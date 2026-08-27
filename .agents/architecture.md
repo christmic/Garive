@@ -1,22 +1,61 @@
 # Architecture
 
-> Design docs accumulate here as the project grows. This file is the
-> index / placeholder for that content.
+## High-level System
 
-## Status
+Garive's runtime is split across four cooperating tiers:
 
-**Placeholder.** No architecture content yet.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  Agent Apps (clients)                       │
+│      Swift (macOS) · TypeScript (web) · other surfaces      │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Agent Gateway (Go)                         │
+│     Auth · rate limit · load balance · observability        │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Core Agent (Rust · Kotlin mirror)                │
+│           loop · tools · safety · memory · knowledge        │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  Multi-channel Surfaces                     │
+│              CLI · IDE · chat · IM · voice (TBD)            │
+└─────────────────────────────────────────────────────────────┘
+```
 
-Garive's runtime stack and core abstractions will be defined in this
-directory as the project takes shape. Update this file with a
-table-of-contents pointing at sub-documents (e.g.
-`architecture/runtime.md`, `architecture/protocol.md`) once they
-exist.
+## Core Agent — Cross-language Isomorphic Design
 
-## Convention for Sub-Docs
+The Core Agent ships in **two source-of-truth mirrors**:
 
-- One file per major subsystem or concern.
-- Each sub-doc leads with a one-paragraph summary, then sections for
-  invariants, contracts, and known limitations.
-- Cross-link from `.agents/AGENTS.md` if a sub-doc defines rules
-  rather than just describing state.
+- **Rust** — primary, ship-to-production implementation.
+  Performance-sensitive paths live here.
+- **Kotlin** — synchronized mirror. Same wire protocol, same
+  semantics, shareable trait / test surface. Used by JVM-side
+  services and Android-adjacent surfaces.
+
+Both languages track each other; a protocol-level change updates
+both in the same change set, verified by a shared conformance
+suite.
+
+## Research Fronts
+
+Beyond the core loop, Garive explores:
+
+- **Self-drive** — the agent initiates work without explicit
+  prompts when it detects signal worth acting on.
+- **Value discovery** — the agent surfaces opportunities the user
+  hasn't yet articulated.
+- **Feedback loops** — every action returns a signal that the
+  agent integrates into its next decision.
+
+## Sub-docs
+
+Per-feature / per-subsystem designs accumulate under
+`docs/architecture/` once specific slices are scoped. Update this
+index as sub-docs land.
