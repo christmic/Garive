@@ -54,6 +54,30 @@ Beyond the core loop, Garive explores:
 - **Feedback loops** — every action returns a signal that the
   agent integrates into its next decision.
 
+## Build Configuration
+
+| Part | Language | Build tool | Workspace |
+|------|----------|------------|-----------|
+| `engine/`, `runtime/replica`, `cli`, `tui`, `bench` | Rust | Cargo workspace (root `Cargo.toml` members) | main |
+| `desktop/` backend | Rust (Tauri) | cargo (workspace member) | main |
+| `desktop/` frontend | TypeScript / React | pnpm (Tauri CLI orchestrates) | independent |
+| `mobile/` | Kotlin (KMP) | Gradle | independent |
+| `experiments/kotlin/` | Kotlin | Gradle | independent |
+| `runtime/gateway/` | Go | go build / go mod | independent |
+| `spec/proto/` | — | buf / protoc codegen → Rust + Kotlin | single source |
+
+Rules of thumb:
+
+- **Main Rust workspace** holds everything that compiles to a Rust
+  binary or library and is part of the canonical Rust toolchain.
+- **Independent builds** (mobile, experiments/kotlin, gateway,
+  desktop frontend) live in their own package-manager trees
+  (Gradle, go.mod, pnpm) and integrate with the main workspace via
+  generated artifacts or inter-process calls.
+- **`spec/proto/`** is the single source of truth for wire schemas.
+  Generated Rust and Kotlin bindings ship into the respective
+  workspaces; schemas do not drift.
+
 ## Sub-docs
 
 Per-feature / per-subsystem designs accumulate under

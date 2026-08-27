@@ -31,13 +31,15 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 
 ### Tech Stack
 
-| Layer | Language |
-|-------|----------|
-| Core Agent (primary) | Rust |
-| Core Agent (mirror) | Kotlin |
-| Gateway | Go |
-| Desktop App | Swift |
-| Web App | TypeScript |
+| Part | Language | Build tool | Workspace |
+|------|----------|------------|-----------|
+| `engine/`, `runtime/replica`, `cli`, `tui`, `bench` | Rust | Cargo workspace (root `Cargo.toml` members) | main |
+| `desktop/` backend | Rust (Tauri) | cargo (workspace member) | main |
+| `desktop/` frontend | TypeScript / React | pnpm (Tauri CLI orchestrates) | independent |
+| `mobile/` | Kotlin (KMP) | Gradle | independent |
+| `experiments/kotlin/` | Kotlin | Gradle | independent |
+| `runtime/gateway/` | Go | go build / go mod | independent |
+| `spec/proto/` | — | buf / protoc codegen → Rust + Kotlin | single source |
 
 @.agents/engineering-rules.md
 @.agents/git-workflow.md

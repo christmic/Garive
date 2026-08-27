@@ -8,11 +8,14 @@ resolver = "2"
 #           observability, config}
 #   runtime/replica
 #   cli, tui, bench
+#   desktop/                  # Tauri Rust backend
 #
 # NOT in this workspace (different language / different repo role):
-#   runtime/gateway          — Go
-#   desktop, mobile          — Swift
-#   experiments/kotlin       — Kotlin mirror
+#   runtime/gateway           — Go (independent go.mod)
+#   desktop/frontend          — TS/React (independent pnpm)
+#   mobile                    — Kotlin KMP (independent Gradle)
+#   experiments/kotlin        — Kotlin mirror (independent Gradle)
+#   spec/proto                — generated Rust + Kotlin, not a member
 members = []
 
 [workspace.package]
