@@ -1,0 +1,3 @@
+{
+  "_comment": "Garive project-local Claude Code config. Canonical rules live in .agents/ and are pulled in via @-references from CLAUDE.md / AGENTS.md at the repo root."
+}

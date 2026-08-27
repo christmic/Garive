@@ -1,0 +1,40 @@
+# Build artefacts (language-agnostic defaults; trim once a stack is chosen)
+target/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+dist/
+build/
+out/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Logs and coverage
+*.log
+coverage/
+*.lcov
+
+# Local secrets / config
+.env
+.env.local
+*.local
+
+# Tooling caches
+.cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.turbo/
