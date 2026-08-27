@@ -1,13 +1,39 @@
-# Build artefacts (language-agnostic defaults; trim once a stack is chosen)
+# Rust
 target/
-node_modules/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-dist/
+**/*.rs.bk
+
+# Go
+bin/
+*.exe
+*.test
+*.out
+
+# Swift (macOS / iOS)
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.dSYM/
+*.dSYM.zip
+
+# Kotlin / JVM
+.gradle/
 build/
+.idea/
+*.iml
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# TypeScript / Node
+node_modules/
+.next/
 out/
+dist/
+.turbo/
+*.tsbuildinfo
 
 # Virtual environments
 .venv/
@@ -19,7 +45,6 @@ env/
 *.swp
 *.swo
 *~
-.idea/
 .vscode/
 
 # Logs and coverage
@@ -37,4 +62,3 @@ coverage/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-.turbo/
