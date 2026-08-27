@@ -1,0 +1,31 @@
+// Garive wire schema — single source of truth.
+//
+// Both Rust and Kotlin bindings are generated from this file:
+//   - Rust:    engine/proto/src/generated/  (via build.rs + prost-build)
+//   - Kotlin:  experiments/kotlin/ + mobile/  (via gradle protobuf plugin)
+//
+// DO NOT hand-edit generated code in either language. To change a
+// wire shape, edit the .proto file and re-run `just codegen`.
+
+syntax = "proto3";
+
+package garive.v1;
+
+// Stable identity for an Agent instance.
+message AgentIdentity {
+    string id   = 1;  // opaque, server-assigned
+    string name = 2;  // human-readable label
+    string kind = 3;  // agent class (e.g. "core", "specialist")
+}
+
+// Liveness check used by the conformance suite. Both languages
+// must produce byte-identical JSON for the same input.
+message PingRequest {
+    string from = 1;
+    int64  ts_ms = 2;
+}
+
+message PingResponse {
+    string pong = 1;
+    int64  ts_ms = 2;
+}

@@ -1,0 +1,10 @@
+{
+  "request": {
+    "from": "garive-conformance",
+    "ts_ms": 1700000000000
+  },
+  "expected_response": {
+    "pong": "garive-conformance",
+    "ts_ms": 1700000000001
+  }
+}

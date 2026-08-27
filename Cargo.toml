@@ -5,7 +5,7 @@ resolver = "2"
 #
 #   engine/{core, ledger, 1lm, tools, memory, knowledge, skill,
 #           multiagent, scheduler, creativity, eval,
-#           observability, config}
+#           observability, config, proto}
 #   runtime/replica
 #   cli, tui, bench
 #   desktop/                  # Tauri Rust backend
@@ -15,7 +15,7 @@ resolver = "2"
 #   desktop/frontend          — TS/React (independent pnpm)
 #   mobile                    — Kotlin KMP (independent Gradle)
 #   experiments/kotlin        — Kotlin mirror (independent Gradle)
-#   spec/proto                — generated Rust + Kotlin, not a member
+#   spec/proto                — schema source, not a member
 members = []
 
 [workspace.package]
