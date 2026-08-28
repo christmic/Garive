@@ -493,6 +493,75 @@ Per-tool formatters are pluggable: adding a new tool = adding
 a new formatter entry. The formatters live with the tool
 definitions, not in the loop.
 
+#### Per-tool Policy Profiles
+
+Different tool *kinds* want different visibility rules.
+Search results are consumable in compressed form (the model
+just needs "this exists, here are top N matches"). Edit /
+confirmation results must stay full — the model needs exact
+content to confirm a re-edit without re-reading. Command
+output sits in the middle. We give each tool class a
+**policy profile** that ties together its tier boundaries,
+eviction behaviour, and preview formatter.
+
+| Class | Examples | Tier boundaries (full / preview / one-liner) | Eviction | Why |
+|-------|----------|-----------------------------------------------|----------|-----|
+| **Search** | `grep`, `glob`, `web_fetch`, `web_search`, `find` | 0–3 / 4–10 / >10 | **eager** | Result is a list; model needs match count + a few samples, not the whole list. Re-runnable. |
+| **Edit** | `read_file`, `edit`, `write`, `apply_patch` | 0–10 / 11–30 / >30 | **never** | The model confirms edits against the exact file content it read. Compressing forces re-reads. |
+| **Command** | `bash`, `python`, `node`, `cargo`, `go` | 0–5 / 6–15 / >15 | **late** | Exit code + tail diagnostics carry most of the value; full output is rarely re-needed. |
+| **Generic** | (other tools) | 0–3 / 4–10 / >10 | **eager** | Unknown tools get the default cautious profile. |
+
+```python
+class ToolClass(Enum):
+    SEARCH = "search"      # aggressive decay, eager eviction
+    EDIT   = "edit"        # preserve, never evict
+    COMMAND = "command"     # moderate decay, late eviction
+    GENERIC = "generic"    # default cautious profile
+
+def tier_for(tool_class: ToolClass, tiers_old: u32) -> Tier:
+    return match tool_class:
+        ToolClass.SEARCH   => match tiers_old: 0..3=>Full; 4..10=>Preview; _=>OneLiner
+        ToolClass.EDIT     => match tiers_old: 0..10=>Full; 11..30=>Preview; _=>OneLiner
+        ToolClass.COMMAND  => match tiers_old: 0..5=>Full; 6..15=>Preview; _=>OneLiner
+        ToolClass.GENERIC  => match tiers_old: 0..3=>Full; 4..10=>Preview; _=>OneLiner
+
+def eviction_for(tool_class: ToolClass) -> EvictionPolicy:
+    return match tool_class:
+        ToolClass.EDIT   => EvictionPolicy.NEVER
+        ToolClass.SEARCH => EvictionPolicy.EAGER
+        ToolClass.COMMAND => EvictionPolicy.LATE
+        _                => EvictionPolicy.EAGER
+```
+
+The tool→class mapping lives with the **tool definition**,
+not in the loop. Adding a new tool = declaring its class.
+Default for an unknown tool is `GENERIC` (cautious profile).
+
+#### Why `EDIT` is `never`-evict
+
+The model will frequently re-reference a file it has read
+once: to verify an edit, to re-edit a neighbour line, to
+copy-paste a comment. Each reference requires the exact
+content — a preview with a seq pointer would force the loop
+to schedule a re-attach round-trip. The cost of *always
+showing the full text* of an edit-class entry is cheaper
+than the cost of *re-resolving it on every reference*.
+
+`COMMAND` is `late`-evict because command output often
+diagnoses a problem the model needs to circle back to (e.g.
+"the test that failed at iteration 4 might be the same one
+that fails again at iteration 7"). Eager eviction drops
+that diagnostic context too early.
+
+`SEARCH` is `eager`-evict because re-running a search is
+cheap, and the result is structurally compressible (lists,
+matches, top-N) — eviction saves more than it costs.
+
+The per-class profiles are **policy**, not mechanism. They
+fall out of the same three-pass `assemble`; only the
+*thresholds* and *eviction triggers* differ. Swapping a
+profile (eager ↔ late) does not require a mechanism change.
+
 #### Combined Pseudocode
 
 ```python
