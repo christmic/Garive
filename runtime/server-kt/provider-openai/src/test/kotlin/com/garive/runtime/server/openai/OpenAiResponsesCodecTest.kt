@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlinx.serialization.json.*
+import kotlinx.coroutines.test.runTest
 import kotlin.time.Duration.Companion.seconds
 
 class OpenAiResponsesCodecTest {
@@ -115,6 +116,24 @@ class OpenAiResponsesCodecTest {
             )
         ).value
         assertEquals(HttpErrorAction.Retry(3.seconds), retry)
+    }
+
+    @Test fun `model port retries before ambiguity and returns one terminal`() = runTest {
+        val transport = ScriptTransport(ArrayDeque(listOf(
+            TransportResult.Success(HttpResponseDescriptor(429, "0",
+                """{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}""".encodeToByteArray())),
+            TransportResult.Success(HttpResponseDescriptor(200, null, fixture("complete.sse"))),
+        )))
+        val result = OpenAiModelPort(transport, 2).invoke(request(), ModelObserver { ObserverDecision.CONTINUE },
+            ModelCancellation { false })
+        assertIs<InvokeOutcome.Completed>(assertIs<ModelPortResult.Success>(result).outcome)
+        assertEquals(listOf(kotlin.time.Duration.ZERO), transport.waits)
+    }
+
+    private class ScriptTransport(private val responses: ArrayDeque<TransportResult>) : OpenAiTransport {
+        val waits = mutableListOf<kotlin.time.Duration>()
+        override suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation) = responses.removeFirst()
+        override suspend fun wait(delay: kotlin.time.Duration) { waits += delay }
     }
 
     private fun render(action: HttpErrorAction): String = when (action) {

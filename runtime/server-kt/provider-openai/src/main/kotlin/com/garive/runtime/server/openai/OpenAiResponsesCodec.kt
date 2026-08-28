@@ -19,6 +19,55 @@ sealed interface HttpErrorAction {
 }
 data class HttpRequestDescriptor(val method: String, val path: String,
     val headers: List<Pair<String, String>>, val body: ByteArray)
+data class HttpResponseDescriptor(val status: Int, val retryAfter: String?, val body: ByteArray)
+enum class TransportFailure { CONNECTION, TIMEOUT }
+sealed interface TransportResult {
+    data class Success(val response: HttpResponseDescriptor) : TransportResult
+    data class Failure(val reason: TransportFailure) : TransportResult
+}
+interface OpenAiTransport {
+    suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation): TransportResult
+    suspend fun wait(delay: Duration)
+}
+
+class OpenAiModelPort(private val transport: OpenAiTransport, private val maxAttempts: Int) : ModelPort {
+    override suspend fun invoke(request: ModelRequest, observer: ModelObserver,
+        cancellation: ModelCancellation): ModelPortResult {
+        if (maxAttempts <= 0) return ModelPortResult.Failure(ModelPortFailure.INVALID_REQUEST)
+        if (cancellation.isCancelled()) return ModelPortResult.Success(cancelled(null))
+        for (attempt in 1..maxAttempts) {
+            val descriptor = when (val rendered = OpenAiResponsesCodec.renderHttpRequest(request, true)) {
+                is OpenAiResult.Success -> rendered.value
+                is OpenAiResult.Failure -> return ModelPortResult.Failure(rendered.error.portFailure())
+            }
+            val response = transport.execute(descriptor, cancellation)
+            if (cancellation.isCancelled()) return ModelPortResult.Success(cancelled(null))
+            val wire = when (response) {
+                is TransportResult.Success -> response.response
+                is TransportResult.Failure -> if (attempt < maxAttempts) {
+                    transport.wait(Duration.ZERO); continue
+                } else return ModelPortResult.Success(InvokeOutcome.Interrupted(
+                    InterruptionKind.TRANSPORT, emptyList(), unknownUsage()))
+            }
+            if (wire.status in 200..299) {
+                val outcome = when (val parsed = OpenAiResponsesCodec.parseSse(wire.body)) {
+                    is OpenAiResult.Success -> parsed.value
+                    is OpenAiResult.Failure -> return ModelPortResult.Failure(parsed.error.portFailure())
+                }
+                return ModelPortResult.Success(if (cancellation.isCancelled()) cancelled(outcome) else outcome)
+            }
+            when (val action = OpenAiResponsesCodec.classifyHttpError(wire.status, wire.retryAfter,
+                wire.body, attempt == maxAttempts, Instant.now())) {
+                is OpenAiResult.Failure -> return ModelPortResult.Failure(action.error.portFailure())
+                is OpenAiResult.Success -> when (val value = action.value) {
+                    is HttpErrorAction.Retry -> transport.wait(value.retryAfter ?: Duration.ZERO)
+                    is HttpErrorAction.Terminal -> return ModelPortResult.Success(value.outcome)
+                }
+            }
+        }
+        return ModelPortResult.Failure(ModelPortFailure.ADAPTER_INVARIANT)
+    }
+}
 private enum class StreamKind { OUTPUT_TEXT, REFUSAL, FUNCTION_ARGUMENTS, REASONING_SUMMARY, REASONING_TEXT }
 private data class StreamField(val kind: StreamKind, val subindex: UInt = 0u)
 private data class StartedItem(val id: String, val kind: String, val callId: String?, val name: String?)
@@ -303,3 +352,12 @@ private fun JsonObject.text(key: String) = getValue(key).jsonPrimitive.content
 private fun JsonObject.ulong(key: String) = text(key).toULongOrNull() ?: fail(OpenAiAdapterError.INVARIANT)
 private fun JsonObject.uint(key: String) = text(key).toUIntOrNull() ?: fail(OpenAiAdapterError.INVARIANT)
 private fun unknownUsage() = ModelUsage(TokenCount.Unknown, TokenCount.Unknown, source = UsageSource.PROVIDER_REPORTED)
+private fun cancelled(previous: InvokeOutcome?): InvokeOutcome.Interrupted { val values = when (previous) {
+    is InvokeOutcome.Completed -> previous.items to previous.usage
+    is InvokeOutcome.Interrupted -> previous.partialItems to previous.usage
+    else -> emptyList<ModelItem>() to unknownUsage() }
+    return InvokeOutcome.Interrupted(InterruptionKind.CANCELLED, values.first, values.second) }
+private fun OpenAiAdapterError.portFailure() = when (this) {
+    OpenAiAdapterError.INVALID_REQUEST -> ModelPortFailure.INVALID_REQUEST
+    OpenAiAdapterError.UNSUPPORTED_CAPABILITY -> ModelPortFailure.UNSUPPORTED_CAPABILITY
+    OpenAiAdapterError.INVALID_JSON, OpenAiAdapterError.INVARIANT -> ModelPortFailure.ADAPTER_INVARIANT }
