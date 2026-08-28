@@ -1,157 +1,97 @@
-# Multi-Language Isomorphic Design
+# Multi-language admission and conformance
 
-> How Garive keeps Rust + Kotlin (and future languages) in
-> lock-step **without "writing two sides"**.
->
-> The mechanism: **single source + code generation +
-> consistency tests**. There is no second author; there is one
-> author of intent, and languages consume the same artifact.
+> Rust is Garive's initial implementation. Another language is admitted for a
+> concrete product or research need, not to prove every abstraction twice.
 
-## The Core Principle
+## Current position
 
-| Layer | Authoring model |
-|-------|-----------------|
-| **Design** (architecture, mechanisms, invariants) | One doc. Both languages read it. |
-| **Data types** (messages, value objects) | One schema. Generated into both languages. |
-| **Protocol** (wire shape, error codes, sequence) | One proto. Generated into both languages. |
-| **Test fixtures** (`spec/fixtures/*`) | One file. The conformance runner reads it from both. |
-| **Cross-language conformance** | One script (`just conformance`). Diff must be empty. |
-| **Core logic** (agent loop, scheduler, dispatch) | **Re-written per language.** Different framework idioms. |
-| **Framework integration** (FFI, SKIE bridge, env handling) | Per language. |
-| **Per-platform UI** | Per platform (Compose, SwiftUI). |
+`experiments/engine-kt/` is an optional Kotlin experiment. It is not a second
+source of truth, a release requirement, or a promise that every Rust module has
+a Kotlin counterpart.
 
-The first six rows are **not** written twice. The last three
-**must** be — because the frameworks are different. We
-**never** transcribe the Rust core to Kotlin, or vice versa.
-We re-author from the same source of intent in each language's
-idioms.
+The sources of truth are boundary-specific:
 
-## What "Mirror" Means (and Doesn't)
+| Concern | Source |
+|---|---|
+| Product/module ownership | `docs/architecture/system.md` |
+| Internal Rust behavior | Rust types, tests, and accepted design |
+| Public/cross-process wire shape | the admitted file under `spec/` |
+| Provider wire shape | pinned official documentation/SDK evidence |
+| Cross-language behavior | shared acceptance fixture for the admitted slice |
 
-When we say `experiments/engine-kt/` is a Kotlin mirror of
-`engine/`, we mean **the semantics are identical**, not that
-the code is. Three things are kept identical:
+## Admission gate
 
-1. **Domain semantics.** Same aggregate boundaries, same
-   invariants, same domain rules. These come from
-   `.agents/ddd.md` + `spec/proto/`.
-2. **Wire shape.** Same proto, same generated types.
-3. **Test expectations.** Same fixtures, same canonical JSON
-   output under conformance.
+A second implementation needs all of:
 
-Everything else is **idiomatic to the language**:
+1. A user or deployment requirement that Rust alone cannot satisfy well.
+2. A bounded behavior surface small enough to specify independently.
+3. Shared acceptance examples that do not depend on either implementation.
+4. An owner and build pipeline for the new implementation.
+5. A decision on whether it is experimental, supported, or production.
 
-| Concern | Rust | Kotlin |
-|---------|------|--------|
-| Async | `tokio::future`, `async fn` | `suspend fun`, `Flow` |
-| Errors | `thiserror` enums | sealed classes / `Result` |
-| Type wrappers | newtype structs | value classes |
-| Module organisation | one crate per sub-dir | one Gradle module per sub-dir |
-| Test framework | `#[test]`, `proptest` | `kotlin.test`, `kotest-property` |
+Until then, keep the idea in docs and do not create placeholder modules.
 
-A new contributor to `engine-kt/` should:
+## What is shared
 
-1. Read `engine/AGENTS.md` and `experiments/engine-kt/AGENTS.md`.
-2. Read the relevant `.agents/` rule files.
-3. **Not** read the Rust code first. Read the proto + fixtures
-   + design doc, then implement from those in Kotlin idioms.
+| Artifact | Sharing rule |
+|---|---|
+| Public wire schema | Generated per language from one admitted schema. |
+| Canonical wire fixture | Same bytes or canonical JSON when byte identity is part of the contract. |
+| Behavioral fixture | Same inputs and semantic outputs; language representation may differ. |
+| Internal domain types | Authored per implementation; no forced proto mirror. |
+| Algorithms | Re-authored from accepted behavior, not transcribed line by line. |
+| Platform integration | Native to the platform. |
 
-If the Kotlin code starts looking like a Rust translation,
-that's a smell — push back and rewrite in Kotlin idioms.
+## Conformance levels
 
-## The Mechanism (Three Guarantees)
+| Level | Assertion | Use |
+|---|---|---|
+| Wire | Decode/encode compatibility and unknown-field policy. | Cross-process schema. |
+| Canonical representation | Byte-equal canonical output. | Hashes, signatures, cache keys, golden wire fixtures. |
+| Semantic | Equivalent domain result after normalization. | Independent Agent or client implementations. |
+| Capability | Both satisfy the same end-to-end scenario and failure contract. | Production support claim. |
 
-```
-                  ┌────────────────────────┐
-                  │  spec/proto/*.proto    │   ← single source
-                  └────────────┬───────────┘
-                               │
-         ┌─────────────────────┼─────────────────────┐
-         ▼                     ▼                     ▼
-   Rust (prost-build)   Kotlin (gradle)      Go (buf gen)   ← codegen
-         │                     │                     │
-         ▼                     ▼                     ▼
-    engine/proto/       engine-kt/proto/       runtime/gateway/   ← generated
-         │                     │                     │
-         ▼                     ▼                     ▼
-    Rust types          Kotlin types            Go types
-         │                     │                     │
-         └──────────┬──────────┴──────────┬──────────┘
-                    │                     │
-                    ▼                     ▼
-             spec/fixtures/*        spec/fixtures/*    ← shared test data
-                    │                     │
-                    └──────────┬──────────┘
-                               ▼
-                  just conformance        ← consistency check
-                  diff must be empty
-```
+Do not require byte equality for values whose map ordering, serialization, or
+language representation is not itself a contract.
 
-Three guarantees keep this honest:
+## Kotlin experiment
 
-1. **Single source.** Anything that's wire-shaped lives in
-   `spec/proto/`. Hand-written parallel types are banned in
-   `engine/`, `engine-kt/`, `mobile/`, `runtime/gateway/`,
-   `desktop/`. See `spec/AGENTS.md`.
-2. **Generated, not transcribed.** Code generation happens at
-   build time. CI fails if generated files drift from source
-   (`.agents/git-workflow.md` Before-Rebase Checklist).
-3. **Conformance gates sync.** `just conformance` reads the
-   same fixture from both languages and diffs the canonical
-   JSON. Empty diff = sync held.
+The current Gradle tree may generate Kotlin bindings from `spec/proto/` and
+host focused experiments. A module becomes supported only when the admission
+gate is recorded in its design document.
 
-## The Sync Loop
+When a Kotlin slice is admitted:
 
-When a slice changes in `engine/` (Rust):
+1. Read the accepted design and fixtures before reading Rust implementation
+   details.
+2. Generate boundary bindings where a schema exists.
+3. Implement Kotlin-idiomatic domain values behind the boundary.
+4. Run the declared conformance level.
+5. Report Rust and Kotlin evidence separately; matching failures are still two
+   failures, not proof of correctness.
 
-```
-1. Update spec/proto/*.proto   if the wire shape moves
-2. Update spec/fixtures/*       if the inputs / expected outputs move
-3. Update Rust impl + Rust-specific tests
-4. Run just conformance — confirm the Rust side alone is green
-5. Sync the Kotlin mirror:
-   a. Pull the new proto + fixture
-   b. Re-author the Kotlin side from those (NOT a port of Rust code)
-   c. Re-run conformance — confirm both sides agree
-6. Both sides commit in lock-step (or two adjacent commits;
-   not "Rust first, Kotlin later, oh wait we forgot")
-```
+## Generated code policy
 
-The same loop applies in reverse when `engine-kt/` leads.
-The Rust side stays as the canonical implementer for
-performance-sensitive paths; the Kotlin mirror exists to
-prove the abstractions are language-agnostic and to serve
-the JVM-side runtime when needed.
+- Generated bindings are build artifacts unless a release/distribution reason
+  explicitly requires committing them.
+- CI regenerates and compares committed artifacts only when the project has
+  chosen to track generated output.
+- Handwritten types may map to generated wire values; they must not silently
+  redefine an admitted public schema.
 
-## What This Means for Future Languages
+## Anti-patterns
 
-Adding a new wire language (Swift, TypeScript, Python, …)
-**does not** mean writing Garive again. It means:
+- Calling two implementations “two sources of truth.”
+- Blocking an initial Rust slice on a Kotlin placeholder.
+- Using proto for every internal value to avoid writing mappings.
+- Comparing arbitrary JSON bytes when semantic equivalence is the contract.
+- Editing a shared fixture to match one implementation without revisiting the
+  accepted behavior.
+- Adding a language because its directory already exists.
 
-1. Wire up `protoc-gen-<lang>` in the codegen step.
-2. Add the generated bindings to the language's package
-   manager.
-3. The conformance runner gains a third participant.
-4. New language's harness slots into the driver loop (no
-   driver changes).
+## Reference
 
-The "platform-specific code" (loop logic, scheduler, …)
-still has to be authored per language — but the **contract**
-is the one source.
-
-## What NOT to Do
-
-- ❌ Don't hand-write types in `engine/`, `engine-kt/`,
-  `mobile/`, `runtime/gateway/` that mirror `.proto` fields.
-  Generate or import.
-- ❌ Don't transcribe Rust code to Kotlin. Re-author in Kotlin
-  idioms from the spec / fixtures / design doc.
-- ❌ Don't let one side drift. If conformance fails, fix
-  the implementation; never edit the fixture to make the
-  diff go away.
-- ❌ Don't skip conformance. `just conformance` is the gate
-  for any commit touching `spec/proto/`, `engine/proto/`,
-  `engine-kt/proto/`, or `mobile/`.
-- ❌ Don't re-design semantics separately per language.
-  Aggregate boundaries, invariants, domain events all come
-  from `.agents/ddd.md` and apply uniformly.
+- `docs/architecture/system.md` — technology admission and ownership.
+- `.agents/ddd.md` — domain/wire separation.
+- `.agents/testing.md` — conformance cadence and evidence maturity.
+- `experiments/engine-kt/AGENTS.md` — Kotlin-local rules.
