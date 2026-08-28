@@ -153,27 +153,95 @@ The pair `(body_inline, body_hash)` is "small body in db" or
 "large body by hash" — pick one per row based on a size
 threshold (e.g. 4 KiB inline, anything larger externalised).
 
-#### `blob` — dedup / registry
+#### `blob` — content-addressed registry (no refcount)
 
 A blob lives at `<session>/blobs/<sha256>` on disk and is
-referenced by hash from `entry.body_hash`. This table is
-the **single index** that maps hashes to file paths and
-records metadata.
+referenced by hash from `entry.body_hash`. The `blob` table
+is the **single index** that maps hashes to file paths and
+records metadata — **and nothing more**. There is no
+reference count.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `hash` | TEXT PRIMARY KEY | `sha256:<hex>` — the content hash. |
-| `size` | INTEGER | Bytes. |
+| `hash` | TEXT PRIMARY KEY | `sha256:<hex>` — the content hash. The row's *identity*; also the on-disk filename. |
+| `size` | INTEGER | Bytes on disk. |
 | `mime` | TEXT | Best-guess MIME type. |
-| `first_seen_seq` | INTEGER | First `entry.seq` that referenced this blob. |
-| `last_seen_seq` | INTEGER | Most recent `entry.seq` that referenced this blob. |
-| `refcount` | INTEGER | Live references (entry rows with this hash and `superseded_by IS NULL`). For GC. |
-| `path` | TEXT | Relative path under the session directory (`blobs/<hash>`). |
+| `wall_ts` | INTEGER NOT NULL | Wall-clock of when the blob was registered. Diagnostic; used by archive sweeps. |
+| `path` | TEXT NOT NULL | Relative path under the session directory (`blobs/<hash>`). |
 
 Multiple `entry` rows referencing the same blob hash **do
-not** duplicate bytes on disk — that's the point of the
-dedup table. `refcount` tells GC when a blob can be deleted
-(no live entries reference it).
+not** duplicate bytes on disk — dedup is by content hash. The
+table itself only knows the blob exists, where it is, and
+how big it is.
+
+#### Why no `refcount`
+
+We deliberately do **not** track per-row references in
+`blob`. The lifecycle is governed by **session activity**, not
+by ledger semantics:
+
+- **Active sessions** — defined as "any session with at least
+  one `entry` append in the last N minutes" — **never have
+  their blobs garbage-collected**. A blob in an active
+  session may be referenced by N entries, 0 entries, or any
+  count; the activity rule wins.
+- **Idle / archived sessions** — defined as "no appends in N
+  days" — are eligible for **whole-session archival**:
+  `entry` rows go to cold storage, the `entry` table is
+  trimmed, and the corresponding blob files are unlinked.
+  The sweep runs once per `ops_log` row.
+
+The implication: a blob in an active session is **never
+deleted**, even if no live entry references it. A blob in an
+idle session goes when the whole session goes. There is no
+"GC this one blob because its refcount dropped to zero"
+path — that path is more complex than the use case warrants
+and creates windows where data can leak between sessions.
+
+#### Integrity checks
+
+The blob table is the source of truth for **what files
+should exist** under `<session>/blobs/`. Three checks fall
+out of that:
+
+1. **Hash verification (rare, on suspicion).** When something
+   looks wrong (a read returns garbage, a checksum mismatch
+   surfaces downstream), `verify_blob(hash)` reads the file
+   from disk, computes `sha256`, and compares to `blob.hash`.
+   Mismatch → log to `ops_log` as `blob_corruption`,
+   **do not delete or rewrite** (the file may still be the
+   right bytes — corruption in our SHA-256 is far less likely
+   than a bug in our SHA-256 implementation). Repair is a
+   manual operator decision.
+2. **Spot-check on session open (cheap).** When a session
+   directory is mounted (process restart, attach tool,
+   inspection), the runtime walks `blob` rows whose
+   `wall_ts > session_recent_threshold` and checks that the
+   file exists at `blob.path`. Missing files are flagged.
+   The runtime **does not** auto-repair or panic; it logs
+   `blob_missing` to `ops_log` and continues with whatever
+   blobs do exist. The session is recoverable from the
+   `entry` table — the model reads `entry.body_hash`, the
+   blob lookup fails, the surface shows a `seq_pointer` with
+   "blob missing", and the loop recovers.
+3. **Archive sweep (cold storage).** When a session ages
+   past the active-session threshold, an archive sweep
+   moves its `entry` rows to cold storage and unlinks the
+   blob files. The sweep **does not** re-verify the blob
+   contents (that's expensive); it relies on the file
+   existing from the previous spot-check. A second spot-check
+   runs on the cold-storage mount, separately, if needed.
+
+The `ops_log` table records every check and every sweep:
+
+```
+{'op': 'blob_spotcheck', 'started_at': …, 'finished_at': …,
+ 'items_removed': 0, 'notes': '{"checked": 47, "missing": 1, "missing_hashes": ["sha256:..."]}'}
+```
+
+Missing blobs are a **loud signal**, not a silent failure.
+The runtime continues — the session is still useful, just
+with one or two holes.
 
 #### `dedup` — idempotency table (the *client_generation* key)
 
