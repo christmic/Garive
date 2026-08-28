@@ -1,39 +1,57 @@
-# Ledger — Append-only Round Log
+# Ledger — Session-as-Directory Append-only Log
 
-> **The ledger is the single source of truth for an
-> `agent_turn`'s state.** It is append-only, durable, and
-> replayable. The surface the LLM sees is a **lossy
-> projection** of the ledger; the loop never *deletes* from
-> the ledger. Together with the loop (`loop.md`), the ledger
+> **One session = one directory.** Inside the directory:
+> a SQLite database (the "container"), and a blob store
+> keyed by content hash for large objects (files, snapshots,
+> multi-KB outputs). The ledger is the single source of truth
+> for an `agent_turn`'s state — append-only, durable, and
+> replayable. Together with the loop (`loop.md`), the ledger
 > implements "the model never loses information that matters,
 > and never re-pays for information it once saw."
 
 This document describes the ledger **as a design**. Specific
-storage backends (SQLite, file, remote), row layouts, and
-index definitions are **policy** that land with the slice —
-the *mechanism* (append-only, replayable, seq-monotonic) is
-what the codebase ships.
+SQLite pragmas, index DDL, hash function choice, and blob
+file naming land with the slice — the *mechanism* (session-
+as-directory, content-hash addressing, append-only) is what
+the codebase ships.
+
+## TL;DR
+
+Four invariants define the ledger:
+
+1. **Session = directory.** One `agent_turn`'s (or longer-
+   running session's) data lives under `<root>/<session>/`.
+2. **Blobs are external + content-addressed.** A large body
+   (file, snapshot, KB-plus output) is stored as
+   `<root>/<session>/blobs/<sha256>`; the db row carries
+   the hash, not the bytes.
+3. **SQLite is the container.** Schema: a main table (one
+   row per ledger entry), a dedup table (one row per unique
+   blob hash), a blob registry (which hashes exist where),
+   and a metadata table (session / agent / model / run tags).
+4. **The ledger never forgets.** The surface is a lossy
+   projection; this document describes the durable store
+   underneath.
 
 ## Context
 
 The loop needs to answer four questions reliably:
 
 1. **Recoverable:** if the process dies mid-round, where
-   should it resume? Answer: read the ledger.
+   should it resume? Answer: read the directory.
 2. **Auditable:** why did this round call this tool at this
-   iteration? Answer: read the ledger.
+   iteration? Answer: read the main table.
 3. **Bounded:** the model's context window is finite; how
    do we give it the right slice? Answer: derive from the
-   ledger.
+   main table + blob registry, projecting into the surface.
 4. **Multi-language:** Rust and Kotlin both need to read the
-   same data with the same semantics. Answer: the ledger is a
-   sequence of typed entries; the language reads what its
-   `derive` needs.
+   same data with the same semantics. Answer: SQLite is the
+   lingua franca; both languages use the same `.sql` schema.
 
 These together rule out an in-memory-only store (no recovery)
 and a hand-rolled binary log (no schema, no cross-language).
-A typed, append-only log with a small, well-defined entry
-schema fits.
+A SQLite-backed session directory with a content-addressed blob
+store fits.
 
 ## Options Considered
 
@@ -43,295 +61,340 @@ schema fits.
 
 Rejected. Loses everything on crash. Cannot recover.
 
-### B. Plain text log (JSONL)
+### B. Plain text log (JSONL), one file per session
 
-One JSON object per line.
+One JSON object per line, big bodies inlined.
 
-Rejected. Cheap to write, but parsing on every read is slow
-without an index; cross-language readers would need to agree
-on serialisation order; no schema enforcement.
+Rejected. Inline bodies turn the log into a giant string per
+row; parsing on every read is slow without an index;
+cross-language readers would need to agree on serialisation
+order; no schema enforcement.
 
-### C. SQLite
+### C. SQLite per session + content-addressed blobs
 
-A small embedded database, one row per ledger entry, indexed
-by `seq` and `kind`.
+A small embedded SQLite db for entry metadata + a sidecar
+blob store keyed by content hash for large bodies.
 
-Considered. Pros: durable, queryable, well-understood, native
-to most language ecosystems. Cons: schema migration overhead;
-not trivial to share across processes.
-
-**Selected as the default.** The schema lives in
-`spec/proto/` (or a sidecar `.sql`) so both Rust and Kotlin
-generate against it.
+**Selected.** Durable, queryable, well-understood. Blobs live
+next to the db (so a session directory is fully portable —
+`tar` it, move it, restore it). Hash-based content addressing
+gives dedup for free (a 50 MB log read twice is one file on
+disk).
 
 ### D. CRDT / event-sourced framework
 
 e.g. `durable-streams`, `eventfold`, custom CRDT.
 
-Considered. Overkill for a single-process ledger. Future
+Considered. Overkill for a single-process writer. Future
 option if multi-process writers become a requirement.
 
 ### E. Custom binary log with sidecar index
 
-Tempting for performance; rejected for the same reasons as
-B + maintenance cost.
+Tempting for performance; rejected for maintenance cost and
+reinventing SQLite badly.
 
 ## Decision
 
-The ledger is an **append-only log of typed entries**, one
-append-only stream per `agent_turn` (per-turn segments). Each
-entry has a monotonically increasing `seq` (per turn). The
-ledger is durable, replayable, and queryable by `(turn_id,
-seq_range)` and `(turn_id, kind)`.
+The ledger is **one directory per session**, containing a
+SQLite db + a blob store + (optionally) sidecar indexes.
 
-### Top-level shape
+### Directory Layout
 
 ```
-Ledger (process-wide)
-└── TurnSegment  one per agent_turn
-    ├── id          turn_id (UUID)
-    ├── started_at  wall-clock
-    ├── ended_at    wall-clock (or null while Suspended)
-    ├── state       snapshot of `state` at the most recent append
-    │              (phase, iteration_count, tokens_used, ...)
-    └── entries     append-only list of Entry
-
-Entry {
-    seq           u64, monotonic per turn
-    kind          string, see "Entry Kinds Catalog" below
-    produced_by   enum { model, runtime, governance, system }
-    produced_at   wall-clock
-    turn_seq      sequence number within the turn
-    payload       structured per kind
-    covers        optional seq_range (only on summary entries)
-    provenance    opaque token for "where this came from"
-}
+<root>/
+└── <session>/
+    ├── ledger.db          SQLite database
+    ├── blobs/             content-addressed blob store
+    │   └── <sha256>       file with the bytes; one per unique hash
+    ├── index/             optional sidecar indexes (search, etc.)
+    └── meta.json          session-level metadata (created_at, agent, model, …)
 ```
 
-A turn segment is the **resumable unit**. `Resume` re-attaches
-to the in-flight turn's segment; a fresh user message starts
-a new turn segment. Ledger is append-only — segments are
-created lazily but never destroyed.
+A session may span multiple `agent_turn`s; `turn_id` is a
+column in the main table, not a directory. The directory
+boundary is **session**, not **turn** — so a multi-turn
+session is one directory; a single-turn agent run is also one
+directory.
 
-### Entry Kinds Catalog
+### SQLite Schema (4 tables)
 
-Each kind is the unit of `derive` filtering. Future kinds
-land by adding a row to this catalog and a corresponding
+The container is a small SQLite database with **four tables**.
+A row in `entry` is the durable record of one ledger event;
+a row in `blob` is the durable record of one blob's existence
+and location; `entry.blob_ref` points at `blob.hash`.
+
+#### `entry` — main table
+
+One row per ledger event. Append-only: rows are never
+updated or deleted in place (only superseded logically —
+see `entry.superseded_by` below).
+
+| Column | Type | What it holds |
+|--------|------|---------------|
+| `seq` | INTEGER PRIMARY KEY | Monotonic per session. Strictly increasing. |
+| `turn` | TEXT | `turn_id` (UUID). The agent_turn this entry belongs to. |
+| `step` | INTEGER | Iteration index within the turn. `0` for user entry, `n` for the n-th `iteration`. |
+| `kind` | TEXT NOT NULL | Dotted kind name (e.g. `assistant.text`, `tool.call`, `tool.result`, `summary.v1`, `rewrite_directive`). |
+| `provenance` | TEXT | Opaque source tag: which model, which tool, which rule produced this entry. |
+| `surface_visible` | INTEGER (bool) | Whether this entry is *currently* visible on the surface. Defaults to `1`. Gets `0` when the entry has aged out / been compressed / been evicted. |
+| `pinned` | INTEGER (bool) | `1` if the entry is **pinned** — never compressed, never evicted, always on the surface. `goal` and `system` are pinned by default; the model can request pin via intent; `governance.judge` can mark entries as pin-worthy. |
+| `pair_ref` | INTEGER | `seq` of the paired entry (e.g. `tool.call` ↔ `tool.result`, `approval_request` ↔ `approval_response`). `NULL` if unpaired. |
+| `schema_var` | INTEGER | Schema version of this entry's payload. Lets readers tolerate old / new fields without parsing errors. |
+| `wall_ts` | INTEGER | Wall-clock time of append (Unix epoch milliseconds). |
+| `body_hash` | TEXT NULL | Content hash (`sha256:<hex>`) of the body if the body is externalised in the blob store. `NULL` if inline. |
+| `body_inline` | BLOB NULL | Inline body for small entries (≤ a configurable byte threshold). `NULL` if externalised. |
+| `body_size` | INTEGER | Size in bytes (whether inline or externalised). |
+| `covers_start` | INTEGER NULL | For `summary.v*` entries: the start of the `seq` range it replaces. |
+| `covers_end` | INTEGER NULL | For `summary.v*` entries: the inclusive end of the `seq` range it replaces. |
+| `superseded_by` | INTEGER NULL | If this entry was logically replaced (e.g. by a summary), points at the replacing entry's `seq`. Enables history walks without `covers_*` joins. |
+| `ext` | BLOB | Extension bag (kind-specific fields). Indexable per kind as needed. |
+
+The pair `(body_inline, body_hash)` is "small body in db" or
+"large body by hash" — pick one per row based on a size
+threshold (e.g. 4 KiB inline, anything larger externalised).
+
+#### `blob` — dedup / registry
+
+A blob lives at `<session>/blobs/<sha256>` on disk and is
+referenced by hash from `entry.body_hash`. This table is
+the **single index** that maps hashes to file paths and
+records metadata.
+
+| Column | Type | What it holds |
+|--------|------|---------------|
+| `hash` | TEXT PRIMARY KEY | `sha256:<hex>` — the content hash. |
+| `size` | INTEGER | Bytes. |
+| `mime` | TEXT | Best-guess MIME type. |
+| `first_seen_seq` | INTEGER | First `entry.seq` that referenced this blob. |
+| `last_seen_seq` | INTEGER | Most recent `entry.seq` that referenced this blob. |
+| `refcount` | INTEGER | Live references (entry rows with this hash and `superseded_by IS NULL`). For GC. |
+| `path` | TEXT | Relative path under the session directory (`blobs/<hash>`). |
+
+Multiple `entry` rows referencing the same blob hash **do
+not** duplicate bytes on disk — that's the point of the
+dedup table. `refcount` tells GC when a blob can be deleted
+(no live entries reference it).
+
+#### `dedup` — body-level dedup
+
+Independent of the blob store: even inline bodies may be
+duplicated (e.g. the model emits the same `assistant.text`
+twice in a retry loop). `dedup` lets a future compaction
+pass find duplicates cheaply.
+
+| Column | Type | What it holds |
+|--------|------|---------------|
+| `hash` | TEXT PRIMARY KEY | Content hash (sha256) of the **value**, regardless of how it's stored (inline or external). |
+| `first_seen_seq` | INTEGER | First entry that produced this value. |
+| `count` | INTEGER | How many entries reference this value. |
+
+(`dedup` is used for analytics / future compaction. The
+authoritative record is still `entry`.)
+
+#### `meta` — session metadata
+
+Session-scoped tags. Mostly written once at session start,
+read often.
+
+| Column | Type | What it holds |
+|--------|------|---------------|
+| `key` | TEXT PRIMARY KEY | Tag name (e.g. `agent`, `model`, `created_at`, `pid`, `session_kind`). |
+| `value` | TEXT | Tag value. |
+| `wall_ts` | INTEGER | When this tag was set. |
+
+`meta` is the equivalent of `meta.json` but inside the db, so
+it joins naturally with the rest.
+
+### Entry Kinds (dotted names)
+
+Kinds are dotted, lower-case, namespace-qualified. Adding a
+new kind is **a row in the catalog** plus a Rust/Kotlin
 typed payload — nothing else changes.
 
-| Kind | Produced by | Payload (key fields) | Notes |
-|------|--------------|----------------------|-------|
-| `user.message` | runtime | `{text, attachments[]}` | One entry per user turn entry. |
-| `assistant.message` | model | `{text, intents[]}` | Model's reply before judge. |
-| `assistant.tool_call` | model | `{tool, args, call_id}` | One per model-intent. Pairs with `tool_result`. |
-| `tool_result` | executor | `{call_id, output, status}` | The result of a tool call. Pairs with `assistant.tool_call`. |
-| `tool_result.rejected` | executor | `{call_id, reason}` | When governance denied. Carries the reason back to the model. |
-| `verdict` | governance | `{intent_seq, decision, rewrite?}` | Governance's call on an `assistant.tool_call`. |
-| `effects` | executor | `{verdict_seq, items[]}` | What the executor did. |
-| `approval_request` | runtime | `{verdict_seq, question}` | AskUser verdict. Round pauses here. |
-| `approval_response` | runtime | `{approval_request_seq, answer}` | Human's reply on Resume. |
-| `summary.v1` | model | `{covers, fields: {goal_progress, confirmed_facts, actions_taken, state_progress, open_questions}}` | See `loop.md` "Summary Entry Schema". |
-| `rewrite_directive` | runtime | `{summary_seq, covers}` | Triggers `derive`'s reset path. |
-| `goal` | system | `{text}` | Frame kind — always-loaded, never summarised. |
-| `system` | runtime | `{text, version}` | Frame kind. |
+| Kind | Produced by | Notes |
+|------|--------------|-------|
+| `user.text` | runtime | One per user message entry. Inline. |
+| `assistant.text` | model | Model's reply before judge. May be large. |
+| `assistant.tool_call` | model | One per model intent. `pair_ref` → the `tool.result`. |
+| `tool.result` | executor | Pairs with `assistant.tool_call`. The actual bytes are usually in the blob store (output files, large logs). |
+| `tool.result.rejected` | executor | When governance denied. Inline (reasons are short). |
+| `governance.verdict` | governance | One per assistant. on `pair_ref` → the `assistant.tool_call`. |
+| `executor.effects` | executor | What the executor did, in addition to the tool result (side effects, file writes, etc.). |
+| `approval.request` | runtime | AskUser verdict. Round pauses here. |
+| `approval.response` | runtime | Human's reply on Resume. `pair_ref` → the `approval.request`. |
+| `model.usage` | model | Token counts (`tokens_in`, `tokens_out`, `cache_read`, `cache_write`). Inline. |
+| `summary.v1` | model | Structured summary. `covers_start` / `covers_end` set. `ext` is the structured fields (see `loop.md`). |
+| `rewrite_directive` | runtime | `covers_start` / `covers_end` set; signals `derive` to reset its surface cache. |
+| `goal` | system | Pinned. Always-loaded. Frame kind. |
+| `system` | runtime | Pinned. Always-loaded. Frame kind. |
+| `session.urn.start` | runtime | Marks the first entry of the session. `meta` row may follow. |
+| `session.urn.end` | runtime | Marks the last entry of a clean close. |
 
-Kinds split into three load classes (see `loop.md` for
-details):
+Kinds split into three load classes (see `loop.md`):
 
-- **Always-loaded** (`goal`, `system`): always on the surface,
-  never summarised.
-- **Body** (`user.message`, `assistant.message`,
-  `assistant.tool_call`, `tool_result`, `tool_result.rejected`,
-  `verdict`, `effects`, `summary.v1`, `rewrite_directive`,
-  `approval_request`, `approval_response`): subject to
-  compression + eviction.
-- **Meta** (`turn.start`, `turn.end`): boundary markers,
-  always present, never on the surface.
+- **Always-loaded** (`goal`, `system`): `pinned=1`,
+  `surface_visible=1`, never summarised.
+- **Body**: subject to compression + eviction;
+  `surface_visible` flips to `0` as the entry ages out.
+- **Meta** (`session.urn.start`/`end`): boundary markers,
+  pinned, always present, but invisible to the model.
 
-### Summary Entry Payload (the structured fields)
+### Why content-addressed blobs
 
-A `summary.v1` payload is **not** a blob — it is the
-`Summary Entry Schema` from `loop.md`:
+A typical agent turn stores **a few large bodies** — file
+diffs, test logs, command outputs — and **many small
+bodies** — model messages, intents, verdicts. Putting the
+large bodies in SQLite BLOB columns makes the db large,
+slow to back up, and the duplicate-friendly (the model may
+read the same file twice). Externalising them as
+**content-addressed files** gives:
 
-```python
-class SummaryV1:
-    covers:                # the seq_range it replaces
-        start_seq: u64
-        end_seq:   u64      # inclusive
-    fields:
-        goal_progress:    str
-        confirmed_facts:  list[Fact]
-            # each Fact = { tool, call_id, key_result: str }
-        actions_taken:    list[Action]
-            # each Action = { tool, args_summary: str, outcome: str }
-        state_progress:    Phase   # mirrors state.phase
-        open_questions:    list[str]
-```
+- **Dedup for free** — `sha256("hello")` is one file on disk
+  regardless of how many `entry` rows reference it.
+- **Portability** — a session is one directory; `tar` it,
+  copy it, restore it without DB-level tooling.
+- **Streaming reads** — a future Tauri / mobile client can
+  serve the blob file directly without round-tripping
+  through the runtime process.
+- **GC-able** — `refcount` on the `blob` table tells us
+  when a blob is no longer referenced and can be unlinked.
 
-Two consequences:
+The db row carries `body_hash`; the body itself lives at
+`blobs/<hash>`. The choice between `body_inline` and
+`body_hash` is per-row, based on a byte threshold.
 
-1. The LLM that produces the summary is **structured-output
-   constrained** — it returns the fields, not a paragraph.
-   The schema is enforced by the wire contract, not by
-   post-hoc parsing.
-2. The next surface reads `summary.v1.fields.*` directly;
-   no LLM is needed to **parse** the summary, only to
-   **reason** about it.
+### The `surface_visible` and `pinned` columns
 
-### Boundary Invariants
+Two columns on the main table capture the policy side of
+derive:
 
-The cover boundary of a `summary.v1` must be **logically
-clean**. See `loop.md` "Boundary Invariants" for the full
-rules. Briefly:
+- **`surface_visible`**: `1` by default. The loop sets it to
+  `0` when an entry has aged out of the surface (tier 2
+  one-liner still uses `surface_visible=1`; only **evicted**
+  entries flip to `0`). Future derives can use it as a
+  pre-computed hint instead of recomputing the visibility
+  from scratch.
+- **`pinned`**: `1` means "never compress, never evict, always
+  on the surface". Set at entry creation for `goal`,
+  `system`, and any user-marked intent. The mechanism is
+  cheap: `derive` filters `pinned = 1` as always-visible;
+  no policy code is needed for it.
 
-- **Tool calls must appear as a pair**: a `summary.v1`'s
-  `covers.seq_range` must contain both the
-  `assistant.tool_call` and its paired `tool_result`.
-- **Pending `approval_request`** must be fully inside the
-  covered range (with its eventual `approval_response` and
-  `effects` back-filled) or fully outside it.
-- **Respect iteration boundaries**: a summary should end at
-  an iteration boundary, not mid-iteration.
-
-The `summarize(prefix)` implementation is responsible for
-**extending the prefix until the boundary is clean**. The
-mechanism doesn't *enforce* it — the policy is what extends.
-
-### Persistence
-
-The default backend is **SQLite**, one file per process:
-
-```
-<data_dir>/ledger.db
-```
-
-Tables:
-
-```sql
-CREATE TABLE turn (
-    id          TEXT PRIMARY KEY,         -- turn_id (UUID)
-    started_at  INTEGER NOT NULL,
-    ended_at    INTEGER,                  -- NULL while Suspended
-    state_blob  BLOB                      -- JSON snapshot of state
-);
-
-CREATE TABLE entry (
-    turn_id      TEXT NOT NULL,
-    seq         INTEGER NOT NULL,
-    kind        TEXT NOT NULL,
-    produced_by TEXT NOT NULL,             -- model | runtime | governance | system
-    produced_at INTEGER NOT NULL,
-    payload     BLOB NOT NULL,             -- protobuf-encoded per kind
-    covers_start INTEGER,
-    covers_end   INTEGER,
-    provenance  BLOB,
-    PRIMARY KEY (turn_id, seq)
-);
-
-CREATE INDEX entry_turn_kind ON entry(turn_id, kind);
-CREATE INDEX entry_turn_seq   ON entry(turn_id, seq);
-CREATE INDEX summary_covers   ON entry(turn_id, covers_start, covers_end) WHERE kind LIKE 'summary.%';
-```
-
-The `summary_covers` partial index makes the
-`rewrite_directive` lookup fast even in long rounds.
-
-**Cross-language:** both Rust (`engine/ledger/`) and Kotlin
-(`engine-kt/ledger/`) generate the same SQLite schema from a
-shared description. The conformance suite asserts schema
-equivalence across languages.
+These columns move what was loop.md policy into a queryable
+schema. The loop's `Surface` cache and `derive` algorithm
+remain the authoritative view — `surface_visible` is a hint,
+not a source of truth.
 
 ### API Surface
 
-The ledger exposes a small, query-shaped API. Every
-operation has a **pure** form (over an in-memory snapshot)
-and an **impure** form (reads from SQLite). Tests run against
-the pure form; production uses the impure form.
-
 | Method | Returns | Notes |
 |--------|---------|-------|
-| `append(turn_id, entry)` | `seq` (the new one) | The only write op. Monotonic per turn. |
-| `entries_since(turn_id, seq)` | list[Entry] | `seq > seq`, ordered ascending. |
-| `latest_seq(turn_id)` | u64 | Highest seq written, or 0 if turn is empty. |
-| `latest_active(kind)` | Entry or null | Most recent non-superseded entry of the given kind. |
-| `rewrite_directive_since(turn_id, seq)` | Entry or null | Most recent `rewrite_directive` after `seq`. (Per `loop.md`, derive inlines this.) |
-| `range(turn_id, start, end)` | list[Entry] | Half-open `[start, end)`. |
-| `open_turn()` | TurnSegment | Most recent turn that has not ended yet. |
-| `turn(id)` | TurnSegment | By id, or null. |
+| `append(entry)` | the new `seq` | The only write op. Monotonic per session. |
+| `since(seq)` | list[Entry] | `seq > seq`, ordered ascending. Used by `derive`. |
+| `latest()` | Entry | Highest-`seq` row in the session. |
+| `latest_kind(kind)` | Entry or null | Highest-`seq` row of the given kind. |
+| `pair_of(seq)` | Entry | The paired entry (`pair_ref` → …). |
+| `surface_entries()` | list[Entry] | Rows where `surface_visible=1`, ordered. |
+| `pinned_entries()` | list[Entry] | Rows where `pinned=1`. Always-loaded. |
+| `covers(start, end)` | list[Entry] | Rows with `covers_start <= X <= covers_end` for any X — used to find the summary that replaced a given seq. |
+| `blob_path(hash)` | Path | Resolves `body_hash` → file on disk. |
+| `blob_get(hash)` | bytes | Reads the blob file. Lazy, cached. |
+| `blob_register(content)` | hash | Adds the content if absent; returns the hash. |
 
-`append` is the only mutation. `entries_since` and
-`rewrite_directive_since` are the two reads the loop actually
-calls (per `loop.md`).
+The pure form of every method operates on an in-memory
+snapshot (for tests); the impure form reads SQLite + the
+filesystem.
 
-### Multi-turn Segments
+### Multi-session ledger
 
-The ledger is one process-wide database, but turns are
-**segments**: a `turn` row plus its `entry` rows. Multiple
-turns coexist; older turns are immutable but their data is
-preserved for replay / audit.
+A process can have **multiple sessions** concurrently
+(multi-agent runs, fork, distributed). Each session is its
+own directory under `<root>`; the loop multiplexes them.
 
-A round's `agent_turn` is bound to a single `turn_id`; cross-
-turn reads are explicit (e.g. "find the most recent `goal`
-in the user's history"). Default `derive` reads only the
-current turn.
+`derive` is per-session: each session's surface is computed
+from its own entries + blobs. Cross-session reads are explicit
+(e.g. "find the most recent `goal` in any session") and not
+on the hot path.
 
 ## Consequences
 
 ### Positive
 
-- **Recoverable by construction.** `Resume` re-attaches to the
-  in-flight `turn_id`; the loop re-derives the surface from
-  the ledger. Nothing in memory is required to survive a
-  crash.
+- **Recoverable by construction.** `Resume` re-attaches to
+  the session directory; the loop re-derives the surface from
+  the SQLite + blobs. Nothing in memory is required to
+  survive a crash.
 - **Auditable.** Every decision — model intent, governance
-  verdict, executor effect, approval request — is in the
-  ledger with provenance. Reconstruct any past iteration.
-- **Cross-language.** SQLite is the lingua franca. Both Rust
-  and Kotlin share the schema; the conformance suite asserts
-  semantic equivalence at the entry-level, not just the
-  proto-level.
+  verdict, executor effect, approval — is a row in `entry`
+  with provenance. Reconstruct any past iteration from a
+  single directory.
+- **Portable.** A session is one directory. Backup = `tar`.
+  Sync = `rsync`. Inspect = `sqlite3 ledger.db` + `cat blobs/<hash>`.
+- **Cross-language.** SQLite + content-addressed files are
+  language-neutral. Rust and Kotlin both use the same schema
+  and the same blob hash; the conformance suite asserts
+  semantic equivalence.
 - **Lossless projection.** Surface is derived; ledger never
-  forgets. `seq_pointer` re-resolves any dropped content.
-- **Compression is safe.** Three-mechanism stack (structured
-  summary + clean cover boundary + seq-pointer back-reference)
-  lets compression scale without the model re-doing work.
+  forgets. `body_hash` re-resolves any dropped content
+  without replaying the loop.
+- **Dedup for free.** Repeated reads of the same file or
+  the same large model output is one blob on disk, many
+  entry rows.
 
 ### Costs
 
-- **SQLite per turn.** A long-running agent that opens
-  thousands of turns accumulates one file. GC is a future
-  concern.
-- **Schema migration.** When a new `kind` lands, the SQLite
-  schema doesn't change (payload is opaque BLOB), but
-  readers must learn the new kind. Documented via the
-  "Entry Kinds Catalog" above.
-- **Single writer.** Two `agent_loop` instances in one
-  process would race. Today's design assumes one writer; a
-  future multi-loop process needs a different ledger (this is
-  one of the Open Questions).
-- **Bulk-export.** Migrating a turn off the device requires
-  the SQLite file + a schema version + the matching readers.
-  Not a daily operation, but not free either.
+- **Two storage systems per session.** SQLite + a filesystem
+  blob store. They have to be kept consistent — a successful
+  `append` that wrote the row but failed to write the blob
+  file leaves a dangling reference. **Two-phase write**:
+  blob first (idempotent — content-addressed), then row
+  (with the hash).
+- **GC.** `blob.refcount` lets us garbage-collect blobs that
+  are no longer referenced. Doing GC wrong = data loss;
+  doing it safely = refcount walks + atomic unlink. Future
+  work; the agent loop never deletes from the ledger
+  eagerly.
+- **Schema migration.** Adding a kind = a new typed payload.
+  Adding a *column* (e.g. a new always-loaded flag) = schema
+  version bump + a careful migration. The `schema_var`
+  column lets readers tolerate old rows without breaking;
+  writers carry the schema version they assume.
+- **Single writer per session.** Two `agent_loop`s writing
+  the same session directory would race on SQLite WAL and
+  on the blob store. Today's design: one writer per session.
+  Multi-writer is a future problem (see Open Questions).
 
 ## Open Questions
 
-1. **Multi-process writers.** Today: one loop = one ledger
-   writer. When does this need to change? (Fork, multi-agent
-   coordination, distributed runtime.) And what's the
-   consensus model — Raft, CRDT, leader-follower?
-2. **Retention.** When does a turn segment get archived or
-   deleted? Per-turn TTL? User-driven? Cold-storage tier
-   (cold SQLite, S3, etc.)?
-3. **Schema versioning.** When `kind` adds a new field, how
-   do readers that don't know the new field react? (Default
-   `serde(default)`-style fallback in Rust/Kotlin? A separate
-   `version` field per kind?)
-4. **Cross-language round-trip tests.** Conformance currently
-   covers `spec/proto/*.proto`. Should it also cover ledger
-   entries (encode → decode → re-encode, bytes match)?
-5. **Append throughput.** A busy agent might append
-   hundreds of entries per iteration. SQLite WAL handles this,
-   but bench it.
+1. **Multi-writer per session.** When does this matter
+   (fork, multi-agent coordination, distributed runtime)?
+   And what's the consensus model — Raft, CRDT, leader-
+   follower? For now: one writer per session is a hard
+   invariant.
+2. **Blob GC.** When does a `refcount==0` blob get unlinked?
+   On session close? On a background sweep? On demand?
+3. **Inline vs externalised body threshold.** Right now the
+   threshold is a single config knob. Future: per-kind
+   thresholds (e.g. `tool.result` bodies externalise at 1 KiB,
+   `assistant.text` at 16 KiB).
+4. **Body-level dedup vs entry-level.** The `dedup` table is
+   value-level (across entries). Useful for analytics; less
+   useful for the loop itself. Is it worth the write
+   overhead?
+5. **`surface_visible` drift.** The column is a hint; the
+   loop's `Surface` cache is authoritative. A buggy `append`
+   that sets `surface_visible=0` on a fresh entry should be
+   impossible — should we make it impossible (e.g. a CHECK
+   constraint)?
+6. **Schema versioning migration path.** When `schema_var`
+   bumps, do old rows get rewritten, or do readers carry
+   per-version parsers? Rewriting is offline + slow;
+   per-version parsers are online + complex.
+7. **Concurrent reads from a long-running attach** (e.g. a
+   debug tool attaching to a live session). WAL mode
+   handles this; the open question is whether the surface
+   cache (`loop.md`) should be shared with the attach tool
+   or rebuilt independently.
 
 ## See also
 
@@ -347,7 +410,8 @@ current turn.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: **draft (possible mechanism)** — entry kinds
-  catalog and SQLite schema are candidates; specific payload
-  encodings, indexes, and retention policy land with the
-  slice. No final code.
+- Status: **draft (possible mechanism)** — session-as-
+  directory + content-addressed blobs + 4-table SQLite are
+  candidates; specific pragmas, index DDL, hash function, and
+  inline-vs-externalised threshold land with the slice. No
+  final code.
