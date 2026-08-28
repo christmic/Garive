@@ -175,21 +175,60 @@ not** duplicate bytes on disk — that's the point of the
 dedup table. `refcount` tells GC when a blob can be deleted
 (no live entries reference it).
 
-#### `dedup` — body-level dedup
+#### `dedup` — idempotency table (the *client_generation* key)
 
-Independent of the blob store: even inline bodies may be
-duplicated (e.g. the model emits the same `assistant.text`
-twice in a retry loop). `dedup` lets a future compaction
-pass find duplicates cheaply.
+`dedup` is **not** content-dedup (the blob store already
+dedups by content hash). It is the **idempotency table** for
+writes: the loop client retries writes with the same
+`client_generation` when a previous attempt crashed / timed
+out; the server detects the duplicate and returns the
+authoritative `seq` of the original write.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `hash` | TEXT PRIMARY KEY | Content hash (sha256) of the **value**, regardless of how it's stored (inline or external). |
-| `first_seen_seq` | INTEGER | First entry that produced this value. |
-| `count` | INTEGER | How many entries reference this value. |
+| `client_generation` | TEXT PRIMARY KEY | Idempotency token supplied by the client (UUID, monotonic counter, or whatever the client uses). Same token across retries = same write. |
+| `body_hash` | TEXT NOT NULL | The body the original write carried. Lets a retry verify intent ("same body? then it's a true retry; different body? that's a new write under a reused token — surface as a conflict"). |
+| `seq` | INTEGER NOT NULL | The authoritative `seq` returned to the client on the first write. This is what a duplicate retry gets back. |
+| `wall_ts` | INTEGER NOT NULL | Wall-clock of the first write. Diagnostic only. |
 
-(`dedup` is used for analytics / future compaction. The
-authoritative record is still `entry`.)
+**Write semantics:**
+
+```
+def append(entry, client_generation):
+    row = dedup.lookup(client_generation)
+    if row is not None:
+        if row.body_hash == hash(entry.body):
+            return row.seq                 # true retry — return the original seq
+        else:
+            raise IdempotencyConflict    # same token, different body — explicit conflict
+
+    # first-write path
+    new_seq = entry_table.append(entry)
+    dedup.insert(client_generation, hash(entry.body), new_seq, now())
+    return new_seq
+```
+
+`IdempotencyConflict` is a deliberate error — it signals that
+the client reused a token with intent that doesn't match the
+original write. It's not silently overwritten; it's surfaced
+to the caller. The caller decides whether the new body is a
+real update (generate a fresh token) or a bug (fix the
+caller).
+
+**Why `body_hash` is part of the key, not the whole key:**
+
+- Pure-`hash` dedup: any retry that happens to have the same
+  body succeeds silently, but a retry with a different body
+  silently overwrites. Wrong.
+- Pure-`client_generation`: same token must mean same body.
+  Different body under same token is a bug. Right.
+- `client_generation` + `body_hash`: same token + same body
+  is a retry; same token + different body is a conflict.
+  Both detected at write time.
+
+The `dedup` row is small and writes are cheap (an `INSERT OR
+IGNORE` per append). GC walks the table periodically and
+removes rows older than a TTL — see `ops_log` below.
 
 #### `meta` — session metadata
 
@@ -204,6 +243,32 @@ read often.
 
 `meta` is the equivalent of `meta.json` but inside the db, so
 it joins naturally with the rest.
+
+#### `ops_log` — operations and GC history
+
+Background operations on the ledger — most importantly the
+**dedup GC** that reclaims old `client_generation` rows,
+but also vacuum, schema-migration history, and any other
+maintenance work — record their runs here for auditing.
+
+| Column | Type | What it holds |
+|--------|------|---------------|
+| `id` | INTEGER PRIMARY KEY | Auto. |
+| `op` | TEXT NOT NULL | Operation name (`dedup_gc`, `ledger_vacuum`, `blob_compact`, `schema_migrate`, …). |
+| `started_at` | INTEGER NOT NULL | Wall-clock. |
+| `finished_at` | INTEGER | `NULL` while running; set on completion. |
+| `items_removed` | INTEGER | Count of rows / files cleaned. `0` for non-cleanup ops. |
+| `notes` | TEXT | Free-form. Diagnostic only. |
+
+**Dedup GC** (the headline op) walks `dedup`, removes rows
+whose `wall_ts` is older than a TTL (e.g. 7 days), and writes
+one `ops_log` row summarising the run. The TTL is a config
+knob; the table itself does not enforce it.
+
+Why `ops_log` is inside the db: GC, vacuum, and migration
+runs are themselves part of the ledger's audit story.
+A future "what happened to this session" query joins
+`entry`, `dedup`, and `ops_log` together.
 
 ### Entry Kinds (by family, with body schemas)
 
