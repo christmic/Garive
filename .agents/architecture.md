@@ -22,6 +22,9 @@ Dependencies point downward. Runtime is the application composition root.
 | `engine/llm/` | Provider-neutral model values; admitted provider adapters stay behind that contract. |
 | `engine/core/` | One bounded Agent execution, context shaping, iteration policy, prepared calls, and internal outcomes. |
 | `engine/tools/` | Tool definitions, immutable prepared calls, neutral authorization/execution ports, and result normalization. |
+| `engine/ledger/`, `memory/`, `knowledge/` | Durable-fact vocabulary, memory/knowledge semantics, and neutral storage/retrieval ports. Runtime owns adapters and persistence. |
+| `engine/skill/`, `multiagent/`, `scheduler/`, `creativity/`, `eval/` | Agent capability policy and portable contracts. Runtime owns workers, clocks, processes, and benchmark I/O. |
+| `engine/config/`, `observability/`, `proto/` | Validated policy values, neutral events, and admitted Rust wire bindings. Environment loading/exporters/codegen live at the boundary. |
 | `runtime/replica/` | Product Sessions, durable turns, scheduling, storage, approvals, concrete execution, credentials, recovery, and observability. |
 | `runtime/gateway/` | Optional service edge only; auth/routing/rate limits when deployment evidence admits it. |
 | `spec/` | Admitted public, cross-process, and persistent compatibility contracts. |
@@ -50,10 +53,10 @@ Dependencies point downward. Runtime is the application composition root.
 
 ## Directory admission
 
-Do not create empty directories for possible future capabilities. Add a source
-directory when a scoped slice has an owner, a dependency direction, and a
-runnable verification command. Deferred languages, gateways, and apps remain
-documented decisions rather than tracked placeholders.
+The planned product skeleton may reserve a tier when its target role is
+accepted. Engine reservations are real Cargo crates and must build; App/service
+reservations carry an explicit status and become buildable with their first
+slice. Do not create duplicate trees or imply that a placeholder ships.
 
 ## Reference
 

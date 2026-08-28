@@ -12,8 +12,9 @@
 
 ## Crate Layout
 
-- Add a crate only for an owned boundary under `core`, `llm`, or `tools`, named
-  with the `garive-` prefix (for example `garive-core`).
+- Each top-level capability directory is an owned crate named with the
+  `garive-` prefix (for example `garive-core`). Keep domain policy and neutral
+  ports here; concrete I/O remains in Runtime.
 - Each crate's `src/lib.rs` is the entry point. Sub-modules live
   under `src/<module>.rs`.
 - Public API is re-exported from `lib.rs`; deeper paths are not

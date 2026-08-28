@@ -1,8 +1,8 @@
 # Product module architecture
 
 > Defines Garive's product layers and ownership before implementation begins.
-> The first implementation is Rust-first and deliberately small; additional
-> languages, gateways, and apps must be earned by a concrete product slice.
+> The first implementation is Rust-first. The full module and App layout is the
+> accepted target skeleton; each tier becomes active through concrete slices.
 
 ## Audience
 
@@ -93,17 +93,24 @@ durable terminals, not reconstructed from process memory.
 
 ## Initial source layout
 
-Garive keeps the existing top-level product layout. Empty subdirectories are
-not contracts; a module becomes real only when its first executable slice
-lands.
+Garive keeps the planned product layout. Engine capability directories are
+buildable crate skeletons; service and App directories record intended product
+boundaries until their first executable slice lands.
 
 | Path | Responsibility |
 |---|---|
 | `engine/core/` | Bounded Agent kernel. |
 | `engine/llm/` | Provider-neutral model contract and admitted provider adapters. |
 | `engine/tools/` | Tool definitions, immutable prepared calls, and neutral ports. |
+| `engine/ledger/` | Durable-fact vocabulary and storage ports; Runtime supplies storage adapters. |
+| `engine/memory/`, `engine/knowledge/` | Agent memory/knowledge policy, evidence, and retrieval contracts. |
+| `engine/skill/`, `engine/multiagent/` | Skill/delegation semantics and neutral execution ports. |
+| `engine/scheduler/` | Scheduling intent/policy; Runtime supplies clocks and workers. |
+| `engine/creativity/`, `engine/eval/` | Exploration and evaluation semantics; benchmark I/O remains outside Engine. |
+| `engine/config/`, `engine/observability/` | Validated policy values and neutral Agent events, not environment loaders/exporters. |
+| `engine/proto/` | Rust bindings for wire contracts admitted through `spec/proto/`. |
 | `runtime/replica/` | Product Runtime, Session lifecycle, storage, execution, recovery, and composition. |
-| `runtime/gateway/` | Optional service edge; admitted only when deployment evidence requires it. |
+| `runtime/gateway/` | Planned Go service edge for auth, admission, routing, and load balancing. |
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |
@@ -118,9 +125,9 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 |---|---|---|
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
 | Kotlin Agent implementation | experimental | A real JVM/on-device execution need plus shared behavioral conformance before production admission. |
-| Go gateway | deferred | Measured edge throughput or operational isolation that the Rust Runtime host cannot meet. |
-| Desktop app | deferred | Stable Runtime host/API boundary and a scoped user workflow. |
-| Mobile app | deferred | Stable API plus an offline/on-device product requirement. |
+| Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
+| Desktop app | planned | Tauri/TypeScript target; activate against a stable Runtime host workflow. |
+| Mobile app | planned | KMP shared client with Compose/SwiftUI target; activate slice by slice. |
 | SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
 
 Experimental and deferred trees must not be described as shipping in lockstep

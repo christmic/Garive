@@ -1,15 +1,14 @@
 [workspace]
 resolver = "2"
 # Members are admitted as target skeletons; behavior lands in vertical slices.
-# Planned members (per AGENTS.md architecture):
+# Active skeleton members:
 #
-#   engine/{core,llm,tools}     # Agent kernel and model/tool contracts
+#   engine/*                  # owned Agent capability crates
+#   bench                     # benchmark scaffold
+# Planned Rust members:
 #   runtime/replica
 #   cli, tui
 #   desktop/                  # Tauri Rust backend
-#
-# Active members (scaffolded):
-#   bench                     # SWE-bench verification runtime
 #
 # NOT in this workspace (different language / different repo role):
 #   runtime/gateway           — Go (independent go.mod)

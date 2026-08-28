@@ -17,8 +17,9 @@ services, and engine buckets before their ownership was settled. That made
 research look like committed architecture and repeated boundaries that
 Sylvander later had to untangle.
 
-The accepted architecture starts with responsibility ownership. Directories
-land only when an executable slice needs them.
+The accepted architecture starts with responsibility ownership. The planned
+module/App skeleton may land early, but active behavior and release claims only
+land with executable slices.
 
 ## Accepted documents
 
@@ -57,9 +58,10 @@ A new source directory must have all four:
 2. A dependency direction that does not introduce a cycle.
 3. An implementation-ready contract in `spec/` when it crosses a process,
    persistence, or public API boundary.
-4. A runnable verification command.
+4. A truthful status; buildable tiers also need a runnable verification command.
 
-Empty placeholders and speculative language mirrors are not retained.
+Planned App/service placeholders are retained as target boundaries. Duplicate
+trees, generated drift, and placeholders described as shipping are not.
 
 ## See also
 

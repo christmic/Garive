@@ -6,9 +6,10 @@ before implementation slices land.
 
 ## Current shape
 
-- `engine/`: the embeddable Agent kernel (`core`, `llm`, `tools`).
+- `engine/`: buildable Rust crates for the Agent kernel and planned capability
+  modules. Domain policy/ports live here; concrete I/O stays in Runtime.
 - `runtime/`: composition, sessions, durable execution, recovery, and external
-  effects. `replica` is the first intended host; `gateway` remains deferred.
+  effects. `replica` is the first host; `gateway` is the planned Go edge.
 - `spec/`: contracts only when a real process, storage, or language boundary
   needs them.
 - `docs/architecture/`: active personal design notes and the current system
