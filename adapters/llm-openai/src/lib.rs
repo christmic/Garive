@@ -296,6 +296,19 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
                 {
                     return Err(OpenAiAdapterError::Invariant);
                 }
+                verify_item_assembled(&assembled, index, &event["item"])?;
+            }
+            "response.content_part.added" => verify_part_event(&started, &event, false)?,
+            "response.content_part.done" => {
+                verify_part_event(&started, &event, true)?;
+                verify_part_done(&assembled, &event)?;
+            }
+            "response.reasoning_summary_part.added" => {
+                verify_summary_part_event(&started, &event, false)?
+            }
+            "response.reasoning_summary_part.done" => {
+                verify_summary_part_event(&started, &event, true)?;
+                verify_part_done(&assembled, &event)?;
             }
             "response.completed" => {
                 if started.keys().copied().collect::<BTreeSet<_>>() != completed {
@@ -320,10 +333,6 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
             "response.created"
             | "response.in_progress"
             | "response.queued"
-            | "response.content_part.added"
-            | "response.content_part.done"
-            | "response.reasoning_summary_part.added"
-            | "response.reasoning_summary_part.done"
             | "response.output_text.annotation.added" => {}
             _ => return Err(OpenAiAdapterError::UnsupportedCapability),
         }
@@ -349,24 +358,110 @@ fn verify_assembled(
         let item = output
             .get(usize::try_from(*index).map_err(|_| OpenAiAdapterError::Invariant)?)
             .ok_or(OpenAiAdapterError::Invariant)?;
-        let final_text = match field {
-            StreamField::OutputText(content_index) => {
-                indexed_text(item, "content", *content_index, "text")?
-            }
-            StreamField::Refusal(content_index) => {
-                indexed_text(item, "content", *content_index, "refusal")?
-            }
-            StreamField::FunctionArguments => item["arguments"]
-                .as_str()
-                .ok_or(OpenAiAdapterError::Invariant)?,
-            StreamField::ReasoningSummary(summary_index) => {
-                indexed_text(item, "summary", *summary_index, "text")?
-            }
-            StreamField::ReasoningText(content_index) => {
-                indexed_text(item, "content", *content_index, "text")?
-            }
-        };
+        let final_text = item_field_text(item, field)?;
         if text != final_text {
+            return Err(OpenAiAdapterError::Invariant);
+        }
+    }
+    Ok(())
+}
+
+fn verify_item_assembled(
+    assembled: &BTreeMap<(u64, StreamField), String>,
+    index: u64,
+    item: &Value,
+) -> Result<(), OpenAiAdapterError> {
+    for ((_, field), text) in assembled
+        .iter()
+        .filter(|((item_index, _), _)| *item_index == index)
+    {
+        if text != item_field_text(item, field)? {
+            return Err(OpenAiAdapterError::Invariant);
+        }
+    }
+    Ok(())
+}
+
+fn item_field_text<'a>(
+    item: &'a Value,
+    field: &StreamField,
+) -> Result<&'a str, OpenAiAdapterError> {
+    Ok(match field {
+        StreamField::OutputText(content_index) => {
+            indexed_text(item, "content", *content_index, "text")?
+        }
+        StreamField::Refusal(content_index) => {
+            indexed_text(item, "content", *content_index, "refusal")?
+        }
+        StreamField::FunctionArguments => item["arguments"]
+            .as_str()
+            .ok_or(OpenAiAdapterError::Invariant)?,
+        StreamField::ReasoningSummary(summary_index) => {
+            indexed_text(item, "summary", *summary_index, "text")?
+        }
+        StreamField::ReasoningText(content_index) => {
+            indexed_text(item, "content", *content_index, "text")?
+        }
+    })
+}
+
+fn verify_part_event(
+    started: &BTreeMap<u64, StartedItem>,
+    event: &Value,
+    done: bool,
+) -> Result<(), OpenAiAdapterError> {
+    let index = output_index(event)?;
+    let state = started.get(&index).ok_or(OpenAiAdapterError::Invariant)?;
+    if state.id != required_text(event, "item_id")? || state.kind != "message" {
+        return Err(OpenAiAdapterError::Invariant);
+    }
+    let part = &event["part"];
+    let kind = required_text(part, "type")?;
+    if !matches!(kind.as_str(), "output_text" | "refusal" | "reasoning_text") {
+        return Err(OpenAiAdapterError::UnsupportedCapability);
+    }
+    if done && !part.is_object() {
+        return Err(OpenAiAdapterError::Invariant);
+    }
+    Ok(())
+}
+
+fn verify_summary_part_event(
+    started: &BTreeMap<u64, StartedItem>,
+    event: &Value,
+    done: bool,
+) -> Result<(), OpenAiAdapterError> {
+    let index = output_index(event)?;
+    let state = started.get(&index).ok_or(OpenAiAdapterError::Invariant)?;
+    if state.id != required_text(event, "item_id")? || state.kind != "reasoning" {
+        return Err(OpenAiAdapterError::Invariant);
+    }
+    let part = &event["part"];
+    if required_text(part, "type")? != "summary_text" || (done && !part.is_object()) {
+        return Err(OpenAiAdapterError::Invariant);
+    }
+    Ok(())
+}
+
+fn verify_part_done(
+    assembled: &BTreeMap<(u64, StreamField), String>,
+    event: &Value,
+) -> Result<(), OpenAiAdapterError> {
+    let index = output_index(event)?;
+    let part = &event["part"];
+    let field = match required_text(part, "type")?.as_str() {
+        "output_text" => StreamField::OutputText(content_index(event)?),
+        "refusal" => StreamField::Refusal(content_index(event)?),
+        "reasoning_text" => StreamField::ReasoningText(content_index(event)?),
+        "summary_text" => StreamField::ReasoningSummary(required_u64(event, "summary_index")?),
+        _ => return Err(OpenAiAdapterError::UnsupportedCapability),
+    };
+    let key = match field {
+        StreamField::Refusal(_) => "refusal",
+        _ => "text",
+    };
+    if let Some(value) = assembled.get(&(index, field)) {
+        if part[key].as_str() != Some(value.as_str()) {
             return Err(OpenAiAdapterError::Invariant);
         }
     }

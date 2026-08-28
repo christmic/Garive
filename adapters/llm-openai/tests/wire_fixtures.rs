@@ -182,6 +182,16 @@ fn ordinary_incomplete_and_unknown_stream_event_are_exact() {
         parse_sse(unknown),
         Err(OpenAiAdapterError::UnsupportedCapability)
     );
+    let malformed = String::from_utf8(fixture("composite.sse"))
+        .unwrap()
+        .replace(
+            "\"part\":{\"type\":\"output_text\",\"text\":\"answer\",\"annotations\":[]}}",
+            "\"part\":{\"type\":\"output_text\",\"text\":\"mismatch\",\"annotations\":[]}}",
+        );
+    assert_eq!(
+        parse_sse(malformed.as_bytes()),
+        Err(OpenAiAdapterError::Invariant)
+    );
 }
 
 fn render_action(action: HttpErrorAction) -> String {

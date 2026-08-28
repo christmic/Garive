@@ -124,7 +124,12 @@ object OpenAiResponsesCodec {
                     val state = started[index] ?: fail(OpenAiAdapterError.INVARIANT)
                     if (state.id != item.text("id") || state.kind != item.text("type") || !completed.add(index))
                         fail(OpenAiAdapterError.INVARIANT)
+                    verifyItemAssembled(assembled, index, item)
                 }
+                "response.content_part.added" -> verifyPartEvent(started, event, false)
+                "response.content_part.done" -> { verifyPartEvent(started, event, true); verifyPartDone(assembled, event) }
+                "response.reasoning_summary_part.added" -> verifySummaryPartEvent(started, event)
+                "response.reasoning_summary_part.done" -> { verifySummaryPartEvent(started, event); verifyPartDone(assembled, event) }
                 "response.completed" -> {
                     if (started.keys != completed) fail(OpenAiAdapterError.INVARIANT)
                     verifyAssembled(assembled, event.getValue("response").jsonObject)
@@ -136,9 +141,8 @@ object OpenAiResponsesCodec {
                     terminal = response(responseValue)
                 }
                 "response.failed" -> fail(OpenAiAdapterError.INVARIANT)
-                "response.created", "response.in_progress", "response.queued", "response.content_part.added",
-                "response.content_part.done", "response.reasoning_summary_part.added",
-                "response.reasoning_summary_part.done", "response.output_text.annotation.added" -> Unit
+                "response.created", "response.in_progress", "response.queued",
+                "response.output_text.annotation.added" -> Unit
                 else -> fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
             }
         }
@@ -193,15 +197,42 @@ object OpenAiResponsesCodec {
         val output = response.getValue("output").jsonArray
         assembled.forEach { (key, text) -> val (index, field) = key
             val item = output.getOrNull(index.toInt())?.jsonObject ?: fail(OpenAiAdapterError.INVARIANT)
-            val final = when (field.kind) {
-                StreamKind.OUTPUT_TEXT -> indexedText(item, "content", field.subindex, "text")
-                StreamKind.REFUSAL -> indexedText(item, "content", field.subindex, "refusal")
-                StreamKind.FUNCTION_ARGUMENTS -> item.text("arguments")
-                StreamKind.REASONING_SUMMARY -> indexedText(item, "summary", field.subindex, "text")
-                StreamKind.REASONING_TEXT -> indexedText(item, "content", field.subindex, "text")
-            }
+            val final = itemFieldText(item, field)
             if (text.toString() != final) fail(OpenAiAdapterError.INVARIANT)
         }
+    }
+    private fun verifyItemAssembled(values: Map<Pair<UInt, StreamField>, StringBuilder>, index: UInt, item: JsonObject) {
+        values.filterKeys { it.first == index }.forEach { (key, text) ->
+            if (text.toString() != itemFieldText(item, key.second)) fail(OpenAiAdapterError.INVARIANT) }
+    }
+    private fun itemFieldText(item: JsonObject, field: StreamField) = when (field.kind) {
+        StreamKind.OUTPUT_TEXT -> indexedText(item, "content", field.subindex, "text")
+        StreamKind.REFUSAL -> indexedText(item, "content", field.subindex, "refusal")
+        StreamKind.FUNCTION_ARGUMENTS -> item.text("arguments")
+        StreamKind.REASONING_SUMMARY -> indexedText(item, "summary", field.subindex, "text")
+        StreamKind.REASONING_TEXT -> indexedText(item, "content", field.subindex, "text") }
+    private fun verifyPartEvent(started: Map<UInt, StartedItem>, event: JsonObject, done: Boolean) {
+        val state = started[event.uint("output_index")] ?: fail(OpenAiAdapterError.INVARIANT)
+        if (state.id != event.text("item_id") || state.kind != "message") fail(OpenAiAdapterError.INVARIANT)
+        val part = event.getValue("part").jsonObject
+        if (part.text("type") !in setOf("output_text", "refusal", "reasoning_text")) fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
+        if (done && event["part"] !is JsonObject) fail(OpenAiAdapterError.INVARIANT)
+    }
+    private fun verifySummaryPartEvent(started: Map<UInt, StartedItem>, event: JsonObject) {
+        val state = started[event.uint("output_index")] ?: fail(OpenAiAdapterError.INVARIANT)
+        if (state.id != event.text("item_id") || state.kind != "reasoning" ||
+            event.getValue("part").jsonObject.text("type") != "summary_text") fail(OpenAiAdapterError.INVARIANT)
+    }
+    private fun verifyPartDone(values: Map<Pair<UInt, StreamField>, StringBuilder>, event: JsonObject) {
+        val part = event.getValue("part").jsonObject
+        val field = when (part.text("type")) { "output_text" -> StreamField(StreamKind.OUTPUT_TEXT, event.uint("content_index"))
+            "refusal" -> StreamField(StreamKind.REFUSAL, event.uint("content_index"))
+            "reasoning_text" -> StreamField(StreamKind.REASONING_TEXT, event.uint("content_index"))
+            "summary_text" -> StreamField(StreamKind.REASONING_SUMMARY, event.uint("summary_index"))
+            else -> fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY) }
+        values[event.uint("output_index") to field]?.let { value ->
+            val key = if (field.kind == StreamKind.REFUSAL) "refusal" else "text"
+            if (part.text(key) != value.toString()) fail(OpenAiAdapterError.INVARIANT) }
     }
 
     private fun streamField(event: JsonObject): StreamField = when (event.text("type")) {

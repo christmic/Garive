@@ -75,6 +75,12 @@ class OpenAiResponsesCodecTest {
 """.encodeToByteArray()
         assertEquals(OpenAiResult.Failure(OpenAiAdapterError.UNSUPPORTED_CAPABILITY),
             OpenAiResponsesCodec.parseSse(unknown))
+        val malformed = fixture("composite.sse").decodeToString().replace(
+            "\"part\":{\"type\":\"output_text\",\"text\":\"answer\",\"annotations\":[]}}",
+            "\"part\":{\"type\":\"output_text\",\"text\":\"mismatch\",\"annotations\":[]}}"
+        ).encodeToByteArray()
+        assertEquals(OpenAiResult.Failure(OpenAiAdapterError.INVARIANT),
+            OpenAiResponsesCodec.parseSse(malformed))
     }
 
     @Test fun `shared HTTP errors and retry date normalize`() {
