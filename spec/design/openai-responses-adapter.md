@@ -3,7 +3,7 @@
 ## Status
 
 Implemented first protocol slice for Rust `adapters/llm-openai` and Kotlin
-`runtime/server-kt/provider-openai`. The supported subset below is exhaustive;
+`experiments/engine-kt/provider-openai`. The supported subset below is exhaustive;
 anything not named is rejected before dispatch or fails closed while parsing.
 
 ## Evidence coordinates

@@ -7,7 +7,7 @@ resolver = "2"
 #   runtime/gateway           — Go (independent go.mod)
 #   desktop/frontend          — TS/React (independent pnpm)
 #   mobile                    — Kotlin KMP (independent Gradle)
-#   runtime/server-kt          — Kotlin Agent server (independent Gradle)
+#   experiments/engine-kt     — experimental Kotlin Engine (independent Gradle)
 #   spec/proto                — schema source, not a member
 members = [
     "adapters/llm-openai",

@@ -43,7 +43,7 @@ androidApp/
 From this directory, with Android SDK 36 installed:
 
 ```text
-java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar \
+java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain app:assembleDebug
 ```
 

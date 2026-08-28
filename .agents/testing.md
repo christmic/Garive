@@ -46,8 +46,8 @@ just architecture
 The Kotlin C0-C3 implementation and proto module are verified separately:
 
 ```text
-cd runtime/server-kt
-./gradlew :agent-core:test :llm-contract:test :proto:test
+cd experiments/engine-kt
+./gradlew :core:test :llm:test :proto:test
 ```
 
 `just conformance` is the joint C0-C3 gate; full Gradle build verifies all

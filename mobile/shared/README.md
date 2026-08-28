@@ -43,7 +43,7 @@ shared/
 From this directory, using Garive's pinned Gradle wrapper:
 
 ```text
-java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar \
+java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain jvmTest
 ```
 

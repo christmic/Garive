@@ -2,7 +2,7 @@
 
 > **Cross-tier integration + E2E.** Tier-specific tests live
 > with their tier (Rust unit tests in `engine/<crate>/tests/`,
-> Kotlin server tests in `runtime/server-kt/`). This
+> Kotlin server tests in `experiments/engine-kt/`). This
 > directory is for tests that **span tiers** within one
 > language.
 

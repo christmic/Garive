@@ -3,7 +3,7 @@
 ## Status
 
 Implemented first protocol slice for Rust `adapters/llm-anthropic` and Kotlin
-`runtime/server-kt/provider-anthropic`. The supported subset below is exhaustive.
+`experiments/engine-kt/provider-anthropic`. The supported subset below is exhaustive.
 
 ## Evidence coordinates
 

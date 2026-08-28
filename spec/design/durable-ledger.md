@@ -194,7 +194,7 @@ assert recovery. In-memory SQLite does not prove restart behavior.
 
 ## Kotlin PostgreSQL adapter
 
-Location: `runtime/server-kt/persistence-postgres`.
+Location: `experiments/engine-kt/persistence-postgres`.
 
 Required transaction policy:
 

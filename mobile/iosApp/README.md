@@ -49,7 +49,7 @@ The executable contract gate builds the shared framework before SwiftPM:
 
 ```text
 cd ../shared
-java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar \
+java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain assembleGariveSharedDebugXCFramework
 cd ../iosApp
 swift test
