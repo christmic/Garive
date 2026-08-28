@@ -3,13 +3,15 @@
 > **One session = one directory.** Inside the directory:
 > a SQLite database (the "container"), and a blob store
 > keyed by content hash for large objects (files, snapshots,
-> multi-KB outputs). The ledger is the single source of truth
-> for an `agent_turn`'s state — append-only, durable, and
+> multi-KB outputs). The ledger is Runtime's source of truth
+> for durable session facts — append-only, durable, and
 > replayable. Together with the loop (`loop.md`), the ledger
 > implements "the model never loses information that matters,
 > and never re-pays for information it once saw."
 
-This document describes the ledger **as a design**. Specific
+The ledger does not own Agent policy and it is not a serialized copy of every
+in-memory object. Runtime rebuilds turn state and read models from durable
+facts. This document describes that store **as a design**. Specific
 SQLite pragmas, index DDL, hash function choice, and blob
 file naming land with the slice — the *mechanism* (session-
 as-directory, content-hash addressing, append-only) is what
@@ -26,14 +28,13 @@ Four invariants define the ledger:
    `<root>/<session>/blobs/<sha256>`; the db row carries
    the hash, not the bytes.
 3. **SQLite is the container.** Schema: a main table (one
-   row per ledger entry), a dedup table (one row per unique
-   blob hash), a blob registry (which hashes exist where),
+   row per ledger entry), a request-dedup table, a blob registry (which hashes exist where),
    and a metadata table (session / agent / model / run tags).
 4. **The ledger never forgets.** The surface is a lossy
    projection; this document describes the durable store
    underneath.
 
-## Mechanism Map — eight problems, one ledger
+## Mechanism Map — nine problems, one ledger
 
 The ledger is **append-only**. Every "fix a problem" the
 runtime has is therefore a **masking family** — append a row
@@ -47,9 +48,9 @@ that hides or transforms part of the surface, never delete.
 | 4 | **Agent tries multiple strategies, picks the best** | `branch.*` family + `branch_path` column: each attempt gets a `branch_path`; `branch.verdict{adopt\|discard}` resolves. Path-style nesting (`A.alt.deep`) for trees. | `branch.*` family + "Branches (in-session lightweight fork)" | Default `PROMPT_FOR_MODEL` projection is **mainline-only**; discarded branches are kept in the ledger for `dream` extraction but hidden from the surface. |
 | 5 | **Long-task goal** — agent must not lose the thread across hours | `goal.declare` / `goal.update` / `goal.close` rows; `pinned=1`; **current goal = derived**, not stored | `goal.*` family + "current goal derived, not stored" | No "current_goal" field anywhere; `derive` walks the `goal.*` timeline each call. |
 | 6 | **Right to erasure** — user / regulator wants data gone | `privacy.redact` (mask a range or a single `uid`); blob bytes **physically unlinked**; the row stays for audit | `privacy.*` family + "Right to Erasure" | `redactable` is a registry flag — some kinds (`compaction.rewrite` itself, `privacy.redact`) **never** redact. The audit trail survives; the bytes do not. |
-| 7 | **Recovery** — crash, kill, or `AskUser` Suspend/Resume | `pair_ref` (in-library) + `state.phase` + `derive_position` on Resume; `uid` keeps the in-flight turn uniquely identified | `entry.pair_ref` + `session.turn_start.boundary=resume` + "The Turn State" | Pair completeness invariant — every `tool.call` has a `tool.result`, every `approval_request` has a `approval_response`. Resume is **mid-pair safe** (it back-fills unpaired calls). |
+| 7 | **Recovery** — crash, kill, or `AskUser` Suspend/Resume | durable lifecycle facts + derived phase/position; `uid` keeps the turn uniquely identified | effect lifecycle in `effect-layer.md` + turn recovery in `loop.md` | An unpaired call is classified, never blindly replayed. External effects require receipts or operator resolution when the outcome is uncertain. |
 | 8 | **Cross-ledger address** — parent refs child, fork refs source, dream refs origin, audit refs any | `uid` (session-scoped global id) + `ref` (`{session, uid}` JSON) on `entry`; `ledger_meta.lineage` for fork | `entry.uid` + `entry.ref` + "Two reference paths" + "lineage" | `ref` is **decoupled from `seq`** — never breaks across re-numbering, archive, or compaction. |
-| 9 | **Idempotency, backup, compat** — retries, durable storage, schema evolution | `dedup` (`client_generation` PRIMARY KEY) + `backup_watermark` + WAL/sync=NORMAL + `kind_registry` (write-strict read-lenient) + `kind_migration` (forward-only) | `dedup` table + `ops_log` + "Write Discipline" + "Kind Compatibility Principle" | Old rows are **always readable**, even by readers that don't know the kind; the registry is **append-only**; the ledger is the source of truth, **everything else is derived**. |
+| 9 | **Idempotency, backup, compat** — retries, durable storage, schema evolution | `dedup` (`request_id` PRIMARY KEY) + `backup_watermark` + an explicit SQLite durability profile + `kind_registry` (write-strict read-lenient) + forward migrations | `dedup` table + `ops_log` + "Write Discipline" + "Kind Compatibility Principle" | Known rows remain readable; unknown kinds remain inspectable but need not be semantically projected. Durable facts are authoritative; caches and projections are derived. |
 
 **The shape of the table matters.** Every row is
 **append-only**. Every problem is solved by **adding a row
@@ -156,7 +157,7 @@ boundary is **session**, not **turn** — so a multi-turn
 session is one directory; a single-turn agent run is also one
 directory.
 
-### SQLite Schema (4 tables)
+### SQLite Schema (5 tables)
 
 The container is a small SQLite database with **four tables**.
 A row in `entry` is the durable record of one ledger event;
@@ -166,8 +167,7 @@ and location; `entry.blob_ref` points at `blob.hash`.
 #### `entry` — main table
 
 One row per ledger event. Append-only: rows are never
-updated or deleted in place (only superseded logically —
-see `entry.superseded_by` below).
+updated or deleted in place. Later entries can mask or supersede earlier ones.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
@@ -178,8 +178,7 @@ see `entry.superseded_by` below).
 | `branch_id` | TEXT NULL | **Lightweight in-session branch path** this entry belongs to. `NULL` = mainline (the default). Non-null = an in-session fork attempt. **Path-style**: a nested branch uses dotted form (`A.B.C`); the segment before the first `.` is the top-level branch, the segment after is the parent. See `branch.*` family below. |
 | `kind` | TEXT NOT NULL | Dotted kind name (e.g. `assistant.text`, `tool.call`, `tool.result`, `compaction.summary`, `compaction.rewrite`). |
 | `provenance` | TEXT | Opaque source tag: which model, which tool, which rule produced this entry. |
-| `surface_visible` | INTEGER (bool) | Whether this entry is *currently* visible on the surface. Defaults to `1`. Gets `0` when the entry has aged out / been compressed / been evicted. |
-| `pinned` | INTEGER (bool) | `1` if the entry is **pinned** — never compressed, never evicted, always on the surface. `goal` and `system` are pinned by default; the model can request pin via intent; `governance.judge` can mark entries as pin-worthy. |
+| `pinned` | INTEGER (bool) | Immutable classification assigned when appended. `1` means the entry participates in the always-load policy unless a later masking/redaction fact overrides it. |
 | `pair_ref` | INTEGER NULL | **In-library** reference: `seq` of the paired entry in the **same session**. `tool.call ↔ tool.result`, `governance.approval_request ↔ governance.approval_response`. `NULL` if unpaired or cross-library. |
 | `ref` | TEXT NULL | **Cross-library** reference: JSON object `{session: <uuid>, uid: <uid>}` pointing at another session. See "Two reference paths" below. `NULL` if no cross-library reference. |
 | `schema_var` | INTEGER | Schema version of this entry's payload. Lets readers tolerate old / new fields without parsing errors. |
@@ -189,7 +188,6 @@ see `entry.superseded_by` below).
 | `body_size` | INTEGER | Size in bytes (whether inline or externalised). |
 | `covers_start` | INTEGER NULL | For `summary.v*` entries: the start of the `seq` range it replaces. |
 | `covers_end` | INTEGER NULL | For `summary.v*` entries: the inclusive end of the `seq` range it replaces. |
-| `superseded_by` | INTEGER NULL | If this entry was logically replaced (e.g. by a summary), points at the replacing entry's `seq`. Enables history walks without `covers_*` joins. |
 | `ext` | BLOB | Extension bag (kind-specific fields). Indexable per kind as needed. |
 
 The pair `(body_inline, body_hash)` is "small body in db" or
@@ -204,7 +202,7 @@ They have different semantics and are **not** interchangeable.
 **`pair_ref` (in-library)** — integer `seq` of the paired entry
 in the **same session**.
 
-- UseUse for: `tool.call ↔ tool.result`,
+- Use for: a later `tool.result → tool.call`,
   `governance.approval_request ↔ governance.approval_response`,
   any same-session dual.
 - Why: cheap to follow (`SELECT … WHERE seq = ?`), survives
@@ -219,7 +217,7 @@ in the **same session**.
 {"session": "uuid-of-other-session", "uid": "uid-in-that-session"}
 ```
 
-- UseUse for: **sub-agent completion messages** (parent session
+- Use for: **sub-agent completion messages** (parent session
   receives a message from a child session it spawned),
   **memory attribution** (long-term memory notes which
   session / entry first observed the fact), **fork lineage**
@@ -250,9 +248,8 @@ or a sortable id like ULID). It does **not** change when:
   but `uid` carries the lineage by being copied into the
   fork's `ledger_meta.lineage`).
 - The session is archived / restored from cold storage.
-- The entry is compacted / superseded (the new entry gets a
-  fresh `uid`; the old `uid` lives on as the
-  `superseded_by` chain's anchor).
+- The entry is compacted / superseded (the new entry gets a fresh `uid` and
+  names the covered range or prior entry; the old row stays unchanged).
 
 Critically: **`uid` lets a parent ledger reference a child
 ledger without depending on the child's `seq`.** The parent
@@ -365,19 +362,19 @@ Missing blobs are a **loud signal**, not a silent failure.
 The runtime continues — the session is still useful, just
 with one or two holes.
 
-#### `dedup` — idempotency table (the *client_generation* key)
+#### `dedup` — idempotency table (the `request_id` key)
 
 `dedup` is **not** content-dedup (the blob store already
 dedups by content hash). It is the **idempotency table** for
-writes: the loop client retries writes with the same
-`client_generation` when a previous attempt crashed / timed
+writes: a Runtime caller retries an append with the same
+`request_id` when a previous attempt timed out; the store
 out; the server detects the duplicate and returns the
 authoritative `seq` of the original write.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
 | `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-assigned rowid. Internal handle. |
-| `client_generation` | TEXT NOT NULL UNIQUE | Idempotency token supplied by the client (UUID, monotonic counter, or whatever the client uses). Same token across retries = same write. |
+| `request_id` | TEXT NOT NULL UNIQUE | Runtime-issued identity for one logical append request. Same identity across retries must mean the same digest. |
 | `body_hash` | TEXT NOT NULL | The body the original write carried. Lets a retry verify intent ("same body? then it's a true retry; different body? that's a new write under a reused token — surface as a conflict"). |
 | `seq` | INTEGER NOT NULL | The authoritative `seq` returned to the client on the first write. This is what a duplicate retry gets back. |
 | `wall_ts` | INTEGER NOT NULL | Wall-clock of the first write. Diagnostic only. |
@@ -385,8 +382,8 @@ authoritative `seq` of the original write.
 **Write semantics:**
 
 ```
-def append(entry, client_generation):
-    row = dedup.lookup(client_generation)
+def append(entry, request_id):
+    row = dedup.lookup(request_id)
     if row is not None:
         if row.body_hash == hash(entry.body):
             return row.seq                 # true retry — return the original seq
@@ -395,7 +392,7 @@ def append(entry, client_generation):
 
     # first-write path
     new_seq = entry_table.append(entry)
-    dedup.insert(client_generation, hash(entry.body), new_seq, now())
+    dedup.insert(request_id, hash(entry.body), new_seq, now())
     return new_seq
 ```
 
@@ -411,9 +408,9 @@ caller).
 - Pure-`hash` dedup: any retry that happens to have the same
   body succeeds silently, but a retry with a different body
   silently overwrites. Wrong.
-- Pure-`client_generation`: same token must mean same body.
+- Pure-`request_id`: same identity must mean same body.
   Different body under same token is a bug. Right.
-- `client_generation` + `body_hash`: same token + same body
+- `request_id` + `body_hash`: same identity + same body
   is a retry; same token + different body is a conflict.
   Both detected at write time.
 
@@ -492,7 +489,7 @@ after a crash.
 - A `memory_watermark` smaller than `entry.latest_seq()` is the
   signal that an extraction is in flight (or crashed).
 - Multiple extractors may run concurrently if gated by
-  `client_generation` (see `dedup` table); the watermark
+  `request_id` (see `dedup` table); the watermark
   update is itself idempotent.
 
 ##### Backup watermark (incremental backup)
@@ -517,7 +514,7 @@ backup pass — `notes` carries the relevant watermarks.
 #### `ops_log` — operations and GC history
 
 Background operations on the ledger — most importantly the
-**dedup GC** that reclaims old `client_generation` rows,
+**dedup GC** that reclaims old `request_id` rows,
 but also vacuum, schema-migration history, and any other
 maintenance work — record their runs here for auditing.
 
@@ -1082,10 +1079,9 @@ deprecated kind that turns out to be needed may stay
 deprecated forever; the right move is to register a new
 `active` kind that replaces it.
 
-The kind registry itself lives in `spec/proto/` — the same
-proto file defines the kind, its body schema, and the
-metadata in this registry. Both Rust and Kotlin generate
-their kind-aware code from this single source.
+The kind registry is a Runtime/domain contract. A protobuf schema is added in
+`spec/proto/` only when that contract crosses a process or language boundary;
+internal Rust types remain the source for in-process behavior.
 
 #### Unknown-Kind Handling (Read Path)
 
@@ -1094,7 +1090,7 @@ their kind-aware code from this single source.
 | `append(kind=X)` | **Error**: `UnknownKind`. The runtime refuses the write before any row is created. The error message includes the candidate kind and a pointer to the kind registry ("register it in `spec/proto/` first"). |
 | `derive()` on a row with unknown kind | **Skip**: the row is not in the surface. The skip is recorded in `ops_log` as `unknown_kind_skip` with the row's `kind` and `seq`, so an operator can see what's being skipped. |
 | Audit / inspection tool reading a row with unknown kind | **Show raw**: the tool prints `kind=<name>, seq=<n>, body=<bytes-as-base64>`. The operator decides what to do (probably: register the kind, or accept it as an external write). |
-| `surface_visible` on a row with unknown kind | `0` (skipped). The registry doesn't know the kind, so the surface policy doesn't know how to project it. |
+| Visibility of a row with unknown kind | Excluded from model context, retained for raw inspection, and reported by derive. |
 | Re-deriving a session that has unknown-kind rows | All known kinds render normally; unknown-kind rows are still skipped, with a count reported in `derive`'s return value. |
 
 The intent: **forward compat without silent loss.** An old
@@ -1152,13 +1148,13 @@ loss across schema evolution**, ever.
 Kinds split into three load classes (see `loop.md` for
 details):
 
-- **Always-loaded** (`goal.*`, `system`): `pinned=1`,
-  `surface_visible=1`, never summarised. `goal.*` rows are
+- **Always-loaded** (`goal.*`, `system`): `pinned=1`, never summarised by the
+  default projection. `goal.*` rows are
   all pinned because they are the model's frame; `derive`
   projects the *current* one (via the algorithm above).
 - **Body** (`text.*`, `tool.*`, `governance.*`, `compaction.*`,
-  `model.usage`, `reasoning.*`): subject to compression + eviction;
-  `surface_visible` flips to `0` as the entry ages out.
+  `model.usage`, `reasoning.*`): subject to compression + projection eviction;
+  the durable entry is unchanged as it ages out.
 - **Meta** (`session.turn_start`): boundary markers,
   pinned, always present, but invisible to the model. `meta`
   table captures session-level tags instead.
@@ -1388,27 +1384,18 @@ The db row carries `body_hash`; the body itself lives at
 `blobs/<hash>`. The choice between `body_inline` and
 `body_hash` is per-row, based on a byte threshold.
 
-### The `surface_visible` and `pinned` columns
+### Visibility projection and the `pinned` classification
 
-Two columns on the main table capture the policy side of
-derive:
+Visibility is a Runtime read model, not mutable truth on an append-only entry:
 
-- **`surface_visible`**: `1` by default. The loop sets it to
-  `0` when an entry has aged out of the surface (tier 2
-  one-liner still uses `surface_visible=1`; only **evicted**
-  entries flip to `0`). Future derives can use it as a
-  pre-computed hint instead of recomputing the visibility
-  from scratch.
-- **`pinned`**: `1` means "never compress, never evict, always
-  on the surface". Set at entry creation for `goal`,
-  `system`, and any user-marked intent. The mechanism is
-  cheap: `derive` filters `pinned = 1` as always-visible;
-  no policy code is needed for it.
+- **visibility** is derived from entries, masking facts, redactions, and the
+  selected projection policy. An optional cache may be updated or discarded,
+  but it is not part of the ledger contract.
+- **`pinned`** is immutable at append time. It is an input to the projection,
+  not permission to bypass later redaction or policy facts.
 
-These columns move what was loop.md policy into a queryable
-schema. The loop's `Surface` cache and `derive` algorithm
-remain the authoritative view — `surface_visible` is a hint,
-not a source of truth.
+The loop's derive algorithm defines the authoritative projection. A cached
+surface is rebuildable from ledger facts.
 
 ### API Surface
 
@@ -1419,7 +1406,7 @@ not a source of truth.
 | `latest()` | Entry | Highest-`seq` row in the session. |
 | `latest_kind(kind)` | Entry or null | Highest-`seq` row of the given kind. |
 | `pair_of(seq)` | Entry | The paired entry (`pair_ref` → …). |
-| `surface_entries()` | list[Entry] | Rows where `surface_visible=1`, ordered. |
+| `surface_entries(policy)` | list[Entry] | Derived visible entries for a named policy, ordered. A cache is optional. |
 | `pinned_entries()` | list[Entry] | Rows where `pinned=1`. Always-loaded. |
 | `covers(start, end)` | list[Entry] | Rows with `covers_start <= X <= covers_end` for any X — used to find the summary that replaced a given seq. |
 | `blob_path(hash)` | Path | Resolves `body_hash` → file on disk. |
@@ -1475,7 +1462,7 @@ column.
 | `entry_turn_step` | `(turn, step)` | Per-turn step lookup; boundary validation against `session.turn_start.body.turn.id`. | Explicit `step` is the iteration index the loop cares about; seq is monotonic *within* a turn, but step is the user-facing semantic. |
 | `entry_turn_kind` | `(turn, kind, seq)` | Per-turn kind filter (e.g. "all `compaction.rewrite` in turn X"). | Could be folded into `entry_kind_seq` + a per-turn filter; kept separate because the per-turn shape dominates. |
 | `entry_pair_ref` | `(pair_ref)` | Pair-completeness check (`pair_ref IS NOT NULL` rows, dangling `pair_ref`s). | Required for the integrity check that `tool.call ↔ tool.result`, `governance.approval_request ↔ approval_response`, etc. are paired. |
-| `entry_pinned_seq` | `(seq) WHERE pinned = 1` | `pinned_entries()` — fetch all pinned entries for the surface. **Partial index** — only the pinned subset is indexed; cheaper to maintain. | When the pinned set is large, falls back to a full scan with `surface_visible = 1`. |
+| `entry_pinned_seq` | `(seq) WHERE pinned = 1` | `pinned_entries()` — fetch immutable pin candidates for derive. **Partial index** — only the pinned subset is indexed. | Keep only if realistic query plans show value. |
 | `summary_covers` | `(turn, covers_start, covers_end) WHERE kind LIKE 'summary.%'` | `covers(start, end)` — find the summary that replaced a given seq. **Partial index** because only `compaction.summary` rows have covers. | Hot path during `compaction.rewrite` resolution. |
 | `blob_size` | `(size)` | GC sweeps that scan large blobs first. | Only useful if the archive GC sorts by size to free the most bytes quickly. |
 | `blob_wall_ts` | `(wall_ts)` | Age-based archive sweeps (oldest-first). | Hot path for the periodic ops_log op. |
@@ -1513,20 +1500,18 @@ flush discipline. Three rules hold:
 
 ```
 PRAGMA journal_mode = WAL;        -- readers don't block writers
-PRAGMA synchronous  = NORMAL;    -- WAL-safe: fsync on commit,
-                                 -- not per-write; ~100x faster
-                                 -- than FULL with no safety loss
+PRAGMA synchronous  = FULL;      -- default durable profile; relax only
+                                 -- against an explicit threat model
 PRAGMA foreign_keys = ON;        -- enforce pair_ref integrity
 ```
 
 - **`journal_mode = WAL`** lets readers continue while a
   writer holds the WAL. The hot path of `derive` (lots of
   reads) is never blocked by an in-flight `append`.
-- **`synchronous = NORMAL`** is the WAL-safe setting — the WAL
-  is fsynced at commit time (not on every write), and the
-  main db file is fsynced periodically by the WAL writer.
-  `FULL` would fsync every write, ~100× slower, with no
-  durability gain under WAL.
+- **`synchronous = FULL`** is the initial durability profile. A measured local
+  deployment may choose `NORMAL`, accepting that a power loss can lose a
+  recently committed transaction. The selected profile and threat model must
+  be explicit; neither performance nor safety multipliers are assumed here.
 - **`foreign_keys = ON`** turns SQLite's FK enforcement on
   so a `tool.result` row can't reference a non-existent
   `tool.call`. The FK on `entry.body_hash → blob.hash` and
@@ -1540,15 +1525,14 @@ open if needed).
 
 #### 2. App-level append-only invariant
 
-The application **never** issues `UPDATE` or `DELETE`
-against `entry`, `blob`, `dedup`, `ledger_meta`, or
-`ops_log` rows. The only writer is `INSERT` (and `BEGIN`/
-`COMMIT` to group inserts into transactions).
+The application **never** issues `UPDATE` or `DELETE` against `entry`. Ledger
+history changes only through new entries. Auxiliary operational tables may
+use scoped updates or retention deletes inside transactions; they are not the
+historical event log and must remain rebuildable or auditable.
 
-The sole exception is **dedup GC**, which deletes `dedup`
-rows older than a TTL (default ~7 days). GC is itself
-recorded in `ops_log`; the GC transaction is the only
-allowed `DELETE` statement.
+For example, dedup GC may delete expired request identities and a watermark
+may advance. Such operations are recorded in `ops_log`. Exact retention is a
+deployment policy, not a fixed seven-day invariant.
 
 This invariant is what lets `Resume` work — the in-flight
 turn's data is never partially mutated. If a row is in the
@@ -1567,7 +1551,7 @@ def append_batch(entries: list[Entry],
             cursor.execute("INSERT INTO entry (...)", ...)
         for d in dedups:
             cursor.execute("INSERT OR IGNORE INTO dedup (...)", ...)
-        conn.commit()                              # fsync WAL
+        conn.commit()                              # commit transaction
 ```
 
 This is **atomic** at the SQLite level — either the whole
@@ -1585,19 +1569,19 @@ group of entries".
 
 #### 4. Flush triggers
 
-`PRAGMA wal_checkpoint(TRUNCATE)` is the explicit
-checkpoint op; commits are implicit. Three triggers:
+`PRAGMA wal_checkpoint(TRUNCATE)` is an operational checkpoint, not a
+correctness requirement. Commits define durable transaction boundaries;
+SQLite replays a valid WAL on open.
 
 | Trigger | Op | Why |
 |---------|-----|-----|
-| **Turn boundary** (`session.turn_start` row written) | `BEGIN; … write … COMMIT; wal_checkpoint(TRUNCATE)` | A turn boundary is a recovery point — the runtime may die right after. The WAL must be empty so a fresh process can open the db without a recovery replay. |
-| **Suspended** (`governance.approval_request` row written) | same | A round may pause for hours. Before pausing, the WAL is empty; the resume process starts from a clean checkpoint. |
-| **Process shutdown** | same | Graceful exit. Ungraceful exit is fine — SQLite's WAL recovery handles it on next open. |
+| **Size/time threshold** | passive checkpoint; truncate when operationally useful | Bound disk use without putting checkpoint latency on every turn. |
+| **Backup preparation** | use SQLite's backup API or a coordinated checkpoint | Produce a consistent backup; do not copy only the main database while WAL pages are live. |
+| **Process shutdown** | optional checkpoint | Reduce recovery work. Correctness does not depend on graceful shutdown. |
 
-Between triggers, the WAL grows as the loop appends. The
-runtime does **not** checkpoint per-iteration — that would
-defeat the speed gain of WAL. The implicit checkpoint per
-`COMMIT` keeps the WAL bounded in the common case.
+Between checkpoints, the WAL grows as the loop appends. Runtime does not force
+a truncate checkpoint per iteration or turn. SQLite auto-checkpoint settings
+and observed workload determine the initial policy.
 
 `wal_checkpoint` is a no-op data-wise — it moves WAL pages
 back into the main db file and truncates the WAL. After
@@ -1678,11 +1662,9 @@ up?".
    value-level (across entries). Useful for analytics; less
    useful for the loop itself. Is it worth the write
    overhead?
-5. **`surface_visible` drift.** The column is a hint; the
-   loop's `Surface` cache is authoritative. A buggy `append`
-   that sets `surface_visible=0` on a fresh entry should be
-   impossible — should we make it impossible (e.g. a CHECK
-   constraint)?
+5. **Visibility cache shape.** Decide whether derive needs a persistent cache
+   after a workload exists. Until then, visibility is recomputed and no mutable
+   visibility column belongs on `entry`.
 6. **Schema versioning migration path.** When `schema_var`
    bumps, do old rows get rewritten, or do readers carry
    per-version parsers? Rewriting is offline + slow;
@@ -1699,9 +1681,9 @@ The schema lands at **5 tables** with a deliberate split:
 
 | | Table | PK | Business key | Role |
 |---|---|---|---|---|
-| **Main** | `entry` | `seq` (monotonic, loop-controlled) | `seq` itself | The ledger events. One row per `entry.append`. **All metadata is inline on the entry** — fractal structure (`ext` BLOB), source (`provenance`), pairing (`pair_ref`), framing (`pinned`, `surface_visible`), window timing (`wall_ts`), version (`schema_var`), span (`covers_*`), history (`superseded_by`). |
+| **Main** | `entry` | `seq` (monotonic, loop-controlled) | `seq` itself | Durable ledger facts. One immutable row per `entry.append`; later rows express masking, redaction, or supersession. |
 | **Aux 1** | `blob` | `id` AUTOINCREMENT | `hash` (sha256, UNIQUE) | Content-addressed large bodies. |
-| **Aux 2** | `dedup` | `id` AUTOINCREMENT | `client_generation` (UNIQUE) | Idempotency table for retries. |
+| **Aux 2** | `dedup` | `id` AUTOINCREMENT | `request_id` (UNIQUE) | Idempotency table for Runtime append retries. |
 | **Aux 3** | `ledger_meta` | `id` AUTOINCREMENT | `key` (UNIQUE, documented) | Session-level KV — schema_version, session_id/mode/agent, timestamps, lineage, watermarks. |
 | **Ops** | `ops_log` | `id` AUTOINCREMENT | — | Operations history (GC, vacuum, sweep, migration). |
 
@@ -1718,13 +1700,13 @@ The schema lands at **5 tables** with a deliberate split:
 |-----------|------|--------------|
 | Insert | auto-assigned | must be unique (UNIQUE enforces) |
 | Lookup | rare (internal joins) | common (`SELECT … WHERE hash = ?`) |
-| Update | forbidden (append-only) | forbidden (append-only) |
-| Delete | forbidden; GC is the exception | forbidden; GC deletes dedup rows by `client_generation` |
+| Update | forbidden for `entry`; scoped for mutable operational state | same contract as the owning table |
+| Delete | forbidden for `entry`; retention may delete auxiliary rows | dedup retention deletes by `request_id` |
 
 The `id` column exists for **physical storage** (cluster key
 in SQLite B-tree) and **internal joins**; the business key is
 the API. Future code never says `WHERE id = 42` — it says
-`WHERE hash = 'sha256:abc…'` or `WHERE client_generation = 'uuid-…'`.
+`WHERE hash = 'sha256:abc…'` or `WHERE request_id = 'uuid-…'`.
 
 ---
 
