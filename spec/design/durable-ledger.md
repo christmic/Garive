@@ -108,7 +108,14 @@ Active -> Completed | Suspended | Stopped | Failed
 ```
 
 Every Execution is terminal exactly once. Continuation creates a new
-`ExecutionId` under the same Turn.
+`ExecutionId` under the same Turn. An Execution cannot become terminal while
+one of its model requests or effects remains `Started`, or while an effect has
+a receipt that still lacks its explicit completion/failure classification.
+Likewise, a Turn cannot suspend or terminate while one of its Executions is
+active, and a Session cannot close while any Turn, Execution, or dispatched
+invocation remains non-terminal. These ordering checks prevent a parent from
+closing before the child facts needed for deterministic recovery can be
+appended.
 
 ### Invocation
 

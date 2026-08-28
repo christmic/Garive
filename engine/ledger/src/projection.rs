@@ -41,8 +41,8 @@ pub(crate) struct SessionProjection {
     closed: bool,
     turns: BTreeMap<TurnId, TurnState>,
     executions: BTreeMap<ExecutionId, (TurnId, ExecutionState)>,
-    models: BTreeMap<ModelRequestId, InvocationState>,
-    tools: BTreeMap<ToolInvocationId, InvocationState>,
+    models: BTreeMap<ModelRequestId, (ExecutionId, InvocationState)>,
+    tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
 }
 
 impl SessionProjection {
@@ -103,7 +103,7 @@ impl SessionProjection {
     pub(crate) fn uncertain_model_requests(&self) -> Vec<ModelRequestId> {
         self.models
             .iter()
-            .filter_map(|(identity, state)| {
+            .filter_map(|(identity, (_, state))| {
                 (*state == InvocationState::Started).then_some(identity.clone())
             })
             .collect()
@@ -112,7 +112,7 @@ impl SessionProjection {
     pub(crate) fn uncertain_tool_invocations(&self) -> Vec<ToolInvocationId> {
         self.tools
             .iter()
-            .filter_map(|(identity, state)| {
+            .filter_map(|(identity, (_, state))| {
                 (*state == InvocationState::Started).then_some(identity.clone())
             })
             .collect()
@@ -123,6 +123,11 @@ impl SessionProjection {
             .turns
             .values()
             .any(|state| matches!(state, TurnState::Open | TurnState::Suspended))
+            || self
+                .executions
+                .values()
+                .any(|(_, state)| *state == ExecutionState::Active)
+            || self.has_recovery_pending_invocation(None)
         {
             return Err(LedgerError::InvalidTransition);
         }
@@ -163,6 +168,13 @@ impl SessionProjection {
         if !valid {
             return Err(LedgerError::InvalidTransition);
         }
+        if self
+            .executions
+            .values()
+            .any(|(owner, state)| owner == turn_id && *state == ExecutionState::Active)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
         self.turns.insert(turn_id.clone(), next);
         Ok(())
     }
@@ -188,11 +200,18 @@ impl SessionProjection {
         let turn = required(&fact.turn_id)?;
         let (owned_turn, state) = self
             .executions
-            .get_mut(execution)
+            .get(execution)
             .ok_or(LedgerError::MissingReference)?;
         if owned_turn != turn || *state != ExecutionState::Active {
             return Err(LedgerError::InvalidTransition);
         }
+        if self.has_recovery_pending_invocation(Some(execution)) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let (_, state) = self
+            .executions
+            .get_mut(execution)
+            .expect("validated execution remains present");
         *state = next;
         Ok(())
     }
@@ -200,9 +219,13 @@ impl SessionProjection {
     fn prepare_model(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let request = required(&fact.model_request_id)?;
+        let execution = required(&fact.execution_id)?;
         if self
             .models
-            .insert(request.clone(), InvocationState::Prepared)
+            .insert(
+                request.clone(),
+                (execution.clone(), InvocationState::Prepared),
+            )
             .is_some()
         {
             return Err(LedgerError::InvalidTransition);
@@ -217,10 +240,14 @@ impl SessionProjection {
     ) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let request = required(&fact.model_request_id)?;
-        let state = self
+        let execution = required(&fact.execution_id)?;
+        let (owner, state) = self
             .models
             .get_mut(request)
             .ok_or(LedgerError::MissingReference)?;
+        if owner != execution {
+            return Err(LedgerError::InvalidTransition);
+        }
         let valid = (*state == InvocationState::Prepared && next == InvocationState::Started)
             || (*state == InvocationState::Started
                 && !matches!(next, InvocationState::Prepared | InvocationState::Started));
@@ -234,9 +261,10 @@ impl SessionProjection {
     fn prepare_tool(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let tool = required(&fact.tool_invocation_id)?;
+        let execution = required(&fact.execution_id)?;
         if self
             .tools
-            .insert(tool.clone(), InvocationState::Prepared)
+            .insert(tool.clone(), (execution.clone(), InvocationState::Prepared))
             .is_some()
         {
             return Err(LedgerError::InvalidTransition);
@@ -251,10 +279,14 @@ impl SessionProjection {
     ) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let tool = required(&fact.tool_invocation_id)?;
-        let state = self
+        let execution = required(&fact.execution_id)?;
+        let (owner, state) = self
             .tools
             .get_mut(tool)
             .ok_or(LedgerError::MissingReference)?;
+        if owner != execution {
+            return Err(LedgerError::InvalidTransition);
+        }
         let valid = matches!(
             (*state, next),
             (InvocationState::Prepared, InvocationState::Authorized)
@@ -284,6 +316,20 @@ impl SessionProjection {
             Some(_) => Err(LedgerError::InvalidTransition),
             None => Err(LedgerError::MissingReference),
         }
+    }
+
+    fn has_recovery_pending_invocation(&self, execution: Option<&ExecutionId>) -> bool {
+        let pending = |owner: &ExecutionId, state: InvocationState| {
+            execution.is_none_or(|expected| owner == expected)
+                && matches!(state, InvocationState::Started | InvocationState::Receipt)
+        };
+        self.models
+            .values()
+            .any(|(owner, state)| pending(owner, *state))
+            || self
+                .tools
+                .values()
+                .any(|(owner, state)| pending(owner, *state))
     }
 }
 

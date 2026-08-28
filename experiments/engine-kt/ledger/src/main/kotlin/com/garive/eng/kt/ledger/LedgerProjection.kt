@@ -12,8 +12,8 @@ internal class LedgerProjection(
     private var closed: Boolean = false,
     private val turns: MutableMap<TurnId, TurnState> = mutableMapOf(),
     private val executions: MutableMap<ExecutionId, Pair<TurnId, ExecutionState>> = mutableMapOf(),
-    private val models: MutableMap<ModelRequestId, InvocationState> = mutableMapOf(),
-    private val tools: MutableMap<ToolInvocationId, InvocationState> = mutableMapOf(),
+    private val models: MutableMap<ModelRequestId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
+    private val tools: MutableMap<ToolInvocationId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
 ) {
     fun copy() = LedgerProjection(
         opened,
@@ -66,17 +66,20 @@ internal class LedgerProjection(
     }
 
     fun uncertainModelRequests() = models.entries
-        .filter { it.value == InvocationState.STARTED }
+        .filter { it.value.second == InvocationState.STARTED }
         .map { it.key }
         .sortedBy { it.value }
 
     fun uncertainToolInvocations() = tools.entries
-        .filter { it.value == InvocationState.STARTED }
+        .filter { it.value.second == InvocationState.STARTED }
         .map { it.key }
         .sortedBy { it.value }
 
     private fun closeSession(): LedgerError? {
-        if (turns.values.any { it == TurnState.OPEN || it == TurnState.SUSPENDED }) {
+        if (turns.values.any { it == TurnState.OPEN || it == TurnState.SUSPENDED } ||
+            executions.values.any { it.second == ExecutionState.ACTIVE } ||
+            hasRecoveryPendingInvocation()
+        ) {
             return LedgerError.InvalidTransition
         }
         closed = true
@@ -106,6 +109,9 @@ internal class LedgerProjection(
             TurnState.OPEN -> false
         }
         if (!valid) return LedgerError.InvalidTransition
+        if (executions.values.any { it.first == turnId && it.second == ExecutionState.ACTIVE }) {
+            return LedgerError.InvalidTransition
+        }
         turns[turnId] = next
         return null
     }
@@ -124,6 +130,7 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = executions[execution] ?: return LedgerError.MissingReference
         if (current.first != turn || current.second != ExecutionState.ACTIVE) return LedgerError.InvalidTransition
+        if (hasRecoveryPendingInvocation(execution)) return LedgerError.InvalidTransition
         executions[execution] = turn to next
         return null
     }
@@ -131,33 +138,43 @@ internal class LedgerProjection(
     private fun prepareModel(fact: FactDraft): LedgerError? {
         requireActiveExecution(fact)?.let { return it }
         val request = fact.modelRequestId ?: return LedgerError.MissingReference
-        if (models.put(request, InvocationState.PREPARED) != null) return LedgerError.InvalidTransition
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        if (models.put(request, execution to InvocationState.PREPARED) != null) {
+            return LedgerError.InvalidTransition
+        }
         return null
     }
 
     private fun transitionModel(fact: FactDraft, next: InvocationState): LedgerError? {
         requireActiveExecution(fact)?.let { return it }
         val request = fact.modelRequestId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = models[request] ?: return LedgerError.MissingReference
-        val valid = (current == InvocationState.PREPARED && next == InvocationState.STARTED) ||
-            (current == InvocationState.STARTED && next != InvocationState.PREPARED && next != InvocationState.STARTED)
+        if (current.first != execution) return LedgerError.InvalidTransition
+        val valid = (current.second == InvocationState.PREPARED && next == InvocationState.STARTED) ||
+            (current.second == InvocationState.STARTED && next != InvocationState.PREPARED && next != InvocationState.STARTED)
         if (!valid) return LedgerError.InvalidTransition
-        models[request] = next
+        models[request] = execution to next
         return null
     }
 
     private fun prepareTool(fact: FactDraft): LedgerError? {
         requireActiveExecution(fact)?.let { return it }
         val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
-        if (tools.put(tool, InvocationState.PREPARED) != null) return LedgerError.InvalidTransition
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        if (tools.put(tool, execution to InvocationState.PREPARED) != null) {
+            return LedgerError.InvalidTransition
+        }
         return null
     }
 
     private fun transitionTool(fact: FactDraft, next: InvocationState): LedgerError? {
         requireActiveExecution(fact)?.let { return it }
         val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = tools[tool] ?: return LedgerError.MissingReference
-        val valid = when (current to next) {
+        if (current.first != execution) return LedgerError.InvalidTransition
+        val valid = when (current.second to next) {
             InvocationState.PREPARED to InvocationState.AUTHORIZED,
             InvocationState.PREPARED to InvocationState.STARTED,
             InvocationState.PREPARED to InvocationState.DENIED,
@@ -173,7 +190,7 @@ internal class LedgerProjection(
             else -> false
         }
         if (!valid) return LedgerError.InvalidTransition
-        tools[tool] = next
+        tools[tool] = execution to next
         return null
     }
 
@@ -182,5 +199,12 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = executions[execution] ?: return LedgerError.MissingReference
         return if (current.first == turn && current.second == ExecutionState.ACTIVE) null else LedgerError.InvalidTransition
+    }
+
+    private fun hasRecoveryPendingInvocation(executionId: ExecutionId? = null): Boolean {
+        fun pending(value: Pair<ExecutionId, InvocationState>) =
+            (executionId == null || value.first == executionId) &&
+                (value.second == InvocationState.STARTED || value.second == InvocationState.RECEIPT)
+        return models.values.any(::pending) || tools.values.any(::pending)
     }
 }
