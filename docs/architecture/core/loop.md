@@ -297,6 +297,62 @@ rest of `derive`'s responsibilities kick in.
 `derive` is the **common path** — every consumer
 (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`, `GOVERNANCE_INPUT`,
 `FORK_BRANCH`, `AUDIT_REPLAY`) shares it. What each consumer
+
+### Change-locality (which side moves for which change)
+
+The split between `derive` and `assemble` is a **boundary
+test**: every legitimate runtime change should touch **one
+side only**. A change that crosses both sides is a smell —
+either the boundary is in the wrong place, or the change is
+two changes pretending to be one.
+
+| Change | Side that moves | What it does there |
+|--------|----------------|---------------------|
+| **Switch provider** (Anthropic ↔ OpenAI ↔ Gemini) | `assemble` | The provider translation step (responsibility 2) changes; the cache marker (responsibility 5) changes; the role mapping (responsibility 1) changes; **nothing in `derive` changes**. |
+| **Add a new provider** (e.g. a local llama.cpp) | `assemble` | A new `provider.render()` + `count_tokens()` + `mark_cache()` implementation. The dialect plug-in lives entirely in `assemble`. |
+| **Provider adds a new cache mechanism** (e.g. Anthropic extends `cache_control` with a 1h TTL) | `assemble` | The cache marker step (responsibility 5) updates; the prefix-stability check updates. **`derive` doesn't need to know about cache TTL.** |
+| **Provider fixes a counting bug** (off-by-one in token estimation) | `assemble` | The budget step (responsibility 4) uses the provider's real counter. Fixing the counter fixes the budget. |
+| **Switch mode** (coding agent ↔ chat agent) | `derive` | The masking-instructions walk (step 3) changes — which kinds are masked, when, why. Tier boundaries (step 5) change — what counts as "old" / "fresh" in this mode. The cache prefix is mode-agnostic; **assemble doesn't change**. |
+| **Add a new masking instruction** (e.g. a "redact-on-share" kind for when the user shares a session externally) | `derive` | New kind in `spec/proto/`; new branch in the masking walk. The `assemble` projection treats the new kind like any other masked entry. |
+| **Adjust a tier policy** (e.g. raise `tool.result` from tier-1 to tier-0 for the most recent 5 iterations) | `derive` | The tier-policy table (`.agents/loop.md` "Per-tool Policy Profiles") updates. `assemble` reads the tier from the cache and renders accordingly. |
+| **Change the kinds of a projection** (e.g. `GOVERNANCE_INPUT` now needs `text.user` too) | `derive` | The projection's `kinds` set updates. `assemble` simply doesn't filter them out. |
+| **Add a new kind** (`loop.receipt`, a new `compaction.*` flavour, etc.) | `derive` | Add the kind to the kind catalog; add a body schema in `spec/proto/`. The masking walk and tier policy decide how the new kind is projected; `assemble` doesn't need to know. |
+| **Change the pinned block** (which kinds are always-loaded) | `derive` | The pinned set updates. `assemble` still renders the pinned block as the head; only the *contents* of the head change. |
+| **Change the layout mode set** (add a new mode like `striped` for A/B testing) | `assemble` | The layout function updates. The pinning and tier decisions in `derive` don't change. |
+| **Add a new projection** (a new view like `DIFF_VIEW` for round-vs-round comparison) | `derive` + `assemble` | A new branch in the dispatch; but the *content decisions* are the existing rules, only the *serialisation* is new. |
+| **Change the delta-fragment policy** (e.g. seen part is the *last 2* iterations instead of the *last iteration*) | `derive` | `last_seen_seq` definition updates. `assemble` reads it; the new boundary is the new cache key. |
+| **Change the loop boundary** (Suspend/Resume rules; `phase` machine) | `derive` | `state.phase` transitions update. `assemble` doesn't observe `phase`. |
+
+The matrix's **shape** matters more than its size. The
+invariant: every entry in this table fits in **one column**
+— the cell under "Side that moves". When a change needs
+both `derive` *and* `assemble`, the change is **two changes
+disguised as one**, and the breakdown is the first thing to
+do.
+
+#### Where the matrix fails
+
+Two cases cross the boundary cleanly (i.e. they belong to
+both sides by design, not by mistake):
+
+- **Add a new kind** (e.g. `privacy.share_redact`) — both
+  sides move, but they move in **separate commits**: the
+  kind + body schema is one commit in `spec/proto/`; the
+  masking-walk branch that handles it is a second commit in
+  `derive`; the role mapping that renders it is a third
+  commit in `assemble`. Three commits, three reviews, one
+  feature.
+- **Add a new projection** — same pattern: the projection's
+  *content* (kinds filter, masking rules) lands in `derive`;
+  the projection's *serialisation* (layout, role map, cache
+  marker) lands in `assemble`. Two commits, two reviews,
+  one feature.
+
+Anything that **can't be split** along the boundary
+(content / serialisation) is a signal that the boundary
+itself is in the wrong place. When that happens, the
+fix is to **rename or move the line**, not to relax the
+rule.
 does *with* the cached surface is **assemble**'s job.
 
 ### Derive pipeline (six steps, in order)
