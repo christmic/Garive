@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
+
 plugins {
     kotlin("multiplatform")
     id("com.squareup.wire")
@@ -8,8 +10,14 @@ version = "0.1.0-SNAPSHOT"
 
 kotlin {
     jvm()
-    iosArm64()
-    iosSimulatorArm64()
+    val xcframework = XCFramework("GariveShared")
+    listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "GariveShared"
+            isStatic = true
+            xcframework.add(this)
+        }
+    }
     sourceSets {
         commonMain.dependencies { api("com.squareup.wire:wire-runtime:6.4.7") }
         commonTest.dependencies { implementation(kotlin("test")) }

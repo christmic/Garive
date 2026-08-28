@@ -102,3 +102,10 @@ object EmbeddedFakeHost {
             text = text,
         )
 }
+
+object EmbeddedFakeHostBridge {
+    fun runText(): String = when (val result = EmbeddedFakeHost.runDefault()) {
+        is HostClientResult.Success -> result.value.text
+        is HostClientResult.Failure -> "failed:${result.error.name.lowercase()}"
+    }
+}

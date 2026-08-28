@@ -22,7 +22,7 @@ mobile/
 |--------|------|
 | `shared/` | KMP `commonMain` + `androidMain` + `iosMain` (or native targets). Holds: agent client, tool registry, memory / knowledge stores, KMP-side protocol bindings. **No UI.** |
 | `androidApp/` | Android app module. Jetpack Compose UI, Android-specific glue (push, permissions, notifications). Depends on `shared/`. |
-| `iosApp/` | iOS app. SwiftUI views in `Sources/UI/`; Swift ↔ Kotlin bridge in `Sources/Bridge/` (uses [SKIE](https://skie.touchlab.co/) for type-safe coroutines / flows across the Kotlin boundary). Depends on `shared/`. |
+| `iosApp/` | iOS app. SwiftUI uses the generated KMP XCFramework for synchronous Host v1 calls. Add SKIE when a later slice exports coroutines or flows. Depends on `shared/`. |
 
 ## Why Native UI (not Compose Multiplatform)
 
@@ -48,8 +48,8 @@ The `shared/` module is the **only** place that knows the
 business logic. UI tiers (`androidApp/`, `iosApp/`) are thin:
 
 - **Compose** calls `shared/` through plain Kotlin interfaces.
-- **SwiftUI** calls `shared/` through SKIE-exposed `Flow` /
-  `suspend` functions. Never hand-roll an interop layer.
+- **SwiftUI** calls synchronous v1 functions through the generated framework;
+  future `Flow`/`suspend` APIs use SKIE rather than hand-written conversion.
 
 Anything that has to exist on both platforms goes in
 `shared/commonMain/`. Anything that's Android-only goes in

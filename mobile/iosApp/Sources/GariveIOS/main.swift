@@ -1,9 +1,22 @@
 import SwiftUI
+#if canImport(GariveShared)
+import GariveShared
+#endif
 
 public struct FakeHost {
     public init() {}
+    public static var usesSharedFramework: Bool {
+#if canImport(GariveShared)
+        true
+#else
+        false
+#endif
+    }
     public func run(_ input: String) throws -> String {
         guard input == "hello" else { throw HostError.unsupportedInput }
+#if canImport(GariveShared)
+        return EmbeddedFakeHostBridge.shared.runText()
+#else
         let events = [(1, "session.created", ""), (2, "turn.started", ""),
             (3, "output.delta", "hello "), (4, "output.delta", "from Garive"),
             (5, "turn.completed", "")]
@@ -16,6 +29,7 @@ public struct FakeHost {
         }
         guard terminal else { throw HostError.missingTerminal }
         return output
+#endif
     }
     public enum HostError: Error { case unsupportedInput, invalidSequence, missingTerminal }
 }
