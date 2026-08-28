@@ -605,13 +605,68 @@ on their reported numbers, clients estimate from tokenisers
 that may diverge by a few percent. `state.tokens_used` should
 prefer `model_reported=true` when both sources are available.
 
-#### Load classes (unchanged)
+#### `goal.*` — current goal derived, not stored
+
+`goal` is **not** a variable that the runtime mutates; it is
+**derived** from the entry stream at every `derive()` call.
+The current goal = the most recent unclosed `goal.*` entry.
+That single rule lets `goal` survive Suspend / Resume,
+fork, archive, and any ref rewrite, with no extra state.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `goal.declare` | `{text: string, subgoals?: list<Subgoal>, 来源?:: enum{user, derived, agent}}` | runtime / user | Creates a new goal. `pinned=1` by default. `text` is the human-readable goal; `subgoals` is an optional hierarchical decomposition. |
+| `goal.update` | `{text?: string, subgoals?: list<Subgoal>, 来源?: enum}` | runtime | Refines an existing goal. `ref = {session, uid}` points at the prior goal entry being updated (the prior entry is *not* superseded — it stays in the ledger as audit; the update is a *new* entry that supersedes semantically). |
+| `goal.close` | `{status: enum{完成, 放弃}, 结论?: string}` | runtime / model | Closes the open goal. `ref` points at the goal entry being closed. After this entry, no goal is open until a new `goal.declare` arrives. |
+
+**Current goal = derived.** No table, no field — the
+runtime computes it from the entry stream:
+
+```
+def current_goal(entries):
+    # walk entries in seq-descending order; the first goal.*
+    # that is not closed is the current one.
+    open_goal = None
+    for e in entries_desc(entries):
+        if e.kind == 'goal.declare' or e.kind == 'goal.update':
+            open_goal = e
+        elif e.kind == 'goal.close' and open_goal and e.ref.targets(open_goal):
+            open_goal = None
+    return open_goal   # None if no open goal
+```
+
+**Why derive instead of store:**
+
+- **Resume** — after a Suspend, the loop's first `derive` finds
+  the open goal; no separate state to load.
+- **Fork** — child session inherits parent's open goal
+  automatically (parent goal entries are in the ledger before
+  the fork's `boundary_seq`).
+- **Archive / restore** — current goal survives any compaction
+  because `goal.*` entries are themselves entries; archive
+  keeps the entry list, restore re-derives.
+- **Cross-session** — `goal.declare` can carry `ref = {session,
+  uid}` pointing at a parent goal, so a sub-agent can adopt a
+  parent's goal.
+- **Personal layer** — long-lived personal goals (user-level,
+  across sessions) live in a special session with `mode =
+  'personal'` (per `ledger_meta.mode`). Other sessions
+  cross-reference personal goals via `ref`. The session-as-
+  directory shape carries it.
+
+`goal.*` kinds are **always-loaded** (they go on the surface
+whenever a goal is open) and **pinned** (never compressed,
+never evicted — they are the model's frame of reference).
+
+#### Load classes
 
 Kinds split into three load classes (see `loop.md` for
 details):
 
-- **Always-loaded** (`goal`, `system`): `pinned=1`,
-  `surface_visible=1`, never summarised.
+- **Always-loaded** (`goal.*`, `system`): `pinned=1`,
+  `surface_visible=1`, never summarised. `goal.*` rows are
+  all pinned because they are the model's frame; `derive`
+  projects the *current* one (via the algorithm above).
 - **Body** (`text.*`, `tool.*`, `governance.*`, `compaction.*`,
   `model.usage`): subject to compression + eviction;
   `surface_visible` flips to `0` as the entry ages out.
