@@ -135,6 +135,7 @@ see `entry.superseded_by` below).
 | `uid` | TEXT NOT NULL UNIQUE | **Global entry identity** within the session. Stable across the entry's lifetime. Generated once at append time (UUID or sortable id). |
 | `turn` | TEXT | `turn_id` (UUID). The agent_turn this entry belongs to. |
 | `step` | INTEGER | Iteration index within the turn. `0` for user entry, `n` for the n-th `iteration`. |
+| `branch_id` | TEXT NULL | **Lightweight in-session branch** this entry belongs to. `NULL` = mainline (the default). Non-null = an in-session fork attempt (`branch.open` row), kept around for the duration of the attempt. See `branch.*` family below. |
 | `kind` | TEXT NOT NULL | Dotted kind name (e.g. `assistant.text`, `tool.call`, `tool.result`, `compaction.summary`, `compaction.rewrite`). |
 | `provenance` | TEXT | Opaque source tag: which model, which tool, which rule produced this entry. |
 | `surface_visible` | INTEGER (bool) | Whether this entry is *currently* visible on the surface. Defaults to `1`. Gets `0` when the entry has aged out / been compressed / been evicted. |
@@ -591,6 +592,8 @@ distinct lifecycle requirements.
 | `session.turn_start` | `{turn: {id: uuid, boundary: enum{user_message, resume, fork}, compression: enum{ok, partial, failed}, fork: option<{from_turn: uuid, reason: string}}}` | runtime | Marks the **legal cut point** for compaction and fork. A `turn_start` with `boundary=user_message` starts a new turn; `boundary=resume` continues a Suspended turn; `boundary=fork` branches from another turn (with `fork.from_turn` set). The `compression` field records whether the round paused with a complete summary or a partial one — useful for `Resume`. |
 | `session.undo` | `{target: seq, reason: string}` | runtime / user | **Masks the suffix after `target`** — the surface is "rolled back" to `target`. `target` must point at a `session.turn_start` entry (legal cut point). Model sees only entries up to and including `target`'s iteration; the next loop iteration runs **from `target` forward**. The undo itself is a row in the ledger — never deleted. |
 | `session.redo` | `{target: seq, ref: {session, uid} \| null, reason: string}` | runtime / user | **Cancels a prior `session.undo`** by re-extending the visible range. The most recent `session.undo` whose `target` ≤ `target` of this `redo` is conceptually undone; future derives again include the previously-masked suffix. `ref` may point at the prior `session.undo` entry being reversed. Like undo, redo is itself a row in the ledger. |
+| `branch.open` | `{branch_id: string, from_seq: seq, purpose: string}` | runtime / model | Opens a **lightweight in-session branch** starting at `from_seq`. All entries appended between this row and the matching `branch.verdict` carry `branch_id = branch_id`. Multiple `branch.open` rows from the same `from_seq` are parallel attempts; each carries its own `branch_id`. |
+| `branch.verdict` | `{branch_id: string, decision: enum{adopt, discard}, reason: string, ref: {session, uid} \| null}` | runtime / model / governance | Resolves a branch. `adopt` makes the branch's entries part of the **mainline** (`branch_id` is preserved on the rows for audit, but the surface projection includes them). `discard` retires the branch's entries from the surface (still in the ledger for audit). The verdict is itself a row in the ledger — auditable, like `governance.verdict`. |
 | `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
 
 ```python
@@ -1015,6 +1018,115 @@ details):
 - **Meta** (`session.turn_start`): boundary markers,
   pinned, always present, but invisible to the model. `meta`
   table captures session-level tags instead.
+- **Branch** (entries with `branch_id` non-null): **in-session
+  branches** that are not the active mainline. By default
+  they are **excluded from the surface** — see "Branches
+  (in-session lightweight fork)" below.
+
+### Branches (in-session lightweight fork)
+
+When the agent wants to **try several strategies and pick the
+best** within one session, it can do so by opening
+**lightweight branches** rather than forking a whole new
+session. A branch is a `branch_id` non-null on the entries
+between `branch.open` and `branch.verdict`. The whole
+mechanism rides on top of the masking family — it does not
+need a new ledger or new state, just two new kinds and one
+new column.
+
+```
+# Example
+branch.open{branch_id:"A", from_seq:100, purpose:"方案A"} → 试A
+branch.open{branch_id:"B", from_seq:100, purpose:"方案B"} → 试B
+branch.open{branch_id:"C", from_seq:100, purpose:"方案C"} → 试C
+branch.verdict{branch_id:"B", decision:"adopt", reason:...}   → 选B
+branch.verdict{branch_id:"A", decision:"discard", reason:...} → 弃A
+branch.verdict{branch_id:"C", decision:"discard", reason:...} → 弃C
+```
+
+**Surface projection for branches.** The default
+`PROMPT_FOR_MODEL` projection follows three rules:
+
+1. **Mainline only** by default. Entries with `branch_id IS
+   NULL` are always on the surface; entries with
+   `branch_id` non-null are **excluded** unless the branch
+   has been `adopt`-ed.
+2. **Adopted branches count as mainline.** When
+   `branch.verdict{branch_id:X, decision:"adopt"}` lands, the
+   branch's entries become mainline for projection purposes
+   (their `branch_id` is preserved on the row for audit, but
+   the surface includes them).
+3. **Discarded branches are hidden.** A `discard` verdict
+   retires the branch from the surface projection. The
+   entries still live in the ledger — they are not deleted,
+   just masked — and audit / `AUDIT_REPLAY` see them.
+
+The projection is a small interpreter over the
+`branch.*` timeline:
+
+```
+def branch_mask(entries, opens, verdicts):
+    """Return entries that are NOT in a discarded branch
+    and ARE in mainline OR an adopted branch."""
+    adopted = {v.branch_id for v in verdicts if v.decision == 'adopt'}
+    discarded = {v.branch_id for v in verdicts if v.decision == 'discard'}
+    out = []
+    for e in entries:
+        if e.branch_id is None:
+            out.append(e)                                 # mainline
+        elif e.branch_id in adopted:
+            out.append(e)                                 # adopted branch
+        elif e.branch_id in discarded:
+            pass                                          # hidden
+        else:
+            pass                                          # undecided — treat like discarded
+    return out
+```
+
+Undecided branches (no verdict yet) are treated as discarded
+from the default projection. The model can opt in to
+"exploratory view" via a `BRANCH_VIEW_ALL` projection that
+shows every branch side-by-side; that's how the
+`FORK_BRANCH` projection differs from the mainline-only
+default.
+
+**Branch verdict is governance-shaped.** `branch.verdict`
+follows the same shape as `governance.verdict`:
+`{branch_id, decision, reason, ref?}`. The branch
+verdict's `ref` may point at the `branch.open` it resolves.
+A branch verdict can itself be **overruled** by a later
+verdict (re-adopt a previously-discarded branch; the
+projection uses the **most recent** verdict for each branch).
+
+**Cross-branch and cross-session references.** A
+`branch.*` entry's `uid` is its global identity; a `ref`
+pointing at a branch entry from another session (or from
+this session's mainline into a branch) uses the standard
+`{session, uid}` shape. The branch's `purpose` is the
+single human-readable field — a one-line description of
+what the branch is trying.
+
+**Cost accounting.** A branch's `model.usage` rows are
+**kept on the ledger**, with `branch_id` set to the branch
+they belong to. The total cost report
+`SUM(tokens) FROM model.usage WHERE ...` includes them —
+agentic exploration is real work and the user pays for it.
+**Adopted branches are not double-counted** when the mainline
+overwrites the same `seq` range with a future iteration;
+the cost of the discard is "the cost of having tried", and
+the audit trail preserves it.
+
+**Relation to `session.fork`.** `branch.*` is
+**intra-session, lightweight** — same session db, no
+filesystem move, no `lineage` row. `session.fork` (via
+`session.turn_start.boundary=fork` + `ledger_meta.lineage`)
+is **inter-session, heavyweight** — new session directory, new
+db, ancestry record. The two are siblings, not replacements:
+branches for "try three solutions to this one step"; forks
+for "let me take the whole conversation in a different
+direction."
+
+### Why content-addressed blobs
 
 ### Why content-addressed blobs
 
