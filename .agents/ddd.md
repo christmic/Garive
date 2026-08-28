@@ -9,7 +9,7 @@
 
 ```
 docs/                      spec/                  engine/ + mobile/ + desktop/ + runtime/
-  (think)        →           (specify)        →              (model)
+  (think)        →           (specify)        →              (model + tests first)
 ```
 
 1. **Explore** in `docs/`. Capture the question, options,
@@ -20,13 +20,64 @@ docs/                      spec/                  engine/ + mobile/ + desktop/ +
      (a paragraph per aggregate, named fields pinned to
      `.proto` tags).
    - `spec/fixtures/` for the data the contract is checked
-     against.
-3. **Model** in `engine/`, `mobile/`, `desktop/`,
-   `runtime/`. The DDD artefacts (below) become concrete
-   classes / crates / modules in each language.
+     against — **these are the acceptance tests**. Write them
+     before any implementation.
+3. **Model — tests first.** Per language (`engine/`, `mobile/`,
+   `desktop/`, `runtime/`), each slice lands in **three
+   commits**, in this order:
+   - **3a. Red — failing test.** Write the unit / integration
+     test for the slice (an aggregate, a repository, a domain
+     service). The test references the fixture in
+     `spec/fixtures/` and exercises the public API the
+     implementation will offer. The test fails because nothing
+     compiles yet — that is the expected state.
+   - **3b. Green — minimal implementation.** Write the
+     minimum code that makes the test pass. No extras, no
+     future-proofing. Compile, run, see green.
+   - **3c. Refactor.** With the test as a safety net, clean
+     up duplication, sharpen names, push invariants into the
+     aggregate root, push logic out of anemic getters/setters.
+     Re-run the test. Stay green.
 4. **Verify** with `just conformance`. The conformance suite
-   is the sync lock — implementation is not merge-ready until
-   the diff is empty.
+   is the cross-language sync lock — implementation is not
+   rebase-ready until the diff is empty.
+
+The 3a/3b/3c ordering is non-negotiable. A slice lands as one
+feature branch with at least three commits, in that order.
+Squash-merge (or in our current flow, fast-forward rebase)
+keeps the slice visible as a unit while preserving each
+TDD step in the branch's local history.
+
+## Test Discipline (Rules)
+
+| Rule | Description |
+|------|-------------|
+| **Test before code** | The first commit on a feature branch must be a failing test. |
+| **Test names describe behaviour, not implementation** | `agent_loop_stops_after_max_turns`, not `test_loop_v2`. |
+| **One assertion concept per test** | Multiple `assert_eq!` on related fields are fine; multiple unrelated behaviours in one test are not. |
+| **No test deletes code in CI** | Don't `#[ignore]` or `.skip()` a failing test to make CI green. Fix the code. |
+| **Fixtures are contracts** | `spec/fixtures/` inputs are read by tests in every language. Edit the fixture, regenerate the conformance diff, fix implementations. |
+| **Conformance gates rebase** | `just conformance` empty diff is required before `git rebase origin/master` (see `.agents/git-workflow.md`). |
+| **Property tests for invariants** | Aggregate invariants (e.g. "turn count never exceeds `max_turns`") get a `proptest` (Rust) / `kotest-property` (Kotlin) / `fast-check` (TS) suite, not just example tests. |
+| **Coverage is a signal, not a goal** | High line coverage with no invariant coverage is worse than low coverage with strong invariant tests. |
+
+## Why Red-Green-Refactor in a DDD Pipeline
+
+DDD shapes the model. TDD shapes the model **before** any
+behaviour locks in. The two together:
+
+- **Red** is a design check — if writing the test is awkward,
+  the public API of the aggregate / repository / service is
+  wrong. Fix the design, not the test.
+- **Green** is the smallest cut of behaviour that satisfies
+  the contract. Anything more is speculation.
+- **Refactor** is where the DDD invariants get pushed into the
+  right place — invariants into the aggregate root, queries
+  into repositories, orchestration into domain services.
+
+Without the Red step, the implementation tends to grow the
+  domain model backwards from "what the code happens to do"
+  rather than forwards from "what the contract demands."
 
 ## Ubiquitous Language
 
