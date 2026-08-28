@@ -1,6 +1,4 @@
-use garive_proto::com::garive::host::v1::{
-    FakeHostCommandV1, FakeHostScenarioV1, HostEventV1,
-};
+use garive_proto::com::garive::host::v1::{FakeHostCommandV1, FakeHostScenarioV1, HostEventV1};
 use prost::Message;
 
 #[test]
