@@ -1,185 +1,117 @@
-# Spec → DDD Methodology
+# Design-to-domain workflow
 
-> **All design in Garive flows from `spec/` through a DDD lens.**
-  Free-form thinking lives in `docs/`; once an idea is firm
-  enough to implement faithfully, it lands in `spec/` and the
-  domain is shaped before any code is written.
->
-> The DDD artefacts (aggregate, value object, domain event,
-> command, repository) shape semantics, not wire shape. Wire
-> shape lives in `spec/proto/`. Cross-language sync (Rust +
-  Kotlin mirror) is governed by `.agents/multi-language.md`.
+> Garive uses domain language to clarify behavior and ownership. DDD does not
+> force every internal type into protobuf, every directory into a bounded
+> context, or every feature into a fixed commit choreography.
 
-@.agents/multi-language.md
+## Workflow
 
-## Pipeline
-
-```
-docs/                      spec/                  engine/ + mobile/ + desktop/ + runtime/
-  (think)        →           (specify)        →              (model + tests first)
+```text
+docs discussion -> accepted architecture -> spec when needed -> tests -> code
 ```
 
-1. **Explore** in `docs/`. Capture the question, options,
-   trade-offs. No code yet.
-2. **Specify** in `spec/`. Land a concrete contract:
-   - `spec/proto/*.proto` for wire types.
-   - `spec/design/<slice>.md` for the normative invariant
-     (a paragraph per aggregate, named fields pinned to
-     `.proto` tags).
-   - `spec/fixtures/` for the data the contract is checked
-     against — **these are the acceptance tests**. Write them
-     before any implementation.
-3. **Model — tests first.** Per language (`engine/`, `mobile/`,
-   `desktop/`, `runtime/`), each slice lands in **three
-   commits**, in this order:
-   - **3a. Red — failing test.** Write the unit / integration
-     test for the slice (an aggregate, a repository, a domain
-     service). The test references the fixture in
-     `spec/fixtures/` and exercises the public API the
-     implementation will offer. The test fails because nothing
-     compiles yet — that is the expected state.
-   - **3b. Green — minimal implementation.** Write the
-     minimum code that makes the test pass. No extras, no
-     future-proofing. Compile, run, see green.
-   - **3c. Refactor.** With the test as a safety net, clean
-     up duplication, sharpen names, push invariants into the
-     aggregate root, push logic out of anemic getters/setters.
-     Re-run the test. Stay green.
-4. **Verify** with `just conformance`. The conformance suite
-   is the cross-language sync lock — implementation is not
-   rebase-ready until the diff is empty.
+1. **Discuss in `docs/`.** Record the problem, alternatives, trade-offs, and
+   unresolved questions.
+2. **Settle ownership.** Name the layer that owns the behavior and verify the
+   dependency direction in `docs/architecture/system.md`.
+3. **Promote a contract when a boundary needs compatibility.** Use `spec/`
+   for public API, cross-process, cross-language, or durable persistence
+   contracts. Purely internal behavior can remain a typed Rust contract.
+4. **Write the test first.** Observe the test fail locally, then implement the
+   smallest behavior that passes it.
+5. **Land green commits.** Every committed step remains buildable and testable;
+   a failing TDD checkpoint does not become permanent trunk history.
 
-The 3a/3b/3c ordering is non-negotiable. A slice lands as one
-feature branch with at least three commits, in that order.
-Squash-merge (or in our current flow, fast-forward rebase)
-keeps the slice visible as a unit while preserving each
-TDD step in the branch's local history.
+## Ubiquitous language
 
-## Test Discipline (Rules)
+The design document that owns a concept names it. Code uses the same concept
+with language-appropriate naming. A wire schema owns only its serialized field
+names and compatibility rules; it does not automatically own internal domain
+vocabulary.
 
-| Rule | Description |
-|------|-------------|
-| **Test before code** | The first commit on a feature branch must be a failing test. |
-| **Test names describe behaviour, not implementation** | `agent_loop_stops_after_max_turns`, not `test_loop_v2`. |
-| **One assertion concept per test** | Multiple `assert_eq!` on related fields are fine; multiple unrelated behaviours in one test are not. |
-| **No test deletes code in CI** | Don't `#[ignore]` or `.skip()` a failing test to make CI green. Fix the code. |
-| **Fixtures are contracts** | `spec/fixtures/` inputs are read by tests in every language. Edit the fixture, regenerate the conformance diff, fix implementations. |
-| **Conformance gates rebase** | `just conformance` empty diff is required before `git rebase origin/master` (see `.agents/git-workflow.md`). |
-| **Property tests for invariants** | Aggregate invariants (e.g. "turn count never exceeds `max_turns`") get a `proptest` (Rust) / `kotest-property` (Kotlin) / `fast-check` (TS) suite, not just example tests. |
-| **Coverage is a signal, not a goal** | High line coverage with no invariant coverage is worse than low coverage with strong invariant tests. |
+| Concept | Owner |
+|---|---|
+| Product `Session`, durable `Turn`, authenticated actor | Runtime |
+| `AgentTurnRequest`, `AgentExecutionPorts`, `AgentOutcome` | Agent kernel |
+| Prepared tool call and execution requirement | Agent/tool contract |
+| Invocation grant, effect receipt, recovery decision | Runtime execution |
+| Public request/event/view fields | Public API spec |
+| Provider request/response fields | Verified provider adapter |
 
-## Why Red-Green-Refactor in a DDD Pipeline
+Avoid ambiguous names such as `SessionContext`, `Manager`, `EngineState`, or
+`Message` when they combine owners. Prefer names that reveal authority and
+lifetime.
 
-DDD shapes the model. TDD shapes the model **before** any
-behaviour locks in. The two together:
+## Boundaries before aggregates
 
-- **Red** is a design check — if writing the test is awkward,
-  the public API of the aggregate / repository / service is
-  wrong. Fix the design, not the test.
-- **Green** is the smallest cut of behaviour that satisfies
-  the contract. Anything more is speculation.
-- **Refactor** is where the DDD invariants get pushed into the
-  right place — invariants into the aggregate root, queries
-  into repositories, orchestration into domain services.
+An aggregate is useful only when a real consistency boundary exists. Do not
+predeclare one aggregate per crate or map one aggregate to one proto message.
 
-Without the Red step, the implementation tends to grow the
-  domain model backwards from "what the code happens to do"
-  rather than forwards from "what the contract demands."
+For each stateful concept, answer:
 
-## Ubiquitous Language
+1. Who may change it?
+2. What transaction or atomic fact makes the change durable?
+3. What invariant must hold after the change?
+4. What identity survives retries and restarts?
+5. Which projections may be rebuilt from durable facts?
 
-A shared vocabulary across `docs/`, `spec/`, and code. The
-terms used in `spec/proto/*.proto` field names are the source
-of truth; code identifiers in every language must mirror those
-names (translated to that language's convention).
+Runtime may commit multiple records in one transaction when product
+correctness requires it. A blanket ban on cross-aggregate transactions is not
+a substitute for defining the actual atomic boundary.
 
-| Spec term | Rust | Kotlin | TypeScript |
-|-----------|------|--------|------------|
-| `AgentIdentity` (proto message) | `AgentIdentity` | `AgentIdentity` | `AgentIdentity` |
-| `ts_ms` (proto field) | `ts_ms` | `tsMs` | `tsMs` |
-| `garive.v1.PingRequest` (proto package) | `garive::v1::PingRequest` | `com.garive.v1.PingRequest` | `garive.v1.PingRequest` |
+## Domain and wire types
 
-If the ubiquitous-language mapping disagrees, the `.proto` wins —
-fix the implementation, not the contract.
+- Internal domain values are handwritten and optimized for invariants.
+- Public, cross-process, and persistent compatibility values are specified at
+  their boundary and mapped explicitly.
+- Generated protobuf types remain at the serialization edge unless a specific
+  design proves they are also the correct internal value.
+- Two modules in the same process may share a stable internal contract without
+  serializing through proto.
+- Mapping code is intentional evidence of a boundary, not duplication to hide.
 
-## Bounded Contexts
+## Events and durable facts
 
-A bounded context is a **language-and-responsibility boundary**
-that owns its own model. Garive ships these bounded contexts:
+Not every internal event belongs in one universal ledger.
 
-| Bounded Context | Owner Crate (Rust) | Wire Surface (proto) |
-|-----------------|--------------------|-----------------------|
-| Core Agent | `engine/core/` | `garive.v1.Agent*`, `garive.v1.Tool*` |
-| Memory | `engine/memory/` | `garive.v1.Memory*` |
-| Knowledge | `engine/knowledge/` | `garive.v1.Knowledge*` |
-| Tools | `engine/tools/` | `garive.v1.Tool*`, `garive.v1.Skill*` |
-| Skills | `engine/skill/` | `garive.v1.Skill*` |
-| Multi-agent | `engine/multiagent/` | `garive.v1.Session*` |
-| Observability | `engine/observability/` | (logs / traces only) |
-| Gateway (Go) | `runtime/gateway/` | `garive.v1.Gateway*`, `garive.v1.Replica*` |
+| Kind | Owner | Durability |
+|---|---|---|
+| Agent progress event | Agent/Runtime bridge | ephemeral unless promoted |
+| Client streaming delta | Runtime/Channel | ephemeral; reconnect uses snapshots |
+| Turn lifecycle terminal | Runtime | durable |
+| External-effect receipt | Runtime execution | durable before terminal publication |
+| Audit/approval decision | Runtime authorization | durable |
+| Provider wire event | Provider adapter | normalized or discarded at boundary |
 
-A context that needs to talk to another context does so via
-**proto messages, not internal types**. Two contexts must not
-share a `pub use`.
+Persist the minimum facts needed for correctness, recovery, audit, and product
+history. Build query/UI projections from those facts rather than forcing every
+runtime signal into the durable model.
 
-## Aggregate Boundaries
+## Test discipline
 
-An aggregate is a consistency boundary. Inside an aggregate:
-
-- Invariants hold after every command.
-- All state changes go through the aggregate root.
-- External callers see only the aggregate root.
-
-**Mapping rule:** an aggregate root is one proto message, and
-all its members live in the same proto package. One aggregate
-= one `garive.vN.<Context>.<Aggregate>` proto message.
-
-## Tactical Building Blocks
-
-When modelling in code, use these names consistently across
-languages:
-
-| DDD concept | Naming convention |
-|-------------|-------------------|
-| Aggregate root | `<Name>` (e.g. `Agent`, `Session`, `MemoryEntry`) |
-| Value object | `<Name>` (immutable, no identity) |
-| Domain event | `<Aggregate><Verb>` past-tense (e.g. `AgentStarted`, `MemoryStored`) |
-| Command | `<Verb><Object>` imperative (e.g. `StartAgent`, `StoreMemory`) |
-| Repository | `<Aggregate>Repository` (Rust: `trait`; Kotlin: `interface`; TS: type) |
-| Domain service | `<Verb><Object>Service` |
-
-Events go on the ledger (`engine/ledger/`) — that is the only
-allowed destination for a domain event.
-
-## Cross-language Sync Lock
-
-The conformance suite enforces that **identical domain logic
-produces identical canonical JSON across languages** for a
-fixed fixture set.
-
-- One fixture = one scenario.
-- The fixture names the input AND the expected output, so a
-  failing diff points at the exact mismatch.
-- An implementation that disagrees with the contract must be
-  fixed. An implementation that disagrees with another
-  implementation across languages **must also be fixed** —
-  drift is a bug, never a negotiation.
+- Write a failing test before implementation, but commit only green states.
+- Fixtures describe accepted behavior; they are not automatically wire
+  contracts.
+- Property tests cover declared invariants and state machines.
+- Cross-language conformance is required only for behavior intentionally
+  supported by more than one implementation.
+- Coverage and benchmark numbers become gates after a measured baseline, not
+  before.
 
 ## Anti-patterns
 
-- ❌ **Anemic domain model**: a domain type with only getters
-  and setters and no behaviour. Move logic into the aggregate.
-- ❌ **Shared kernel leaking across contexts**: if two
-  contexts both depend on the same Rust type, that type
-  probably belongs in its own context or in `spec/`.
-- ❌ **Cross-aggregate transactions**: two aggregates must
-  not be modified in the same transaction. Communicate via
-  domain events.
-- ❌ **Proto as DTO only**: if your generated proto types are
-  never seen outside the network / IPC boundary, your domain
-  model is leaking across tiers. Keep the proto boundary
-  thin; the domain types live behind it.
-- ❌ **Skipping `spec/`**: writing a Rust type that has no
-  proto / no fixture is a design smell. Either move it to
-  `spec/` (if it's a contract) or keep it strictly internal
-  and document the boundary.
+- A wire DTO carrying execution authority.
+- Agent code opening a database, resolving credentials, or selecting a concrete
+  sandbox.
+- Runtime behavior hidden behind provider-specific response types.
+- A generic module name that combines unrelated owners.
+- A fixture changed only to make an implementation pass.
+- A speculative bounded context or proto message created because a directory
+  already exists.
+
+## Reference
+
+- `docs/architecture/system.md` — product ownership.
+- `docs/architecture/core/README.md` — active mechanism index.
+- `.agents/multi-language.md` — optional cross-language admission.
+- `.agents/testing.md` — verification layers and evidence maturity.
