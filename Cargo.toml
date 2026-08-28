@@ -20,9 +20,15 @@ resolver = "2"
 members = [
     "bench",
     "engine/core",
+    "engine/creativity",
+    "engine/eval",
+    "engine/knowledge",
     "engine/ledger",
     "engine/llm",
     "engine/memory",
+    "engine/multiagent",
+    "engine/scheduler",
+    "engine/skill",
     "engine/tools",
 ]
 
