@@ -46,8 +46,8 @@ pub struct HttpResponseDescriptor {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransportFailure {
-    Connection,
-    Timeout,
+    BeforeDispatch,
+    Ambiguous,
 }
 
 pub type TransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -98,7 +98,7 @@ impl<T: OpenAiTransport> ModelPort for OpenAiModelPort<T> {
                 }
                 let response = match response {
                     Ok(value) => value,
-                    Err(_) if attempt < self.max_attempts => {
+                    Err(TransportFailure::BeforeDispatch) if attempt < self.max_attempts => {
                         self.transport.wait(Duration::ZERO).await;
                         continue;
                     }

@@ -100,6 +100,17 @@ class AnthropicMessagesCodecTest {
         assertIs<InvokeOutcome.Completed>(assertIs<ModelPortResult.Success>(result).outcome)
         assertEquals(listOf(kotlin.time.Duration.ZERO), transport.waits)
     }
+    @Test fun `model port never retries ambiguous transport failure`() = runTest {
+        val transport = ScriptTransport(ArrayDeque(listOf(
+            TransportResult.Failure(TransportFailure.AMBIGUOUS),
+            TransportResult.Success(HttpResponseDescriptor(200, null, fixture("complete.sse"))),
+        )))
+        val result = AnthropicModelPort(transport, 2).invoke(request(), ModelObserver { ObserverDecision.CONTINUE },
+            ModelCancellation { false })
+        assertIs<InvokeOutcome.Interrupted>(assertIs<ModelPortResult.Success>(result).outcome)
+        assertEquals(1, transport.calls)
+        assertEquals(emptyList(), transport.waits)
+    }
     @Test fun `model port honors observer cancel with observed partial`() = runTest {
         val transport = ScriptTransport(
             ArrayDeque(
@@ -116,7 +127,11 @@ class AnthropicMessagesCodecTest {
 
     private class ScriptTransport(private val responses: ArrayDeque<TransportResult>) : AnthropicTransport {
         val waits = mutableListOf<kotlin.time.Duration>()
-        override suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation) = responses.removeFirst()
+        var calls = 0
+        override suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation): TransportResult {
+            calls += 1
+            return responses.removeFirst()
+        }
         override suspend fun wait(delay: kotlin.time.Duration) { waits += delay }
     }
 

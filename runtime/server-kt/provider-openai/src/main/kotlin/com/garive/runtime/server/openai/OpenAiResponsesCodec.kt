@@ -20,7 +20,7 @@ sealed interface HttpErrorAction {
 data class HttpRequestDescriptor(val method: String, val path: String,
     val headers: List<Pair<String, String>>, val body: ByteArray)
 data class HttpResponseDescriptor(val status: Int, val retryAfter: String?, val body: ByteArray)
-enum class TransportFailure { CONNECTION, TIMEOUT }
+enum class TransportFailure { BEFORE_DISPATCH, AMBIGUOUS }
 sealed interface TransportResult {
     data class Success(val response: HttpResponseDescriptor) : TransportResult
     data class Failure(val reason: TransportFailure) : TransportResult
@@ -44,7 +44,9 @@ class OpenAiModelPort(private val transport: OpenAiTransport, private val maxAtt
             if (cancellation.isCancelled()) return ModelPortResult.Success(cancelled(null))
             val wire = when (response) {
                 is TransportResult.Success -> response.response
-                is TransportResult.Failure -> if (attempt < maxAttempts) {
+                is TransportResult.Failure -> if (
+                    response.reason == TransportFailure.BEFORE_DISPATCH && attempt < maxAttempts
+                ) {
                     transport.wait(Duration.ZERO); continue
                 } else return ModelPortResult.Success(InvokeOutcome.Interrupted(
                     InterruptionKind.TRANSPORT, emptyList(), unknownUsage()))

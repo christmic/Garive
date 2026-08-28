@@ -232,6 +232,28 @@ fn model_port_retries_before_ambiguity_and_returns_one_terminal() {
 }
 
 #[test]
+fn model_port_never_retries_ambiguous_transport_failure() {
+    let state = Arc::new(ScriptState {
+        responses: Mutex::new(VecDeque::from([
+            Err(TransportFailure::Ambiguous),
+            Ok(HttpResponseDescriptor {
+                status: 200,
+                retry_after: None,
+                body: fixture("complete.sse"),
+            }),
+        ])),
+        waits: Mutex::new(Vec::new()),
+    });
+    let port = AnthropicModelPort::new(ScriptTransport(Arc::clone(&state)), 2);
+    let mut observer = IgnoreObserver;
+    let outcome =
+        futures::executor::block_on(port.invoke(&request(), &mut observer, &NeverCancel)).unwrap();
+    assert!(matches!(outcome, InvokeOutcome::Interrupted { .. }));
+    assert_eq!(state.responses.lock().unwrap().len(), 1);
+    assert!(state.waits.lock().unwrap().is_empty());
+}
+
+#[test]
 fn model_port_honors_observer_cancel_with_observed_partial() {
     let state = Arc::new(ScriptState {
         responses: Mutex::new(VecDeque::from([Ok(HttpResponseDescriptor {
