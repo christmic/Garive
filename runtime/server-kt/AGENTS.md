@@ -9,8 +9,8 @@
 ## Current scope
 
 The Gradle project contains `:agent-core` (C0-C3), `:llm-contract` (C1/C1b),
-and `:proto`. Ledger, PostgreSQL, provider, and host modules are added only with
-their implementation slice and native boundary tests.
+`:ledger-contract` (L0), and `:proto`. PostgreSQL, provider, and host modules
+are added only with their implementation slice and native boundary tests.
 
 ```text
 runtime/server-kt/
@@ -20,6 +20,7 @@ runtime/server-kt/
 ├── gradle/wrapper/gradle-wrapper.properties
 ├── agent-core/        supported C0-C3 domain + shared fixtures
 ├── llm-contract/      supported C1/C1b model contract
+├── ledger-contract/   supported L0 durable fact semantics
 └── proto/             generated admitted wire bindings
 ```
 

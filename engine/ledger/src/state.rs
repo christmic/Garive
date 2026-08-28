@@ -86,16 +86,19 @@ impl LedgerState {
                 .ok_or(LedgerError::PositionOverflow)
         })?;
         let mut positions = Vec::with_capacity(drafts.len());
-        for draft in drafts.iter().cloned() {
+        let last_index = drafts.len() - 1;
+        for (index, draft) in drafts.iter().cloned().enumerate() {
             next.projection.apply(&draft)?;
             let durable = DurableFact::from((session_id.clone(), position, draft.clone()));
             durable.verify()?;
             next.drafts.insert(position, draft);
             next.facts.push(durable);
             positions.push(position);
-            position = position
-                .checked_add(1)
-                .ok_or(LedgerError::PositionOverflow)?;
+            if index != last_index {
+                position = position
+                    .checked_add(1)
+                    .ok_or(LedgerError::PositionOverflow)?;
+            }
         }
         next.version = next
             .version
