@@ -41,6 +41,9 @@ class LedgerState {
         var replayed = 0
         for (draft in drafts) {
             draft.validate()?.let { return LedgerResult.Failure(it) }
+            if (identityOwnedByOtherSession(sessionId, draft)) {
+                return LedgerResult.Failure(LedgerError.InvalidTransition)
+            }
             if (!identities.add(draft.factId)) return LedgerResult.Failure(LedgerError.InvalidFact)
             factIndex[draft.factId]?.let { existing ->
                 if (existing.sessionId != sessionId || !existing.draft.sameSemantics(draft)) {
@@ -145,7 +148,18 @@ class LedgerState {
 
     private fun findInvocation(predicate: (DurableFact) -> Boolean) =
         sessions.values.flatMap { it.facts }.filter(predicate)
+
+    private fun identityOwnedByOtherSession(sessionId: SessionId, draft: FactDraft) =
+        factIndex.values.any { existing ->
+            existing.sessionId != sessionId &&
+                (samePresent(existing.draft.turnId, draft.turnId) ||
+                    samePresent(existing.draft.executionId, draft.executionId) ||
+                    samePresent(existing.draft.modelRequestId, draft.modelRequestId) ||
+                    samePresent(existing.draft.toolInvocationId, draft.toolInvocationId))
+        }
 }
+
+private fun <T> samePresent(left: T?, right: T?) = left != null && right != null && left == right
 
 private fun FactDraft.toDurable(sessionId: SessionId, position: ULong) = DurableFact(
     factId,

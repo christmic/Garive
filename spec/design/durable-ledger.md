@@ -24,6 +24,10 @@ The ledger preserves distinct non-empty identities:
 
 No database-generated integer substitutes for a public/domain identity. A
 database may use internal row keys only as an implementation detail.
+Turn, Execution, model-request and tool-invocation identities are globally
+bound to the Session that first commits them. A different Session cannot reuse
+one of those identities; otherwise `load_turn` and recovery queries would be
+ambiguous across adapters.
 
 ## Durable position
 

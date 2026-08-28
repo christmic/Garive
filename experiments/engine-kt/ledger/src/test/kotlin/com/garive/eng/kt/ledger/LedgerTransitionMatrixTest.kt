@@ -218,6 +218,28 @@ class LedgerTransitionMatrixTest {
     }
 
     @Test
+    fun `lifecycle identities cannot be reowned by another session`() {
+        listOf("turn.started", "execution.started", "model.prepared", "effect.prepared").forEach { sharedKind ->
+            val first = SessionId.of("first")
+            val second = SessionId.of("second")
+            val ledger = LedgerState()
+            val prefix = listOf("session.opened", "turn.started", "execution.started")
+                .takeWhile { it != sharedKind } + sharedKind
+            assertIs<LedgerResult.Success<CommitResult>>(
+                ledger.commit(first, 0u, prefix.mapIndexed { index, kind -> fact("first-$index", kind) }),
+            )
+
+            val result = ledger.commit(
+                second,
+                0u,
+                listOf(fact("second-open", "session.opened"), fact("reowned", sharedKind)),
+            )
+            assertEquals(LedgerError.InvalidTransition, assertIs<LedgerResult.Failure>(result).error, sharedKind)
+            assertEquals(0, ledger.factCount(second), sharedKind)
+        }
+    }
+
+    @Test
     fun `read and recovery queries cover ranges filters and missing references`() {
         val session = SessionId.of("session")
         val ledger = LedgerState()

@@ -249,6 +249,37 @@ fn commit_validation_and_idempotency_fail_closed_without_partial_state() {
 }
 
 #[test]
+fn lifecycle_identities_cannot_be_reowned_by_another_session() {
+    for shared_kind in [
+        "turn.started",
+        "execution.started",
+        "model.prepared",
+        "effect.prepared",
+    ] {
+        let first = SessionId::try_from("first").unwrap();
+        let second = SessionId::try_from("second").unwrap();
+        let mut ledger = LedgerState::default();
+        let prefix: Vec<_> = ["session.opened", "turn.started", "execution.started"]
+            .into_iter()
+            .take_while(|kind| *kind != shared_kind)
+            .chain([shared_kind])
+            .enumerate()
+            .map(|(index, kind)| fact(&format!("first-{index}"), kind))
+            .collect();
+        ledger.commit(first, 0, prefix).unwrap();
+
+        let mut second_batch = vec![fact("second-open", "session.opened")];
+        second_batch.push(fact("reowned", shared_kind));
+        assert_eq!(
+            ledger.commit(second.clone(), 0, second_batch),
+            Err(LedgerError::InvalidTransition),
+            "{shared_kind}"
+        );
+        assert_eq!(ledger.fact_count(&second), 0, "{shared_kind}");
+    }
+}
+
+#[test]
 fn read_and_recovery_queries_cover_ranges_filters_and_missing_references() {
     let session = SessionId::try_from("session").unwrap();
     let mut ledger = LedgerState::default();

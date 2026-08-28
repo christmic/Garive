@@ -55,6 +55,9 @@ impl LedgerState {
         let mut replayed = 0usize;
         for draft in &drafts {
             draft.validate()?;
+            if self.identity_owned_by_other_session(&session_id, draft) {
+                return Err(LedgerError::InvalidTransition);
+            }
             if !identities.insert(draft.fact_id.clone()) {
                 return Err(LedgerError::InvalidFact);
             }
@@ -244,4 +247,21 @@ impl LedgerState {
             .cloned()
             .collect()
     }
+
+    fn identity_owned_by_other_session(&self, session_id: &SessionId, draft: &FactDraft) -> bool {
+        self.fact_index.values().any(|existing| {
+            existing.session_id != *session_id
+                && (same_present(&existing.draft.turn_id, &draft.turn_id)
+                    || same_present(&existing.draft.execution_id, &draft.execution_id)
+                    || same_present(&existing.draft.model_request_id, &draft.model_request_id)
+                    || same_present(
+                        &existing.draft.tool_invocation_id,
+                        &draft.tool_invocation_id,
+                    ))
+        })
+    }
+}
+
+fn same_present<T: PartialEq>(left: &Option<T>, right: &Option<T>) -> bool {
+    matches!((left, right), (Some(left), Some(right)) if left == right)
 }
