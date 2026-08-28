@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-# Members will be added as engine/runtime slices are scoped.
+# Members are admitted as target skeletons; behavior lands in vertical slices.
 # Planned members (per AGENTS.md architecture):
 #
 #   engine/{core,llm,tools}     # Agent kernel and model/tool contracts
@@ -19,9 +19,15 @@ resolver = "2"
 #   spec/proto                — schema source, not a member
 members = [
     "bench",
+    "engine/core",
+    "engine/ledger",
+    "engine/llm",
+    "engine/memory",
+    "engine/tools",
 ]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
 rust-version = "1.75"
