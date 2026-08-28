@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "contract": "model-request-stream",
+  "request_cases": [
+    {"name": "valid-request", "mutation": "none", "expected": "ok"},
+    {"name": "empty-request-id", "mutation": "empty-request-id", "expected": "empty-identity"},
+    {"name": "duplicate-capability", "mutation": "duplicate-capability", "expected": "duplicate-capability"},
+    {"name": "duplicate-tool", "mutation": "duplicate-tool", "expected": "duplicate-tool"},
+    {"name": "zero-output-limit", "mutation": "zero-output-limit", "expected": "zero-output-limit"}
+  ],
+  "stream_cases": [
+    {"name": "valid-interleaved-items", "events": ["start:0:text", "text:0:a", "start:1:reasoning", "reasoning:1:r", "complete:1:reasoning", "complete:0:text", "usage"], "expected": "ok"},
+    {"name": "refusal-is-distinct", "events": ["start:0:refusal", "refusal:0:no", "complete:0:refusal"], "expected": "ok"},
+    {"name": "delta-before-start", "events": ["text:0:a"], "expected": "item-not-started"},
+    {"name": "delta-kind-mismatch", "events": ["start:0:reasoning", "text:0:a"], "expected": "item-kind-mismatch"},
+    {"name": "non-monotonic-start", "events": ["start:1:text", "start:0:text"], "expected": "non-monotonic-start"},
+    {"name": "duplicate-completion", "events": ["start:0:text", "complete:0:text", "complete:0:text"], "expected": "item-already-completed"}
+  ]
+}
