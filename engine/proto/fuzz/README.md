@@ -52,3 +52,9 @@ a fuzz target, full stop.**
 
 Placeholder. Targets land as messages land in
 `spec/proto/*.proto`.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

@@ -36,3 +36,9 @@ published scores were measured against.
 
 `bench/config/official.toml` (placeholder) controls image
 registry, runtime args, network policy, and resource limits.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

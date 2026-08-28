@@ -43,3 +43,9 @@ from the case alone). In other cases it runs after env setup
 (e.g. to include resolved file paths). The driver loop
 handles both orderings — pass `case` first, then `env_setup`
 once the env signals readiness.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

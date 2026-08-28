@@ -50,3 +50,9 @@ them separate means:
 - Adapter bugs are fixed without touching agent code.
 - New agents only need to ship two small adapters — they don't
   have to learn the swe-bench eval harness.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

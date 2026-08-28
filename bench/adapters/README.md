@@ -62,3 +62,9 @@ env_setup ─┐
 Both adapters are wired into `bench/src/runner.rs`; their
 concrete types are dispatched by adapter name from the run
 config (`--intake garive --patch garive-bridge` etc.).
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

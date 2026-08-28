@@ -48,3 +48,9 @@ shared/
 `just conformance` (run from repo root) is the cross-language
 sync gate for anything that touches the wire types consumed
 from this module.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

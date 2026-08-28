@@ -61,3 +61,9 @@ backend/
 ## Build
 
 `just desktop` (orchestrates frontend + backend via Tauri CLI).
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

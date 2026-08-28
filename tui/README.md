@@ -67,3 +67,9 @@ cargo run -p tui
 ```
 
 `just tui` is a thin wrapper.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

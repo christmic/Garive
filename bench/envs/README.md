@@ -150,3 +150,9 @@ Output integration:
   pull failure, eval harness crash, network timeout).
   Agent underperformance produces a low score, not a CI
   failure.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

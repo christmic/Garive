@@ -12,3 +12,9 @@
 These are **operational scripts**, not part of the bench
 crate. They run before / after the bench runner, not inside
 it.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

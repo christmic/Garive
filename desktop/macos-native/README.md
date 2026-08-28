@@ -58,3 +58,9 @@ the Rust dependency tree manageable and avoids FFI duplication.
 
 The Tauri release pipeline packages the resulting `.appex` /
 `.bundle` into the right slot of the `.app` bundle.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

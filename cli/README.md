@@ -64,3 +64,9 @@ cargo run -p cli -- run --task job.yaml
 ```
 
 `just cli` is a thin wrapper.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

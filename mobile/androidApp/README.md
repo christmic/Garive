@@ -41,3 +41,9 @@ androidApp/
 ## Build
 
 `cd mobile && gradle :androidApp:assembleDebug`
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

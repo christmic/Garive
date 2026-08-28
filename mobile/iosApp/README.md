@@ -52,3 +52,9 @@ iosApp/
 Open `iosApp.xcworkspace` in Xcode and ⌘R. The KMP framework
 is built by Gradle as part of the Xcode build phases
 (configured in the workspace).
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

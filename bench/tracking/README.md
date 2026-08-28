@@ -62,3 +62,9 @@ diff <(jq -S . versions/v0.4.0.json) <(jq -S . versions/v0.4.1.json)
 Append-only JSONL survives mid-run crashes, doesn't require
 a database, and diffs cleanly across versions. A future
 SQLite reader can ingest the same files.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

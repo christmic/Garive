@@ -47,3 +47,9 @@ pass_to_pass         tests that must still pass after the patch
 
 This mirrors the official swe-bench JSON schema; `bench/`
 loads it verbatim.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

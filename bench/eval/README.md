@@ -39,3 +39,9 @@ the #1 source of fake benchmark wins.
 - Python version / venv bootstrap script.
 - Test-timeout and per-test retry policy.
 - Network policy (eval should run with **no** network).
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.

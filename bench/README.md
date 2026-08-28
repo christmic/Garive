@@ -91,3 +91,9 @@ just bench -- --source terminal-bench --mode self-cow --jobs 16
 ```
 
 See `bench/AGENTS.md` for the full rules.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: accepted.

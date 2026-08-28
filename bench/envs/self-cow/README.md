@@ -49,3 +49,9 @@ root, per-case resource limits, and toolchain assumptions
 
 Switch to `official` whenever the goal is to publish a number
 that someone else might compare against.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-27
+- Status: stub — slice not yet landed; content is scaffolding.
