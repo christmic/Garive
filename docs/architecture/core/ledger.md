@@ -540,10 +540,10 @@ runs are themselves part of the ledger's audit story.
 A future "what happened to this session" query joins
 `entry`, `dedup`, and `ops_log` together.
 
-### Entry Kinds (by family, with body schemas)
+### Entry Kinds — ten categories, one namespace
 
-Kinds are **dotted, lower-case, family-prefixed**. The
-prefix is the family; the suffix names the specific event.
+Kinds are **dotted, lower-case, category-prefixed**. The
+prefix is the category; the suffix names the specific event.
 Adding a new kind is **a row in the catalog** plus a typed
 payload — nothing else changes.
 
@@ -551,6 +551,48 @@ Body schemas below are normative: the wire format in
 `spec/proto/` must match these shapes. Inline bodies carry
 the value directly in `entry.body_inline`; large bodies
 reference a blob hash in `entry.body_hash`.
+
+**Ten categories** (the namespace is closed; new categories
+require an update to this list):
+
+| # | Category | Kinds | What it covers |
+|---|----------|-------|----------------|
+| 1 | **user/model** | `text.user`, `text.assistant` | The free-form text the user and the model exchange. |
+| 2 | **tool** | `tool.call`, `tool.result`, `tool.result.rejected` | The model's verb (call) and the executor's response (result). Pairs via `pair_ref`. |
+| 3 | **governance** | `governance.verdict`, `governance.approval_request`, `governance.approval_response` | The gate between intent and effect. AskUser ↔ ApprovalResponse is a complete pair. |
+| 4 | **compaction** | `compaction.rewrite`, `compaction.summary` | Window-overflow machinery. Masks the prefix; the new prefix starts at the rewrite point. |
+| 5 | **session** | `session.turn_start`, `session.undo`, `session.redo` | Turn boundaries, human rewind, redo. |
+| 6 | **branch** | `branch.open`, `branch.verdict` | In-session lightweight fork. Path-style nesting (`A.B.C`); the verdict picks the winner. |
+| 7 | **goal** | `goal.declare`, `goal.update`, `goal.close` | The long-task frame. Current goal = derived from the entry stream. |
+| 8 | **privacy** | `privacy.redact` | Right-to-erasure masking. The blob may be physically unlinked; the row stays for audit. |
+| 9 | **injection** | `harness.feature`, `system` | The harness-supplied context: env snapshots, skills catalog, `AGENTS.md`, and the framework-pinned system prompt. |
+| 10 | **telemetry** | `model.usage` | Per-call observability: token counts (`in / out / cache_read / cache_write / total`), `model_reported` flag, `model_id`. |
+
+The categories are **ordered by where they sit in the
+agent's mental loop** (which is also the order `derive`
+applies its masking + projection pipeline — see
+`loop.md` "Derive pipeline"):
+
+1. **session** (`session.undo`) — first, because undo masks
+   the largest possible range
+2. **branch** (`branch.verdict`) — second, because
+   discarded branches get masked wholesale
+3. **compaction** (`compaction.rewrite`) — third, masks the
+   prefix
+4. **privacy** (`privacy.redact`) — fourth, masks individual
+   ranges / `uid`s
+5. **clipping rules** (per-tier / age / volume) — fifth,
+   shrink the surviving entries
+6. **kinds filter + pinned** — sixth, project the visible
+   categories to the surface
+
+Categories **1–4** are the **masking family** (cover a
+range, hide content from the surface). Category **5** is the
+**shrinking family** (shrink content within a still-visible
+range). Category **6** is the **projection step** (which
+categories go on the surface at all). Categories **7–10**
+are **content categories**: where the entries come from, not
+how they are projected.
 
 #### `text.*` — text exchanges
 

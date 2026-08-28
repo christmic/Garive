@@ -299,6 +299,62 @@ rest of `derive`'s responsibilities kick in.
 `FORK_BRANCH`, `AUDIT_REPLAY`) shares it. What each consumer
 does *with* the cached surface is **assemble**'s job.
 
+### Derive pipeline (six steps, in order)
+
+`derive` is a **fixed-order pipeline** of six masking /
+shrinking / projection steps. Each step consumes the output
+of the previous one. The order matters: a step earlier in
+the pipeline can hide rows that a later step would otherwise
+shrink; a step later in the pipeline can shrink what an
+earlier step's masking would not have hidden.
+
+```python
+def derive(surface, projection, budget):
+    # 1. session.undo — masks suffix after a turn boundary
+    surface = apply_undo(surface)
+
+    # 2. branch.verdict — masks branches not adopted
+    surface = apply_branch_verdict(surface)
+
+    # 3. compaction.rewrite — masks prefix; reads compaction.summary
+    surface = apply_compaction_rewrite(surface)
+
+    # 4. privacy.redact — masks individual ranges / uids
+    surface = apply_redaction(surface)
+
+    # 5. Clipping rules — tier (age), volume (token size), kind policy
+    surface = apply_clipping_rules(surface, budget)
+
+    # 6. Kinds filter + pinned — categories that surface sees
+    surface = project_by_kinds(surface, projection.kinds,
+                                pinned=ALWAYS_LOADED)
+
+    return surface, DeriveReceipt(
+        applied_masks=[...],
+        clipped=...,
+        skipped=...,
+        token_breakdown=...,
+    )
+```
+
+**Why this order:**
+
+| Step | Rationale |
+|------|-----------|
+| **1. session.undo** | Undo masks the **largest possible range** (the entire suffix after `target`). Doing it first means the later steps don't waste budget shrinking rows the user has already said to forget. |
+| **2. branch.verdict** | Discarded branches are masked wholesale. Branch verdict operates on `branch_path`; doing it after undo (which is *not* branch-scoped) means an undo across branch boundaries still works correctly. |
+| **3. compaction.rewrite** | The prefix has been summarised; the prefix rows are masked. After this, only the tail of the round is in the surface, plus the `compaction.summary` row itself (always loaded). |
+| **4. privacy.redact** | Individual entries or ranges. The redacted entries are masked **as redacted placeholders**, preserving identity (`seq`, `kind`, `wall_ts`, `provenance`, `pair_ref`, `ref`) but not the body. |
+| **5. Clipping rules** | Per-tier (age) + per-volume (token size) + per-kind (tool policy) shaping. These are **shrinking** operations on the surviving entries — they don't change *which* entries, they change *how much* of each entry. |
+| **6. Kinds filter + pinned** | The projection. `kinds` selects which categories the projection cares about; `pinned` (always-loaded) is *added*, never replaced. The result is the surface. |
+
+The masking family (steps 1–4) operates on **range**; the
+shrinking family (step 5) operates on **content within a
+range**; the projection (step 6) operates on **category**.
+The three operate on different axes, so the order is
+naturally forced: range first (biggest area), then content
+within range, then category.
+
 ### Assemble (per-projection reshape)
 
 `assemble(surface, projection, last_seen_seq?)` is the stage
