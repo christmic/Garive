@@ -337,7 +337,142 @@ A 10% regression on B1–B3 in CI blocks the PR. A leak on
 B4 in nightly opens a P1 issue and rolls back the last
 green commit.
 
-## See also
+## Token-economics benchmarks (the *token* dimension)
+
+The B-series measures **latency** (ms). This series measures
+**tokens** — the actual resource the model is paying for.
+`derive` doesn't just need to be fast; it needs to be
+**steady** and **honest** about what it costs. A 50 ms
+regression breaks the per-iteration budget; a 30 % token-count
+regression breaks the user's wallet.
+
+| Bench | Setup | Target | Tooling |
+|-------|-------|--------|---------|
+| **T1. Surface smoothness** | Run a long round (1k iterations, naturally growing). Measure `surface_token_count` at each iteration. | **Coefficient of variation < 0.15** — the curve is smooth, not sawtooth. A sawtooth pattern means every iteration the model has to reprocess the same context shape; the cache is thrashing. | `criterion` + custom metric |
+| **T2. LLM compression call rate** | Run a round of N iterations. Count how many `compaction.rewrite` rows land (i.e. how many times the LLM is called to summarise). | **Compression ratio ≥ 50:1** — at most 1 LLM summarisation call per 50 iterations. **Average interval ≥ 50 iterations** between calls. | Runtime counter + `criterion` |
+| **T3. Per-projection size ratios** | Given a fixed ledger, run `derive` under each projection. Compare `surface_token_count` of each. | **`GOVERNANCE_INPUT ≤ 0.2 × PROMPT_FOR_MODEL`**; **`SUMMARIZE_INPUT ≤ 0.3 × PROMPT_FOR_MODEL`**; **`FORK_BRANCH ≥ PROMPT_FOR_MODEL`** (full data); `AUDIT_REPLAY ≥ PROMPT_FOR_MODEL` (with metadata). Projections must show **strict ordering** for the governance / summary / mainline roles. | `criterion` + per-projection counter |
+| **T4. Token-counting error** | For a corpus of N=1000 random ledgers, compare `derive`'s estimated `surface_token_count` against the **provider's real tokenizer** (tiktoken for OpenAI, the provider's own for Anthropic). | **Mean absolute error ≤ 5%**; **p99 ≤ 15%**. A 5% miscount on a 10k surface is 500 tokens — a 500-token error makes the budget cut the wrong thing. | Reference tokeniser + custom metric |
+
+The four token-economics tests share a property: each one
+answers **"is the runtime honest with the user?"** A 10k
+surface that the runtime says is 8k but the model charges for
+12k is a trust violation; a 10k surface that's quoted as
+10k but is 9.2k in practice is a *useful* undercount. T4
+puts bounds on both.
+
+### T1 in detail — Surface smoothness
+
+The "sawtooth" failure mode is subtle: every iteration, the
+surface token count **jumps up**, then **drops sharply** as
+compression lands. The model is being asked to reprocess
+similar context shapes every cycle; the cache is partially
+broken by the variable prefix; the user is paying for
+re-tokens.
+
+```
+# sawtooth (bad)
+tokens
+  │   ╱╲     ╱╲     ╱╲
+  │  ╱  ╲   ╱  ╲   ╱  ╲
+  │ ╱    ╲ ╱    ╲ ╱    ╲
+  └───────────────────── iter
+     (CV > 0.3)
+
+# smooth (good)
+tokens
+  │       ╱───
+  │     ╱
+  │   ╱
+  │ ╱
+  └───────────────────── iter
+     (CV < 0.15)
+```
+
+The metric is the **coefficient of variation** (stddev / mean)
+of `surface_token_count` over the iterations, excluding the
+warm-up window (the first 50 iterations). CV < 0.15 is the
+target; > 0.30 is a failure. The bench also reports the
+**autocorrelation** of the time series at lag 1: a sawtooth
+has high positive autocorrelation at lag 1; a smooth ramp has
+low. The two metrics together distinguish "noisy" from
+"sawtoothy".
+
+### T2 in detail — Compression call rate
+
+`compaction.rewrite` is the *only* instruction that requires
+an **LLM call** (to summarise the prefix). Every other
+instruction is a pure ledger operation. The compression call
+rate is therefore **the user's bill for the cost of context
+management**.
+
+The metric is **iterations per compression call** (the higher,
+the better). A well-tuned `derive` should rarely need to call
+the LLM for summarisation; the tier policy + sticky demotion
++ targeted compaction should be enough. The target is at
+least 50 iterations per call. A regression that drops below
+20 means the runtime is calling the LLM every model turn —
+that's a 50× cost spike, and the user will notice.
+
+The bench also records **which** entries forced the
+compression (which kinds were too large to fit), so the
+**cause** of the spike is in the report. A regression to T2
+should ship with a diff in `derive` (a new policy, a tighter
+tier boundary) and a snapshot of the new compression call
+frequency.
+
+### T3 in detail — Per-projection size ratios
+
+The five projections are **not the same view**. The
+bench asserts that they have **strictly ordered** sizes:
+
+```
+PROMPT_FOR_MODEL    ████████████████████████  100% (the full model view)
+FORK_BRANCH         ███████████████████████   ≥ 100% (with branch tree)
+AUDIT_REPLAY        ████████████████████████  ≥ 100% (with metadata)
+SUMMARIZE_INPUT     ███████                    ≤ 30% (prefix only)
+GOVERNANCE_INPUT   ████                       ≤ 20% (intent + min ctx)
+```
+
+A failure here is a **semantic bug** — it means a projection
+that should be a focused view is accidentally returning the
+full surface, or vice versa. T3 is the cheapest way to catch
+a "GOVERNANCE_INPUT is exposing the whole conversation"
+regression (which would also blow the budget).
+
+### T4 in detail — Token-counting error
+
+`derive` reports `surface_token_count` so the loop can decide
+whether to truncate the tail (responsibility 4 of `assemble`).
+That number is **estimated** — `derive` doesn't actually call
+the provider's tokenizer. If the estimate is off, the
+budget gate either **truncates too much** (model loses useful
+context) or **too little** (the request fails with a 413
+from the provider).
+
+The bench runs 1000 random ledgers, computes both the
+estimate and the provider's real count, and asserts:
+
+- **Mean absolute error** ≤ 5 % — the runtime is "honest
+  enough" to make budget decisions.
+- **p99 error** ≤ 15 % — the worst-case estimate is still
+  usable (the runtime can fall back to "truncate hard" rather
+  than the gentle "drop tail" it normally does).
+
+A regression in T4 is a **trust violation** — the runtime is
+quietly wrong about how much the user is paying. T4 catches
+it.
+
+### Cadence
+
+| Bench | Cadence | Why |
+|-------|---------|-----|
+| T1, T3 | Per-PR | Cheap to run; catches day-to-day regressions |
+| T2, T4 | Nightly | T2 is per-round; T4 needs a corpus of 1000 ledgers |
+
+A regression on T1 or T3 in CI blocks the PR. A regression
+on T2 or T4 in nightly opens a P2 issue (it's a user-cost
+problem, not a correctness problem — the prompt still works,
+it just costs more).
 
 - `loop.md` "Derive in Detail (common path)" — the function
   being tested.
