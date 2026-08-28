@@ -470,6 +470,130 @@ Three properties of the delta fragment that
   on Resume. The provider-cache prefix is **stable across
   pause / resume cycles**.
 
+#### Harness de-dup (same-feature supersedes)
+
+Some `harness.*` kinds are **append-only by nature**: each
+emission is a fresh snapshot of the same logical thing.
+
+- `harness.feature{feature:"skills_catalog"}` — the runtime
+  re-emits the current skills catalog whenever it changes.
+  Over a long round, the ledger has N rows for the same
+  feature; the model only needs the **latest one**.
+- `harness.feature{feature:"env_snapshot"}` — environment
+  state (PATH, working dir, tool availability) is re-emitted
+  at meaningful changes. Same supersedes-older pattern.
+- `harness.feature{feature:"agents_md"}` — the project's
+  `AGENTS.md` content is re-emitted when it changes. Same
+  pattern.
+
+The default masking-instructions walk in `assemble` step 1
+does **not** cover this — masking operates on entry `seq`
+ranges, not on entry equivalence. So `assemble` adds a
+**same-feature dedup** pass after the kinds filter:
+
+```python
+def dedup_harness(body):
+    """Keep the latest entry per (kind, feature) pair.
+    Older entries still exist in the ledger (audit) but
+    are hidden from the surface."""
+    latest = {}
+    for e in body:
+        if e.kind.startswith('harness.'):
+            key = (e.kind, e.body.feature)  # feature is a top-level field
+            latest[key] = e                   # later seq wins
+    # split: harness rows go through 'latest' only; non-harness pass through
+    out = [latest[(e.kind, e.body.feature)]
+           if e.kind.startswith('harness.') else e
+           for e in body]
+    return out
+```
+
+Three properties:
+
+- **Old entries are not deleted.** The ledger preserves the
+  full history of `harness.feature` emissions. Audit sees
+  every snapshot. The next `memory_watermark` walk may
+  pick up the most recent of them as a long-term fact.
+- **Old entries are masked from the surface.** The
+  projection's view of the model is exactly one row per
+  `(kind, feature)` — the latest. The model's context is
+  not bloated by N copies of the same skills catalog.
+- **Deduplication is per `(kind, feature)`, not per
+  `body_hash`.** Two consecutive emissions of the
+  `skills_catalog` *with the same content* still result in
+  one row on the surface (one of them is shadowed). Two
+  emissions *with different content* result in the **newer**
+  one on the surface (the old is shadowed but kept).
+
+The masking-timeline walk in step 1 stays as-is — it operates
+on the masking-family entries (`compaction.rewrite`,
+`privacy.redact`, `session.undo`, `session.redo`,
+`branch.*`). The harness de-dup is a **separate pass**
+because it operates on equivalence (same `feature`), not on
+range (same `seq` span).
+
+#### Layout-aware assembly (U-shaped attention)
+
+The model has a known attention shape: **the head and tail
+of the prompt are strong; the middle is weak**. The classic
+"lost in the middle" finding. `assemble` exploits this by
+positioning content by its attention value, not just by
+its `seq` order.
+
+The default layout has three zones, in order:
+
+| Zone | Content | Why |
+|------|---------|-----|
+| **Head** (strong) | `pinned` block: `goal.*`, `system`, the latest `harness.feature` (skills catalog, env_snapshot, agents_md). The model's "frame" for the round. | Head of context is the most-attended; the frame belongs there. |
+| **Middle** (weak) | `seen` part (history of prior iterations), `compaction.summary` rows. The "boring middle" — the model knows about it but doesn't anchor on it. | The model's middle attention is weakest; this is where the volume goes. |
+| **Tail** (strong) | `new` part (delta since `last_seen_seq`), the most recent `tool.result`, the most recent `assistant.text`, anything the loop wants the model to *act on next*. | Tail of context is the second-most-attended; the actionable stuff belongs there. |
+
+The **default** layout is `[head | middle | tail]`. Other
+modes rearrange:
+
+| Mode | Layout | Use case |
+|------|--------|----------|
+| `default` | `[head | middle | tail]` | Normal rounds. |
+| `compact` | `[head | tail]` (no middle) | Long rounds where the middle is mostly summaries the model has already digested. Skips the attention valley. |
+| `audit` | `[head | middle | tail]` + every row's metadata (`provenance`, `wall_ts`, `pair_ref`) appended | `AUDIT_REPLAY` projection; not for model consumption. |
+| `governance` | `[head | relevant_intent]`, no middle, no tail | `GOVERNANCE_INPUT` projection; the judge sees only what it needs. |
+| `speculative` | `[head | tail_only]` | Round is about to call the model with **only the deltas**; the seen part is implicit (provider cache). For rounds where the middle is guaranteed to be a cache hit. |
+
+Layout mode is a parameter of `assemble`:
+
+```python
+def layout(body, mode='default'):
+    head, middle, tail = split_zones(body)
+    if mode == 'default':  return head + middle + tail
+    if mode == 'compact':  return head + tail
+    if mode == 'audit':    return head + middle + tail + audit_meta(body)
+    if mode == 'governance': return head + governance_intent_only(body)
+    if mode == 'speculative': return head + tail
+```
+
+The **head is always the same**: the pinned block + the
+latest `harness.feature`. Head content does not change
+between iterations (it's pinned / de-duped), so the
+**head position is provider-cache stable**. The **tail is
+appended to**, so the cache breaks at the tail (as the
+delta fragment contract expects). The **middle is the
+disposable zone** — if budget gets tight, that's where
+`assemble` cuts first.
+
+**Why this is constitutional:** the same
+append-only-and-stability rules that govern `derive` govern
+`assemble`'s layout. The head does not change bytes. The
+middle appends at its own boundary. The tail is the only
+truly-new bytes. The provider cache sees `[head]`
+unchanged across iterations (full hit), `[middle]`
+appended to (cache break at the new tail), `[tail]` freshly
+emitted (always new). With `compact` mode, the middle is
+omitted entirely — when the cache breaks at the new middle
+boundary, the new boundary is *the same* as a
+default-mode boundary (because the middle was already
+digestible). Prompt cache locality is preserved across mode
+switches within a round.
+
 #### What assemble does **not** do
 
 - It does **not** re-walk the ledger. `derive` does the
