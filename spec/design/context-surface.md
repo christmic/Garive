@@ -35,6 +35,7 @@ ContextRequest {
   turn_id,
   purpose,
   after_position,
+  through_position,
   max_items,
   max_utf8_bytes,
 }
@@ -43,6 +44,8 @@ ContextRequest {
 - identities are non-empty;
 - `max_items` and `max_utf8_bytes` are non-zero;
 - `after_position` is an exclusive lower bound when present;
+- `through_position` is non-zero and is greater than `after_position` when the
+  latter is present;
 - the request contains no SQL, provider model or transport values.
 
 UTF-8 byte length is the C2 cross-language budget. It is not a token estimate.
@@ -55,6 +58,9 @@ Input candidates must be strictly increasing by `DurablePosition` and unique.
 A candidate at or below `after_position` is ignored and reported as filtered.
 Malformed order, duplicate reference, empty required content or an unknown kind
 fails the derivation; C2 never silently repairs storage order.
+Any supplied candidate beyond the frozen `through_position`, or belonging to a
+different Session, is a port/invariant failure rather than concurrent data C2
+may ignore.
 
 Purpose filtering occurs before budgeting:
 
@@ -62,6 +68,11 @@ Purpose filtering occurs before budgeting:
 - purpose-limited content is eligible only for a named purpose;
 - `Redacted` emits a reference-only `RedactedItem` and never exposes the old
   content or redaction reason to the model.
+
+A `RedactedItem` consumes one item and zero content bytes. For an ordinary
+`ModelInputItem`, UTF-8 cost is the sum of every string payload field, excluding
+enum tags and collection structure; an opaque JSON string therefore includes
+its own punctuation bytes. A custom `MediaKind.Other` name is a payload field.
 
 The result records filtered references so Runtime can explain omissions without
 placing hidden content in the model surface.
@@ -79,6 +90,8 @@ placing hidden content in the model surface.
    when all its items fit both remaining limits. A candidate is atomic.
 8. Sort admitted candidates back into ascending durable order.
 9. Return admitted items, retained/dropped/filtered references and exact totals.
+
+All reference lists are returned in ascending durable-position order.
 
 Skipping one oversized optional candidate does not stop examination of older,
 smaller candidates. The complete dropped-reference list makes this behavior
@@ -103,6 +116,8 @@ ContextSurface {
 Items retain their candidate and intra-candidate order. Empty surfaces are
 valid only when no required candidate was eligible. The surface is immutable
 and does not carry raw ledger rows.
+`from_position` is one when `after_position` is absent, otherwise
+`after_position + 1`; `through_position` is copied from the frozen request.
 
 ## Minimal ledger read port
 
