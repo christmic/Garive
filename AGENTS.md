@@ -50,5 +50,4 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 @.agents/git-workflow.md
 @.agents/conventions.md
 @.agents/ddd.md
-@.agents/memory-flush.md
 @.agents/architecture.md
