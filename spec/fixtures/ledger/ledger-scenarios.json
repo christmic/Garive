@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "contract": "durable-ledger",
+  "cases": [
+    {
+      "name": "contiguous-append-and-fixed-read",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}]}},
+        {"commit": {"expected": 1, "facts": [{"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},
+        {"read": {"after": 0, "through": 2}}
+      ],
+      "expected": {"results": ["committed:1:1-2", "committed:2:3-3", "read:session.opened,turn.started"], "version": 2, "fact_count": 3, "uncertain": []}
+    },
+    {
+      "name": "optimistic-version-conflict-is-atomic",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}]}},
+        {"commit": {"expected": 0, "facts": [{"id": "f2", "kind": "privacy.redacted"}]}}
+      ],
+      "expected": {"results": ["committed:1:1-1", "error:concurrent-modification"], "version": 1, "fact_count": 1, "uncertain": []}
+    },
+    {
+      "name": "idempotent-replay-and-collision",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened", "payload": {"value": 1}}]}},
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened", "payload": {"value": 1}}]}},
+        {"commit": {"expected": 1, "facts": [{"id": "f1", "kind": "session.opened", "payload": {"value": 2}}]}}
+      ],
+      "expected": {"results": ["committed:1:1-1", "replayed:1:1-1", "error:idempotency-collision"], "version": 1, "fact_count": 1, "uncertain": []}
+    },
+    {
+      "name": "suspension-opens-new-execution",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},
+        {"commit": {"expected": 1, "facts": [{"id": "f4", "kind": "execution.suspended", "turn": "t1", "execution": "e1"}, {"id": "f5", "kind": "turn.suspended", "turn": "t1"}]}},
+        {"commit": {"expected": 2, "facts": [{"id": "f6", "kind": "turn.started", "turn": "t1"}, {"id": "f7", "kind": "execution.started", "turn": "t1", "execution": "e2"}]}}
+      ],
+      "expected": {"results": ["committed:1:1-3", "committed:2:4-5", "committed:3:6-7"], "version": 3, "fact_count": 7, "uncertain": []}
+    },
+    {
+      "name": "terminal-turn-is-immutable",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "turn.completed", "turn": "t1"}]}},
+        {"commit": {"expected": 1, "facts": [{"id": "f4", "kind": "turn.started", "turn": "t1"}]}}
+      ],
+      "expected": {"results": ["committed:1:1-3", "error:invalid-transition"], "version": 1, "fact_count": 3, "uncertain": []}
+    },
+    {
+      "name": "model-lifecycle-reaches-terminal",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}, {"id": "f4", "kind": "model.prepared", "turn": "t1", "execution": "e1", "request": "r1"}, {"id": "f5", "kind": "model.started", "turn": "t1", "execution": "e1", "request": "r1"}, {"id": "f6", "kind": "model.completed", "turn": "t1", "execution": "e1", "request": "r1"}]}}
+      ],
+      "expected": {"results": ["committed:1:1-6"], "version": 1, "fact_count": 6, "uncertain": []}
+    },
+    {
+      "name": "started-model-is-uncertain",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}, {"id": "f4", "kind": "model.prepared", "turn": "t1", "execution": "e1", "request": "r1"}, {"id": "f5", "kind": "model.started", "turn": "t1", "execution": "e1", "request": "r1"}]}}
+      ],
+      "expected": {"results": ["committed:1:1-5"], "version": 1, "fact_count": 5, "uncertain": ["r1"]}
+    },
+    {
+      "name": "multi-fact-transition-rolls-back",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},
+        {"commit": {"expected": 1, "facts": [{"id": "f4", "kind": "execution.completed", "turn": "t1", "execution": "e1"}, {"id": "f5", "kind": "execution.failed", "turn": "t1", "execution": "e1"}]}}
+      ],
+      "expected": {"results": ["committed:1:1-3", "error:invalid-transition"], "version": 1, "fact_count": 3, "uncertain": []}
+    },
+    {
+      "name": "unknown-kind-preserved-and-corruption-rejected",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "future.opaque", "payload": {"z": [2, 1], "a": "蟹"}}]}},
+        {"verify_corrupt": {"position": 2}}
+      ],
+      "expected": {"results": ["committed:1:1-2", "error:digest-mismatch"], "version": 1, "fact_count": 2, "uncertain": []}
+    }
+  ]
+}

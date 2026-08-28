@@ -58,6 +58,15 @@ contract-declared canonical representation and binds idempotency. Unknown fact
 kinds/schema versions remain readable as opaque audit facts but are not applied
 to a projection without an admitted decoder.
 
+Canonical payload version 1 accepts JSON null, booleans, strings, arrays,
+objects and integer numbers representable as signed or unsigned 64-bit values.
+It rejects floating-point/exponent values and duplicate object keys. Objects
+are recursively sorted by Unicode scalar-value key order, insignificant
+whitespace is removed, arrays retain order, and strings use the platform JSON
+encoder's minimal escapes. The SHA-256 digest is lowercase hexadecimal over
+the resulting UTF-8 bytes. A future numeric surface requires a new canonical
+payload version rather than language-native floating-point formatting.
+
 ## Fact kinds
 
 The first admitted vocabulary is:
@@ -84,6 +93,8 @@ Open -> Suspended -> Open ... -> Completed | Stopped | Failed
 
 `Suspended` keeps the durable Turn resumable. A terminal Turn cannot return to
 Open. Product retry after `Stopped`/`Failed` creates a new Turn.
+`turn.started` creates an absent Turn or reopens the same Turn from Suspended;
+the following `execution.started` must carry a new Execution identity.
 
 ### Execution
 
