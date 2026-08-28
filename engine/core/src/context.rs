@@ -3,104 +3,170 @@ use std::collections::BTreeSet;
 use garive_llm::{MediaKind, ModelInputContent, ModelInputItem};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// Consumer-specific reason for deriving a bounded context surface.
 pub enum ContextPurpose {
+    /// Input for a model inference request.
     Inference,
+    /// Evidence for policy, authorization, or safety decisions.
     Governance,
+    /// Input needed to prepare a tool invocation.
     ToolPreparation,
+    /// Input used to build a durable summary.
     Summarization,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Semantic class of a ledger fact considered for context.
 pub enum CandidateKind {
+    /// Trusted instruction that constrains the agent.
     Instruction,
+    /// User-provided input.
     UserInput,
+    /// Prior model output.
     ModelOutput,
+    /// Observation returned by a tool.
     ToolObservation,
+    /// Approval or denial decision.
     Approval,
+    /// Durable summary derived from earlier facts.
     Summary,
+    /// System-generated operational notice.
     SystemNotice,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Whether a candidate may be dropped to satisfy a budget.
 pub enum Retention {
+    /// The candidate must fit or derivation fails.
     Required,
+    /// The candidate may be dropped, oldest first, when budgets are tight.
     Optional,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Purpose-based disclosure rule applied before budgeting.
 pub enum Visibility {
+    /// Include the candidate's model input items.
     Visible,
+    /// Preserve the fact reference but replace its content with a redaction.
     Redacted,
+    /// Include content only for the listed purposes.
     Purposes(BTreeSet<ContextPurpose>),
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// Stable reference to one ordered fact in a session ledger.
 pub struct FactRef {
+    /// Session that owns the fact.
     pub session_id: String,
+    /// One-based durable position within the session.
     pub position: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Validated input candidate presented to the pure derivation algorithm.
 pub struct ContextCandidate {
+    /// Durable identity and ordering key of the source fact.
     pub fact_ref: FactRef,
+    /// Semantic fact class used by callers and audit evidence.
     pub kind: CandidateKind,
+    /// Budget retention rule.
     pub retention: Retention,
+    /// Purpose-specific disclosure rule.
     pub visibility: Visibility,
+    /// Model input items contributed when visible.
     pub items: Vec<ModelInputItem>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Bounds and ledger window for one deterministic context derivation.
 pub struct ContextRequest {
+    /// Session whose facts may enter the surface.
     pub session_id: String,
+    /// Turn requesting context; required for traceability.
     pub turn_id: String,
+    /// Consumer purpose used for visibility filtering.
     pub purpose: ContextPurpose,
+    /// Exclusive lower fact position, if deriving an incremental surface.
     pub after_position: Option<u64>,
+    /// Inclusive upper fact position captured for this derivation.
     pub through_position: u64,
+    /// Maximum number of output items, including redaction placeholders.
     pub max_items: usize,
+    /// Maximum UTF-8 bytes across visible model input fields.
     pub max_utf8_bytes: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// One auditable item emitted in a derived context surface.
 pub enum ContextItem {
+    /// Visible model input tied to its originating fact.
     Input {
+        /// Source ledger fact.
         fact_ref: FactRef,
+        /// Model input content copied from the candidate.
         item: ModelInputItem,
     },
+    /// Placeholder proving that a fact existed but was redacted.
     RedactedItem {
+        /// Source ledger fact whose content was withheld.
         fact_ref: FactRef,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Deterministic, bounded projection supplied to a context consumer.
 pub struct ContextSurface {
+    /// Purpose under which visibility was evaluated.
     pub purpose: ContextPurpose,
+    /// Inclusive lower position represented by the request window.
     pub from_position: u64,
+    /// Inclusive upper position captured by the request.
     pub through_position: u64,
+    /// Visible inputs and redaction placeholders in ledger order.
     pub items: Vec<ContextItem>,
+    /// Candidate references retained in the output.
     pub retained_refs: Vec<FactRef>,
+    /// Eligible optional references dropped for budget pressure.
     pub dropped_refs: Vec<FactRef>,
+    /// References excluded by window or visibility rules.
     pub filtered_refs: Vec<FactRef>,
+    /// Number of emitted items.
     pub item_count: usize,
+    /// UTF-8 bytes charged against the content budget.
     pub utf8_bytes: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Contract violation or bounded-derivation failure.
 pub enum ContextDerivationError {
+    /// Request identifiers, bounds, or budgets are invalid.
     InvalidRequest,
+    /// A candidate belongs to a different session.
     SessionMismatch,
+    /// A candidate position is zero or beyond the captured surface.
     PositionBeyondSurface,
+    /// Candidate positions are not strictly increasing.
     NonIncreasingPosition,
+    /// Two adjacent ordered candidates reference the same fact position.
     DuplicateReference,
+    /// A required visible candidate contributes no usable content.
     EmptyRequiredContent,
+    /// A purpose-restricted visibility rule names no purpose.
     InvalidVisibility,
+    /// Internal checked arithmetic detected a size overflow.
     BudgetOverflow,
+    /// Required candidates alone exceed a declared request budget.
     RequiredFactsExceedBudget {
+        /// Required output item count.
         item_count: usize,
+        /// Required visible UTF-8 byte count.
         utf8_bytes: usize,
     },
 }
 
 impl ContextDerivationError {
+    /// Returns the stable machine-readable error code used by fixtures and adapters.
     pub const fn code(&self) -> &'static str {
         match self {
             Self::InvalidRequest => "invalid-request",
@@ -123,6 +189,11 @@ struct Eligible<'a> {
     redacted: bool,
 }
 
+/// Derives a deterministic surface without reading or mutating external state.
+///
+/// Candidates must be in strictly increasing ledger order. Visibility filtering
+/// occurs before budgeting; required candidates are always retained, while the
+/// newest optional candidates are retained until either budget is exhausted.
 pub fn derive_context(
     request: &ContextRequest,
     candidates: &[ContextCandidate],
