@@ -24,18 +24,18 @@ Five-step algorithm, run at the end of each `derive`:
 2. find anchor: most recent model.usage with same model_id
 3. projection = anchor.send_true + E_now - anchor.receipt.heuristic
 4. if projection > trigger_ratio × window_size:  compress
-5. on return: append model.usage; update EWMA calibration;
-            flag overserved_max if 413
+5. on return: Runtime appends normalized usage and calibration evidence;
+              verified overflow signals update per-model limit evidence
 ```
 
 Four adaptive layers stacked on top:
 
 | Layer | What it does | Tunable? |
 |-------|-------------|----------|
-| **Mathematical** | Projection formula + trigger structure | No — hard-coded contract |
+| **Mathematical** | Projection formula + trigger structure | Versioned policy |
 | **Self-learning** | EWMA calibration ratio = actual / estimated | Per-round automatic |
-| **Overflow** | `overserved_max` from provider 413s | Auto-recorded, TTL |
-| **Configuration** | `trigger_ratio` (default 0.85), `min_preserve` | Runtime config |
+| **Overflow** | verified per-provider/model limit evidence | Recorded with provenance and expiry |
+| **Configuration** | trigger ratio, preserved headroom, calibration policy | Runtime config |
 
 ## Why this design
 
@@ -55,8 +55,8 @@ Three failure modes the design defends against:
 2. **Provider ceiling false advertising** — a provider
    advertises a 200k window but rejects at 195k. The trigger
    must use the *real* ceiling, not the advertised one.
-   `overserved_max` records the real ceiling from the first
-   413.
+   verified overflow evidence can reduce the effective ceiling. One failure
+   does not by itself prove an exact model limit.
 3. **Tuning drift across rounds** — a fixed `trigger_ratio`
    can't adapt to a changing mix of long vs short rounds. The
    EWMA calibration ratio lets the **estimate** get better
@@ -96,7 +96,7 @@ degraded mode of the anchor path.
 
 ```
 projection =
-    anchor.send_true_count       # provider billed, post-cache
+    anchor.normalized_input_count # context contribution, not billing cost
   + E_now                        # this round, heuristic
   - anchor.receipt.heuristic     # last round, heuristic
 ```
@@ -119,16 +119,14 @@ Where `effective_window` is:
 ```
 effective_window = min(
     configured_window_size,            # model spec, e.g. 200k
-    overserved_max × overserved_max_ratio  # 0.95 — provider real ceiling
+    observed_limit × safety_ratio          # scoped limit evidence
 )
 ```
 
-The trigger fires when the projection is `trigger_ratio`
-(default **85 %**) of the effective window — leaves 15 % as
-headroom for the model's reply + tool calls + assembly
-overhead. `overserved_max` shrinks the effective window
-when the provider's real ceiling is lower than the
-advertised one.
+The trigger fires when the projection reaches a configured fraction of the
+effective window, leaving measured headroom for output, tool calls, and
+assembly overhead. Scoped limit evidence shrinks the effective window when a
+verified adapter outcome indicates a lower accepted limit than configured.
 
 ### Step 5 — record + learn
 
@@ -136,14 +134,15 @@ After the model call returns:
 
 1. Append a `model.usage` row with `tokens`, `model_id`,
    `model_reported`, `ref → loop.receipt`.
-2. Update the **EWMA calibration ratio**:
+2. Runtime's accounting/calibration component updates the **EWMA calibration
+   ratio** after the call. `derive` only reads an immutable calibration snapshot:
    ```
    calibration_ratio =
        0.9 × calibration_ratio            # old
      + 0.1 × (actual / estimated)         # new round
    ```
-3. If the provider returned **413**, record the request's
-   actual byte size as `overserved_max`.
+3. If the adapter returns a verified `Overflow`, record the normalized input
+   size, provider/model identity, raw classification evidence, and expiry.
 
 The calibration ratio is what `derive` uses to convert
 heuristic estimates into better estimates:
@@ -157,30 +156,26 @@ over time, automatically.
 
 ## The 4-layer adaptation
 
-### Layer 1 — Mathematical (hard-coded contract)
+### Layer 1 — Mathematical (versioned policy)
 
-- The projection formula (anchor + delta + trigger) is
-  **math**.
-- The shape is the contract; the coefficients are
-  documented but not user-configurable in this layer.
-- A test asserts the formula byte-for-byte; a regression
-  here is a P0.
+- The projection formula is a versioned policy with property tests around
+  monotonicity and safety margins.
+- Coefficients are hypotheses until workload evidence promotes them to gates.
 
 ### Layer 2 — Self-learning (EWMA calibration)
 
 ```
-EWMA_alpha = 0.1   # constitutional default
+EWMA_alpha = configured_alpha
 calibration_ratio[t+1] =
     (1 - alpha) × calibration_ratio[t]
   +     alpha  × (actual[t] / estimated[t])
 ```
 
 The ratio converges over many rounds; one outlier doesn't
-move it. The convergence rate is the constitutional
-`EWMA_alpha` (0.1 = slow but stable).
+move it. The initial convergence rate is provisional and must be measured.
 
-The **calibration_ratio** is stored in `state` per-round
-and re-used by `derive`'s estimator:
+The **calibration_ratio** is persisted by Runtime as calibration evidence and
+passed to `derive` as part of its immutable input:
 
 ```
 E_now_corrected = E_now_heuristic × calibration_ratio
@@ -188,33 +183,31 @@ E_now_corrected = E_now_heuristic × calibration_ratio
 
 ### Layer 3 — Overflow (`overserved_max`)
 
-A provider **413** (request too large) is a signal that
-the runtime asked for more than the model can deliver. The
-runtime records the request's actual size:
+A verified provider-specific overflow outcome is evidence that the submitted
+context exceeded an accepted limit under that request shape. Runtime records
+the normalized input size and its provenance:
 
 ```
 overserved_max = request_size × overserved_ratio   # default 0.95
 ```
 
-`overserved_max` is **per-model-id** and TTL'd (default 7
-days). After 7 days without a new 413, the runtime falls
-back to the configured window size. `overserved_max` is
-the runtime **trusting the provider's hard ceiling over
-the configured window size**.
+The evidence is scoped at least by provider, model, endpoint/request shape,
+and policy version. Expiry and safety margin are configuration hypotheses;
+after expiry Runtime falls back to its configured model capability.
 
 ### Layer 4 — Configuration (runtime-tunable knobs)
 
 | Knob | Default | Meaning |
 |------|---------|---------|
-| `trigger_ratio` | 0.85 | Compress when projection reaches 85 % of effective window. |
+| `trigger_ratio` | provisional | Compress when projection reaches this fraction of the effective window. |
 | `min_preserve` | model-specific | Minimum headroom preserved after compression. |
-| `EWMA_alpha` | 0.1 | Calibration learning rate. |
-| `overserved_ratio` | 0.95 | Trust margin on provider's reported 413 size. |
-| `overserved_max_ttl` | 7 days | How long `overserved_max` is remembered. |
+| `EWMA_alpha` | provisional | Calibration learning rate. |
+| `overserved_ratio` | provisional | Safety margin applied to verified overflow evidence. |
+| `overserved_max_ttl` | provisional | How long provider/model limit evidence is remembered. |
 
-All knobs are **runtime-tunable**. Constitutional defaults
-are documented here; the runtime can change them at startup
-or per-session.
+All knobs are Runtime policy. Initial values belong in configuration and must
+be accompanied by benchmarks or production observations before becoming
+release gates.
 
 ## Worked example — a case study (anchor vs no-anchor)
 
@@ -234,7 +227,7 @@ derive → E_now = 92k                       # heuristic
 anchor: none                               # first round
 projection = E_now = 92k                  # pure fallback
 trigger  : 92k < 170k                     # don't compress
-call:    input reported = 88k              # provider billed
+call:    normalized input reported = 88k   # context accounting
          assembly count = 87.5k            # real tokeniser
 record:  model.usage{tokens.in = 88k,
                        sent_true = 87.5k,
@@ -274,17 +267,15 @@ trigger holds until the **real** budget is reached.
 **One day** (provider's advertised window is wrong):
 
 ```
-A request for 195k tokens is rejected with 413.
+A request for 195k normalized tokens receives a provider-specific signal that
+the adapter classifies as `Overflow`.
 overserved_max  = 195k × 0.95 = 185.25k
 effective_window = min(200k, 185.25k) = 185.25k
 trigger        = 185.25k × 0.85 = 157.5k
 
-The trigger automatically becomes 157.5k instead of 170k —
-the runtime **trusts the provider's real ceiling over the
-configured window size**. Self-healing; no human in the
-loop. The `overserved_max` TTLs after 7 days; if the
-provider's behaviour normalises, the runtime relaxes back
-to the configured window.
+The example tightens the trigger from 170k to 157.5k. In a real policy, the
+evidence is scoped, carries a configured margin, and expires; the values above
+are illustrative rather than defaults.
 ```
 
 The four layers work in concert:
@@ -305,8 +296,8 @@ Each round appends a `model.usage` row:
 ```python
 class ModelUsage:
     tokens:         Tokens              # in / out / cache_read / cache_write / total
-    model_reported: bool                # true = provider billed, false = client estimated
-    model_id:       string              # the model that produced the bill
+    model_reported: bool                # provider-reported vs locally estimated
+    model_id:       string              # model used for the request
     ref:            {session, uid}      # → loop.receipt entry for this round
     calibration:    float               # EWMA at the moment of this round
     heuristic:      int                 # what derive estimated (for delta math)
@@ -334,7 +325,7 @@ SELECT r.notes AS saw,
 
 | Failure | Layer that catches it | Recovery |
 |---------|----------------------|----------|
-| Provider's advertised window is wrong | **Overflow** (`overserved_max`) | 413 → record real ceiling → trigger auto-tightens |
+| Provider rejects the submitted context as too large | **Overflow evidence** | Normalize the provider-specific signal, record scoped evidence, and tighten conservatively |
 | Estimator drifts over many rounds | **Self-learning** (EWMA) | Ratio converges; trigger stops firing prematurely |
 | First round / model swap | **Mathematical fallback** | No anchor → pure `E_now`; the next round gets a fresh anchor |
 | Calibration ratio out-of-bounds (e.g. 2.0) | **Self-learning alert** | Ratio clamped at runtime; out-of-bounds value recorded in `ops_log` |
@@ -345,17 +336,17 @@ SELECT r.notes AS saw,
 These are open for later iteration; the design above
 **records** them but does not commit to a choice:
 
-- **P1. EWMA alpha** — default 0.1. The right value depends on
+- **P1. EWMA alpha** — an initial candidate is 0.1. The right value depends on
   how stable the provider is; a noisy provider wants a
   smaller alpha (slower convergence, smoother), a stable
   provider wants a larger alpha (faster convergence, less
   memory). *Resolution deferred.*
-- **P2. `overserved_ratio`** — default 0.95. Trust margin on
-  the provider's 413 size. A more conservative margin (e.g.
+- **P2. `overserved_ratio`** — an initial candidate is 0.95. Safety margin on
+  verified overflow evidence. A more conservative margin (e.g.
   0.85) is safer but compresses earlier. *Resolution deferred.*
-- **P3. `overserved_max_ttl`** — default 7 days. How long to
-  trust a single 413. A flaky provider's 413 might be a
-  transient; long TTL gives time for the EWMA to re-converge.
+- **P3. `overserved_max_ttl`** — an initial candidate is 7 days. How long to
+  trust limit evidence. A provider classification or capability can change;
+  expiry prevents stale evidence from becoming permanent truth.
   *Resolution deferred.*
 - **P4. Anchor selection at multi-model boundaries** — when a
   single round emits multiple `model.usage` rows (e.g. router
@@ -387,9 +378,9 @@ skeleton rewrites.**
 | # | Change | Lands in | Skeleton touched? |
 |---|--------|-----------|-------------------|
 | **1. Receipt writing + ledger append** | `derive` returns `(surface, receipt)`; the loop already appends `loop.receipt` to the ledger via the existing `append` machinery | `derive` signature + the loop's existing `append` step | **No** — the receipt is just another entry the loop appends |
-| **2. Anchor accounting (projection / EWMA)** | `derive` reads the previous round's `model.usage` from the ledger; computes `projection`; updates the EWMA calibration | `derive` reads from `ledger.usage` table | **No** — ledger port already exposes usage; `derive` is the consumer |
+| **2. Anchor accounting (projection / EWMA)** | Runtime reads normalized prior usage, updates calibration after a call, and supplies a snapshot; `derive` computes a projection without writes | Runtime accounting + derive input | **No** — ownership follows the existing Runtime/Agent boundary |
 | **3. Anchor source (read prior round)** | The previous round's `model.usage` is the **anchor**; `derive` reads it via the ledger port | `ledger.usage` port + `derive` reads | **No** — pure read |
-| **4. observed_max learning** | The model adapter recognises the **413** response; records `overserved_max` on the error entry | `model` adapter | **No** — error entries already flow through `append` |
+| **4. observed-limit learning** | The adapter classifies provider-specific overflow; Runtime records scoped evidence | provider adapter + Runtime accounting | **No** — classified outcomes already flow through Runtime |
 | **5. Provider cache marker** | The provider adapter writes the `cache_control` marker on the byte-stable prefix; `assemble` asserts byte stability | `assemble` + provider adapter | **No** — assemble already knows prefix bytes from `derive` |
 
 ### The "onion" picture
@@ -406,14 +397,14 @@ skeleton rewrites.**
          ├── derive 6-step pipeline   (unchanged)
          ├── read prior usage         (3)
          ├── compute projection       (2)
-         ├── compute EWMA             (2)
+         ├── read calibration snapshot (2)
          ├── return (surface, receipt) (1)
        ───────────────────────────
        assemble                        (zero changes here)
        ───────────────────────────
        model adapter
          ├── assemble output → POST
-         ├── detect 413               (4)
+         ├── classify overflow signal (4)
          └── emit overserved_max      (4)
        ───────────────────────────
        ledger port
@@ -436,8 +427,8 @@ The onion absorbs the change because each layer's
   reading the anchor is one method call (`ledger.usage.latest(model_id)`).
 - **`append` is append-only**; a new kind (`model.usage`,
   `loop.receipt`) is one more entry — no schema migration.
-- **`model` adapter** already handles error responses; a 413
-  path is one more branch.
+- **`model` adapter** already normalizes provider responses; overflow is a
+  provider-specific classification, not a universal HTTP branch.
 - **`assemble` already knows** the byte-stable prefix from
   `derive`'s split-at-`last_seen_seq`; the provider marker
   is one more write.
@@ -471,9 +462,9 @@ right to begin with.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
+- Last reviewed: 2026-08-29
 - Status: **draft (possible mechanism)** — the 5-step
-  algorithm and the 4-layer adaptation are settled; the
+  algorithm and the 4-layer adaptation are working hypotheses; the
   EWMA alpha, the trust margin, the TTL, and the anchor
   selection policy are placeholders that land with the
   slice. No final code.
