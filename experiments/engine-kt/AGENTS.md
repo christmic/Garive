@@ -149,3 +149,21 @@ Run `gradle wrapper` once in `engine-kt/` to generate
   one without the other.
 - ❌ Don't reintroduce an `engine/` or `runtime/` intermediate
   directory. Each Gradle module sits directly under `engine-kt/`.
+
+## Testing
+
+This tier follows the test pyramid in `.agents/testing.md`.
+For `engine-kt/`, the relevant layers:
+
+| Layer | Where | What |
+|-------|-------|------|
+| Static | per module | `ktlint`, `detekt` |
+| Unit | `engine-kt/<module>/src/test/kotlin/` | one test per behaviour; TDD-first |
+| Property | `engine-kt/<module>/src/test/kotlin/` | `kotest-property` for aggregate invariants |
+| Integration | `engine-kt/<module>/src/test-integration/kotlin/` + `tests/integration/` | multi-module flows |
+| Contract | `engine-kt/proto/src/test/` | round-trip every `.proto` message |
+| Cross-language | driven from `just conformance` (Rust ↔ Kotlin) | sync lock |
+
+Add a fuzz target in `engine-kt/proto/fuzz/` per message.
+Same contract as the Rust side: every wire message has a fuzz
+target, full stop.

@@ -46,3 +46,23 @@ structs are forbidden.
 - Trace IDs propagate from gateway to replica via request
   metadata; both tiers emit the same trace ID on every log line
   that touches the request.
+
+## Testing
+
+This tier follows the test pyramid in `.agents/testing.md`.
+For `runtime/`:
+
+| Layer | Where | What |
+|-------|-------|------|
+| Static (Rust) | `runtime/replica/` | `cargo fmt --check`, `cargo clippy -- -D warnings` |
+| Static (Go) | `runtime/gateway/` | `gofmt -l`, `go vet ./...`, `golangci-lint run` |
+| Unit (Rust) | `runtime/replica/src/...` | TDD-first |
+| Unit (Go) | `runtime/gateway/*_test.go` | built-in `testing` + `testing/quickcheck` |
+| Property (Go) | `runtime/gateway/property_*_test.go` | `testing.F` for decoder robustness |
+| Integration | `runtime/gateway/*_integration_test.go` | real wire over `127.0.0.1` |
+| Contract | round-trip the generated Go bindings for every `.proto` message |
+| E2E | `tests/e2e/replica+gateway/` | replica + gateway + smoke load |
+
+The gateway is the most exposed tier; fuzz the request parser
+religiously. The replica is the most stateful tier; integration
+tests live with it.

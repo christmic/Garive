@@ -100,3 +100,21 @@ configuration.
   the generated bindings.
 - ❌ Don't skip `just conformance` before committing to
   `shared/`.
+
+## Testing
+
+This tier follows the test pyramid in `.agents/testing.md`.
+For `mobile/`:
+
+| Layer | Where | What |
+|-------|-------|------|
+| Static | per module | `ktlint`, `detekt` (KMP shared + Android); ESLint / `tsc --noEmit` not applicable here |
+| Unit | `mobile/shared/src/commonTest/`, `mobile/androidApp/src/test/`, `mobile/iosApp/` XCTests | TDD-first |
+| Property | `mobile/shared/src/commonTest/` | `kotest-property` |
+| Integration | `mobile/shared/src/test-integration/kotlin/` | shared-module flows |
+| Contract | `mobile/shared/src/test/...` | round-trip every consumed `.proto` message |
+| E2E | `mobile/androidApp/` (Espresso) + `mobile/iosApp/` (XCUITest) | platform-native UI tests; CI on a real device farm |
+
+The shared KMP module is where cross-language conformance runs
+(Kotlin side). The platform UI tests live with the platform,
+not with shared.

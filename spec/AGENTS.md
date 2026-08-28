@@ -55,3 +55,18 @@
 - An empty `diff -u` output is the gate. Empty diff = sync held.
 - If conformance fails, fix the implementation; do not edit the
   fixture to make the diff go away.
+
+## Testing
+
+This tier is the **source of truth** for several test layers
+(per `.agents/testing.md`):
+
+| Layer | What lives here |
+|-------|-----------------|
+| Contract | `spec/proto/*.proto` is the schema. Round-trip tests in `engine/proto/tests/`, `engine-kt/proto/src/test/`, `runtime/gateway/*_test.go`. |
+| Cross-language | `spec/fixtures/*.json` drives `just conformance`. Both languages read the same fixtures; empty diff is the gate. |
+| Property / Fuzz | Schema-driven fuzz targets (one per message) in `engine/proto/fuzz/` + `engine-kt/proto/fuzz/`. |
+
+A change to `spec/proto/*.proto` MUST re-run Contract +
+Cross-language. CI fails if generated files drift from
+source.

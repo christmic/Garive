@@ -209,3 +209,21 @@ Services/` of the Tauri `.app`.
   webview.
 - ❌ Don't add a Rust crate under `desktop/macos-native/` —
   Swift / SwiftUI / Xcode only.
+
+## Testing
+
+This tier follows the test pyramid in `.agents/testing.md`.
+For `desktop/`:
+
+| Layer | Where | What |
+|-------|-------|------|
+| Static (Rust) | `desktop/backend/` | `cargo fmt --check`, `cargo clippy -- -D warnings` |
+| Static (TS) | `desktop/frontend/` | ESLint + `tsc --noEmit` |
+| Unit (Rust) | `desktop/backend/src/commands/` (per `#[tauri::command]`) | TDD-first per `.agents/ddd.md` |
+| Unit (TS) | `desktop/frontend/src/ipc/`, `state/`, `ui/` | component + state-store tests |
+| Integration (Rust) | `desktop/backend/tests/` | `#[tauri::test]` calling commands end-to-end inside the Tauri runtime |
+| E2E | `tests/e2e/desktop/` (Playwright against the built Tauri webview, or `tauri-driver`) | the app boots, IPC round-trips, native bridge works |
+
+`macos-native/` (SwiftUI) has its own XCUITest target per
+sub-project; tests live inside each sub-project's Xcode
+target.

@@ -60,3 +60,21 @@ Each crate in `engine/` must pass:
 - `cargo doc --no-deps -- -D warnings`
 
 A crate that fails any of these is not merge-ready.
+
+## Testing
+
+This tier follows the test pyramid in `.agents/testing.md`.
+For `engine/`, the relevant layers:
+
+| Layer | Where | What |
+|-------|-------|------|
+| Static | root + per crate | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` |
+| Unit | `engine/<crate>/tests/` | one test per behaviour; TDD-first per `.agents/ddd.md` |
+| Property | `engine/<crate>/tests/` | `proptest` for aggregate invariants |
+| Integration | `engine/<crate>/tests-integration/` + `tests/integration/` | multi-crate flows |
+| Contract | `engine/proto/tests/` | round-trip every `.proto` message |
+| Cross-language | `bench/conformance` (driven from `just conformance`) | Rust ↔ Kotlin sync lock |
+
+Add a fuzz target in `engine/proto/fuzz/` the moment a new
+message lands in `spec/proto/*.proto`. The contract: every
+wire message has a fuzz target, full stop.

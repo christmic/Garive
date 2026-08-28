@@ -284,4 +284,20 @@ bench/
 ```
 just bench                  # cargo run -p bench
 just conformance            # cargo run -p bench -- conformance
+
+## Testing
+
+This tier **is** the Agent / SWE test layer (layer 8 in
+`.agents/testing.md`). The other seven layers apply as
+follows:
+
+| Layer | Where |
+|-------|-------|
+| Static | `cargo fmt --check`, `cargo clippy -- -D warnings` on the bench crate |
+| Unit | `bench/src/lib.rs`, `runner.rs` etc. — the driver loop, the pool logic, the adapter dispatch |
+| Contract | round-trip the bench output JSON schema (`bench/tracking/`) on read |
+| Cross-language | `just conformance` (which `bench/conformance` participates in) |
+| Integration | `tests/integration/bench-*` — wiring the runner with a fake agent, fake env, fake eval |
+| E2E | `tests/e2e/bench-*` — full sweep with the smallest fixture subset on a self-hosted runner |
+| Agent / SWE | **the whole bench/** is layer 8 |
 ```
