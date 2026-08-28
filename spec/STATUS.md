@@ -31,7 +31,7 @@ planned without reopening a narrower completed row.
 | C0 | Execution identity and bounded control | accepted | accepted | partial | implemented | verified | active | Complete Rust API docs and enforce the API-doc gate. |
 | C1 | Model facts and outcomes | accepted | accepted | partial | implemented | verified | active | Complete Rust API docs and normalized error reference. |
 | C1b | Model request and stream contract | accepted | accepted | partial | implemented | verified | active | Complete Rust API docs and stream transition reference. |
-| C2 | Deterministic context derive | accepted | accepted | partial | implemented | partial | active | Close the instruction/visibility/budget coverage matrix and document every public value. |
+| C2 | Deterministic context derive | accepted | accepted | partial | implemented | verified | active | Document every public value and enforce the API-doc gate. |
 | C3 | Bounded model-only execution | accepted | accepted | partial | implemented | verified | active | Complete public port/outcome docs; retain the explicit no-tool boundary. |
 | C4 | Tool resolution and prepared calls | accepted | missing | missing | skeleton | missing | planned | Accept a focused Prepared Call/digest/replay Spec before implementation. |
 | C5 | Governed effects and observations | accepted | missing | missing | skeleton | missing | planned | Accept authorization, interaction, receipt, and uncertain-effect Specs. |

@@ -4,7 +4,7 @@ use garive_core::{
     derive_context, CandidateKind, ContextCandidate, ContextDerivationError, ContextItem,
     ContextPurpose, ContextRequest, FactRef, Retention, Visibility,
 };
-use garive_llm::{ModelInputContent, ModelInputItem, ModelRole};
+use garive_llm::{MediaKind, ModelInputContent, ModelInputItem, ModelRole};
 use serde_json::Value;
 
 fn fixture() -> Value {
@@ -48,6 +48,19 @@ fn visibility(value: &str) -> Visibility {
     }
 }
 
+fn kind(value: Option<&str>) -> CandidateKind {
+    match value.unwrap_or("user-input") {
+        "instruction" => CandidateKind::Instruction,
+        "user-input" => CandidateKind::UserInput,
+        "model-output" => CandidateKind::ModelOutput,
+        "tool-observation" => CandidateKind::ToolObservation,
+        "approval" => CandidateKind::Approval,
+        "summary" => CandidateKind::Summary,
+        "system-notice" => CandidateKind::SystemNotice,
+        other => panic!("unknown candidate kind: {other}"),
+    }
+}
+
 fn candidates(values: &Value) -> Vec<ContextCandidate> {
     values
         .as_array()
@@ -55,10 +68,10 @@ fn candidates(values: &Value) -> Vec<ContextCandidate> {
         .iter()
         .map(|value| ContextCandidate {
             fact_ref: FactRef {
-                session_id: "session-1".into(),
+                session_id: value["session"].as_str().unwrap_or("session-1").into(),
                 position: value["position"].as_u64().unwrap(),
             },
-            kind: CandidateKind::UserInput,
+            kind: kind(value["kind"].as_str()),
             retention: match value["retention"].as_str().unwrap() {
                 "required" => Retention::Required,
                 "optional" => Retention::Optional,
@@ -108,16 +121,29 @@ fn rendered_items(items: &[ContextItem]) -> Vec<String> {
 fn rust_consumes_every_context_case() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 9);
+    assert_eq!(cases.len(), 12);
     for case in cases {
+        let request = request(&case["request"]);
         let expected = &case["expected"];
-        let result = derive_context(&request(&case["request"]), &candidates(&case["candidates"]));
+        let result = derive_context(&request, &candidates(&case["candidates"]));
         if expected["status"] != "ok" {
             let error = result.unwrap_err();
             assert_eq!(error.code(), expected["status"], "{}", case["name"]);
             continue;
         }
         let surface = result.unwrap();
+        assert_eq!(surface.purpose, request.purpose, "{}", case["name"]);
+        assert_eq!(
+            surface.from_position,
+            request.after_position.unwrap_or(0) + 1,
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            surface.through_position, request.through_position,
+            "{}",
+            case["name"]
+        );
         assert_eq!(
             surface
                 .retained_refs
@@ -164,10 +190,126 @@ fn rust_consumes_every_context_case() {
 
 #[test]
 fn request_and_candidate_boundaries_fail_closed() {
-    let mut value = request(&fixture()["cases"][0]["request"]);
-    value.through_position = 0;
+    let base = request(&fixture()["cases"][0]["request"]);
+    let invalid_requests = [
+        ContextRequest {
+            session_id: String::new(),
+            ..base.clone()
+        },
+        ContextRequest {
+            turn_id: String::new(),
+            ..base.clone()
+        },
+        ContextRequest {
+            through_position: 0,
+            ..base.clone()
+        },
+        ContextRequest {
+            max_items: 0,
+            ..base.clone()
+        },
+        ContextRequest {
+            max_utf8_bytes: 0,
+            ..base.clone()
+        },
+        ContextRequest {
+            after_position: Some(base.through_position),
+            ..base.clone()
+        },
+        ContextRequest {
+            after_position: Some(u64::MAX),
+            ..base.clone()
+        },
+    ];
+    for request in invalid_requests {
+        assert_eq!(
+            derive_context(&request, &[]),
+            Err(ContextDerivationError::InvalidRequest)
+        );
+    }
+
+    let candidate =
+        |session_id: &str, position: u64, items: Vec<ModelInputItem>| ContextCandidate {
+            fact_ref: FactRef {
+                session_id: session_id.into(),
+                position,
+            },
+            kind: CandidateKind::Instruction,
+            retention: Retention::Required,
+            visibility: Visibility::Visible,
+            items,
+        };
+    let text = || {
+        vec![ModelInputItem::Message {
+            role: ModelRole::System,
+            content: vec![ModelInputContent::Text("instruction".into())],
+        }]
+    };
     assert_eq!(
-        derive_context(&value, &[]).unwrap_err(),
-        ContextDerivationError::InvalidRequest
+        derive_context(&base, &[candidate("other", 2, text())]),
+        Err(ContextDerivationError::SessionMismatch)
     );
+    assert_eq!(
+        derive_context(&base, &[candidate("session-1", 0, text())]),
+        Err(ContextDerivationError::PositionBeyondSurface)
+    );
+    assert_eq!(
+        derive_context(&base, &[candidate("session-1", 5, text())]),
+        Err(ContextDerivationError::PositionBeyondSurface)
+    );
+    assert_eq!(
+        derive_context(&base, &[candidate("session-1", 2, Vec::new())]),
+        Err(ContextDerivationError::EmptyRequiredContent)
+    );
+    let mut empty_visibility = candidate("session-1", 2, text());
+    empty_visibility.visibility = Visibility::Purposes(BTreeSet::new());
+    assert_eq!(
+        derive_context(&base, &[empty_visibility]),
+        Err(ContextDerivationError::InvalidVisibility)
+    );
+}
+
+#[test]
+fn every_model_input_payload_field_counts_toward_the_budget() {
+    let request = ContextRequest {
+        session_id: "session-1".into(),
+        turn_id: "turn-1".into(),
+        purpose: ContextPurpose::Inference,
+        after_position: None,
+        through_position: 1,
+        max_items: 3,
+        max_utf8_bytes: 31,
+    };
+    let candidate = ContextCandidate {
+        fact_ref: FactRef {
+            session_id: "session-1".into(),
+            position: 1,
+        },
+        kind: CandidateKind::Instruction,
+        retention: Retention::Required,
+        visibility: Visibility::Visible,
+        items: vec![
+            ModelInputItem::Message {
+                role: ModelRole::System,
+                content: vec![
+                    ModelInputContent::Text("a".into()),
+                    ModelInputContent::MediaReference {
+                        media_kind: MediaKind::Other("custom".into()),
+                        reference: "ref".into(),
+                        media_type: "image/png".into(),
+                    },
+                ],
+            },
+            ModelInputItem::ToolObservation {
+                model_call_id: "call".into(),
+                result_json: "{}".into(),
+            },
+            ModelInputItem::ReasoningReference {
+                reference: "reason".into(),
+            },
+        ],
+    };
+    let surface = derive_context(&request, &[candidate]).unwrap();
+    assert_eq!(surface.item_count, 3);
+    assert_eq!(surface.utf8_bytes, 31);
 }

@@ -22,7 +22,7 @@ class ContextSurfaceTest {
     @Test
     fun `Kotlin consumes every context case`() {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(9, cases.size)
+        assertEquals(12, cases.size)
         cases.forEach { element ->
             val case = element.jsonObject
             when (val result = deriveContext(request(case.obj("request")), candidates(case.getValue("candidates").jsonArray.map { it.jsonObject }))) {
@@ -34,7 +34,11 @@ class ContextSurfaceTest {
 
     private fun assertSurface(case: JsonObject, surface: ContextSurface) {
         val expected = case.obj("expected")
+        val request = request(case.obj("request"))
         assertEquals("ok", expected.text("status"), case.text("name"))
+        assertEquals(request.purpose, surface.purpose, case.text("name"))
+        assertEquals((request.afterPosition ?: 0uL) + 1uL, surface.fromPosition, case.text("name"))
+        assertEquals(request.throughPosition, surface.throughPosition, case.text("name"))
         assertEquals(expected.positions("retained"), surface.retainedRefs.map { it.position }, case.text("name"))
         assertEquals(expected.positions("dropped"), surface.droppedRefs.map { it.position }, case.text("name"))
         assertEquals(expected.positions("filtered"), surface.filteredRefs.map { it.position }, case.text("name"))
@@ -55,8 +59,8 @@ class ContextSurfaceTest {
 
     private fun candidates(values: List<JsonObject>) = values.map { value ->
         ContextCandidate(
-            factRef = FactRef("session-1", value.number("position")),
-            kind = CandidateKind.USER_INPUT,
+            factRef = FactRef(value["session"]?.jsonPrimitive?.content ?: "session-1", value.number("position")),
+            kind = candidateKind(value["kind"]?.jsonPrimitive?.content ?: "user-input"),
             retention = enumValueOf(value.text("retention").uppercase()),
             visibility = visibility(value.text("visibility")),
             items = value.getValue("items").jsonArray.map {
@@ -78,6 +82,17 @@ class ContextSurfaceTest {
         "tool-preparation" -> ContextPurpose.TOOL_PREPARATION
         "summarization" -> ContextPurpose.SUMMARIZATION
         else -> error("unknown purpose $value")
+    }
+
+    private fun candidateKind(value: String): CandidateKind = when (value) {
+        "instruction" -> CandidateKind.INSTRUCTION
+        "user-input" -> CandidateKind.USER_INPUT
+        "model-output" -> CandidateKind.MODEL_OUTPUT
+        "tool-observation" -> CandidateKind.TOOL_OBSERVATION
+        "approval" -> CandidateKind.APPROVAL
+        "summary" -> CandidateKind.SUMMARY
+        "system-notice" -> CandidateKind.SYSTEM_NOTICE
+        else -> error("unknown candidate kind $value")
     }
 
     private fun render(value: ContextItem): String = when (value) {

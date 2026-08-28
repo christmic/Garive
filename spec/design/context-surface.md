@@ -137,6 +137,9 @@ so concurrent appends do not change one derivation.
 
 `spec/fixtures/agent/context-surface.json` covers:
 
+- every candidate kind, including required instructions, while preserving
+  durable and intra-candidate order;
+- all four context purposes through positive admission and exclusion cases;
 - strict ordering and duplicate rejection;
 - exclusive lower-bound filtering;
 - purpose inclusion/exclusion and redaction;
@@ -144,6 +147,13 @@ so concurrent appends do not change one derivation.
 - optional newest-first retention with chronological output;
 - atomic multi-item candidates and UTF-8 byte accounting;
 - empty eligible surface and exact audit reference lists.
+
+Native boundary tests additionally cover every invalid request field, Session
+mismatch, zero/beyond-surface positions, empty required instructions, empty
+purpose sets, and byte accounting for text, media, tool observations, and
+reasoning references. Rust evidence lives in
+`engine/core/tests/context_surface.rs`; Kotlin evidence lives in
+`experiments/engine-kt/core/src/test/kotlin/com/garive/eng/kt/core/`.
 
 Rust and Kotlin must consume every case. Canonical serialized bytes are not a
 C2 contract; normalized semantic fields are compared.

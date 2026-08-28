@@ -77,6 +77,37 @@
       "request": {"purpose": "tool-preparation", "after": null, "through": 1, "max_items": 2, "max_bytes": 10},
       "candidates": [{"position": 1, "retention": "optional", "visibility": "purpose:governance", "items": ["hidden"]}],
       "expected": {"status": "ok", "retained": [], "dropped": [], "filtered": [1], "items": [], "item_count": 0, "bytes": 0}
+    },
+    {
+      "name": "all-candidate-kinds-preserve-instruction-order",
+      "request": {"purpose": "inference", "after": null, "through": 7, "max_items": 7, "max_bytes": 64},
+      "candidates": [
+        {"position": 1, "kind": "instruction", "retention": "required", "visibility": "visible", "items": ["instruction"]},
+        {"position": 2, "kind": "user-input", "retention": "required", "visibility": "visible", "items": ["user"]},
+        {"position": 3, "kind": "model-output", "retention": "optional", "visibility": "visible", "items": ["model"]},
+        {"position": 4, "kind": "tool-observation", "retention": "optional", "visibility": "visible", "items": ["tool"]},
+        {"position": 5, "kind": "approval", "retention": "optional", "visibility": "visible", "items": ["approval"]},
+        {"position": 6, "kind": "summary", "retention": "optional", "visibility": "visible", "items": ["summary"]},
+        {"position": 7, "kind": "system-notice", "retention": "optional", "visibility": "visible", "items": ["notice"]}
+      ],
+      "expected": {"status": "ok", "retained": [1, 2, 3, 4, 5, 6, 7], "dropped": [], "filtered": [], "items": ["text:instruction", "text:user", "text:model", "text:tool", "text:approval", "text:summary", "text:notice"], "item_count": 7, "bytes": 45}
+    },
+    {
+      "name": "governance-purpose-admits-instructions",
+      "request": {"purpose": "governance", "after": null, "through": 2, "max_items": 2, "max_bytes": 32},
+      "candidates": [
+        {"position": 1, "kind": "instruction", "retention": "required", "visibility": "purpose:governance", "items": ["policy"]},
+        {"position": 2, "kind": "user-input", "retention": "optional", "visibility": "purpose:inference", "items": ["hidden"]}
+      ],
+      "expected": {"status": "ok", "retained": [1], "dropped": [], "filtered": [2], "items": ["text:policy"], "item_count": 1, "bytes": 6}
+    },
+    {
+      "name": "summarization-purpose-admits-summary",
+      "request": {"purpose": "summarization", "after": null, "through": 1, "max_items": 1, "max_bytes": 16},
+      "candidates": [
+        {"position": 1, "kind": "summary", "retention": "required", "visibility": "purpose:summarization", "items": ["summary"]}
+      ],
+      "expected": {"status": "ok", "retained": [1], "dropped": [], "filtered": [], "items": ["text:summary"], "item_count": 1, "bytes": 7}
     }
   ]
 }
