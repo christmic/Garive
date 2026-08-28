@@ -13,7 +13,7 @@
 ## Crate Layout
 
 - One crate per sub-directory, named with the `garive-` prefix
-  (e.g. `garive-core`, `garive-ledger`, `garive-1lm`).
+  (e.g. `garive-core`, `garive-ledger`, `garive-llm`).
 - Each crate's `src/lib.rs` is the entry point. Sub-modules live
   under `src/<module>.rs`.
 - Public API is re-exported from `lib.rs`; deeper paths are not
@@ -37,7 +37,7 @@
 - Functions / variables: `snake_case`.
 - Constants: `SCREAMING_SNAKE_CASE`.
 - Crate names: `garive-<dir>` (kebab-case, no abbreviation
-  unless the directory name is itself abbreviated, e.g. `1lm`).
+  unless the directory name is itself abbreviated, e.g. `llm`).
 
 ## Module-level Imports
 

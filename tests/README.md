@@ -20,7 +20,7 @@ tests/
 ## What Goes Here
 
 - A Rust test that exercises `engine/core` + `engine/memory`
-  + `engine/1lm` together.
+  + `engine/llm` together.
 - A Rust test that talks to a real `runtime/replica`
   process over the wire schema in `spec/proto/`.
 - An E2E that boots the desktop backend, points it at a

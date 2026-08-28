@@ -3,7 +3,7 @@ resolver = "2"
 # Members will be added as engine/runtime slices are scoped.
 # Planned members (per AGENTS.md architecture):
 #
-#   engine/{core, ledger, 1lm, tools, memory, knowledge, skill,
+#   engine/{core, ledger, llm, tools, memory, knowledge, skill,
 #           multiagent, scheduler, creativity, eval,
 #           observability, config, proto}
 #   runtime/replica

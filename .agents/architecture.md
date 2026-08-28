@@ -52,7 +52,7 @@ sub-directory lands when its slice is scoped.
 |------|------|
 | `core/` | Agent loop, runtime primitives, contracts. |
 | `ledger/` | Durable, append-only event log (decisions, actions, outcomes). |
-| `1lm/` | Language-model abstraction (provider-agnostic). |
+| `llm/` | Language-model abstraction (provider-agnostic). |
 | `tools/` | Tool registry and execution surface. |
 | `memory/` | Short- and long-term memory layers. |
 | `knowledge/` | Knowledge store and retrieval. |

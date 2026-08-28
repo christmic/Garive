@@ -82,14 +82,13 @@ top-level Gradle module. That's the standard layout.
 |------------|---------------|----------------|
 | `garive-core` | `:core` | `com.garive.eng.kt.core` |
 | `garive-ledger` | `:ledger` | `com.garive.eng.kt.ledger` |
-| `garive-1lm` (Rust numeric-prefix workaround) | `:llm` | `com.garive.eng.kt.llm` |
+| `garive-llm` | `:llm` | `com.garive.eng.kt.llm` |
 | `garive-tools` | `:tools` | `com.garive.eng.kt.tools` |
 | … | … | … |
 | `garive-replica` | `:replica` | `com.garive.eng.kt.replica` |
 
-The numeric-prefix crate name `garive-1lm` is a Rust identifier
-constraint; the Kotlin mirror uses the natural `llm`. The
-ubiquitous-language mapping in `.agents/ddd.md` applies.
+Both implementations use the natural `llm` name. The ubiquitous-language
+mapping in `.agents/ddd.md` applies.
 
 ## Adding a New Module
 

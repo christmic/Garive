@@ -19,7 +19,7 @@ localised, but the **keys themselves** stay English.
 
 | Element | Convention |
 |---------|------------|
-| Crates | `garive-<kebab-slug>` (e.g. `garive-core`, `garive-1lm`). |
+| Crates | `garive-<kebab-slug>` (e.g. `garive-core`, `garive-llm`). |
 | Modules | `snake_case`. |
 | Types / traits / enums | `PascalCase`. |
 | Functions / methods / variables | `snake_case`. |
