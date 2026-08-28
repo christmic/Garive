@@ -589,6 +589,8 @@ distinct lifecycle requirements.
 | Kind | Body | Producer | Notes |
 |------|------|----------|-------|
 | `session.turn_start` | `{turn: {id: uuid, boundary: enum{user_message, resume, fork}, compression: enum{ok, partial, failed}, fork: option<{from_turn: uuid, reason: string}}}` | runtime | Marks the **legal cut point** for compaction and fork. A `turn_start` with `boundary=user_message` starts a new turn; `boundary=resume` continues a Suspended turn; `boundary=fork` branches from another turn (with `fork.from_turn` set). The `compression` field records whether the round paused with a complete summary or a partial one — useful for `Resume`. |
+| `session.undo` | `{target: seq, reason: string}` | runtime / user | **Masks the suffix after `target`** — the surface is "rolled back" to `target`. `target` must point at a `session.turn_start` entry (legal cut point). Model sees only entries up to and including `target`'s iteration; the next loop iteration runs **from `target` forward**. The undo itself is a row in the ledger — never deleted. |
+| `session.redo` | `{target: seq, ref: {session, uid} \| null, reason: string}` | runtime / user | **Cancels a prior `session.undo`** by re-extending the visible range. The most recent `session.undo` whose `target` ≤ `target` of this `redo` is conceptually undone; future derives again include the previously-masked suffix. `ref` may point at the prior `session.undo` entry being reversed. Like undo, redo is itself a row in the ledger. |
 | `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
 
 ```python
@@ -726,6 +728,110 @@ unlinked (recorded in `ops_log` as `blob_redact_unlink`). The
 **blob hash stays in the row's `body_hash`** — so any future
 audit can still see "this entry pointed at a blob that was
 unlinked on date X". The body is gone; the pointer is not.
+
+#### Undo / Redo (a third masking family)
+
+The ledger is immutable; you cannot delete a row. Undo and
+redo are therefore **third masking instructions** alongside
+`compaction.rewrite` (masks a prefix) and `privacy.redact`
+(masks a range or a single `uid`). The pattern is the same:
+**append a row that covers a range; the projection hides
+the covered content; the row itself stays forever.**
+
+| Instruction | Direction | What it masks | Effect on the surface |
+|-------------|-----------|----------------|----------------------|
+| `compaction.rewrite` | masks **prefix** | `covers: {from, to}` | the prefix is replaced by `compaction.summary`; model sees the summary plus the post-cut tail. |
+| `privacy.redact` | masks a **range** | `covers: {from, to}` or `{uid}` | rows in the range render as `[已删除]` placeholders. Blob may be physically unlinked. |
+| `session.undo` | masks **suffix after `target`** | `target: seq` | model sees only entries `seq <= target`'s turn; the suffix beyond is "retired" for the duration of the undo. |
+| `session.redo` | reverses a `session.undo` | `target: seq`, `ref: {session, uid}` of the prior undo | the masked suffix is visible again. |
+
+**Rules** (these are the *only* rules; everything else
+follows from the general masking family):
+
+1. **`target` is a turn boundary.** `session.undo.target`
+   must equal a `session.turn_start.seq`. The projection
+   walks entries after `target` and marks them retired; the
+   next `derive` recomputes with that retirement in effect.
+   The loop resumes from `target`'s turn forward — the user
+   re-runs the round as if it had paused at that boundary.
+2. **Complete pairs required.** Every entry in the retired
+   suffix must be part of a *complete* pair (its
+   `pair_ref` resolved, no dangling `intent` without
+   `tool_result`, no `approval_request` without
+   `approval_response`). Undo is **rejected** with an error
+   if the suffix is mid-pair. This is the same boundary
+   invariant as `compaction.rewrite`'s clean-cover rule
+   (`loop.md`).
+3. **The undo is itself a row.** The conversation about the
+   undo — what was undone, when, why — lives in the ledger
+   too. `session.undo.body.reason` carries the user's
+   rationale; the `ops_log` carries the timestamp of the op.
+4. **Redo is a forward-pointing undo.** `session.redo.target`
+   is **at or after** the most recent undo's `target`.
+   Conceptually, redo re-extends the visible suffix.
+   `session.redo.ref` may point at the prior undo entry it
+   reverses; the projection uses `ref` to disambiguate when
+   multiple undos are stacked.
+
+**Cost does not roll back.** This is the load-bearing
+invariant:
+
+- The **context** rolls back: the surface presented to the
+  model is truncated to `target`. Token **spend** does not.
+- Every `model.usage` row that was appended before the undo
+  is **preserved** verbatim, including its `tokens_in` /
+  `tokens_out` / `cache_read` / `cache_write`. Cost reports
+  keep the true spend — the agent was paid to think those
+  tokens; rolling back the budget would be a billing lie.
+- `state.tokens_used` is a *cache*; it does not store cost.
+  The authoritative cost is the sum of `model.usage` rows in
+  the ledger, which the undo does not touch.
+
+**What this looks like in `derive`'s surface:**
+
+- Entries with `seq > session.undo.target` are **retired**:
+  the projection's `PROMPT_FOR_MODEL` view omits them
+  (they are past the user's "rewind to here" point).
+- `state.iteration_count` and `state.tokens_used` reflect the
+  **current** iteration (after the rewind), not the sum of
+  pre-rewind history.
+- `state.phase` resumes from `Running` at the target turn's
+  end.
+- A new `model.usage` row after the undo is **appended** to
+  the ledger as the new work happens, in `seq > target`. The
+  cost report queries `SUM(tokens) FROM model.usage WHERE
+  wall_ts <= ...` — the historical rows are still there,
+  counted, never deleted.
+
+**Stability** (see `loop.md` "Derive Stability"):
+`session.undo` is a **boundary-anchored reordering**. The
+prefix up to `target` is unchanged; the suffix is hidden.
+The prompt-cache key for the prefix is preserved (it's the
+*same prefix* the model saw before the undo). The new
+iteration's prompt adds the undo's body and a new model
+call at `target`'s next iteration; the cache breaks at that
+point (intentional — the user rewound).
+
+**Redo-vs-undo ordering.** If a user undoes, then makes
+progress, then undoes again — the second `session.undo` is
+just a row. The projection applies the **most recent**
+undo at each `derive` call. Redo is similarly "the most
+recent redo that cancels a currently-active undo".
+
+```
+# pseudo-projection
+def mask_suffix(surface, undos, redos):
+    active = latest_active_undo(undos, redos)   # walks both lists
+    if active is None:
+        return surface                        # no undo in effect
+    return [e for e in surface if e.seq <= active.target]
+```
+
+`latest_active_undo` is a small interpreter: it walks the
+undo / redo timeline, applies them in order, and returns the
+`target` of the undo that is currently in force (or `None` if
+the timeline ends in an undone state). The projection then
+truncates at that `target`.
 
 #### Encryption (static at-rest, future-proofing)
 
