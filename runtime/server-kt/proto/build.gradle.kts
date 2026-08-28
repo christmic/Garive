@@ -13,7 +13,7 @@ plugins {
 
 dependencies {
     "implementation"(platform("org.jetbrains.kotlin:kotlin-bom"))
-    "implementation"("com.google.protobuf:protobuf-kotlin:4.28.2")
+    "api"("com.google.protobuf:protobuf-kotlin:4.28.2")
 
     "testImplementation"(kotlin("test"))
 }
