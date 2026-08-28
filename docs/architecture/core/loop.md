@@ -527,6 +527,58 @@ The three passes interact in a fixed order: tiering first
 releases big results). They never run in the opposite order —
 eviction always sees the tier-shrunk surface.
 
+### Mechanism vs Policy
+
+The three passes above describe the **mechanism** — the
+structural capability to:
+
+- Compress a `tool_result`'s visibility (tiering).
+- Evict a big result losslessly via seq pointer.
+- Shape per-tool previews (pluggable formatters).
+
+They are **not** a specific implementation. The mechanism
+defines what the runtime can do; the **policy** chooses what
+the runtime does. Two equally valid policies fit the same
+mechanism:
+
+| Policy | What it does | Trade-off |
+|--------|--------------|-----------|
+| **Eager (default candidate)** | Tier on every `derive`; evict big results as soon as the surface overflows budget. | Simple, predictable, slightly more compute per derive. |
+| **Lazy / verify-first** | Keep `tool_result` at full content for a configurable grace window; only tier / evict when the model signals "I don't need this anymore" via an intent. | More compute-efficient; the model has to know it can hint eviction. |
+
+A future variant — **adaptive** — switches between the two
+based on observed budget pressure (token use × iteration
+count). All three share the same **mechanism**: tiering,
+eviction, per-tool preview, seq pointer to ledger. The
+mechanism is what the codebase ships; the policy is what
+runtime tuning chooses.
+
+Future work: a `SurfacePolicy` config that picks one of the
+above at startup, with **eager** as the sensible default
+because it's the simplest to reason about and to test.
+
+#### What is *not* up for debate
+
+The **mechanism** is fixed:
+
+- `Surface` is a cached projection of the ledger.
+- `derive` is incremental + stateful.
+- The ledger is the source of truth.
+- `tool_result` can be shrunk / evicted losslessly via seq
+  pointer.
+- Per-tool preview is pluggable.
+
+The **policy** is the choice:
+
+- How many iterations count as "fresh" (tier 0 boundary).
+- When to evict (eager / lazy / adaptive).
+- What a specific tool's preview shape is.
+- Whether the model can hint eviction.
+
+Mixing the two has a cost: conflating them turns policy
+choices into structural changes. Keep them separate — the
+mechanism defines the surface area; the policy populates it.
+
 ### Governance Is a Port, Not an Actor
 
 Every intent the model emits (tool call, file write, network
