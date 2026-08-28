@@ -564,6 +564,140 @@ round. The fix is almost always a `Derive Stability`
 Rule 1 violation in a new instruction; the test points
 right at it.
 
+## Bench Directory Layout
+
+The 4-dim contract + the 9 micro-benchmarks are realised as
+**seven sub-directories** under `engine/core/tests/derive_bench/`.
+The directory layout is part of the contract — adding a new
+test type means adding a new sub-directory (or extending an
+existing one), not inventing a new path.
+
+```
+engine/core/tests/derive_bench/
+├── fixtures/                # synthesised-ledger generator
+│   ├── generators.py        # size × branch_density × compression_count
+│   └── corpus/              # real-world captures (anonymised)
+│
+├── golden/                  # hand-computed expected surfaces
+│   ├── golden__pure_append/
+│   ├── golden__compaction_*/
+│   ├── golden__undo_masks_suffix/
+│   ├── golden__redo_restores_suffix/
+│   ├── golden__branch_adopted/
+│   ├── golden__branch_discarded/
+│   ├── golden__redaction_placeholders/
+│   ├── golden__multiple_instructions_stacked/
+│   └── ...
+│
+├── replay/                  # historical-run replay
+│   └── captured_runs/        # snapshots of past (ledger, surfaces)
+│
+├── invariants/              # proptest (Rust) / kotest-property (Kotlin)
+│   └── properties.py        # pair-completeness, pinned-always,
+│                             # budget-honoured, mask-cumulative,
+│                             # reordering-never; plus the
+│                             # instruction interaction matrix
+│
+├── perf/                    # criterion (Rust) / kotlinx-benchmark (Kotlin)
+│   ├── B1_latency.py         # latency × ledger size
+│   ├── B2_cold_rebuild.py    # cold-cache rebuild
+│   ├── B3_incremental.py     # incremental after rewrite
+│   ├── B4_memory_leak.py     # memory + leak detector
+│   ├── T1_smoothness.py      # CV of surface token count
+│   ├── T2_compression_rate.py # iter/call ratio
+│   ├── T3_projection_ratios.py# per-projection size ratios
+│   ├── T4_counting_error.py  # estimate vs provider real
+│   └── CF1_prefix_stability.py# byte-diff prefix over 200+ iters
+│
+├── retention/               # T3 fact-retention probe + runner
+│   ├── probes.py             # {question_id, expected_answer, surface_position}
+│   └── runner.py             # seed N facts, force compression,
+│                             # derive, send to model, score
+│
+├── prefix_stability/         # CF1
+│   └── cf1_runner.py         # byte-diff + stability ratio
+│
+└── README.md                # how to add a test, how to interpret
+                             # a failure, the acceptance gate
+```
+
+### The Synthesised-Ledger Generator
+
+The `fixtures/generators.py` module is the **input engine**
+for every other test. It produces ledgers parameterised by:
+
+- `size` — total entry count (1k / 10k / 100k)
+- `branch_density` — fraction of entries inside an opened
+  branch (0.0 / 0.2 / 0.5 / 0.8)
+- `compression_count` — number of `compaction.rewrite` rows
+  embedded in the ledger (0 / 1 / 5 / 20)
+
+The full matrix is `3 × 4 × 4 = 48` parameter combinations;
+each property / perf sweep runs at least **1000 ledgers per
+combination** (the admission gate's "千组" minimum), for a
+total of ≥ 48 000 ledgers per CI run. The combinations are
+**named** so a failing test report reads as
+"`size=10k, branch_density=0.5, compression_count=5`".
+
+The generator is **deterministic** — every combination has a
+seed; re-running the bench produces the same ledgers, so
+failures are reproducible from the seed alone (no need to
+commit every generated ledger).
+
+The generator is also **constrained** — the ledgers it
+produces always satisfy the invariants that the `invariants/`
+tests check (every `tool.call` has a paired `tool.result`,
+every `compaction.rewrite` is followed by a `compaction.summary`,
+etc.). Constrained generation is what makes the
+`invariants/` tests meaningful: if a property fails on a
+generator output, the bug is in `derive`, not in the ledger.
+
+### `golden/` Snapshot Format
+
+Each sub-directory is one snapshot. A snapshot is a
+**self-contained triple**:
+
+```
+golden__compaction_summary_replaces_prefix/
+├── ledger.pb              # the test ledger (binary proto)
+├── masking_timeline.json  # the masking instructions
+├── expected_surface.json  # the hand-computed expected surface
+└── snapshot.meta.json     # name, author, last_updated, what
+                           # this snapshot covers, known_edge_cases
+```
+
+The expected surface is the **ground truth** — a maintainer
+walks the 6-step pipeline by hand and records the result.
+`golden/` is the **canonical record** of what `derive` is
+supposed to do; a failing golden is a **bug in `derive`**
+until proven otherwise (the maintainer is allowed to update
+the golden if the design changed, but every change is
+reviewed in PR).
+
+### `corpus/` — Real-world captures
+
+`corpus/` holds **anonymised captures** of real production
+rounds. These are the `derive`-stress tests the synth
+generator can't reproduce: long-tail shapes the generator
+doesn't know about, multi-language interleavings, weird
+interactions between `branch.*` and `compaction.rewrite` and
+`session.undo` that don't appear in the matrix.
+
+The corpus is **read-only** at runtime — snapshots, not
+generators. A failing corpus entry is "real production broke";
+the fix lands in the synth generator first, then in
+`derive`.
+
+### `replay/` — Historical-run replay
+
+`replay/captured_runs/` holds snapshots of past production
+runs — `(ledger, masking_timeline, expected_surface)` triples
+that shipped to users. Replay runs `derive` on each one and
+asserts the output is byte-equal to the captured surface. If
+a refactor changes a surface, replay catches it against the
+*real* surfaces that users saw, not the synth ones the
+generator produced.
+
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
 - Status: **draft (possible mechanism)** — the 4-dim structure

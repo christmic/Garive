@@ -283,6 +283,67 @@ This file is the **constitutional rule** that the four
 dimensions exist; the design doc is the **implementation
 plan**. A regression in any dimension is load-bearing.
 
+### Derive Acceptance Gate (3 gates, all must pass)
+
+`derive` is **constitutionally required to pass all three
+gates** before any change to its implementation can land.
+A change that drops a gate is a regression; the change is
+rejected, not the gate.
+
+| Gate | What it asserts | Numeric threshold |
+|------|----------------|-------------------|
+| **Admission gate** | (1) every `golden/` snapshot passes byte-exactly; (2) the **synthesised-ledger generator** produces ≥ **1000** ledgers per property / perf sweep, parameterised over `size × branch_density × compression_count`; (3) the **instruction interaction matrix** covers every two-mask pair (then every three, up to the 6-step fan-out). | 100 % golden pass, 1000+ ledgers per sweep, 100 % pair coverage. |
+| **Performance gate** | All of B1–B4 (latency / cold rebuild / incremental / memory+leak), T1–T4 (smoothness / compression-rate / projection-ratios / counting-error), CF1 (prefix-stability) within **SLO × 1.1**. | B1: 10k ≤ 5.5 ms; B2: 10k ≤ 55 ms; B3: Δ ≤ 1.1 ms; B4: cache O(surface_tokens), no leak; T1: CV < 0.165; T2: ≥ 45:1; T3: GOVERNANCE ≤ 0.22 × PROMPT, SUMMARIZE ≤ 0.33 × PROMPT; T4: MAE ≤ 5.5 %, p99 ≤ 16.5 %; CF1: ≥ 89 %. |
+| **Quality gate** | (1) **late-fact retention ≥ 95 %** (T3 § quality): facts seeded at `seq ≥ 0.8 × N` survive compression + derive; (2) **compression-coverage retention ≥ 80 %** (T3 § coverage): among facts that fit in the surface, ≥ 80 % are still answerable; (3) **prefix-stability steady-state ≥ 90 %** (CF1): 90 % of steady-state rounds have a byte-equal prefix. | Late-fact ≥ 95 %; coverage ≥ 80 %; CF1 ≥ 90 %. |
+
+**Why three gates, not one.** A single "passes all tests" gate
+hides *why* a change broke. Splitting into admission /
+performance / quality means the **failure message** points at
+the class of bug:
+
+- **Admission** failure — a single snapshot is wrong, or a
+  pair of masks isn't covered. The fix is *add coverage*,
+  not *tune the algorithm*.
+- **Performance** failure — a regression in latency / tokens /
+  cache. The fix is *tune derive*, not change the contract.
+- **Quality** failure — late facts are being lost, or
+  compression is over-eager, or the cache keeps breaking.
+  The fix is *change the policy*, not the implementation.
+
+A change that breaks **two** gates is **two bugs**, not one.
+The breakdown comes first; the fix comes second.
+
+**Bench directory layout** (constitutional):
+
+```
+engine/core/tests/derive_bench/
+├── fixtures/                synthesised-ledger generator
+│   ├── generators.py        size × branch_density × compression_count
+│   └── corpus/              real-world captures (anonymised)
+├── golden/                  hand-computed expected surfaces
+│   ├── golden__pure_append/
+│   └── ...
+├── replay/                  historical-run replay
+│   └── captured_runs/        snapshots of past (ledger, surfaces)
+├── invariants/              proptest (Rust) / kotest-property (Kotlin)
+├── perf/                    criterion (Rust) / kotlinx-benchmark (Kotlin)
+│   ├── B1_latency.py
+│   └── ...
+├── retention/               T3 — fact-retention probe + runner
+│   ├── probes.py
+│   └── runner.py
+└── prefix_stability/        CF1 — byte-diff + ratio
+
+README.md                      bench-orchestration docs (how to add a
+                               new test, how to interpret a failure)
+```
+
+**All three gates must pass before merge.** A PR that lands
+a change touching `derive` (or any of its callers) carries
+the output of all three; the merge is blocked if any fails.
+This is a **constitutional** rule — relaxing a gate requires
+updating this file, not just the code.
+
 ## What This Means for Each Sub-project
 
 | Sub-project | Tests to write |
