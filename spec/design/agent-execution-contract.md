@@ -117,7 +117,7 @@ Completed {
 }
 Suspended {
   reason: ApprovalRequired | ExternalInputRequired |
-          OperatorReconciliation | ResourceUnavailable,
+          OperatorReconciliation | ResourceUnavailable | PartialOutput,
   continuation_requirement
 }
 Stopped {
@@ -142,10 +142,14 @@ metadata. It contains neither provider credentials nor HTTP fields.
 Input/output uses an ordered `ModelItem` sum type:
 
 - `Text`;
+- `Refusal`, a valid provider-declared model result;
 - `Reasoning` with visibility (`ModelVisible` or `OpaqueReference`);
 - `ToolIntent` with untrusted model call ID, tool name and structured arguments;
 - `ToolObservation` with call correlation and neutral result/rejection;
 - `MediaReference` with media kind, content reference and declared metadata.
+
+Context `RedactedItem` values remain audit placeholders and are not dispatched
+as model input; only their non-secret omission is observable to Core.
 
 Unknown item variants from a future wire version are preserved for audit but
 are not silently included in model context.
