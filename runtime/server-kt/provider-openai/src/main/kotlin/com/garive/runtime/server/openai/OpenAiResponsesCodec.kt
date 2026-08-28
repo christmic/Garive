@@ -54,7 +54,8 @@ class OpenAiModelPort(private val transport: OpenAiTransport, private val maxAtt
                     is OpenAiResult.Success -> parsed.value
                     is OpenAiResult.Failure -> return ModelPortResult.Failure(parsed.error.portFailure())
                 }
-                return ModelPortResult.Success(if (cancellation.isCancelled()) cancelled(outcome) else outcome)
+                return ModelPortResult.Success(if (cancellation.isCancelled()) cancelled(outcome)
+                    else notifyOutcome(outcome, observer, cancellation))
             }
             when (val action = OpenAiResponsesCodec.classifyHttpError(wire.status, wire.retryAfter,
                 wire.body, attempt == maxAttempts, Instant.now())) {
@@ -357,6 +358,26 @@ private fun cancelled(previous: InvokeOutcome?): InvokeOutcome.Interrupted { val
     is InvokeOutcome.Interrupted -> previous.partialItems to previous.usage
     else -> emptyList<ModelItem>() to unknownUsage() }
     return InvokeOutcome.Interrupted(InterruptionKind.CANCELLED, values.first, values.second) }
+private fun notifyOutcome(outcome: InvokeOutcome, observer: ModelObserver,
+    cancellation: ModelCancellation): InvokeOutcome { val values = when (outcome) {
+        is InvokeOutcome.Completed -> outcome.items to outcome.usage
+        is InvokeOutcome.Interrupted -> outcome.partialItems to outcome.usage
+        else -> return outcome }
+    val observed = mutableListOf<ModelItem>()
+    values.first.forEachIndexed { index, item -> val outputIndex = index.toUInt()
+        if (cancellation.isCancelled() || observer.observe(ModelStreamEvent.OutputItemStarted(
+                outputIndex, outputKind(item))) == ObserverDecision.CANCEL)
+            return InvokeOutcome.Interrupted(InterruptionKind.CANCELLED, observed, values.second)
+        observed += item
+        if (observer.observe(ModelStreamEvent.OutputItemCompleted(outputIndex, item)) == ObserverDecision.CANCEL)
+            return InvokeOutcome.Interrupted(InterruptionKind.CANCELLED, observed, values.second) }
+    if (cancellation.isCancelled() || observer.observe(ModelStreamEvent.UsageUpdated(values.second)) == ObserverDecision.CANCEL)
+        return InvokeOutcome.Interrupted(InterruptionKind.CANCELLED, observed, values.second)
+    return outcome }
+private fun outputKind(item: ModelItem): ModelOutputKind = when (item) {
+    is ModelItem.Text -> ModelOutputKind.Text; is ModelItem.Refusal -> ModelOutputKind.Refusal
+    is ModelItem.Reasoning -> ModelOutputKind.Reasoning; is ModelItem.ToolIntent -> ModelOutputKind.ToolIntent(item.modelCallId)
+    is ModelItem.ToolObservation -> ModelOutputKind.ToolObservation; is ModelItem.MediaReference -> ModelOutputKind.MediaReference }
 private fun OpenAiAdapterError.portFailure() = when (this) {
     OpenAiAdapterError.INVALID_REQUEST -> ModelPortFailure.INVALID_REQUEST
     OpenAiAdapterError.UNSUPPORTED_CAPABILITY -> ModelPortFailure.UNSUPPORTED_CAPABILITY

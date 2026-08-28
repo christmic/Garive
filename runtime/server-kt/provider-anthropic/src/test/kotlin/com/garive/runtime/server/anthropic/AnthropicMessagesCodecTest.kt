@@ -93,6 +93,19 @@ class AnthropicMessagesCodecTest {
         assertIs<InvokeOutcome.Completed>(assertIs<ModelPortResult.Success>(result).outcome)
         assertEquals(listOf(kotlin.time.Duration.ZERO), transport.waits)
     }
+    @Test fun `model port honors observer cancel with observed partial`() = runTest {
+        val transport = ScriptTransport(
+            ArrayDeque(
+                listOf(TransportResult.Success(HttpResponseDescriptor(200, null, fixture("complete.sse")))),
+            ),
+        )
+        val result = AnthropicModelPort(transport, 1).invoke(request(), ModelObserver { event ->
+            if (event is ModelStreamEvent.OutputItemCompleted) ObserverDecision.CANCEL else ObserverDecision.CONTINUE
+        }, ModelCancellation { false })
+        val outcome = assertIs<InvokeOutcome.Interrupted>(assertIs<ModelPortResult.Success>(result).outcome)
+        assertEquals(InterruptionKind.CANCELLED, outcome.reason)
+        assertEquals(1, outcome.partialItems.size)
+    }
 
     private class ScriptTransport(private val responses: ArrayDeque<TransportResult>) : AnthropicTransport {
         val waits = mutableListOf<kotlin.time.Duration>()

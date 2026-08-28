@@ -220,6 +220,32 @@ fn model_port_retries_before_ambiguity_and_returns_one_terminal() {
     assert_eq!(state.waits.lock().unwrap().as_slice(), &[Duration::ZERO]);
 }
 
+#[test]
+fn model_port_honors_observer_cancel_with_observed_partial() {
+    let state = Arc::new(ScriptState {
+        responses: Mutex::new(VecDeque::from([Ok(HttpResponseDescriptor {
+            status: 200,
+            retry_after: None,
+            body: fixture("complete.sse"),
+        })])),
+        waits: Mutex::new(Vec::new()),
+    });
+    let port = AnthropicModelPort::new(ScriptTransport(state), 1);
+    let mut observer = CancelAfterCompletion;
+    let outcome =
+        futures::executor::block_on(port.invoke(&request(), &mut observer, &NeverCancel)).unwrap();
+    let InvokeOutcome::Interrupted {
+        kind,
+        partial_items,
+        ..
+    } = outcome
+    else {
+        panic!()
+    };
+    assert_eq!(kind, InterruptionKind::Cancelled);
+    assert_eq!(partial_items.len(), 1);
+}
+
 struct ScriptState {
     responses: Mutex<VecDeque<Result<HttpResponseDescriptor, TransportFailure>>>,
     waits: Mutex<Vec<Duration>>,
@@ -247,6 +273,16 @@ struct IgnoreObserver;
 impl ModelObserver for IgnoreObserver {
     fn observe(&mut self, _: &ModelStreamEvent) -> ObserverDecision {
         ObserverDecision::Continue
+    }
+}
+struct CancelAfterCompletion;
+impl ModelObserver for CancelAfterCompletion {
+    fn observe(&mut self, event: &ModelStreamEvent) -> ObserverDecision {
+        if matches!(event, ModelStreamEvent::OutputItemCompleted { .. }) {
+            ObserverDecision::Cancel
+        } else {
+            ObserverDecision::Continue
+        }
     }
 }
 

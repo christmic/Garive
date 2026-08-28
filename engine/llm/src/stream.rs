@@ -152,7 +152,7 @@ pub enum ObserverDecision {
     Cancel,
 }
 
-pub trait ModelObserver {
+pub trait ModelObserver: Send {
     fn observe(&mut self, event: &ModelStreamEvent) -> ObserverDecision;
 }
 

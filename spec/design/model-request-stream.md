@@ -110,6 +110,11 @@ transport permits and returns `Interrupted(Cancelled, partial_items, usage)`.
 The observer cannot mutate the request, change Runtime policy or turn a partial
 item into a completed item.
 
+In Rust the observer is `Send`, because `ModelPort` returns a `Send` future and
+may retain the mutable observer across transport awaits. Kotlin's suspending
+port provides the equivalent structured-concurrency ownership without a marker
+interface.
+
 ## Model port
 
 ```text

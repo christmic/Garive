@@ -4,9 +4,9 @@
 
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelFuture, ModelInputContent,
-    ModelInputItem, ModelItem, ModelObserver, ModelPort, ModelPortFailure, ModelRequest, ModelRole,
-    ModelStopReason, ModelUsage, ReasoningContent, RejectionKind, TextMode, TokenCount,
-    UnavailableKind, UsageSource,
+    ModelInputItem, ModelItem, ModelObserver, ModelOutputKind, ModelPort, ModelPortFailure,
+    ModelRequest, ModelRole, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision,
+    ReasoningContent, RejectionKind, TextMode, TokenCount, UnavailableKind, UsageSource,
 };
 use serde_json::{json, Map, Value};
 use std::{
@@ -80,7 +80,7 @@ impl<T: OpenAiTransport> ModelPort for OpenAiModelPort<T> {
     fn invoke<'a>(
         &'a self,
         request: &'a ModelRequest,
-        _observer: &'a mut dyn ModelObserver,
+        observer: &'a mut dyn ModelObserver,
         cancellation: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         Box::pin(async move {
@@ -115,7 +115,7 @@ impl<T: OpenAiTransport> ModelPort for OpenAiModelPort<T> {
                     return if cancellation.is_cancelled() {
                         Ok(cancelled_outcome(Some(outcome)))
                     } else {
-                        Ok(outcome)
+                        Ok(notify_outcome(outcome, observer, cancellation))
                     };
                 }
                 match classify_http_error(
@@ -811,6 +811,69 @@ fn cancelled_outcome(previous: Option<InvokeOutcome>) -> InvokeOutcome {
         kind: InterruptionKind::Cancelled,
         partial_items,
         usage,
+    }
+}
+
+fn notify_outcome(
+    outcome: InvokeOutcome,
+    observer: &mut dyn ModelObserver,
+    cancellation: &dyn ModelCancellation,
+) -> InvokeOutcome {
+    let (items, usage) = match &outcome {
+        InvokeOutcome::Completed { items, usage, .. } => (items.clone(), *usage),
+        InvokeOutcome::Interrupted {
+            partial_items,
+            usage,
+            ..
+        } => (partial_items.clone(), *usage),
+        _ => return outcome,
+    };
+    let mut observed = Vec::new();
+    for (index, item) in items.into_iter().enumerate() {
+        let Ok(output_index) = u32::try_from(index) else {
+            return outcome;
+        };
+        if cancellation.is_cancelled()
+            || observer.observe(&ModelStreamEvent::OutputItemStarted {
+                output_index,
+                kind: output_kind(&item),
+            }) == ObserverDecision::Cancel
+        {
+            return cancelled_with(observed, usage);
+        }
+        observed.push(item.clone());
+        if observer.observe(&ModelStreamEvent::OutputItemCompleted { output_index, item })
+            == ObserverDecision::Cancel
+        {
+            return cancelled_with(observed, usage);
+        }
+    }
+    if cancellation.is_cancelled()
+        || observer.observe(&ModelStreamEvent::UsageUpdated { usage }) == ObserverDecision::Cancel
+    {
+        return cancelled_with(observed, usage);
+    }
+    outcome
+}
+
+fn cancelled_with(partial_items: Vec<ModelItem>, usage: ModelUsage) -> InvokeOutcome {
+    InvokeOutcome::Interrupted {
+        kind: InterruptionKind::Cancelled,
+        partial_items,
+        usage,
+    }
+}
+
+fn output_kind(item: &ModelItem) -> ModelOutputKind {
+    match item {
+        ModelItem::Text { .. } => ModelOutputKind::Text,
+        ModelItem::Refusal { .. } => ModelOutputKind::Refusal,
+        ModelItem::Reasoning { .. } => ModelOutputKind::Reasoning,
+        ModelItem::ToolIntent { model_call_id, .. } => ModelOutputKind::ToolIntent {
+            model_call_id: model_call_id.clone(),
+        },
+        ModelItem::ToolObservation { .. } => ModelOutputKind::ToolObservation,
+        ModelItem::MediaReference { .. } => ModelOutputKind::MediaReference,
     }
 }
 
