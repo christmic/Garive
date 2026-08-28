@@ -1,57 +1,70 @@
 use std::{error::Error, fmt, num::NonZeroU32};
 
-/// Runtime-supplied identity retained across suspension and resume.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TurnId(Box<str>);
+macro_rules! identity_type {
+    ($name:ident, $label:literal) => {
+        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name(Box<str>);
 
-impl TurnId {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<&str> for TurnId {
-    type Error = InvalidTurnId;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.is_empty() {
-            Err(InvalidTurnId)
-        } else {
-            Ok(Self(value.into()))
+        impl $name {
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
         }
-    }
-}
 
-impl TryFrom<String> for TurnId {
-    type Error = InvalidTurnId;
+        impl TryFrom<&str> for $name {
+            type Error = InvalidIdentity;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.is_empty() {
-            Err(InvalidTurnId)
-        } else {
-            Ok(Self(value.into_boxed_str()))
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                if value.is_empty() {
+                    Err(InvalidIdentity { kind: $label })
+                } else {
+                    Ok(Self(value.into()))
+                }
+            }
         }
-    }
+
+        impl TryFrom<String> for $name {
+            type Error = InvalidIdentity;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                if value.is_empty() {
+                    Err(InvalidIdentity { kind: $label })
+                } else {
+                    Ok(Self(value.into_boxed_str()))
+                }
+            }
+        }
+    };
 }
+
+identity_type!(TurnId, "turn");
+identity_type!(ExecutionId, "execution");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InvalidTurnId;
+pub struct InvalidIdentity {
+    kind: &'static str,
+}
 
-impl fmt::Display for InvalidTurnId {
+impl InvalidIdentity {
+    pub const fn kind(self) -> &'static str {
+        self.kind
+    }
+}
+
+impl fmt::Display for InvalidIdentity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("turn identity cannot be empty")
+        write!(formatter, "{} identity cannot be empty", self.kind)
     }
 }
 
-impl Error for InvalidTurnId {}
+impl Error for InvalidIdentity {}
 
-/// Immutable execution limits selected by Runtime.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TurnLimits {
+pub struct ExecutionLimits {
     max_iterations: NonZeroU32,
 }
 
-impl TurnLimits {
+impl ExecutionLimits {
     pub const fn new(max_iterations: NonZeroU32) -> Self {
         Self { max_iterations }
     }
@@ -62,79 +75,88 @@ impl TurnLimits {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SuspensionReason {
-    ApprovalRequired,
-    PartialModelOutput,
-    RateBudgetExhausted,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TerminalReason {
-    Answered,
-    NoMoreToolCalls,
-    BudgetExhausted,
-    Cancelled,
-    ProviderUnavailable,
+pub enum ExecutionOutcomeKind {
+    Completed,
+    Suspended,
+    Stopped,
     Failed,
-    OperatorRequired,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TurnStatus {
-    Running,
-    Suspended(SuspensionReason),
-    Terminal(TerminalReason),
+pub enum ExecutionStatus {
+    Active,
+    Closed(ExecutionOutcomeKind),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IterationDecision {
+pub enum BeginIteration {
     Started { iteration: NonZeroU32 },
-    Terminated(TerminalReason),
+    IterationLimitReached,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TransitionError {
-    NotRunning,
-    NotSuspended,
-    AlreadyTerminal,
+pub enum ControlError {
+    CursorBeyondLimit { completed: u32, maximum: u32 },
+    AlreadyClosed,
 }
 
-impl fmt::Display for TransitionError {
+impl fmt::Display for ControlError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::NotRunning => "turn is not running",
-            Self::NotSuspended => "turn is not suspended",
-            Self::AlreadyTerminal => "turn is already terminal",
-        })
+        match self {
+            Self::CursorBeyondLimit { completed, maximum } => write!(
+                formatter,
+                "completed iteration cursor {completed} exceeds limit {maximum}"
+            ),
+            Self::AlreadyClosed => formatter.write_str("execution is already closed"),
+        }
     }
 }
 
-impl Error for TransitionError {}
+impl Error for ControlError {}
 
-/// In-memory control projection for one bounded Agent execution.
+/// Disposable control projection for one Kernel Execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TurnState {
+pub struct ExecutionControl {
     turn_id: TurnId,
-    limits: TurnLimits,
+    execution_id: ExecutionId,
+    limits: ExecutionLimits,
     completed_iterations: u32,
-    status: TurnStatus,
+    status: ExecutionStatus,
 }
 
-impl TurnState {
-    pub fn new(turn_id: TurnId, limits: TurnLimits) -> Self {
-        Self {
-            turn_id,
-            limits,
-            completed_iterations: 0,
-            status: TurnStatus::Running,
+impl ExecutionControl {
+    pub fn new(
+        turn_id: TurnId,
+        execution_id: ExecutionId,
+        completed_iterations: u32,
+        limits: ExecutionLimits,
+    ) -> Result<Self, ControlError> {
+        let maximum = limits.max_iterations.get();
+        if completed_iterations > maximum {
+            return Err(ControlError::CursorBeyondLimit {
+                completed: completed_iterations,
+                maximum,
+            });
         }
+
+        Ok(Self {
+            turn_id,
+            execution_id,
+            limits,
+            completed_iterations,
+            status: ExecutionStatus::Active,
+        })
     }
 
     pub fn turn_id(&self) -> &TurnId {
         &self.turn_id
     }
 
-    pub const fn limits(&self) -> TurnLimits {
+    pub fn execution_id(&self) -> &ExecutionId {
+        &self.execution_id
+    }
+
+    pub const fn limits(&self) -> ExecutionLimits {
         self.limits
     }
 
@@ -142,56 +164,33 @@ impl TurnState {
         self.completed_iterations
     }
 
-    pub const fn status(&self) -> TurnStatus {
+    pub const fn status(&self) -> ExecutionStatus {
         self.status
     }
 
-    pub fn begin_iteration(&mut self) -> Result<IterationDecision, TransitionError> {
-        self.require_running()?;
-
+    pub fn begin_iteration(&mut self) -> Result<BeginIteration, ControlError> {
+        self.require_active()?;
         if self.completed_iterations == self.limits.max_iterations.get() {
-            let reason = TerminalReason::BudgetExhausted;
-            self.status = TurnStatus::Terminal(reason);
-            return Ok(IterationDecision::Terminated(reason));
+            self.status = ExecutionStatus::Closed(ExecutionOutcomeKind::Stopped);
+            return Ok(BeginIteration::IterationLimitReached);
         }
 
         self.completed_iterations += 1;
         let iteration = NonZeroU32::new(self.completed_iterations)
-            .expect("the counter was incremented from a value below a non-zero limit");
-        Ok(IterationDecision::Started { iteration })
+            .expect("a successfully incremented iteration is non-zero");
+        Ok(BeginIteration::Started { iteration })
     }
 
-    pub fn suspend(&mut self, reason: SuspensionReason) -> Result<(), TransitionError> {
-        self.require_running()?;
-        self.status = TurnStatus::Suspended(reason);
+    pub fn close(&mut self, kind: ExecutionOutcomeKind) -> Result<(), ControlError> {
+        self.require_active()?;
+        self.status = ExecutionStatus::Closed(kind);
         Ok(())
     }
 
-    pub fn resume(&mut self) -> Result<(), TransitionError> {
+    fn require_active(&self) -> Result<(), ControlError> {
         match self.status {
-            TurnStatus::Suspended(_) => {
-                self.status = TurnStatus::Running;
-                Ok(())
-            }
-            TurnStatus::Terminal(_) => Err(TransitionError::AlreadyTerminal),
-            TurnStatus::Running => Err(TransitionError::NotSuspended),
-        }
-    }
-
-    pub fn terminate(&mut self, reason: TerminalReason) -> Result<(), TransitionError> {
-        if matches!(self.status, TurnStatus::Terminal(_)) {
-            return Err(TransitionError::AlreadyTerminal);
-        }
-
-        self.status = TurnStatus::Terminal(reason);
-        Ok(())
-    }
-
-    fn require_running(&self) -> Result<(), TransitionError> {
-        match self.status {
-            TurnStatus::Running => Ok(()),
-            TurnStatus::Suspended(_) => Err(TransitionError::NotRunning),
-            TurnStatus::Terminal(_) => Err(TransitionError::AlreadyTerminal),
+            ExecutionStatus::Active => Ok(()),
+            ExecutionStatus::Closed(_) => Err(ControlError::AlreadyClosed),
         }
     }
 }

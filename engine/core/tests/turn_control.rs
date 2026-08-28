@@ -1,117 +1,101 @@
 use std::num::NonZeroU32;
 
 use garive_core::{
-    IterationDecision, SuspensionReason, TerminalReason, TransitionError, TurnId, TurnLimits,
-    TurnState, TurnStatus,
+    BeginIteration, ControlError, ExecutionControl, ExecutionId, ExecutionLimits,
+    ExecutionOutcomeKind, ExecutionStatus, TurnId,
 };
 
-fn state(max_iterations: u32) -> TurnState {
-    TurnState::new(
+fn control(completed: u32, maximum: u32) -> ExecutionControl {
+    ExecutionControl::new(
         TurnId::try_from("turn-1").unwrap(),
-        TurnLimits::new(NonZeroU32::new(max_iterations).unwrap()),
+        ExecutionId::try_from("execution-1").unwrap(),
+        completed,
+        ExecutionLimits::new(NonZeroU32::new(maximum).unwrap()),
     )
+    .unwrap()
 }
 
 #[test]
-fn identity_rejects_empty_values() {
-    assert!(TurnId::try_from("").is_err());
-    assert_eq!(TurnId::try_from("turn-1").unwrap().as_str(), "turn-1");
+fn identities_are_distinct_and_non_empty() {
+    assert_eq!(TurnId::try_from("").unwrap_err().kind(), "turn");
+    assert_eq!(ExecutionId::try_from("").unwrap_err().kind(), "execution");
+    assert_eq!(TurnId::try_from("same").unwrap().as_str(), "same");
+    assert_eq!(ExecutionId::try_from("same").unwrap().as_str(), "same");
 }
 
 #[test]
-fn iteration_limit_terminates_without_overcounting() {
-    let mut turn = state(2);
-
-    assert_eq!(
-        turn.begin_iteration(),
-        Ok(IterationDecision::Started {
-            iteration: NonZeroU32::new(1).unwrap()
-        })
+fn reconstructed_cursor_cannot_exceed_limit() {
+    let result = ExecutionControl::new(
+        TurnId::try_from("turn-1").unwrap(),
+        ExecutionId::try_from("execution-2").unwrap(),
+        3,
+        ExecutionLimits::new(NonZeroU32::new(2).unwrap()),
     );
     assert_eq!(
-        turn.begin_iteration(),
-        Ok(IterationDecision::Started {
+        result,
+        Err(ControlError::CursorBeyondLimit {
+            completed: 3,
+            maximum: 2
+        })
+    );
+}
+
+#[test]
+fn limit_closes_without_overcounting() {
+    let mut execution = control(1, 2);
+    assert_eq!(
+        execution.begin_iteration(),
+        Ok(BeginIteration::Started {
             iteration: NonZeroU32::new(2).unwrap()
         })
     );
     assert_eq!(
-        turn.begin_iteration(),
-        Ok(IterationDecision::Terminated(
-            TerminalReason::BudgetExhausted
-        ))
+        execution.begin_iteration(),
+        Ok(BeginIteration::IterationLimitReached)
     );
-    assert_eq!(turn.completed_iterations(), 2);
+    assert_eq!(execution.completed_iterations(), 2);
     assert_eq!(
-        turn.status(),
-        TurnStatus::Terminal(TerminalReason::BudgetExhausted)
+        execution.status(),
+        ExecutionStatus::Closed(ExecutionOutcomeKind::Stopped)
     );
 }
 
 #[test]
-fn suspend_and_resume_preserve_control_identity() {
-    let mut turn = state(3);
-    turn.begin_iteration().unwrap();
-    let identity = turn.turn_id().clone();
-    let limits = turn.limits();
-
-    turn.suspend(SuspensionReason::ApprovalRequired).unwrap();
-    assert_eq!(
-        turn.status(),
-        TurnStatus::Suspended(SuspensionReason::ApprovalRequired)
-    );
-    turn.resume().unwrap();
-
-    assert_eq!(turn.status(), TurnStatus::Running);
-    assert_eq!(turn.turn_id(), &identity);
-    assert_eq!(turn.limits(), limits);
-    assert_eq!(turn.completed_iterations(), 1);
-}
-
-#[test]
-fn invalid_transitions_do_not_mutate_state() {
-    let mut running = state(1);
-    let before = running.clone();
-    assert_eq!(running.resume(), Err(TransitionError::NotSuspended));
-    assert_eq!(running, before);
-
-    running
-        .suspend(SuspensionReason::PartialModelOutput)
-        .unwrap();
-    let before = running.clone();
-    assert_eq!(running.begin_iteration(), Err(TransitionError::NotRunning));
-    assert_eq!(running, before);
-}
-
-#[test]
-fn every_terminal_reason_is_immutable() {
-    let reasons = [
-        TerminalReason::Answered,
-        TerminalReason::NoMoreToolCalls,
-        TerminalReason::BudgetExhausted,
-        TerminalReason::Cancelled,
-        TerminalReason::ProviderUnavailable,
-        TerminalReason::Failed,
-        TerminalReason::OperatorRequired,
-    ];
-
-    for reason in reasons {
-        let mut turn = state(1);
-        turn.terminate(reason).unwrap();
-        let terminal = turn.clone();
-
+fn all_outcome_kinds_close_exactly_once() {
+    for kind in [
+        ExecutionOutcomeKind::Completed,
+        ExecutionOutcomeKind::Suspended,
+        ExecutionOutcomeKind::Stopped,
+        ExecutionOutcomeKind::Failed,
+    ] {
+        let mut execution = control(0, 1);
+        execution.close(kind).unwrap();
+        let closed = execution.clone();
+        assert_eq!(execution.close(kind), Err(ControlError::AlreadyClosed));
         assert_eq!(
-            turn.begin_iteration(),
-            Err(TransitionError::AlreadyTerminal)
+            execution.begin_iteration(),
+            Err(ControlError::AlreadyClosed)
         );
-        assert_eq!(
-            turn.suspend(SuspensionReason::ApprovalRequired),
-            Err(TransitionError::AlreadyTerminal)
-        );
-        assert_eq!(turn.resume(), Err(TransitionError::AlreadyTerminal));
-        assert_eq!(
-            turn.terminate(TerminalReason::Failed),
-            Err(TransitionError::AlreadyTerminal)
-        );
-        assert_eq!(turn, terminal);
+        assert_eq!(execution, closed);
     }
+}
+
+#[test]
+fn continuation_is_a_new_execution_with_a_durable_cursor() {
+    let mut first = control(0, 3);
+    first.begin_iteration().unwrap();
+    first.close(ExecutionOutcomeKind::Suspended).unwrap();
+
+    let continued = ExecutionControl::new(
+        first.turn_id().clone(),
+        ExecutionId::try_from("execution-2").unwrap(),
+        first.completed_iterations(),
+        first.limits(),
+    )
+    .unwrap();
+
+    assert_eq!(continued.turn_id(), first.turn_id());
+    assert_ne!(continued.execution_id(), first.execution_id());
+    assert_eq!(continued.completed_iterations(), 1);
+    assert_eq!(continued.status(), ExecutionStatus::Active);
 }

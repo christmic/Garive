@@ -5,6 +5,6 @@
 mod turn;
 
 pub use turn::{
-    InvalidTurnId, IterationDecision, SuspensionReason, TerminalReason, TransitionError, TurnId,
-    TurnLimits, TurnState, TurnStatus,
+    BeginIteration, ControlError, ExecutionControl, ExecutionId, ExecutionLimits,
+    ExecutionOutcomeKind, ExecutionStatus, InvalidIdentity, TurnId,
 };
