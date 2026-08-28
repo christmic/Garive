@@ -175,17 +175,13 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root in
   `engine/`; expose them via the Tauri command / XPC layer.
 
-`just desktop` builds backend + frontend; macos-native has its
-own Xcode build that runs as part of the macOS-only release
-pipeline. `just conformance` is the sync gate for any change
-that touches wire types.
+These commands are future targets. `just desktop` currently reports that no
+Tauri manifest exists; no desktop conformance gate is active.
 
 ## Build
 
 ```
-just desktop                       # backend + frontend (all platforms)
-cd desktop/macos-native && \
-  xcodebuild -scheme <Extension>   # macos-native extensions (macOS only)
+just desktop                       # truthful placeholder until the slice lands
 ```
 
 The macOS release pipeline additionally runs the Xcode project

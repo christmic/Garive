@@ -1486,9 +1486,8 @@ Empirical `EXPLAIN QUERY PLAN` against a realistic workload
   culted. Add only what `derive` / `assembly` / `summarize`
   actually call.
 
-The conformance suite (`just conformance`) asserts schema
-**shape** (the index list above) but not the actual `EXPLAIN`
-plans — those are runtime concerns, land with the slice.
+When the ledger slice lands, schema tests assert required constraints. Indexes
+and query plans are performance evidence, not cross-language conformance.
 
 ### Write Discipline
 

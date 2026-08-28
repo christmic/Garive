@@ -1,8 +1,8 @@
 # mobile/AGENTS.md
 
-> **Mobile Agent Apps.** Kotlin Multiplatform (KMP) for shared
-> business logic, **Jetpack Compose** on Android, **SwiftUI**
-> on iOS. KMP shares logic; UI stays native per platform.
+> **Planned mobile Agent Apps.** Kotlin Multiplatform shares client logic,
+> Jetpack Compose serves Android, and SwiftUI serves iOS. This is the target
+> skeleton; its build and release gates land slice by slice.
 >
 > This file applies to everything under `mobile/`. It overrides
 > the root `AGENTS.md` where the two disagree.
@@ -75,15 +75,13 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root,
   push I/O behind a repository interface.
 
-`just conformance` must pass before any commit that touches
-`shared/`.
+When the first mobile slice lands, add the smallest executable checks required
+by the contracts it actually consumes. `just conformance` is not wired today.
 
 ## Build
 
 ```
-cd mobile
-gradle :shared:build               # KMP shared module
-gradle :androidApp:assembleDebug   # Android debug build
+just mobile                        # truthful placeholder until Gradle lands
 ```
 
 iOS uses Xcode (`iosApp/iosApp.xcworkspace`). The KMP framework
@@ -98,8 +96,7 @@ configuration.
   default for iOS in Garive.
 - ❌ Don't hand-write types that mirror a `.proto` field. Use
   the generated bindings.
-- ❌ Don't skip `just conformance` before committing to
-  `shared/`.
+- ❌ Don't claim cross-language parity without an executable harness.
 
 ## Testing
 

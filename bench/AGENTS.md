@@ -282,8 +282,9 @@ bench/
 ## Build
 
 ```
-just bench                  # cargo run -p bench
-just conformance            # cargo run -p bench -- conformance
+just bench                  # cargo test -p bench (scaffold verification)
+just conformance            # currently reports "not yet wired"
+```
 
 ## Testing
 
@@ -296,8 +297,7 @@ follows:
 | Static | `cargo fmt --check`, `cargo clippy -- -D warnings` on the bench crate |
 | Unit | `bench/src/lib.rs`, `runner.rs` etc. — the driver loop, the pool logic, the adapter dispatch |
 | Contract | round-trip the bench output JSON schema (`bench/tracking/`) on read |
-| Cross-language | `just conformance` (which `bench/conformance` participates in) |
+| Cross-language | Add an executable harness only when two real consumers need comparison |
 | Integration | `tests/integration/bench-*` — wiring the runner with a fake agent, fake env, fake eval |
 | E2E | `tests/e2e/bench-*` — full sweep with the smallest fixture subset on a self-hosted runner |
 | Agent / SWE | **the whole bench/** is layer 8 |
-```

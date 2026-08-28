@@ -1,68 +1,43 @@
 # runtime/AGENTS.md
 
-> **Service-runtime tier.** Hosts the Core Agent as a service.
-> Two sub-tiers:
->
-> - `replica/` — Rust service container running an Agent process.
-> - `gateway/` — Go high-throughput gateway (auth, rate limit,
->   load balance, observability, routing).
->
-> This file applies to everything under `runtime/`. It overrides
-> the root `AGENTS.md` where the two disagree.
+> Runtime owns session lifecycle, durable storage, execution, recovery, and
+> composition around the Agent kernel.
+
+This file applies under `runtime/` and refines the root rules.
 
 @AGENTS.md
 
-## Replica (`runtime/replica/`, Rust)
+## Ownership
 
-- Workspace member of the root Cargo workspace (added to
-  `members` in the root `Cargo.toml`).
-- Embeds `engine/` crates via normal Cargo path dependencies.
-- Exposes a single inbound interface (`/v1/<endpoint>`) that the
-  gateway calls. The wire schema lives in `spec/proto/`; replica
-  types are generated bindings, never hand-written.
-- Long-running work runs in a Tokio runtime; CPU-bound work is
-  dispatched to a blocking pool.
+- `replica/` is the intended first Rust host and composition root. It may
+  depend on `engine/`; `engine/` must not depend on it.
+- Runtime owns model/tool invocation lifecycle, external-effect receipts,
+  cancellation, resume, channels, and persistence adapters.
+- Runtime does not decide Agent intent or move domain policy into transport
+  handlers.
+- `gateway/` is the planned Go service edge for auth, admission, routing, load
+  balancing, and edge observability. It is not active until its first slice
+  lands and must not absorb Agent policy or Runtime recovery state.
 
-## Gateway (`runtime/gateway/`, Go)
+## Boundaries
 
-- **Not** a Cargo workspace member. Standalone `go.mod`.
-- Talks to replicas over the wire schema in `spec/proto/` using
-  the generated Go bindings (`buf generate` with the Go plugin).
-- Owns auth, rate limit, load balance, and observability. Does
-  **not** run agent logic; agent logic lives in the replica.
-- All public endpoints are versioned under `/v1/`.
+Add a wire schema in `spec/` only when Runtime has a real out-of-process
+consumer. In-process ports remain Rust interfaces. Transport-generated types
+are mapped at the boundary and do not become the domain model.
 
-## Cross-tier Contract
+Every external effect uses a durable lifecycle and stable invocation identity.
+After a crash, classify the invocation as safe to replay, receipt-recoverable,
+or uncertain; never infer success from a missing result and never blindly
+repeat an uncertain effect.
 
-The replica ↔ gateway interface is **defined by `spec/proto/`**
-and nothing else. Any change to a request / response shape starts
-in `spec/proto/*.proto` and is reflected by `buf generate` (or
-`build.rs`) into both tiers. Hand-written request / response
-structs are forbidden.
+## Verification
 
-## Observability
+For each implemented Runtime slice:
 
-- Replica and gateway both emit structured logs (JSON) to stdout.
-- Trace IDs propagate from gateway to replica via request
-  metadata; both tiers emit the same trace ID on every log line
-  that touches the request.
-
-## Testing
-
-This tier follows the test pyramid in `.agents/testing.md`.
-For `runtime/`:
-
-| Layer | Where | What |
-|-------|-------|------|
-| Static (Rust) | `runtime/replica/` | `cargo fmt --check`, `cargo clippy -- -D warnings` |
-| Static (Go) | `runtime/gateway/` | `gofmt -l`, `go vet ./...`, `golangci-lint run` |
-| Unit (Rust) | `runtime/replica/src/...` | TDD-first |
-| Unit (Go) | `runtime/gateway/*_test.go` | built-in `testing` + `testing/quickcheck` |
-| Property (Go) | `runtime/gateway/property_*_test.go` | `testing.F` for decoder robustness |
-| Integration | `runtime/gateway/*_integration_test.go` | real wire over `127.0.0.1` |
-| Contract | round-trip the generated Go bindings for every `.proto` message |
-| E2E | `tests/e2e/replica+gateway/` | replica + gateway + smoke load |
-
-The gateway is the most exposed tier; fuzz the request parser
-religiously. The replica is the most stateful tier; integration
-tests live with it.
+- run workspace formatting, clippy, tests, and docs;
+- test durable state transitions and crash boundaries with the real storage
+  adapter where recovery behavior is claimed;
+- add wire, fuzz, or end-to-end checks only for the parsers and processes that
+  actually exist;
+- keep numeric performance gates provisional until a reproducible baseline is
+  recorded.

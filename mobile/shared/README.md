@@ -41,16 +41,15 @@ shared/
 
 ## Build
 
-`cd mobile && gradle :shared:build`
+Not wired. Add a Gradle build only when the mobile client slice is selected.
 
 ## Verify
 
-`just conformance` (run from repo root) is the cross-language
-sync gate for anything that touches the wire types consumed
-from this module.
+No mobile conformance gate exists yet. Add consumer-specific wire or semantic
+checks with the first shared module that consumes a shipped contract.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
+- Last reviewed: 2026-08-29
 - Status: stub — slice not yet landed; content is scaffolding.
