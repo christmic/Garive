@@ -30,8 +30,10 @@ exhaustive dispatch. It is not a wire tag commitment.
 
 `ModelUsage` carries input, output, cache-read, and cache-write token counts.
 Counts describe context/accounting evidence, not currency or guaranteed
-provider billing. Unknown values are represented by the adapter's surrounding
-evidence in a later slice; C1a values are observed counts and default to zero.
+provider billing. Cache counts are breakdown fields and are not added again by
+`total_tokens()`, which checks only `input + output`. Unknown values are
+represented by the adapter's surrounding evidence in a later slice; C1a values
+are observed counts and default to zero.
 
 ## Invariants
 
