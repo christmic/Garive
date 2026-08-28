@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[dependencies]
+garive-runtime = { path = "../runtime/replica" }
+
 [[bin]]
 name = "garive-tui"
 path = "src/main.rs"

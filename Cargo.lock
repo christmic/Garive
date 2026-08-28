@@ -206,6 +206,9 @@ dependencies = [
 [[package]]
 name = "garive-cli"
 version = "0.1.0"
+dependencies = [
+ "garive-runtime",
+]
 
 [[package]]
 name = "garive-config"
@@ -305,6 +308,9 @@ version = "0.1.0"
 [[package]]
 name = "garive-tui"
 version = "0.1.0"
+dependencies = [
+ "garive-runtime",
+]
 
 [[package]]
 name = "generic-array"
