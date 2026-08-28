@@ -60,8 +60,12 @@ impl SessionProjection {
         match kind {
             "session.closed" => self.close_session(),
             "turn.started" => self.start_turn(required(&fact.turn_id)?),
-            "turn.suspended" => self.transition_turn(required(&fact.turn_id)?, TurnState::Suspended),
-            "turn.completed" => self.transition_turn(required(&fact.turn_id)?, TurnState::Completed),
+            "turn.suspended" => {
+                self.transition_turn(required(&fact.turn_id)?, TurnState::Suspended)
+            }
+            "turn.completed" => {
+                self.transition_turn(required(&fact.turn_id)?, TurnState::Completed)
+            }
             "turn.stopped" => self.transition_turn(required(&fact.turn_id)?, TurnState::Stopped),
             "turn.failed" => self.transition_turn(required(&fact.turn_id)?, TurnState::Failed),
             "turn.input" => self.require_open_turn(required(&fact.turn_id)?),
@@ -85,8 +89,12 @@ impl SessionProjection {
             "effect.failed" => self.transition_tool(fact, InvocationState::Failed),
             "effect.denied" => self.transition_tool(fact, InvocationState::Denied),
             "effect.uncertain" => self.transition_tool(fact, InvocationState::Uncertain),
-            "effect.authorized" | "interaction.requested" | "interaction.resolved"
-            | "interaction.cancelled" | "context.summary" | "privacy.redacted" => Ok(()),
+            "effect.authorized"
+            | "interaction.requested"
+            | "interaction.resolved"
+            | "interaction.cancelled"
+            | "context.summary"
+            | "privacy.redacted" => Ok(()),
             _ => Ok(()),
         }
     }
@@ -131,7 +139,10 @@ impl SessionProjection {
     }
 
     fn transition_turn(&mut self, turn_id: &TurnId, next: TurnState) -> Result<(), LedgerError> {
-        let current = self.turns.get(turn_id).ok_or(LedgerError::MissingReference)?;
+        let current = self
+            .turns
+            .get(turn_id)
+            .ok_or(LedgerError::MissingReference)?;
         let valid = match next {
             TurnState::Suspended | TurnState::Completed => *current == TurnState::Open,
             TurnState::Stopped | TurnState::Failed => {
@@ -179,7 +190,11 @@ impl SessionProjection {
     fn prepare_model(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let request = required(&fact.model_request_id)?;
-        if self.models.insert(request.clone(), InvocationState::Prepared).is_some() {
+        if self
+            .models
+            .insert(request.clone(), InvocationState::Prepared)
+            .is_some()
+        {
             return Err(LedgerError::InvalidTransition);
         }
         Ok(())
@@ -192,7 +207,10 @@ impl SessionProjection {
     ) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let request = required(&fact.model_request_id)?;
-        let state = self.models.get_mut(request).ok_or(LedgerError::MissingReference)?;
+        let state = self
+            .models
+            .get_mut(request)
+            .ok_or(LedgerError::MissingReference)?;
         let valid = (*state == InvocationState::Prepared && next == InvocationState::Started)
             || (*state == InvocationState::Started
                 && !matches!(next, InvocationState::Prepared | InvocationState::Started));
@@ -206,7 +224,11 @@ impl SessionProjection {
     fn prepare_tool(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let tool = required(&fact.tool_invocation_id)?;
-        if self.tools.insert(tool.clone(), InvocationState::Prepared).is_some() {
+        if self
+            .tools
+            .insert(tool.clone(), InvocationState::Prepared)
+            .is_some()
+        {
             return Err(LedgerError::InvalidTransition);
         }
         Ok(())
@@ -219,7 +241,10 @@ impl SessionProjection {
     ) -> Result<(), LedgerError> {
         self.require_active_execution(fact)?;
         let tool = required(&fact.tool_invocation_id)?;
-        let state = self.tools.get_mut(tool).ok_or(LedgerError::MissingReference)?;
+        let state = self
+            .tools
+            .get_mut(tool)
+            .ok_or(LedgerError::MissingReference)?;
         let valid = (*state == InvocationState::Prepared
             && matches!(next, InvocationState::Started | InvocationState::Denied))
             || (*state == InvocationState::Started
