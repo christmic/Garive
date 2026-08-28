@@ -264,6 +264,9 @@ pub fn render_request(
                 model_call_id,
                 result_json,
             } => {
+                if model_call_id.is_empty() {
+                    return Err(AnthropicAdapterError::InvalidRequest);
+                }
                 conversation_started = true;
                 let _: Value = serde_json::from_str(result_json)
                     .map_err(|_| AnthropicAdapterError::InvalidRequest)?;

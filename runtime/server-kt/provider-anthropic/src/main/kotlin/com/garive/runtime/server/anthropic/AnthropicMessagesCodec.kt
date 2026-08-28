@@ -102,7 +102,8 @@ object AnthropicMessagesCodec {
                     item.content.forEach { system += text(it) }
                 } else { started = true; messages += buildJsonObject { put("role", item.role.name.lowercase())
                     put("content", JsonArray(item.content.map(::text))) } }
-                is ModelInputItem.ToolObservation -> { started = true
+                is ModelInputItem.ToolObservation -> { if (item.modelCallId.isEmpty()) fail(AnthropicAdapterError.INVALID_REQUEST)
+                    started = true
                     parse(item.resultJson, AnthropicAdapterError.INVALID_REQUEST)
                     messages += buildJsonObject { put("role", "user"); putJsonArray("content") {
                         addJsonObject { put("type", "tool_result"); put("tool_use_id", item.modelCallId)
@@ -220,8 +221,13 @@ private class Failure(val error: AnthropicAdapterError) : RuntimeException()
 private fun fail(error: AnthropicAdapterError): Nothing = throw Failure(error)
 private inline fun <T> guard(block: () -> T): AnthropicResult<T> = try { AnthropicResult.Success(block()) }
 catch (error: Failure) { AnthropicResult.Failure(error.error) } catch (_: IllegalArgumentException) { AnthropicResult.Failure(AnthropicAdapterError.INVALID_JSON) }
-private fun parse(value: String, error: AnthropicAdapterError = AnthropicAdapterError.INVALID_JSON) = try { Json.parseToJsonElement(value) }
-catch (_: IllegalArgumentException) { fail(error) }
+private fun parse(value: String, error: AnthropicAdapterError = AnthropicAdapterError.INVALID_JSON) = try {
+    val trimmed = value.trim()
+    if (trimmed.firstOrNull()?.isLetter() == true && trimmed !in setOf("true", "false", "null")) fail(error)
+    Json.parseToJsonElement(value).also { element ->
+        if (element is JsonPrimitive && element.isString && !value.trimStart().startsWith('"')) fail(error)
+    }
+} catch (_: IllegalArgumentException) { fail(error) }
 private fun JsonObject.text(key: String) = getValue(key).jsonPrimitive.content
 private fun JsonObject.ulong(key: String) = text(key).toULongOrNull() ?: fail(AnthropicAdapterError.INVARIANT)
 private fun JsonObject.uint(key: String) = text(key).toUIntOrNull() ?: fail(AnthropicAdapterError.INVARIANT)

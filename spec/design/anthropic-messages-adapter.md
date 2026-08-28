@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted first protocol slice for Rust `adapters/llm-anthropic` and Kotlin
-`runtime/server-kt/provider-anthropic`.
+Implemented first protocol slice for Rust `adapters/llm-anthropic` and Kotlin
+`runtime/server-kt/provider-anthropic`. The supported subset below is exhaustive.
 
 ## Evidence coordinates
 
@@ -15,84 +15,78 @@ Reviewed 2026-08-29:
 - official `anthropic-sdk-python` commit
   `009b035305e0724ce108ebd796935f91711fc6e1`
   (`v0.121.0-2-g009b035`);
-- inspected SDK paths: `message_create_params.py`, `message.py`, `usage.py`,
-  `raw_message_stream_event.py`, every raw message/content-block event and
-  delta type, `resources/messages/messages.py`, `_client.py`, `_exceptions.py`
-  and `types/shared/error_*`.
+- inspected create params, message/content-block/usage types, every admitted raw
+  stream event/delta, client/error implementation and shared error types.
 
-The official docs/SDK define wire truth. Sylvander is an implementation
-reference only; disagreement is resolved in favor of these coordinates.
+Official wire types define protocol truth. Sylvander is only an implementation
+reference.
 
-## Boundary
+## Boundary and composition
 
 - endpoint: `POST /v1/messages`;
-- request/ordinary response media type: JSON;
-- streaming: request `stream=true`, response is SSE;
-- required version header: `anthropic-version: 2023-06-01` for this slice;
-- authentication: `x-api-key` or an explicitly configured bearer credential;
-- optional beta features require an explicit, frozen `anthropic-beta` list;
-- token counting, batches, legacy completions, Bedrock, Vertex and Foundry are
+- JSON request and ordinary response; SSE when `stream=true`;
+- required version header: `anthropic-version: 2023-06-01`;
+- token counting, batches, legacy completions and cloud-provider variants are
   outside this slice.
 
-Runtime owns credentials, base URL, version/beta policy and timeouts. Secrets
-and transport headers never enter `ModelRequest`, fixtures or public errors.
+The adapter creates a credential-free request descriptor. Runtime supplies base
+URL, `x-api-key` or configured bearer credential, beta policy, timeout and
+actual I/O. Secrets and transport configuration never enter `ModelRequest`,
+fixtures or public errors.
+
+The composed `AnthropicModelPort` accepts a Runtime-selected maximum-attempt
+count. Transport classifies failures as `BeforeDispatch` or `Ambiguous`; only a
+proven pre-dispatch failure may retry. Ambiguity immediately returns
+`Interrupted(Transport)`. Received retryable errors may honor `Retry-After`.
+
+The current transport returns a complete response body. The adapter validates
+SSE bytes, then emits authoritative completed/partial items and usage to the
+observer. Token-delta observation and mid-body cancellation require a later
+chunk-transport slice and are not claimed here.
 
 ## Supported request subset
 
-The adapter renders required `model`, `max_tokens` and ordered `messages`.
-Messages use only `user` or `assistant`; Core `System` and `Developer` input is
-rendered through the top-level `system` content in original relative order.
-Interleaving either role after the first user/assistant message is rejected,
-because moving it would change meaning. There is no Anthropic `system` role.
+The adapter renders exactly:
 
-Supported content is text, admitted image/media source forms, prior
-`tool_use`, and matching `tool_result`. Tools render name, description and
-`input_schema`; tool choice and strictness are rendered only when the selected
-official contract supports the requested semantics. Optional stop sequences,
-temperature, top-p/top-k, service tier, thinking and bounded metadata are sent
-only when frozen target policy declares them.
+- required `model`, positive `max_tokens`, ordered messages and `stream`;
+- user/assistant text messages;
+- leading Core System/Developer text as ordered top-level `system` blocks;
+- client `tool_result` from a non-empty call correlation and valid JSON result;
+  the JSON bytes are carried as official string content, not an invalid object;
+- non-strict client tools with name, description and parsed `input_schema`;
+- either no metadata or exactly one bounded `user_id` entry.
 
-Unknown input blocks, provider server tools, unsupported JSON-output mode or
-unrepresentable role ordering fail before dispatch. The adapter never drops or
-stringifies them.
+System/Developer content after conversation start, media, reasoning references,
+strict tools and non-plain output modes fail `UnsupportedCapability`. A tool
+result wire block is supported, but end-to-end paired tool transcripts remain a
+C4/C5 responsibility; this adapter does not invent a preceding assistant
+`tool_use` block.
 
-## Response blocks
+## Response blocks and usage
 
-The response `content` array is authoritative and order-sensitive. This slice
-normalizes:
+The ordered `content` array maps:
 
 - `text` to `ModelItem.Text`;
-- `thinking` to one visible `Reasoning` item followed, when present, by one
-  opaque-reference `Reasoning` item containing its signature evidence;
-- `redacted_thinking` to an opaque `Reasoning` reference;
-- `tool_use` id/name/complete input JSON to `ToolIntent`.
+- `thinking` to visible reasoning plus an opaque signature reference when
+  supplied;
+- `redacted_thinking` to an opaque reasoning reference;
+- `tool_use` to `ToolIntent` with ID, name and complete input JSON.
 
-Unknown blocks, citations and provider-operated server-tool blocks are kept as
-bounded sanitized audit evidence and fail `UnsupportedCapability` unless that
-exact target capability was admitted. Signatures are opaque: they are never
-parsed, synthesized or logged as user-visible reasoning.
+Unknown, citation and provider-server-tool blocks fail
+`UnsupportedCapability`. Signatures remain opaque and are never parsed or
+presented as ordinary model text. Runtime transport may retain separately
+sanitized protocol telemetry; the adapter does not claim unknown-block storage.
 
-## Usage
+Normalized input usage is the checked sum of `input_tokens`,
+`cache_creation_input_tokens` and `cache_read_input_tokens`; output and cache
+breakdowns remain separately available. Missing cache fields mean zero for the
+breakdown. Invalid integers, decreasing cumulative output usage or overflow
+fail the adapter invariant.
 
-Anthropic reports ordinary input tokens and cache input components separately.
-Garive maps them without double counting:
+## SSE lifecycle
 
-| Anthropic | Garive |
-|---|---|
-| `input_tokens` + `cache_creation_input_tokens` + `cache_read_input_tokens` | known input tokens |
-| `output_tokens` | known output tokens |
-| `cache_read_input_tokens` | cache-read breakdown |
-| `cache_creation_input_tokens` | cache-write breakdown |
-| server-tool usage and service tier | provider detail/audit |
-
-All additions use checked `u64` arithmetic. Negative values or overflow fail
-the adapter invariant. Cache fields are already included in normalized input
-and are never added again by `total_tokens()`.
-
-## SSE sequence
-
-SSE transport can carry `ping` and `error` events in addition to typed message
-events. The admitted lifecycle is:
+`ping` is permitted as liveness and `error` is permitted as a terminal. Every
+content/message event otherwise requires exactly one preceding `message_start`:
 
 ```text
 message_start
@@ -101,78 +95,53 @@ message_start
   -> message_stop
 ```
 
-Block indexes are non-negative, unique on start and complete exactly once.
-Supported deltas are `text_delta`, `thinking_delta`, `signature_delta` and
-`input_json_delta`. Delta kind must match its started block. Incremental tool
-JSON is opaque until block completion, then must parse as exactly one JSON
-value. A thinking signature must precede its block stop when supplied.
+Block indexes are non-negative and unique. Blocks stop once; delta kind must
+match text, thinking or tool-input state. Tool input must parse as one JSON value
+at block stop. Output usage cannot decrease. `message_stop` requires a stop
+reason and every block closed; it is the only successful stream terminal.
 
-`message_delta` supplies the final stop reason and cumulative output usage.
-Usage must not decrease. `message_stop` is the only successful stream
-terminal. Duplicate terminal, event after terminal, missing block stop,
-unknown meaning-changing delta or mismatched final content fails closed.
+An `error` before content maps only verified authentication, rate-limit or
+availability types. Once content exists, it returns
+`Interrupted(Transport)` with assembled partial items. EOF returns the same
+interruption (with unknown or last reported usage); HTTP 2xx and
+`message_delta` alone never complete.
 
-`ping` is ignored as transport liveness. An SSE `error` before any content
-normalizes its verified authentication, rate-limit or availability kind. Once
-any content block has started, the same event is externally ambiguous and
-normalizes to `Interrupted(Transport)` with the assembled partial items; the
-adapter never discards partial output to report a retryable terminal. EOF,
-HTTP 2xx or a final `message_delta` alone never completes the request.
+## Terminal and HTTP mapping
 
-## Terminal mapping
-
-| Official fact | Garive fact |
+| Verified fact | Garive fact |
 |---|---|
-| valid message / `message_stop`, `end_turn` | `Completed(EndTurn)` |
-| valid message / `message_stop`, `tool_use` | `Completed(ToolUse)` |
+| `end_turn` | `Completed(EndTurn)` |
+| `tool_use` | `Completed(ToolUse)` |
 | `stop_sequence` | `Completed(StopSequence)` |
-| `pause_turn` | `Completed(PauseTurn)`; Core policy decides continuation |
-| `refusal` | `Completed(Refusal)` with a refusal item when supplied |
-| `max_tokens` or `model_context_window_exceeded` after output | `Interrupted(OutputLimit)` with partial items |
-| verified request context overflow before output | `Rejected(ContextOverflow)` |
-| verified authentication/permission rejection | `Rejected(Authentication)` |
-| observer cancellation | `Interrupted(Cancelled)` |
-| connection/timeout/EOF before terminal | `Interrupted(Transport)` |
-| exhausted 429 | `Unavailable(RateLimited, retry_after)` |
-| exhausted 5xx/529/model unavailability | `Unavailable(ModelUnavailable)` |
+| `pause_turn` | `Completed(PauseTurn)` |
+| `refusal` | `Completed(Refusal)` |
+| `max_tokens` / `model_context_window_exceeded` after output | `Interrupted(OutputLimit)` |
+| observer/Runtime cancellation | `Interrupted(Cancelled)` |
+| EOF or ambiguous transport | `Interrupted(Transport)` |
+| verified long-prompt/context-window invalid request | `Rejected(ContextOverflow)` |
+| HTTP 401/403 or authentication/permission type | `Rejected(Authentication)` |
+| exhausted rate-limit response | `Unavailable(RateLimited)` |
+| exhausted 500/503/504/529 or API/overload type | `Unavailable(ModelUnavailable)` |
 
-The adapter preserves an explicit refusal as a factual model result; it does
-not silently reclassify it as provider transport rejection.
+Status 413 alone is not enough evidence for context overflow; the current slice
+requires a verified invalid-request type plus bounded long-prompt/context-window
+message evidence. Unrecognized HTTP/error combinations fail
+`UnsupportedCapability`. Public evidence contains only a bounded error type.
 
-## HTTP errors and retry
+## Fixtures and acceptance
 
-Official error responses contain top-level `type=error`, an error object with
-typed `type` and `message`, and optional `request_id`. The adapter bounds and
-sanitizes these fields, reads the request ID header/body for telemetry only,
-and classifies only verified signals. Raw bodies, credentials, headers and user
-content never enter public errors.
+`spec/fixtures/providers/anthropic/messages/` contains reviewed metadata,
+ordinary/request/tool-result, complete/truncated/thinking streams, stream error
+and HTTP errors. Native tests in both languages synthesize malformed root,
+block lifecycle, indexes, deltas, terminal and retry/ambiguity cases.
 
-Runtime supplies retry limits. Retry is permitted only before an externally
-ambiguous response and retains the same logical request ID; no provider billing
-idempotency guarantee is inferred. Valid `Retry-After` is retained. Status 413,
-429, 500/503/504 and 529 remain distinct internal evidence even when multiple
-statuses normalize to the same Core envelope.
-
-## Official wire fixtures
-
-`spec/fixtures/providers/anthropic/messages/` contains minimal text, thinking,
-redacted thinking, tool use with chunked JSON, cache usage, each stop reason,
-ping, stream error, HTTP errors, malformed lifecycle/index/delta/terminal, and
-unknown block cases. Each fixture records its official source path and reviewed
-commit. Rust and Kotlin consume identical bytes and compare normalized facts.
-
-## Acceptance
-
-- request JSON and headers match the admitted official schema exactly;
-- both parsers pass all official-shape fixtures and reject malformed streams;
-- chunk boundaries cannot change ordered terminal items;
-- only a complete ordinary response or `message_stop` can complete;
-- stop reasons, usage and errors follow the mappings above;
-- adapter modules depend on the LLM contract, never Core/Runtime policy;
-- no live API test runs without explicitly supplied credentials/endpoint.
+Acceptance requires identical Rust/Kotlin normalization of shared bytes,
+official request/header shape, strict lifecycle and terminal checks,
+ambiguity-safe retry, observer cancellation, native tests, and no live request
+without an explicitly composed Runtime transport and credentials.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: accepted
+- Status: implemented protocol slice

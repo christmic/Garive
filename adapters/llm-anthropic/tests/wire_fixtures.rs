@@ -71,6 +71,27 @@ fn tool_result_request_matches_official_string_content_shape() {
     });
     let expected: Value = serde_json::from_slice(&fixture("request-tool-result.json")).unwrap();
     assert_eq!(render_request(&value, true).unwrap(), expected);
+    if let ModelInputItem::ToolObservation { model_call_id, .. } =
+        value.input_items.last_mut().unwrap()
+    {
+        model_call_id.clear();
+    }
+    assert_eq!(
+        render_request(&value, true),
+        Err(AnthropicAdapterError::InvalidRequest)
+    );
+    if let ModelInputItem::ToolObservation {
+        model_call_id,
+        result_json,
+    } = value.input_items.last_mut().unwrap()
+    {
+        model_call_id.push_str("call-1");
+        *result_json = "not-json".into();
+    }
+    assert_eq!(
+        render_request(&value, true),
+        Err(AnthropicAdapterError::InvalidRequest)
+    );
 }
 
 #[test]

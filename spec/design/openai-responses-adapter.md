@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted first protocol slice for Rust `adapters/llm-openai` and Kotlin
-`runtime/server-kt/provider-openai`.
+Implemented first protocol slice for Rust `adapters/llm-openai` and Kotlin
+`runtime/server-kt/provider-openai`. The supported subset below is exhaustive;
+anything not named is rejected before dispatch or fails closed while parsing.
 
 ## Evidence coordinates
 
@@ -16,169 +17,133 @@ Reviewed 2026-08-29:
 - official `openai-python` commit
   `a1eeab58db02de46717ccebaf1eb83e314fa86ff`
   (`v3.0.0-1-ga1eeab58`);
-- inspected SDK paths:
-  `src/openai/types/responses/response_create_params.py`, `response.py`,
-  `response_output_item.py`, `response_stream_event.py`, `response_usage.py`,
-  `response_function_tool_call.py`, function-call argument delta/done event
-  types, and `src/openai/types/shared/error_object.py`.
+- inspected SDK request/response, output-item, stream-event, usage, function-call
+  and error types under `src/openai/types/responses/` and `shared/error_object.py`.
 
-The official docs/SDK define wire truth. Sylvander is an implementation
-reference only; any disagreement is resolved in favor of the coordinates above.
+Official wire types define protocol truth. Sylvander is only an implementation
+reference.
 
-## Boundary
+## Boundary and composition
 
 - endpoint: `POST /v1/responses`;
-- authentication: Runtime supplies the secret bearer credential to the HTTP
-  adapter; it never enters `ModelRequest`, logs or fixtures;
-- request media type: JSON;
-- streaming: request `stream=true`, response parsed as SSE semantic events;
-- Chat Completions, Realtime, WebSocket mode, background responses and remote
-  retrieval/cancellation are outside this first slice.
+- JSON request and ordinary response; SSE when `stream=true`;
+- Chat Completions, Realtime, WebSocket, background mode and remote response
+  retrieval/cancellation are outside this slice.
 
-Base URL, organization/project routing and credential source are Runtime
-configuration. Core cannot override them.
+The adapter creates a credential-free request descriptor containing method,
+path, media headers and body. A Runtime-owned transport supplies base URL,
+bearer credential, organization/project routing, timeout and actual I/O. Those
+values never enter `ModelRequest`, fixtures or public errors.
+
+The composed `OpenAiModelPort` accepts a Runtime-selected maximum-attempt count.
+Transport must classify failure as `BeforeDispatch` or `Ambiguous`. Only the
+former may be retried; ambiguity immediately returns
+`Interrupted(Transport)`. A received retryable HTTP error may use a valid
+`Retry-After`. No provider billing idempotency is inferred.
+
+The current transport boundary returns one complete response body. SSE bytes
+are validated as a stream, then authoritative completed/partial items and usage
+are sent to the observer. This slice does not claim token-delta delivery or
+mid-body cancellation; those require a later chunk-transport contract.
 
 ## Supported request subset
 
-The adapter renders:
+The adapter renders exactly:
 
-- required `model` from the resolved target;
-- ordered `input` messages with `system`, `developer`, `user`, or `assistant`
-  roles and text content;
-- admitted image/media references only after Runtime resolves them to an
-  official `input_image` representation;
-- `instructions` only when the frozen request explicitly uses the dedicated
-  instruction channel; it is not copied from an arbitrary message;
+- `model` from the Runtime-resolved `ModelTargetId`;
+- ordered message input with system/developer/user/assistant roles;
+- `input_text` and image `input_image` whose reference has already been
+  resolved by Runtime to an accepted `image_url` value;
 - optional non-zero `max_output_tokens`;
-- function tools with `type=function`, name, description, parameters and
-  strictness;
-- `parallel_tool_calls`, text format and reasoning configuration when declared
-  by the target capability snapshot;
-- bounded metadata (official limit: at most 16 entries, key ≤64 characters,
-  value ≤512 characters);
-- `store=false` by default unless Runtime policy explicitly admits provider
-  storage.
+- function tools with name, description, parsed parameters and strictness;
+- plain, `json_object`, or strict named `json_schema` text format;
+- at most 16 bounded metadata entries;
+- `stream` as requested and `store=false`.
 
-Unsupported `ModelInputItem`, tool kind or output mode fails before dispatch.
-The adapter never drops it or changes it to text.
+`ToolObservation`, `ReasoningReference`, non-image media, instructions,
+parallel-tool policy and reasoning configuration are not represented by the
+current portable request and therefore fail or are omitted rather than guessed.
 
-## Response items
+## Response and usage
 
-The response `output` array is authoritative and order-sensitive. The adapter
-supports:
+The ordered `output` array maps:
 
-- `message` content: `output_text` and `refusal`;
-- `reasoning`: visible summary/text and opaque/encrypted content references;
-- `function_call`: `call_id`, name and the complete JSON argument string.
+- message `output_text` to `ModelItem.Text`;
+- message `refusal` to `ModelItem.Refusal`;
+- reasoning summary/text to model-visible reasoning and `encrypted_content` to
+  an opaque reasoning reference;
+- `function_call` to `ToolIntent` with call ID, name and complete argument text.
 
-Unknown/built-in output item kinds are preserved as bounded sanitized audit
-evidence and return `UnsupportedCapability` unless the target snapshot admitted
-that exact kind. The adapter does not execute OpenAI built-in tools on behalf of
-Core.
+Unknown output item or content kinds fail `UnsupportedCapability`. They are not
+claimed to be retained by this adapter; sanitized protocol telemetry belongs to
+the Runtime transport.
 
-## Usage
+`input_tokens`, `output_tokens`, cache-read and optional cache-write breakdowns
+map to `ModelUsage`. `total_tokens` must equal checked input plus output. A
+negative/non-integer value or overflow is an adapter invariant failure. Cache
+and reasoning breakdowns are not added to the total again.
 
-Official `ResponseUsage` fields map as follows:
+## SSE lifecycle
 
-| OpenAI | Garive |
-|---|---|
-| `input_tokens` | known input tokens |
-| `output_tokens` | known output tokens |
-| `input_tokens_details.cached_tokens` | cache-read breakdown |
-| `input_tokens_details.cache_write_tokens` | cache-write breakdown |
-| `output_tokens_details.reasoning_tokens` | provider detail/audit, already included in output |
-| `total_tokens` | consistency evidence, not recomputed billing truth |
-
-Negative values, overflow, or `total_tokens != input_tokens + output_tokens`
-produce an adapter invariant failure with sanitized evidence. Cache/reasoning
-breakdowns are not added again to totals.
-
-## SSE sequence
-
-Every decoded event has a non-negative `sequence_number`. Sequence numbers must
-strictly increase. The admitted lifecycle is:
+Every event requires a non-negative, strictly increasing `sequence_number`.
+The first semantic event is exactly one `response.created`; supported item
+events then precede one terminal:
 
 ```text
 response.created
-  -> response.in_progress / response.queued (optional lifecycle facts)
-  -> output item/content/delta events
+  -> response.in_progress / response.queued*
+  -> output_item/content_part/delta/done events*
   -> response.completed | response.incomplete | response.failed
 ```
 
-For supported items the adapter handles:
+The parser validates output-item identity/index, content-part identity/index,
+delta kind, final done value, one item completion and equality with terminal
+response content. It supports output text, refusal, reasoning summary/text and
+function-call argument events. `response.output_text.annotation.added` is
+non-assembling and ignored. Every other unknown semantic event fails
+`UnsupportedCapability`.
 
-- `response.output_item.added/done`;
-- `response.content_part.added/done`;
-- `response.output_text.delta/done`;
-- `response.refusal.delta/done`;
-- reasoning text/summary delta/done events;
-- `response.function_call_arguments.delta/done`.
+Only a valid `response.completed` creates `Completed`. A supported
+`response.incomplete` with `max_output_tokens` creates
+`Interrupted(OutputLimit)`. EOF before a terminal creates
+`Interrupted(Transport)` with assembled partial items and unknown usage.
+`response.failed` currently fails closed as an adapter invariant; no factual
+mapping is claimed until its error union is specified and fixture-covered.
 
-Deltas require a started output item and matching item/index. Done events must
-match the fully assembled item. Duplicate terminal, event after terminal,
-missing required item completion or mismatched arguments fails closed.
+## Terminal and HTTP mapping
 
-Unknown event types are retained as sanitized audit evidence. They are ignored
-only when they cannot change admitted item assembly or terminal meaning;
-otherwise the outcome is adapter invariant/unsupported failure.
-
-## Terminal mapping
-
-| Official terminal | Garive fact |
+| Verified fact | Garive fact |
 |---|---|
-| `response.completed` with status `completed` | `Completed` with ordered items/usage/stop reason |
-| `response.incomplete`, reason `max_output_tokens` | `Interrupted(OutputLimit)` with partial items/usage |
-| incomplete/failed content-policy evidence | `Rejected(ContentPolicy)` or completed refusal item according to the official response shape |
-| cancelled response or observer cancellation | `Interrupted(Cancelled)` |
-| transport ends before terminal | `Interrupted(Transport)` |
-| verified context-length rejection | `Rejected(ContextOverflow)` |
-| verified auth failure | `Rejected(Authentication)` |
-| exhausted 429 | `Unavailable(RateLimited, retry_after)` |
-| exhausted service/model availability | `Unavailable(ModelUnavailable)` |
+| completed text | `Completed(EndTurn)` |
+| completed function call | `Completed(ToolUse)` |
+| completed refusal item | `Completed(Refusal)` |
+| incomplete `max_output_tokens` | `Interrupted(OutputLimit)` |
+| incomplete `content_filter` ordinary response | `Rejected(ContentPolicy)` |
+| observer/Runtime cancellation | `Interrupted(Cancelled)` |
+| EOF or ambiguous transport | `Interrupted(Transport)` |
+| error code `context_length_exceeded` | `Rejected(ContextOverflow)` |
+| HTTP 401/403 or `invalid_api_key` | `Rejected(Authentication)` |
+| exhausted HTTP 429 | `Unavailable(RateLimited)` |
+| exhausted HTTP 5xx | `Unavailable(ModelUnavailable)` |
 
-Only `response.completed` with a valid completed Response can produce
-`Completed`. HTTP 2xx or SSE EOF alone cannot.
+Unrecognized HTTP/error combinations fail `UnsupportedCapability`; raw bodies,
+headers, credentials and user content never enter public evidence.
 
-## HTTP errors and retry
+## Fixtures and acceptance
 
-The adapter parses the official error object (`message`, `type`, optional code
-and parameter), sanitizes/bounds evidence, and classifies only verified signals.
-Runtime config supplies retry limits. Adapter retry is allowed only before a
-response becomes externally ambiguous and uses the same logical request ID;
-provider billing idempotency is not assumed without an official guarantee.
+`spec/fixtures/providers/openai/responses/` contains reviewed metadata, request,
+ordinary, complete, composite reasoning/text/tool stream, incomplete, truncated,
+content-filter, refusal and HTTP-error bytes. Native tests in both languages
+also synthesize malformed sequence, missing-root, identity, done-value,
+duplicate/late-terminal and unknown-event cases.
 
-`Retry-After` is parsed when present and valid. Raw response bodies, headers,
-credentials and user content are never placed in public errors.
-
-## Official wire fixtures
-
-`spec/fixtures/providers/openai/responses/` contains:
-
-- minimal text request/response;
-- ordered text + reasoning + function-call response;
-- complete SSE stream with argument delta chunking;
-- incomplete max-output stream;
-- refusal/content-policy case;
-- 400 context/auth errors, 429 with retry hint and 5xx availability;
-- malformed sequence/index/done/terminal cases;
-- unknown event and unsupported output-item cases;
-- known/cache/reasoning usage case.
-
-Fixtures record their official source path and reviewed commit. Rust/Kotlin
-parsers consume the same bytes and compare normalized facts.
-
-## Acceptance
-
-- request JSON matches the admitted official schema and omits unset fields;
-- both parsers pass every official-shape fixture and reject malformed streams;
-- stream chunking cannot change terminal ordered items;
-- no response completes from HTTP status/EOF alone;
-- usage and error classification follow the mappings above;
-- adapter modules depend on the LLM contract, never Core/Runtime policy;
-- no live API test runs without explicitly supplied credentials/endpoint.
+Acceptance requires identical Rust/Kotlin normalization of shared bytes,
+official request shape, strict lifecycle/terminal checks, ambiguity-safe retry,
+observer cancellation, native tests, and no live request without an explicitly
+composed Runtime transport and credentials.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: accepted
+- Status: implemented protocol slice

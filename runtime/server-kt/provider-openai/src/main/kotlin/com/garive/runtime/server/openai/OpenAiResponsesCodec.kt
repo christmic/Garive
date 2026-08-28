@@ -357,7 +357,11 @@ private inline fun <T> guard(block: () -> T): OpenAiResult<T> = try { OpenAiResu
 catch (error: CodecFailure) { OpenAiResult.Failure(error.error) }
 catch (_: IllegalArgumentException) { OpenAiResult.Failure(OpenAiAdapterError.INVALID_JSON) }
 private fun parse(text: String, error: OpenAiAdapterError = OpenAiAdapterError.INVALID_JSON): JsonElement =
-    try { Json.parseToJsonElement(text) } catch (_: IllegalArgumentException) { fail(error) }
+    try { val trimmed = text.trim()
+        if (trimmed.firstOrNull()?.isLetter() == true && trimmed !in setOf("true", "false", "null")) fail(error)
+        Json.parseToJsonElement(text).also { element ->
+        if (element is JsonPrimitive && element.isString && !text.trimStart().startsWith('"')) fail(error)
+    } } catch (_: IllegalArgumentException) { fail(error) }
 private fun JsonObject.text(key: String) = getValue(key).jsonPrimitive.content
 private fun JsonObject.ulong(key: String) = text(key).toULongOrNull() ?: fail(OpenAiAdapterError.INVARIANT)
 private fun JsonObject.uint(key: String) = text(key).toUIntOrNull() ?: fail(OpenAiAdapterError.INVARIANT)

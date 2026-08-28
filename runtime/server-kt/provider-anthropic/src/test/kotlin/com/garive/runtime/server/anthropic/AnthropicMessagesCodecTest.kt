@@ -40,6 +40,12 @@ class AnthropicMessagesCodecTest {
         val actual = assertIs<AnthropicResult.Success<JsonObject>>(
             AnthropicMessagesCodec.renderRequest(value, true)).value
         assertEquals(Json.parseToJsonElement(fixture("request-tool-result.json").decodeToString()), actual)
+        assertEquals(AnthropicResult.Failure(AnthropicAdapterError.INVALID_REQUEST),
+            AnthropicMessagesCodec.renderRequest(value.copy(inputItems = value.inputItems.dropLast(1) +
+                ModelInputItem.ToolObservation("", "{}")), true))
+        assertEquals(AnthropicResult.Failure(AnthropicAdapterError.INVALID_REQUEST),
+            AnthropicMessagesCodec.renderRequest(value.copy(inputItems = value.inputItems.dropLast(1) +
+                ModelInputItem.ToolObservation("call-1", "not-json")), true))
     }
     @Test fun `ordinary complete and truncated streams normalize`() {
         val ordinary = assertIs<AnthropicResult.Success<InvokeOutcome>>(
