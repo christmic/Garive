@@ -21,6 +21,11 @@ Every mutation accepts `Idempotency-Key`. The response repeats stable Session,
 Turn and Execution identities and the committed ledger position. A client must
 never invent a terminal from HTTP success or stream EOF.
 
+The cross-platform wire schema is
+`spec/proto/garive/host/v1/host.proto`. Its `event` discriminator remains a
+string so an unknown future value survives protobuf decoding. Generated
+bindings are transport values; client presentation state is derived separately.
+
 ## Event envelope
 
 ```text

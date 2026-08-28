@@ -27,6 +27,7 @@ class FakeHostClientTest {
         assertEquals("hello from Garive", result.text)
         assertEquals(HostTerminalKind.COMPLETED, result.terminal)
         assertEquals(5uL, result.lastPosition)
+        assertEquals(result, assertIs<HostClientResult.Success>(EmbeddedFakeHost.runDefault()).value)
     }
 
     @Test fun positionGapFailsClosed() {

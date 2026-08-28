@@ -1,6 +1,6 @@
 plugins {
-    kotlin("multiplatform") version "2.3.21"
-    id("com.squareup.wire") version "6.4.7"
+    kotlin("multiplatform")
+    id("com.squareup.wire")
 }
 
 group = "com.garive"

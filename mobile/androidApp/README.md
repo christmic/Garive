@@ -40,10 +40,19 @@ androidApp/
 
 ## Build
 
-`cd mobile && gradle :androidApp:assembleDebug`
+From this directory, with Android SDK 36 installed:
+
+```text
+java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar \
+  org.gradle.wrapper.GradleWrapperMain app:assembleDebug
+```
+
+The app includes `../shared` as a Gradle project and renders the result returned
+by `EmbeddedFakeHost`; it does not duplicate Host reduction in the UI tier.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: active Compose shell; Gradle configuration verified, APK gate requires
+  a local Android SDK.

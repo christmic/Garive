@@ -1,5 +1,6 @@
 package com.garive.mobile.host
 
+import com.garive.host.v1.FakeHostCommandV1
 import com.garive.host.v1.FakeHostScenarioV1
 import com.garive.host.v1.HostEventV1
 
@@ -73,4 +74,31 @@ class FakeHostClient(private val scenario: FakeHostScenarioV1) {
         "turn.failed" -> HostTerminalKind.FAILED
         else -> null
     }
+}
+
+object EmbeddedFakeHost {
+    fun runDefault(): HostClientResult = FakeHostClient(
+        FakeHostScenarioV1(
+            api_version = "garive.host.v1",
+            command = FakeHostCommandV1("garive.default", "hello"),
+            events = listOf(
+                event(1, "session.created"),
+                event(2, "turn.started", turn = true),
+                event(3, "output.delta", "hello ", turn = true),
+                event(4, "output.delta", "from Garive", turn = true),
+                event(5, "turn.completed", turn = true),
+            ),
+        )
+    ).run("garive.default", "hello")
+
+    private fun event(position: Long, kind: String, text: String = "", turn: Boolean = false) =
+        HostEventV1(
+            api_version = "garive.host.v1",
+            session_id = "session-fixture",
+            position = position,
+            event = kind,
+            turn_id = if (turn) "turn-fixture" else "",
+            execution_id = if (turn) "execution-fixture" else "",
+            text = text,
+        )
 }
