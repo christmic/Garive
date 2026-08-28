@@ -27,6 +27,38 @@ pub enum HttpErrorAction {
     Terminal(InvokeOutcome),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpRequestDescriptor {
+    pub method: &'static str,
+    pub path: &'static str,
+    pub headers: Vec<(&'static str, &'static str)>,
+    pub body: Vec<u8>,
+}
+
+pub fn render_http_request(
+    request: &ModelRequest,
+    stream: bool,
+) -> Result<HttpRequestDescriptor, OpenAiAdapterError> {
+    let body = serde_json::to_vec(&render_request(request, stream)?)
+        .map_err(|_| OpenAiAdapterError::Invariant)?;
+    Ok(HttpRequestDescriptor {
+        method: "POST",
+        path: "/v1/responses",
+        headers: vec![
+            ("content-type", "application/json"),
+            (
+                "accept",
+                if stream {
+                    "text/event-stream"
+                } else {
+                    "application/json"
+                },
+            ),
+        ],
+        body,
+    })
+}
+
 pub fn classify_http_error(
     status: u16,
     retry_after: Option<&str>,

@@ -25,6 +25,13 @@ class AnthropicMessagesCodecTest {
     @Test fun `request matches shared official shape`() {
         val actual = assertIs<AnthropicResult.Success<*>>(AnthropicMessagesCodec.renderRequest(request(), true)).value
         assertEquals(Json.parseToJsonElement(fixture("request.json").decodeToString()), actual)
+        val http = assertIs<AnthropicResult.Success<HttpRequestDescriptor>>(
+            AnthropicMessagesCodec.renderHttpRequest(request(), true)).value
+        assertEquals("POST", http.method); assertEquals("/v1/messages", http.path)
+        assertEquals("text/event-stream", http.headers.toMap()["accept"])
+        assertEquals("2023-06-01", http.headers.toMap()["anthropic-version"])
+        assertEquals(null, http.headers.toMap()["x-api-key"])
+        assertEquals(actual, Json.parseToJsonElement(http.body.decodeToString()))
     }
     @Test fun `ordinary complete and truncated streams normalize`() {
         val ordinary = assertIs<AnthropicResult.Success<InvokeOutcome>>(

@@ -6,7 +6,9 @@ use garive_llm::{
     ToolDescriptor,
 };
 use garive_llm_openai::{classify_http_error, HttpErrorAction};
-use garive_llm_openai::{parse_response, parse_sse, render_request, OpenAiAdapterError};
+use garive_llm_openai::{
+    parse_response, parse_sse, render_http_request, render_request, OpenAiAdapterError,
+};
 use serde_json::Value;
 use std::time::{Duration, SystemTime};
 
@@ -41,6 +43,18 @@ fn request() -> ModelRequest {
 fn request_matches_official_shape_fixture() {
     let expected: Value = serde_json::from_slice(&fixture("request.json")).unwrap();
     assert_eq!(render_request(&request(), true).unwrap(), expected);
+    let http = render_http_request(&request(), true).unwrap();
+    assert_eq!(http.method, "POST");
+    assert_eq!(http.path, "/v1/responses");
+    assert!(http.headers.contains(&("accept", "text/event-stream")));
+    assert!(http
+        .headers
+        .iter()
+        .all(|(name, _)| *name != "authorization"));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&http.body).unwrap(),
+        expected
+    );
 }
 
 #[test]

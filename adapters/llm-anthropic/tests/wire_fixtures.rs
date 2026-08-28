@@ -4,8 +4,8 @@ use garive_llm::{
     TextMode, TokenCount, ToolDescriptor,
 };
 use garive_llm_anthropic::{
-    classify_http_error, parse_response, parse_sse, render_request, AnthropicAdapterError,
-    HttpErrorAction,
+    classify_http_error, parse_response, parse_sse, render_http_request, render_request,
+    AnthropicAdapterError, HttpErrorAction,
 };
 use serde_json::Value;
 use std::{
@@ -46,6 +46,16 @@ fn request() -> ModelRequest {
 fn request_matches_official_shape_fixture() {
     let expected: Value = serde_json::from_slice(&fixture("request.json")).unwrap();
     assert_eq!(render_request(&request(), true).unwrap(), expected);
+    let http = render_http_request(&request(), true).unwrap();
+    assert_eq!(http.method, "POST");
+    assert_eq!(http.path, "/v1/messages");
+    assert!(http.headers.contains(&("accept", "text/event-stream")));
+    assert!(http.headers.contains(&("anthropic-version", "2023-06-01")));
+    assert!(http.headers.iter().all(|(name, _)| *name != "x-api-key"));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&http.body).unwrap(),
+        expected
+    );
 }
 
 #[test]

@@ -17,11 +17,22 @@ sealed interface HttpErrorAction {
     data class Retry(val retryAfter: Duration?) : HttpErrorAction
     data class Terminal(val outcome: InvokeOutcome) : HttpErrorAction
 }
+data class HttpRequestDescriptor(val method: String, val path: String,
+    val headers: List<Pair<String, String>>, val body: ByteArray)
 private enum class StreamKind { OUTPUT_TEXT, REFUSAL, FUNCTION_ARGUMENTS, REASONING_SUMMARY, REASONING_TEXT }
 private data class StreamField(val kind: StreamKind, val subindex: UInt = 0u)
 private data class StartedItem(val id: String, val kind: String, val callId: String?, val name: String?)
 
 object OpenAiResponsesCodec {
+    fun renderHttpRequest(request: ModelRequest, stream: Boolean): OpenAiResult<HttpRequestDescriptor> = guard {
+        val body = when (val rendered = renderRequest(request, stream)) {
+            is OpenAiResult.Success -> rendered.value.toString().encodeToByteArray()
+            is OpenAiResult.Failure -> fail(rendered.error)
+        }
+        HttpRequestDescriptor("POST", "/v1/responses", listOf("content-type" to "application/json",
+            "accept" to if (stream) "text/event-stream" else "application/json"), body)
+    }
+
     fun classifyHttpError(
         status: Int,
         retryAfter: String?,

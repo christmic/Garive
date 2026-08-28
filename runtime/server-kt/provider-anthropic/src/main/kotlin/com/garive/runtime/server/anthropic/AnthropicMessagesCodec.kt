@@ -17,10 +17,22 @@ private sealed interface Block { data class Text(val value: StringBuilder) : Blo
     data class Tool(val id: String, val name: String, val json: StringBuilder) : Block }
 sealed interface HttpErrorAction { data class Retry(val retryAfter: Duration?) : HttpErrorAction
     data class Terminal(val outcome: InvokeOutcome) : HttpErrorAction }
+data class HttpRequestDescriptor(val method: String, val path: String,
+    val headers: List<Pair<String, String>>, val body: ByteArray)
 private sealed interface ParsedStop { data class Completed(val reason: ModelStopReason) : ParsedStop
     data object OutputLimit : ParsedStop }
 
 object AnthropicMessagesCodec {
+    fun renderHttpRequest(request: ModelRequest, stream: Boolean): AnthropicResult<HttpRequestDescriptor> = guard {
+        val body = when (val rendered = renderRequest(request, stream)) {
+            is AnthropicResult.Success -> rendered.value.toString().encodeToByteArray()
+            is AnthropicResult.Failure -> fail(rendered.error)
+        }
+        HttpRequestDescriptor("POST", "/v1/messages", listOf("content-type" to "application/json",
+            "accept" to if (stream) "text/event-stream" else "application/json",
+            "anthropic-version" to "2023-06-01"), body)
+    }
+
     fun classifyHttpError(status: Int, retryAfter: String?, body: ByteArray, exhausted: Boolean, now: Instant): AnthropicResult<HttpErrorAction> = guard {
         val error = parse(body.decodeToString()).jsonObject.getValue("error").jsonObject
         val type = error["type"]?.jsonPrimitive?.contentOrNull.orEmpty()

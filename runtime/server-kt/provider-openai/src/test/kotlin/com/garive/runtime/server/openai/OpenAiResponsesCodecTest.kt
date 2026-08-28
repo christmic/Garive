@@ -24,6 +24,12 @@ class OpenAiResponsesCodecTest {
     @Test fun `request matches shared official shape`() {
         val actual = assertIs<OpenAiResult.Success<*>>(OpenAiResponsesCodec.renderRequest(request(), true)).value
         assertEquals(Json.parseToJsonElement(fixture("request.json").decodeToString()), actual)
+        val http = assertIs<OpenAiResult.Success<HttpRequestDescriptor>>(
+            OpenAiResponsesCodec.renderHttpRequest(request(), true)).value
+        assertEquals("POST", http.method); assertEquals("/v1/responses", http.path)
+        assertEquals("text/event-stream", http.headers.toMap()["accept"])
+        assertEquals(null, http.headers.toMap()["authorization"])
+        assertEquals(actual, Json.parseToJsonElement(http.body.decodeToString()))
     }
 
     @Test fun `ordinary complete and truncated streams normalize`() {
