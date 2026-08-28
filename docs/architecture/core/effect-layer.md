@@ -286,6 +286,8 @@ the surface. Audit is end-to-end.
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
 - Status: **draft (possible mechanism)** — the 4-stage
-  shape and the dispatcher policies are settled; specific
-  tool implementations, per-tool timeouts, and workspace
-  capability flags land with the slice. No final code.
+  shape, the failure-semantics discipline, the L2 dispatcher
+  family, the tool registry with `effect_class`, and the E1–E5
+  contract tests are settled. Specific tool implementations,
+  per-tool timeouts, and workspace capability flags land with
+  the slice. No final code.
