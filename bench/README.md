@@ -13,11 +13,12 @@ injected — `bench/` itself ships none of them.
 
 ```
                 ┌─────────────┐
-                │ Case loader │  ← SWE-bench Verified / Lite
+                │ Case loader │  ← SWE-bench Verified / Lite / Multimodal / Multilingual,
+                │             │    Terminal-Bench, … (official public datasets only)
                 └──────┬──────┘
                        ▼
             ┌────────────────────┐
-            │   Env adapter      │  ← official (Docker) | self-cow (host)
+            │   Env adapter      │  ← official (Docker, image pool) | self-cow (host, workspace pool)
             └────────┬───────────┘
                      ▼
                ┌──────────┐
@@ -37,9 +38,23 @@ injected — `bench/` itself ships none of them.
             └────────┬───────────┘
                      ▼
             ┌────────────────────┐
-            │   Tracking         │  ← per-version + per-case JSONL
+            │   Tracking         │  ← per-version + per-case JSONL;
+            │                    │    committed to a tracking branch from CI
             └────────────────────┘
 ```
+
+## Where It Runs
+
+| Run kind | Where | When |
+|----------|-------|------|
+| Dev loop | developer laptop | iterating on agent / patch adapter |
+| PR smoke | GH Actions hosted runner | per-PR, small subset, `self-cow`, fail fast |
+| Nightly | GH Actions self-hosted | nightly full-suite `self-cow`, posts score |
+| Release | GH Actions self-hosted | manual trigger, full-suite `official` |
+
+Workflow files live in `.github/workflows/`. Any score that
+lands in `bench/tracking/versions/` is produced on a CI runner
+— local runs are dev-loop only. See `bench/AGENTS.md` Rule 3.
 
 ## Pieces
 
