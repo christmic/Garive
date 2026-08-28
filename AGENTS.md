@@ -23,7 +23,7 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 ### Components
 
 - **Core Agent** — the agent runtime. Written in **Rust** as the
-  primary language, with a **Kotlin** mirror (`experiments/kotlin/`)
+  primary language, with a **Kotlin** mirror (`experiments/engine-kt/`)
   that tracks the Rust tree semantically. Shared wire protocol and
   semantics; Kotlin ships in lock-step with Rust.
 - **Multi-channel capability** — chat surfaces beyond the coding IDE.
@@ -40,7 +40,7 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 | `desktop/` backend | Rust (Tauri) | cargo (workspace member) | main |
 | `desktop/` frontend | TypeScript / React | pnpm (Tauri CLI orchestrates) | independent |
 | `mobile/` | Kotlin (KMP) | Gradle | independent |
-| `experiments/kotlin/` | Kotlin | Gradle | independent |
+| `experiments/engine-kt/` | Kotlin | Gradle | independent |
 | `runtime/gateway/` | Go | go build / go mod | independent |
 | `spec/proto/` | — | buf / protoc codegen → Rust + Kotlin | single source |
 

@@ -35,7 +35,7 @@ The Core Agent ships in **two source-of-truth mirrors**:
 
 - **Rust** — primary, ship-to-production implementation.
   Performance-sensitive paths live here.
-- **Kotlin** — synchronized mirror in `experiments/kotlin/`. Same
+- **Kotlin** — synchronized mirror in `experiments/engine-kt/`. Same
   wire protocol, same semantics, shareable trait / test surface.
   Used by JVM-side services and Android-adjacent surfaces.
 
@@ -100,7 +100,7 @@ Beyond the core loop, Garive explores:
 | `desktop/` backend | Rust (Tauri) | cargo (workspace member) | main |
 | `desktop/` frontend | TypeScript / React | pnpm (Tauri CLI orchestrates) | independent |
 | `mobile/` | Kotlin (KMP) | Gradle | independent |
-| `experiments/kotlin/` | Kotlin | Gradle | independent |
+| `experiments/engine-kt/` | Kotlin | Gradle | independent |
 | `runtime/gateway/` | Go | go build / go mod | independent |
 | `spec/proto/` | — | buf / protoc codegen → Rust + Kotlin | single source |
 
@@ -108,7 +108,7 @@ Rules of thumb:
 
 - **Main Rust workspace** holds everything that compiles to a Rust
   binary or library and is part of the canonical Rust toolchain.
-- **Independent builds** (mobile, experiments/kotlin, gateway,
+- **Independent builds** (mobile, engine-kt, gateway,
   desktop frontend) live in their own package-manager trees
   (Gradle, go.mod, pnpm) and integrate via generated artifacts or
   inter-process calls.

@@ -22,7 +22,7 @@
   produces byte-identical canonical JSON from Rust + Kotlin over
   the same fixtures. Empty `diff -u` is the gate. Run it before
   any commit that touches `spec/proto/`, `engine/proto/`,
-  `experiments/kotlin/`, or `mobile/`.
+  `experiments/engine-kt/`, or `mobile/`.
 - **Per-tier AGENTS.md override the root:** `engine/AGENTS.md`,
   `runtime/AGENTS.md`, `spec/AGENTS.md` carry tier-specific rules
   and win over the root `AGENTS.md` where they disagree.

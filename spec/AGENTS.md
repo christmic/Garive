@@ -22,7 +22,7 @@
 - All new packages go under a versioned namespace
   (`garive.v1`, `garive.v2`, …). Bumping a major version is a
   breaking change to the wire — coordinate with `engine/`,
-  `runtime/`, `mobile/`, `desktop/`, `experiments/kotlin/`.
+  `runtime/`, `mobile/`, `desktop/`, `experiments/engine-kt/`.
 - Do not remove a field once shipped. Mark it deprecated and
   reserve the tag.
 - New `enum` values are additive — never renumber.
@@ -33,7 +33,7 @@
   `spec/proto/`. Output lands in `OUT_DIR` and is pulled in via
   `include!` from `engine/proto/src/lib.rs`.
 - Kotlin: Gradle protobuf plugin generates Kotlin bindings into
-  `experiments/kotlin/` and `mobile/`.
+  `experiments/engine-kt/` and `mobile/`.
 - Go: `buf generate` with the Go plugin (gateway).
 - Regenerate on every `.proto` change; CI fails if generated
   files drift from source.

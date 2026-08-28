@@ -28,7 +28,7 @@ Do not move content between the two lightly.
 
 - `proto/` is the **source**. Rust types are generated into
   `engine/proto/` via `build.rs` + `prost-build`; Kotlin types are
-  generated into `experiments/kotlin/` and `mobile/` via the
+  generated into `experiments/engine-kt/` and `mobile/` via the
   Gradle protobuf plugin.
 - `fixtures/` drives the conformance target. Both languages
   consume the same fixtures; `just conformance` diffs the outputs.

@@ -2,7 +2,7 @@
 
 > **Core Agent implementation tier.** Primary implementation is
 > Rust (Cargo workspace). The Kotlin mirror lives in
-> `experiments/kotlin/` and tracks this tree semantically.
+> `experiments/engine-kt/` and tracks this tree semantically.
 >
 > This file applies to everything under `engine/`. It overrides
 > the root `AGENTS.md` where the two disagree.
@@ -23,7 +23,7 @@
 - Crates within `engine/` depend only on other `engine/` crates,
   `runtime/replica`, and `spec/proto`-generated bindings. They
   **must not** depend on `runtime/gateway` (different language)
-  or on crates in `mobile/`, `desktop/`, `experiments/kotlin/`.
+  or on crates in `mobile/`, `desktop/`, `experiments/engine-kt/`.
 - Third-party dependencies are added to the root
   `[workspace.dependencies]` table so versions stay aligned.
 - Avoid heavy I/O or framework dependencies; keep the core
