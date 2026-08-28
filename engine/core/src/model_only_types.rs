@@ -41,6 +41,7 @@ pub enum TerminalRecoveryAction {
     Suspend,
     Stop,
     Fail,
+    AlternateThenSuspend,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,6 +149,7 @@ pub enum StopReason {
     TokenLimit,
     Deadline,
     Cancelled,
+    ResourceUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

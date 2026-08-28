@@ -6,8 +6,8 @@ use garive_llm::{
 use crate::{
     AgentEvent, AgentEventKind, AgentExecutionPorts, AgentFailureReason, AgentOutcome,
     AgentTurnRequest, ContextItem, ContextSurface, EventSink, ExecutionControl,
-    ExecutionOutcomeKind, ExecutionReport, ExecutionStatus, MissingUsagePolicy, ModelRecoveryPolicy,
-    StopReason, SuspensionReason, TerminalRecoveryAction, UsageSummary,
+    ExecutionOutcomeKind, ExecutionReport, ExecutionStatus, MissingUsagePolicy,
+    ModelRecoveryPolicy, StopReason, SuspensionReason, TerminalRecoveryAction, UsageSummary,
 };
 
 pub(super) fn build_model_request(
@@ -34,10 +34,7 @@ pub(super) fn build_model_request(
         output: request.model_output.clone(),
         trace_metadata: vec![
             ("turn_id".into(), request.turn_id.as_str().into()),
-            (
-                "execution_id".into(),
-                request.execution_id.as_str().into(),
-            ),
+            ("execution_id".into(), request.execution_id.as_str().into()),
         ],
     };
     value.validate().map_err(|_| ())?;
@@ -85,7 +82,10 @@ impl UsageAccumulator {
         let (output, output_estimated) =
             known_or_estimate(model_usage.output_tokens, policy, false)?;
         self.input = self.input.checked_add(input).ok_or(UsageError::Overflow)?;
-        self.output = self.output.checked_add(output).ok_or(UsageError::Overflow)?;
+        self.output = self
+            .output
+            .checked_add(output)
+            .ok_or(UsageError::Overflow)?;
         self.estimated |= input_estimated || output_estimated;
         Ok(())
     }
