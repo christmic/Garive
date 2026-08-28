@@ -45,6 +45,7 @@ sealed interface MediaKind {
 
 sealed interface ModelItem {
     data class Text(val text: String) : ModelItem
+    data class Refusal(val text: String) : ModelItem
     data class Reasoning(val content: ReasoningContent) : ModelItem
     data class ToolIntent(
         val modelCallId: String,
@@ -58,6 +59,9 @@ sealed interface ModelItem {
 sealed interface ModelStopReason {
     data object EndTurn : ModelStopReason
     data object ToolUse : ModelStopReason
+    data object StopSequence : ModelStopReason
+    data object PauseTurn : ModelStopReason
+    data object Refusal : ModelStopReason
     data class Other(val name: String) : ModelStopReason
 }
 

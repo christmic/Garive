@@ -62,6 +62,9 @@ pub enum ModelItem {
     Text {
         text: String,
     },
+    Refusal {
+        text: String,
+    },
     Reasoning {
         content: ReasoningContent,
     },
@@ -84,6 +87,9 @@ pub enum ModelItem {
 pub enum ModelStopReason {
     EndTurn,
     ToolUse,
+    StopSequence,
+    PauseTurn,
+    Refusal,
     Other(String),
 }
 

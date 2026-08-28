@@ -83,6 +83,7 @@ ModelRequest {
 
 - `OutputItemStarted { output_index, kind }`;
 - `TextDelta { output_index, delta }`;
+- `RefusalDelta { output_index, delta }`;
 - `ReasoningDelta { output_index, delta }` for model-visible reasoning only;
 - `ToolArgumentsDelta { output_index, model_call_id, delta }`;
 - `OutputItemCompleted { output_index, item }`;

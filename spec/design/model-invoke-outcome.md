@@ -27,6 +27,8 @@ defaults to zero.
 `ModelItem` is an ordered sum type:
 
 - `Text { text }`;
+- `Refusal { text }`, a provider-declared refusal returned as valid model
+  output rather than a transport or policy rejection;
 - `Reasoning { content }`, where content is visible text or an opaque reference;
 - `ToolIntent { model_call_id, tool_name, arguments }`;
 - `ToolObservation { model_call_id, result }`;
@@ -52,6 +54,11 @@ or a digest before C4 validation.
 `Completed` alone is success. `Interrupted` alone is partial. Outcome values do
 not prescribe retry, failover, prompt rewriting, suspension, stopping, or
 failure. A frozen Core recovery policy owns that mapping.
+
+`ModelStopReason` is `EndTurn`, `ToolUse`, `StopSequence`, `PauseTurn`,
+`Refusal`, or bounded provider-neutral `Other`. `PauseTurn` and `Refusal` are
+factual successful terminals; Core policy may suspend or stop after observing
+them, but adapters cannot rewrite either as an error.
 
 ## Validation and safety
 

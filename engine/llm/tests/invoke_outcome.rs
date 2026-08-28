@@ -36,6 +36,9 @@ fn usage_distinguishes_known_unknown_and_overflow() {
 fn ordered_items_cover_the_portable_model_surface() {
     let items = vec![
         ModelItem::Text { text: "one".into() },
+        ModelItem::Refusal {
+            text: "cannot comply".into(),
+        },
         ModelItem::Reasoning {
             content: ReasoningContent::OpaqueReference("reasoning-1".into()),
         },
@@ -114,4 +117,5 @@ fn all_reason_kinds_remain_distinct() {
         UnavailableKind::CircuitOpen,
         UnavailableKind::ModelUnavailable
     );
+    assert_ne!(ModelStopReason::PauseTurn, ModelStopReason::Refusal);
 }

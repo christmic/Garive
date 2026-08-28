@@ -42,6 +42,9 @@ fn items(kinds: &Value) -> Vec<ModelItem> {
             "text" => ModelItem::Text {
                 text: "text".into(),
             },
+            "refusal" => ModelItem::Refusal {
+                text: "refusal".into(),
+            },
             "reasoning" => ModelItem::Reasoning {
                 content: ReasoningContent::OpaqueReference("reasoning".into()),
             },
@@ -74,6 +77,7 @@ fn rendered_total(total: UsageTotal) -> String {
 fn item_kind(item: &ModelItem) -> &'static str {
     match item {
         ModelItem::Text { .. } => "text",
+        ModelItem::Refusal { .. } => "refusal",
         ModelItem::Reasoning { .. } => "reasoning",
         ModelItem::ToolIntent { .. } => "tool-intent",
         ModelItem::ToolObservation { .. } => "tool-observation",
@@ -85,6 +89,21 @@ fn item_kind(item: &ModelItem) -> &'static str {
 fn rust_consumes_every_model_outcome_case() {
     let document = fixture();
     assert_eq!(document["schema_version"], 1);
+    let stop_reasons: Vec<_> = document["completed_stop_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| match value.as_str().unwrap() {
+            "end-turn" => ModelStopReason::EndTurn,
+            "tool-use" => ModelStopReason::ToolUse,
+            "stop-sequence" => ModelStopReason::StopSequence,
+            "pause-turn" => ModelStopReason::PauseTurn,
+            "refusal" => ModelStopReason::Refusal,
+            "other" => ModelStopReason::Other("other".into()),
+            other => panic!("unknown stop reason: {other}"),
+        })
+        .collect();
+    assert_eq!(stop_reasons.len(), 6);
     let cases = document["cases"].as_array().unwrap();
     assert_eq!(
         cases.len(),

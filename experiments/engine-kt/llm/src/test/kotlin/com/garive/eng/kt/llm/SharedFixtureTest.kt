@@ -20,6 +20,18 @@ class SharedFixtureTest {
     @Test
     fun `Kotlin consumes every model outcome case`() {
         val cases = document.getValue("cases").jsonArray
+        val stopReasons = document.getValue("completed_stop_reasons").jsonArray.map {
+            when (val reason = it.jsonPrimitive.content) {
+                "end-turn" -> ModelStopReason.EndTurn
+                "tool-use" -> ModelStopReason.ToolUse
+                "stop-sequence" -> ModelStopReason.StopSequence
+                "pause-turn" -> ModelStopReason.PauseTurn
+                "refusal" -> ModelStopReason.Refusal
+                "other" -> ModelStopReason.Other(reason)
+                else -> error("unknown stop reason $reason")
+            }
+        }
+        assertEquals(6, stopReasons.size)
         assertEquals(10, cases.size, "fixture coverage changed; review both runners")
         cases.forEach { runCase(it.jsonObject) }
     }
@@ -78,6 +90,7 @@ class SharedFixtureTest {
     private fun items(kinds: List<String>): List<ModelItem> = kinds.map { kind ->
         when (kind) {
             "text" -> ModelItem.Text("text")
+            "refusal" -> ModelItem.Refusal("refusal")
             "reasoning" -> ModelItem.Reasoning(ReasoningContent.OpaqueReference("reasoning"))
             "tool-intent" -> ModelItem.ToolIntent("call", "tool", "{}")
             "tool-observation" -> ModelItem.ToolObservation("call", "{}")
@@ -94,6 +107,7 @@ class SharedFixtureTest {
 
     private fun itemKind(item: ModelItem): String = when (item) {
         is ModelItem.Text -> "text"
+        is ModelItem.Refusal -> "refusal"
         is ModelItem.Reasoning -> "reasoning"
         is ModelItem.ToolIntent -> "tool-intent"
         is ModelItem.ToolObservation -> "tool-observation"

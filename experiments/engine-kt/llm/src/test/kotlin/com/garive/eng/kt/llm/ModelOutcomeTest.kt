@@ -32,5 +32,6 @@ class ModelOutcomeTest {
         assertFalse(interrupted.isSuccess)
         assertFalse(rejected.isSuccess)
         assertFalse(rejected.isPartial)
+        assertFalse(ModelStopReason.PauseTurn == ModelStopReason.Refusal)
     }
 }

@@ -1,12 +1,13 @@
 {
   "schema_version": 1,
   "contract": "model-outcome",
+  "completed_stop_reasons": ["end-turn", "tool-use", "stop-sequence", "pause-turn", "refusal", "other"],
   "cases": [
     {
       "name": "completed-preserves-ordered-items",
       "usage": {"input": "10", "output": "2", "cache_read": "4", "cache_write": "1", "source": "provider-reported"},
-      "outcome": {"envelope": "completed", "reason": "end-turn", "item_kinds": ["text", "reasoning", "tool-intent", "tool-observation", "media-reference"]},
-      "expected": {"total": "known:12", "kind": "completed", "success": true, "partial": false, "item_kinds": ["text", "reasoning", "tool-intent", "tool-observation", "media-reference"]}
+      "outcome": {"envelope": "completed", "reason": "end-turn", "item_kinds": ["text", "refusal", "reasoning", "tool-intent", "tool-observation", "media-reference"]},
+      "expected": {"total": "known:12", "kind": "completed", "success": true, "partial": false, "item_kinds": ["text", "refusal", "reasoning", "tool-intent", "tool-observation", "media-reference"]}
     },
     {
       "name": "unknown-usage-remains-unknown",
