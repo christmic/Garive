@@ -44,6 +44,30 @@ pub(super) fn build_model_request(
     Ok((value, request_id))
 }
 
+pub(super) fn prepare_control(
+    request: &AgentTurnRequest,
+) -> Result<ExecutionControl, ExecutionReport> {
+    if request.validate().is_err() {
+        return Err(invalid_report(request));
+    }
+    ExecutionControl::new(
+        request.turn_id.clone(),
+        request.execution_id.clone(),
+        request.cursor.completed_iterations,
+        request.limits.execution,
+    )
+    .map_err(|_| invalid_report(request))
+}
+
+fn invalid_report(request: &AgentTurnRequest) -> ExecutionReport {
+    ExecutionReport {
+        outcome: AgentOutcome::Failed {
+            reason: AgentFailureReason::InvalidInput,
+        },
+        completed_iterations: request.cursor.completed_iterations,
+    }
+}
+
 #[derive(Default)]
 pub(super) struct UsageAccumulator {
     input: u64,
