@@ -1,65 +1,119 @@
-# Core Agent development plan
+# Core Agent delivery DAG
 
-## Responsibility
+## Status
 
-Turn the active Core Agent design into vertical, testable Rust slices without
-pulling Runtime persistence, provider HTTP, or client state into the kernel.
+Execution plan derived from the accepted Agent architecture/execution and
+Rust/Kotlin conformance contracts. A slice cannot start behavior implementation
+until its focused spec and acceptance fixtures are accepted.
 
-## Dependency direction
+## Milestones
 
 ```text
-runtime/replica -> garive-core -> garive-llm
-                    |          -> garive-tools
-                    `----------> garive-ledger ports/vocabulary
+Foundation
+  C0 execution control -----+
+  C1 model facts -----------+--> C2 context surface
+                                   |
+                                   v
+                            C3 model-only turn
+                                   |
+                    +--------------+--------------+
+                    v                             v
+             C4 tool preparation          capability ports
+                    |                memory/knowledge/skill
+                    v                             |
+             C5 governed effects <---------------+
+                    |
+                    v
+             C6 durable Runtime host
+                    |
+                    +--> C7 measured compression
+                    `--> multi-Agent/delegation slices
 ```
 
-Arrows point from consumer to dependency. Runtime composes all ports; no engine
-crate depends on Runtime or an App.
+## Slice contracts
 
-## Slice order
+| Slice | Deliverable | Required evidence |
+|---|---|---|
+| C0 | Distinct Turn/Execution IDs, reconstructed cursor, bounded active/closed control. | Rust + Kotlin units and shared execution-control fixtures. |
+| C1 | Ordered ModelItems, known/unknown usage, four factual outcome envelopes. | Rust + Kotlin units and shared model-outcome fixtures. |
+| C2 | Purpose-specific context request/surface, deterministic masking/order/budget, minimal ledger read port. | Shared semantic fixtures, property tests, no SQLite dependency. |
+| C3 | Immutable AgentTurnRequest, frozen ports, model-only bounded execution and AgentOutcome. | Rust/Kotlin fake context/model capability scenarios including cancellation and every model envelope. |
+| C4 | Exact tool definition resolution, argument validation, immutable Prepared Call/digest/replay class. | Shared semantic fixtures; invalid intent never reaches authorization. |
+| C5 | Authorization/interaction/execution reduction and model-visible observations. | approve/deny/replacement/ask-user/uncertain-effect scenarios; no concrete sandbox in Core. |
+| C6 | Runtime Turn facts, request/effect receipts, suspension continuation, crash recovery with real storage. | Rust process-restart integration tests and operator-reconciliation paths. Kotlin consumes public semantics only unless separately admitted. |
+| C7 | Compression/masking policy selected from measured context pressure. | Quality/cost baseline; thresholds remain proposed until reproducible. |
 
-| Slice | Output | Depends on | Exit evidence |
-|---|---|---|---|
-| C0 Turn control | typed turn identity, phase, limits, legal transitions | none | transition unit tests and exhaustive terminal behavior |
-| C1 Model contract | provider-neutral request, streamed items, usage, nine normalized outcomes | C0 vocabulary only where necessary | fake adapter contract tests; no HTTP/provider names in Core |
-| C2 Context surface | ledger read port, purpose projection, budget, deterministic derive result | C0 + ledger vocabulary | fixture/property tests for ordering, masking, and budget |
-| C3 Model-only turn | bounded derive → assemble → invoke loop | C0-C2 | fake-model integration: answer, overflow, cancel, unavailable |
-| C4 Tool preparation | registry lookup, schema validation, immutable prepared call + digest | tools vocabulary | invalid intent never reaches authorization; digest stability tests |
-| C5 Governed effects | authorization/execution ports and model-visible outcomes | C3-C4 | approve, deny, rewrite, ask-user, multi-iteration tests |
-| C6 Durable host | Runtime facts, resume derivation, effect lifecycle and receipts | C0-C5 | process-restart integration tests with real storage adapter |
-| C7 Compression | summary request and masking policy under context pressure | C2-C6 evidence | quality/cost baseline before numeric release gates |
+## Change-set gate
 
-## Work rules
+For C0-C5, each shared semantic change merges only with:
 
-- Each slice gets one focused spec under `spec/design/` before behavior lands.
-- Internal domain types remain Rust types. Proto is introduced only for a real
-  public, persistence, or cross-process boundary.
-- Core uses injected ports and deterministic clocks/limits; concrete storage,
-  credentials, sandboxes, and provider clients remain outside it.
-- A suspended turn retains its `turn_id`. Runtime rebuilds Core input from
-  durable facts; Core state is not a second checkpoint format.
-- A missing external-effect result is never interpreted as permission to
-  execute again.
+1. focused spec update;
+2. shared fixture update;
+3. Rust implementation and native tests;
+4. Kotlin implementation and native tests;
+5. root `just conformance` consuming all fixture cases in both languages;
+6. architecture/dependency and strict native build checks.
 
-## Immediate backlog
+C6 is Runtime-owned Rust behavior. Kotlin parity is not implied, but public
+continuation/outcome semantics must remain compatible with the shared contract.
 
-1. Implement C0 from [`core-turn-control.md`](core-turn-control.md).
-2. Promote the normalized model outcomes into a C1 spec, removing policy
-   actions that belong to Runtime.
-3. Define the smallest ledger read port needed by C2 rather than implementing
-   the full ledger research document.
-4. Use fakes to deliver C3 before SQLite, provider SDKs, or Apps are connected.
+## Work packages
 
-## Out of scope for the first milestone
+### F1 — repair the foundation
 
-- provider-specific retry tables and billing reconciliation;
-- SQLite schema/index tuning;
-- adaptive compression coefficients;
-- Kotlin parity, Gateway, Desktop, or Mobile integration;
-- benchmark thresholds without a runnable Agent baseline.
+- replace C0 cross-call resume state with disposable ExecutionControl;
+- replace C1 text-only/nine-action outcome with ordered items/fact envelopes;
+- add Kotlin `core` and `llm` modules;
+- add shared fixture readers and wire `just conformance`;
+- remove placeholder parity claims.
 
-## Acceptance
+Exit: C0/C1 support matrix is executable and green in both languages.
 
-The first milestone is complete when a deterministic Rust test runs one
-model-only turn through a fake context source and fake model, returns a typed
-terminal outcome, and cannot exceed its iteration limit.
+### F2 — context contract
+
+- specify durable fact reference and purpose projections;
+- define deterministic surface ordering/masking and budget result;
+- admit only the ledger query operations required by derive;
+- implement C2 in Rust/Kotlin from shared fixtures.
+
+Exit: identical semantic surfaces for fixtures; canonical bytes only where an
+explicit cache/digest contract requires them.
+
+### F3 — first Agent milestone
+
+- specify complete request/ports/events/outcome values;
+- implement bounded model-only reducer/driver;
+- use fake Runtime context and fake Model ports;
+- cover answer, overflow rebuild, partial, rate unavailable, cancellation,
+  iteration limit, missing usage, and required capability failure.
+
+Exit: both languages run the same model-only capability scenarios and cannot
+exceed limits or confuse suspension with continuation.
+
+### F4 — governed tools
+
+- C4 preparation/digest/replay class;
+- C5 authorization, required interaction, effect result reduction;
+- Runtime fake proves no invalid/unapproved call executes;
+- uncertain `Started` path suspends for operator reconciliation.
+
+### F5 — durable host
+
+- select minimal durable facts from the ledger research document;
+- implement real storage transactions and exact cursor reconstruction;
+- test every request/effect crash boundary in a separate process;
+- expose redacted status and reconciliation action through Runtime host.
+
+## Explicitly deferred
+
+- provider SDK mappings until C1/C3 ports are executable;
+- SQLite index/backup/GC catalog beyond C6's required facts;
+- compression formulas and numeric SLOs before C3/C6 baseline;
+- full Kotlin copies of Runtime, persistence, Gateway or every Engine module;
+- Desktop/Mobile integration before a Runtime host/API slice.
+
+## First milestone acceptance
+
+F1-F3 are complete only when one deterministic model-only Turn can suspend and
+continue as two Execution IDs under one Turn ID, or complete/stop/fail exactly
+once, with Rust and Kotlin consuming the same complete fixture/scenario sets.

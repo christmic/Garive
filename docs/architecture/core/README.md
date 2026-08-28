@@ -83,8 +83,14 @@ A mechanism is ready for `spec/` when it has:
 
 ## Implementation specs
 
+- [`../../../spec/design/agent-architecture.md`](../../../spec/design/agent-architecture.md)
+  — normative Agent/product ownership and capability composition.
+- [`../../../spec/design/agent-execution-contract.md`](../../../spec/design/agent-execution-contract.md)
+  — Kernel request, ports, events, outcomes, model and effect semantics.
+- [`../../../spec/design/cross-language-agent-contract.md`](../../../spec/design/cross-language-agent-contract.md)
+  — Rust/Kotlin support matrix and executable conformance rule.
 - [`../../../spec/design/core-agent-plan.md`](../../../spec/design/core-agent-plan.md)
-  — slice order and first milestone.
+  — dependency DAG, work packages and milestone gates.
 - [`../../../spec/design/core-turn-control.md`](../../../spec/design/core-turn-control.md)
   — C0 typed turn state and transition contract.
 - [`../../../spec/design/model-invoke-outcome.md`](../../../spec/design/model-invoke-outcome.md)
