@@ -12,6 +12,7 @@
 > It overrides the root `AGENTS.md` where the two disagree.
 
 @AGENTS.md
+@.agents/multi-language.md
 
 ## Layout
 

@@ -4,6 +4,13 @@
   Free-form thinking lives in `docs/`; once an idea is firm
   enough to implement faithfully, it lands in `spec/` and the
   domain is shaped before any code is written.
+>
+> The DDD artefacts (aggregate, value object, domain event,
+> command, repository) shape semantics, not wire shape. Wire
+> shape lives in `spec/proto/`. Cross-language sync (Rust +
+  Kotlin mirror) is governed by `.agents/multi-language.md`.
+
+@.agents/multi-language.md
 
 ## Pipeline
 
