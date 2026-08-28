@@ -2,6 +2,8 @@ package com.garive.runtime.server.ledger
 
 import java.math.BigInteger
 import java.security.MessageDigest
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -26,6 +28,24 @@ class CanonicalPayload private constructor(val json: String, val sha256: String)
             val json = output.toString()
             return CanonicalPayloadResult.Success(CanonicalPayload(json, digest(json.encodeToByteArray())))
         }
+
+        fun fromStoredJson(json: String, sha256: String): CanonicalPayloadResult {
+            val value = try {
+                Json.parseToJsonElement(json)
+            } catch (_: SerializationException) {
+                return CanonicalPayloadResult.Failure(CanonicalPayloadError.INVALID_JSON)
+            } catch (_: IllegalArgumentException) {
+                return CanonicalPayloadResult.Failure(CanonicalPayloadError.INVALID_JSON)
+            }
+            return when (val canonical = fromValue(value)) {
+                is CanonicalPayloadResult.Failure -> canonical
+                is CanonicalPayloadResult.Success -> if (canonical.payload.sha256 == sha256) {
+                    canonical
+                } else {
+                    CanonicalPayloadResult.Failure(CanonicalPayloadError.DIGEST_MISMATCH)
+                }
+            }
+        }
     }
 }
 
@@ -34,7 +54,7 @@ sealed interface CanonicalPayloadResult {
     data class Failure(val error: CanonicalPayloadError) : CanonicalPayloadResult
 }
 
-enum class CanonicalPayloadError { UNSUPPORTED_NUMBER, DIGEST_MISMATCH }
+enum class CanonicalPayloadError { INVALID_JSON, UNSUPPORTED_NUMBER, DIGEST_MISMATCH }
 
 private val minimumInteger = BigInteger.valueOf(Long.MIN_VALUE)
 private val maximumInteger = BigInteger("18446744073709551615")
