@@ -15,8 +15,9 @@ types are adapter-owned and never implement this contract directly.
 
 - `ModelRequestId`: non-empty opaque identity for one logical request across
   only proven-safe adapter retries.
-- `ModelTargetId`: Runtime-selected, non-empty opaque capability target. It is
-  not a provider model string and does not contain credentials.
+- `ModelTargetId`: Runtime-selected, non-empty target opaque to Core. Runtime
+  resolves it for the selected adapter; its value may be a provider deployment
+  or model identifier, but never contains credentials.
 - `ModelCapability`: declared requirement such as text, vision, reasoning,
   tools, JSON output or streaming.
 

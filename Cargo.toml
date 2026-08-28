@@ -1,14 +1,7 @@
 [workspace]
 resolver = "2"
-# Members are admitted as target skeletons; behavior lands in vertical slices.
-# Active skeleton members:
-#
-#   engine/*                  # owned Agent capability crates
-#   bench                     # benchmark scaffold
-# Planned Rust members:
-#   runtime/replica
-#   cli, tui
-#   desktop/                  # Tauri Rust backend
+# Active Rust members include the portable Engine, provider adapters, SQLite
+# Runtime, CLI/TUI shells, Tauri backend and benchmark scaffold.
 #
 # NOT in this workspace (different language / different repo role):
 #   runtime/gateway           — Go (independent go.mod)

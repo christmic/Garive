@@ -169,7 +169,8 @@ not protocol evidence.
 The first admitted protocol is `POST /v1/responses` with SSE streaming. Chat
 Completions compatibility is outside this slice. The adapter preserves ordered
 output items, function-call argument deltas, reasoning references, refusal,
-terminal response, usage and unknown event types for audit. Only
+terminal response and usage. Unknown semantic event types fail closed; sanitized
+transport telemetry is Runtime-owned. Only
 `response.completed` produces a completed model fact.
 
 ### Anthropic module
@@ -188,7 +189,7 @@ The initial skeleton is intentionally small but executable:
 | CLI | Submit one Turn, render final/typed terminal, return documented exit code. |
 | TUI | Display ordered fake-host events and one terminal state. |
 | Web | Boot a strict TypeScript app and render Session/Turn state from a fake Host client. |
-| Desktop | Tauri backend command and React frontend share the Host DTO contract. |
+| Desktop | Tauri backend fake-host command and React frontend share a typed IPC boundary. |
 | Android | Compose app calls KMP fake Host client and renders terminal state. |
 | iOS | SwiftUI app calls the generated/shared bridge and renders terminal state. |
 

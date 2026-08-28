@@ -74,7 +74,7 @@ resolves references and freezes an effective execution input before Core runs.
 | Crate | Owns | Does not own |
 |---|---|---|
 | `core` | Kernel execution protocol, iteration control, outcome reduction, portable events. | Session/recovery, storage, concrete adapters. |
-| `llm` | Provider-neutral request/items/stream/outcome/usage/capability values and model port. | HTTP, credentials, retry policy outside one safe transport attempt. |
+| `llm` | Provider-neutral request/items/stream/outcome/usage/capability values and model port. | HTTP, credentials, product failover, or retry-budget selection. |
 | `tools` | Tool definitions, model intents, validation, immutable prepared calls, neutral results. | Authorization facts, sandboxes, process execution. |
 | `ledger` | Durable-fact vocabulary and query/append ports required by Engine policies. | SQLite schema, transactions, backup. |
 | `memory` | Memory candidates, retrieval intent, ranking/policy contracts. | Persistent store or automatic authority over prompts. |

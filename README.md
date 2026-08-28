@@ -1,35 +1,42 @@
 # Garive
 
-Garive is a from-scratch Agent project informed by Sylvander's lessons. The
-repository is currently converging the product boundary and recovery model
-before implementation slices land.
+Garive is a from-scratch Agent platform informed by Sylvander's lessons, not a
+source-level fork. Its governing rule is: Agent decides, Runtime persists and
+executes, adapters translate external protocols, and clients own presentation
+only.
 
-## Current shape
+## Implemented foundation
 
-- `engine/`: buildable Rust crates for the Agent kernel and planned capability
-  modules. Domain policy/ports live here; concrete I/O stays in Runtime.
-- `runtime/`: composition, sessions, durable execution, recovery, and external
-  effects. `replica` is the first host; `gateway` is the planned Go edge.
-- `spec/`: contracts only when a real process, storage, or language boundary
-  needs them.
-- `docs/architecture/`: active personal design notes and the current system
-  map. Start at [`docs/architecture/README.md`](docs/architecture/README.md).
-- `runtime/server-kt/`: supported Kotlin C0-C3 server implementation and
-  native adapters; accepted specs and shared fixtures remain the source of truth.
+- Rust and Kotlin independently implement portable Agent C0-C3 semantics from
+  accepted specs and shared fixtures.
+- Rust SQLite and Kotlin PostgreSQL adapters implement the durable ledger slice
+  with real database tests.
+- Rust/Kotlin OpenAI Responses and Anthropic Messages adapters share reviewed
+  official-shape fixtures and strict terminal/retry contracts.
+- Host API v1 has generated Rust, Kotlin and KMP bindings plus semantic
+  round-trips.
+- CLI, TUI, Web, Tauri Desktop, Android and iOS provide executable fake-host
+  shells; Android APK verification still requires a local SDK.
 
-The Rust workspace and Kotlin server currently implement portable C0-C3 from
-shared fixtures. Other crates and product surfaces remain explicit skeletons.
-Commands in the `Justfile` report unimplemented paths without presenting them
-as successful gates.
+## Repository map
 
-## Design rule
+- `engine/`: portable Rust Agent, LLM, ledger and capability contracts.
+- `adapters/`: Rust provider wire adapters.
+- `runtime/replica/`: Rust composition/storage boundary with SQLite.
+- `runtime/server-kt/`: Kotlin Agent server, PostgreSQL/providers and executable
+  server composition root.
+- `spec/`: accepted behavior, wire schemas and cross-language fixtures.
+- `docs/architecture/`: design research and the system map.
+- `cli/`, `tui/`, `web/`, `desktop/`, `mobile/`: thin product surfaces over the
+  Host boundary.
 
-Agent decides; Runtime executes and persists; adapters translate external
-protocols. An external effect is never blindly replayed after an uncertain
-crash window.
+C4-C7 governed tools, full durable Turn orchestration, live network hosts,
+production credentials/deployment and the Go gateway remain explicitly gated.
+See `spec/design/core-agent-plan.md` and
+`spec/design/agent-platform-delivery.md` for the work graph and evidence rules.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: architecture convergence; implementation skeleton only
+- Status: executable Agent platform foundation

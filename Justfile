@@ -1,64 +1,63 @@
-# Garive build orchestration
-# https://github.com/casey/just
-#
-# Thin top-level orchestrator. Each recipe wires the corresponding
-# language's build tool; individual crates / modules carry the
-# implementation. Install `just` via `brew install just`.
-#
-# Toolchains (each recipe assumes the relevant ones on PATH):
-#   rustup (rust 1.75+), cargo, protoc, pnpm, gradle, go, jq.
+# Garive verification orchestration. Individual modules own implementation.
 
 set shell := ["bash", "-uc"]
 
-# Default — list recipes
 default:
     @just --list
 
-# Setup: wire `.claude/{rules,skills,agents}` as symlinks to the
-# canonical `.agents/` tree so Claude Code auto-loads project
-# rules / skills. Idempotent.
 setup:
     bash scripts/setup-claude-symlinks.sh
 
-# Codegen: regenerate protobuf bindings from spec/proto/.
-# Pending — wire Rust generation to `engine/proto`; Kotlin generation is part
-# of the independent Gradle build.
+# Cargo and Gradle generate bindings from spec/proto; generated files stay in
+# build output and are never parallel handwritten DTOs.
 codegen:
-    @echo "codegen: Rust engine/proto bindings are not wired yet"
+    cargo check -p garive-proto
+    cd runtime/server-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :proto:generateProto
 
-# Build: codegen + Rust workspace
-build: codegen architecture
-    cargo build --workspace
-
-# Test: cargo test across workspace
-test:
-    cargo test --workspace
-
-# C0-C3 semantic/capability conformance over the same fixtures.
-conformance: architecture
-    cargo test -p garive-core -p garive-llm
-    cd runtime/server-kt && ./gradlew --no-daemon --console=plain :agent-core:test :llm-contract:test
-
-# Architecture: an Engine crate may depend on other Engine crates or external
-# libraries, never on a local Runtime/App package.
 architecture:
     cargo metadata --locked --format-version 1 | jq -e '[.packages[] | select(.manifest_path | contains("/engine/")) | .dependencies[] | select(.path != null and (.path | contains("/engine/") | not))] | length == 0'
 
-# Desktop: Tauri build (TS frontend + Rust backend)
+conformance: architecture
+    cargo test -p garive-core -p garive-llm
+    cd runtime/server-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :agent-core:test :llm-contract:test
+
+providers:
+    cargo test -p garive-llm-openai -p garive-llm-anthropic
+    cd runtime/server-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :provider-openai:test :provider-anthropic:test
+
+server:
+    cd runtime/server-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
+
+web:
+    cd web && pnpm install --frozen-lockfile && pnpm test && pnpm build
+
 desktop:
+    cd desktop/frontend && pnpm install --frozen-lockfile && pnpm test && pnpm build
+    cargo test -p garive-desktop
     cargo check -p garive-desktop
 
-# Mobile: Gradle Kotlin Multiplatform build
 mobile:
+    cd mobile/shared && java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain jvmTest assembleGariveSharedDebugXCFramework
     cd mobile/iosApp && swift test
-    @echo "Android SDK gate: cd mobile/androidApp && gradle :app:assembleDebug"
+    cd mobile/androidApp && java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain tasks --all
 
-# Bench: SWE-bench verification runtime (orchestrator only).
-# Implementation lands as the slice is scoped; until then this
-# prints a stub.
+apps: web desktop mobile
+    cargo test -p garive-cli -p garive-tui
+
+rust:
+    cargo fmt --check
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace
+    RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
+
+build: codegen architecture
+    cargo build --workspace
+    cd runtime/server-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
+
+verify: conformance providers server apps rust
+
 bench:
     cargo test -p bench
 
-# Clean: remove build artefacts across the workspace
 clean:
     cargo clean

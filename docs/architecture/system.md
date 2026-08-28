@@ -93,9 +93,9 @@ durable terminals, not reconstructed from process memory.
 
 ## Initial source layout
 
-Garive keeps the planned product layout. Engine capability directories are
-buildable crate skeletons; service and App directories record intended product
-boundaries until their first executable slice lands.
+Garive keeps the product layout below. C0-C3, ledger/provider adapters and the
+first executable client shells are active; untouched capability crates remain
+explicit boundaries rather than implied implementations.
 
 | Path | Responsibility |
 |---|---|
@@ -126,8 +126,8 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
 | Kotlin Agent implementation | C0-C3 supported; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`. |
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
-| Desktop app | planned | Tauri/TypeScript target; activate against a stable Runtime host workflow. |
-| Mobile app | planned | KMP shared client with Compose/SwiftUI target; activate slice by slice. |
+| Desktop app | executable shell | Tauri backend plus strict React/TypeScript fake-host workflow. |
+| Mobile app | executable shell | Generated KMP Host client with Compose and SwiftUI shells. |
 | SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
 
 Only slices listed as supported in the cross-language matrix evolve jointly;
