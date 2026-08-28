@@ -47,7 +47,7 @@ planned without reopening a narrower completed row.
 |---|---|---|---|---|---|---|---|---|
 | P1-O | OpenAI Responses protocol adapter | accepted | accepted | documented | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
 | P1-A | Anthropic Messages protocol adapter | accepted | accepted | documented | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
-| H0 | Host API v1 schema and bindings | accepted | accepted | partial | implemented | verified | active | Document compatibility/error policy at each public consumer boundary. |
+| H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
 | H1 | Live durable Host | accepted | draft | missing | missing | missing | planned | Depends on C6 and one real provider transport. |
 | A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
 | A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
