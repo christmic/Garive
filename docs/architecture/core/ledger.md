@@ -674,6 +674,135 @@ Empirical `EXPLAIN QUERY PLAN` against a realistic workload
 The conformance suite (`just conformance`) asserts schema
 **shape** (the index list above) but not the actual `EXPLAIN`
 plans — those are runtime concerns, land with the slice.
+
+### Write Discipline
+
+The ledger is durable, but durability is enforced by a
+specific recipe of SQLite pragmas + application invariants +
+flush discipline. Three rules hold:
+
+#### 1. PRAGMAs (set once at session creation)
+
+```
+PRAGMA journal_mode = WAL;        -- readers don't block writers
+PRAGMA synchronous  = NORMAL;    -- WAL-safe: fsync on commit,
+                                 -- not per-write; ~100x faster
+                                 -- than FULL with no safety loss
+PRAGMA foreign_keys = ON;        -- enforce pair_ref integrity
+```
+
+- **`journal_mode = WAL`** lets readers continue while a
+  writer holds the WAL. The hot path of `derive` (lots of
+  reads) is never blocked by an in-flight `append`.
+- **`synchronous = NORMAL`** is the WAL-safe setting — the WAL
+  is fsynced at commit time (not on every write), and the
+  main db file is fsynced periodically by the WAL writer.
+  `FULL` would fsync every write, ~100× slower, with no
+  durability gain under WAL.
+- **`foreign_keys = ON`** turns SQLite's FK enforcement on
+  so a `tool.result` row can't reference a non-existent
+  `tool.call`. The FK on `entry.body_hash → blob.hash` and
+  `entry.pair_ref → entry.seq` is what makes pair_ref
+  integrity real, not aspirational.
+
+These three are **set once per session** in `PRAGMA journal_mode = WAL;` order — they
+survive across process restarts (the journal mode is
+persisted in the db header; the others can be re-applied on
+open if needed).
+
+#### 2. App-level append-only invariant
+
+The application **never** issues `UPDATE` or `DELETE`
+against `entry`, `blob`, `dedup`, `ledger_meta`, or
+`ops_log` rows. The only writer is `INSERT` (and `BEGIN`/
+`COMMIT` to group inserts into transactions).
+
+The sole exception is **dedup GC**, which deletes `dedup`
+rows older than a TTL (default ~7 days). GC is itself
+recorded in `ops_log`; the GC transaction is the only
+allowed `DELETE` statement.
+
+This invariant is what lets `Resume` work — the in-flight
+turn's data is never partially mutated. If a row is in the
+db, it's because the transaction that wrote it committed.
+
+#### 3. Transaction boundaries — batched writes
+
+A round trip that produces N entries writes them in a
+**single transaction**, not one transaction per entry:
+
+```
+def append_batch(entries: list[Entry],
+                 dedups: list[DedupRow]):
+    with conn:                                     # BEGIN
+        for e in entries:
+            cursor.execute("INSERT INTO entry (...)", ...)
+        for d in dedups:
+            cursor.execute("INSERT OR IGNORE INTO dedup (...)", ...)
+        conn.commit()                              # fsync WAL
+```
+
+This is **atomic** at the SQLite level — either the whole
+batch lands or none of it does. The loop's three-pass
+`assemble` writes its outputs as one batch per iteration.
+The mid-iteration `summarize(prefix)` writes the
+`compaction.summary` + the trailing `compaction.rewrite`
+as one batch (so the rewrite always points at a committed
+summary — no dangling pointers).
+
+Batch size defaults to "the whole iteration" (~3-15 entries).
+Very long rounds can split into smaller batches if a
+transaction takes too long, but the unit is always "logical
+group of entries".
+
+#### 4. Flush triggers
+
+`PRAGMA wal_checkpoint(TRUNCATE)` is the explicit
+checkpoint op; commits are implicit. Three triggers:
+
+| Trigger | Op | Why |
+|---------|-----|-----|
+| **Turn boundary** (`session.turn_start` row written) | `BEGIN; … write … COMMIT; wal_checkpoint(TRUNCATE)` | A turn boundary is a recovery point — the runtime may die right after. The WAL must be empty so a fresh process can open the db without a recovery replay. |
+| **Suspended** (`governance.approval_request` row written) | same | A round may pause for hours. Before pausing, the WAL is empty; the resume process starts from a clean checkpoint. |
+| **Process shutdown** | same | Graceful exit. Ungraceful exit is fine — SQLite's WAL recovery handles it on next open. |
+
+Between triggers, the WAL grows as the loop appends. The
+runtime does **not** checkpoint per-iteration — that would
+defeat the speed gain of WAL. The implicit checkpoint per
+`COMMIT` keeps the WAL bounded in the common case.
+
+`wal_checkpoint` is a no-op data-wise — it moves WAL pages
+back into the main db file and truncates the WAL. After
+checkpoint, the main db is self-contained and the WAL file
+is empty.
+
+#### 5. Backup — directory is git-managed
+
+A session is one directory; **that directory is the unit of
+backup**. The simplest production backup for a single-
+machine or small-team deployment is `git`:
+
+- `cd <root> && git add . && git commit -m "session <id> @ seq N"`
+- push to a remote on every commit (or every Nth commit).
+
+This gets you:
+- **Incremental backups**: git deltas are cheap.
+- **Off-site redundancy**: push to a remote.
+- **Audit trail**: commit messages + branch history.
+- **Free dedup at the file level**: identical blob files
+  between two sessions are deduplicated by git's content-
+  addressable object store.
+
+For larger teams or multi-machine deployment, the same
+directory layout works with `git-annex`, `restic`, S3
+mounts, or any object store. The **on-disk format is
+portable**; the backup tooling is replaceable.
+
+The `backup_watermark` row in `ledger_meta` tracks "what's
+been shipped to the *next* tier" — git's commit log is a
+secondary record, but the db row is what an in-process
+check uses to decide "does this entry still need backing
+up?".
 - **Lossless projection.** Surface is derived; ledger never
   forgets. `body_hash` re-resolves any dropped content
   without replaying the loop.
