@@ -2,8 +2,7 @@
 // `spec/proto/`. The protobuf Gradle plugin points at the
 // schema source, generates Kotlin types into
 // `build/generated/source/proto/main/kotlin/`, and exposes them
-// as `com.garive.eng.kt.proto.*` for every other module to
-// consume via `implementation(project(":proto"))`.
+// under each schema-declared package for admitted consumers.
 
 import com.google.protobuf.gradle.id
 

@@ -1,17 +1,16 @@
-package com.garive.eng.kt.core
+package com.garive.runtime.server.agent
 
-import com.garive.eng.kt.llm.InterruptionKind
-import com.garive.eng.kt.llm.InvokeOutcome
-import com.garive.eng.kt.llm.ModelInputItem
-import com.garive.eng.kt.llm.ModelItem
-import com.garive.eng.kt.llm.ModelObserver
-import com.garive.eng.kt.llm.ModelPortFailure
-import com.garive.eng.kt.llm.ModelPortResult
-import com.garive.eng.kt.llm.ModelRequest
-import com.garive.eng.kt.llm.ModelRequestId
-import com.garive.eng.kt.llm.ObserverDecision
-import com.garive.eng.kt.llm.RejectionKind
-import com.garive.eng.kt.llm.TokenCount
+import com.garive.runtime.server.llm.InterruptionKind
+import com.garive.runtime.server.llm.InvokeOutcome
+import com.garive.runtime.server.llm.ModelItem
+import com.garive.runtime.server.llm.ModelObserver
+import com.garive.runtime.server.llm.ModelPortFailure
+import com.garive.runtime.server.llm.ModelPortResult
+import com.garive.runtime.server.llm.ModelRequest
+import com.garive.runtime.server.llm.ModelRequestId
+import com.garive.runtime.server.llm.ObserverDecision
+import com.garive.runtime.server.llm.RejectionKind
+import com.garive.runtime.server.llm.TokenCount
 
 suspend fun executeModelOnly(request: AgentTurnRequest, ports: AgentExecutionPorts): ExecutionReport {
     if (request.validate() != null) return invalidReport(request)
@@ -218,7 +217,7 @@ private class UsageAccumulator {
     var output = 0uL
     var estimated = false
 
-    fun add(value: com.garive.eng.kt.llm.ModelUsage, policy: MissingUsagePolicy): Boolean {
+    fun add(value: com.garive.runtime.server.llm.ModelUsage, policy: MissingUsagePolicy): Boolean {
         val inputValue = knownOrEstimate(value.inputTokens, policy, true) ?: return false
         val outputValue = knownOrEstimate(value.outputTokens, policy, false) ?: return false
         if (ULong.MAX_VALUE - input < inputValue.first || ULong.MAX_VALUE - output < outputValue.first) return false
@@ -246,7 +245,7 @@ private fun knownOrEstimate(
 
 private fun accountOrLimit(
     usage: UsageAccumulator,
-    value: com.garive.eng.kt.llm.ModelUsage,
+    value: com.garive.runtime.server.llm.ModelUsage,
     request: AgentTurnRequest,
 ): AgentOutcome? {
     if (!usage.add(value, request.recoveryPolicy.missingUsage)) {

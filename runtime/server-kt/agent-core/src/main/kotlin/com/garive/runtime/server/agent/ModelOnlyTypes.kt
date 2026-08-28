@@ -1,12 +1,12 @@
-package com.garive.eng.kt.core
+package com.garive.runtime.server.agent
 
-import com.garive.eng.kt.llm.ModelCancellation
-import com.garive.eng.kt.llm.ModelCapability
-import com.garive.eng.kt.llm.ModelItem
-import com.garive.eng.kt.llm.ModelOutputSettings
-import com.garive.eng.kt.llm.ModelPort
-import com.garive.eng.kt.llm.ModelStreamEvent
-import com.garive.eng.kt.llm.ModelTargetId
+import com.garive.runtime.server.llm.ModelCancellation
+import com.garive.runtime.server.llm.ModelCapability
+import com.garive.runtime.server.llm.ModelItem
+import com.garive.runtime.server.llm.ModelOutputSettings
+import com.garive.runtime.server.llm.ModelPort
+import com.garive.runtime.server.llm.ModelStreamEvent
+import com.garive.runtime.server.llm.ModelTargetId
 
 sealed interface ResumeInput {
     data class ExternalInput(val value: String) : ResumeInput

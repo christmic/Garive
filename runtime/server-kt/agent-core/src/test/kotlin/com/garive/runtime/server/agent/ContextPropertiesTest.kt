@@ -1,8 +1,8 @@
-package com.garive.eng.kt.core
+package com.garive.runtime.server.agent
 
-import com.garive.eng.kt.llm.ModelInputContent
-import com.garive.eng.kt.llm.ModelInputItem
-import com.garive.eng.kt.llm.ModelRole
+import com.garive.runtime.server.llm.ModelInputContent
+import com.garive.runtime.server.llm.ModelInputItem
+import com.garive.runtime.server.llm.ModelRole
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

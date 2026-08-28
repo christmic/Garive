@@ -1,8 +1,8 @@
-package com.garive.eng.kt.core
+package com.garive.runtime.server.agent
 
-import com.garive.eng.kt.llm.MediaKind
-import com.garive.eng.kt.llm.ModelInputContent
-import com.garive.eng.kt.llm.ModelInputItem
+import com.garive.runtime.server.llm.MediaKind
+import com.garive.runtime.server.llm.ModelInputContent
+import com.garive.runtime.server.llm.ModelInputItem
 
 enum class ContextPurpose { INFERENCE, GOVERNANCE, TOOL_PREPARATION, SUMMARIZATION }
 

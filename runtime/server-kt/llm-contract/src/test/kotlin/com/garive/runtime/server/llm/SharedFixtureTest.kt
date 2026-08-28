@@ -1,4 +1,4 @@
-package com.garive.eng.kt.llm
+package com.garive.runtime.server.llm
 
 import java.nio.file.Path
 import kotlin.io.path.readText

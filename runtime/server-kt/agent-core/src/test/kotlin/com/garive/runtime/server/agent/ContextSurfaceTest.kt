@@ -1,8 +1,8 @@
-package com.garive.eng.kt.core
+package com.garive.runtime.server.agent
 
-import com.garive.eng.kt.llm.ModelInputContent
-import com.garive.eng.kt.llm.ModelInputItem
-import com.garive.eng.kt.llm.ModelRole
+import com.garive.runtime.server.llm.ModelInputContent
+import com.garive.runtime.server.llm.ModelInputItem
+import com.garive.runtime.server.llm.ModelRole
 import java.nio.file.Path
 import kotlin.io.path.readText
 import kotlin.test.Test

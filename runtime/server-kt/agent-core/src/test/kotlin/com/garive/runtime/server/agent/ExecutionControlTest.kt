@@ -1,4 +1,4 @@
-package com.garive.eng.kt.core
+package com.garive.runtime.server.agent
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

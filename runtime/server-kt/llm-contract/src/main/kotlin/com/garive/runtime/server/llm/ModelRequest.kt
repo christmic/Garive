@@ -1,4 +1,4 @@
-package com.garive.eng.kt.llm
+package com.garive.runtime.server.llm
 
 data class ModelRequestId(val value: String)
 data class ModelTargetId(val value: String)
