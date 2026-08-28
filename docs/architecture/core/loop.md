@@ -1,13 +1,14 @@
-# Agent Loop — Two-Layer Driver / Turn / Iteration
+# Agent Loop — Driver / Turn / Iteration
 
 > **Three nested layers**: a long-running `agent_loop` (driver),
 > each user message starts an `agent_turn` (round), and each
 > round is one or more `iteration`s of the **derive → invoke
 > → judge → run** loop. The ledger is the **single source of
-> truth** for state; the LLM never sees raw ledger, only a
+> truth** for durable state; the LLM never sees raw ledger, only a
 > **budget-shaped surface** derived from it. **Governance is
-> queried, not invoked** — every model-intent is judged, and
-> the only way a round pauses is `AskUser`.
+> queried, not invoked** — every model-intent is judged. Runtime owns
+> suspension and recovery for approval, cancellation, provider backoff, and
+> uncertain external effects.
 
 This is **deliberative**, not a spec. Type names, method
 signatures, and exact field shapes will land in
@@ -22,7 +23,7 @@ signatures, and exact field shapes will land in
 > **shape**:
 >
 > - `agent_loop` / `agent_turn` / `iteration` nesting
-> - Ledger as single source of truth
+> - Runtime durable facts as the single source of resumable state
 > - Governance as a queried port
 > - `derive` as incremental + stateful
 > - Three-pass `assemble` (tier / evict / format)
@@ -77,7 +78,7 @@ ledger; reasoning about "what state are we in" becomes a
 two-source problem. The ledger IS the checkpoint; we don't
 need a second one.
 
-### C. Two-layer driver + turn + ledger (CHOSEN)
+### C. Driver + turn + durable facts (CHOSEN)
 
 ```
 agent_loop  (driver, 1 instance, long-lived)
@@ -127,7 +128,7 @@ if entry is Resume:
     pos = derive_position(ledger)
     # 从 pos 对应的阶段进入
     #   - 未配对的审批应答     → 接受执行 / 拒绝
-    #   - 未配对的 calls       → 补齐 (synthesize 缺失的 tool 结果)
+    #   - 未完成的 calls       → 按 durable receipt 分类恢复；不盲目重放
 
 while not termination.done(state):
 
@@ -135,7 +136,7 @@ while not termination.done(state):
     surface = ledger.derive(kinds_for(this_mode), budget)
     if surface.needs_summary:
         #   纯推理报告：需要新摘要
-        ledger.append(summarize(prefix))          # 唯一不纯步骤
+        ledger.append(summarize(prefix))          # LLM-backed impure step
         #                                                   (LLM 摘要)
         ledger.append(rewrite_directive{
             覆盖: prefix.seq_range,
@@ -170,7 +171,7 @@ while not termination.done(state):
                     question,
                     引用: verdict.seq,
                 })
-                return Suspended                 # 唯一的中断原因：需要人介入
+                return Suspended                 # governance-triggered suspension
 ```
 
 ### Layered Semantics
@@ -183,8 +184,8 @@ while not termination.done(state):
 
 ### The Ledger's Role
 
-The ledger (a separate design — `docs/architecture/ledger.md`,
-TBD) is the **single source of truth** for round state. It
+The Runtime-owned durable store (detailed in [`ledger.md`](ledger.md)) is the
+**single source of truth** for resumable turn state. It
 records:
 
 - Every model `reply` (items with `kind` and `provenance`).
@@ -197,29 +198,27 @@ records:
 - Every `approval_request` — so a Resume can re-attach the
   human's answer.
 
-The ledger has **one impure step** — `summarize(prefix)` —
-because summarisation requires the LLM. Every other write is a
-pure projection over the existing ledger.
+Summarization and external execution are impure operations. Their durable
+inputs, outputs, and recovery classification are recorded by Runtime; a write
+to the durable store is not itself a pure projection.
 
 ### The Turn State
 
 Per-`agent_turn` runtime state — the small set of values the
 loop reads and writes **inside the `while`**. The state is
-**per-turn** (lives across Suspended / Resume), not per-loop
-or per-process. The state and the ledger are deliberately
-separate: the **ledger** is the durable, replayable record
-("what happened"); the **state** is the in-flight loop
-control ("what's the loop doing right now"). Anything the
-ledger can answer, the state must not.
+**per-turn**, not per-loop or per-process. It is an in-memory projection of
+durable turn facts, rebuilt after restart. Runtime does not serialize this
+struct as a second checkpoint. Anything durable facts can answer is derived;
+loop-local caches may be discarded.
 
 | Field | Type | What it holds |
 |-------|------|---------------|
 | `iteration_count` | `u32` | Iterations since the turn started. Bumped once per `while` pass. |
-| `phase` | enum `{Running, AwaitingApproval, AwaitingConfirm, Done, Suspended, Failed}` | Where the turn is right now. Drives the entry protocol on Resume. |
-| `termination_reason` | enum `{NotDone, Answered, NoMoreToolCalls, BudgetExhausted, CircuitBroken, GovernanceDenied, Suspended, Failed}` | The verdict that closes the `while`. Set by the loop, never by the model. |
+| `phase` | enum `{Running, Suspended, Done, Failed, OperatorRequired}` | Projection of the current durable turn facts. A suspension carries a typed reason rather than another overlapping phase enum. |
+| `termination_reason` | enum `{NotDone, Answered, NoMoreToolCalls, BudgetExhausted, Cancelled, ProviderUnavailable, Failed, OperatorRequired}` | The terminal that closes the execution. Set by Runtime/loop policy, never by the model. |
 | `tokens_used` | `{in: u32, out: u32, total: u32}` | Cumulative across all `model.invoke` calls in this turn. Compared against `budget.tokens` on every iteration. |
 | `wall_clock_used_ms` | `u64` | Wall-clock from `agent_turn` entry. Compared against `budget.wall_clock_ms`. |
-| `last_confirm_response` | enum `{None, Approved, Denied}` | The human's answer to the most recent `AskUser`. `None` until a confirm is requested; `Denied` keeps the round alive (the denial is fed back to the model as a `tool_result.rejected`). |
+| `last_confirm_response` | enum `{None, Approved, Denied}` | Cached projection of the most recent durable approval response. |
 | `circuit_breaker` | struct `{consecutive_failures: u32, last_failure_kind: enum, opened_at_ms: Option<u64>}` | Local throttle. Increments on `model.invoke` / `executor.run` failures; trips to `open` when it crosses a threshold. While `open`, the loop pauses / escalates rather than retrying. |
 
 The state is **explicitly typed** — fields are named, not a
@@ -252,19 +251,18 @@ Three rules:
    it was when the iteration started; any update from this
    iteration's `executor.run` lands **before** the next
    iteration's read.
-3. **`state` survives Suspended → Resume.** It is part of the
-   `agent_turn` resumable payload (along with the ledger
-   segment for the turn). On Resume, the state is loaded as-is
-   and the loop resumes from the `phase` it was in.
+3. **Durable facts survive Suspended → Resume.** The in-memory state does not.
+   On Resume, Runtime derives a fresh state and recovery decision from committed
+   facts and exact invocation receipts.
 
 ### State vs Ledger
 
 | Question | Answer source |
 |----------|---------------|
-| "How many tokens did the round spend?" | `state.tokens_used` (fast read; loop-local) |
+| "How many tokens did the round spend?" | durable normalized usage facts; `state.tokens_used` is only a cache |
 | "Which `model.invoke` calls happened, in order, with what output?" | ledger (durable; replayable) |
-| "Are we currently waiting on the user?" | `state.phase` |
-| "What was the human's last answer?" | `state.last_confirm_response` |
+| "Are we currently waiting on the user?" | durable suspension fact projected into `state.phase` |
+| "What was the human's last answer?" | durable approval response projected into `state.last_confirm_response` |
 | "Why was this tool denied?" | ledger (the verdict + reason) |
 | "Why is the loop refusing to retry?" | `state.circuit_breaker` |
 | "What's the round's termination status?" | `state.termination_reason` (this turn's outcome) |
@@ -321,8 +319,7 @@ matrix work. Specifically:
   the source of truth; `derive` is a *read* of the ledger
   (through the cache). Writes are `summarize`,
   `governance.judge`, `executor.run`, the loop itself
-  (appending `model.usage` and the per-round `ops_log`
-  receipt).
+  through Runtime ports (durable request/response and usage receipts).
 - `derive` **does not call out** to the LLM, the executor,
   or any other I/O. The whole pipeline is a function of
   `current_surface` + the masking timeline + projection args.
@@ -350,7 +347,7 @@ commit), not one.
 
 > **Disclaimer — names vs implementation.** The names
 > "event stream" and "ledger stream" describe the **two
-> properties the design needs** — lossless-real-time
+> properties the design needs** — low-latency best-effort
 > notifications vs lossless-durable records. They are
 > **related in content** (both observe the same
 > `model.invoke` boundary), **different in form** (event
@@ -371,7 +368,7 @@ promise**.
 | Protocol | What it carries | Failure tolerance | Recovery |
 |----------|-----------------|--------------------|----------|
 | **Event stream** | Model streaming tokens, thinking deltas, tool-start/tool-complete signals, governance decisions in flight | **Lossy — OK** to drop a token | None — the event is ephemeral |
-| **Ledger stream** | `model.usage`, `loop.receipt`, `tool.result`, `verdict`, `provider.partial` (cancellation), `overserved_max` | **Lossless** — append-only; if it didn't write, it's gone | Required — the ledger is the source of truth |
+| **Durable facts** | model request/response receipts, normalized usage, tool results, approvals, effect receipts, and turn terminals | **Lossless** for committed facts | Required — Runtime rebuilds recovery and reconnect snapshots from them |
 
 The split is load-bearing:
 
@@ -381,16 +378,15 @@ The split is load-bearing:
   latency. A dropped token means the UI flickers for one
   frame; the user is fine.
 - **Ledger stream** is for **durable consistency** — every
-  call produces a `model.usage` row, every round produces a
-  `loop.receipt` row, every cancellation produces a
+  call produces normalized usage and response receipts; every request has a
+  durable pre-invoke receipt; every cancellation produces a
   `provider.partial` row. A missing row means the round's
   accounting is wrong, the audit trail is broken, or the
   recovery on resume fails.
 
-The two protocols **never share a write path** — the event
-stream is fire-and-forget (pub/sub); the ledger stream is
-the existing `entry.append` machinery (atomic per
-transaction). A subscriber of the event stream failing
+The two protocols have separate delivery guarantees — the event stream is
+best-effort pub/sub; durable facts commit through Runtime storage. A subscriber
+of the event stream failing
 costs the UI a few frames; a ledger append failing
 **halts the loop** (the next round can't recover).
 
@@ -403,12 +399,12 @@ turn_loop round (annotated with protocol split):
               ▲
               │ streaming
               │
-  derive  ──► assemble  ──► model.invoke  ──►  outcome (8 kinds)
+  derive  ──► assemble  ──► model.invoke  ──►  neutral outcome
    │           │                                │
    │           │                                ▼
-   │           │                       [ledger] append:
-   │           │                            - model.usage  (Completed/Overflow)
-   │           │                            - loop.receipt (Completed/OutputTruncated)
+   │           │                       [runtime] commit:
+   │           │                            - model.request (before dispatch)
+   │           │                            - model.response + usage (terminal)
    │           │                            - provider.partial  (PartialCancelled)
    │           │                            - overserved_max    (Overflow)
    │           │                            - content.violation  (ContentViolation)
@@ -421,9 +417,9 @@ turn_loop round (annotated with protocol split):
 - **Event stream** runs **inside** `model.invoke` —
   streaming tokens, partial reads, thinking deltas. The
   transport adapter owns this.
-- **Ledger stream** runs **at the boundaries** of
-  `model.invoke` — when the call returns, when the call is
-  cancelled, when the call fails. The loop owns this.
+- **Durable recording** runs **at the boundaries** of `model.invoke` — before
+  the call starts and when it returns, is cancelled, or fails. Runtime owns
+  durability; the Agent consumes the neutral model port.
 
 ### Cancellation: the bridge
 
@@ -485,12 +481,11 @@ plugs in without touching the loop.
 
 ### Cross-references
 
-- `provider-adapter.md` "Outcome kinds" — the 8 kinds
+- `provider-adapter.md` "Outcome kinds" — the provider-neutral outcomes
   `model.invoke` returns, and the `PartialCancelled` case
   that bridges the two protocols.
-- `ledger.md` "Entry kinds" — every event the loop emits
-  has a corresponding ledger entry kind (model.usage,
-  loop.receipt, provider.partial, …).
+- `ledger.md` "Entry kinds" — every fact that affects recovery has a durable
+  representation; ephemeral UI deltas do not.
 - `assemble-testing.md` "Dim 1c — Real API smoke" — verifies
   the outcome kinds land in the ledger on every test.
 
@@ -499,8 +494,10 @@ plugs in without touching the loop.
 The earlier budget design had `derive` estimating the
 surface's token cost and asking the loop to truncate when
 estimated > budget. That was **pure estimation** — no ground
-truth. The new design **anchors** the budget to the real
-cost reported by the provider.
+truth. The candidate design anchors estimates to normalized provider usage.
+This remains a hypothesis until provider-specific usage fields and tokenizer
+evidence are verified; billed tokens are not assumed to equal context-window
+occupancy.
 
 #### The formula
 
@@ -511,9 +508,8 @@ budget_projection(this_round) =
     - est(this_round.prev_actual_surface)   # yesterday's surface, estimated
 ```
 
-- `last_actual` is **`model.usage` from the previous round**:
-  `tokens_in + (cache_read + cache_write)`. This is the
-  provider's *billed* number, not an estimate.
+- `last_actual` is the previous request's normalized
+  `context_input_tokens`, not a billed-cost total.
 - `est(...)` is `derive`'s budget-aware estimate of the
   surface's token cost, in the same units the provider
   would count.
@@ -522,24 +518,21 @@ budget_projection(this_round) =
   fewer (compaction), the budget shrinks. The estimate's
   absolute accuracy doesn't matter, only its *change*.
 
-#### Budget vs cost (two layers, both from `model.usage`)
+#### Context budget vs billing
 
-- **Budget** = `tokens_in` (pre-cache, what the model
-  receives as the prompt). Used to decide whether the
-  surface fits the model's window.
-- **Cost** = `cache_read + cache_write` (post-cache
-  effective). The dollars the user actually pays.
-- Both come from the same `model.usage` row; they're just
-  different fields. The `tokens` payload carries both
-  nested:
+- **Context budget** uses normalized input occupancy plus reserved output.
+- **Billing** uses provider-reported categories and the price schedule pinned
+  to the exact provider/model revision.
+- **Cache accounting** remains separate because providers include/exclude
+  cached input differently. Each adapter documents its normalization.
 
 ```python
 class Tokens:
-    in:          u32   # pre-cache input (budget gate)
-    out:         u32   # output (the reserve)
-    cache_read:  u32   # post-cache hit (cost reduction)
-    cache_write: u32   # post-cache miss → write (cost)
-    total:       u32   # in + out (computed)
+    context_input:     u32   # normalized context-window occupancy
+    output:            u32
+    cache_read_input:  u32 | None
+    cache_write_input: u32 | None
+    provider_raw:      Value # verified provider usage for audit
 ```
 
 #### Boundary conditions (fallback to pure estimation)
@@ -552,7 +545,7 @@ invalid:
 |-----------|-----------|
 | **First round** of a session (no `last_actual`) | Pure `est(surface)` — the model.usage anchor doesn't exist yet. |
 | **`model_id` changes mid-session** | The previous anchor was for a different tokenizer; the diff is meaningless. Reset to pure `est(surface)`. The next round will have a fresh anchor. |
-| **Provider emits a malformed `model.usage`** (missing fields, garbage cache count) | The runtime flags the round's budget as **unanchored** and falls back to pure estimation. The error is logged to `ops_log`. |
+| **Provider emits malformed usage** | Runtime retains the raw receipt, marks normalized usage invalid, and falls back to pure estimation without inventing fields. |
 
 #### Compression / undo delta absorption
 
@@ -575,18 +568,15 @@ handling for compression or undo:
 
 #### Audit link
 
-`model.usage` carries a `ref = {session, uid}` to the
-`loop.receipt` entry that described the round's surface
-(`loop.md` "Derive Receipt"). An audit query joins them:
+Normalized usage and the durable request receipt share an exact `request_id`.
+The request receipt describes the surface and points to the request artifact:
 
 ```sql
 -- "Show me what the model saw and what it cost."
-SELECT r.notes AS saw, u.tokens AS paid
-  FROM entry r
-  JOIN entry u ON u.ref == r.uid
- WHERE u.kind == 'model.usage'
-   AND r.kind == 'loop.receipt'
-   AND r.round_id == ?
+SELECT r.request_digest, r.artifact_ref, u.normalized_usage, u.provider_raw
+  FROM model_request r
+  JOIN model_usage u USING (request_id)
+ WHERE r.turn_id == ?
 ```
 
 The audit query reconstructs **"what the model saw"** from
@@ -624,13 +614,9 @@ These are open for later iteration; the design above
   Truncate tail, abort the round, ask the user, split into
   two calls? The decision is **not yet made**. *Recorded
   as a pending design choice.*
-- **D6. Receipt ↔ `model.usage` link timing.** Does the link
-  happen at **append time** (one transaction writes both)
-  or **at query time** (join by `round_id`)? Append-time
-  is stronger (one place to look) but requires `assemble`
-  to know the receipt's `uid` before it exists. Query-time
-  is simpler but the link is **eventual**. *Resolution
-  deferred.*
+- **D6. Usage terminal atomicity.** The request receipt is committed before
+  dispatch and both records share `request_id`. Whether response and usage
+  commit in one transaction remains a Runtime storage decision.
 - **D7. `state.tokens_used` semantics.** Is the
   per-round running total **summed across rounds** (full
   cost) or **the latest round only** (one-round cost)? The
@@ -658,9 +644,9 @@ two changes pretending to be one.
 | **Provider fixes a counting bug** (off-by-one in token estimation) | `assemble` | The budget step (responsibility 4) uses the provider's real counter. Fixing the counter fixes the budget. |
 | **Switch mode** (coding agent ↔ chat agent) | `derive` | The masking-instructions walk (step 3) changes — which kinds are masked, when, why. Tier boundaries (step 5) change — what counts as "old" / "fresh" in this mode. The cache prefix is mode-agnostic; **assemble doesn't change**. |
 | **Add a new masking instruction** (e.g. a "redact-on-share" kind for when the user shares a session externally) | `derive` | New kind in `spec/proto/`; new branch in the masking walk. The `assemble` projection treats the new kind like any other masked entry. |
-| **Adjust a tier policy** (e.g. raise `tool.result` from tier-1 to tier-0 for the most recent 5 iterations) | `derive` | The tier-policy table (`.agents/loop.md` "Per-tool Policy Profiles") updates. `assemble` reads the tier from the cache and renders accordingly. |
+| **Adjust a tier policy** (e.g. raise `tool.result` from tier-1 to tier-0 for the most recent 5 iterations) | `derive` | The tier-policy table in this document updates. `assemble` reads the tier from the cache and renders accordingly. |
 | **Change the kinds of a projection** (e.g. `GOVERNANCE_INPUT` now needs `text.user` too) | `derive` | The projection's `kinds` set updates. `assemble` simply doesn't filter them out. |
-| **Add a new kind** (`loop.receipt`, a new `compaction.*` flavour, etc.) | `derive` | Add the kind to the kind catalog; add a body schema in `spec/proto/`. The masking walk and tier policy decide how the new kind is projected; `assemble` doesn't need to know. |
+| **Add a new model-visible kind** (a new `compaction.*` flavour, etc.) | `derive` | Add the internal kind and projection rule; add a wire schema only if it crosses an admitted boundary. |
 | **Change the pinned block** (which kinds are always-loaded) | `derive` | The pinned set updates. `assemble` still renders the pinned block as the head; only the *contents* of the head change. |
 | **Change the layout mode set** (add a new mode like `striped` for A/B testing) | `assemble` | The layout function updates. The pinning and tier decisions in `derive` don't change. |
 | **Add a new projection** (a new view like `DIFF_VIEW` for round-vs-round comparison) | `derive` + `assemble` | A new branch in the dispatch; but the *content decisions* are the existing rules, only the *serialisation* is new. |
@@ -1085,8 +1071,8 @@ switches within a round.
 happen elsewhere (`summarize` writes summaries;
 `governance.judge` writes verdicts; `executor.run` writes
 `tool_result` and effects; the loop writes the
-`model.usage` rows; **the loop also writes the per-round
-receipt to `ops_log` with `op = 'loop.receipt'`**).
+`model.usage` rows; Runtime durably records the exact request receipt before
+the provider call starts).
 
 #### Where assemble fits in the loop
 
@@ -1109,21 +1095,18 @@ reply = model.invoke(
 )
 # ... judge, run, etc.
 
-# Receipt flushed to ops_log at flush points (see below)
+# Runtime has already committed the request receipt before invoke
 ```
 
-#### Derive / Assemble Receipt (log-only view description)
+#### Derive / Assemble Receipt (durable request description)
 
 `derive` and `assemble` are not just **read** operations —
 they are **read + describe**. Each call returns the data
-the consumer asked for, **plus a receipt** that records
-exactly what that call did. The receipt is **log-only**:
-it does **not** enter the source-of-truth ledger as a
-new kind; instead it is a **derivable view** over the
-ledger. The runtime keeps the receipt in a small **in-memory
-buffer attached to `state`**; the buffer is flushed to
-`ops_log` at flush points (turn boundary / Suspend / close)
-and queryable from there. (See "Receipt storage" below.)
+the consumer asked for, **plus a receipt** that records exactly what that call
+did. Before `model.invoke` starts, Runtime commits the receipt, exact
+`request_id`, model coordinate, request digest, and an opaque request-artifact
+reference. An in-memory buffer is insufficient because a crash after provider
+dispatch would otherwise lose the evidence needed to classify recovery.
 
 **Why:** the ledger captures **what happened** — every
 event, every intent, every result. The receipt captures
@@ -1138,43 +1121,23 @@ the receipt, they answer that question by reading one row.
 > actually saw*, and replay each round with the exact prompt
 > the model got.**
 
-**Receipt storage — `ops_log` with `op = 'loop.receipt'`.**
-The receipt is **not** a new table. The ledger is
-**append-only**; the receipt is **per-round metadata** that
-the runtime needs to query for analysis. `ops_log` already
-exists for exactly this kind of per-op audit trail (GC
-runs, vacuum, sweep). The receipt is one more `op` value
-in that table:
+**Receipt storage.** The physical table is a Runtime storage decision. The
+logical contract is a durable `model.request` fact keyed by `request_id`, not
+an eventually flushed analytics row. It must commit before network dispatch
+and link to the later response/usage receipt:
 
 ```sql
--- ops_log already has:
---   id, op, started_at, finished_at, items_removed, notes, wall_ts
---
--- For receipts:
-INSERT INTO ops_log (op, started_at, finished_at, items_removed, notes)
-VALUES ('loop.receipt', ?, ?, 0, ?);
--- notes = JSON-serialised receipt body
+BEGIN;
+INSERT INTO model_request
+  (request_id, turn_id, model_coordinate, request_digest, artifact_ref, state)
+VALUES (?, ?, ?, ?, ?, 'prepared');
+COMMIT;
+# provider dispatch may begin only after this commit
 ```
 
-`ops_log`'s existing indexes (`started_at`, `(op,
-started_at)`) are exactly what receipt queries need
-("latest receipt", "all receipts for round X"). Adding a
-new table for receipts would duplicate the indexing
-infrastructure and break the "ledger + ops_log + audit"
-three-table pattern; the right move is to **promote the
-receipt to a first-class `op` value** in the existing
-audit log.
-
-**Why not a `loop.receipt` entry kind?** Because the
-receipt is a **derivation**, not an event. The ledger is
-"things that happened"; the receipt is "the runtime's
-*description* of what the model saw in light of those
-things." Mixing the two in one table conflates "what
-happened" with "what was visible" — two different
-concerns. Keeping the receipt in `ops_log` (the audit
-trail) makes the **direction of dependence** explicit:
-`ledger = truth`, `ops_log = derived view of how the runtime
-used the truth`.
+The full request bytes may remain in encrypted/artifact storage, but the
+identity, digest, coordinate, state, and artifact reference are durable facts.
+Whether they share a physical table with other entries is not decided here.
 
 ```python
 class DeriveReceipt:
@@ -1214,26 +1177,18 @@ class DeriveReceipt:
         detail:     str
 ```
 
-**`record_receipt(receipt)` writes to a separate
-`receipt` table** in the same db — distinct from the
-ledger's `entry` table because the receipt is a **view
-description**, not an event:
+`record_request(receipt)` is an idempotent Runtime operation keyed by
+`request_id`. Reusing the ID with a different digest is a conflict:
 
 ```sql
--- ops_log already has:
---   id, op, started_at, finished_at, items_removed, notes, wall_ts
---
--- For receipts:
-INSERT INTO ops_log (op, started_at, finished_at, items_removed, notes)
-VALUES ('loop.receipt', ?, ?, 0, ?);
--- notes = JSON-serialised receipt body
+INSERT INTO model_request (...) VALUES (...)
+ON CONFLICT(request_id) DO UPDATE SET request_id = request_id
+WHERE model_request.request_digest = excluded.request_digest;
 ```
 
-The receipt's `op = 'loop.receipt'` reuses the existing
-`ops_log` schema — its `(op, started_at)` index and
-`started_at` index are exactly what receipt queries need
-("latest receipt", "all receipts for round X"). No new
-table, no new indexes, no schema drift.
+Response, usage, cancellation, and terminal facts link to the same
+`request_id`. Recovery after dispatch is receipt-based; it never assumes that
+absence of a response means the provider was not invoked.
 
 **What the receipt enables:**
 
@@ -1440,9 +1395,8 @@ Specifically:
   `tool_result`). A summary must not cover an `intent`
   without its `tool_result`; the model needs the result to
   reason about whether the call succeeded.
-- **A pending `approval_request`** (AskUser verdict) must be
-  either fully inside the covered range — with its eventual
-  verdict + effects back-filled — or fully outside it. A
+- **A pending `approval_request`** must stay outside the covered range. A
+  resolved request/response pair may be fully inside. A
   boundary that chops a pending approval in half leaves
   `Suspended` and `Resume` unable to reason about the round's
   pause state.
@@ -2037,7 +1991,7 @@ runs. The verdict is one of:
 | `Approve` | executor runs the intent as-is |
 | `Deny(reason)` | a `tool_result.rejected(reason)` is appended; the rejection is fed back to the model next iteration (no termination) |
 | `ApproveWithRewrite(x)` | executor runs `intent.with(x)` — typically used to constrain a parameter |
-| `AskUser(question)` | an `approval_request` is appended and the round **returns `Suspended`** — this is the **only** way the round pauses |
+| `AskUser(question)` | an approval request is committed and the execution returns `Suspended(ApprovalRequired)` |
 
 Governance is **queried** — the loop asks `governance.judge`,
 not the other way around. This keeps the loop the single
@@ -2060,16 +2014,17 @@ The round that paused is **the same** `turn_id`. Resume is an
    locates where it paused (the pending `approval_request`).
 2. The round re-enters the `while` loop with a synthetic
    `entry` carrying the human's answer.
-3. Unpaired calls (from a previous iteration that didn't get
-   to execute) get their results back-filled.
+3. Incomplete model/tool invocations are classified from durable receipts as
+   retryable, receipt-recoverable, or operator-required. An unpaired call is
+   never blindly executed or given a synthetic success result.
 
 ## Consequences
 
 ### Positive
 
-- **Recoverable** by construction. The ledger is the
-  snapshot; the driver just replays from there. A crash, a
-  deploy, a network blip — none of them lose round state.
+- **Recoverable under an explicit contract.** Runtime rebuilds state from
+  committed facts and exact receipts. Uncertain external effects fail closed
+  to operator reconciliation instead of being replayed.
 - **Bounded** by construction. `ledger.derive(kinds, budget)`
   enforces the budget *before* the call, not after. The model
   never has a chance to see a context window it can overflow.
@@ -2098,17 +2053,15 @@ The round that paused is **the same** `turn_id`. Resume is an
 
 ### Cross-language
 
-This design applies uniformly to **Rust** (`engine/core/`) and
-**Kotlin** (`engine-kt/core/`). Same loop, same ledger, same
-governance port. The conformance suite
-(`just conformance`) is the sync lock for the
-ledger / governance / executor ports specifically.
+Rust under `engine/core/` is the initial implementation. A Kotlin experiment
+may implement a bounded subset after `.agents/multi-language.md` admission; it
+is not required to mirror this entire loop in lockstep.
 
 ## Open Questions
 
 1. **Ledger shape**: append-only vs bitemporal; per-turn
    segments vs global log. (See forthcoming
-   `docs/architecture/ledger.md`.)
+   [`ledger.md`](ledger.md).)
 2. **Summarisation cost**: the one impure step. Should
    summarisation run in a background task that pre-emptively
    summarises old prefixes, or strictly on-demand inside the
@@ -2153,10 +2106,9 @@ ledger / governance / executor ports specifically.
 - `AGENTS.md` — repo-wide rules (the constitution).
 - `.agents/ddd.md` — domain-driven design pipeline; this loop
   is the **mechanical heart** of a DDD aggregate.
-- `.agents/multi-language.md` — Rust + Kotlin mirror rules;
-  this loop applies to both.
-- `.agents/testing.md` — the eight-layer test pyramid;
-  iteration-level unit tests + ledger replay tests live here.
+- `.agents/multi-language.md` — optional implementation admission and
+  conformance levels.
+- `.agents/testing.md` — test categories and evidence maturity.
 - `bench/AGENTS.md` — the runner-loop pattern (`load →
   drive → adapt → eval`) is the same shape, lifted one
   level up.
@@ -2164,7 +2116,7 @@ ledger / governance / executor ports specifically.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
+- Last reviewed: 2026-08-29
 - Status: **draft (possible mechanism)** — loop shape settled
   as a *candidate*; ledger shape, governance policy, tier
   thresholds, eviction triggers, and Open Questions still open.
