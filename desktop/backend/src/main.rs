@@ -2,7 +2,8 @@
 fn run_fake_host(input: String) -> Result<String, String> {
     let host = garive_runtime::FakeHost::from_fixture(include_bytes!(
         "../../../spec/fixtures/host/fake-session.json"
-    )).map_err(str::to_owned)?;
+    ))
+    .map_err(str::to_owned)?;
     let mut output = String::new();
     for event in host.run(&input).map_err(str::to_owned)? {
         if event.kind == garive_runtime::HostEventKind::OutputDelta {
