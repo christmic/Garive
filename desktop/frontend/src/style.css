@@ -1,0 +1,6 @@
+:root { color: #eee; background: #111; font: 16px system-ui, sans-serif; }
+body { margin: 0; }
+main { margin: 4rem; }
+button { padding: .6rem 1rem; }
+output { display: block; margin-top: 1rem; color: #9fe; }
+[role="alert"] { color: #ff9b9b; }

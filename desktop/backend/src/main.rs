@@ -19,3 +19,14 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("Garive desktop runtime failed");
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn command_runs_the_shared_fake_host() {
+        assert_eq!(
+            super::run_fake_host("hello".into()),
+            Ok("hello from Garive".into())
+        );
+    }
+}
