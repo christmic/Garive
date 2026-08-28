@@ -29,7 +29,8 @@ gradle.beforeProject {
     project.apply(plugin = "org.jetbrains.kotlin.jvm")
 
     project.extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
-        jvmToolchain(17)
+        jvmToolchain(21)
+        compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 
     project.dependencies {
@@ -38,6 +39,17 @@ gradle.beforeProject {
 
         "testImplementation"(platform("org.jetbrains.kotlin:kotlin-bom"))
         "testImplementation"(kotlin("test"))
+        "testImplementation"("org.jetbrains.kotlin:kotlin-test-junit5")
         "testImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+        "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+    }
+
+    project.tasks.withType<Test>().configureEach {
+        useJUnitPlatform()
+        systemProperty("garive.repo.root", rootProject.projectDir.resolve("../..").canonicalPath)
+    }
+
+    project.tasks.withType<JavaCompile>().configureEach {
+        options.release.set(17)
     }
 }

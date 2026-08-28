@@ -15,4 +15,6 @@ rootProject.name = "engine-kt"
 // `creativity/`, `eval/`, `observability/`, `config/`,
 // `ledger/`) are empty placeholders. Add a module to this file
 // when its slice starts landing code.
+include(":core")          // C0 portable execution control
+include(":llm")           // C1 provider-neutral model facts
 include(":proto")         // generated Kotlin bindings from spec/proto/
