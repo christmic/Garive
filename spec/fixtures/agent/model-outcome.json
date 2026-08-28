@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "contract": "model-outcome",
+  "cases": [
+    {
+      "name": "completed-preserves-ordered-items",
+      "usage": {"input": "10", "output": "2", "cache_read": "4", "cache_write": "1", "source": "provider-reported"},
+      "outcome": {"envelope": "completed", "reason": "end-turn", "item_kinds": ["text", "reasoning", "tool-intent", "tool-observation", "media-reference"]},
+      "expected": {"total": "known:12", "kind": "completed", "success": true, "partial": false, "item_kinds": ["text", "reasoning", "tool-intent", "tool-observation", "media-reference"]}
+    },
+    {
+      "name": "unknown-usage-remains-unknown",
+      "usage": {"input": "unknown", "output": "2", "source": "estimated"},
+      "outcome": {"envelope": "interrupted", "reason": "output-limit", "item_kinds": ["text"]},
+      "expected": {"total": "unknown", "kind": "interrupted", "success": false, "partial": true, "item_kinds": ["text"]}
+    },
+    {
+      "name": "usage-overflow-is-not-unknown",
+      "usage": {"input": "18446744073709551615", "output": "1", "source": "provider-reported"},
+      "outcome": {"envelope": "unavailable", "reason": "rate-limited", "item_kinds": []},
+      "expected": {"total": "overflow", "kind": "unavailable", "success": false, "partial": false, "item_kinds": []}
+    },
+    {
+      "name": "authentication-is-a-rejection-fact",
+      "usage": {"input": "0", "output": "0", "source": "provider-reported"},
+      "outcome": {"envelope": "rejected", "reason": "authentication", "item_kinds": []},
+      "expected": {"total": "known:0", "kind": "rejected", "success": false, "partial": false, "item_kinds": []}
+    },
+    {
+      "name": "content-policy-is-a-rejection-fact",
+      "usage": {"input": "0", "output": "0", "source": "provider-reported"},
+      "outcome": {"envelope": "rejected", "reason": "content-policy", "item_kinds": []},
+      "expected": {"total": "known:0", "kind": "rejected", "success": false, "partial": false, "item_kinds": []}
+    },
+    {
+      "name": "context-overflow-is-a-rejection-fact",
+      "usage": {"input": "unknown", "output": "unknown", "source": "estimated"},
+      "outcome": {"envelope": "rejected", "reason": "context-overflow", "item_kinds": []},
+      "expected": {"total": "unknown", "kind": "rejected", "success": false, "partial": false, "item_kinds": []}
+    },
+    {
+      "name": "cancelled-transport-output-and-availability-remain-distinct",
+      "usage": {"input": "1", "output": "1", "source": "provider-reported"},
+      "outcome": {"envelope": "interrupted", "reason": "cancelled", "item_kinds": []},
+      "expected": {"total": "known:2", "kind": "interrupted", "success": false, "partial": true, "item_kinds": []}
+    }
+  ]
+}

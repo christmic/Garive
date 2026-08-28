@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "contract": "execution-control",
+  "cases": [
+    {
+      "name": "fresh-execution-reaches-limit",
+      "input": {"turn_id": "turn-a", "execution_id": "exec-a1", "completed": 0, "maximum": 2},
+      "operations": ["begin", "begin", "begin"],
+      "expected": {"results": ["started:1", "started:2", "iteration-limit"], "completed": 2, "status": "closed:stopped"}
+    },
+    {
+      "name": "completed-execution-closes-once",
+      "input": {"turn_id": "turn-b", "execution_id": "exec-b1", "completed": 0, "maximum": 3},
+      "operations": ["begin", "close:completed", "begin"],
+      "expected": {"results": ["started:1", "closed:completed", "error:already-closed"], "completed": 1, "status": "closed:completed"}
+    },
+    {
+      "name": "suspension-closes-current-execution",
+      "input": {"turn_id": "turn-c", "execution_id": "exec-c1", "completed": 1, "maximum": 4},
+      "operations": ["begin", "close:suspended"],
+      "expected": {"results": ["started:2", "closed:suspended"], "completed": 2, "status": "closed:suspended"}
+    },
+    {
+      "name": "continuation-is-a-new-execution",
+      "input": {"turn_id": "turn-c", "execution_id": "exec-c2", "completed": 2, "maximum": 4},
+      "operations": ["begin", "close:failed"],
+      "expected": {"results": ["started:3", "closed:failed"], "completed": 3, "status": "closed:failed"}
+    },
+    {
+      "name": "cursor-beyond-limit-is-rejected",
+      "input": {"turn_id": "turn-d", "execution_id": "exec-d1", "completed": 3, "maximum": 2},
+      "operations": [],
+      "expected": {"construction_error": "cursor-beyond-limit"}
+    }
+  ]
+}
