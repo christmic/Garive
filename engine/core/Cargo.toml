@@ -9,5 +9,8 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+garive-llm = { path = "../llm" }
+
 [dev-dependencies]
 serde_json.workspace = true

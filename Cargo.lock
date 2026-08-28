@@ -18,6 +18,7 @@ version = "0.1.0"
 name = "garive-core"
 version = "0.1.0"
 dependencies = [
+ "garive-llm",
  "serde_json",
 ]
 
