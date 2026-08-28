@@ -757,6 +757,143 @@ The encryption roadmap is:
 **"hook payloads are encrypted at rest, just like other entry
 bodies"** is stated here so any hook design must respect it.
 
+#### Kind Compatibility Principle (forward-only)
+
+Kind handling is **asymmetric** by design:
+
+- **Write-strict.** The runtime accepts an `entry.append` **only
+  if its `kind` is registered in the kind registry** (see
+  below). Unknown kinds are **rejected** with a write error.
+  This prevents the runtime from sprinkling unknown kinds
+  into the ledger; the registry is the gate.
+- **Read-lenient.** A reader that encounters a row whose
+  `kind` it doesn't know **does not error**:
+  - The row stays in the ledger (not deleted, not modified).
+  - `derive` **skips** the row in the surface (the model
+    doesn't see a half-rendered unknown).
+  - Audit / inspection tools **show** the row with its raw
+    body and `kind`, so operators can see what's in the db
+    even if no reader knows how to render it.
+  This is forward-compat: an old reader (Rust, Kotlin,
+  debugging tool) can open a newer ledger without crashing.
+
+The asymmetry prevents production data corruption (writes
+that nobody can read) while never losing data to a
+reader's missing knowledge.
+
+#### Kind Registry (append-only)
+
+Every kind the runtime knows about is registered **once** in
+the **kind registry**. The registry is the **authoritative
+list of allowed kinds**; anything not in it is rejected at
+write time.
+
+The registry is **append-only** — kinds are added, never
+deleted. A deprecated or retired kind stays in the registry
+forever, so old entries always have a definition to look up.
+
+| Field | Type | What it holds |
+|-------|------|---------------|
+| `kind` | TEXT PRIMARY KEY | The dotted kind name (e.g. `tool.call`). |
+| `family` | TEXT NOT NULL | The family prefix (e.g. `tool`). |
+| `status` | TEXT NOT NULL | Lifecycle stage: `active` (current) \| `deprecated` (still written, prefer alternatives) \| `retired` (no longer written, but old entries still readable). |
+| `body_schema_ref` | TEXT NOT NULL | Pointer to the canonical proto definition (e.g. `spec/proto/garive/v1/agent.proto#ToolCall`). Readers use this to know how to decode the body. |
+| `default_surface` | TEXT NOT NULL | How `derive` projects this kind by default: `full` \| `preview` \| `one_liner` \| `redacted_placeholder`. |
+| `pinned` | INTEGER (bool) | `1` if this kind is always-loaded (e.g. `goal.*`, `system`). |
+| `pair_kind` | TEXT NULL | The kind this entry pairs with (e.g. `tool.call` ↔ `tool.result`). `NULL` if unpaired. |
+| `redactable` | INTEGER (bool) | `1` if entries of this kind can be `privacy.redact`-ed. `0` for kinds whose body must never be hidden (e.g. `privacy.redact` itself, `compaction.rewrite`, audit kinds). |
+| `registered_at` | INTEGER | Wall-clock when the kind was first registered. |
+| `deprecated_at` | INTEGER NULL | Wall-clock when the kind moved to `deprecated` or `retired`. |
+| `notes` | TEXT | Free-form. Used for migration notes, deprecation reasons, etc. |
+
+**Lifecycle transitions** (one-way):
+
+```
+active ──▶ deprecated ──▶ retired
+```
+
+- **`active`**: writers may emit this kind; readers project it
+  as `default_surface`.
+- **`deprecated`**: writers should prefer the replacement
+  kind (recorded in `notes`); readers still project the
+  default surface; `derive` may emit a soft warning to the
+  surface ("this entry is from the deprecated `kind.x`
+  family; prefer `kind.y`").
+- **`retired`**: writers must not emit this kind. **Readers
+  continue to read it** — old entries stay readable forever.
+  `derive` still skips it (the registry says the kind is
+  known, the status says it's not in the live set).
+
+A kind never goes from `retired` back to `active`. A
+deprecated kind that turns out to be needed may stay
+deprecated forever; the right move is to register a new
+`active` kind that replaces it.
+
+The kind registry itself lives in `spec/proto/` — the same
+proto file defines the kind, its body schema, and the
+metadata in this registry. Both Rust and Kotlin generate
+their kind-aware code from this single source.
+
+#### Unknown-Kind Handling (Read Path)
+
+| Path | Behaviour |
+|------|-----------|
+| `append(kind=X)` | **Error**: `UnknownKind`. The runtime refuses the write before any row is created. The error message includes the candidate kind and a pointer to the kind registry ("register it in `spec/proto/` first"). |
+| `derive()` on a row with unknown kind | **Skip**: the row is not in the surface. The skip is recorded in `ops_log` as `unknown_kind_skip` with the row's `kind` and `seq`, so an operator can see what's being skipped. |
+| Audit / inspection tool reading a row with unknown kind | **Show raw**: the tool prints `kind=<name>, seq=<n>, body=<bytes-as-base64>`. The operator decides what to do (probably: register the kind, or accept it as an external write). |
+| `surface_visible` on a row with unknown kind | `0` (skipped). The registry doesn't know the kind, so the surface policy doesn't know how to project it. |
+| Re-deriving a session that has unknown-kind rows | All known kinds render normally; unknown-kind rows are still skipped, with a count reported in `derive`'s return value. |
+
+The intent: **forward compat without silent loss.** An old
+reader can open a new ledger (no crash), and an operator can
+see exactly which rows are unrendered (no silent skip).
+
+#### Versioned reads (schema evolution)
+
+Each entry carries a `schema_var` (per `entry` table). The
+`schema_var` is the **version of the kind's body schema**
+that the row was written under. When the kind's body schema
+changes (a field is added, a sub-message is renamed), the
+kind's `body_schema_ref` in the registry points at the new
+version, and **the next write uses the new version's
+`schema_var`**. Old rows keep their old `schema_var`.
+
+A reader that knows the current `body_schema_ref` may not
+know old versions. The mitigation:
+
+- The proto definition supports **forward compat per
+  field** (proto3 default — unknown fields are preserved
+  on parse, not dropped).
+- A `migration` registry row lists, per kind, how old
+  versions' payloads are brought forward. The runtime's
+  `migrate(entry)` function applies it lazily at read time.
+- The migration function is **never destructive** — it
+  converts old payload → new payload, but the original is
+  preserved in `body_inline` / `body_hash` (which is
+  content-addressed, so the original is recoverable).
+
+```sql
+CREATE TABLE kind_migration (
+    kind             TEXT NOT NULL,
+    from_schema_var  INTEGER NOT NULL,
+    to_schema_var    INTEGER NOT NULL,
+    migration_path   TEXT,        -- description or executable identifier
+    PRIMARY KEY (kind, from_schema_var, to_schema_var)
+);
+```
+
+When `derive` reads a row with a stale `schema_var`, it
+looks up the migration path and applies it. The migrated
+body lives in the **surface** only; the ledger row keeps
+its original `body_inline` / `body_hash` (immutable, per
+append-only invariant).
+
+**Why forward-only:** we never delete a kind or a
+`schema_var`. The registry grows; the migrations grow; old
+rows are always readable. The cost is more code, more
+migrations, more registry rows — the benefit is **no data
+loss across schema evolution**, ever.
+
 #### Load classes
 
 Kinds split into three load classes (see `loop.md` for
