@@ -1,6 +1,7 @@
 //! Bounded Agent kernel: decisions, turn semantics, and execution ports.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 mod context;
 mod model_only;

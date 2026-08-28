@@ -111,7 +111,10 @@ pub enum ExecutionStatus {
 /// Result of attempting to enter the next bounded iteration.
 pub enum BeginIteration {
     /// The iteration cursor advanced to this one-based value.
-    Started { iteration: NonZeroU32 },
+    Started {
+        /// One-based iteration number entered by the controller.
+        iteration: NonZeroU32,
+    },
     /// No iteration started and the controller closed as stopped.
     IterationLimitReached,
 }

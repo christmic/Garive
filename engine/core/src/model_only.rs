@@ -11,6 +11,11 @@ use crate::model_only_support::{
     prepare_control, ForwardObserver, UsageAccumulator,
 };
 
+/// Runs one bounded model-only kernel execution against frozen ports.
+///
+/// The driver validates the immutable request, checks cancellation and limits at
+/// defined boundaries, forwards normalized model events, and returns exactly one
+/// terminal proposal. It never persists state or executes tool intents.
 pub async fn execute_model_only(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
