@@ -1,1 +1,17 @@
-{"name":"@garive/web","private":true,"type":"module","scripts":{"dev":"node server.mjs","test":"node --test test/*.test.mjs"}}
+{
+  "name": "@garive/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "dev": "vite",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
+  }
+}

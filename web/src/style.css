@@ -1,0 +1,5 @@
+:root { color: #eee; background: #111; font: 16px system-ui, sans-serif; }
+body { margin: 0; }
+main { max-width: 48rem; margin: 4rem auto; padding: 2rem; border: 1px solid #444; border-radius: 1rem; }
+button { padding: .6rem 1rem; }
+output { display: block; margin-top: 1rem; color: #9fe; }
