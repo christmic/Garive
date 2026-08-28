@@ -37,7 +37,7 @@ planned without reopening a narrower completed row.
 | C5 | Governed effects and observations | accepted | missing | missing | skeleton | missing | planned | Accept authorization, interaction, receipt, and uncertain-effect Specs. |
 | C6 | Durable Runtime Turn orchestration | accepted | draft | partial | partial | partial | active | Specify and prove one real persisted Turn across every crash boundary. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Record a C3/C6 baseline before accepting thresholds or algorithms. |
-| L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | partial | active | Close the full transition/query/error coverage matrix. |
+| L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | verified | done | Keep Rust/Kotlin scenario and exhaustive transition matrices green. |
 | L1-R | SQLite Ledger adapter | accepted | accepted | partial | implemented | partial | active | Add migration/backup policy and the remaining process-boundary fault matrix. |
 | L1-K | Kotlin PostgreSQL experiment | accepted | accepted | partial | implemented | partial | active | Keep PostgreSQL evidence experimental and complete API/KDoc coverage. |
 

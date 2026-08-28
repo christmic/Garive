@@ -243,6 +243,13 @@ repositories are insufficient for PostgreSQL transaction claims.
 Rust/Kotlin domain implementations consume every scenario. SQLite/PostgreSQL
 integration tests replay the same scenarios against their real adapters.
 
+The shared scenarios are complemented by mirrored exhaustive domain matrices
+in `engine/ledger/tests/ledger_transition_matrix.rs` and
+`experiments/engine-kt/ledger/src/test/.../LedgerTransitionMatrixTest.kt`.
+Those matrices enumerate every admitted Turn, Execution, model and effect
+terminal; reject skipped/repeated/cross-owner transitions and premature parent
+closure; and cover commit, query, identity and canonical-payload boundaries.
+
 ## Backup and migration boundary
 
 L1 requires forward migrations from an empty database and schema-version
