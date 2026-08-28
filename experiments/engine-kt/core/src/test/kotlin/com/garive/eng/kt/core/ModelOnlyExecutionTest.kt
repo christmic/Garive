@@ -45,7 +45,7 @@ class ModelOnlyExecutionTest {
     @Test
     fun `Kotlin consumes every model-only scenario`() = runTest {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(15, cases.size)
+        assertEquals(16, cases.size)
         cases.forEach { element -> runCase(element.jsonObject) }
     }
 
@@ -67,7 +67,10 @@ class ModelOnlyExecutionTest {
         var calls = 0
         override fun derive(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult {
             calls += 1
-            if (scripts.removeFirst() == "failure") return ContextPortResult.Failure(PortFailure.CONTEXT)
+            when (scripts.removeFirst()) {
+                "failure" -> return ContextPortResult.Failure(PortFailure.CONTEXT)
+                "required-budget" -> return ContextPortResult.RequiredFactsExceedBudget
+            }
             val ref = FactRef(request.sessionId, request.throughPosition)
             return ContextPortResult.Success(
                 ContextSurface(

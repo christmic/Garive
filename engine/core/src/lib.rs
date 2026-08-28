@@ -15,9 +15,10 @@ pub use context::{
 pub use model_only::execute_model_only;
 pub use model_only_types::{
     AgentCursor, AgentEntry, AgentEvent, AgentEventKind, AgentExecutionPorts, AgentFailureReason,
-    AgentOutcome, AgentRequestError, AgentTurnRequest, ClockPort, ContextPort, EventSink,
-    ExecutionReport, MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction,
-    PortFailure, ResumeInput, StopReason, SuspensionReason, TerminalRecoveryAction, UsageSummary,
+    AgentOutcome, AgentRequestError, AgentTurnRequest, ClockPort, ContextPort, ContextPortError,
+    EventSink, ExecutionReport, MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy,
+    OutputLimitAction, PortFailure, ResumeInput, StopReason, SuspensionReason,
+    TerminalRecoveryAction, UsageSummary,
 };
 pub use turn::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, BeginIteration, ControlError,

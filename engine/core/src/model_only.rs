@@ -113,7 +113,17 @@ pub async fn execute_model_only(
             .derive(&request.context_request, rebuild_attempt)
         {
             Ok(surface) => surface,
-            Err(_) => {
+            Err(crate::ContextPortError::RequiredFactsExceedBudget) => {
+                return finish(
+                    request,
+                    ports,
+                    &mut control,
+                    AgentOutcome::Stopped {
+                        reason: StopReason::TokenLimit,
+                    },
+                );
+            }
+            Err(crate::ContextPortError::PortFailure) => {
                 return finish(
                     request,
                     ports,
@@ -182,7 +192,7 @@ pub async fn execute_model_only(
                 ports,
                 &mut control,
                 AgentOutcome::Failed {
-                    reason: AgentFailureReason::InvalidInput,
+                    reason: AgentFailureReason::PortFailure,
                 },
             );
         }
@@ -317,6 +327,19 @@ pub async fn execute_model_only(
                     }
                     InterruptionKind::OutputLimit => match request.recovery_policy.output_limit {
                         OutputLimitAction::CompletePartial => {
+                            if partial_items
+                                .iter()
+                                .any(|item| matches!(item, ModelItem::ToolIntent { .. }))
+                            {
+                                return finish(
+                                    request,
+                                    ports,
+                                    &mut control,
+                                    AgentOutcome::Failed {
+                                        reason: AgentFailureReason::RequiredCapabilityUnavailable,
+                                    },
+                                );
+                            }
                             return finish(
                                 request,
                                 ports,

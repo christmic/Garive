@@ -53,6 +53,9 @@ suspend fun executeModelOnly(request: AgentTurnRequest, ports: AgentExecutionPor
         }
         val surface = when (val context = ports.context.derive(request.contextRequest, rebuildAttempt)) {
             is ContextPortResult.Success -> context.surface
+            ContextPortResult.RequiredFactsExceedBudget -> {
+                return finish(request, ports, control, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT))
+            }
             is ContextPortResult.Failure -> {
                 return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
             }
@@ -74,10 +77,11 @@ suspend fun executeModelOnly(request: AgentTurnRequest, ports: AgentExecutionPor
             request.modelOutput,
             listOf("turn_id" to request.turnId.value, "execution_id" to request.executionId.value),
         )
-        if (modelRequest.validate() != null ||
-            !emit(request, ports, AgentEventKind.ModelRequestPrepared(requestId, target.value))
-        ) {
+        if (modelRequest.validate() != null) {
             return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.INVALID_INPUT))
+        }
+        if (!emit(request, ports, AgentEventKind.ModelRequestPrepared(requestId, target.value))) {
+            return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
         var observerFailure = false
         val observer = ModelObserver { event ->

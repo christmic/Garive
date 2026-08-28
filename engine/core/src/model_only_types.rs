@@ -226,12 +226,18 @@ pub enum PortFailure {
     Clock,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ContextPortError {
+    RequiredFactsExceedBudget,
+    PortFailure,
+}
+
 pub trait ContextPort {
     fn derive(
         &mut self,
         request: &ContextRequest,
         rebuild_attempt: u32,
-    ) -> Result<ContextSurface, PortFailure>;
+    ) -> Result<ContextSurface, ContextPortError>;
 }
 
 pub trait EventSink {

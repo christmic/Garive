@@ -131,6 +131,7 @@ data class AgentEvent(
 enum class PortFailure { CONTEXT, EVENT, CLOCK }
 sealed interface ContextPortResult {
     data class Success(val surface: ContextSurface) : ContextPortResult
+    data object RequiredFactsExceedBudget : ContextPortResult
     data class Failure(val failure: PortFailure) : ContextPortResult
 }
 fun interface ContextPort { fun derive(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult }

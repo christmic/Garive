@@ -13,8 +13,8 @@ use futures::executor::block_on;
 use garive_core::{
     execute_model_only, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry,
     AgentEvent, AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentTurnRequest, ClockPort,
-    ContextItem, ContextPort, ContextPurpose, ContextRequest, ContextSurface, EventSink,
-    ExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits,
+    ContextItem, ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
+    EventSink, ExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits,
     ModelRecoveryPolicy, OutputLimitAction, PortFailure, ResumeInput, SessionId, StopReason,
     SuspensionReason, TerminalRecoveryAction, TurnId,
 };
@@ -58,10 +58,16 @@ struct FakeContext {
 }
 
 impl ContextPort for FakeContext {
-    fn derive(&mut self, request: &ContextRequest, _: u32) -> Result<ContextSurface, PortFailure> {
+    fn derive(
+        &mut self,
+        request: &ContextRequest,
+        _: u32,
+    ) -> Result<ContextSurface, ContextPortError> {
         self.calls += 1;
-        if self.scripts.pop_front().as_deref() == Some("failure") {
-            return Err(PortFailure::Context);
+        match self.scripts.pop_front().as_deref() {
+            Some("failure") => return Err(ContextPortError::PortFailure),
+            Some("required-budget") => return Err(ContextPortError::RequiredFactsExceedBudget),
+            _ => {}
         }
         let fact_ref = FactRef {
             session_id: request.session_id.clone(),
@@ -289,7 +295,7 @@ fn render(outcome: &AgentOutcome) -> &'static str {
 fn rust_consumes_every_model_only_scenario() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 15);
+    assert_eq!(cases.len(), 16);
     for case in cases {
         let mut context = FakeContext {
             scripts: case["contexts"]
