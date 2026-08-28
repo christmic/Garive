@@ -42,6 +42,10 @@ Port implementations are selected before execution and cannot be replaced by
 Core. A port error becomes `Failed(PortFailure)` unless a more specific required
 capability failure applies.
 
+Rust `EventSink` is `Send` because the forwarding observer is retained across
+the `ModelPort`'s `Send` future. Kotlin preserves the equivalent single-owner
+suspending call without a marker interface.
+
 ## Recovery policy
 
 `ModelRecoveryPolicy` is immutable and bounded:

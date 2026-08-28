@@ -240,7 +240,7 @@ pub trait ContextPort {
     ) -> Result<ContextSurface, ContextPortError>;
 }
 
-pub trait EventSink {
+pub trait EventSink: Send {
     fn emit(&mut self, event: AgentEvent) -> Result<(), PortFailure>;
 }
 
