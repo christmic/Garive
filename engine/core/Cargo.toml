@@ -13,4 +13,5 @@ path = "src/lib.rs"
 garive-llm = { path = "../llm" }
 
 [dev-dependencies]
+futures.workspace = true
 serde_json.workspace = true
