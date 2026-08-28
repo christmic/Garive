@@ -348,6 +348,21 @@ commit), not one.
 
 ### Two protocols — event stream + ledger stream
 
+> **Disclaimer — names vs implementation.** The names
+> "event stream" and "ledger stream" describe the **two
+> properties the design needs** — lossless-real-time
+> notifications vs lossless-durable records. They are
+> **related in content** (both observe the same
+> `model.invoke` boundary), **different in form** (event
+> stream = ephemeral payload; ledger stream = durable
+> rows), and **different in use case** (UI / monitor vs
+> audit / recovery). An event-stream implementation could be
+> in-process pub/sub, a per-loop `Channel`, an SSE stream, a
+> WebSocket, or even poll-based. The ledger-stream is the
+> existing `entry.append` — durable, atomic per transaction.
+> **This doc names the properties; the runtime picks the
+> transport.**
+
 The `turn_loop` skeleton runs **two protocols in parallel**
 during a single round. Both observe the same `model.invoke`
 boundary; they differ in **what they carry** and **what they
