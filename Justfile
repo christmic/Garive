@@ -47,9 +47,11 @@ desktop:
 mobile:
     cd mobile && gradle build
 
-# Bench
+# Bench: SWE-bench verification runtime (orchestrator only).
+# Implementation lands as the slice is scoped; until then this
+# prints a stub.
 bench:
-    @echo "bench: not yet wired — bench crate is not in the workspace"
+    cargo run -p bench
 
 # Clean: remove build artefacts across the workspace
 clean:

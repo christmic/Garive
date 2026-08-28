@@ -7,16 +7,21 @@ resolver = "2"
 #           multiagent, scheduler, creativity, eval,
 #           observability, config, proto}
 #   runtime/replica
-#   cli, tui, bench
+#   cli, tui
 #   desktop/                  # Tauri Rust backend
+#
+# Active members (scaffolded):
+#   bench                     # SWE-bench verification runtime
 #
 # NOT in this workspace (different language / different repo role):
 #   runtime/gateway           — Go (independent go.mod)
 #   desktop/frontend          — TS/React (independent pnpm)
 #   mobile                    — Kotlin KMP (independent Gradle)
-#   experiments/engine-kt        — Kotlin mirror (independent Gradle)
+#   experiments/engine-kt      — Kotlin mirror (independent Gradle)
 #   spec/proto                — schema source, not a member
-members = []
+members = [
+    "bench",
+]
 
 [workspace.package]
 edition = "2021"
