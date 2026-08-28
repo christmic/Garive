@@ -14,8 +14,8 @@ before implementation slices land.
   needs them.
 - `docs/architecture/`: active personal design notes and the current system
   map. Start at [`docs/architecture/README.md`](docs/architecture/README.md).
-- `experiments/engine-kt/`: optional Kotlin experiment, not a second source of
-  truth or a release gate.
+- `experiments/engine-kt/`: supported Kotlin C0/C1 semantics plus focused
+  experiments; accepted specs and shared fixtures remain the source of truth.
 
 Today the Rust workspace contains only the benchmark scaffold. Commands in the
 `Justfile` report placeholders honestly where an implementation has not landed.

@@ -5,9 +5,10 @@
 
 ## Current position
 
-`experiments/engine-kt/` is an optional Kotlin experiment. It is not a second
-source of truth, a release requirement, or a promise that every Rust module has
-a Kotlin counterpart.
+Kotlin is a supported semantic implementation for admitted portable slices C0
+and C1. Those slices evolve jointly with Rust through accepted specs and shared
+fixtures. This is not a promise that every Rust/Runtime module has a Kotlin
+counterpart.
 
 The sources of truth are boundary-specific:
 
@@ -54,13 +55,13 @@ Until then, keep the idea in docs and do not create placeholder modules.
 Do not require byte equality for values whose map ordering, serialization, or
 language representation is not itself a contract.
 
-## Kotlin experiment
+## Kotlin implementation
 
-The current Gradle tree may generate Kotlin bindings from `spec/proto/` and
-host focused experiments. A module becomes supported only when the admission
-gate is recorded in its design document.
+The Gradle tree contains supported `:core` (C0) and `:llm` (C1) modules plus
+`:proto`. The exact support matrix lives in
+`spec/design/cross-language-agent-contract.md`.
 
-When a Kotlin slice is admitted:
+For every admitted joint slice:
 
 1. Read the accepted design and fixtures before reading Rust implementation
    details.
@@ -89,9 +90,17 @@ When a Kotlin slice is admitted:
   accepted behavior.
 - Adding a language because its directory already exists.
 
+## Joint merge gate
+
+An admitted shared semantic change includes the spec, shared fixtures, Rust
+implementation/tests, Kotlin implementation/tests, and green `just
+conformance` in one merge. Unsupported slices remain explicit rather than
+silently diverging.
+
 ## Reference
 
 - `docs/architecture/system.md` — technology admission and ownership.
 - `.agents/ddd.md` — domain/wire separation.
 - `.agents/testing.md` — conformance cadence and evidence maturity.
 - `experiments/engine-kt/AGENTS.md` — Kotlin-local rules.
+- `spec/design/cross-language-agent-contract.md` — support matrix and fixtures.

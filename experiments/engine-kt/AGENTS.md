@@ -1,16 +1,16 @@
-# Kotlin Agent experiment rules
+# Kotlin Agent implementation rules
 
-> Optional Kotlin experiments against admitted Garive boundaries. This tree is
-> not a second source of truth and does not mirror every Rust directory.
+> Supported C0/C1 semantic implementation plus focused experiments. Accepted
+> specs and shared fixtures, not Rust source, define joint behavior.
 
 @AGENTS.md
 @.agents/multi-language.md
 
 ## Current scope
 
-The Gradle project currently contains only `:proto`, which proves that an
-admitted schema can generate Kotlin bindings. No Kotlin Agent or Runtime is
-currently claimed.
+The Gradle project contains `:core` (C0 execution control), `:llm` (C1 model
+facts), and `:proto`. C0/C1 are supported at semantic conformance level; no
+Kotlin Runtime is claimed.
 
 ```text
 experiments/engine-kt/
@@ -18,8 +18,9 @@ experiments/engine-kt/
 ├── build.gradle.kts
 ├── gradle.properties
 ├── gradle/wrapper/gradle-wrapper.properties
-└── proto/
-    └── build.gradle.kts
+├── core/              supported C0 domain + shared fixtures
+├── llm/               supported C1 domain + shared fixtures
+└── proto/             generated admitted wire bindings
 ```
 
 Empty historical module directories are not architectural commitments. Remove
@@ -72,7 +73,7 @@ An empty diff proves only the dimension being compared.
 ## What not to do
 
 - Do not add placeholder modules for the Rust directory list.
-- Do not block Rust implementation on an unadmitted Kotlin counterpart.
+- Do not merge an admitted C0/C1 semantic change with only one language updated.
 - Do not use generated proto values as the entire internal domain model.
 - Do not claim production parity from schema generation alone.
 - Do not add a Kotlin replica until a JVM/on-device Runtime requirement exists.

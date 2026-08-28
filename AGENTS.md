@@ -62,8 +62,8 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 ### Components
 
 - **Core Agent** — one bounded reasoning execution, written in Rust first.
-  The Kotlin tree under `experiments/engine-kt/` is an optional semantic
-  experiment, not a second source of truth or a lock-step release promise.
+  Kotlin jointly implements admitted portable slices (currently C0/C1) from
+  accepted specs and shared semantic fixtures; it is not a second source of truth.
 - **Multi-channel capability** — chat surfaces beyond the coding IDE.
 - **Runtime** — product Sessions, durable turns, execution, storage, recovery,
   and the host boundary used by every client.
@@ -80,7 +80,7 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 | `desktop/` backend | Rust (Tauri) | cargo (workspace member) | main |
 | `desktop/` frontend | TypeScript / React | pnpm (Tauri CLI orchestrates) | independent |
 | `mobile/` | Kotlin (KMP) | Gradle | independent |
-| `experiments/engine-kt/` | Kotlin experiment | Gradle | independent |
+| `experiments/engine-kt/` | Kotlin C0/C1 + focused experiments | Gradle | independent |
 | `runtime/gateway/` | Go (deferred) | go build / go mod | independent |
 | `spec/proto/` | — | buf / protoc codegen → Rust + Kotlin | single source |
 

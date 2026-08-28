@@ -14,7 +14,7 @@ resolver = "2"
 #   runtime/gateway           — Go (independent go.mod)
 #   desktop/frontend          — TS/React (independent pnpm)
 #   mobile                    — Kotlin KMP (independent Gradle)
-#   experiments/engine-kt      — optional Kotlin experiment (independent Gradle)
+#   experiments/engine-kt      — Kotlin C0/C1 + experiments (independent Gradle)
 #   spec/proto                — schema source, not a member
 members = [
     "bench",

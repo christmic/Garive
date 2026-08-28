@@ -8,9 +8,9 @@
 
 rootProject.name = "engine-kt"
 
-// Active modules — `proto` is the only module with real build
-// configuration today. The other sub-directories
-// at this level (`core/`, `llm/`, `tools/`, `memory/`,
+// Active modules — `core` and `llm` implement admitted C0/C1 semantics;
+// `proto` generates admitted bindings. Other sub-directories
+// at this level (`tools/`, `memory/`,
 // `knowledge/`, `skill/`, `multiagent/`, `scheduler/`,
 // `creativity/`, `eval/`, `observability/`, `config/`,
 // `ledger/`) are empty placeholders. Add a module to this file

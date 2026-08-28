@@ -18,10 +18,9 @@
   native toolchain (Cargo workspace, Gradle, pnpm, Go, buf).
   Workspace members are added as crates are populated — see
   the planned-list comment in the root `Cargo.toml`.
-- **Conformance is evidence-driven:** `just conformance` is currently a
-  truthful placeholder. When two implementations consume a shipped boundary,
-  wire/canonical/semantic checks land with that slice; byte identity is only a
-  gate for explicitly canonical encodings.
+- **Conformance is executable:** `just conformance` runs Rust and Kotlin C0/C1
+  native tests over shared semantic fixtures. Byte identity remains a gate only
+  for explicitly canonical encodings.
 - **Per-tier AGENTS.md override the root:** `engine/AGENTS.md`,
   `runtime/AGENTS.md`, `spec/AGENTS.md` carry tier-specific rules
   and win over the root `AGENTS.md` where they disagree.
@@ -35,7 +34,7 @@
 |------|---------|
 | List recipes | `just --list` |
 | Regenerate proto bindings | `just codegen` |
-| Cross-language checks (not wired yet) | `just conformance` |
+| Rust/Kotlin C0/C1 conformance | `just conformance` |
 | Build Rust workspace | `just build` |
 | Run Rust tests | `just test` |
 | Desktop placeholder | `just desktop` |

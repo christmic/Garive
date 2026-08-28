@@ -2053,9 +2053,9 @@ The round that paused is **the same** `turn_id`. Resume is an
 
 ### Cross-language
 
-Rust under `engine/core/` is the initial implementation. A Kotlin experiment
-may implement a bounded subset after `.agents/multi-language.md` admission; it
-is not required to mirror this entire loop in lockstep.
+Rust under `engine/core/` is production-first. Kotlin jointly implements only
+the slices admitted by `cross-language-agent-contract.md`; C0/C1 are supported,
+while the entire loop is not implicitly in lockstep.
 
 ## Open Questions
 

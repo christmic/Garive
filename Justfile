@@ -33,11 +33,10 @@ build: codegen
 test:
     cargo test --workspace
 
-# Conformance: Rust + Kotlin read same fixtures, output identical
-# Pending — wire to `cargo run -p bench --bin conformance` + the
-# Kotlin `:conformance:run` task once both implementations land.
+# C0/C1 semantic conformance: both implementations consume the same fixtures.
 conformance:
-    @echo "conformance: not yet wired"
+    cargo test -p garive-core -p garive-llm
+    cd experiments/engine-kt && gradle --no-daemon --console=plain :core:test :llm:test
 
 # Desktop: Tauri build (TS frontend + Rust backend)
 desktop:

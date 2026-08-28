@@ -124,14 +124,14 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Technology | Initial status | Admission evidence |
 |---|---|---|
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
-| Kotlin Agent implementation | experimental | A real JVM/on-device execution need plus shared behavioral conformance before production admission. |
+| Kotlin Agent implementation | C0/C1 supported; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`. |
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
 | Desktop app | planned | Tauri/TypeScript target; activate against a stable Runtime host workflow. |
 | Mobile app | planned | KMP shared client with Compose/SwiftUI target; activate slice by slice. |
 | SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
 
-Experimental and deferred trees must not be described as shipping in lockstep
-with the Rust implementation.
+Only slices listed as supported in the cross-language matrix evolve jointly;
+directory similarity does not extend support to other modules.
 
 ## Protocol boundaries
 

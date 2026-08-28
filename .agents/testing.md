@@ -42,15 +42,15 @@ cargo test --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-The Kotlin experiment currently proves configuration separately:
+The Kotlin C0/C1 implementation and proto module are verified separately:
 
 ```text
 cd experiments/engine-kt
-gradle projects
+gradle :core:test :llm:test :proto:test
 ```
 
-`gradle build` becomes a repository gate after a complete toolchain/wrapper and
-an executable Kotlin slice are present.
+`just conformance` is the joint C0/C1 gate; full Gradle build verifies all
+currently admitted Kotlin modules.
 
 ## Unit and property rules
 
