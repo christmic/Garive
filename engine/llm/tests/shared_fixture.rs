@@ -71,6 +71,16 @@ fn rendered_total(total: UsageTotal) -> String {
     }
 }
 
+fn item_kind(item: &ModelItem) -> &'static str {
+    match item {
+        ModelItem::Text { .. } => "text",
+        ModelItem::Reasoning { .. } => "reasoning",
+        ModelItem::ToolIntent { .. } => "tool-intent",
+        ModelItem::ToolObservation { .. } => "tool-observation",
+        ModelItem::MediaReference { .. } => "media-reference",
+    }
+}
+
 #[test]
 fn rust_consumes_every_model_outcome_case() {
     let document = fixture();
@@ -78,7 +88,7 @@ fn rust_consumes_every_model_outcome_case() {
     let cases = document["cases"].as_array().unwrap();
     assert_eq!(
         cases.len(),
-        7,
+        10,
         "fixture coverage changed; review both runners"
     );
 
@@ -151,5 +161,13 @@ fn rust_consumes_every_model_outcome_case() {
             _ => &[],
         };
         assert_eq!(actual_items, model_items, "{name}");
+        let actual_kinds: Vec<_> = actual_items.iter().map(item_kind).collect();
+        let expected_kinds: Vec<_> = expected["item_kinds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|kind| kind.as_str().unwrap())
+            .collect();
+        assert_eq!(actual_kinds, expected_kinds, "{name}");
     }
 }

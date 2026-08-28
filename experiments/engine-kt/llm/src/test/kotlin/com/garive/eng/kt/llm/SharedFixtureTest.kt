@@ -20,7 +20,7 @@ class SharedFixtureTest {
     @Test
     fun `Kotlin consumes every model outcome case`() {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(7, cases.size, "fixture coverage changed; review both runners")
+        assertEquals(10, cases.size, "fixture coverage changed; review both runners")
         cases.forEach { runCase(it.jsonObject) }
     }
 
@@ -57,6 +57,11 @@ class SharedFixtureTest {
             else -> emptyList()
         }
         assertEquals(items, actualItems, name)
+        assertEquals(
+            expected.getValue("item_kinds").jsonArray.map { it.jsonPrimitive.content },
+            actualItems.map(::itemKind),
+            name,
+        )
     }
 
     private fun usage(value: JsonObject) = ModelUsage(
@@ -85,6 +90,14 @@ class SharedFixtureTest {
         is UsageTotal.Known -> "known:${value.value}"
         UsageTotal.Unknown -> "unknown"
         UsageTotal.Overflow -> "overflow"
+    }
+
+    private fun itemKind(item: ModelItem): String = when (item) {
+        is ModelItem.Text -> "text"
+        is ModelItem.Reasoning -> "reasoning"
+        is ModelItem.ToolIntent -> "tool-intent"
+        is ModelItem.ToolObservation -> "tool-observation"
+        is ModelItem.MediaReference -> "media-reference"
     }
 
     private fun JsonObject.text(key: String) = getValue(key).jsonPrimitive.content
