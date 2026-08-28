@@ -17,8 +17,11 @@ before implementation slices land.
 - `experiments/engine-kt/`: supported Kotlin C0/C1 semantics plus focused
   experiments; accepted specs and shared fixtures remain the source of truth.
 
-Today the Rust workspace contains only the benchmark scaffold. Commands in the
-`Justfile` report placeholders honestly where an implementation has not landed.
+The Rust workspace currently implements the portable C0 execution-control and
+C1 model-outcome slices; Kotlin implements the same admitted semantics from
+shared fixtures. Other crates and product surfaces remain explicit skeletons.
+Commands in the `Justfile` report unimplemented paths without presenting them
+as successful gates.
 
 ## Design rule
 

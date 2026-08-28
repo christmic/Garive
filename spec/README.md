@@ -36,7 +36,7 @@ concept.
 
 Choose the minimum level the boundary requires: wire compatibility, canonical
 encoding, semantic equivalence, or explicit capability reporting. `just
-conformance` is currently a placeholder and becomes a gate only when a real
-harness and at least two consumers land.
+conformance` is the executable semantic gate for admitted C0/C1 behavior: Rust
+and Kotlin both consume every case in the shared Agent fixtures.
 
 See [`AGENTS.md`](AGENTS.md) for schema and verification rules.

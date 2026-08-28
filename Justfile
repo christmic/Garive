@@ -21,9 +21,10 @@ setup:
     bash scripts/setup-claude-symlinks.sh
 
 # Codegen: regenerate protobuf bindings from spec/proto/.
-# Pending — wire to `engine/proto/build.rs` once that crate lands.
+# Pending — wire Rust generation to `engine/proto`; Kotlin generation is part
+# of the independent Gradle build.
 codegen:
-    @echo "codegen: not yet wired — engine/proto is not in the workspace"
+    @echo "codegen: Rust engine/proto bindings are not wired yet"
 
 # Build: codegen + Rust workspace
 build: codegen
