@@ -62,7 +62,8 @@ The response `content` array is authoritative and order-sensitive. This slice
 normalizes:
 
 - `text` to `ModelItem.Text`;
-- `thinking` text plus its opaque signature evidence to `Reasoning`;
+- `thinking` to one visible `Reasoning` item followed, when present, by one
+  opaque-reference `Reasoning` item containing its signature evidence;
 - `redacted_thinking` to an opaque `Reasoning` reference;
 - `tool_use` id/name/complete input JSON to `ToolIntent`.
 
@@ -111,8 +112,11 @@ Usage must not decrease. `message_stop` is the only successful stream
 terminal. Duplicate terminal, event after terminal, missing block stop,
 unknown meaning-changing delta or mismatched final content fails closed.
 
-`ping` is ignored as transport liveness. An SSE `error` may occur at any point
-and terminates factual assembly according to its verified error kind. EOF,
+`ping` is ignored as transport liveness. An SSE `error` before any content
+normalizes its verified authentication, rate-limit or availability kind. Once
+any content block has started, the same event is externally ambiguous and
+normalizes to `Interrupted(Transport)` with the assembled partial items; the
+adapter never discards partial output to report a retryable terminal. EOF,
 HTTP 2xx or a final `message_delta` alone never completes the request.
 
 ## Terminal mapping

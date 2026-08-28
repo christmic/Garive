@@ -4,10 +4,14 @@
 
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelInputContent, ModelInputItem, ModelItem, ModelRequest,
-    ModelRole, ModelStopReason, ModelUsage, ReasoningContent, TextMode, TokenCount, UsageSource,
+    ModelRole, ModelStopReason, ModelUsage, ReasoningContent, RejectionKind, TextMode, TokenCount,
+    UnavailableKind, UsageSource,
 };
 use serde_json::{json, Map, Value};
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AnthropicAdapterError {
@@ -15,6 +19,69 @@ pub enum AnthropicAdapterError {
     UnsupportedCapability,
     InvalidJson,
     Invariant,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HttpErrorAction {
+    Retry { retry_after: Option<Duration> },
+    Terminal(InvokeOutcome),
+}
+
+pub fn classify_http_error(
+    status: u16,
+    retry_after: Option<&str>,
+    body: &[u8],
+    exhausted: bool,
+    now: SystemTime,
+) -> Result<HttpErrorAction, AnthropicAdapterError> {
+    let value: Value =
+        serde_json::from_slice(body).map_err(|_| AnthropicAdapterError::InvalidJson)?;
+    let error = value
+        .get("error")
+        .and_then(Value::as_object)
+        .ok_or(AnthropicAdapterError::Invariant)?;
+    let kind = error
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let evidence = format!("type:{}", bounded(kind, 64));
+    if kind == "invalid_request_error"
+        && (message.contains("prompt is too long") || message.contains("context window"))
+    {
+        return Ok(HttpErrorAction::Terminal(InvokeOutcome::Rejected {
+            kind: RejectionKind::ContextOverflow,
+            sanitized_evidence: evidence,
+        }));
+    }
+    if matches!(status, 401 | 403) || matches!(kind, "authentication_error" | "permission_error") {
+        return Ok(HttpErrorAction::Terminal(InvokeOutcome::Rejected {
+            kind: RejectionKind::Authentication,
+            sanitized_evidence: evidence,
+        }));
+    }
+    let unavailable = if status == 429 || kind == "rate_limit_error" {
+        Some(UnavailableKind::RateLimited)
+    } else if matches!(status, 500 | 503 | 504 | 529)
+        || matches!(kind, "api_error" | "overloaded_error")
+    {
+        Some(UnavailableKind::ModelUnavailable)
+    } else {
+        None
+    }
+    .ok_or(AnthropicAdapterError::UnsupportedCapability)?;
+    let delay = retry_after.and_then(|value| parse_retry_after(value, now));
+    if !exhausted {
+        return Ok(HttpErrorAction::Retry { retry_after: delay });
+    }
+    Ok(HttpErrorAction::Terminal(InvokeOutcome::Unavailable {
+        kind: unavailable,
+        retry_after: delay,
+    }))
 }
 
 pub fn render_request(
@@ -112,22 +179,31 @@ pub fn parse_response(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterErr
         serde_json::from_slice(bytes).map_err(|_| AnthropicAdapterError::InvalidJson)?;
     let items = parse_content(&message["content"])?;
     let usage = parse_usage(&message["usage"])?;
-    Ok(InvokeOutcome::Completed {
-        items,
-        usage,
-        stop_reason: parse_stop(
-            message["stop_reason"]
-                .as_str()
-                .ok_or(AnthropicAdapterError::Invariant)?,
-        )?,
-    })
+    match parse_stop(required(&message, "stop_reason")?.as_str())? {
+        ParsedStop::Completed(stop_reason) => Ok(InvokeOutcome::Completed {
+            items,
+            usage,
+            stop_reason,
+        }),
+        ParsedStop::OutputLimit => Ok(InvokeOutcome::Interrupted {
+            kind: InterruptionKind::OutputLimit,
+            partial_items: items,
+            usage,
+        }),
+    }
 }
 
 #[derive(Clone)]
 enum Block {
     Text(String),
     Thinking(String, String),
+    RedactedThinking(String),
     Tool(String, String, String),
+}
+
+enum ParsedStop {
+    Completed(ModelStopReason),
+    OutputLimit,
 }
 
 pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
@@ -166,6 +242,7 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 {
                     "text" => Block::Text(required(value, "text")?),
                     "thinking" => Block::Thinking(required(value, "thinking")?, String::new()),
+                    "redacted_thinking" => Block::RedactedThinking(required(value, "data")?),
                     "tool_use" => Block::Tool(
                         required(value, "id")?,
                         required(value, "name")?,
@@ -233,20 +310,41 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 terminal = true;
             }
             "ping" => {}
-            "error" => return Err(AnthropicAdapterError::Invariant),
+            "error" => {
+                let items: Vec<ModelItem> = blocks
+                    .values()
+                    .cloned()
+                    .flat_map(|(block, _)| block_items(block))
+                    .collect();
+                if !items.is_empty() {
+                    return Ok(InvokeOutcome::Interrupted {
+                        kind: InterruptionKind::Transport,
+                        partial_items: items,
+                        usage,
+                    });
+                }
+                return classify_stream_error(&event);
+            }
             _ => return Err(AnthropicAdapterError::UnsupportedCapability),
         }
     }
-    let items = blocks
+    let items: Vec<ModelItem> = blocks
         .into_values()
-        .map(|(block, _)| block_item(block))
-        .collect::<Result<Vec<_>, _>>()?;
+        .flat_map(|(block, _)| block_items(block))
+        .collect();
     if terminal {
-        Ok(InvokeOutcome::Completed {
-            items,
-            usage,
-            stop_reason: stop_reason.unwrap(),
-        })
+        match stop_reason.unwrap() {
+            ParsedStop::Completed(stop_reason) => Ok(InvokeOutcome::Completed {
+                items,
+                usage,
+                stop_reason,
+            }),
+            ParsedStop::OutputLimit => Ok(InvokeOutcome::Interrupted {
+                kind: InterruptionKind::OutputLimit,
+                partial_items: items,
+                usage,
+            }),
+        }
     } else {
         Ok(InvokeOutcome::Interrupted {
             kind: InterruptionKind::Transport,
@@ -257,7 +355,7 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
 }
 
 fn parse_content(value: &Value) -> Result<Vec<ModelItem>, AnthropicAdapterError> {
-    value
+    let groups = value
         .as_array()
         .ok_or(AnthropicAdapterError::Invariant)?
         .iter()
@@ -266,38 +364,58 @@ fn parse_content(value: &Value) -> Result<Vec<ModelItem>, AnthropicAdapterError>
                 .as_str()
                 .ok_or(AnthropicAdapterError::Invariant)?
             {
-                "text" => Ok(ModelItem::Text {
+                "text" => Ok(vec![ModelItem::Text {
                     text: required(value, "text")?,
-                }),
-                "thinking" => Ok(ModelItem::Reasoning {
-                    content: ReasoningContent::ModelVisible(required(value, "thinking")?),
-                }),
-                "redacted_thinking" => Ok(ModelItem::Reasoning {
+                }]),
+                "thinking" => {
+                    let mut items = vec![ModelItem::Reasoning {
+                        content: ReasoningContent::ModelVisible(required(value, "thinking")?),
+                    }];
+                    if let Some(signature) = value["signature"].as_str() {
+                        items.push(ModelItem::Reasoning {
+                            content: ReasoningContent::OpaqueReference(signature.into()),
+                        });
+                    }
+                    Ok(items)
+                }
+                "redacted_thinking" => Ok(vec![ModelItem::Reasoning {
                     content: ReasoningContent::OpaqueReference(required(value, "data")?),
-                }),
-                "tool_use" => Ok(ModelItem::ToolIntent {
+                }]),
+                "tool_use" => Ok(vec![ModelItem::ToolIntent {
                     model_call_id: required(value, "id")?,
                     tool_name: required(value, "name")?,
                     arguments_json: value["input"].to_string(),
-                }),
+                }]),
                 _ => Err(AnthropicAdapterError::UnsupportedCapability),
             }
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(groups.into_iter().flatten().collect())
 }
 
-fn block_item(block: Block) -> Result<ModelItem, AnthropicAdapterError> {
-    Ok(match block {
-        Block::Text(text) => ModelItem::Text { text },
-        Block::Thinking(text, _) => ModelItem::Reasoning {
-            content: ReasoningContent::ModelVisible(text),
-        },
-        Block::Tool(model_call_id, tool_name, arguments_json) => ModelItem::ToolIntent {
+fn block_items(block: Block) -> Vec<ModelItem> {
+    match block {
+        Block::Text(text) => vec![ModelItem::Text { text }],
+        Block::Thinking(text, signature) => {
+            let mut items = vec![ModelItem::Reasoning {
+                content: ReasoningContent::ModelVisible(text),
+            }];
+            if !signature.is_empty() {
+                items.push(ModelItem::Reasoning {
+                    content: ReasoningContent::OpaqueReference(signature),
+                });
+            }
+            items
+        }
+        Block::RedactedThinking(data) => vec![ModelItem::Reasoning {
+            content: ReasoningContent::OpaqueReference(data),
+        }],
+        Block::Tool(model_call_id, tool_name, arguments_json) => vec![ModelItem::ToolIntent {
             model_call_id,
             tool_name,
             arguments_json,
-        },
-    })
+        }],
+    }
 }
 fn parse_usage(value: &Value) -> Result<ModelUsage, AnthropicAdapterError> {
     let base = value["input_tokens"]
@@ -320,18 +438,51 @@ fn parse_usage(value: &Value) -> Result<ModelUsage, AnthropicAdapterError> {
         source: UsageSource::ProviderReported,
     })
 }
-fn parse_stop(value: &str) -> Result<ModelStopReason, AnthropicAdapterError> {
+fn parse_stop(value: &str) -> Result<ParsedStop, AnthropicAdapterError> {
     Ok(match value {
-        "end_turn" => ModelStopReason::EndTurn,
-        "tool_use" => ModelStopReason::ToolUse,
-        "stop_sequence" => ModelStopReason::StopSequence,
-        "pause_turn" => ModelStopReason::PauseTurn,
-        "refusal" => ModelStopReason::Refusal,
-        "max_tokens" | "model_context_window_exceeded" => {
-            return Err(AnthropicAdapterError::UnsupportedCapability)
-        }
-        _ => ModelStopReason::Other(value.into()),
+        "end_turn" => ParsedStop::Completed(ModelStopReason::EndTurn),
+        "tool_use" => ParsedStop::Completed(ModelStopReason::ToolUse),
+        "stop_sequence" => ParsedStop::Completed(ModelStopReason::StopSequence),
+        "pause_turn" => ParsedStop::Completed(ModelStopReason::PauseTurn),
+        "refusal" => ParsedStop::Completed(ModelStopReason::Refusal),
+        "max_tokens" | "model_context_window_exceeded" => ParsedStop::OutputLimit,
+        _ => ParsedStop::Completed(ModelStopReason::Other(value.into())),
     })
+}
+
+fn classify_stream_error(event: &Value) -> Result<InvokeOutcome, AnthropicAdapterError> {
+    let kind = event["error"]["type"]
+        .as_str()
+        .ok_or(AnthropicAdapterError::Invariant)?;
+    let evidence = format!("type:{}", bounded(kind, 64));
+    Ok(match kind {
+        "authentication_error" | "permission_error" => InvokeOutcome::Rejected {
+            kind: RejectionKind::Authentication,
+            sanitized_evidence: evidence,
+        },
+        "rate_limit_error" => InvokeOutcome::Unavailable {
+            kind: UnavailableKind::RateLimited,
+            retry_after: None,
+        },
+        "api_error" | "overloaded_error" => InvokeOutcome::Unavailable {
+            kind: UnavailableKind::ModelUnavailable,
+            retry_after: None,
+        },
+        _ => return Err(AnthropicAdapterError::UnsupportedCapability),
+    })
+}
+
+fn parse_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
+    if let Ok(seconds) = value.trim().parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    httpdate::parse_http_date(value)
+        .ok()
+        .and_then(|deadline| deadline.duration_since(now).ok())
+}
+
+fn bounded(value: &str, limit: usize) -> String {
+    value.chars().take(limit).collect()
 }
 fn text_block(value: &ModelInputContent) -> Result<Value, AnthropicAdapterError> {
     match value {

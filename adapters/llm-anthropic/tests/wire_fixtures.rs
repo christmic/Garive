@@ -1,11 +1,18 @@
 use garive_llm::{
-    InvokeOutcome, ModelCapability, ModelInputContent, ModelInputItem, ModelOutputSettings,
-    ModelRequest, ModelRequestId, ModelRole, ModelStopReason, ModelTargetId, TextMode, TokenCount,
-    ToolDescriptor,
+    InterruptionKind, InvokeOutcome, ModelCapability, ModelInputContent, ModelInputItem,
+    ModelOutputSettings, ModelRequest, ModelRequestId, ModelRole, ModelStopReason, ModelTargetId,
+    TextMode, TokenCount, ToolDescriptor,
 };
-use garive_llm_anthropic::{parse_response, parse_sse, render_request, AnthropicAdapterError};
+use garive_llm_anthropic::{
+    classify_http_error, parse_response, parse_sse, render_request, AnthropicAdapterError,
+    HttpErrorAction,
+};
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 fn fixture(name: &str) -> Vec<u8> {
     fs::read(
@@ -86,4 +93,114 @@ fn eof_is_transport_interruption_and_unclosed_block_fails_terminal() {
         parse_sse(malformed.as_bytes()),
         Err(AnthropicAdapterError::Invariant)
     );
+}
+
+#[test]
+fn output_limit_is_a_partial_factual_terminal() {
+    let body = br#"{"content":[{"type":"text","text":"partial"}],"stop_reason":"max_tokens","usage":{"input_tokens":2,"output_tokens":4}}"#;
+    let InvokeOutcome::Interrupted {
+        kind,
+        partial_items,
+        usage,
+    } = parse_response(body).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(kind, InterruptionKind::OutputLimit);
+    assert_eq!(partial_items.len(), 1);
+    assert_eq!(usage.output_tokens, TokenCount::Known(4));
+}
+
+#[test]
+fn stream_error_is_a_verified_unavailable_terminal() {
+    let outcome = parse_sse(&fixture("stream-error.sse")).unwrap();
+    assert_eq!(
+        outcome,
+        InvokeOutcome::Unavailable {
+            kind: garive_llm::UnavailableKind::ModelUnavailable,
+            retry_after: None,
+        }
+    );
+}
+
+#[test]
+fn ordinary_and_stream_preserve_thinking_evidence() {
+    let ordinary = parse_response(&fixture("thinking.json")).unwrap();
+    let streamed = parse_sse(&fixture("thinking.sse")).unwrap();
+    assert_eq!(ordinary, streamed);
+    let InvokeOutcome::Completed { items, .. } = ordinary else {
+        panic!()
+    };
+    assert_eq!(items.len(), 4);
+    assert!(matches!(
+        &items[1],
+        garive_llm::ModelItem::Reasoning {
+            content: garive_llm::ReasoningContent::OpaqueReference(value)
+        } if value == "opaque-signature"
+    ));
+}
+
+#[test]
+fn shared_http_error_cases_have_exact_terminals() {
+    let fixture: Value = serde_json::from_slice(&fixture("errors.json")).unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let action = classify_http_error(
+            case["status"].as_u64().unwrap() as u16,
+            case["retry_after"].as_str(),
+            &serde_json::to_vec(&case["body"]).unwrap(),
+            true,
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap();
+        assert_eq!(render_action(action), case["expected"].as_str().unwrap());
+    }
+}
+
+#[test]
+fn retry_after_supports_delta_seconds_and_http_date() {
+    let body = br#"{"type":"error","error":{"type":"rate_limit_error","message":"busy"}}"#;
+    assert_eq!(
+        classify_http_error(429, Some("2"), body, false, SystemTime::UNIX_EPOCH).unwrap(),
+        HttpErrorAction::Retry {
+            retry_after: Some(Duration::from_secs(2))
+        }
+    );
+    assert_eq!(
+        classify_http_error(
+            429,
+            Some("Thu, 01 Jan 1970 00:00:03 GMT"),
+            body,
+            false,
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap(),
+        HttpErrorAction::Retry {
+            retry_after: Some(Duration::from_secs(3))
+        }
+    );
+}
+
+fn render_action(action: HttpErrorAction) -> String {
+    match action {
+        HttpErrorAction::Retry { retry_after } => {
+            format!("retry:{}", retry_after.unwrap().as_secs())
+        }
+        HttpErrorAction::Terminal(InvokeOutcome::Rejected { kind, .. }) => format!(
+            "rejected:{}",
+            match kind {
+                garive_llm::RejectionKind::ContextOverflow => "context-overflow",
+                garive_llm::RejectionKind::Authentication => "authentication",
+                garive_llm::RejectionKind::ContentPolicy => "content-policy",
+            }
+        ),
+        HttpErrorAction::Terminal(InvokeOutcome::Unavailable { kind, retry_after }) => match kind {
+            garive_llm::UnavailableKind::RateLimited => format!(
+                "unavailable:rate-limited:{}",
+                retry_after.unwrap().as_secs()
+            ),
+            garive_llm::UnavailableKind::ModelUnavailable => "unavailable:model-unavailable".into(),
+            garive_llm::UnavailableKind::CircuitOpen => "unavailable:circuit-open".into(),
+        },
+        HttpErrorAction::Terminal(_) => "unexpected".into(),
+    }
 }
