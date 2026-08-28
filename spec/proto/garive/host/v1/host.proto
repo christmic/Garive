@@ -5,22 +5,36 @@ package com.garive.host.v1;
 // Stable Host API v1 wire values. Event remains a string so unknown future
 // facts survive decoding and can be classified without enum-value loss.
 message HostEventV1 {
+  // Exact Host API version used to encode the event.
   string api_version = 1;
+  // Session owning this event stream.
   string session_id = 2;
+  // One-based contiguous event position within the fake scenario.
   uint64 position = 3;
+  // Stable semantic event name; unknown names remain decodable.
   string event = 4;
+  // Owning Turn identity when the event is turn-scoped.
   string turn_id = 5;
+  // Owning disposable Execution identity when applicable.
   string execution_id = 6;
+  // Optional text carried by output events.
   string text = 7;
 }
 
+// Fixture-backed command shape used by Host shell conformance tests.
 message FakeHostCommandV1 {
+  // Agent definition selected by the fixture.
   string agent_definition_id = 1;
+  // Exact trusted input accepted by the fixture.
   string text = 2;
 }
 
+// Complete deterministic fake Host scenario.
 message FakeHostScenarioV1 {
+  // Exact Host API version used throughout the scenario.
   string api_version = 1;
+  // Single command admitted by the fixture.
   FakeHostCommandV1 command = 2;
+  // Ordered event stream returned for the command.
   repeated HostEventV1 events = 3;
 }

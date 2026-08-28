@@ -13,19 +13,27 @@ package garive.v1;
 
 // Stable identity for an Agent instance.
 message AgentIdentity {
-    string id   = 1;  // opaque, server-assigned
-    string name = 2;  // human-readable label
-    string kind = 3;  // agent class (e.g. "core", "specialist")
+    // Opaque, server-assigned Agent identity.
+    string id = 1;
+    // Human-readable Agent label.
+    string name = 2;
+    // Agent class such as "core" or "specialist".
+    string kind = 3;
 }
 
 // Minimal liveness shape for the current Kotlin schema experiment. It becomes
 // a cross-language contract only when another real consumer lands.
 message PingRequest {
+    // Caller identity or component label.
     string from = 1;
+    // Caller timestamp in Unix epoch milliseconds.
     int64  ts_ms = 2;
 }
 
+// Minimal liveness response for the current schema experiment.
 message PingResponse {
+    // Liveness response text.
     string pong = 1;
+    // Responder timestamp in Unix epoch milliseconds.
     int64  ts_ms = 2;
 }

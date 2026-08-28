@@ -1,6 +1,7 @@
 //! Desktop command logic shared by the Tauri entry point and integration tests.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 /// Runs the committed fake Host scenario and returns its ordered text output.
 ///
