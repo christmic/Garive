@@ -1,4 +1,4 @@
-// build.gradle.kts — Engine-KT root build.
+// build.gradle.kts — Kotlin server root build.
 //
 // Plugin versions and project-wide defaults. Each module's own
 // `build.gradle.kts` applies what it specifically needs; this
@@ -12,7 +12,7 @@ plugins {
 }
 
 allprojects {
-    group = "com.garive.eng.kt"
+    group = "com.garive.runtime.server"
     version = "0.1.0-SNAPSHOT"
 
     repositories {

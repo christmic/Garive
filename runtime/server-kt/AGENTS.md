@@ -1,45 +1,45 @@
-# Kotlin Agent implementation rules
+# Kotlin server implementation rules
 
-> Supported C0/C1 semantic implementation plus focused experiments. Accepted
-> specs and shared fixtures, not Rust source, define joint behavior.
+> Production server modules. Accepted specs and shared fixtures, not Rust
+> source, define jointly admitted behavior.
 
 @AGENTS.md
 @.agents/multi-language.md
 
 ## Current scope
 
-The Gradle project contains `:core` (C0 execution control), `:llm` (C1 model
-facts), and `:proto`. C0/C1 are supported at semantic conformance level; no
-Kotlin Runtime is claimed.
+The Gradle project contains `:agent-core` (C0-C3), `:llm-contract` (C1/C1b),
+and `:proto`. Ledger, PostgreSQL, provider, and host modules are added only with
+their implementation slice and native boundary tests.
 
 ```text
-experiments/engine-kt/
+runtime/server-kt/
 ├── settings.gradle.kts
 ├── build.gradle.kts
 ├── gradle.properties
 ├── gradle/wrapper/gradle-wrapper.properties
-├── core/              supported C0 domain + shared fixtures
-├── llm/               supported C1 domain + shared fixtures
+├── agent-core/        supported C0-C3 domain + shared fixtures
+├── llm-contract/      supported C1/C1b model contract
 └── proto/             generated admitted wire bindings
 ```
 
-Empty historical module directories are not architectural commitments. Remove
-them when encountered; add a Gradle module only with an admitted experiment.
+Empty historical module directories are not architectural commitments. Add a
+Gradle module only with an admitted production boundary and executable test.
 
 ## Module admission
 
 Before adding `:<module>`:
 
 1. Link the product/research requirement.
-2. Name the accepted Garive behavior being tested.
+2. Name the accepted Garive behavior being implemented.
 3. Define wire, semantic, or capability conformance.
 4. Add executable Kotlin tests and a build command.
-5. Mark the module experimental or supported.
+5. Mark the module supported or explicitly incomplete.
 
 ## Build
 
 ```text
-cd experiments/engine-kt
+cd runtime/server-kt
 ./gradlew projects
 ./gradlew build
 ```
@@ -49,7 +49,7 @@ depend on whichever Gradle version happens to be installed globally.
 
 ## Language rules
 
-- Packages use `com.garive.eng.kt.<module>`.
+- Packages use `com.garive.runtime.server.<module>`.
 - Kotlin domain values are idiomatic and may map explicitly to generated wire
   values.
 - Do not transcribe Rust control flow line by line.
@@ -75,4 +75,4 @@ An empty diff proves only the dimension being compared.
 - Do not merge an admitted C0/C1 semantic change with only one language updated.
 - Do not use generated proto values as the entire internal domain model.
 - Do not claim production parity from schema generation alone.
-- Do not add a Kotlin replica until a JVM/on-device Runtime requirement exists.
+- Do not substitute an embedded database for PostgreSQL integration evidence.
