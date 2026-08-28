@@ -24,7 +24,7 @@ names describe Rust crates, not Gradle modules).
 ```
 engine-kt/
 ├── AGENTS.md                 this file
-├── settings.gradle.kts       Gradle module list (:proto, :replica, ...)
+├── settings.gradle.kts       Gradle module list (:proto, ...)
 ├── build.gradle.kts          root build (plugin versions, group/version, repos)
 ├── gradle.properties         Gradle / Kotlin defaults
 ├── gradle/wrapper/
@@ -33,10 +33,6 @@ engine-kt/
 ├── proto/                    :proto  — generated Kotlin bindings from spec/proto/
 │   ├── build.gradle.kts
 │   └── src/main/proto/       protobuf Gradle plugin source dir
-│
-├── replica/                  :replica — Kotlin mirror of Rust runtime/replica
-│   ├── build.gradle.kts
-│   └── src/main/kotlin/com/garive/eng/kt/replica/
 │
 ├── core/         placeholders — `include(":core")` when the slice lands
 ├── ledger/
@@ -71,7 +67,8 @@ Gradle module is just a directory with its own
 `include(":replica")`, ...) is the only thing that needs to match
 the directory. There is no need for `engine/` and `runtime/`
 intermediate directories that only exist to mirror Rust's
-crate-name convention.
+crate-name convention. A Kotlin replica module will be added only after the
+Kotlin Agent experiment has an executable product requirement.
 
 When the Kotlin mirror grows, each slice becomes its own
 top-level Gradle module. That's the standard layout.

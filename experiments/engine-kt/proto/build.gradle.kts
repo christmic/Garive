@@ -23,17 +23,9 @@ protobuf {
     protoc {
         artifact = "com.google.protobuf:protoc:4.28.2"
     }
-    plugins {
-        id("java") {
-            artifact = "io.grpc:protoc-gen-grpc-java:1.65.1"
-        }
-    }
     generateProtoTasks {
         all().forEach { task ->
             task.builtins {
-                id("java") {
-                    option("lite")
-                }
                 id("kotlin") {
                     option("lite")
                 }

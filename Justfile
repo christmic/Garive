@@ -27,11 +27,11 @@ codegen:
 
 # Build: codegen + Rust workspace
 build: codegen
-    @echo "build: not yet wired — workspace has no members yet"
+    cargo build --workspace
 
 # Test: cargo test across workspace
 test:
-    @echo "test: not yet wired — workspace has no members yet"
+    cargo test --workspace
 
 # Conformance: Rust + Kotlin read same fixtures, output identical
 # Pending — wire to `cargo run -p bench --bin conformance` + the
@@ -41,17 +41,17 @@ conformance:
 
 # Desktop: Tauri build (TS frontend + Rust backend)
 desktop:
-    cd desktop && pnpm tauri build
+    @echo "desktop: not yet wired — no Tauri manifest has landed"
 
 # Mobile: Gradle Kotlin Multiplatform build
 mobile:
-    cd mobile && gradle build
+    @echo "mobile: not yet wired — no KMP settings file has landed"
 
 # Bench: SWE-bench verification runtime (orchestrator only).
 # Implementation lands as the slice is scoped; until then this
 # prints a stub.
 bench:
-    cargo run -p bench
+    cargo test -p bench
 
 # Clean: remove build artefacts across the workspace
 clean:
