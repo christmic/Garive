@@ -154,9 +154,10 @@ are not silently included in model context.
 
 Each token count is `Known(u64)` or `Unknown`; unknown is not encoded as zero.
 Usage records input, output, optional cache-read/cache-write breakdowns, source
-(`ProviderReported` or `Estimated`), and model capability identity. Cache fields
-are breakdowns and are not added again to input+output total. Arithmetic is
-checked.
+(`ProviderReported` or `Estimated`). Runtime associates the usage with the
+`ModelRequestId` and selected model capability when it commits the fact. Cache
+fields are breakdowns and are not added again to input+output total. Arithmetic
+is checked.
 
 ## Model invocation outcome
 

@@ -50,4 +50,19 @@ class ExecutionControlTest {
         }
         assertEquals(ExecutionStatus.Closed(ExecutionOutcomeKind.COMPLETED), control.status)
     }
+
+    @Test
+    fun `identities and limits reject invalid construction`() {
+        assertFailsWith<IllegalArgumentException> { TurnId.of("") }
+        assertFailsWith<IllegalArgumentException> { ExecutionId.of("") }
+        assertFailsWith<IllegalArgumentException> { ExecutionLimits(0u) }
+        assertFailsWith<ControlException.CursorBeyondLimit> {
+            ExecutionControl.create(
+                TurnId.of("turn-1"),
+                ExecutionId.of("execution-1"),
+                completedIterations = 3u,
+                limits = ExecutionLimits(2u),
+            )
+        }
+    }
 }

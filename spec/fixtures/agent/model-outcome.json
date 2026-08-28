@@ -39,7 +39,7 @@
       "expected": {"total": "unknown", "kind": "rejected", "success": false, "partial": false, "item_kinds": []}
     },
     {
-      "name": "cancelled-transport-output-and-availability-remain-distinct",
+      "name": "cancelled-interruption-remains-partial",
       "usage": {"input": "1", "output": "1", "source": "provider-reported"},
       "outcome": {"envelope": "interrupted", "reason": "cancelled", "item_kinds": []},
       "expected": {"total": "known:2", "kind": "interrupted", "success": false, "partial": true, "item_kinds": []}

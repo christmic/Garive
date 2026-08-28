@@ -32,9 +32,10 @@ defaults to zero.
 - `ToolObservation { model_call_id, result }`;
 - `MediaReference { media_kind, reference }`.
 
-Structured arguments/results use a portable structured value in C4. Until C4,
-they are preserved validated JSON text and are never used as a digest without
-canonicalization.
+Structured arguments/results use a validated portable value in C4. Until C4,
+C1 preserves them only as opaque JSON text and makes no validation or
+canonicalization claim. They must not enter tool preparation, authorization,
+or a digest before C4 validation.
 
 ## Fact envelopes
 
