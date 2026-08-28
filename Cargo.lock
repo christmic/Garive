@@ -249,6 +249,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-llm-anthropic"
+version = "0.1.0"
+dependencies = [
+ "garive-llm",
+ "serde_json",
+]
+
+[[package]]
 name = "garive-llm-openai"
 version = "0.1.0"
 dependencies = [

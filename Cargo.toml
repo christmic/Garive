@@ -18,6 +18,7 @@ resolver = "2"
 #   spec/proto                — schema source, not a member
 members = [
     "adapters/llm-openai",
+    "adapters/llm-anthropic",
     "bench",
     "cli",
     "engine/config",
