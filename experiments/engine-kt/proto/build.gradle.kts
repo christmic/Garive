@@ -14,7 +14,7 @@ plugins {
 
 dependencies {
     "implementation"(platform("org.jetbrains.kotlin:kotlin-bom"))
-    "implementation"("com.google.protobuf:protobuf-kotlin-lite:4.28.2")
+    "implementation"("com.google.protobuf:protobuf-kotlin:4.28.2")
 
     "testImplementation"(kotlin("test"))
 }
@@ -26,9 +26,7 @@ protobuf {
     generateProtoTasks {
         all().forEach { task ->
             task.builtins {
-                id("kotlin") {
-                    option("lite")
-                }
+                id("kotlin")
             }
         }
     }
@@ -37,7 +35,7 @@ protobuf {
 sourceSets {
     main {
         proto {
-            srcDir("../../spec/proto")
+            srcDir(rootProject.file("../../spec/proto"))
         }
     }
 }
