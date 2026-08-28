@@ -615,7 +615,8 @@ switches within a round.
 happen elsewhere (`summarize` writes summaries;
 `governance.judge` writes verdicts; `executor.run` writes
 `tool_result` and effects; the loop writes the
-`model.usage` rows).
+`model.usage` rows; **the loop also writes the per-round
+receipt to `ops_log` with `op = 'loop.receipt'`**).
 
 #### Where assemble fits in the loop
 
@@ -636,9 +637,9 @@ reply = model.invoke(
     seen   = assembled.seen,
     new    = assembled.new,
 )
-# ... judge, run, record receipt, etc.
+# ... judge, run, etc.
 
-record_receipt(receipt)   # log-only, see below
+# Receipt flushed to ops_log at flush points (see below)
 ```
 
 #### Derive / Assemble Receipt (log-only view description)
@@ -647,8 +648,12 @@ record_receipt(receipt)   # log-only, see below
 they are **read + describe**. Each call returns the data
 the consumer asked for, **plus a receipt** that records
 exactly what that call did. The receipt is **log-only**:
-it does not enter the source-of-truth ledger, but it is
-queryable for analysis, debug, and audit.
+it does **not** enter the source-of-truth ledger as a
+new kind; instead it is a **derivable view** over the
+ledger. The runtime keeps the receipt in a small **in-memory
+buffer attached to `state`**; the buffer is flushed to
+`ops_log` at flush points (turn boundary / Suspend / close)
+and queryable from there. (See "Receipt storage" below.)
 
 **Why:** the ledger captures **what happened** — every
 event, every intent, every result. The receipt captures
@@ -662,6 +667,44 @@ the receipt, they answer that question by reading one row.
 > ledger has*; with the receipt, they can see *what the model
 > actually saw*, and replay each round with the exact prompt
 > the model got.**
+
+**Receipt storage — `ops_log` with `op = 'loop.receipt'`.**
+The receipt is **not** a new table. The ledger is
+**append-only**; the receipt is **per-round metadata** that
+the runtime needs to query for analysis. `ops_log` already
+exists for exactly this kind of per-op audit trail (GC
+runs, vacuum, sweep). The receipt is one more `op` value
+in that table:
+
+```sql
+-- ops_log already has:
+--   id, op, started_at, finished_at, items_removed, notes, wall_ts
+--
+-- For receipts:
+INSERT INTO ops_log (op, started_at, finished_at, items_removed, notes)
+VALUES ('loop.receipt', ?, ?, 0, ?);
+-- notes = JSON-serialised receipt body
+```
+
+`ops_log`'s existing indexes (`started_at`, `(op,
+started_at)`) are exactly what receipt queries need
+("latest receipt", "all receipts for round X"). Adding a
+new table for receipts would duplicate the indexing
+infrastructure and break the "ledger + ops_log + audit"
+three-table pattern; the right move is to **promote the
+receipt to a first-class `op` value** in the existing
+audit log.
+
+**Why not a `loop.receipt` entry kind?** Because the
+receipt is a **derivation**, not an event. The ledger is
+"things that happened"; the receipt is "the runtime's
+*description* of what the model saw in light of those
+things." Mixing the two in one table conflates "what
+happened" with "what was visible" — two different
+concerns. Keeping the receipt in `ops_log` (the audit
+trail) makes the **direction of dependence** explicit:
+`ledger = truth`, `ops_log = derived view of how the runtime
+used the truth`.
 
 ```python
 class DeriveReceipt:
@@ -707,41 +750,20 @@ ledger's `entry` table because the receipt is a **view
 description**, not an event:
 
 ```sql
-CREATE TABLE receipt (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_id        TEXT NOT NULL,            -- uuid
-    seq_from        INTEGER NOT NULL,
-    seq_to          INTEGER NOT NULL,
-    seq_count       INTEGER NOT NULL,
-    projection      TEXT NOT NULL,            -- PROMPT_FOR_MODEL etc.
-    layout_mode     TEXT NOT NULL,            -- default / compact / ...
-    token_pinned    INTEGER NOT NULL,
-    token_seen      INTEGER NOT NULL,
-    token_new       INTEGER NOT NULL,
-    token_total     INTEGER NOT NULL,
-    last_seen_seq   INTEGER,
-    notes           BLOB,                      -- JSON: masks / dedup / skipped / warnings
-    wall_ts         INTEGER NOT NULL
-);
-
-CREATE INDEX receipt_round   ON receipt(round_id);
-CREATE INDEX receipt_wall_ts ON receipt(wall_ts);
+-- ops_log already has:
+--   id, op, started_at, finished_at, items_removed, notes, wall_ts
+--
+-- For receipts:
+INSERT INTO ops_log (op, started_at, finished_at, items_removed, notes)
+VALUES ('loop.receipt', ?, ?, 0, ?);
+-- notes = JSON-serialised receipt body
 ```
 
-**Why a separate table, not a ledger entry?**
-
-- The ledger is **source of truth for events**. A
-  `loop.receipt` entry would conflate "what happened" with
-  "what the model saw" — two different concerns.
-- Receipts are **derived**; if a receipt is wrong, the
-  ledger is still right. If the ledger is wrong, the
-  receipts that describe it are also wrong. Keeping them
-  separate makes the **direction of dependence** explicit:
-  `ledger = truth`, `receipt = derived view`.
-- Receipts are **log-only** and **best-effort** — a
-  crashed / lost receipt is recoverable (replay the round
-  by re-running `derive` / `assemble` with the same state).
-  The ledger cannot be lost; the receipt can.
+The receipt's `op = 'loop.receipt'` reuses the existing
+`ops_log` schema — its `(op, started_at)` index and
+`started_at` index are exactly what receipt queries need
+("latest receipt", "all receipts for round X"). No new
+table, no new indexes, no schema drift.
 
 **What the receipt enables:**
 
