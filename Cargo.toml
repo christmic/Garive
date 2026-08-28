@@ -18,6 +18,7 @@ resolver = "2"
 #   spec/proto                — schema source, not a member
 members = [
     "bench",
+    "cli",
     "engine/config",
     "engine/core",
     "engine/creativity",
@@ -32,6 +33,8 @@ members = [
     "engine/scheduler",
     "engine/skill",
     "engine/tools",
+    "runtime/replica",
+    "tui",
 ]
 
 [workspace.package]
