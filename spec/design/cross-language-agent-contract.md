@@ -2,9 +2,9 @@
 
 ## Status
 
-Kotlin is admitted as a supported server implementation for portable C0-C3.
-Other Engine capabilities remain unsupported until admitted by an amended
-matrix.
+Kotlin is admitted as an experimental conformance implementation for portable
+C0-C3. It is not a supported product server. Other Engine capabilities remain
+outside the experiment until admitted by an amended matrix.
 
 Rust remains the production-first implementation. Neither language defines
 shared behavior alone: accepted specs plus shared fixtures define it.
@@ -19,12 +19,12 @@ domain models.
 
 | Slice | Rust | Kotlin | Required conformance |
 |---|---|---|---|
-| C0 execution control | supported | supported | semantic fixtures + native unit tests |
-| C1 usage/model outcome | supported | supported | semantic fixtures + native unit tests |
-| C1b model request/stream | supported | supported | semantic fixtures + stream invariant tests |
-| C2 context derive | supported | supported | semantic fixtures + property tests |
-| C3 model-only turn | supported | supported | capability scenarios |
-| C4-C7 | Rust planned | unsupported | no parity claim until explicitly admitted |
+| C0 execution control | supported | experimental | semantic fixtures + native unit tests |
+| C1 usage/model outcome | supported | experimental | semantic fixtures + native unit tests |
+| C1b model request/stream | supported | experimental | semantic fixtures + stream invariant tests |
+| C2 context derive | supported | experimental | semantic fixtures + property tests |
+| C3 model-only turn | supported | experimental | capability scenarios |
+| C4-C7 | Rust planned | not admitted | no conformance claim until explicitly admitted |
 
 `unsupported` is a valid explicit capability result. It must not silently fall
 back to behavior with different safety semantics.
@@ -116,13 +116,13 @@ items are preserved in order. Cache breakdowns are never double-counted.
 The root gate is `just conformance`:
 
 1. Rust native tests including all shared fixtures;
-2. Kotlin `:agent-core:test` and `:llm-contract:test` including the same fixture files;
+2. Kotlin `:core:test` and `:llm:test` including the same fixture files;
 3. a fixture coverage check proving both runners consumed every declared case.
 
 The gate reports Rust and Kotlin results separately. Success requires both;
 matching failures are not conformance.
 
-## Joint iteration rule
+## Experimental conformance rule
 
 For an admitted shared slice, one change set contains:
 
@@ -132,10 +132,11 @@ For an admitted shared slice, one change set contains:
 4. Kotlin implementation/tests;
 5. successful root conformance.
 
-A language may temporarily be red while developing on a worktree, but the
-slice cannot merge with only one implementation updated. Breaking capability
-or semantic changes require a versioned migration or an explicit support-matrix
-change reviewed before code.
+A language may temporarily be red while developing on a worktree. A change may
+claim cross-language conformance only when both implementations and fixtures
+land together. A production-only Rust change may instead remove or defer the
+affected Kotlin matrix row explicitly; the experiment never blocks undeclared
+Rust evolution.
 
 ## Non-conformance
 
@@ -150,6 +151,7 @@ The following do not prove parity:
 
 ## Acceptance
 
-C0-C3 are jointly supported only when native Rust and Kotlin tests pass, both
-consume the same complete fixture set, `just conformance` invokes both, and the
-support matrix matches executable reality.
+C0-C3 carry an experimental Rust/Kotlin conformance claim only when native
+tests pass, both consume the same complete fixture set, `just conformance`
+invokes both, and the matrix matches executable reality. This evidence does not
+promote Kotlin into a production Engine or Runtime.

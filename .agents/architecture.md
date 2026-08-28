@@ -29,7 +29,7 @@ Dependencies point downward. Runtime is the application composition root.
 | `runtime/gateway/` | Optional service edge only; auth/routing/rate limits when deployment evidence admits it. |
 | `spec/` | Admitted public, cross-process, and persistent compatibility contracts. |
 | `cli/`, `tui/`, `desktop/`, `mobile/` | Clients over a Runtime-owned host/API boundary. |
-| `runtime/server-kt/` | Kotlin server implementation and native infrastructure adapters. |
+| `experiments/engine-kt/` | Experimental Kotlin Engine conformance implementation and verification adapters; no product Runtime ownership. |
 
 ## Hard dependency rules
 

@@ -7,10 +7,11 @@ only.
 
 ## Implemented foundation
 
-- Rust and Kotlin independently implement portable Agent C0-C3 semantics from
-  accepted specs and shared fixtures.
-- Rust SQLite and Kotlin PostgreSQL adapters implement the durable ledger slice
-  with real database tests.
+- Rust implements the production-first Agent C0-C3 semantics. The experimental
+  Kotlin Engine checks the admitted portable subset against the same specs and
+  fixtures without becoming a second production implementation.
+- Rust SQLite implements the durable host slice. The Kotlin experiment uses
+  PostgreSQL to validate portability with real database tests.
 - Rust/Kotlin OpenAI Responses and Anthropic Messages adapters share reviewed
   official-shape fixtures and strict terminal/retry contracts.
 - Host API v1 has generated Rust, Kotlin and KMP bindings plus semantic
@@ -23,8 +24,8 @@ only.
 - `engine/`: portable Rust Agent, LLM, ledger and capability contracts.
 - `adapters/`: Rust provider wire adapters.
 - `runtime/replica/`: Rust composition/storage boundary with SQLite.
-- `runtime/server-kt/`: Kotlin Agent server, PostgreSQL/providers and executable
-  server composition root.
+- `experiments/engine-kt/`: experimental Kotlin Engine mirror and verification
+  adapters; never a product Runtime or second source of truth.
 - `spec/`: accepted behavior, wire schemas and cross-language fixtures.
 - `docs/architecture/`: design research and the system map.
 - `cli/`, `tui/`, `web/`, `desktop/`, `mobile/`: thin product surfaces over the

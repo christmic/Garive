@@ -5,10 +5,10 @@
 
 ## Current position
 
-Kotlin is a supported semantic implementation for admitted portable slices
-C0-C3. Those slices evolve jointly with Rust through accepted specs and shared
-fixtures. This is not a promise that every Rust/Runtime module has a Kotlin
-counterpart.
+Kotlin is an experimental semantic implementation for admitted portable slices
+C0-C3. It evaluates portability through accepted specs and shared fixtures; it
+is not a supported product server, a Runtime, or a promise that every Rust
+module has a Kotlin counterpart.
 
 The sources of truth are boundary-specific:
 
@@ -57,8 +57,8 @@ language representation is not itself a contract.
 
 ## Kotlin implementation
 
-The Gradle tree contains supported `:agent-core` (C0-C3) and `:llm-contract`
-(C1/C1b) modules plus `:proto`. The exact support matrix lives in
+The Gradle tree contains experimental `:core` (C0-C3) and `:llm`
+(C1/C1b) modules plus `:proto`. The exact conformance matrix lives in
 `spec/design/cross-language-agent-contract.md`.
 
 For every admitted joint slice:
@@ -90,17 +90,17 @@ For every admitted joint slice:
   accepted behavior.
 - Adding a language because its directory already exists.
 
-## Joint merge gate
+## Conformance merge gate
 
-An admitted shared semantic change includes the spec, shared fixtures, Rust
-implementation/tests, Kotlin implementation/tests, and green `just
-conformance` in one merge. Unsupported slices remain explicit rather than
-silently diverging.
+When a change claims Rust/Kotlin conformance for an admitted slice, it includes
+the spec, shared fixtures, both implementations/tests, and green `just
+conformance`. Production Rust changes outside the admitted experimental matrix
+do not wait on Kotlin placeholders.
 
 ## Reference
 
 - `docs/architecture/system.md` — technology admission and ownership.
 - `.agents/ddd.md` — domain/wire separation.
 - `.agents/testing.md` — conformance cadence and evidence maturity.
-- `runtime/server-kt/AGENTS.md` — Kotlin server rules.
+- `experiments/engine-kt/AGENTS.md` — Kotlin experiment rules.
 - `spec/design/cross-language-agent-contract.md` — support matrix and fixtures.

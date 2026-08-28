@@ -114,7 +114,7 @@ explicit boundaries rather than implied implementations.
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |
-| `runtime/server-kt/` | Kotlin C0-C3 server implementation plus PostgreSQL/provider adapters. |
+| `experiments/engine-kt/` | Experimental Kotlin C0-C3 Engine implementation plus PostgreSQL/provider verification adapters. |
 
 Internal source modules should be named for owned responsibilities, not generic
 buckets such as `common`, `manager`, `utils`, or `engine`.
@@ -124,14 +124,15 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Technology | Initial status | Admission evidence |
 |---|---|---|
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
-| Kotlin Agent implementation | C0-C3 supported; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`. |
+| Kotlin Engine experiment | C0-C3 conformance experiment; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`; no product-server claim. |
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
 | Desktop app | executable shell | Tauri backend plus strict React/TypeScript fake-host workflow. |
 | Mobile app | executable shell | Generated KMP Host client with Compose and SwiftUI shells. |
 | SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
 
-Only slices listed as supported in the cross-language matrix evolve jointly;
-directory similarity does not extend support to other modules.
+Only slices listed in the cross-language matrix carry a conformance claim;
+directory similarity does not create production support or block Rust-only
+evolution.
 
 ## Protocol boundaries
 

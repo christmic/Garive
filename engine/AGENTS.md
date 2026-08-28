@@ -1,8 +1,8 @@
 # engine/AGENTS.md
 
 > **Core Agent implementation tier.** Primary implementation is
-> Rust (Cargo workspace). `runtime/server-kt/` independently implements
-> jointly admitted semantics; it is not a source mirror.
+> Rust (Cargo workspace). `experiments/engine-kt/` independently experiments
+> with admitted semantics; it is not a source mirror or production peer.
 >
 > This file applies to everything under `engine/`. It overrides
 > the root `AGENTS.md` where the two disagree.
@@ -25,7 +25,7 @@
 - Crates within `engine/` depend only on lower-level `engine/` contracts and
   wire bindings required by a real external boundary. They **must not** depend
   on `runtime/replica`, `runtime/gateway`,
-  or on crates in `mobile/`, `desktop/`, `runtime/server-kt/`.
+  or on crates in `mobile/`, `desktop/`, `experiments/engine-kt/`.
 - Third-party dependencies are added to the root
   `[workspace.dependencies]` table so versions stay aligned.
 - Avoid heavy I/O or framework dependencies; keep the core

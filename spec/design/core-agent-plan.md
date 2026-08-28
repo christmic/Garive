@@ -36,7 +36,7 @@ Reviewed 2026-08-29:
 
 | Work | Status | Executable evidence |
 |---|---|---|
-| F1-F3 / C0-C3 | implemented in Rust and Kotlin | shared fixtures, native/property tests, bounded model-only executions |
+| F1-F3 / C0-C3 | production-first in Rust; Kotlin experiment executable | shared fixtures, native/property tests, bounded model-only executions |
 | Provider P1/P2 | implemented protocol slice | shared official-shape bytes, dual parsers, composed buffered transports |
 | Ledger L0 + storage adapters | implemented | shared semantics, real SQLite restart and PostgreSQL transaction tests |
 | Host/client foundation | executable shell | generated Host v1 bindings and fake-host CLI/TUI/Web/Desktop/Mobile/server roots |
@@ -52,10 +52,10 @@ uncertain-effect recovery through one live Host workflow.
 
 | Slice | Deliverable | Required evidence |
 |---|---|---|
-| C0 | Distinct Turn/Execution IDs, reconstructed cursor, bounded active/closed control. | Rust + Kotlin units and shared execution-control fixtures. |
-| C1 | Ordered ModelItems, known/unknown usage, four factual outcome envelopes. | Rust + Kotlin units and shared model-outcome fixtures. |
+| C0 | Distinct Turn/Execution IDs, reconstructed cursor, bounded active/closed control. | Rust units plus Kotlin experimental execution-control fixtures. |
+| C1 | Ordered ModelItems, known/unknown usage, four factual outcome envelopes. | Rust units plus Kotlin experimental model-outcome fixtures. |
 | C2 | Purpose-specific context request/surface, deterministic masking/order/budget, minimal ledger read port. | Shared semantic fixtures, property tests, no SQLite dependency. |
-| C3 | Immutable AgentTurnRequest, frozen ports, model-only bounded execution and AgentOutcome. | Rust/Kotlin fake context/model capability scenarios including cancellation and every model envelope. |
+| C3 | Immutable AgentTurnRequest, frozen ports, model-only bounded execution and AgentOutcome. | Rust scenarios plus the admitted Kotlin experiment, including cancellation and every model envelope. |
 | C4 | Exact tool definition resolution, argument validation, immutable Prepared Call/digest/replay class. | Shared semantic fixtures; invalid intent never reaches authorization. |
 | C5 | Authorization/interaction/execution reduction and model-visible observations. | approve/deny/replacement/ask-user/uncertain-effect scenarios; no concrete sandbox in Core. |
 | C6 | Runtime Turn facts, request/effect receipts, suspension continuation, crash recovery with real storage. | Rust/SQLite process-restart tests and Kotlin/PostgreSQL transaction/recovery tests required by `agent-platform-delivery.md`. |
@@ -63,7 +63,7 @@ uncertain-effect recovery through one live Host workflow.
 
 ## Change-set gate
 
-For C0-C5, each shared semantic change merges only with:
+For C0-C3 changes that retain an experimental cross-language conformance claim:
 
 1. focused spec update;
 2. shared fixture update;
@@ -87,7 +87,7 @@ shared, while SQLite and PostgreSQL each require native integration evidence.
 - add shared fixture readers and wire `just conformance`;
 - remove placeholder parity claims.
 
-Exit: the admitted C0-C3 support matrix is executable and green in both languages.
+Exit: Rust C0-C3 is executable and the admitted Kotlin experiment is green.
 
 ### F2 — context contract
 
@@ -133,8 +133,9 @@ exceed limits or confuse suspension with continuation.
 - production credentials, signing, distribution and deployment for product
   clients.
 
-Provider adapters, the Kotlin PostgreSQL server, and executable client
-skeletons are active work in `agent-platform-delivery.md`. Product clients may
+Provider adapters, the experimental Kotlin PostgreSQL verification host, and
+executable client skeletons are active work in
+`agent-platform-delivery.md`. Product clients may
 use the versioned fake Host boundary before C6 is complete, but cannot claim a
 live end-to-end Agent workflow until the durable Host slice passes.
 

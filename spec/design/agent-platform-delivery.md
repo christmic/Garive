@@ -6,18 +6,20 @@ Accepted delivery map for the next Garive implementation phase. It extends the
 Agent architecture and execution contracts without changing their ownership
 rules.
 
-Current implementation has executable evidence for C0-C3, L0, SQLite,
-PostgreSQL, both buffered provider protocol slices, generated Host v1 bindings
-and all fake-host product shells. It does not yet claim the complete phase:
-full durable Turn orchestration/live network hosting and an Android APK gate
-remain open (the current machine has no Android SDK).
+Current implementation has production-first Rust evidence for C0-C3, L0 and
+SQLite. The Kotlin Engine experiment independently checks the admitted subset,
+PostgreSQL and both provider protocol slices. Generated Host v1 bindings and
+the fake-host product shells are executable. Full durable Turn orchestration,
+live network hosting and an Android APK gate remain open (the current machine
+has no Android SDK).
 
 ## Purpose
 
-Turn the accepted Agent boundary into two executable server-capable
-implementations, durable hosts, verified provider adapters, and buildable
-product clients. This document fixes module ownership and sequencing; focused
-behavior remains in slice-specific specs.
+Turn the accepted Agent boundary into one production-first Rust Runtime,
+verified provider adapters and buildable product clients, while using the
+Kotlin Engine experiment to test portability assumptions. This document fixes
+module ownership and sequencing; focused behavior remains in slice-specific
+specs.
 
 ## Required outcomes
 
@@ -25,10 +27,10 @@ The phase is complete only when all rows have executable evidence:
 
 | Area | Required outcome | Evidence |
 |---|---|---|
-| Agent Core | Deterministic context derivation and a bounded model-only loop. | Rust/Kotlin shared fixtures plus native tests. |
-| Ledger contract | Durable Turn/fact/invocation vocabulary with monotonic positions and atomic terminal writes. | Domain tests in both languages. |
+| Agent Core | Deterministic context derivation and a bounded model-only loop. | Rust native tests; experimental Kotlin conformance over shared fixtures. |
+| Ledger contract | Durable Turn/fact/invocation vocabulary with monotonic positions and atomic terminal writes. | Rust domain tests plus the declared Kotlin experiment. |
 | Rust host | SQLite-backed Runtime persistence and restart recovery. | Real temporary SQLite crash-boundary tests. |
-| Kotlin host | PostgreSQL-backed server persistence; no embedded/mobile database claim. | Real PostgreSQL integration tests in a disposable database. |
+| Kotlin experiment host | PostgreSQL-backed portability verification; no product-server or embedded/mobile database claim. | Real PostgreSQL integration tests in a disposable database. |
 | OpenAI | Responses API request, response, SSE stream and error normalization. | Official-shape fixtures consumed by Rust/Kotlin adapters. |
 | Anthropic | Messages API request, response, SSE stream and error normalization. | Official-shape fixtures consumed by Rust/Kotlin adapters. |
 | Host API | Versioned Session/Turn/event/status contract for all clients. | Generated consumers and semantic round trips. |
@@ -50,14 +52,17 @@ adapters/                       concrete external protocols
 
 runtime/
   replica/                      Rust composition root + SQLite adapter
-  server-kt/                    Kotlin server Gradle build
-    agent-core/                 portable C0-C5 semantics
-    llm-contract/               provider-neutral model values
-    ledger-contract/            durable vocabulary and ports
+
+experiments/
+  engine-kt/                    experimental Kotlin Engine Gradle build
+    core/                       admitted portable semantics
+    llm/                        provider-neutral model values
+    ledger/                     durable vocabulary and ports
     persistence-postgres/       PostgreSQL adapter and migrations
     provider-openai/            OpenAI Responses adapter
     provider-anthropic/         Anthropic Messages adapter
-    server-host/                Kotlin server composition root
+    proto/                      generated experimental bindings
+    server-host/                executable verification fixture
 
 cli/                            Rust one-shot host client
 tui/                            Rust interactive terminal host client
@@ -69,9 +74,9 @@ mobile/androidApp/              Compose UI
 mobile/iosApp/                  SwiftUI UI
 ```
 
-The former `experiments/engine-kt/` code has been promoted into
-`runtime/server-kt/` without a duplicate tree. The Kotlin server remains an independent
-implementation of admitted semantics, not a source mirror of Rust.
+`experiments/engine-kt/` deliberately remains outside `engine/` and `runtime/`.
+It is an independent implementation of admitted semantics for research and
+conformance, not a source mirror, production Engine, or product Runtime.
 
 ## Dependency direction
 
@@ -86,8 +91,9 @@ Apps -> versioned Host API -> Runtime host -> Engine contracts
 - Provider adapters depend on `garive-llm`, not on Core or Runtime policy.
 - Runtime owns credentials, concrete clients, persistence, transactions,
   recovery, retry budgets and composition.
-- Kotlin domain modules do not depend on Ktor, JDBC, Exposed, jOOQ or a server
-  framework. Those dependencies begin in adapter/host modules.
+- Kotlin experimental domain modules do not depend on Ktor, JDBC, Exposed,
+  jOOQ or a server framework. Those dependencies begin in experiment
+  adapter/host modules.
 - Apps never import Engine internals or database adapters.
 
 ## Work graph
@@ -135,9 +141,10 @@ execution.
 
 ### L0 — portable vocabulary
 
-Both languages implement typed Session/Turn/Execution/request/invocation IDs,
+Rust owns the production typed Session/Turn/Execution/request/invocation IDs,
 monotonic fact positions, fact kinds, terminal outcomes, prepared-call digest,
-effect lifecycle, read cursor and append transaction contract.
+effect lifecycle, read cursor and append transaction contract. Kotlin
+independently checks the admitted portable subset.
 
 ### L1-Rust — SQLite
 
@@ -146,9 +153,9 @@ foreign keys and WAL. A transaction atomically appends facts and advances the
 Turn terminal/cursor. Restart tests use a real database file and verify
 request-before-dispatch, terminal atomicity and uncertain-effect recovery.
 
-### L1-Kotlin — PostgreSQL
+### L1-Kotlin experiment — PostgreSQL
 
-`runtime/server-kt/persistence-postgres` owns PostgreSQL migrations and the
+`experiments/engine-kt/persistence-postgres` owns PostgreSQL migrations and the
 JDBC/R2DBC adapter selected by its focused spec. Tests run against a disposable
 PostgreSQL instance and verify the same semantic fixtures plus transaction
 isolation and unique invocation constraints. No H2/SQLite substitute proves
@@ -205,8 +212,8 @@ network deployment remain later product slices.
 
 ## Shared evolution
 
-- C0-C3 and L0 are jointly implemented in Rust/Kotlin from shared semantic
-  fixtures.
+- C0-C3 and L0 are production-first in Rust and experimentally checked in
+  Kotlin from shared semantic fixtures.
 - Provider adapters share official wire fixtures but keep language-native wire
   models and parsers.
 - SQLite and PostgreSQL share semantic ledger scenarios, not SQL text or byte
@@ -222,7 +229,7 @@ Every landed slice includes:
 2. fixtures and a schema/version owner;
 3. implementation-native tests;
 4. cross-language semantic/wire checks where admitted;
-5. strict Rust and pinned Gradle builds;
+5. strict Rust builds and pinned Gradle conformance builds where claimed;
 6. real SQLite/PostgreSQL/provider parser tests where behavior is claimed;
 7. truthful support matrix and build recipes.
 
