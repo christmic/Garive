@@ -13,6 +13,27 @@ This is **deliberative**, not a spec. Type names, method
 signatures, and exact field shapes will land in
 `spec/design/agent-loop.md` once this design settles.
 
+> **Heads-up: this document is a *possible mechanism*, not
+> final code.** Every pseudo-code snippet, every field name,
+> every threshold (the 0–3 / 4–10 / >10 tier boundaries; the
+> 3 / 10 / 30 Edit-class numbers; the eager / late / never
+> eviction triggers) is a **draft design choice** that may
+> change as the slice lands. The *stable* part is the loop
+> **shape**:
+>
+> - `agent_loop` / `agent_turn` / `iteration` nesting
+> - Ledger as single source of truth
+> - Governance as a queried port
+> - `derive` as incremental + stateful
+> - Three-pass `assemble` (tier / evict / format)
+> - Mechanism / policy split
+>
+> The *specifics* — exact field shapes, threshold numbers,
+> per-tool policy profiles — are **not** committed to. Treat
+> this as a starting point, not a contract. When the slice
+> lands, this design gets re-checked against what the code
+> actually wants, and either the code or the design moves.
+
 ## Context
 
 Garive's agent runtime has three properties the loop must
@@ -787,5 +808,7 @@ ledger / governance / executor ports specifically.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: draft — loop skeleton settled; ledger shape,
-  governance policy, and Open Questions still open.
+- Status: **draft (possible mechanism)** — loop shape settled
+  as a *candidate*; ledger shape, governance policy, tier
+  thresholds, eviction triggers, and Open Questions still open.
+  No final code; this is the deliberation, not the spec.
