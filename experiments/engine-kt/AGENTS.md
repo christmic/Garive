@@ -13,23 +13,28 @@
 
 @AGENTS.md
 
-## Naming
-
-`engine-kt` follows the **Rust crate-name convention** (think
-`garive-1lm` — Rust crate names can't start with a digit, so
-`1lm` is the workaround). `engine-kt` is the Kotlin mirror's
-sibling — same shape, different language. The `kt` suffix marks
-it as the Kotlin port; the rest of the name lines up with the
-Rust side (`engine-core` ↔ `engine-kt/core`, etc.).
-
 ## Layout
+
+`engine-kt/` is a **Gradle multi-module project**, not a flat
+copy of `engine/`. Each sub-directory is its own Gradle module
+with its own `build.gradle.kts`.
 
 ```
 engine-kt/
-├── engine/                    Kotlin mirror of engine/*
+├── AGENTS.md                  this file
+├── settings.gradle.kts        module list (`:engine:*`, `:runtime:*`)
+├── build.gradle.kts           root build (plugin versions, group / version)
+├── gradle.properties          repo-wide Gradle / Kotlin defaults
+├── gradle/wrapper/
+│   └── gradle-wrapper.properties   (run `gradle wrapper` once to generate gradlew/jar)
+│
+├── engine/                    Gradle multi-module "engine" group
+│   ├── build.gradle.kts       applies Kotlin JVM to every :engine:* subproject
 │   ├── core/                  Agent loop, runtime primitives
+│   │   ├── build.gradle.kts
+│   │   └── src/main/kotlin/com/garive/eng/kt/core/
 │   ├── ledger/                Append-only event log
-│   ├── llm/                   Language-model abstraction
+│   ├── llm/                   Language-model abstraction (provider-agnostic)
 │   ├── tools/                 Tool registry
 │   ├── memory/                Short- and long-term memory
 │   ├── knowledge/             Knowledge store + retrieval
@@ -40,50 +45,77 @@ engine-kt/
 │   ├── eval/                  Eval harness
 │   ├── observability/         Tracing, metrics, logs
 │   ├── config/                Config schema + loaders
-│   └── proto/                 Generated Kotlin bindings (from spec/proto)
+│   └── proto/                 Generated Kotlin bindings from spec/proto/
+│       ├── build.gradle.kts   protobuf Gradle plugin
+│       └── src/main/proto/    linked source for spec/proto/
+│
 └── runtime/
-    └── replica/               Kotlin mirror of runtime/replica
+    └── replica/               Kotlin mirror of runtime/replica (Gradle application module)
+        ├── build.gradle.kts
+        └── src/main/kotlin/com/garive/eng/kt/replica/
 ```
 
-## Mapping
+## Why Gradle Multi-module (not a 1:1 Rust Copy)
 
-| Rust crate | Kotlin module |
-|------------|---------------|
-| `garive-core` | `com.garive.eng.kt.core` |
-| `garive-ledger` | `com.garive.eng.kt.ledger` |
-| `garive-1lm` (Rust numeric-prefix workaround) | `com.garive.eng.kt.llm` (Kotlin prefers readable names) |
-| `garive-tools` | `com.garive.eng.kt.tools` |
-| … | … |
+Rust uses a Cargo workspace — one repo with N crates, each a
+flat sub-directory. Kotlin uses Gradle — one repo with N
+**modules**, each its own sub-project with its own
+`build.gradle.kts`. The two layouts look superficially
+similar but:
+
+- Gradle modules share JVM and Kotlin toolchain configuration
+  through the `subprojects { ... }` block in
+  `engine/build.gradle.kts`.
+- A Kotlin module declares its **own dependencies** in its own
+  `build.gradle.kts` (`implementation(project(":engine:proto"))`,
+  etc.), so module boundaries are explicit and enforceable.
+- The protobuf module (`engine/proto/`) is a real Gradle module
+  because it owns the protobuf plugin and generated sources —
+  there is no "Cargo build script" analogue.
+- Each module has the standard `src/main/kotlin/` and
+  `src/test/kotlin/` source sets; tests live next to the code
+  they exercise.
+
+## Naming
+
+| Rust crate | Gradle module | Kotlin package |
+|------------|---------------|----------------|
+| `garive-core` | `:engine:core` | `com.garive.eng.kt.core` |
+| `garive-ledger` | `:engine:ledger` | `com.garive.eng.kt.ledger` |
+| `garive-1lm` (Rust numeric-prefix workaround) | `:engine:llm` | `com.garive.eng.kt.llm` |
+| `garive-tools` | `:engine:tools` | `com.garive.eng.kt.tools` |
+| … | … | … |
+| `garive-replica` | `:runtime:replica` | `com.garive.eng.kt.replica` |
 
 The numeric-prefix crate name `garive-1lm` is a Rust identifier
-constraint. The Kotlin mirror uses the natural `llm`. The
+constraint; the Kotlin mirror uses the natural `llm`. The
 ubiquitous-language mapping in `.agents/ddd.md` applies.
 
-## When to Use This vs. `engine/`
+## Adding a New Module
 
-- **Production today**: Rust under `engine/`.
-- **Cross-language conformance**: `engine-kt` is the second
-  implementation that keeps `engine/` honest — `.agents/ddd.md`
-  treats them as a single domain.
-- **JVM-side services**: anything that wants to embed the
-  agent runtime without a Rust toolchain.
+1. Create `engine/<name>/build.gradle.kts` (start from the
+   placeholder comment already there) and
+   `engine/<name>/src/main/kotlin/com/garive/eng/kt/<name>/`.
+2. Add `include(":engine:<name>")` to `settings.gradle.kts`.
+3. If the module depends on other engine modules, add
+   `implementation(project(":engine:other"))` to its
+   `build.gradle.kts`.
 
 ## Build
 
 ```
 cd experiments/engine-kt
-gradle build                            # builds all Kotlin modules + tests
-gradle :engine:proto:generateProto      # regenerate Kotlin bindings from spec/proto/
+gradle build                          # builds every module + tests
+gradle :engine:proto:generateProto    # regenerate Kotlin bindings from spec/proto/
 ```
 
-This is an **independent Gradle build** — not part of any
-mobile/desktop workspace. Reuse is via Maven coordinates once
-the mirror is published.
+Run `gradle wrapper` once in `engine-kt/` to generate
+`gradlew`, `gradlew.bat`, and the wrapper jar.
 
 ## Wire Contracts
 
-- Generated Kotlin bindings are produced by the Gradle protobuf
-  plugin from `spec/proto/`.
+- Generated Kotlin bindings are produced by the protobuf Gradle
+  plugin (`engine/proto/build.gradle.kts`) from `spec/proto/`.
 - Hand-written request / response types mirroring `.proto`
   fields are **forbidden**.
 - Bumping a `.proto` package version requires regenerating
@@ -104,8 +136,8 @@ the mirror is published.
 - ❌ Don't let `engine-kt` drift semantically from `engine/`.
   Mirror changes are paired with the Rust change in the same
   PR (or in lock-step across two).
-- ❌ Don't put domain types here that have no counterpart in
-  `engine/`. The mirror mirrors; it doesn't extend the domain.
+- ❌ Don't put domain types in a module that have no counterpart
+  in `engine/`. The mirror mirrors; it doesn't extend the domain.
 - ❌ Don't hand-write types that mirror `.proto` fields. Use
   generated bindings.
 - ❌ Don't depend on crates from `engine/` directly. `engine-kt`
