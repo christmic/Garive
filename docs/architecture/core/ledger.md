@@ -135,7 +135,7 @@ see `entry.superseded_by` below).
 | `uid` | TEXT NOT NULL UNIQUE | **Global entry identity** within the session. Stable across the entry's lifetime. Generated once at append time (UUID or sortable id). |
 | `turn` | TEXT | `turn_id` (UUID). The agent_turn this entry belongs to. |
 | `step` | INTEGER | Iteration index within the turn. `0` for user entry, `n` for the n-th `iteration`. |
-| `branch_id` | TEXT NULL | **Lightweight in-session branch** this entry belongs to. `NULL` = mainline (the default). Non-null = an in-session fork attempt (`branch.open` row), kept around for the duration of the attempt. See `branch.*` family below. |
+| `branch_id` | TEXT NULL | **Lightweight in-session branch path** this entry belongs to. `NULL` = mainline (the default). Non-null = an in-session fork attempt. **Path-style**: a nested branch uses dotted form (`A.B.C`); the segment before the first `.` is the top-level branch, the segment after is the parent. See `branch.*` family below. |
 | `kind` | TEXT NOT NULL | Dotted kind name (e.g. `assistant.text`, `tool.call`, `tool.result`, `compaction.summary`, `compaction.rewrite`). |
 | `provenance` | TEXT | Opaque source tag: which model, which tool, which rule produced this entry. |
 | `surface_visible` | INTEGER (bool) | Whether this entry is *currently* visible on the surface. Defaults to `1`. Gets `0` when the entry has aged out / been compressed / been evicted. |
@@ -592,8 +592,8 @@ distinct lifecycle requirements.
 | `session.turn_start` | `{turn: {id: uuid, boundary: enum{user_message, resume, fork}, compression: enum{ok, partial, failed}, fork: option<{from_turn: uuid, reason: string}}}` | runtime | Marks the **legal cut point** for compaction and fork. A `turn_start` with `boundary=user_message` starts a new turn; `boundary=resume` continues a Suspended turn; `boundary=fork` branches from another turn (with `fork.from_turn` set). The `compression` field records whether the round paused with a complete summary or a partial one — useful for `Resume`. |
 | `session.undo` | `{target: seq, reason: string}` | runtime / user | **Masks the suffix after `target`** — the surface is "rolled back" to `target`. `target` must point at a `session.turn_start` entry (legal cut point). Model sees only entries up to and including `target`'s iteration; the next loop iteration runs **from `target` forward**. The undo itself is a row in the ledger — never deleted. |
 | `session.redo` | `{target: seq, ref: {session, uid} \| null, reason: string}` | runtime / user | **Cancels a prior `session.undo`** by re-extending the visible range. The most recent `session.undo` whose `target` ≤ `target` of this `redo` is conceptually undone; future derives again include the previously-masked suffix. `ref` may point at the prior `session.undo` entry being reversed. Like undo, redo is itself a row in the ledger. |
-| `branch.open` | `{branch_id: string, from_seq: seq, purpose: string}` | runtime / model | Opens a **lightweight in-session branch** starting at `from_seq`. All entries appended between this row and the matching `branch.verdict` carry `branch_id = branch_id`. Multiple `branch.open` rows from the same `from_seq` are parallel attempts; each carries its own `branch_id`. |
-| `branch.verdict` | `{branch_id: string, decision: enum{adopt, discard}, reason: string, ref: {session, uid} \| null}` | runtime / model / governance | Resolves a branch. `adopt` makes the branch's entries part of the **mainline** (`branch_id` is preserved on the rows for audit, but the surface projection includes them). `discard` retires the branch's entries from the surface (still in the ledger for audit). The verdict is itself a row in the ledger — auditable, like `governance.verdict`. |
+| `branch.open` | `{branch_id: string, from_seq: seq, purpose: string}` | runtime / model | Opens a **lightweight in-session branch** starting at `from_seq`. All entries appended between this row and the matching `branch.verdict` carry `branch_id = branch_id`. **Nested branches** are allowed: a `branch.open` whose `branch_id` contains a `.` (e.g. `A.B`) is a sub-branch of `A`; its `from_seq` must be ≥ the parent branch's `from_seq` and ≤ the parent's `branch.verdict.seq`. Multiple `branch.open` rows from the same `from_seq` are parallel attempts at that level; each carries its own `branch_id`. |
+| `branch.verdict` | `{branch_id: string, decision: enum{adopt, discard}, reason: string, ref: {session, uid} \| null}` | runtime / model / governance | Resolves a branch. `adopt` makes the branch's entries part of the **mainline** (`branch_id` is preserved on the rows for audit, but the surface projection includes them). `discard` retires the branch's entries from the surface (still in the ledger for audit). The verdict is itself a row in the ledger — auditable, like `governance.verdict`. **A verdict's `branch_id` matches a single `branch.open`'s `branch_id`** (the path). A nested branch's verdict operates at that level only; it does not auto-adopt / auto-discard the parent. |
 | `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
 
 ```python
@@ -1044,6 +1044,34 @@ branch.verdict{branch_id:"A", decision:"discard", reason:...} → 弃A
 branch.verdict{branch_id:"C", decision:"discard", reason:...} → 弃C
 ```
 
+**Path-style nesting.** `branch_id` is a **path**:
+top-level branches are `"A"`, `"B"`, `"C"`; nested branches
+are dotted (`"A.alt"`, `"A.alt.deep"`). The **first segment**
+is the top-level branch; segments after the first dot are
+descendants. Constraints:
+
+- A sub-branch's `from_seq` must be **between** the parent
+  branch's `from_seq` (inclusive) and the parent branch's
+  `branch.verdict.seq` (exclusive).
+- A sub-branch is **opened and resolved within the parent
+  branch's lifetime**; it does not auto-promote to mainline
+  when the parent is adopted (the parent's verdict operates
+  at its own level; the sub-branch has its own verdict).
+- Surface projection: an entry's `branch_id` is a prefix
+  match. Adopted `"A"` includes `"A"`, `"A.alt"`,
+  `"A.alt.deep"` (if those were adopted too). Adopted
+  `"A.alt"` only includes `"A.alt"`, not its parent or its
+  siblings.
+
+```
+def branch_visible(branch_id, adopted_set):
+    # adopted_set is {branch_id, ...} from the latest verdicts
+    for adopted in adopted_set:
+        if branch_id == adopted or branch_id.startswith(accepted + '.'):
+            return True
+    return False
+```
+
 **Surface projection for branches.** The default
 `PROMPT_FOR_MODEL` projection follows three rules:
 
@@ -1055,33 +1083,12 @@ branch.verdict{branch_id:"C", decision:"discard", reason:...} → 弃C
    `branch.verdict{branch_id:X, decision:"adopt"}` lands, the
    branch's entries become mainline for projection purposes
    (their `branch_id` is preserved on the row for audit, but
-   the surface includes them).
+   the surface includes them). Adopt propagates to **all
+   adopted descendants** of `X` (path-prefix match).
 3. **Discarded branches are hidden.** A `discard` verdict
    retires the branch from the surface projection. The
    entries still live in the ledger — they are not deleted,
    just masked — and audit / `AUDIT_REPLAY` see them.
-
-The projection is a small interpreter over the
-`branch.*` timeline:
-
-```
-def branch_mask(entries, opens, verdicts):
-    """Return entries that are NOT in a discarded branch
-    and ARE in mainline OR an adopted branch."""
-    adopted = {v.branch_id for v in verdicts if v.decision == 'adopt'}
-    discarded = {v.branch_id for v in verdicts if v.decision == 'discard'}
-    out = []
-    for e in entries:
-        if e.branch_id is None:
-            out.append(e)                                 # mainline
-        elif e.branch_id in adopted:
-            out.append(e)                                 # adopted branch
-        elif e.branch_id in discarded:
-            pass                                          # hidden
-        else:
-            pass                                          # undecided — treat like discarded
-    return out
-```
 
 Undecided branches (no verdict yet) are treated as discarded
 from the default projection. The model can opt in to
@@ -1106,25 +1113,110 @@ this session's mainline into a branch) uses the standard
 single human-readable field — a one-line description of
 what the branch is trying.
 
-**Cost accounting.** A branch's `model.usage` rows are
-**kept on the ledger**, with `branch_id` set to the branch
-they belong to. The total cost report
-`SUM(tokens) FROM model.usage WHERE ...` includes them —
-agentic exploration is real work and the user pays for it.
-**Adopted branches are not double-counted** when the mainline
-overwrites the same `seq` range with a future iteration;
-the cost of the discard is "the cost of having tried", and
-the audit trail preserves it.
+#### Branch analytics: cost, learning, weight
 
-**Relation to `session.fork`.** `branch.*` is
-**intra-session, lightweight** — same session db, no
-filesystem move, no `lineage` row. `session.fork` (via
-`session.turn_start.boundary=fork` + `ledger_meta.lineage`)
-is **inter-session, heavyweight** — new session directory, new
-db, ancestry record. The two are siblings, not replacements:
-branches for "try three solutions to this one step"; forks
-for "let me take the whole conversation in a different
-direction."
+The branch machinery pays for itself across three axes.
+
+**1. Per-branch cost accounting.** A branch's
+`model.usage` rows carry `branch_id` set. The
+`memory_watermark` / cost queries naturally group by
+branch:
+
+```sql
+SELECT branch_id, SUM(tokens_in) AS in_, SUM(tokens_out) AS out
+  FROM entry
+ WHERE kind = 'model.usage' AND branch_id IS NOT NULL
+ GROUP BY branch_id
+ ORDER BY in_ + out DESC;
+```
+
+Output is "branch A cost X tokens, branch B cost Y, branch C
+cost Z, the mainline cost W". The user can see which
+strategies are cheap and which are expensive — **a real
+metric for "how much did it cost to try this approach?"**.
+Adopted branches are not double-counted: the agent does the
+work once, the row is counted once.
+
+**2. Discarded branches feed long-term memory (dream).**
+The `memory_watermark` op walks the ledger and extracts
+durable facts into long-term memory. **Discarded branches are
+the highest-value input to that walk** — they are the
+agent's empirical record of "I tried X and it didn't work
+because Y". This is exactly the kind of fact worth carrying
+forward: future sessions of the same user / project should
+not re-discover it.
+
+The dream walk (forthcoming `docs/architecture/core/dream.md`)
+special-cases `branch.*` rows:
+
+- For every `branch.verdict{decision:"discard", reason:...}`,
+  extract the failure pattern (`purpose`, `from_seq`,
+  surrounding tool results) into long-term memory.
+- For every `branch.verdict{decision:"adopt", reason:...}`,
+  extract the success pattern — but **only if** the branch
+  has a non-trivial `purpose` (otherwise it's noise).
+- The walk uses the existing `memory_watermark` row to
+  checkpoint progress, so a crashed dream walk resumes
+  cleanly.
+
+The **immutability** of the ledger is what makes this work:
+a discarded branch is **never deleted**, the failure
+pattern stays readable forever, and the dream walk can find
+it whenever it runs.
+
+**3. Weight escalation: short branch ↔ long sub-agent.**
+A branch is **in-process and lightweight** — one entry's
+`branch_id` set. When the agent decides a strategy needs
+**long exploration** (sub-tasks, parallel agents, hours
+rather than minutes), the right move is to **escalate the
+branch into a sub-agent** rather than carry on inside the
+branch:
+
+- Spawn a new session for the sub-agent (a new
+  `<root>/<sub-session>/` directory, new `ledger.db`).
+- Pass the **branch's `from_seq` snapshot** as a
+  `harness.feature` entry into the sub-session.
+- The sub-agent returns a verdict (also a row in the
+  sub-session's db).
+- The **parent session receives a `compaction.summary` or a
+  new `harness.feature` row carrying the result**, with
+  `ref = {session: <sub-session-uuid>, uid: <result-uid>}`.
+
+The two-tier pattern:
+
+```
+session (main)                              sub-agent session
+─────────────                               ──────────────────
+branch.open{A, from_seq:100}               (harness.feature: goal)
+branch.* ...                                 ... runs long
+branch.verdict{A, discard}                   ...
+                                          returns verdict via ref
+```
+
+A **short** exploration stays inside the parent's branch
+machinery. A **long** exploration escalates to a sub-agent.
+The decision boundary is the agent's, not the runtime's —
+the runtime just makes both paths cheap to take.
+
+**4. Branch trees are the audit trail.** The path
+`A.alt.deep` is also a literal path through the
+exploration tree. `AUDIT_REPLAY` shows the full tree;
+`FORK_BRANCH` shows side-by-side comparisons; the
+`BRANCH_VIEW_ALL` projection shows every leaf and its
+verdict. The user can answer "what did the agent try, and
+why did each attempt fail or succeed?" from a single
+ledger scan.
+
+#### Relation to `session.fork`
+
+| | `branch.*` (intra-session) | `session.fork` (inter-session) |
+|---|---|---|
+| Scope | Same session db | New session directory + new db |
+| Tag | `branch_id` column | `ledger_meta.lineage` |
+| Cost | One `branch_id` set per row | Whole directory + db copy |
+| Use | "Try 3 solutions to this step" | "Take the whole conversation elsewhere" |
+| Granularity | Step / sub-step | Turn / whole session |
+| Status | Siblings, not replacements | Siblings, not replacements |
 
 ### Why content-addressed blobs
 
