@@ -346,6 +346,139 @@ commit), not one.
 (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`, `GOVERNANCE_INPUT`,
 `FORK_BRANCH`, `AUDIT_REPLAY`) shares it. What each consumer
 
+### Two protocols — event stream + ledger stream
+
+The `turn_loop` skeleton runs **two protocols in parallel**
+during a single round. Both observe the same `model.invoke`
+boundary; they differ in **what they carry** and **what they
+promise**.
+
+| Protocol | What it carries | Failure tolerance | Recovery |
+|----------|-----------------|--------------------|----------|
+| **Event stream** | Model streaming tokens, thinking deltas, tool-start/tool-complete signals, governance decisions in flight | **Lossy — OK** to drop a token | None — the event is ephemeral |
+| **Ledger stream** | `model.usage`, `loop.receipt`, `tool.result`, `verdict`, `provider.partial` (cancellation), `overserved_max` | **Lossless** — append-only; if it didn't write, it's gone | Required — the ledger is the source of truth |
+
+The split is load-bearing:
+
+- **Event stream** is for **live observability** — the UI
+  shows the model thinking token-by-token, the debug tool
+  watches tool execution, the monitoring system tracks
+  latency. A dropped token means the UI flickers for one
+  frame; the user is fine.
+- **Ledger stream** is for **durable consistency** — every
+  call produces a `model.usage` row, every round produces a
+  `loop.receipt` row, every cancellation produces a
+  `provider.partial` row. A missing row means the round's
+  accounting is wrong, the audit trail is broken, or the
+  recovery on resume fails.
+
+The two protocols **never share a write path** — the event
+stream is fire-and-forget (pub/sub); the ledger stream is
+the existing `entry.append` machinery (atomic per
+transaction). A subscriber of the event stream failing
+costs the UI a few frames; a ledger append failing
+**halts the loop** (the next round can't recover).
+
+### Where the two protocols split inside a round
+
+```
+turn_loop round (annotated with protocol split):
+
+  [event]  ──── token-by-token model output  ───►  event bus
+              ▲
+              │ streaming
+              │
+  derive  ──► assemble  ──► model.invoke  ──►  outcome (8 kinds)
+   │           │                                │
+   │           │                                ▼
+   │           │                       [ledger] append:
+   │           │                            - model.usage  (Completed/Overflow)
+   │           │                            - loop.receipt (Completed/OutputTruncated)
+   │           │                            - provider.partial  (PartialCancelled)
+   │           │                            - overserved_max    (Overflow)
+   │           │                            - content.violation  (ContentViolation)
+   │           │                            - loop.exit          (ModelUnavailable/CB Open)
+   │
+   ▼           ▼
+  surface    payload
+```
+
+- **Event stream** runs **inside** `model.invoke` —
+  streaming tokens, partial reads, thinking deltas. The
+  transport adapter owns this.
+- **Ledger stream** runs **at the boundaries** of
+  `model.invoke` — when the call returns, when the call is
+  cancelled, when the call fails. The loop owns this.
+
+### Cancellation: the bridge
+
+A **mid-stream cancellation** is the one place the two
+protocols *almost* touch. When the user / loop / harness
+cancels:
+
+1. The event stream **stops emitting** (the transport
+   closes the connection / cancels the iterator). Tokens
+   received so far are **lost to the UI** — that's fine, the
+   UI is reactive.
+2. The bytes already received **must go to the ledger** as
+   a `provider.partial` entry. This is the only way to
+   recover on resume.
+3. The loop's `state` transitions to `phase = AwaitingConfirm`
+   with the partial as the baseline.
+
+The cancellation rule — **partial goes to the ledger, not
+to in-memory** — is what bridges the two protocols. See
+`provider-adapter.md` "Cancellation semantics" for the
+full design.
+
+### Why two protocols (not one)
+
+A single protocol would have to choose between the two
+properties — **realtime lossless** is impossible for streaming
+tokens (you'd buffer the entire stream before publishing it,
+defeating the point). Splitting them lets each protocol pick
+the right property:
+
+- **Event stream** picks **realtime + lossy**. A dropped
+  frame is invisible.
+- **Ledger stream** picks **durable + lossless**. A dropped
+  entry is a corruption.
+
+A single protocol that *also* tries to do both would be
+neither realtime nor lossless — it would be **batch-oriented
++ best-effort**, which is the worst of both worlds.
+
+### Skeleton implication
+
+The split is **structural**, not behavioural. The
+`turn_loop` skeleton continues to do exactly one thing per
+protocol:
+
+- For the **event stream** — the skeleton publishes a
+  sequence of events; the subscribers (UI / monitor / debug)
+  consume them. Failure of a subscriber is invisible to the
+  loop.
+- For the **ledger stream** — the skeleton calls `entry.append`
+  at the boundaries. Failure of `append` halts the loop (the
+  round can't recover without its accounting).
+
+Adding a new **event** kind is a pub/sub topic; no skeleton
+change. Adding a new **ledger** entry kind is a `ledger.md`
+catalog update; no skeleton change. The skeleton's contract
+with each protocol is **already complete**; new content
+plugs in without touching the loop.
+
+### Cross-references
+
+- `provider-adapter.md` "Outcome kinds" — the 8 kinds
+  `model.invoke` returns, and the `PartialCancelled` case
+  that bridges the two protocols.
+- `ledger.md` "Entry kinds" — every event the loop emits
+  has a corresponding ledger entry kind (model.usage,
+  loop.receipt, provider.partial, …).
+- `assemble-testing.md` "Dim 1c — Real API smoke" — verifies
+  the outcome kinds land in the ledger on every test.
+
 ### Budget Projection (anchored to `model.usage`)
 
 The earlier budget design had `derive` estimating the
