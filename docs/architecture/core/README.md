@@ -10,8 +10,11 @@
 
 | Doc | What it covers | Status |
 |-----|----------------|--------|
-| `loop.md` | Two-layer driver (`agent_loop` + `agent_turn`) and the **derive → invoke → judge → run** iteration. Ledger as single source of truth. Governance as queried port. Suspended / Resume. | draft — loop skeleton settled |
-| `ledger.md` | *(forthcoming)* Append-only event log, derive path, surface shapes, summarisation, replay semantics. |
+| `loop.md` | Two-layer driver (`agent_loop` + `agent_turn`) and the **derive → invoke → judge → run** iteration. The turn state. Derive as incremental + stateful. Three-pass `assemble` (tier / evict / format). Per-tool policy profiles. Summary entry schema. Boundary invariants. Three-mechanism recap. | **draft (possible mechanism)** — shape settled as a candidate; specifics (thresholds, eviction triggers) are not committed |
+| `ledger.md` | Append-only round log. Per-turn segments. Entry kinds catalog (user.message, assistant.message, intent, tool_result, verdict, effects, summary.v1, rewrite_directive, approval_request, ...). SQLite persistence. API surface. Multi-turn segments. | **draft (possible mechanism)** — kinds catalog + schema are candidates |
+| `governance.md` | *(forthcoming)* Policy for `governance.judge(intent) → verdict`. Allow / deny / rewrite / AskUser decision tree. Where policy lives, how it gets updated. |
+| `scheduler.md` | *(forthcoming)* Turn scheduling across a single process; interaction with multi-agent runs. |
+| `multiagent.md` | *(forthcoming)* Multi-agent coordination, sessions, fan-out / fan-in. |
 | `governance.md` | *(forthcoming)* Policy for `governance.judge(intent) → verdict`. Allow / deny / rewrite / AskUser decision tree. Where policy lives, how it gets updated. |
 | `scheduler.md` | *(forthcoming)* Turn scheduling across a single process; interaction with multi-agent runs. |
 | `multiagent.md` | *(forthcoming)* Multi-agent coordination, sessions, fan-out / fan-in. |
@@ -27,7 +30,7 @@ architecture/
 ├── system-overview.md     high-level system architecture (forthcoming)
 ├── core/                  Core Agent — this directory
 │   ├── loop.md            agent_loop / agent_turn / iteration
-│   ├── ledger.md          event log + derive (forthcoming)
+│   ├── ledger.md          append-only round log + entry kinds
 │   └── ...
 ├── infra/                 runtime, gateway, replica (forthcoming)
 ├── client/                 mobile, desktop, macos-native (forthcoming)
@@ -41,11 +44,15 @@ settles (loop is the closest), the relevant excerpt moves to
 
 ## Status
 
-`loop.md` is the **only settled design** today. The other
-docs above are placeholders — when they land, they get the
-same `## Meta` block, the same Context / Options / Decision
-/ Consequences / Open Questions / Known Limitations skeleton,
-and the same cross-link discipline.
+`loop.md` and `ledger.md` are both **draft (possible
+mechanism)** — shape is settled as a candidate; specifics
+(payload encodings, schema indexes, threshold numbers, eviction
+triggers) land with the slice. `governance.md`,
+`scheduler.md`, and `multiagent.md` are placeholders — when
+they land, they get the same `## Meta` block, the same
+Context / Options / Decision / Consequences / Open
+Questions / Known Limitations skeleton, and the same
+cross-link discipline.
 
 ## See also
 
