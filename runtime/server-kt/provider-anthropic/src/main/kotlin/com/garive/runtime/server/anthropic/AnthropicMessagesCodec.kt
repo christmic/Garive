@@ -95,12 +95,19 @@ object AnthropicMessagesCodec {
         if (limit > Long.MAX_VALUE.toULong()) fail(AnthropicAdapterError.INVALID_REQUEST)
         val system = mutableListOf<JsonElement>(); val messages = mutableListOf<JsonElement>(); var started = false
         request.inputItems.forEach { item ->
-            val message = item as? ModelInputItem.Message ?: fail(AnthropicAdapterError.UNSUPPORTED_CAPABILITY)
-            if (message.role == ModelRole.SYSTEM || message.role == ModelRole.DEVELOPER) {
-                if (started) fail(AnthropicAdapterError.UNSUPPORTED_CAPABILITY)
-                message.content.forEach { system += text(it) }
-            } else { started = true; messages += buildJsonObject { put("role", message.role.name.lowercase())
-                put("content", JsonArray(message.content.map(::text))) } }
+            when (item) {
+                is ModelInputItem.Message -> if (item.role == ModelRole.SYSTEM || item.role == ModelRole.DEVELOPER) {
+                    if (started) fail(AnthropicAdapterError.UNSUPPORTED_CAPABILITY)
+                    item.content.forEach { system += text(it) }
+                } else { started = true; messages += buildJsonObject { put("role", item.role.name.lowercase())
+                    put("content", JsonArray(item.content.map(::text))) } }
+                is ModelInputItem.ToolObservation -> { started = true
+                    parse(item.resultJson, AnthropicAdapterError.INVALID_REQUEST)
+                    messages += buildJsonObject { put("role", "user"); putJsonArray("content") {
+                        addJsonObject { put("type", "tool_result"); put("tool_use_id", item.modelCallId)
+                            put("content", item.resultJson) } } } }
+                is ModelInputItem.ReasoningReference -> fail(AnthropicAdapterError.UNSUPPORTED_CAPABILITY)
+            }
         }
         val tools = request.tools.map { tool ->
             if (tool.strict) fail(AnthropicAdapterError.UNSUPPORTED_CAPABILITY)

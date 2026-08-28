@@ -34,6 +34,13 @@ class AnthropicMessagesCodecTest {
         assertEquals(null, http.headers.toMap()["x-api-key"])
         assertEquals(actual, Json.parseToJsonElement(http.body.decodeToString()))
     }
+    @Test fun `tool result matches shared official string content shape`() {
+        val value = request().copy(inputItems = request().inputItems +
+            ModelInputItem.ToolObservation("call-1", """{"temperature":21}"""))
+        val actual = assertIs<AnthropicResult.Success<JsonObject>>(
+            AnthropicMessagesCodec.renderRequest(value, true)).value
+        assertEquals(Json.parseToJsonElement(fixture("request-tool-result.json").decodeToString()), actual)
+    }
     @Test fun `ordinary complete and truncated streams normalize`() {
         val ordinary = assertIs<AnthropicResult.Success<InvokeOutcome>>(
             AnthropicMessagesCodec.parseResponse(fixture("ordinary.json"))).value

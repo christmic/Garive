@@ -63,6 +63,17 @@ fn request_matches_official_shape_fixture() {
 }
 
 #[test]
+fn tool_result_request_matches_official_string_content_shape() {
+    let mut value = request();
+    value.input_items.push(ModelInputItem::ToolObservation {
+        model_call_id: "call-1".into(),
+        result_json: r#"{"temperature":21}"#.into(),
+    });
+    let expected: Value = serde_json::from_slice(&fixture("request-tool-result.json")).unwrap();
+    assert_eq!(render_request(&value, true).unwrap(), expected);
+}
+
+#[test]
 fn ordinary_and_stream_preserve_tool_and_cache_usage() {
     let InvokeOutcome::Completed {
         items,

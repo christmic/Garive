@@ -265,10 +265,10 @@ pub fn render_request(
                 result_json,
             } => {
                 conversation_started = true;
-                let content: Value = serde_json::from_str(result_json)
+                let _: Value = serde_json::from_str(result_json)
                     .map_err(|_| AnthropicAdapterError::InvalidRequest)?;
                 messages.push(json!({"role":"user","content":[{"type":"tool_result",
-                    "tool_use_id":model_call_id,"content":content}]}));
+                    "tool_use_id":model_call_id,"content":result_json}]}));
             }
             ModelInputItem::ReasoningReference { .. } => {
                 return Err(AnthropicAdapterError::UnsupportedCapability)
