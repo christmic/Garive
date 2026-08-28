@@ -1,22 +1,22 @@
 # Git Workflow
 
-## Branching Model
+## Flow (current state — no merge)
 
-Garive uses a **trunk-based** model on `master`:
+Garive currently runs a **rebase-only, worktree-isolated**
+flow on `master`. Merge / PR review will be added once the team
+grows; today the trunk is `master` and every change lands
+there by rebase.
 
-- **`master`** is the trunk. Always green, always deployable.
-- **Long-lived branches** are only used for major-version
-  stabilization (`release/1.x`).
-- **Short-lived feature / fix branches** carry every change,
-  merged back via PR / fast-forward.
+| Change kind | Where it happens | How it lands |
+|-------------|------------------|--------------|
+| Feature, fix, refactor, behaviour change | `feature/<slug>` (or `fix/<slug>`) on a worktree | rebase + fast-forward onto `master` once verification passes |
+| Hotfix to live behaviour | `hotfix/<slug>` on a worktree | rebase + fast-forward onto `master`, then onto any `release/*` |
+| Docs-only edits (`*.md` in `docs/`, comment-only changes) | directly on `master` | regular commit, no branch needed |
+| Repo maintenance scripts (`.gitignore`, `Justfile`, CI config) | directly on `master` | regular commit, no branch needed |
 
-| Branch | Lifetime | Branched from | Merges into |
-|--------|----------|---------------|-------------|
-| `master` | permanent | — | — |
-| `release/<major>.<minor>` | weeks–months | `master` | `master` (tag only) |
-| `feature/<slug>` | days | `master` | `master` (PR) |
-| `fix/<slug>` | hours–days | `master` | `master` (PR) |
-| `hotfix/<slug>` | hours | `master` (or `release/*` for live fixes) | both targets |
+> The "directly on `master`" lane is intentionally narrow. If a
+> doc edit touches any non-doc file, or if a script edit changes
+> observable behaviour, it goes through a branch.
 
 ## Branch Naming
 
@@ -24,15 +24,36 @@ Garive uses a **trunk-based** model on `master`:
 |--------|-----|---------|
 | `feature/` | New functionality. | `feature/agent-loop`, `feature/wire-ping-pong` |
 | `fix/` | A bug fix scoped to one area. | `fix/conformance-fixture-encoding` |
-| `hotfix/` | Urgent fix to live behavior; cherry-pick across `master` + `release/*`. | `hotfix/gateway-auth-bypass` |
+| `hotfix/` | Urgent fix to live behaviour; cherry-pick across `master` + `release/*`. | `hotfix/gateway-auth-bypass` |
 | `release/` | Stabilization branch for an upcoming tag. | `release/0.4` |
-| `docs/` | Docs-only change (also fine on `feature/`). | `docs/spec-vs-docs-split` |
-| `chore/` | Tooling / CI / repo maintenance with no product impact. | `chore/ignore-cargo-lock` |
+| `docs/` | Docs-only branch (only when the change is non-trivial; trivial edits go directly on `master`). | `docs/spec-vs-docs-split` |
+| `chore/` | Tooling / CI / repo maintenance with product impact — branch, not direct. | `chore/ignore-cargo-lock` |
 
 The **slug names the requirement**, not the file. Multi-file
 changes belong on the same branch.
 
 If a branch touches more than one requirement, split it.
+
+## Worktree Isolation (mandatory for feature work)
+
+Every feature / fix / hotfix branch lives in a **dedicated
+worktree**, not in the main checkout. The main checkout stays
+clean on `master`.
+
+```
+~/OraculoSpace/Garive/                 ← main checkout (master)
+~/OraculoSpace/Garive.feature-agent/    ← worktree on feature/agent-loop
+~/OraculoSpace/Garive.fix-fixture/      ← worktree on fix/conformance-...
+```
+
+- Branch from `master` inside the worktree.
+- Commit small units.
+- Verify (see Before-Rebase Checklist).
+- Rebase onto the latest `master` (no merge).
+- Fast-forward `master` to the branch tip.
+
+The main checkout never holds in-flight work — it always shows
+`master` and is always green.
 
 ## Commit Rule
 
@@ -45,38 +66,65 @@ If a branch touches more than one requirement, split it.
 | **Atomic** | Each commit must leave the tree in a buildable, testable state. |
 | **Scope Tag** | Prefix with a scope when the change is single-area: `<scope>: <verb-phrase>`. Examples: `engine: add Agent trait`, `spec: bump agent id field`, `docs: clarify tier split`. |
 
-## Before Push Checklist
+## Before-Rebase Checklist
+
+Run inside the worktree, before `git rebase master`:
 
 - `cargo fmt --check` (when Rust code is touched)
 - `cargo clippy --workspace --all-targets -- -D warnings` (Rust)
 - `cargo test` (Rust)
 - `just conformance` (when `spec/proto/`, `engine/proto/`,
   `experiments/kotlin/`, or `mobile/` is touched)
-- Self-review: read `git diff master` once before pushing. If
-  anything looks wrong, fix it before the PR.
+- Self-review: read `git diff master` once before rebasing. If
+  anything looks wrong, fix it before the rebase.
 
-## Merge Flow
+All green → rebase, fast-forward `master`, push, drop the
+worktree.
 
-1. Branch from `master`.
-2. Commit in small units (see Commit Rule).
-3. Push and open a PR against `master`.
-4. CI runs the Before-Push Checklist plus the cross-language
-   conformance gate.
-5. Reviewer signs off.
-6. **Squash-merge** by default — keeps `master` history linear
-   and one commit per landed feature. Use a regular merge only
-   when the per-commit history carries reviewer-relevant
-   context.
-7. Delete the branch on merge.
+## Rebase Flow
 
-## Rebase Strategy
+Inside the worktree, on `feature/<slug>`:
 
-- **Rebase interactively before review**, not after. Force-push
-  during the branch's lifetime is fine; force-push after a
-  branch is shared is forbidden.
-- **Never rebase `master`** or any `release/*` branch.
-- **Linear history** is preferred. Avoid merge commits from
-  feature branches.
+```
+git fetch origin
+git rebase origin/master            # replay commits on top of latest master
+# resolve any conflicts, then:
+git push --force-with-lease origin feature/<slug>
+```
+
+Then, from the **main checkout** on `master`:
+
+```
+git fetch origin
+git merge --ff-only origin/feature/<slug>   # fast-forward only
+git push origin master
+git worktree remove <path-to-worktree>
+git branch -d feature/<slug>                 # local cleanup
+```
+
+Key rules:
+
+- **Fast-forward only.** If a fast-forward is not possible,
+  rebase again — never merge.
+- **`--force-with-lease`, never `--force`.** A force-with-lease
+  refuses to clobber a branch tip that moved underneath you.
+- **No merge commits into `master`.** `master` is a linear
+  history of fast-forwarded branches plus direct edits.
+- **Never rebase `master`** itself, never rebase `release/*`.
+
+## Direct-on-`master` Lane (docs / scripts only)
+
+When the change is **strictly** documentation (`.md`) or repo
+scripting (`Justfile`, `.gitignore`, CI YAML, hooks) and has
+**no behaviour impact**:
+
+1. Work in the main checkout on `master`.
+2. Commit in small units (Commit Rule still applies).
+3. Push.
+4. No branch, no worktree, no rebase.
+
+If the diff touches any non-doc / non-script file — even a
+one-line tweak — move it to a branch.
 
 ## Tagging
 
@@ -90,43 +138,40 @@ If a branch touches more than one requirement, split it.
   Bug fixes bump PATCH. See `spec/AGENTS.md` for schema-version
   coordination.
 
-## Isolation
-
-**Use a worktree per non-trivial slice.**
-
-For isolated sub-feature work, use a worktree to keep the main
-checkout clean. Branch, commit, push; merge back when green.
-
 ## What NOT to Do
 
+- ❌ Do not commit directly to `master` for code, tests, refactors,
+  or anything behaviour-affecting.
+- ❌ Do not create feature work without a worktree.
+- ❌ Do not merge a feature branch into `master` — rebase.
 - ❌ Do not create separate branches for each file change.
 - ❌ Do not create separate branches for code vs tests vs docs
   that belong to the same requirement.
-- ❌ Do not commit directly to `master` or `release/*`.
 - ❌ Do not wait until everything is done to make one giant
   commit.
 - ❌ Do not amend published commits without coordination.
-- ❌ Do not force-push to a branch that others are working on.
-- ❌ Do not merge your own PR without a reviewer (exception: solo
-  branches under `chore/` or `docs/` with no code impact).
+- ❌ Do not force-push with `--force`; use `--force-with-lease`.
+- ❌ Do not rebase `master` or any `release/*` branch.
 
 ## Example Flow
 
 ```
-master
-  │
-  ├── feature/agent-loop
-  │     ├── commit: engine: add Agent trait skeleton
-  │     ├── commit: engine: add loop driver with bounded turns
-  │     ├── commit: engine: add cancellation token plumbing
-  │     ├── commit: engine: add unit tests for happy path
-  │     ├── commit: engine: add conformance fixture for loop
-  │     └── PR + squash-merge → master
-  │
-  └── feature/conformance-gate
-        ├── commit: spec: add ping fixture v1
-        ├── commit: bench: add conformance binary (Rust)
-        ├── commit: experiments/kotlin: add conformance runner
-        ├── commit: Justfile: wire conformance target
-        └── PR + squash-merge → master
+master  ─────────────────────────────────────────►  (linear history)
+
+       feature/agent-loop  (worktree: ../Garive.feature-agent/)
+         ├── commit: engine: add Agent trait skeleton
+         ├── commit: engine: add loop driver with bounded turns
+         ├── commit: engine: add cancellation token plumbing
+         ├── commit: engine: add unit tests for happy path
+         ├── commit: engine: add conformance fixture for loop
+         ├── [verify: fmt + clippy + test + conformance]
+         ├── git fetch + rebase origin/master
+         ├── git push --force-with-lease
+         └── (main checkout) git merge --ff-only origin/feature/agent-loop
+                                 git push origin master
+                                 worktree remove
+                                 branch -d feature/agent-loop
+
+       docs: clarify tier split           (direct commit on master)
+       chore: update .gitignore           (direct commit on master)
 ```
