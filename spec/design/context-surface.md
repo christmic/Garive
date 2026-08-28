@@ -158,7 +158,13 @@ For every valid request/candidate set:
 - retained, dropped and filtered reference sets are disjoint;
 - changing candidate input chunking does not change the surface;
 - re-running with identical values produces an equal result;
-- increasing a limit cannot remove a previously retained optional candidate.
+- at fixed limits, no dropped optional candidate can replace a retained older
+  candidate without violating the newest-first traversal or a limit.
+
+The retained-reference set is intentionally not monotonic as a budget grows:
+a newly fitting, newer atomic candidate may displace an older one. Required
+references remain monotonic because they are always admitted or derivation
+fails before optional selection.
 
 ## Acceptance
 

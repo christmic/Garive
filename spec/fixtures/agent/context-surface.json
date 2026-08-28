@@ -39,6 +39,16 @@
       "expected": {"status": "ok", "retained": [1], "dropped": [2], "filtered": [], "items": ["text:a"], "item_count": 1, "bytes": 1}
     },
     {
+      "name": "larger-budget-admits-newer-priority",
+      "request": {"purpose": "inference", "after": null, "through": 3, "max_items": 3, "max_bytes": 7},
+      "candidates": [
+        {"position": 1, "retention": "optional", "visibility": "visible", "items": ["abc"]},
+        {"position": 2, "retention": "optional", "visibility": "visible", "items": ["abcde"]},
+        {"position": 3, "retention": "optional", "visibility": "visible", "items": ["xy"]}
+      ],
+      "expected": {"status": "ok", "retained": [2, 3], "dropped": [1], "filtered": [], "items": ["text:abcde", "text:xy"], "item_count": 2, "bytes": 7}
+    },
+    {
       "name": "utf8-budget-counts-bytes",
       "request": {"purpose": "inference", "after": null, "through": 1, "max_items": 1, "max_bytes": 6},
       "candidates": [{"position": 1, "retention": "required", "visibility": "visible", "items": ["蟹蟹"]}],

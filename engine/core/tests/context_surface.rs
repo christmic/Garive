@@ -108,7 +108,7 @@ fn rendered_items(items: &[ContextItem]) -> Vec<String> {
 fn rust_consumes_every_context_case() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 8);
+    assert_eq!(cases.len(), 9);
     for case in cases {
         let expected = &case["expected"];
         let result = derive_context(&request(&case["request"]), &candidates(&case["candidates"]));

@@ -22,7 +22,7 @@ class ContextSurfaceTest {
     @Test
     fun `Kotlin consumes every context case`() {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(8, cases.size)
+        assertEquals(9, cases.size)
         cases.forEach { element ->
             val case = element.jsonObject
             when (val result = deriveContext(request(case.obj("request")), candidates(case.getValue("candidates").jsonArray.map { it.jsonObject }))) {
