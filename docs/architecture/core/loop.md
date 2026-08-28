@@ -267,42 +267,90 @@ history. The LLM is given only this surface. This guarantees:
 ### Derive in Detail
 
 `ledger.derive(kinds, budget)` is the projection the loop
-calls every iteration. It has four steps.
+calls every iteration. **It is not a full-ledger scan.** It
+is an **incremental update over a cached surface**: when the
+ledger hasn't been compressed, derive appends the new entries
+to the cache and returns; when a `rewrite_directive` lands, the
+cache resets to the directive's start-point and is rebuilt
+from there. A round that runs for a month reads **only the
+delta since the last derive**, not the month's accumulated
+ledger.
 
 ```python
+class Surface:
+    """Cached view of the ledger that the loop maintains
+    across calls to derive. Lives in `state` (alongside
+    `phase`, `iteration_count`, etc.)."""
+    start_seq: int                       # earliest seq in the cache
+                                          #   (= 0 if no compression,
+                                          #    or rewrite_directive.
+                                          #    covers.seq_range.end + 1
+                                          #    otherwise)
+    last_seq: int                       # latest seq already in the cache
+    last_directive_seq: int             # latest rewrite_directive seq
+                                          #   already accounted for
+    entries: list[Entry]                # the cached entries
+    always_loaded: dict[Kind, Entry]    # special kinds (e.g. goal)
+                                          #   maintained independently
+                                          #   of seq range
+
 def derive(kinds, budget):
-    # 1. 找到最近的 rewrite_directive（压缩标记）
-    rw = ledger.latest(kind=rewrite_directive)
+    # 1. 检查自上次 derive 后是否有新的 rewrite_directive
+    new_directive = ledger.rewrite_directive_since(
+        surface.last_directive_seq)
 
-    if rw is None:
-        # 从未压缩过 → 从头读
-        start_seq = 0
-    else:
-        # 有压缩 → 从被覆盖区段的下一个 seq 开始
-        start_seq = rw.covers.seq_range.end + 1
-        # rewrite_directive 本身也在 surface 里（让模型
-        # 知道"曾经压缩过、压缩了哪一段"）
-        # 但它指向的、被覆盖的旧条目不在 surface 里
+    if new_directive is not None:
+        # 压缩标记出现 → 作废从新起点之前的缓存
+        surface.start_seq = new_directive.covers.seq_range.end + 1
+        surface.entries   = []  # 清空缓存
+        surface.last_directive_seq = new_directive.seq
 
-    # 2. 从 start_seq 往后，按 kinds + budget 取所有可见条目
-    raw = ledger.range(
-        start    = start_seq,
-        kinds    = = kinds,                 # 本轮想看的事件类型
-        until    = budget.tokens,         # 软上限（按 token 数截断）
-        deadline = budget.wall_clock_ms,  # 硬上限（按时间截止）
-    )
+    # 2. 增量追加新条目（没压缩时 = ledger append-only）
+    new_entries = ledger.entries_since(surface.last_seq)
+    surface.entries.extend(new_entries)
+    surface.last_seq = ledger.latest_seq()
 
-    # 3. 特殊条目（goal 之类）独立维护，始终加载
-    #    —— 不受 rewrite_directive 影响，不被压缩
-    for k in ALWAYS_LOAD_KINDS:           # 例如 {goal, system, ...}
+    # 3. always-loaded kinds 独立维护（不受压缩影响，始终最新）
+    for k in ALWAYS_LOAD_KINDS:        # {goal, system, ...}
         active = ledger.latest_active(kind=k)
-        if active is not None:
-            raw.prepend(active)           # 放在 surface 最前
+        surface.always_loaded[k] = active   # 全量替换
+                                            #   永远取最新版本
 
-    # 4. 按 budget 装配 → surface
-    surface = assemble(raw, budget)
-    return surface
+    # 4. 按 kinds + budget 装配 → surface
+    return assemble(surface, kinds, budget)
 ```
+
+#### Cost model — what actually runs per iteration
+
+| Scenario | What `derive` does | Cost |
+|----------|-------------------|------|
+| No compression, ledger grew by Δ entries since last derive | append Δ to cache | **O(Δ)** — typically a handful of entries |
+| Compression event (`rewrite_directive` lands) | clear cache, replay from `covers.seq_range.end + 1` | O(prefix-size after the cut) — bounded by what the summary captures |
+| `always_loaded` kind updated | swap one entry in `surface.always_loaded` | O(1) |
+| `assemble` for the budget shape | walk the cache, drop tail to fit budget | O(cache-size) — small per iteration |
+
+A round that has run for a month **does not re-scan** the
+month's accumulated ledger on every iteration. The cache
+holds the *current* view; derive only processes **the delta
+since the previous call**.
+
+#### Why this is safe
+
+- **Ledger is append-only** (`.agents/ddd.md` + `engine/AGENTS.md`).
+  Once an entry is written, it's there forever; derive
+  doesn't have to handle mid-stream edits.
+- **`rewrite_directive` resets, not rewrites.** The cache
+  clears and replays from a fresh start-point. Nothing is
+  "merged" — the previous view is discarded.
+- **`always_loaded` is replace, not merge.** Goal / system /
+  frame entries are *singletons*; the model always sees the
+  latest version, full stop. They're outside the seq-range
+  compression scheme on purpose — `goal` is the *frame* and
+  must survive any summarisation.
+- **No "scan all" fallback.** The implementation never walks
+  the whole ledger; if a corner case requires a fresh build
+  (process restart, ledger corruption recovery), that is an
+  explicit recovery path, not a per-iteration cost.
 
 #### Summary prefix convention
 
