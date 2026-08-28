@@ -14,10 +14,9 @@ this module depends on neither.
 shared/
 ├── src/
 │   ├── commonMain/kotlin/   platform-agnostic business code
-│   ├── androidMain/kotlin/  Android-specific glue (push, FCM, KeyStore)
-│   ├── iosMain/kotlin/      iOS-specific glue (NSUserDefaults, Keychain)
-│   └── commonTest/kotlin/   shared unit tests (referenced from spec/fixtures)
-├── build.gradle.kts         KMP module config; protobuf plugin wired here
+│   ├── commonMain/kotlin/   generated-wire Host client and reducer
+│   └── jvmTest/kotlin/      shared fixture and protobuf round-trip tests
+├── build.gradle.kts         KMP + Square Wire generation
 └── README.md
 ```
 
@@ -28,7 +27,7 @@ shared/
 | Agent loop client, tool registry | `AgentLoop`, `ToolRegistry`, `ToolResult` |
 | Domain types | `Agent`, `Session`, `MemoryEntry`, `Knowledge` |
 | Repositories | `SessionRepository`, `MemoryRepository` |
-| Generated proto bindings (Kotlin) | from `spec/proto/` via Gradle protobuf plugin |
+| Generated proto bindings (Kotlin) | from `spec/proto/` via Square Wire Gradle plugin |
 | Platform interfaces | `Clock`, `SecureStorage`, `PushNotifications` |
 
 | Forbidden | Why |
@@ -41,15 +40,21 @@ shared/
 
 ## Build
 
-Not wired. Add a Gradle build only when the mobile client slice is selected.
+From this directory, using Garive's pinned Gradle wrapper:
+
+```text
+java -classpath ../../runtime/server-kt/gradle/wrapper/gradle-wrapper.jar \
+  org.gradle.wrapper.GradleWrapperMain jvmTest
+```
 
 ## Verify
 
-No mobile conformance gate exists yet. Add consumer-specific wire or semantic
-checks with the first shared module that consumes a shipped contract.
+`jvmTest` reads `spec/fixtures/host/fake-session.json`, constructs only
+Wire-generated Host values, round-trips protobuf bytes, and verifies terminal,
+identity and durable-position reduction.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: active Host API v1 client slice.
