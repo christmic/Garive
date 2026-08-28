@@ -2,7 +2,7 @@
 
 > **Cross-tier integration + E2E.** Tier-specific tests live
 > with their tier (Rust unit tests in `engine/<crate>/tests/`,
-> Kotlin server tests in `experiments/engine-kt/`). This
+> Kotlin experiment tests in `experiments/engine-kt/`). This
 > directory is for tests that **span tiers** within one
 > language.
 
@@ -11,8 +11,7 @@
 ```
 tests/
 ├── integration/    cross-tier integration, one language (mostly Rust)
-├── e2e/            whole-stack smoke, real runtimes
-└── conformance/    executable cross-implementation checks when a slice needs them
+└── e2e/            whole-stack smoke, real runtimes
 ```
 
 ## What Goes Here
@@ -29,7 +28,9 @@ tests/
 - Unit tests for a single crate — they live in
   `engine/<crate>/tests/`.
 - Unit-only serialization tests for one consumer — keep them beside that
-  consumer. Shared conformance belongs here only once executable.
+  consumer. Cross-language conformance uses shared data under `spec/fixtures/`
+  and native runners beside each implementation; do not create a third test
+  implementation here.
 - Per-language UI tests — they live with the tier
   (`mobile/iosApp/`, `desktop/frontend/`).
 
