@@ -1,6 +1,7 @@
 //! Provider-neutral model requests, outcomes, and adapter contracts.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 mod outcome;
 mod request;
