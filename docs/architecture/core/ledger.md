@@ -298,19 +298,97 @@ The `dedup` row is small and writes are cheap (an `INSERT OR
 IGNORE` per append). GC walks the table periodically and
 removes rows older than a TTL — see `ops_log` below.
 
-#### `meta` — session metadata
+#### `ledger_meta` — session-level KV (structured keys)
 
-Session-scoped tags. Mostly written once at session start,
-read often.
+Session-scoped tags. The table is a small KV; the *keys* are
+constrained to a documented set so readers know what to
+expect. Anything outside the set is an extension (still
+allowed) but should not be the only source of truth.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `key` | TEXT PRIMARY KEY | Tag name (e.g. `agent`, `model`, `created_at`, `pid`, `session_kind`). |
-| `value` | TEXT | Tag value. |
-| `wall_ts` | INTEGER | When this tag was set. |
+| `key` | TEXT PRIMARY KEY | A documented tag name (see below). |
+| `value` | TEXT NOT NULL | The tag value. Most are strings or JSON-encoded objects. |
+| `wall_ts` | INTEGER NOT NULL | When the tag was last set. |
 
-`meta` is the equivalent of `meta.json` but inside the db, so
-it joins naturally with the rest.
+##### Documented keys
+
+| Key | Type | What it holds | When set |
+|-----|------|---------------|----------|
+| `schema_version` | string | The version of the ledger schema this db was created under (e.g. `"v1"`). Read by readers to migrate old rows on read. | once at session creation; only changed by a migration op. |
+| `session_id` | UUID (string) | The identity of this session. Matches `<root>/<session>/` directory name. | once at session creation; immutable. |
+| `mode` | enum string | `"interactive"` \| `"batch"` \| `"ci"` \| `"replay"` \| … — how this session is being driven. | once at session creation; immutable for the session. |
+| `agent` | string | The agent identifier this session is running (`"garive-default"`, `"garive-experimental"`, …). | once at session creation. |
+| `created_at` | INTEGER (epoch ms) | Wall-clock the session directory was created. | once at session creation; immutable. |
+| `last_active_at` | INTEGER (epoch ms) | Wall-clock of the most recent `entry.append` in this session. Updated on every write; read by `ops_log` GC sweeps to identify idle sessions. | updated on every write. |
+| `lineage` | JSON | `{"parent_session": uuid \| null, "boundary_seq": int \| null}` — for a forked session, where it branched from. For a root session, both fields are `null`. See "Lineage and fork" below. | once at session creation; immutable. |
+| `memory_watermark` | INTEGER (seq) | The latest `seq` whose contents have been **extracted into long-term memory**. The next `extract_memory()` call resumes from `seq + 1`. See "Memory extraction watermark" below. | updated by the memory-extraction op. |
+| `backup_watermark` | INTEGER (seq) | The latest `seq` that has been **safely persisted to the next backup tier** (e.g. shipped to cold storage). Used by **incremental backup** — only entries with `seq > backup_watermark` need to ship. | updated by the backup op. |
+
+##### Lineage and fork
+
+A session may be **forked** from another session. The fork creates
+a new `<root>/<session>/` directory whose `lineage` row points
+back at the parent:
+
+```
+{"parent_session": "uuid-of-parent", "boundary_seq": 42}
+```
+
+- `parent_session` is the UUID of the session being forked from.
+- `boundary_seq` is the `seq` in the parent up to (and including)
+  which the fork inherits entries. Entries with
+  `seq > boundary_seq` in the parent are **not** visible to the
+  fork.
+
+**Root sessions** carry the literal `null` lineage:
+
+```
+{"parent_session": null, "boundary_seq": null}
+```
+
+The lineage is written **once at session creation** and is
+immutable for the lifetime of the session — a fork never
+re-parents, and a root session never sprouts a parent. Cross-
+session reads that need to follow lineage (e.g. "did the
+parent already see this file?") use `ledger_meta` + the parent's
+db.
+
+##### Memory extraction watermark
+
+A periodic op walks the ledger and extracts durable facts
+into long-term memory (e.g. "the user prefers tabs over
+spaces", "the project uses Cargo workspace"). The
+`memory_watermark` row marks progress so the op can resume
+after a crash.
+
+- On each successful extraction pass, the op updates
+  `memory_watermark = last_extracted_seq`.
+- On restart, the op resumes from `seq = memory_watermark + 1`.
+- A `memory_watermark` smaller than `entry.latest_seq()` is the
+  signal that an extraction is in flight (or crashed).
+- Multiple extractors may run concurrently if gated by
+  `client_generation` (see `dedup` table); the watermark
+  update is itself idempotent.
+
+##### Backup watermark (incremental backup)
+
+A periodic op ships new ledger entries to a backup tier (cold
+storage, off-site, durable beyond the SQLite file).
+`backup_watermark` marks progress.
+
+- The backup op reads `entry WHERE seq > backup_watermark`,
+  serialises them (along with referenced blobs), ships, and on
+  success sets `backup_watermark = last_shipped_seq`.
+- A fresh process / attach tool reads `backup_watermark` to
+  know "what's already off-site" — restoring from backup
+  starts at `seq = backup_watermark + 1`.
+- This is **incremental backup**: only the delta ships each
+  cycle. The full ledger can be reconstructed by replaying
+  backup-watermark checkpoints.
+
+`ops_log` records every memory-extraction pass and every
+backup pass — `notes` carries the relevant watermarks.
 
 #### `ops_log` — operations and GC history
 
