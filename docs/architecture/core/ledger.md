@@ -658,6 +658,105 @@ def current_goal(entries):
 whenever a goal is open) and **pinned** (never compressed,
 never evicted — they are the model's frame of reference).
 
+#### `privacy.*` — Right to Erasure (redaction is to deletion as compaction is to summarisation)
+
+The ledger is durable and append-only; **the only way to
+"delete" data is to mark it deleted in the ledger and let the
+runtime render the redaction**. The row itself is never
+removed; the blob bytes it points at may be physically
+unlinked.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `privacy.redact` | `{covers: {from_seq: int, to_seq: int} \| {uid: string}, reason: string}` | runtime | Marks a range (or single entry by `uid`) as redacted. `derive` projects entries inside the range as `[已删除] <kind> @<seq>` placeholders; **the entry row is preserved**, the body content (if any) is **never** returned. The blob may be physically unlinked. |
+
+Two granularity levels:
+
+- **Session-level delete** — `rm -rf <session>/`. The whole
+  directory goes. This is the strong form: no audit, no
+  recovery, no replay. Reserved for the user's explicit
+  request to forget the session entirely.
+- **Entry-level redaction** — `privacy.redact`. **Isomorphic
+  to `compaction.rewrite`**: it adds an entry to the ledger
+  that covers a range; the covered entries' bodies are
+  hidden from `derive`; the row itself stays. **Auditable**:
+  the redaction entry records what was covered, when, and
+  why — so the deletion itself is part of the ledger.
+
+**`derive` behaviour with redaction:**
+
+```python
+def project_entry(e, redactions):
+    for r in redactions:
+        if r.covers.contains(e.seq):
+            return RedactedPlaceholder(
+                kind   = e.kind,
+                seq    = e.seq,
+                by_seq = r.seq,
+                when   = r.wall_ts,
+                reason = r.reason,
+            )
+    return e    # unredacted — surface the body
+```
+
+The placeholder preserves the entry's identity (`seq`,
+`kind`, `wall_ts`, `provenance`, `pinned`, `pair_ref` /
+`ref`) but not its body. The model sees something like:
+
+```
+TOOL_RESULT @seq 42 (redacted by privacy.redact@seq 47 on
+ 2026-08-29, reason="user-requested")
+```
+
+— enough to know a tool was called, not enough to see its
+output.
+
+**What stays, what goes, after redaction:**
+
+| Field | Stays | Why |
+|-------|-------|-----|
+| `seq`, `uid`, `kind`, `turn`, `step` | yes | what happened |
+| `provenance`, `wall_ts`, `pair_ref`, `ref` | yes | chain-of-custody for the redaction itself |
+| `body_inline` / `body_hash` content | **no** | the whole point of the redaction |
+| The row itself | yes | the redaction is itself an entry in the ledger |
+
+**The blob is the only thing physically removable.** When no
+non-redacted entry references a blob, the blob's bytes are
+unlinked (recorded in `ops_log` as `blob_redact_unlink`). The
+**blob hash stays in the row's `body_hash`** — so any future
+audit can still see "this entry pointed at a blob that was
+unlinked on date X". The body is gone; the pointer is not.
+
+#### Encryption (static at-rest, future-proofing)
+
+Three layers, in order of immediacy:
+
+| Layer | Today | Future |
+|-------|-------|--------|
+| **Static at rest — db** | OS directory permissions + the redaction mechanism (above) is the primary privacy layer today. | `sqlcipher` — full SQLite encryption, transparently to the schema. Key material in OS keychain / KMS. |
+| **Static at rest — blobs** | OS directory permissions; the redaction + `blob_redact_unlink` op removes sensitive bytes from disk. | Per-blob symmetric encryption keyed by the session's wrapping key; key unwrapped on session open. |
+| **In-flight — hook content** | `harness.feature` (and any other hook-supplied `entry` payload) is **encrypted at the row level** before it reaches the ledger. The session key wraps the hook key. | Same shape; the hook key rotates per the hook's lifetime, not the session's. |
+
+The redaction mechanism is the **first line of defence** —
+most "delete" requirements are met by making the body
+unreadable, not by reaching for cryptographic keys.
+
+The encryption roadmap is:
+
+1. **Today** — directory permissions (chmod 700 / per-user)
+   + the redaction layer. Redacted blobs are physically
+   unlinked, so the body bytes do not sit on disk.
+2. **Next** — `sqlcipher` for the main db. Schema unchanged.
+   Key material in OS keychain (Keychain on macOS,
+   libsecret on GNOME, Windows DPAPI).
+3. **Later** — per-blob encryption. Hook payload encryption
+   is in scope from day 1 of step 2.
+
+`hook` design itself is not in this document — see future
+`docs/architecture/core/hooks.md` — but the invariant
+**"hook payloads are encrypted at rest, just like other entry
+bodies"** is stated here so any hook design must respect it.
+
 #### Load classes
 
 Kinds split into three load classes (see `loop.md` for
