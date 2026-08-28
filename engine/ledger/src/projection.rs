@@ -23,7 +23,9 @@ enum ExecutionState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum InvocationState {
     Prepared,
+    Authorized,
     Started,
+    Receipt,
     Completed,
     Rejected,
     Interrupted,
@@ -82,15 +84,14 @@ impl SessionProjection {
             "model.unavailable" => self.transition_model(fact, InvocationState::Unavailable),
             "model.uncertain" => self.transition_model(fact, InvocationState::Uncertain),
             "effect.prepared" => self.prepare_tool(fact),
+            "effect.authorized" => self.transition_tool(fact, InvocationState::Authorized),
             "effect.started" => self.transition_tool(fact, InvocationState::Started),
-            "effect.completed" | "effect.receipt" => {
-                self.transition_tool(fact, InvocationState::Completed)
-            }
+            "effect.receipt" => self.transition_tool(fact, InvocationState::Receipt),
+            "effect.completed" => self.transition_tool(fact, InvocationState::Completed),
             "effect.failed" => self.transition_tool(fact, InvocationState::Failed),
             "effect.denied" => self.transition_tool(fact, InvocationState::Denied),
             "effect.uncertain" => self.transition_tool(fact, InvocationState::Uncertain),
-            "effect.authorized"
-            | "interaction.requested"
+            "interaction.requested"
             | "interaction.resolved"
             | "interaction.cancelled"
             | "context.summary"
@@ -245,10 +246,20 @@ impl SessionProjection {
             .tools
             .get_mut(tool)
             .ok_or(LedgerError::MissingReference)?;
-        let valid = (*state == InvocationState::Prepared
-            && matches!(next, InvocationState::Started | InvocationState::Denied))
-            || (*state == InvocationState::Started
-                && !matches!(next, InvocationState::Prepared | InvocationState::Started));
+        let valid = matches!(
+            (*state, next),
+            (InvocationState::Prepared, InvocationState::Authorized)
+                | (InvocationState::Prepared, InvocationState::Started)
+                | (InvocationState::Prepared, InvocationState::Denied)
+                | (InvocationState::Authorized, InvocationState::Started)
+                | (InvocationState::Authorized, InvocationState::Denied)
+                | (InvocationState::Started, InvocationState::Receipt)
+                | (InvocationState::Started, InvocationState::Completed)
+                | (InvocationState::Started, InvocationState::Failed)
+                | (InvocationState::Started, InvocationState::Uncertain)
+                | (InvocationState::Receipt, InvocationState::Completed)
+                | (InvocationState::Receipt, InvocationState::Failed)
+        );
         if !valid {
             return Err(LedgerError::InvalidTransition);
         }

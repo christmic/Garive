@@ -116,6 +116,11 @@ The request/effect digest is committed in `Prepared` before dispatch. A
 `Uncertain`; absence of a result never proves the external operation did not
 happen.
 
+Tool authorization is an optional transition between `Prepared` and
+`Started`. A trustworthy `effect.receipt` proves that the effect returned and
+may be followed by `effect.completed`; it is recovery-terminal for uncertainty
+queries but does not replace the explicit completion fact.
+
 ## Append transaction
 
 Runtime calls:
@@ -172,8 +177,10 @@ Required connection policy:
 - explicit schema migration table;
 - write transactions begin IMMEDIATE to serialize one-writer allocation.
 
-The schema enforces unique domain IDs, `(session_id, position)`, `fact_id`,
-model request ID and tool invocation ID. Payload/digest columns are NOT NULL.
+The schema enforces unique domain IDs, `(session_id, position)` and `fact_id`.
+Partial unique indexes admit exactly one `model.prepared` fact per model request
+ID and one `effect.prepared` fact per tool invocation ID; later lifecycle facts
+reuse those identities. Payload/digest columns are NOT NULL.
 No trigger contains Agent policy; transition validation remains in the Runtime
 adapter and domain contract.
 
