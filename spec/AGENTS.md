@@ -1,72 +1,50 @@
 # spec/AGENTS.md
 
-> **落地规范 + 共享 wire schemas.** Anything that Rust, Kotlin,
-> Go, Swift, and TypeScript all need to agree on lives here.
->
-> This file applies to everything under `spec/`. It overrides
-> the root `AGENTS.md` where the two disagree.
+> Normative contracts that cross a real process, storage, or language
+> boundary. Internal domain types do not belong here by default.
+
+This file applies to everything under `spec/` and refines the root rules.
 
 @AGENTS.md
 @.agents/multi-language.md
 
-## Single Source of Truth
+## Ownership
 
-- **`spec/proto/*.proto`** is the **only** place wire types are
-  defined. Rust and Kotlin (and any future Go / Swift / TS)
-  bindings are generated from these files.
-- Hand-written request / response / message structs that mirror
-  a `.proto` field are forbidden in any tier. If a hand-written
-  type shadows a generated one, delete it.
+- `spec/proto/` owns protobuf wire schemas for boundaries that are actually
+  implemented by more than one component or persisted independently.
+- `spec/fixtures/` owns shared, versioned conformance inputs once an executable
+  conformance harness exists.
+- `spec/design/` may hold concise normative decisions. Exploratory reasoning
+  remains in `docs/`.
+- An internal Rust struct is owned by its Rust module. Do not introduce proto
+  merely to make the repository look language-neutral.
 
-## Schema Discipline
+## Schema discipline
 
-- All new packages go under a versioned namespace
-  (`garive.v1`, `garive.v2`, …). Bumping a major version is a
-  breaking change to the wire — coordinate with `engine/`,
-  `runtime/`, `mobile/`, `desktop/`, `experiments/engine-kt/`.
-- Do not remove a field once shipped. Mark it deprecated and
-  reserve the tag.
-- New `enum` values are additive — never renumber.
+- Use a versioned package such as `garive.v1` for a shipped wire boundary.
+- Once a field/tag has shipped, do not reuse its tag. Reserve removed tags and
+  document compatibility behavior.
+- Generated bindings are outputs; change the schema and generator, not the
+  generated file.
+- State the producer, consumer, compatibility promise, and canonicalization
+  rules beside each contract.
 
-## Codegen Workflow
+## Evidence and conformance
 
-- Rust: `engine/proto/build.rs` calls `prost-build` over
-  `spec/proto/`. Output lands in `OUT_DIR` and is pulled in via
-  `include!` from `engine/proto/src/lib.rs`.
-- Kotlin: Gradle protobuf plugin generates Kotlin bindings into
-  `experiments/engine-kt/` and `mobile/`.
-- Go: `buf generate` with the Go plugin (gateway).
-- Regenerate on every `.proto` change; CI fails if generated
-  files drift from source.
+Conformance level is chosen per boundary:
 
-## Fixtures (`spec/fixtures/`)
+1. wire: each consumer can decode/encode the contract;
+2. canonical: byte identity only when the encoding is specified as canonical;
+3. semantic: implementations produce equivalent normalized outcomes;
+4. capability: unsupported features are declared explicitly.
 
-- JSON / YAML inputs consumed by the cross-language conformance
-  suite (`just conformance`).
-- One fixture per scenario; names are stable across languages.
-- Treat fixtures as part of the contract — changing one is a
-  semantic change, not a refactor.
+`just conformance` is not a gate until it runs a real harness. A schema change
+must run the generator and tests that exist for its current consumers; do not
+claim Rust/Kotlin/Go parity before those consumers exist.
 
-## Cross-language Sync Lock
+## Verification
 
-- `just conformance` is the **only** arbiter of cross-language
-  parity. Both implementations must produce byte-identical
-  canonical JSON for every fixture.
-- An empty `diff -u` output is the gate. Empty diff = sync held.
-- If conformance fails, fix the implementation; do not edit the
-  fixture to make the diff go away.
-
-## Testing
-
-This tier is the **source of truth** for several test layers
-(per `.agents/testing.md`):
-
-| Layer | What lives here |
-|-------|-----------------|
-| Contract | `spec/proto/*.proto` is the schema. Round-trip tests in `engine/proto/tests/`, `engine-kt/proto/src/test/`, `runtime/gateway/*_test.go`. |
-| Cross-language | `spec/fixtures/*.json` drives `just conformance`. Both languages read the same fixtures; empty diff is the gate. |
-| Property / Fuzz | Schema-driven fuzz targets (one per message) in `engine/proto/fuzz/` + `engine-kt/proto/fuzz/`. |
-
-A change to `spec/proto/*.proto` MUST re-run Contract +
-Cross-language. CI fails if generated files drift from
-source.
+- Validate protobuf syntax with the generator/toolchain pinned by the slice.
+- Run round-trip and compatibility tests beside each real consumer.
+- Add property or fuzz testing based on parser risk, not one target per message
+  as a directory convention.

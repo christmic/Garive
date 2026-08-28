@@ -1,8 +1,8 @@
 # engine/AGENTS.md
 
 > **Core Agent implementation tier.** Primary implementation is
-> Rust (Cargo workspace). The Kotlin mirror lives in
-> `experiments/engine-kt/` and tracks this tree semantically.
+> Rust (Cargo workspace). `experiments/engine-kt/` may validate selected
+> semantics after the Rust boundary is executable; it is not a mirror gate.
 >
 > This file applies to everything under `engine/`. It overrides
 > the root `AGENTS.md` where the two disagree.
@@ -12,8 +12,8 @@
 
 ## Crate Layout
 
-- One crate per sub-directory, named with the `garive-` prefix
-  (e.g. `garive-core`, `garive-ledger`, `garive-llm`).
+- Add a crate only for an owned boundary under `core`, `llm`, or `tools`, named
+  with the `garive-` prefix (for example `garive-core`).
 - Each crate's `src/lib.rs` is the entry point. Sub-modules live
   under `src/<module>.rs`.
 - Public API is re-exported from `lib.rs`; deeper paths are not
@@ -21,9 +21,9 @@
 
 ## Dependencies
 
-- Crates within `engine/` depend only on other `engine/` crates,
-  `runtime/replica`, and `spec/proto`-generated bindings. They
-  **must not** depend on `runtime/gateway` (different language)
+- Crates within `engine/` depend only on lower-level `engine/` contracts and
+  wire bindings required by a real external boundary. They **must not** depend
+  on `runtime/replica`, `runtime/gateway`,
   or on crates in `mobile/`, `desktop/`, `experiments/engine-kt/`.
 - Third-party dependencies are added to the root
   `[workspace.dependencies]` table so versions stay aligned.
@@ -72,9 +72,8 @@ For `engine/`, the relevant layers:
 | Unit | `engine/<crate>/tests/` | one test per behaviour; TDD-first per `.agents/ddd.md` |
 | Property | `engine/<crate>/tests/` | `proptest` for aggregate invariants |
 | Integration | `engine/<crate>/tests-integration/` + `tests/integration/` | multi-crate flows |
-| Contract | `engine/proto/tests/` | round-trip every `.proto` message |
-| Cross-language | `bench/conformance` (driven from `just conformance`) | Rust ↔ Kotlin sync lock |
+| Contract | beside the owning boundary | round-trip only shipped wire contracts |
+| Cross-language | executable conformance harness | compare selected semantics when a second implementation exists |
 
-Add a fuzz target in `engine/proto/fuzz/` the moment a new
-message lands in `spec/proto/*.proto`. The contract: every
-wire message has a fuzz target, full stop.
+Add fuzzing where parser risk and evidence justify it; a schema file alone does
+not create a blanket fuzz-target requirement.
