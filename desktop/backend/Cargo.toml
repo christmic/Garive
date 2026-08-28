@@ -1,0 +1,14 @@
+[package]
+name = "garive-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+garive-runtime = { path = "../../runtime/replica" }
+tauri = { version = "2.11.5", features = [] }

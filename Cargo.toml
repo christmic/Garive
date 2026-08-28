@@ -21,6 +21,7 @@ members = [
     "adapters/llm-anthropic",
     "bench",
     "cli",
+    "desktop/backend",
     "engine/config",
     "engine/core",
     "engine/creativity",
@@ -43,7 +44,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-rust-version = "1.75"
+rust-version = "1.77.2"
 
 [workspace.dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
