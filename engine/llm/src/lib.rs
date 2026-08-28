@@ -5,5 +5,7 @@
 mod outcome;
 
 pub use outcome::{
-    Completed, InvokeOutcome, InvokeOutcomeKind, ModelUsage, OverflowEvidence, PartialOutput,
+    InterruptionKind, InvokeOutcome, InvokeOutcomeKind, MediaKind, ModelItem, ModelStopReason,
+    ModelUsage, ReasoningContent, RejectionKind, TokenCount, UnavailableKind, UsageSource,
+    UsageTotal,
 };

@@ -1,94 +1,117 @@
 use std::time::Duration;
 
 use garive_llm::{
-    Completed, InvokeOutcome, InvokeOutcomeKind, ModelUsage, OverflowEvidence, PartialOutput,
+    InterruptionKind, InvokeOutcome, InvokeOutcomeKind, MediaKind, ModelItem, ModelStopReason,
+    ModelUsage, ReasoningContent, RejectionKind, TokenCount, UnavailableKind, UsageSource,
+    UsageTotal,
 };
 
-fn usage() -> ModelUsage {
+fn usage(input: TokenCount, output: TokenCount) -> ModelUsage {
     ModelUsage {
-        input_tokens: 10,
-        output_tokens: 2,
-        cache_read_tokens: 4,
-        cache_write_tokens: 1,
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_tokens: Some(TokenCount::Known(4)),
+        cache_write_tokens: Some(TokenCount::Known(1)),
+        source: UsageSource::ProviderReported,
     }
 }
 
 #[test]
-fn every_variant_has_a_distinct_kind() {
-    let partial = || PartialOutput {
-        text: "prefix".into(),
-        usage: usage(),
+fn usage_distinguishes_known_unknown_and_overflow() {
+    assert_eq!(
+        usage(TokenCount::Known(10), TokenCount::Known(2)).total_tokens(),
+        UsageTotal::Known(12)
+    );
+    assert_eq!(
+        usage(TokenCount::Unknown, TokenCount::Known(2)).total_tokens(),
+        UsageTotal::Unknown
+    );
+    assert_eq!(
+        usage(TokenCount::Known(u64::MAX), TokenCount::Known(1)).total_tokens(),
+        UsageTotal::Overflow
+    );
+}
+
+#[test]
+fn ordered_items_cover_the_portable_model_surface() {
+    let items = vec![
+        ModelItem::Text { text: "one".into() },
+        ModelItem::Reasoning {
+            content: ReasoningContent::OpaqueReference("reasoning-1".into()),
+        },
+        ModelItem::ToolIntent {
+            model_call_id: "call-1".into(),
+            tool_name: "read".into(),
+            arguments_json: r#"{"path":"a"}"#.into(),
+        },
+        ModelItem::ToolObservation {
+            model_call_id: "call-1".into(),
+            result_json: r#"{"text":"b"}"#.into(),
+        },
+        ModelItem::MediaReference {
+            media_kind: MediaKind::Image,
+            reference: "sha256:image".into(),
+        },
+    ];
+
+    let outcome = InvokeOutcome::Completed {
+        items: items.clone(),
+        usage: usage(TokenCount::Known(1), TokenCount::Known(1)),
+        stop_reason: ModelStopReason::EndTurn,
     };
+    let InvokeOutcome::Completed { items: actual, .. } = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(actual, items);
+}
+
+#[test]
+fn fact_envelopes_do_not_encode_recovery_actions() {
+    let usage = usage(TokenCount::Known(1), TokenCount::Unknown);
     let outcomes = [
-        InvokeOutcome::Completed(Completed {
-            text: "done".into(),
-            usage: usage(),
-        }),
-        InvokeOutcome::Overflow(OverflowEvidence {
-            normalized_input_tokens: Some(100),
-            accepted_limit_tokens: Some(90),
-        }),
-        InvokeOutcome::OutputTruncated(partial()),
-        InvokeOutcome::RateBudgetExhausted {
+        InvokeOutcome::Completed {
+            items: vec![],
+            usage,
+            stop_reason: ModelStopReason::EndTurn,
+        },
+        InvokeOutcome::Rejected {
+            kind: RejectionKind::ContextOverflow,
+            sanitized_evidence: "limit".into(),
+        },
+        InvokeOutcome::Interrupted {
+            kind: InterruptionKind::OutputLimit,
+            partial_items: vec![ModelItem::Text {
+                text: "prefix".into(),
+            }],
+            usage,
+        },
+        InvokeOutcome::Unavailable {
+            kind: UnavailableKind::RateLimited,
             retry_after: Some(Duration::from_secs(1)),
         },
-        InvokeOutcome::PartialCancelled(partial()),
-        InvokeOutcome::AuthFailure {
-            reason: "reauthentication required".into(),
-        },
-        InvokeOutcome::ContentViolation {
-            reason: "policy category".into(),
-            violated_field: Some("input".into()),
-        },
-        InvokeOutcome::ModelUnavailable {
-            model_id: "primary".into(),
-        },
-        InvokeOutcome::CircuitBreakerOpen {
-            target: "pool-a".into(),
-        },
-    ];
-    let expected = [
-        InvokeOutcomeKind::Completed,
-        InvokeOutcomeKind::Overflow,
-        InvokeOutcomeKind::OutputTruncated,
-        InvokeOutcomeKind::RateBudgetExhausted,
-        InvokeOutcomeKind::PartialCancelled,
-        InvokeOutcomeKind::AuthFailure,
-        InvokeOutcomeKind::ContentViolation,
-        InvokeOutcomeKind::ModelUnavailable,
-        InvokeOutcomeKind::CircuitBreakerOpen,
     ];
 
-    assert_eq!(outcomes.each_ref().map(InvokeOutcome::kind), expected);
-    assert!(outcomes[0].is_completed());
-    assert!(outcomes[1..].iter().all(|outcome| !outcome.is_completed()));
-}
-
-#[test]
-fn partial_output_is_not_completed() {
-    let outcome = InvokeOutcome::OutputTruncated(PartialOutput {
-        text: "valid prefix".into(),
-        usage: usage(),
-    });
-
-    assert!(!outcome.is_completed());
-    let InvokeOutcome::OutputTruncated(partial) = outcome else {
-        panic!("expected truncated output");
-    };
-    assert_eq!(partial.text, "valid prefix");
-    assert_eq!(partial.usage, usage());
-}
-
-#[test]
-fn usage_total_is_checked_and_does_not_double_count_cache_breakdowns() {
-    assert_eq!(usage().total_tokens(), Some(12));
     assert_eq!(
-        ModelUsage {
-            input_tokens: u64::MAX,
-            output_tokens: 1,
-            ..ModelUsage::default()
-        }
-        .total_tokens(),
-        None
+        outcomes.each_ref().map(InvokeOutcome::kind),
+        [
+            InvokeOutcomeKind::Completed,
+            InvokeOutcomeKind::Rejected,
+            InvokeOutcomeKind::Interrupted,
+            InvokeOutcomeKind::Unavailable,
+        ]
+    );
+    assert!(outcomes[0].is_success());
+    assert!(outcomes[2].is_partial());
+    assert!(outcomes[1..].iter().all(|value| !value.is_success()));
+    assert!(!outcomes[0].is_partial());
+}
+
+#[test]
+fn all_reason_kinds_remain_distinct() {
+    assert_ne!(RejectionKind::Authentication, RejectionKind::ContentPolicy);
+    assert_ne!(InterruptionKind::Cancelled, InterruptionKind::Transport);
+    assert_ne!(
+        UnavailableKind::CircuitOpen,
+        UnavailableKind::ModelUnavailable
     );
 }
