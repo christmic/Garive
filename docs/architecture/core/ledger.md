@@ -295,7 +295,21 @@ distinct lifecycle requirements.
 | Kind | Body | Producer | Notes |
 |------|------|----------|-------|
 | `session.turn_start` | `{turn: {id: uuid, boundary: enum{user_message, resume, fork}, compression: enum{ok, partial, failed}, fork: option<{from_turn: uuid, reason: string}}}` | runtime | Marks the **legal cut point** for compaction and fork. A `turn_start` with `boundary=user_message` starts a new turn; `boundary=resume` continues a Suspended turn; `boundary=fork` branches from another turn (with `fork.from_turn` set). The `compression` field records whether the round paused with a complete summary or a partial one — useful for `Resume`. |
-| `model.usage` | `{tokens_in: u32, tokens_out: u32, cache_read: u32, cache_write: u32, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. |
+| `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
+
+```python
+class Tokens:
+    in:          u32   # input tokens
+    out:         u32   # output tokens
+    cache_read:  u32   # input tokens served from cache
+    cache_write: u32   # input tokens written to cache
+    total:       u32   # in + out (computed or summed)
+```
+
+`model_reported` matters for cost accuracy — providers bill
+on their reported numbers, clients estimate from tokenisers
+that may diverge by a few percent. `state.tokens_used` should
+prefer `model_reported=true` when both sources are available.
 
 #### Load classes (unchanged)
 
