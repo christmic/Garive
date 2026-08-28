@@ -5,28 +5,28 @@
 Garive's runtime is split across four cooperating tiers:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                  Agent Apps (clients)                       │
-│      Swift (macOS) · TypeScript (web) · other surfaces      │
-└─────────────────────────┬───────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                  Agent Apps (clients)                           │
+│      Swift (macOS) · TypeScript (web) · other surfaces          │
+└─────────────────────────┬───────────────────────────────────────┘
                           │
                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Agent Gateway (Go)                         │
-│     Auth · rate limit · load balance · observability        │
-└─────────────────────────┬───────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                  Agent Gateway (Go)                             │
+│     Auth · rate limit · load balance · observability            │
+└─────────────────────────┬───────────────────────────────────────┘
                           │
                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│            Core Agent (Rust · Kotlin mirror)                │
-│           loop · tools · safety · memory · knowledge        │
-└─────────────────────────┬───────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│            Core Agent (Rust · Kotlin mirror)                    │
+│           loop · tools · safety · memory · knowledge            │
+└─────────────────────────┬───────────────────────────────────────┘
                           │
                           ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Multi-channel Surfaces                     │
-│              CLI · IDE · chat · IM · voice (TBD)            │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                  Multi-channel Surfaces                         │
+│              CLI · IDE · chat · IM · voice (TBD)                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Core Agent — Cross-language Isomorphic Design
@@ -35,13 +35,51 @@ The Core Agent ships in **two source-of-truth mirrors**:
 
 - **Rust** — primary, ship-to-production implementation.
   Performance-sensitive paths live here.
-- **Kotlin** — synchronized mirror. Same wire protocol, same
-  semantics, shareable trait / test surface. Used by JVM-side
-  services and Android-adjacent surfaces.
+- **Kotlin** — synchronized mirror in `experiments/kotlin/`. Same
+  wire protocol, same semantics, shareable trait / test surface.
+  Used by JVM-side services and Android-adjacent surfaces.
 
 Both languages track each other; a protocol-level change updates
 both in the same change set, verified by a shared conformance
 suite.
+
+## Engine Sub-directories
+
+The Rust workspace (`engine/`) holds the Core Agent crates. Each
+sub-directory lands when its slice is scoped.
+
+| Path | Role |
+|------|------|
+| `core/` | Agent loop, runtime primitives, contracts. |
+| `ledger/` | Durable, append-only event log (decisions, actions, outcomes). |
+| `1lm/` | Language-model abstraction (provider-agnostic). |
+| `tools/` | Tool registry and execution surface. |
+| `memory/` | Short- and long-term memory layers. |
+| `knowledge/` | Knowledge store and retrieval. |
+| `skill/` | Skill packaging, loading, execution. |
+| `multiagent/` | Coordination primitives for multi-agent runs. |
+| `scheduler/` | Task and turn scheduling. |
+| `creativity/` | Value discovery, ideation, exploration. |
+| `eval/` | Evaluation harness for agent behaviour. |
+| `observability/` | Tracing, metrics, structured logs. |
+| `config/` | Configuration schema and loaders. |
+| `proto/` | Generated protobuf wire types (single source: `spec/proto/`). |
+
+Adding a new engine crate = create the sub-dir + its `Cargo.toml`
++ register it in the root workspace `members`.
+
+## Runtime Tier
+
+The `runtime/` tier hosts the agent core as a service.
+
+| Path | Language | Role |
+|------|----------|------|
+| `replica/` | Rust | The replica — the service container that runs an Agent process. |
+| `gateway/` | Go | High-throughput gateway (auth, rate limit, load balance, observability, routing). Independent `go.mod`. |
+
+The replica embeds the Rust engine crates and exposes an interface
+the gateway talks to. The gateway is **not** part of the Rust
+workspace.
 
 ## Research Fronts
 
@@ -72,14 +110,8 @@ Rules of thumb:
   binary or library and is part of the canonical Rust toolchain.
 - **Independent builds** (mobile, experiments/kotlin, gateway,
   desktop frontend) live in their own package-manager trees
-  (Gradle, go.mod, pnpm) and integrate with the main workspace via
-  generated artifacts or inter-process calls.
+  (Gradle, go.mod, pnpm) and integrate via generated artifacts or
+  inter-process calls.
 - **`spec/proto/`** is the single source of truth for wire schemas.
   Generated Rust and Kotlin bindings ship into the respective
   workspaces; schemas do not drift.
-
-## Sub-docs
-
-Per-feature / per-subsystem designs accumulate under
-`docs/architecture/` once specific slices are scoped. Update this
-index as sub-docs land.
