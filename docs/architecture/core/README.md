@@ -1,67 +1,88 @@
-# docs/architecture/core/
+# Core Agent design index
 
-> **Core Agent design.** Documents in this directory describe
-> the Core Agent — the engine that drives a user message
-> through to an answer. The Core lives in `engine/core/` (Rust
-> primary) and `engine-kt/core/` (Kotlin mirror); both follow
-> the same design.
+> Working documents for Garive's bounded Agent execution and the Runtime
+> services immediately around it. Read the system ownership rules first; these
+> documents refine mechanisms without changing those owners.
 
-## What's Here
+## Audience
 
-| Doc | What it covers | Status |
-|-----|----------------|--------|
-| `loop.md` | Two-layer driver (`agent_loop` + `agent_turn`) and the **derive → invoke → judge → run** iteration. The turn state. Derive as incremental + stateful. Three-pass `assemble` (tier / evict / format). Per-tool policy profiles. Summary entry schema. Boundary invariants. Three-mechanism recap. | **draft (possible mechanism)** — shape settled as a candidate; specifics (thresholds, eviction triggers) are not committed |
-| `ledger.md` | Append-only round log. Per-turn segments. Entry kinds catalog (user.message, assistant.message, intent, tool_result, verdict, effects, summary.v1, rewrite_directive, approval_request, ...). SQLite persistence. API surface. Multi-turn segments. | **draft (possible mechanism)** — kinds catalog + schema are candidates |
-| `governance.md` | *(forthcoming)* Policy for `governance.judge(intent) → verdict`. Allow / deny / rewrite / AskUser decision tree. Where policy lives, how it gets updated. |
-| `scheduler.md` | *(forthcoming)* Turn scheduling across a single process; interaction with multi-agent runs. |
-| `multiagent.md` | *(forthcoming)* Multi-agent coordination, sessions, fan-out / fan-in. |
-| `governance.md` | *(forthcoming)* Policy for `governance.judge(intent) → verdict`. Allow / deny / rewrite / AskUser decision tree. Where policy lives, how it gets updated. |
-| `scheduler.md` | *(forthcoming)* Turn scheduling across a single process; interaction with multi-agent runs. |
-| `multiagent.md` | *(forthcoming)* Multi-agent coordination, sessions, fan-out / fan-in. |
+The project owner and engineers discussing the first Agent/Runtime vertical
+slice.
 
-## Layering
+## Why
 
-`core/` is one layer of `docs/architecture/`. Higher layers
-(when they exist) consume `core/` as input. Lower layers (when
-they exist) elaborate `core/` into specific surfaces.
+The documents in this directory were developed through design discussion and
+remain the active workspace. They contain useful detail, but not every detail
+has the same maturity. This index distinguishes settled boundaries from
+provisional mechanisms so a rough idea is not mistaken for a contract.
 
-```
-architecture/
-├── system-overview.md     high-level system architecture (forthcoming)
-├── core/                  Core Agent — this directory
-│   ├── loop.md            agent_loop / agent_turn / iteration
-│   ├── ledger.md          append-only round log + entry kinds
-│   └── ...
-├── infra/                 runtime, gateway, replica (forthcoming)
-├── client/                 mobile, desktop, macos-native (forthcoming)
-└── cross-cutting/          multi-language, conformance, etc. (forthcoming)
-```
+## Reading order
 
-`core/` documents are **deliberative**. When a slice here
-settles (loop is the closest), the relevant excerpt moves to
-`spec/design/<slice>.md` and `core/<file>.md` is updated with a
-"Status: superseded by …" pointer.
+| Order | Document | Scope | Status |
+|---:|---|---|---|
+| 1 | [`../system.md`](../system.md) | Product ownership and dependency direction. | accepted |
+| 2 | [`loop.md`](loop.md) | One bounded Agent execution; derive, assemble, invoke, prepare, and return. | draft |
+| 3 | [`provider-adapter.md`](provider-adapter.md) | Provider-neutral invocation boundary and provider-specific transport recovery. | draft |
+| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | draft |
+| 5 | [`ledger.md`](ledger.md) | Runtime-owned durable facts, projections, audit, and recovery. | draft |
+| 6 | [`compression.md`](compression.md) | Context-pressure estimation and compression policy. | research |
+| 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | research |
+| 8 | [`assemble-testing.md`](assemble-testing.md) | Provider assembly contract tests. | research |
 
-## Status
+## Settled boundaries
 
-`loop.md` and `ledger.md` are both **draft (possible
-mechanism)** — shape is settled as a candidate; specifics
-(payload encodings, schema indexes, threshold numbers, eviction
-triggers) land with the slice. `governance.md`,
-`scheduler.md`, and `multiagent.md` are placeholders — when
-they land, they get the same `## Meta` block, the same
-Context / Options / Decision / Consequences / Open
-Questions / Known Limitations skeleton, and the same
-cross-link discipline.
+- Agent executes one immutable `AgentTurnRequest` with frozen
+  `AgentExecutionPorts` and returns `AgentOutcome`.
+- Runtime owns product Session lifecycle, durable turns, scheduling, storage,
+  approvals, concrete execution, and restart recovery.
+- Provider adapters own official wire translation and transport retries; Core
+  sees provider-neutral outcomes.
+- External effects are never blindly replayed after an uncertain crash window.
+- Live UI events and durable facts are separate delivery contracts.
+- Proto describes admitted wire/persistence boundaries, not every internal
+  domain value.
 
-## See also
+## Provisional mechanisms
 
-- `AGENTS.md` — repo-wide rules (the constitution).
-- `docs/README.md` — doc hierarchy (docs → spec → constitution → code).
-- `.agents/ddd.md` — domain-driven design pipeline.
+The following remain hypotheses until an executable slice produces evidence:
+
+- exact entry-kind catalogs and SQLite schema;
+- compression thresholds, EWMA coefficients, and token formulas;
+- byte-equality requirements outside canonical wire fixtures;
+- cross-language implementation parity;
+- performance and retention numeric gates;
+- provider-specific error mappings and payload legality tables.
+
+Keep these details in the current documents, mark unresolved choices, and
+promote only the selected subset to `spec/` before implementation.
+
+## Known cross-document rules
+
+| Topic | Canonical owner |
+|---|---|
+| Product/module ownership | [`../system.md`](../system.md) |
+| One-execution control flow | [`loop.md`](loop.md) |
+| Provider outcome classification | [`provider-adapter.md`](provider-adapter.md) |
+| Tool effect lifecycle | [`effect-layer.md`](effect-layer.md) |
+| Durable records and projections | [`ledger.md`](ledger.md) |
+| Compression policy | [`compression.md`](compression.md) |
+| Test categories | [`.agents/testing.md`](../../../.agents/testing.md) |
+
+When two documents disagree, fix the non-owner document to reference the
+canonical owner rather than defining the fact twice.
+
+## Promotion to spec
+
+A mechanism is ready for `spec/` when it has:
+
+1. one owner and dependency direction;
+2. explicit inputs, outputs, invariants, and failure terminals;
+3. no unresolved crash or authority boundary;
+4. acceptance examples that do not depend on an implementation;
+5. a runnable verification plan.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
-- Status: drafting — one design landed (`loop.md`); siblings pending.
+- Last reviewed: 2026-08-29
+- Status: accepted
