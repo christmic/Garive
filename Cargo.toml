@@ -17,6 +17,7 @@ resolver = "2"
 #   runtime/server-kt          — Kotlin Agent server (independent Gradle)
 #   spec/proto                — schema source, not a member
 members = [
+    "adapters/llm-openai",
     "bench",
     "cli",
     "engine/config",
