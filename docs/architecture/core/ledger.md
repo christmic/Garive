@@ -163,7 +163,8 @@ reference count.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `hash` | TEXT PRIMARY KEY | `sha256:<hex>` — the content hash. The row's *identity*; also the on-disk filename. |
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-assigned rowid. Internal handle. |
+| `hash` | TEXT NOT NULL UNIQUE | `sha256:<hex>` — the content hash. The row's *business identity*; also the on-disk filename. |
 | `size` | INTEGER | Bytes on disk. |
 | `mime` | TEXT | Best-guess MIME type. |
 | `wall_ts` | INTEGER NOT NULL | Wall-clock of when the blob was registered. Diagnostic; used by archive sweeps. |
@@ -254,7 +255,8 @@ authoritative `seq` of the original write.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `client_generation` | TEXT PRIMARY KEY | Idempotency token supplied by the client (UUID, monotonic counter, or whatever the client uses). Same token across retries = same write. |
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-assigned rowid. Internal handle. |
+| `client_generation` | TEXT NOT NULL UNIQUE | Idempotency token supplied by the client (UUID, monotonic counter, or whatever the client uses). Same token across retries = same write. |
 | `body_hash` | TEXT NOT NULL | The body the original write carried. Lets a retry verify intent ("same body? then it's a true retry; different body? that's a new write under a reused token — surface as a conflict"). |
 | `seq` | INTEGER NOT NULL | The authoritative `seq` returned to the client on the first write. This is what a duplicate retry gets back. |
 | `wall_ts` | INTEGER NOT NULL | Wall-clock of the first write. Diagnostic only. |
@@ -307,7 +309,8 @@ allowed) but should not be the only source of truth.
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `key` | TEXT PRIMARY KEY | A documented tag name (see below). |
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Auto-assigned rowid. Internal handle. |
+| `key` | TEXT NOT NULL UNIQUE | A documented tag name (see below). |
 | `value` | TEXT NOT NULL | The tag value. Most are strings or JSON-encoded objects. |
 | `wall_ts` | INTEGER NOT NULL | When the tag was last set. |
 
@@ -864,6 +867,41 @@ up?".
    handles this; the open question is whether the surface
    cache (`loop.md`) should be shared with the attach tool
    or rebuilt independently.
+
+## Summary — 1 main + 3 aux + 1 ops
+
+The schema lands at **5 tables** with a deliberate split:
+
+| | Table | PK | Business key | Role |
+|---|---|---|---|---|
+| **Main** | `entry` | `seq` (monotonic, loop-controlled) | `seq` itself | The ledger events. One row per `entry.append`. **All metadata is inline on the entry** — fractal structure (`ext` BLOB), source (`provenance`), pairing (`pair_ref`), framing (`pinned`, `surface_visible`), window timing (`wall_ts`), version (`schema_var`), span (`covers_*`), history (`superseded_by`). |
+| **Aux 1** | `blob` | `id` AUTOINCREMENT | `hash` (sha256, UNIQUE) | Content-addressed large bodies. |
+| **Aux 2** | `dedup` | `id` AUTOINCREMENT | `client_generation` (UNIQUE) | Idempotency table for retries. |
+| **Aux 3** | `ledger_meta` | `id` AUTOINCREMENT | `key` (UNIQUE, documented) | Session-level KV — schema_version, session_id/mode/agent, timestamps, lineage, watermarks. |
+| **Ops** | `ops_log` | `id` AUTOINCREMENT | — | Operations history (GC, vacuum, sweep, migration). |
+
+**Pattern**: every **aux / ops** table has
+- `id INTEGER PRIMARY KEY AUTOINCREMENT` — internal handle, never user-facing.
+- A **business key** with `UNIQUE` — the value the rest of the schema looks up by.
+- The main `entry` table is the only one whose PK is not auto — `seq` is loop-controlled
+  so that `derive` can reason about ranges (`seq > ?`, `covers_start..covers_end`)
+  without the auto-increment semantics getting in the way.
+
+**Aux table operations:**
+
+| Operation | `id` | business key |
+|-----------|------|--------------|
+| Insert | auto-assigned | must be unique (UNIQUE enforces) |
+| Lookup | rare (internal joins) | common (`SELECT … WHERE hash = ?`) |
+| Update | forbidden (append-only) | forbidden (append-only) |
+| Delete | forbidden; GC is the exception | forbidden; GC deletes dedup rows by `client_generation` |
+
+The `id` column exists for **physical storage** (cluster key
+in SQLite B-tree) and **internal joins**; the business key is
+the API. Future code never says `WHERE id = 42` — it says
+`WHERE hash = 'sha256:abc…'` or `WHERE client_generation = 'uuid-…'`.
+
+---
 
 ## See also
 
