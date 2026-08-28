@@ -287,12 +287,60 @@ history. The LLM is given only this surface. This guarantees:
 
 ### Derive in Detail (common path)
 
+> **One-liner.** `derive` is a **pure function** —
+> `(current_surface, new_entries, masking_timeline,
+> projection_args) → derived_surface`. No side effects, no
+> ledger writes, no I/O. The **caller** owns the cache and
+> applies the returned `derived_surface`. `assemble` is
+> **dialect serialisation** — it turns `derived_surface`
+> into the exact bytes the provider will see.
+
+This split is **load-bearing** for testability, replay, and
+boundary hygiene. A pure `derive` is trivial to fuzz
+(input space, output check) and to replay against historical
+ledger snapshots. A dialect-aware `assemble` is the
+**only** place provider differences live. Anything that
+doesn't fit cleanly into one of these two responsibilities is
+in the wrong layer.
+
 `ledger.derive(kinds, budget)` is the projection the loop
 calls every iteration. **It is not a full-ledger scan.** It
 is an **incremental update over a cached surface**: when the
 ledger hasn't been compressed, derive appends the new entries
 to the cache and returns; when a `rewrite_directive` lands, the
 rest of `derive`'s responsibilities kick in.
+
+The **purity contract** is what makes the change-locality
+matrix work. Specifically:
+
+- `derive` **does not mutate** anything. The "cache" is the
+  caller's pre-existing state; `derive` reads it, transforms
+  it, returns a new surface. The caller then atomically
+  swaps the cache reference.
+- `derive` **does not write** to the ledger. The ledger is
+  the source of truth; `derive` is a *read* of the ledger
+  (through the cache). Writes are `summarize`,
+  `governance.judge`, `executor.run`, the loop itself
+  (appending `model.usage` and the per-round `ops_log`
+  receipt).
+- `derive` **does not call out** to the LLM, the executor,
+  or any other I/O. The whole pipeline is a function of
+  `current_surface` + the masking timeline + projection args.
+
+```
+def derive(current_surface, new_entries, masking_timeline,
+          projection_args) -> DerivedSurface:
+    """Pure function. No side effects. No I/O."""
+    ...
+```
+
+This shape is why the **change-locality matrix** (below)
+holds: every entry in the matrix lands in exactly one column
+— `derive` *or* `assemble` — because every legitimate change
+is either a content decision (derive) or a serialisation
+decision (assemble). When a change spans both, it is **two
+changes** (a kind+schema commit + an assemble dispatch
+commit), not one.
 
 `derive` is the **common path** — every consumer
 (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`, `GOVERNANCE_INPUT`,
