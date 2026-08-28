@@ -2,9 +2,9 @@
 
 ## Status
 
-Kotlin is admitted as a supported semantic implementation for the portable C0
-execution-control and C1 model-outcome contracts. Other Engine capabilities
-remain unsupported in Kotlin until admitted by an amended matrix.
+Kotlin is admitted as a supported server implementation for portable C0-C3.
+Other Engine capabilities remain unsupported until admitted by an amended
+matrix.
 
 Rust remains the production-first implementation. Neither language defines
 shared behavior alone: accepted specs plus shared fixtures define it.
@@ -21,8 +21,9 @@ domain models.
 |---|---|---|---|
 | C0 execution control | supported | supported | semantic fixtures + native unit tests |
 | C1 usage/model outcome | supported | supported | semantic fixtures + native unit tests |
-| C2 context derive | planned | planned with C2 | semantic fixtures; canonical only for declared cache/digest inputs |
-| C3 model-only turn | planned | planned with C3 | capability scenarios |
+| C1b model request/stream | supported | supported | semantic fixtures + stream invariant tests |
+| C2 context derive | supported | supported | semantic fixtures + property tests |
+| C3 model-only turn | supported | supported | capability scenarios |
 | C4-C7 | Rust planned | unsupported | no parity claim until explicitly admitted |
 
 `unsupported` is a valid explicit capability result. It must not silently fall
@@ -99,7 +100,7 @@ items are preserved in order. Cache breakdowns are never double-counted.
 - Implementations are authored from specs and fixtures, not translated line by
   line from each other.
 - Protobuf is used only when the value crosses an admitted wire/persistence
-  boundary. C0/C1 semantic fixtures do not require generated domain types.
+  boundary. C0-C3 semantic fixtures do not require generated domain types.
 - Both implementations validate inputs and make invalid states unrepresentable
   where practical.
 
@@ -112,11 +113,10 @@ items are preserved in order. Cache breakdowns are never double-counted.
 
 ## Conformance commands
 
-The root gate is `just conformance`. Once C0/C1 land it must execute, not print
-a placeholder:
+The root gate is `just conformance`:
 
 1. Rust native tests including all shared fixtures;
-2. Kotlin `:core:test` and `:llm:test` including the same fixture files;
+2. Kotlin `:agent-core:test` and `:llm-contract:test` including the same fixture files;
 3. a fixture coverage check proving both runners consumed every declared case.
 
 The gate reports Rust and Kotlin results separately. Success requires both;
@@ -150,6 +150,6 @@ The following do not prove parity:
 
 ## Acceptance
 
-C0/C1 are jointly supported only when native Rust and Kotlin tests pass, both
+C0-C3 are jointly supported only when native Rust and Kotlin tests pass, both
 consume the same complete fixture set, `just conformance` invokes both, and the
 support matrix matches executable reality.

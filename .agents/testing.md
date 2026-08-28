@@ -43,14 +43,14 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 just architecture
 ```
 
-The Kotlin C0/C1 implementation and proto module are verified separately:
+The Kotlin C0-C3 implementation and proto module are verified separately:
 
 ```text
-cd experiments/engine-kt
-./gradlew :core:test :llm:test :proto:test
+cd runtime/server-kt
+./gradlew :agent-core:test :llm-contract:test :proto:test
 ```
 
-`just conformance` is the joint C0/C1 gate; full Gradle build verifies all
+`just conformance` is the joint C0-C3 gate; full Gradle build verifies all
 currently admitted Kotlin modules.
 
 ## Unit and property rules

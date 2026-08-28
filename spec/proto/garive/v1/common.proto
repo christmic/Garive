@@ -1,6 +1,6 @@
 // Garive wire schema — single source of truth.
 //
-// Current consumer: experiments/engine-kt/proto via the Gradle protobuf
+// Current consumer: runtime/server-kt/proto via the Gradle protobuf
 // plugin. Rust and mobile consumers land only with their implementation slice.
 //
 // DO NOT hand-edit generated code in either language. To change a

@@ -5,8 +5,8 @@
 
 ## Current position
 
-Kotlin is a supported semantic implementation for admitted portable slices C0
-and C1. Those slices evolve jointly with Rust through accepted specs and shared
+Kotlin is a supported semantic implementation for admitted portable slices
+C0-C3. Those slices evolve jointly with Rust through accepted specs and shared
 fixtures. This is not a promise that every Rust/Runtime module has a Kotlin
 counterpart.
 
@@ -57,8 +57,8 @@ language representation is not itself a contract.
 
 ## Kotlin implementation
 
-The Gradle tree contains supported `:core` (C0) and `:llm` (C1) modules plus
-`:proto`. The exact support matrix lives in
+The Gradle tree contains supported `:agent-core` (C0-C3) and `:llm-contract`
+(C1/C1b) modules plus `:proto`. The exact support matrix lives in
 `spec/design/cross-language-agent-contract.md`.
 
 For every admitted joint slice:
@@ -102,5 +102,5 @@ silently diverging.
 - `docs/architecture/system.md` — technology admission and ownership.
 - `.agents/ddd.md` — domain/wire separation.
 - `.agents/testing.md` — conformance cadence and evidence maturity.
-- `experiments/engine-kt/AGENTS.md` — Kotlin-local rules.
+- `runtime/server-kt/AGENTS.md` — Kotlin server rules.
 - `spec/design/cross-language-agent-contract.md` — support matrix and fixtures.

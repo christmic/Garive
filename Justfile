@@ -34,10 +34,10 @@ build: codegen architecture
 test:
     cargo test --workspace
 
-# C0/C1 semantic conformance: both implementations consume the same fixtures.
+# C0-C3 semantic/capability conformance over the same fixtures.
 conformance: architecture
     cargo test -p garive-core -p garive-llm
-    cd experiments/engine-kt && ./gradlew --no-daemon --console=plain :core:test :llm:test
+    cd runtime/server-kt && ./gradlew --no-daemon --console=plain :agent-core:test :llm-contract:test
 
 # Architecture: an Engine crate may depend on other Engine crates or external
 # libraries, never on a local Runtime/App package.

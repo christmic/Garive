@@ -72,7 +72,7 @@ An empty diff proves only the dimension being compared.
 ## What not to do
 
 - Do not add placeholder modules for the Rust directory list.
-- Do not merge an admitted C0/C1 semantic change with only one language updated.
+- Do not merge an admitted C0-C3 semantic change with only one language updated.
 - Do not use generated proto values as the entire internal domain model.
 - Do not claim production parity from schema generation alone.
 - Do not substitute an embedded database for PostgreSQL integration evidence.

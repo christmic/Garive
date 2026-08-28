@@ -14,11 +14,10 @@ before implementation slices land.
   needs them.
 - `docs/architecture/`: active personal design notes and the current system
   map. Start at [`docs/architecture/README.md`](docs/architecture/README.md).
-- `experiments/engine-kt/`: supported Kotlin C0/C1 semantics plus focused
-  experiments; accepted specs and shared fixtures remain the source of truth.
+- `runtime/server-kt/`: supported Kotlin C0-C3 server implementation and
+  native adapters; accepted specs and shared fixtures remain the source of truth.
 
-The Rust workspace currently implements the portable C0 execution-control and
-C1 model-outcome slices; Kotlin implements the same admitted semantics from
+The Rust workspace and Kotlin server currently implement portable C0-C3 from
 shared fixtures. Other crates and product surfaces remain explicit skeletons.
 Commands in the `Justfile` report unimplemented paths without presenting them
 as successful gates.

@@ -36,7 +36,7 @@ concept.
 
 Choose the minimum level the boundary requires: wire compatibility, canonical
 encoding, semantic equivalence, or explicit capability reporting. `just
-conformance` is the executable semantic gate for admitted C0/C1 behavior: Rust
+conformance` is the executable semantic gate for admitted C0-C3 behavior: Rust
 and Kotlin both consume every case in the shared Agent fixtures.
 
 See [`AGENTS.md`](AGENTS.md) for schema and verification rules.

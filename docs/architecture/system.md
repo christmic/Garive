@@ -100,7 +100,7 @@ boundaries until their first executable slice lands.
 | Path | Responsibility |
 |---|---|
 | `engine/core/` | Bounded Agent kernel. |
-| `engine/llm/` | Provider-neutral model contract and admitted provider adapters. |
+| `engine/llm/` | Provider-neutral model contract; concrete adapters live outside Engine. |
 | `engine/tools/` | Tool definitions, immutable prepared calls, and neutral ports. |
 | `engine/ledger/` | Durable-fact vocabulary and storage ports; Runtime supplies storage adapters. |
 | `engine/memory/`, `engine/knowledge/` | Agent memory/knowledge policy, evidence, and retrieval contracts. |
@@ -114,7 +114,7 @@ boundaries until their first executable slice lands.
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |
-| `experiments/engine-kt/` | Supported C0/C1 semantic implementation; later slices require admission and are not a second source of truth. |
+| `runtime/server-kt/` | Kotlin C0-C3 server implementation plus PostgreSQL/provider adapters. |
 
 Internal source modules should be named for owned responsibilities, not generic
 buckets such as `common`, `manager`, `utils`, or `engine`.
@@ -124,7 +124,7 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Technology | Initial status | Admission evidence |
 |---|---|---|
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
-| Kotlin Agent implementation | C0/C1 supported; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`. |
+| Kotlin Agent implementation | C0-C3 supported; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`. |
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
 | Desktop app | planned | Tauri/TypeScript target; activate against a stable Runtime host workflow. |
 | Mobile app | planned | KMP shared client with Compose/SwiftUI target; activate slice by slice. |

@@ -69,7 +69,7 @@ shared, while SQLite and PostgreSQL each require native integration evidence.
 - add shared fixture readers and wire `just conformance`;
 - remove placeholder parity claims.
 
-Exit: C0/C1 support matrix is executable and green in both languages.
+Exit: the admitted C0-C3 support matrix is executable and green in both languages.
 
 ### F2 — context contract
 

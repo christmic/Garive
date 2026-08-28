@@ -74,7 +74,7 @@ Run inside the worktree, before `git rebase master`:
 - `cargo clippy --workspace --all-targets -- -D warnings` (Rust)
 - `cargo test` (Rust)
 - `just conformance` (when `spec/proto/`, `engine/proto/`,
-  `experiments/engine-kt/`, or `mobile/` is touched)
+  `runtime/server-kt/`, or `mobile/` is touched)
 - Self-review: read `git diff master` once before rebasing. If
   anything looks wrong, fix it before the rebase.
 

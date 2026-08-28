@@ -27,7 +27,7 @@ localised, but the **keys themselves** stay English.
 | Error variants | `PascalCase`; thiserror enums end in `Error` (e.g. `AgentLoopError`). |
 | Feature flags | `kebab-case` (`agent-loop`, `multi-agent`). |
 
-### Kotlin (`experiments/engine-kt/`, `mobile/`)
+### Kotlin (`runtime/server-kt/`, `mobile/`)
 
 | Element | Convention |
 |---------|------------|

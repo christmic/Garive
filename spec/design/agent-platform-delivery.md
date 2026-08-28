@@ -63,8 +63,8 @@ mobile/androidApp/              Compose UI
 mobile/iosApp/                  SwiftUI UI
 ```
 
-The currently supported code under `experiments/engine-kt/` is promoted into
-`runtime/server-kt/`; it is not copied. The Kotlin server remains an independent
+The former `experiments/engine-kt/` code has been promoted into
+`runtime/server-kt/` without a duplicate tree. The Kotlin server remains an independent
 implementation of admitted semantics, not a source mirror of Rust.
 
 ## Dependency direction
