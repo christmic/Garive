@@ -9,20 +9,28 @@ use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 mod migrations;
 mod storage;
 
+/// SQLite-backed durable Ledger adapter with restart-safe append semantics.
 pub struct SqliteLedger {
     connection: Connection,
 }
 
 #[derive(Debug)]
+/// Domain, integrity, migration, or storage failure from [`SqliteLedger`].
 pub enum SqliteLedgerError {
+    /// A submitted operation violated the portable Ledger contract.
     Domain(LedgerError),
+    /// Persisted rows could not reconstruct a valid portable Ledger state.
     CorruptLedger(LedgerError),
+    /// SQLite returned an operational/storage error.
     Storage(rusqlite::Error),
+    /// Database schema is newer than this adapter understands.
     UnsupportedSchema(u32),
+    /// A persisted value cannot represent its declared domain field.
     InvalidStoredValue(&'static str),
 }
 
 impl SqliteLedger {
+    /// Opens or creates a database and enforces WAL, foreign keys, FULL sync, and migrations.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SqliteLedgerError> {
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
@@ -40,6 +48,10 @@ impl SqliteLedger {
         Ok(Self { connection })
     }
 
+    /// Atomically validates and appends one portable fact batch.
+    ///
+    /// Uses an immediate transaction so version comparison, contiguous position
+    /// allocation, fact insertion, and projection advancement commit together.
     pub fn commit(
         &mut self,
         session_id: SessionId,
@@ -111,6 +123,7 @@ impl SqliteLedger {
         Ok(result)
     }
 
+    /// Reads a verified fixed-prefix fact range in ascending durable position.
     pub fn read_facts(
         &self,
         session_id: &SessionId,
@@ -126,6 +139,7 @@ impl SqliteLedger {
         )?)
     }
 
+    /// Lists model requests still `Started` after reconstructing durable state.
     pub fn list_uncertain_model_requests(
         &self,
         session_id: &SessionId,
@@ -133,6 +147,7 @@ impl SqliteLedger {
         Ok(storage::load_state(&self.connection)?.list_uncertain_model_requests(session_id)?)
     }
 
+    /// Lists effects still `Started` without a receipt or terminal fact.
     pub fn list_uncertain_tool_invocations(
         &self,
         session_id: &SessionId,
@@ -140,6 +155,7 @@ impl SqliteLedger {
         Ok(storage::load_state(&self.connection)?.list_uncertain_tool_invocations(session_id)?)
     }
 
+    /// Returns all verified lifecycle facts for one tool invocation.
     pub fn find_tool_invocation(
         &self,
         invocation_id: &ToolInvocationId,
@@ -147,6 +163,7 @@ impl SqliteLedger {
         Ok(storage::load_state(&self.connection)?.find_tool_invocation(invocation_id))
     }
 
+    /// Returns the durable optimistic-concurrency version of a Session.
     pub fn session_version(
         &self,
         session_id: &SessionId,
