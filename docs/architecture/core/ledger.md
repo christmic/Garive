@@ -631,6 +631,49 @@ on the hot path.
   language-neutral. Rust and Kotlin both use the same schema
   and the same blob hash; the conformance suite asserts
   semantic equivalence.
+
+#### Index plan (candidates)
+
+Indexes that the loop's expected query patterns need.
+**This is a draft plan; the actual index set lands with the
+slice and gets re-validated against `EXPLAIN` output.** Each
+index is named after the query it serves, not after the
+column.
+
+| Index | Definition | Query it serves | Notes |
+|-------|------------|------------------|-------|
+| `entry_kind_seq` | `(kind, seq DESC)` | `latest_kind(kind)`, `rewrite_directive_since(seq)` | The hot path: `derive` filters by kind then walks seq descending to find the latest directive. **DESC matters**: SQLite uses the index in reverse for `seq > ?` queries when sorted DESC. |
+| `entry_turn_seq` | `(turn, seq)` | Per-turn seq range: `since(seq)` within a turn, surface entries within a turn. | The most common scan after `entry_kind_seq`. |
+| `entry_turn_step` | `(turn, step)` | Per-turn step lookup; boundary validation against `session.turn_start.body.turn.id`. | Explicit `step` is the iteration index the loop cares about; seq is monotonic *within* a turn, but step is the user-facing semantic. |
+| `entry_turn_kind` | `(turn, kind, seq)` | Per-turn kind filter (e.g. "all `compaction.rewrite` in turn X"). | Could be folded into `entry_kind_seq` + a per-turn filter; kept separate because the per-turn shape dominates. |
+| `entry_pair_ref` | `(pair_ref)` | Pair-completeness check (`pair_ref IS NOT NULL` rows, dangling `pair_ref`s). | Required for the integrity check that `tool.call ↔ tool.result`, `governance.approval_request ↔ approval_response`, etc. are paired. |
+| `entry_pinned_seq` | `(seq) WHERE pinned = 1` | `pinned_entries()` — fetch all pinned entries for the surface. **Partial index** — only the pinned subset is indexed; cheaper to maintain. | When the pinned set is large, falls back to a full scan with `surface_visible = 1`. |
+| `summary_covers` | `(turn, covers_start, covers_end) WHERE kind LIKE 'summary.%'` | `covers(start, end)` — find the summary that replaced a given seq. **Partial index** because only `compaction.summary` rows have covers. | Hot path during `compaction.rewrite` resolution. |
+| `blob_size` | `(size)` | GC sweeps that scan large blobs first. | Only useful if the archive GC sorts by size to free the most bytes quickly. |
+| `blob_wall_ts` | `(wall_ts)` | Age-based archive sweeps (oldest-first). | Hot path for the periodic ops_log op. |
+| `ops_log_started` | `(started_at)` | "What ops ran recently?" — dashboard / status queries. | Rare path; cheap to drop if not needed. |
+| `ops_log_op_started` | `(op, started_at)` | "What's the history of dedup_gc runs?" — per-op audit. | Same as above. |
+
+**Indexes intentionally NOT created:**
+
+- `(seq)` alone — `seq` is the primary key; the PK index
+  already covers seq-only lookups.
+- `(provenance)` — provenance is diagnostic; full-scan is
+  acceptable for the rare "who produced this?" queries.
+- `(body_hash)` — pointer lookups go through `entry.body_hash`,
+  not the blob table; the join cost is dominated by the entry
+  scan, not the blob lookup.
+
+**Index tuning note:** every index above is a candidate.
+Empirical `EXPLAIN QUERY PLAN` against a realistic workload
+  determines which survive. A rule of thumb: if the query
+  never appears in the loop's hot path, the index is cargo-
+  culted. Add only what `derive` / `assembly` / `summarize`
+  actually call.
+
+The conformance suite (`just conformance`) asserts schema
+**shape** (the index list above) but not the actual `EXPLAIN`
+plans — those are runtime concerns, land with the slice.
 - **Lossless projection.** Surface is derived; ledger never
   forgets. `body_hash` re-resolves any dropped content
   without replaying the loop.
