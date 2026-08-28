@@ -264,6 +264,90 @@ history. The LLM is given only this surface. This guarantees:
   runtime didn't already know.
 - The context window is enforced before the call, not after.
 
+### Derive in Detail
+
+`ledger.derive(kinds, budget)` is the projection the loop
+calls every iteration. It has four steps.
+
+```python
+def derive(kinds, budget):
+    # 1. 找到最近的 rewrite_directive（压缩标记）
+    rw = ledger.latest(kind=rewrite_directive)
+
+    if rw is None:
+        # 从未压缩过 → 从头读
+        start_seq = 0
+    else:
+        # 有压缩 → 从被覆盖区段的下一个 seq 开始
+        start_seq = rw.covers.seq_range.end + 1
+        # rewrite_directive 本身也在 surface 里（让模型
+        # 知道"曾经压缩过、压缩了哪一段"）
+        # 但它指向的、被覆盖的旧条目不在 surface 里
+
+    # 2. 从 start_seq 往后，按 kinds + budget 取所有可见条目
+    raw = ledger.range(
+        start    = start_seq,
+        kinds    = = kinds,                 # 本轮想看的事件类型
+        until    = budget.tokens,         # 软上限（按 token 数截断）
+        deadline = budget.wall_clock_ms,  # 硬上限（按时间截止）
+    )
+
+    # 3. 特殊条目（goal 之类）独立维护，始终加载
+    #    —— 不受 rewrite_directive 影响，不被压缩
+    for k in ALWAYS_LOAD_KINDS:           # 例如 {goal, system, ...}
+        active = ledger.latest_active(kind=k)
+        if active is not None:
+            raw.prepend(active)           # 放在 surface 最前
+
+    # 4. 按 budget 装配 → surface
+    surface = assemble(raw, budget)
+    return surface
+```
+
+#### Summary prefix convention
+
+Summarised entries are recognised by a **kind prefix** on
+the ledger entry's content:
+
+```
+# 完整条目
+reply.items[0]      →  kind = "assistant.message", seq = 42
+
+# 摘要条目（替代 seq 30..41）
+reply.items[1]      →  kind = "summary.v1",  seq = 43,
+   content = "<compressed summary covering seq 30..41>"
+```
+
+Rules:
+
+- A summary's `kind` **always** starts with `summary.`
+  (e.g. `summary.v1`, `summary.short`, `summary.tool-only`).
+- A summary's `covers.seq_range` names the seqs it replaces.
+  Future derives skip those seqs.
+- A summary's `seq` is **after** its covers (so a normal
+  range walk reads it).
+- A `rewrite_directive` references the summary's `seq` and
+  the `covers.seq_range`; future derives find the latest
+  directive and resume from `covers.seq_range.end + 1`.
+
+#### Why this shape
+
+- **Start-point is single-valued.** Only the *latest*
+  `rewrite_directive` matters. Older ones are reached
+  transitively through the chain of summaries they describe.
+- **Always-load kinds are exempt.** `goal`, `system`, and any
+  future "frame" kinds are appended to every surface,
+  regardless of what was summarised. The model always
+  remembers the goal.
+- **Budget cuts from the tail, not the middle.** If the
+  range overflows budget, drop the oldest entries first
+  (after the start-point has been re-established). Never
+  excise a summary — a summary is a load-bearing record.
+- **Reads are bounded by deadline.** A `wall_clock_ms`
+  ceiling stops a runaway derive from blocking the loop.
+  Partial surfaces are acceptable; the next iteration
+  extends them.
+
 ### Governance Is a Port, Not an Actor
 
 Every intent the model emits (tool call, file write, network
