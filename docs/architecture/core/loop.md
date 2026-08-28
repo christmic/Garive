@@ -292,6 +292,243 @@ calls every iteration. **It is not a full-ledger scan.** It
 is an **incremental update over a cached surface**: when the
 ledger hasn't been compressed, derive appends the new entries
 to the cache and returns; when a `rewrite_directive` lands, the
+rest of `derive`'s responsibilities kick in.
+
+`derive` is the **common path** — every consumer
+(`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`, `GOVERNANCE_INPUT`,
+`FORK_BRANCH`, `AUDIT_REPLAY`) shares it. What each consumer
+does *with* the cached surface is **assemble**'s job.
+
+### Assemble (per-projection reshape)
+
+`assemble(surface, projection, last_seen_seq?)` is the stage
+that **shapes the cached surface into the exact bytes the
+consumer sees**. It runs after `derive`, before
+`model.invoke`. Where `derive` is the common path,
+`assemble` is the **per-projection reshape** that turns
+policy and history into the prompt the model actually
+receives.
+
+#### What assemble does (seven responsibilities)
+
+1. **Apply masking instructions** — the row stream
+   `compaction.rewrite`, `privacy.redact`, `session.undo`,
+   `session.redo`, `branch.verdict` all live in the
+   `entry` table. The cached surface carries the entries
+   themselves; `assemble` walks the masking timeline
+   (`compaction.rewrite` + `privacy.redact` + `session.undo`
+   + `branch.*`) and projects a `RedactedPlaceholder` /
+   retired entry / hidden-branch view per the rules in
+   `ledger.md`. The mask is **cumulative** — all
+   instructions apply together.
+2. **`kinds` filter** — `projection.kinds` declares which
+   kinds the projection cares about. `assemble` drops
+   anything else. `PROMPT_FOR_MODEL` uses the full default
+   set; `SUMMARIZE_INPUT` narrows to body kinds;
+   `GOVERNANCE_INPUT` narrows further to the intent + the
+   minimum context.
+3. **`pinned` block injection** — `goal.*` and `system`
+   kinds are pinned, so they appear in **every** projection,
+   at the top of the prompt. `assemble` injects them
+   first, **deduplicating** if the same pinned entry would
+   otherwise appear in both the pinned block and the body
+   stream. The pinned block is its own segment of the
+   prompt (separator, then body stream).
+4. **Position-based budget clipping** — the per-tool tier
+   policy in `loop.md` (3-pass `assemble`) does the
+   *content* shaping; a separate position function clips
+   *where* the budget is spent. Examples: the assistant's
+   most recent reply must be visible; the most recent
+   `tool_result` must be visible; everything before gets
+   budget-allocated in reverse-`seq` order. The
+   position function is per-projection.
+5. **Pinned-block dedup** — the pinned block is
+   `goal.*` + `system`; if any of those also exist in the
+   body stream (e.g. a `system` prompt that was written as
+   a regular entry), `assemble` keeps the pinned copy and
+   **removes the duplicate** from the body stream. The
+   model sees one instance of each pinned kind, not two.
+6. **Projection-specific reshape** — the five projections
+   (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`,
+   `GOVERNANCE_INPUT`, `FORK_BRANCH`, `AUDIT_REPLAY`) each
+   have their own reshape rules. `assemble` dispatches
+   based on the `projection` argument.
+7. **Delta fragment** — *crucial for prompt-cache
+   stability.* If the loop has a `last_seen_seq` for this
+   round (which it does after the first iteration), the
+   body stream is split into a **seen part** (`seq <=
+   last_seen_seq`) and a **new part** (`seq >
+   last_seen_seq`). The seen part is byte-for-byte the
+   same as the previous iteration's prompt tail — that's
+   what gives the LLM provider's prompt cache a stable
+   prefix. The new part is what the loop emits as a
+   *delta*. Detail in "Delta fragment and prompt-cache
+   prefix" below.
+
+The seven responsibilities run in order: masking first
+(it's a global projection), then kinds filter, then pinned
+injection, then dedup, then position clipping, then
+projection-specific reshape, then delta-fragment
+composition.
+
+```python
+def assemble(surface, projection, last_seen_seq=None):
+    # 1. masking (compaction / redaction / undo / branch)
+    masked = apply_masking(surface, projection)
+
+    # 2. kinds filter
+    body = [e for e in masked if e.kind in projection.kinds]
+
+    # 3. pinned injection (with 5. dedup)
+    pinned = collect_pinned(masked)
+    body   = [e for e in body if e not in pinned]   # dedup
+
+    # 4. position-based budget clipping
+    body = position_clip(body, projection.position_fn,
+                        projection.budget)
+
+    # 5+6. projection-specific reshape
+    body = projection.reshape(body)                 # tier / format / etc.
+
+    # 7. delta fragment (prompt-cache anchor)
+    if last_seen_seq is not None:
+        seen, new = split_at(body, last_seen_seq)
+        delta_boundary = last_seen_seq
+    else:
+        seen, new = [], body
+        delta_boundary = None
+
+    return Assembled(
+        pinned = pinned,
+        seen    = seen,
+        new     = new,
+        delta_boundary = delta_boundary,
+    )
+```
+
+`assemble` does **not** read the ledger directly — it works
+off the cached surface that `derive` maintains. The
+separation is deliberate: `derive` is the *common*
+incremental update; `assemble` is the *per-projection*
+reshaping. The masking-instructions walk in `assemble` is
+reading rows **from the surface cache**, not from the
+ledger — same cache, just two passes over it.
+
+#### Delta fragment and prompt-cache prefix
+
+The provider prompt cache hits when the next iteration's
+prefix is **byte-for-byte** the same as the previous
+iteration's. `assemble`'s delta fragment is what makes
+that work.
+
+**The contract:** every iteration's prompt is structured
+as
+
+```
+[pinned block]  [seen part = previous prompt's tail]  [new part = delta since last_seen_seq]
+```
+
+The **seen part is byte-for-byte the previous prompt's
+tail**. The pinned block is byte-for-byte the previous
+prompt's pinned block. The only thing that changes is the
+**new part** at the end. The provider cache hits on
+`pinned + seen`; the model only needs to ingest the
+`new` part.
+
+The **first iteration** of a round has no `last_seen_seq`,
+so the entire body is `new`. The second iteration
+truncates; the third and beyond are **append-only**
+relative to the second. The `seen` part grows; the `new`
+part shrinks. Eventually, **the `new` part is empty** and
+the model only sees the prefix + a "no new entries"
+marker — at that point the provider cache is *fully*
+hitting.
+
+The **delta boundary** (`last_seen_seq`) is recorded in
+the round's `state` (see `loop.md` "The Turn State"). On
+Suspend, the boundary is part of the resumable payload;
+on Resume, the loop continues from the same boundary, and
+the next `assemble` uses the same boundary — the
+provider cache's stable prefix **survives a Suspend /
+Resume cycle** as long as the suspended round is the one
+being resumed.
+
+Three properties of the delta fragment that
+**constitutional** to its design:
+
+- **Append-only within a round.** The `seen` part is
+  always the same bytes; the `new` part is always appended
+  at the end. The pinned block is always the same bytes.
+  This is the same `Derive Stability` Rule 1 applied to
+  the assembled prompt.
+- **Boundary-anchored.** A `compaction.rewrite` resets
+  the cache; the `seen` part is replaced with a
+  `compaction.summary` row that the model has not seen
+  before. The `new` boundary starts at the rewrite point.
+- **Survives Suspend/Resume.** `last_seen_seq` is
+  part of `state`, persisted to the ledger, and re-loaded
+  on Resume. The provider-cache prefix is **stable across
+  pause / resume cycles**.
+
+#### What assemble does **not** do
+
+- It does **not** re-walk the ledger. `derive` does the
+  ledger walk (incrementally); `assemble` works off the
+  cache.
+- It does **not** re-decide tier boundaries. Tier
+  decisions are sticky (see `Derive Stability` Rule 2) and
+  are decided once, when the entry is first projected.
+- It does **not** call `governance.judge`. Governance
+  happens **between** `assemble` and `model.invoke` —
+  the model sees the assembled prompt, emits an intent,
+  and the loop asks `governance.judge(intent)` before
+  calling `executor.run(intent)`.
+- It does **not** call `summarize`. `summarize` is a
+  *write* op (it appends a `compaction.summary` row to the
+  ledger), not a read op. `assemble` only reads.
+
+`assemble` is **read-only over the cache**; all the writes
+happen elsewhere (`summarize` writes summaries;
+`governance.judge` writes verdicts; `executor.run` writes
+`tool_result` and effects; the loop writes the
+`model.usage` rows).
+
+#### Where assemble fits in the loop
+
+```
+# in agent_turn, between derive and model.invoke:
+
+surface = derive(kinds=ALL, budget=BUDGET)
+assembled = assemble(
+    surface,
+    projection=PROMPT_FOR_MODEL,
+    last_seen_seq=state.last_seen_seq,
+)
+state.last_seen_seq = max(state.last_seen_seq or 0, surface.latest_seq)
+
+reply = model.invoke(
+    pinned = assembled.pinned,
+    seen   = assembled.seen,
+    new    = assembled.new,
+)
+# ... judge, run, record, etc.
+```
+
+The **prompt structure** the model sees is **three
+segments** (`pinned`, `seen`, `new`), separated by
+explicit tokens the runtime can recognise. The provider
+sees a stable prefix (`pinned + seen`) and a small
+appended delta (`new`); the cache key matches the prefix
+across iterations.
+
+`assemble` is the last transformation the loop applies
+before the model call. Everything after `assemble` is
+**interaction with the world** (`model.invoke`,
+`governance.judge`, `executor.run`). Everything before
+`assemble` is **interaction with the ledger** (`append`,
+`derive`). `assemble` is the bridge.
+
+### Derive in Detail (continued)
 cache resets to the directive's start-point and is rebuilt
 from there. A round that runs for a month reads **only the
 delta since the last derive**, not the month's accumulated
