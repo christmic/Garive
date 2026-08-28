@@ -1,16 +1,20 @@
 use garive_llm::{
-    InterruptionKind, InvokeOutcome, ModelCapability, ModelInputContent, ModelInputItem,
-    ModelOutputSettings, ModelRequest, ModelRequestId, ModelRole, ModelStopReason, ModelTargetId,
-    TextMode, TokenCount, ToolDescriptor,
+    InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelInputContent,
+    ModelInputItem, ModelObserver, ModelOutputSettings, ModelPort, ModelRequest, ModelRequestId,
+    ModelRole, ModelStopReason, ModelStreamEvent, ModelTargetId, ObserverDecision, TextMode,
+    TokenCount, ToolDescriptor,
 };
 use garive_llm_anthropic::{
     classify_http_error, parse_response, parse_sse, render_http_request, render_request,
-    AnthropicAdapterError, HttpErrorAction,
+    AnthropicAdapterError, AnthropicModelPort, AnthropicTransport, HttpErrorAction,
+    HttpResponseDescriptor, TransportFailure, TransportFuture,
 };
 use serde_json::Value;
 use std::{
+    collections::VecDeque,
     fs,
     path::PathBuf,
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime},
 };
 
@@ -188,6 +192,62 @@ fn retry_after_supports_delta_seconds_and_http_date() {
             retry_after: Some(Duration::from_secs(3))
         }
     );
+}
+
+#[test]
+fn model_port_retries_before_ambiguity_and_returns_one_terminal() {
+    let state = Arc::new(ScriptState {
+        responses: Mutex::new(VecDeque::from([
+            Ok(HttpResponseDescriptor {
+                status: 529,
+                retry_after: Some("0".into()),
+                body: br#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#
+                    .to_vec(),
+            }),
+            Ok(HttpResponseDescriptor {
+                status: 200,
+                retry_after: None,
+                body: fixture("complete.sse"),
+            }),
+        ])),
+        waits: Mutex::new(Vec::new()),
+    });
+    let port = AnthropicModelPort::new(ScriptTransport(Arc::clone(&state)), 2);
+    let mut observer = IgnoreObserver;
+    let outcome =
+        futures::executor::block_on(port.invoke(&request(), &mut observer, &NeverCancel)).unwrap();
+    assert!(matches!(outcome, InvokeOutcome::Completed { .. }));
+    assert_eq!(state.waits.lock().unwrap().as_slice(), &[Duration::ZERO]);
+}
+
+struct ScriptState {
+    responses: Mutex<VecDeque<Result<HttpResponseDescriptor, TransportFailure>>>,
+    waits: Mutex<Vec<Duration>>,
+}
+struct ScriptTransport(Arc<ScriptState>);
+impl AnthropicTransport for ScriptTransport {
+    fn execute<'a>(
+        &'a self,
+        _: garive_llm_anthropic::HttpRequestDescriptor,
+        _: &'a dyn ModelCancellation,
+    ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>> {
+        Box::pin(async move { self.0.responses.lock().unwrap().pop_front().unwrap() })
+    }
+    fn wait<'a>(&'a self, delay: Duration) -> TransportFuture<'a, ()> {
+        Box::pin(async move { self.0.waits.lock().unwrap().push(delay) })
+    }
+}
+struct NeverCancel;
+impl ModelCancellation for NeverCancel {
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+struct IgnoreObserver;
+impl ModelObserver for IgnoreObserver {
+    fn observe(&mut self, _: &ModelStreamEvent) -> ObserverDecision {
+        ObserverDecision::Continue
+    }
 }
 
 fn render_action(action: HttpErrorAction) -> String {

@@ -3,13 +3,16 @@
 #![forbid(unsafe_code)]
 
 use garive_llm::{
-    InterruptionKind, InvokeOutcome, ModelInputContent, ModelInputItem, ModelItem, ModelRequest,
-    ModelRole, ModelStopReason, ModelUsage, ReasoningContent, RejectionKind, TextMode, TokenCount,
+    InterruptionKind, InvokeOutcome, ModelCancellation, ModelFuture, ModelInputContent,
+    ModelInputItem, ModelItem, ModelObserver, ModelPort, ModelPortFailure, ModelRequest, ModelRole,
+    ModelStopReason, ModelUsage, ReasoningContent, RejectionKind, TextMode, TokenCount,
     UnavailableKind, UsageSource,
 };
 use serde_json::{json, Map, Value};
 use std::{
     collections::BTreeMap,
+    future::Future,
+    pin::Pin,
     time::{Duration, SystemTime},
 };
 
@@ -33,6 +36,106 @@ pub struct HttpRequestDescriptor {
     pub path: &'static str,
     pub headers: Vec<(&'static str, &'static str)>,
     pub body: Vec<u8>,
+}
+
+pub struct HttpResponseDescriptor {
+    pub status: u16,
+    pub retry_after: Option<String>,
+    pub body: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransportFailure {
+    Connection,
+    Timeout,
+}
+
+pub type TransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub trait AnthropicTransport: Send + Sync {
+    fn execute<'a>(
+        &'a self,
+        request: HttpRequestDescriptor,
+        cancellation: &'a dyn ModelCancellation,
+    ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>>;
+
+    fn wait<'a>(&'a self, delay: Duration) -> TransportFuture<'a, ()>;
+}
+
+pub struct AnthropicModelPort<T> {
+    transport: T,
+    max_attempts: u32,
+}
+
+impl<T> AnthropicModelPort<T> {
+    pub const fn new(transport: T, max_attempts: u32) -> Self {
+        Self {
+            transport,
+            max_attempts,
+        }
+    }
+}
+
+impl<T: AnthropicTransport> ModelPort for AnthropicModelPort<T> {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _observer: &'a mut dyn ModelObserver,
+        cancellation: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            if self.max_attempts == 0 {
+                return Err(ModelPortFailure::InvalidRequest);
+            }
+            if cancellation.is_cancelled() {
+                return Ok(cancelled_outcome(None));
+            }
+            for attempt in 1..=self.max_attempts {
+                let descriptor = render_http_request(request, true).map_err(port_failure)?;
+                let response = self.transport.execute(descriptor, cancellation).await;
+                if cancellation.is_cancelled() {
+                    return Ok(cancelled_outcome(None));
+                }
+                let response = match response {
+                    Ok(value) => value,
+                    Err(_) if attempt < self.max_attempts => {
+                        self.transport.wait(Duration::ZERO).await;
+                        continue;
+                    }
+                    Err(_) => {
+                        return Ok(InvokeOutcome::Interrupted {
+                            kind: InterruptionKind::Transport,
+                            partial_items: Vec::new(),
+                            usage: unknown_usage(),
+                        })
+                    }
+                };
+                if (200..300).contains(&response.status) {
+                    let outcome = parse_sse(&response.body).map_err(port_failure)?;
+                    return if cancellation.is_cancelled() {
+                        Ok(cancelled_outcome(Some(outcome)))
+                    } else {
+                        Ok(outcome)
+                    };
+                }
+                match classify_http_error(
+                    response.status,
+                    response.retry_after.as_deref(),
+                    &response.body,
+                    attempt == self.max_attempts,
+                    SystemTime::now(),
+                )
+                .map_err(port_failure)?
+                {
+                    HttpErrorAction::Retry { retry_after } => {
+                        self.transport.wait(retry_after.unwrap_or_default()).await
+                    }
+                    HttpErrorAction::Terminal(outcome) => return Ok(outcome),
+                }
+            }
+            Err(ModelPortFailure::AdapterInvariant)
+        })
+    }
 }
 
 pub fn render_http_request(
@@ -541,5 +644,32 @@ fn unknown_usage() -> ModelUsage {
         cache_read_tokens: None,
         cache_write_tokens: None,
         source: UsageSource::ProviderReported,
+    }
+}
+
+fn cancelled_outcome(previous: Option<InvokeOutcome>) -> InvokeOutcome {
+    let (partial_items, usage) = match previous {
+        Some(InvokeOutcome::Completed { items, usage, .. }) => (items, usage),
+        Some(InvokeOutcome::Interrupted {
+            partial_items,
+            usage,
+            ..
+        }) => (partial_items, usage),
+        _ => (Vec::new(), unknown_usage()),
+    };
+    InvokeOutcome::Interrupted {
+        kind: InterruptionKind::Cancelled,
+        partial_items,
+        usage,
+    }
+}
+
+const fn port_failure(error: AnthropicAdapterError) -> ModelPortFailure {
+    match error {
+        AnthropicAdapterError::InvalidRequest => ModelPortFailure::InvalidRequest,
+        AnthropicAdapterError::UnsupportedCapability => ModelPortFailure::UnsupportedCapability,
+        AnthropicAdapterError::InvalidJson | AnthropicAdapterError::Invariant => {
+            ModelPortFailure::AdapterInvariant
+        }
     }
 }

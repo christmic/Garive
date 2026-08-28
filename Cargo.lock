@@ -1014,6 +1014,7 @@ dependencies = [
 name = "garive-llm-anthropic"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "garive-llm",
  "httpdate",
  "serde_json",
