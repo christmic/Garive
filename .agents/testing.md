@@ -55,6 +55,9 @@ currently admitted Kotlin modules.
 
 ## Unit and property rules
 
+- Rust tests live outside `src/` in the owning crate's `tests/` directory.
+  Production modules must not contain `#[cfg(test)]` modules or `#[test]`
+  functions. Other languages use their standard test source sets and naming.
 - Write the test before implementation and observe a real failure.
 - Commit green states; do not preserve uncompilable TDD checkpoints in trunk
   history.

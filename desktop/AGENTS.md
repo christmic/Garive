@@ -168,7 +168,7 @@ project (or `swift package` workspace) that lives inside
 
 Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 
-- **3a. Test first.** A unit test in `backend/src/commands/`
+- **3a. Test first.** A Rust integration test in `backend/tests/`
   (or `macos-native/<X>/Tests/`) referencing the fixture in
   `spec/fixtures/`.
 - **3b. Implement.** Minimal command + handler.
@@ -215,7 +215,7 @@ For `desktop/`:
 |-------|-------|------|
 | Static (Rust) | `desktop/backend/` | `cargo fmt --check`, `cargo clippy -- -D warnings` |
 | Static (TS) | `desktop/frontend/` | ESLint + `tsc --noEmit` |
-| Unit (Rust) | `desktop/backend/src/commands/` (per `#[tauri::command]`) | TDD-first per `.agents/ddd.md` |
+| Unit/contract (Rust) | `desktop/backend/tests/` | Commands through the public library boundary; no test modules in `src/`. |
 | Unit (TS) | `desktop/frontend/src/ipc/`, `state/`, `ui/` | component + state-store tests |
 | Integration (Rust) | `desktop/backend/tests/` | `#[tauri::test]` calling commands end-to-end inside the Tauri runtime |
 | E2E | `tests/e2e/desktop/` (Playwright against the built Tauri webview, or `tauri-driver`) | the app boots, IPC round-trips, native bridge works |
