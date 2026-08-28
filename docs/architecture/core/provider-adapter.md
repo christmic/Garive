@@ -44,7 +44,7 @@ The failure-handling code rests on five standard primitives:
 | **Exponential backoff + jitter** | Retry-after time grows exponentially; jitter decorrelates retries across callers. | All transient HTTP failures (5xx, 429, connection reset). |
 | **Circuit breaker** | After N consecutive failures, stop trying and fail fast; periodically probe to recover. | Provider down for an extended period. Avoids hammering a dead endpoint. |
 | **End-to-end principle** | Higher layers don't re-derive what the lower layer already knows; each layer has a single source of truth. | The loop doesn't re-track the request state — the adapter does. |
-| **Idempotency + retry safety** | A retry of the **same logical request** must produce the **same logical effect** (and not double-charge). | All retries carry `client_generation` (per `ledger.md` "Dedup"); the provider is told "same as before" if it supports idempotency keys. |
+| **Idempotency + retry safety** | A retry retains one stable Runtime `request_id` and identical request digest. | Use a provider idempotency key only when officially supported; otherwise do not assume a started call is safe to replay. |
 | **AIMD** (Additive-Increase / Multiplicative-Decrease) | Concurrency grows slowly; on 429 / rate-limit, drops by half. | Provider rate limits. |
 
 These five are the **toolbox**, not the policy. The
@@ -119,10 +119,10 @@ round, surface to the user").
 
 | Failure | HTTP / provider signal | Action |
 |---------|------------------------|--------|
-| **Output overflow** | `413` | Record `overserved_max` on the error entry; rebuild the surface (`re-derive`); retry the call once. If it 413s again, halt the round and emit `governance.approval_request(question="output overflow")` — a human decides. |
+| **Input/context overflow** | Provider-specific status/body/finish signal mapped by the adapter | Return `Overflow` with verified limit evidence; Core decides whether to derive a smaller request. Do not assume every provider uses HTTP 413. |
 | **max_tokens exceeded (output truncation)** | `truncated: true`, `usage.completion_tokens == max_tokens` | Send a **continue** request with the prior response as the prefix. Max 3 continues; if the third still truncates, **terminate** the round and emit `output.truncated` entry. |
 | **Auth failure** | `401`, `403` | Halt the round. Emit `governance.approval_request(question="auth failed: reauth?")`. Do **not** retry — auth failures don't recover via backoff. |
-| **Content policy violation** | `400 policy_violation` (or provider-specific flag) | Emit `content.violation` entry to the ledger (audit-visible). Re-formulate the intent with a different policy and retry once. If it fails again, halt. |
+| **Content policy violation** | Verified provider-specific signal | Return `ContentViolation`. The adapter does not rewrite prompts or intents; Agent/Runtime policy decides whether another request is allowed. |
 | **Model unavailable** | 5xx exhausted; circuit-breaker open; model down for >30 s | **Failover to backup model**. The loop records the failover in `model.usage` (the failed-model entry is kept alongside the backup's success). The user's session continues with reduced capability. |
 
 The recovery table is **declarative**: each entry has a
@@ -176,16 +176,15 @@ ad-hoc per-call error handling in code.
  └─────────┘
 ```
 
-The state machine is **internal to `model.invoke`**. The
-loop sees exactly three events:
+The transport state machine is **internal to `model.invoke`**. At that layer,
+requests finish in one of three broad classes:
 
 1. **success** — `model.usage` row + `loop.receipt` row
 2. **transient_exhausted** — backoff retries failed; the
    loop sees a single "transient" event (which the recovery
    table handles)
-3. **semantic_failure** — 4xx / 413 / 5xx-exhausted; the
-   loop sees the specific kind, which the recovery table
-   dispatches
+3. **classified_failure** — a verified provider signal is normalized to one
+   of the outcome kinds below; the Runtime policy dispatches it
 
 ## AIMD — concurrency control
 
@@ -207,21 +206,19 @@ the ceiling based on success / rate-limit signals.
 
 ## Idempotency — the safety net
 
-Every `model.invoke` carries a **`client_generation`** token
+Every `model.invoke` carries a stable Runtime **`request_id`**
 (per `ledger.md` "Dedup"). On retry:
 
-- The adapter re-sends the same `client_generation`.
-- If the provider supports idempotency keys (Anthropic,
-  OpenAI), the provider's idempotency layer de-duplicates —
-  the second call returns the original response without
-  re-billing.
-- If the provider does not support idempotency keys
-  (Gemini at the time of writing), the runtime **stores
-  the prior response in `model.usage`** keyed by
-  `client_generation`; the loop's `dedup` table catches
-  duplicates before they reach the provider.
+- The adapter reuses the same `request_id` only for retries proven safe by the
+  provider contract and an identical request digest.
+- When a pinned provider contract explicitly supports an idempotency key, the
+  adapter passes `request_id` through using that contract.
+- Otherwise, Runtime deduplication only prevents a duplicate that has already
+  reached a terminal durable result. A request left in `Started` is uncertain
+  and is not replayed automatically.
 
-Either way, **a retry never double-bills the user** —
+Local deduplication does **not** prove that a provider avoided duplicate work
+or billing. Billing reconciliation remains provider-specific evidence.
 that is the load-bearing contract.
 
 ## Recovery strategy — declarative policy table
@@ -253,8 +250,8 @@ policies:
         budget_per_attempt_ms: 5000
 
   recover:
-    output_overflow:
-      match: {http_status: 413}
+    input_overflow:
+      match: {normalized_outcome: Overflow}
       action:
         - record_overserved_max        # to ledger_meta
         - rebuild_surface             # re-derive, smaller surface
@@ -282,8 +279,7 @@ policies:
       match: {policy_violation: true}
       action:
         - emit_entry(kind=content.violation)
-        - retry_with_revised_intent    # different policy
-        - if_fail: halt_round
+        - halt_round                   # policy may authorize a new request
 
     model_unavailable:
       match: {http_status: 5xx, retries_exhausted: true}
@@ -300,9 +296,9 @@ policies:
         - emit_ops_log(op=provider.cb_open)
 ```
 
-The table is **runtime-readable** (the provider adapter
-loads it from config). Adding a new failure mode is one row,
-not a code change.
+The table is **runtime-readable**. Adding a policy for an existing normalized
+outcome is a configuration change; adding a new outcome kind changes the typed
+boundary and requires code and conformance tests.
 
 ## Cross-references
 
@@ -310,7 +306,7 @@ not a code change.
   is the call-out from derive/assemble to the adapter.
 - `loop.md` "The Turn State" — `phase = AwaitingApproval` for
   governance.approval_request emissions.
-- `ledger.md` "Dedup" — `client_generation` idempotency.
+- `ledger.md` "Dedup" — stable Runtime request identity and digest.
 - `ledger.md` "ledger_meta" — `overserved_max` recorded here.
 - `compression.md` "Layer 3 — Overflow (`overserved_max`)" —
   the recovery action records to the same field the trigger
@@ -328,12 +324,12 @@ does not see retry state.
 | Outcome kind | Trigger | Carries | What the loop does |
 |--------------|---------|---------|---------------------|
 | `Completed(replay)` | HTTP 2xx, response not truncated, no auth/content issue | `text`, `reasoning.*`, `media.*`, `usage` | Normal — write `model.usage` + `loop.receipt` |
-| `Overflow(learn_max)` | HTTP 413 | `request_size`, `overserved_max_candidate` | Record `overserved_max` on `ledger_meta`; **rebuild the surface** (`re-derive`, smaller); retry once. If it 413s again, halt and emit `governance.approval_request("output overflow; abort or split?")`. |
+| `Overflow(learn_max)` | Verified provider-specific context/input-limit signal | `request_size`, optional verified limit evidence | Return the neutral outcome; Runtime records evidence and Core may rebuild a smaller surface. |
 | `OutputTruncated(continuable)` | `truncated == true` AND `usage.completion_tokens == max_tokens` | `prefix_so_far`, `tokens_used` | Send a **continue** request with the prefix as the prior message. Max 3 continues; if the third still truncates, **terminate** the round and emit `output.truncated` entry. |
 | `RateBudgetExhausted` | 429 + AIMD has dropped concurrency to 1 + still rate-limited | `retry_after_ms` (if header) | **Suspend** the round (`state.phase = AwaitingApproval`); emit `governance.approval_request("rate budget exhausted; wait or downgrade model?")`. The user / runtime picks. **Or** failover to a backup model immediately (configurable). |
 | `PartialCancelled(reason, prefix_so_far)` | User / loop / harness cancels **mid-stream** | `prefix_so_far` (bytes already received) | **Partial result goes to the ledger** as a `provider.partial` entry. The round's state is suspended with the partial as the resume baseline. On resume: discard the partial and re-issue from the last clean anchor, **or** continue from the partial (configurable). |
 | `AuthFailure(provider, reason)` | HTTP 401, 403 | `provider`, `reason` | Halt the round. Emit `governance.approval_request("auth failed: reauth?")`. Do **not** retry — auth failures don't recover via backoff. |
-| `ContentViolation(reason)` | HTTP 400, `policy_violation == true` | `reason`, `violated_field` | Emit `content.violation` entry. Re-formulate the intent with a different policy and retry once. If it fails again, halt. |
+| `ContentViolation(reason)` | Verified provider-specific content-policy signal | `reason`, `violated_field` | Return the neutral outcome. Prompt reformulation, retry, or halt is an Agent/Runtime policy decision. |
 | `ModelUnavailable(circuit_open_s, last_5xx)` | 5xx exhausted; CB open > 30 s | `last_model_id`, `circuit_open_s` | **Failover to backup model**. The failed-model row goes to `model.usage` (audit-visible); the backup's success is the round's actual response. |
 | `CircuitBreakerOpen` | CB opened transiently, not exhausted | `provider`, `opened_at` | Failover to backup model **without retrying the original**. Same record pattern as `ModelUnavailable`. |
 
@@ -358,8 +354,8 @@ class InvokeOutcome(Enum):
     CircuitBreakerOpen = auto()  # provider, opened_at
 ```
 
-The loop's `match invoke_outcome:` is **exhaustive** over
-these 8 kinds. Adding a 9th is a `non_exhaustive_match`
+The loop's `match invoke_outcome:` is exhaustive over these **nine** kinds.
+Adding a tenth is a `non_exhaustive_match`
 warning in Rust / `@when` fall-through in Kotlin — the loop
 catches new failure modes without missing a case.
 
@@ -369,8 +365,8 @@ catches new failure modes without missing a case.
   success — the response is 200, the body is valid — but
   `truncated == true`. Treating it as success would silently
   drop the rest of the model's answer.
-- `Overflow` ≠ `RateBudgetExhausted`. 413 is the **provider's
-  hard ceiling** (request too big); 429 is **rate limiting**
+- `Overflow` ≠ `RateBudgetExhausted`. The former is a normalized input/context
+  limit signal; 429 is commonly **rate limiting**
   (too many requests in a window). Different recovery.
 - `ModelUnavailable` ≠ `CircuitBreakerOpen`. The CB can be
   open transiently (single 5xx wave); `ModelUnavailable` is
@@ -424,8 +420,8 @@ average").
 
 ### End-to-end principle
 
-The provider doesn't assume client state; the client doesn't
-assume provider state. **All state lives in the ledger.**
+The provider doesn't assume client state; the client doesn't assume provider
+state. **All resumable product state lives in Runtime durable storage.**
 The `provider.partial` entry is the canonical record of a
 mid-stream cancellation; on resume, the loop reads the
 ledger, not the in-memory state, to decide what to do.
@@ -445,28 +441,30 @@ If the loop decides to continue from the partial:
    ]
    ```
 
-2. The provider continues the model from where it left off.
+2. This is a new request, not a transport-level continuation guarantee. The
+   prior partial is included only when it forms a valid, policy-approved
+   message and the adapter can encode it without inventing provider state.
 3. The new response is appended to `provider.partial`'s `ref`
    chain (or a new `loop.receipt` carries both).
 4. **`overserved_max` is NOT updated from a continue** —
    continue doesn't push the input past the model's ceiling.
    Only `Completed` and `Overflow` update it.
 
-The continue branch is the **only** path that survives a
-mid-stream cancellation; all other failure kinds either
-abort the round or fail over.
+This follow-up branch is one policy option after a mid-stream cancellation;
+the policy may instead halt, ask for approval, or begin a fresh round.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
-- Status: **active** — `model.invoke` design is **closed
-  out** (see Summary below).
+- Last reviewed: 2026-08-29
+- Status: **draft** — boundary and outcome categories are active; exact
+  provider mappings, retry safety, and partial handling require evidence.
 
-## Summary — `model.invoke` design complete
+## Summary — current `model.invoke` shape
 
 This doc covers everything between `derive → assemble` and
-the **provider's wire API**. The design is now closed out:
+the **provider's wire API**. The ownership shape is settled; provider details
+remain open until verified against pinned official sources:
 
 ### Already in this doc (8 layers)
 
@@ -476,7 +474,7 @@ the **provider's wire API**. The design is now closed out:
 2. **Retry vs Recover** — retries are local to `model.invoke`;
    semantic failures bubble up to the loop skeleton as a
    single outcome event.
-3. **InvokeOutcome** — 8 sealed-type outcome kinds
+3. **InvokeOutcome** — 9 sealed-type outcome kinds
    (`Completed`, `Overflow`, `OutputTruncated`,
    `RateBudgetExhausted`, `PartialCancelled`, `AuthFailure`,
    `ContentViolation`, `ModelUnavailable`,
@@ -485,8 +483,8 @@ the **provider's wire API**. The design is now closed out:
    `provider.partial` to the ledger (the bridge between the
    two protocols).
 5. **AIMD + circuit breaker** — per-pool concurrency control.
-6. **Idempotency** — `client_generation` deduplicates retries
-   across provider + ledger.
+6. **Idempotency** — stable `request_id` + digest deduplicate Runtime facts;
+   provider replay still depends on official idempotency support.
 7. **Dead-flow detection** — TTFT / inter-chunk / call-budget
    timers; **suspending recovery** (user leaves) + **liveness
    probe** (provider down).
@@ -500,8 +498,9 @@ the **provider's wire API**. The design is now closed out:
 Provider failure kinds are split into **two distinct
 boundaries**:
 
-- **Transport failures** (5xx / 429 / 413 / truncation /
-  cancel / model-down) live in **`provider-adapter.md`** and
+- **Transport/provider failures** (provider-specific overload or overflow
+  signals, truncation, cancellation, model unavailability) live in
+  **`provider-adapter.md`** and
   are recovered by the **5-strategy declarative policy
   table**. The recovery is **declarative** (YAML) and
   **runtime-readable**.
@@ -527,7 +526,7 @@ boundaries**:
 
 The shape is:
 
-- **Transport** — the streaming caller + the 8 outcome kinds
+- **Transport** — the streaming caller + the 9 outcome kinds
 - **Resilience** — the 5-strategy recovery policy table
 - **Economy** — the per-role dispatch table + AIMD pools
 - **Trace** — `request_id` across provider, ledger, telemetry
