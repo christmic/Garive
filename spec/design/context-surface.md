@@ -156,7 +156,9 @@ For every valid request/candidate set:
 - output totals never exceed limits;
 - every eligible required reference is retained;
 - retained, dropped and filtered reference sets are disjoint;
-- changing candidate input chunking does not change the surface;
+- splitting/combining text content inside the same input item does not change
+  its admission, audit references or byte cost; the preserved item structure
+  itself remains input-owned;
 - re-running with identical values produces an equal result;
 - at fixed limits, no dropped optional candidate can replace a retained older
   candidate without violating the newest-first traversal or a limit.
