@@ -1,10 +1,9 @@
 # Effect Layer — tool execution
 
-> After `model.invoke` returns, the loop hands the model's
-> intents to the effect layer: **governance**, **dispatch**,
-> **execute**. This doc covers everything below
-> `governance.judge` — the `ToolDispatcher` and the tool
-> implementations themselves.
+> After `model.invoke` returns, the Agent prepares model intents and asks
+> Runtime to **authorize**, **dispatch**, and **execute** them. This doc covers
+> the boundary below
+> the authorization port — preparation, dispatch, execution, and recovery.
 >
 > `loop.md` describes the effect-layer outline as one stage of
 > the round; this doc is the **detail**. The boundary between
@@ -16,20 +15,19 @@
 ```
 model.usage.reply.intents
        ↓
-Stage 1 — extract intents
+Stage 1 — validate + prepare immutable calls
        ↓
-Stage 2 — governance.judge  →  verdict
+Stage 2 — Runtime authorization  →  invocation grant
        ↓
 Stage 3 — ToolDispatcher  (batch / concurrency / streaming / timeout)
        ↓
-Stage 4 — tool implementation  →  workspace
+Stage 4 — Runtime execution adapter  →  bounded environment
        ↓
 tool.result / tool.result.rejected → ledger
 ```
 
-The four stages are **a single round's effect chain**;
-each stage writes its own ledger row so the chain is fully
-auditable.
+The four stages form one effect chain. Runtime durably binds prepared input,
+authorization, execution identity, receipt, and model-visible result.
 
 ## Boundary — effect-layer vs provider-adapter
 
@@ -51,40 +49,75 @@ The boundary rule:
 > **If the failure is about the wire, it's provider-adapter's.
 > If the failure is about what the model said, it's effect-layer's.**
 
-## Stage 1 — extract intents
+## Stage 1 — validate and prepare immutable calls
 
-The model's reply carries one or more `intent`s in
-`reply.items`. An intent is a 4-tuple:
+The model's reply carries one or more intents. Agent code validates the tool
+name and schema, then produces an immutable prepared call. The model's
+`call_id` is correlation data, not a recovery or idempotency identity:
 
 ```python
-class Intent:
-    name:     str            # tool name, e.g. "read_file"
-    args:     dict          # tool-specific arguments
-    call_id:  str           # model-side identifier
-    parallel: bool = False  # explicit parallel flag (rare)
+class PreparedToolCall:
+    invocation_id: uuid      # stable Runtime-derived identity
+    model_call_id: str       # untrusted correlation value
+    tool_revision: str       # exact registered definition
+    normalized_args: Value   # validated and immutable
+    input_digest: sha256
+    requirements: ExecutionRequirements
+    replay_class: ReplayClass
 ```
 
-Multiple intents in one reply → **batch dispatch** by the
-ToolDispatcher. The batch policy decides whether to run them
-sequentially or in parallel — see Stage 3.
+Reusing an `invocation_id` with another digest or tool revision is a conflict.
+Invalid model output becomes a model-visible preparation failure; it never
+reaches authorization or an executor.
 
-## Stage 2 — governance.judge
+## Stage 2 — Runtime authorization
 
-Each intent goes through `governance.judge(intent)` →
-verdict (Approve / Deny / ApproveWithRewrite / AskUser). The
-verdict is itself a `governance.verdict` ledger row.
+Each prepared call goes through an injected authorization port. Runtime derives
+actor authority from authenticated product state and returns a grant bound to
+the exact invocation, digest, tool revision, target, and limits.
 
 | Verdict | What the dispatcher does |
 |---------|---------------------------|
-| `Approve` | Dispatch as-is |
+| `Approve` | Commit the grant, then dispatch the exact prepared call. |
 | `Deny(reason)` | Write `tool.result.rejected{reason}`; feed reason back to model next iteration (no termination) |
-| `ApproveWithRewrite(x)` | Dispatch with rewritten args |
+| `ApproveWithRewrite(x)` | Reject the old preparation and create a new prepared call/digest; authorization never mutates an approved call in place. |
 | `AskUser(question)` | Write `approval_request`; round returns `Suspended` (per `loop.md` "Stage ④") |
 
-The verdict is **the only place** that consumes the
-workspace capability declaration. A tool that declares
-`network: false` cannot be coerced into a network call by
-the model — `governance.judge` rejects it on principle.
+Authorization evaluates requested capabilities, but a declaration does not
+enforce isolation. The selected Runtime executor must truthfully enforce the
+filesystem, process, network, and resource limits carried by the grant. If it
+cannot, execution fails closed before the operation starts.
+
+## Durable execution lifecycle
+
+External-effect recovery is part of the execution contract, not a later ledger
+repair. Runtime advances a monotonic program counter:
+
+```text
+Prepared
+  -> Authorized
+  -> Started
+  -> EffectCommitted(receipt)
+  -> ResultRecorded
+```
+
+| Recovery position | Decision |
+|---|---|
+| Before `Started` | Retry with the same invocation after revalidating the frozen grant. |
+| `Started`, no receipt | Retry only when the replay class and executor prove it safe; otherwise `OperatorRequired`. |
+| Receipt exists, result absent | Recover from the receipt; do not execute again. |
+| Result exists | Return the recorded result idempotently. |
+
+Replay classes are explicit:
+
+| Class | Example | Recovery |
+|---|---|---|
+| `ReadOnly` | bounded file read | Same-ID retry after input/target validation. |
+| `Idempotent` | API supporting an idempotency key | Same-ID retry through the verified adapter. |
+| `ReceiptRecoverable` | workspace mutation journal | Recover/finish from committed receipt. |
+| `NeverReplay` | arbitrary command, payment, message send | Uncertain `Started` state requires operator reconciliation. |
+
+The absence of `tool.result` never proves that the effect did not commit.
 
 ## Stage 3 — ToolDispatcher
 
@@ -96,12 +129,12 @@ A single model reply can carry N intents. The dispatcher
 decides whether to run them sequentially or in parallel:
 
 | Default | All intents in a single turn run **sequentially** (deterministic) |
-| **Parallel** | Explicit `intent.parallel: true` flag on the intent |
+| **Parallel** | Model requests parallelism; preparation retains it as an untrusted scheduling hint. |
 | **Mixed** | Read-only tools run in parallel; write tools run sequentially |
 
 The model's claim of "parallel" is **advisory** —
-`governance.judge` may rewrite it to sequential if the
-policy says so.
+Runtime may schedule sequentially regardless of the hint; authorization and
+dependency analysis take precedence.
 
 ### Concurrency policy
 
@@ -115,7 +148,8 @@ on tool.policy_violation: tool.concurrency -= 1    # permanent cut
 clamp(tool.concurrency, 1, tool.max_concurrency)
 ```
 
-The default is per-tool because the failure modes differ:
+The AIMD values are a provisional policy, not an accepted default. Concurrency
+must also respect target and global limits. Failure meanings differ:
 
 - `bash` timeout → reduce concurrency (provider likely busy)
 - `read_file` timeout → unusual (filesystem I/O); reduce less
@@ -151,15 +185,17 @@ Per-tool `timeout_ms` (default 30 s):
 When a tool times out:
 
 - The partial output so far is buffered to `tool.result{status: timeout, output: blob}` — **lossless** for audit
-- The model gets `tool.result.rejected{reason: "timeout"}` to retry
+- The model gets a typed `tool.result{status: timeout}`; rejection is reserved
+  for authorization/preparation denial
 - The runtime's tool.concurrency is **multiplicatively** reduced (AIMD)
 
 ## Stage 4 — tool implementation + workspace
 
-Every tool implements:
+Every Agent-visible tool definition provides preparation metadata. Concrete
+execution is a Runtime adapter selected before the turn:
 
 ```python
-class Tool:
+class ToolDefinition:
     name:           str
     description:    str
     schema:         dict               # JSON Schema for args
@@ -168,8 +204,8 @@ class Tool:
     concurrency:    int                # AIMD-adjusted
     max_concurrency: int                # clamp upper
 
-    async def run(self, args: dict, ws: Workspace) -> ToolResult:
-        ...
+class ExecutionPort:
+    async def execute(call: PreparedToolCall, grant: InvocationGrant) -> ToolReceipt
 ```
 
 `Workspace` carries the bounded environment:
@@ -185,16 +221,14 @@ class Workspace:
 
 ### Workspace is the boundary
 
-Workspace = the boundary between **tool power** and
-**governance policy**. `governance.judge` checks intent
-*against* the workspace capability declaration. A tool
-that declares `network: false` cannot make a network call,
-**full stop** — even if the model tries.
+The Runtime execution adapter is the boundary between **tool power** and
+**authorization policy**. Policy approves requirements; the adapter enforces
+them. Unsupported or unverifiable enforcement fails closed.
 
 | Tool class | `requires` | Workspace behavior |
 |------------|------------|---------------------|
 | `read_file` | `filesystem` | Path is normalised and **rooted at `/workspace/<session>/`**. Path traversal blocked. |
-| `bash` | `filesystem + process` | Args are **arrays** (not shell strings) → no shell injection. Env is an allow-list. Network disabled by default. |
+| `bash` | `filesystem + process` | Structured argv avoids an implicit shell; an explicit shell command remains untrusted input. Env is an allow-list. Network denial must be enforced by the selected executor. |
 | `web_fetch` | `filesystem + network` | URL is allow-listed by host. Output is captured as a blob. |
 | `grep` | `filesystem` | Recursive glob is rooted. |
 
@@ -229,10 +263,9 @@ If `bash` is detected to attempt `network`, `governance.verdict{decision: deny, 
 | Approve (run) | `tool.result{call_id, status, output: blob}` |
 | Effects | `executor.effects{...}` — file changes, subprocess results, etc. |
 
-Each row has **`pair_ref`** linking the judge → the result,
-and the verdict → the result.rejected. An audit query joins
-on `pair_ref` to reconstruct the **full effect chain** for a
-given turn.
+Every fact carries the stable `invocation_id`; authorization additionally binds
+the prepared input digest and tool/target revisions. Audit reconstructs the
+chain by that identity, not by a model-provided `call_id` or ambiguous pair.
 
 ## Tool result lifecycle
 
@@ -241,13 +274,10 @@ intake → judge → run → result
                     ↓
    ┌──────────────┬──────────────┐
    ↓              ↓              ↓
-ok result    rejected      exception
+ok result      rejected       failed/timeout
    ↓              ↓              ↓
-tool.result   tool.result.   tool.result.
-              rejected        rejected{reason:
-(cached in    (feedback       "exception:
- surface      to model)        ..."}
- via tier-1)   
+tool.result   tool.result.    tool.result
+              rejected        {status:error|timeout}
 ```
 
 - **OK result** → `tool.result` — visible on surface (via
@@ -255,13 +285,12 @@ tool.result   tool.result.   tool.result.
 - **Rejected** → `tool.result.rejected` — reason fed back to
   the model next iteration (no termination; the model owns
   its output)
-- **Exception** (caught at the workspace boundary) →
-  `tool.result.rejected{reason: "exception: ..."}` — same
-  path as rejected
+- **Execution failure** → typed `tool.result{status: error}` linked to the
+  durable execution terminal; it is distinct from authorization rejection
 
-All three paths land in the ledger; the **model.usage**
-records the cost; the **loop.receipt** records what was in
-the surface. Audit is end-to-end.
+All three paths become Runtime-owned durable facts. Model request/response
+receipts record what the model saw and what it cost; the shared invocation
+identity makes effect audit end-to-end.
 
 ## Cross-references
 
@@ -284,7 +313,7 @@ the surface. Audit is end-to-end.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
+- Last reviewed: 2026-08-29
 - Status: **draft (possible mechanism)** — the 4-stage
   shape, the failure-semantics discipline, the L2 dispatcher
   family, the tool registry with `effect_class`, and the E1–E5
