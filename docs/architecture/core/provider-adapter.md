@@ -318,6 +318,144 @@ not a code change.
 - `assemble-testing.md` "Dim 1c — Real API smoke" — these
   failure modes are exercised by the smoke test.
 
+## Outcome kinds — what `model.invoke` returns
+
+`model.invoke` returns **one of these outcome kinds** to the
+loop. The kind is the entire contract; the loop does not
+parse the HTTP response, does not know the provider, and
+does not see retry state.
+
+| Outcome kind | Trigger | Carries | What the loop does |
+|--------------|---------|---------|---------------------|
+| `Completed(replay)` | HTTP 2xx, response not truncated, no auth/content issue | `text`, `reasoning.*`, `media.*`, `usage` | Normal — write `model.usage` + `loop.receipt` |
+| `Overflow(learn_max)` | HTTP 413 | `request_size`, `overserved_max_candidate` | Record `overserved_max` on `ledger_meta`; **rebuild the surface** (`re-derive`, smaller); retry once. If it 413s again, halt and emit `governance.approval_request("output overflow; abort or split?")`. |
+| `OutputTruncated(continuable)` | `truncated == true` AND `usage.completion_tokens == max_tokens` | `prefix_so_far`, `tokens_used` | Send a **continue** request with the prefix as the prior message. Max 3 continues; if the third still truncates, **terminate** the round and emit `output.truncated` entry. |
+| `RateBudgetExhausted` | 429 + AIMD has dropped concurrency to 1 + still rate-limited | `retry_after_ms` (if header) | **Suspend** the round (`state.phase = AwaitingApproval`); emit `governance.approval_request("rate budget exhausted; wait or downgrade model?")`. The user / runtime picks. **Or** failover to a backup model immediately (configurable). |
+| `PartialCancelled(reason, prefix_so_far)` | User / loop / harness cancels **mid-stream** | `prefix_so_far` (bytes already received) | **Partial result goes to the ledger** as a `provider.partial` entry. The round's state is suspended with the partial as the resume baseline. On resume: discard the partial and re-issue from the last clean anchor, **or** continue from the partial (configurable). |
+| `AuthFailure(provider, reason)` | HTTP 401, 403 | `provider`, `reason` | Halt the round. Emit `governance.approval_request("auth failed: reauth?")`. Do **not** retry — auth failures don't recover via backoff. |
+| `ContentViolation(reason)` | HTTP 400, `policy_violation == true` | `reason`, `violated_field` | Emit `content.violation` entry. Re-formulate the intent with a different policy and retry once. If it fails again, halt. |
+| `ModelUnavailable(circuit_open_s, last_5xx)` | 5xx exhausted; CB open > 30 s | `last_model_id`, `circuit_open_s` | **Failover to backup model**. The failed-model row goes to `model.usage` (audit-visible); the backup's success is the round's actual response. |
+| `CircuitBreakerOpen` | CB opened transiently, not exhausted | `provider`, `opened_at` | Failover to backup model **without retrying the original**. Same record pattern as `ModelUnavailable`. |
+
+### Outcome as a sealed type
+
+The outcome kinds above are **the runtime's contract** —
+each is a constructor of an enum-like sealed type. There
+are no ad-hoc fields; the kind's *tag* tells the loop how to
+proceed, and the kind's *data* is exactly the payload the
+loop needs.
+
+```python
+class InvokeOutcome(Enum):
+    Completed          = auto()  # text, reasoning, media, usage
+    Overflow           = auto()  # request_size, overserved_max
+    OutputTruncated    = auto()  # prefix_so_far, tokens_used
+    RateBudgetExhausted= auto()  # retry_after_ms
+    PartialCancelled   = auto()  # reason, prefix_so_far
+    AuthFailure        = auto()  # provider, reason
+    ContentViolation   = auto()  # reason, violated_field
+    ModelUnavailable   = auto()  # last_model_id, circuit_open_s
+    CircuitBreakerOpen = auto()  # provider, opened_at
+```
+
+The loop's `match invoke_outcome:` is **exhaustive** over
+these 8 kinds. Adding a 9th is a `non_exhaustive_match`
+warning in Rust / `@when` fall-through in Kotlin — the loop
+catches new failure modes without missing a case.
+
+### Why each kind is distinct
+
+- `Completed` ≠ `OutputTruncated`. Truncation **looks like**
+  success — the response is 200, the body is valid — but
+  `truncated == true`. Treating it as success would silently
+  drop the rest of the model's answer.
+- `Overflow` ≠ `RateBudgetExhausted`. 413 is the **provider's
+  hard ceiling** (request too big); 429 is **rate limiting**
+  (too many requests in a window). Different recovery.
+- `ModelUnavailable` ≠ `CircuitBreakerOpen`. The CB can be
+  open transiently (single 5xx wave); `ModelUnavailable` is
+  the exhausted state. Different times to retry.
+- `PartialCancelled` ≠ any failure kind. It's **a normal
+  outcome** with a particular property: the response is
+  partial. The loop should suspend rather than fail.
+
+## Cancellation semantics — partial results ledger-挂账
+
+When the user, the loop, or the harness **cancels** a
+`model.invoke` mid-stream (e.g. user pressed stop, loop
+hit a step timeout, harness aborted):
+
+1. **Stop the request** at the transport layer (close the
+   connection / cancel the streaming iterator).
+2. **The bytes already received go to the ledger** as a
+   `provider.partial` entry, **not discarded**:
+
+   ```
+   kind: provider.partial
+   body: {
+       ref:           round_id              # → loop.receipt
+       reason:        user_cancel | timeout | harness_abort
+       bytes:         <the partial bytes received so far>
+       cancel_at_seq: <last_seq from the request>
+       wall_ts:       <when cancelled>
+   }
+   ```
+
+3. **The round's state** transitions to
+   `phase = AwaitingConfirm` with the partial as the
+   baseline. The next round either:
+   - **Discards** the partial and re-issues from the last
+     clean anchor (cheap, may lose work), or
+   - **Continues from the partial** (preserves work, may
+     drift from the original intent).
+4. **Audit** — the partial entry is a permanent ledger row.
+   A future "why did round N end mid-stream?" query is one
+   read away.
+
+### Why ledger-挂账, not in-memory
+
+The partial is a **fact about the round** — what happened,
+when, how much was received. In-memory would lose it on
+crash; the ledger doesn't. The partial also feeds the
+`memory_watermark` walk: a future dream pass can treat
+recurring partial-cancellation patterns as a fact worth
+extracting ("user cancels this round type after 2 s on
+average").
+
+### End-to-end principle
+
+The provider doesn't assume client state; the client doesn't
+assume provider state. **All state lives in the ledger.**
+The `provider.partial` entry is the canonical record of a
+mid-stream cancellation; on resume, the loop reads the
+ledger, not the in-memory state, to decide what to do.
+
+### Re-attachment (the "continue from partial" branch)
+
+If the loop decides to continue from the partial:
+
+1. Construct a **follow-up request** with the partial as the
+   prior message:
+
+   ```
+   request = [
+       ...prior messages...,
+       model_reply_so_far,     # from provider.partial.bytes
+       user: "continue"
+   ]
+   ```
+
+2. The provider continues the model from where it left off.
+3. The new response is appended to `provider.partial`'s `ref`
+   chain (or a new `loop.receipt` carries both).
+4. **`overserved_max` is NOT updated from a continue** —
+   continue doesn't push the input past the model's ceiling.
+   Only `Completed` and `Overflow` update it.
+
+The continue branch is the **only** path that survives a
+mid-stream cancellation; all other failure kinds either
+abort the round or fail over.
+
 ## Meta
 
 - Owner: `@christmic`
