@@ -1,69 +1,78 @@
-# Core Agent C1a — model invocation outcome
+# C1 — provider-neutral model facts
+
+## Status
+
+Accepted focused contract under `agent-execution-contract.md`.
 
 ## Responsibility
 
-Define the provider-neutral facts returned by one model invocation after the
-adapter has exhausted only the transport retries proven safe by its contract.
-The outcome does not contain HTTP status codes or prescribe Agent/Runtime
-recovery policy.
+Represent ordered model items, usage evidence, and the factual result of one
+logical model request after only adapter-proven-safe transport retries.
 
-## Interface
+## Usage
 
-`garive-llm` exposes `InvokeOutcome`, an exhaustive enum with nine variants:
+`TokenCount` is `Known(u64)` or `Unknown`. `ModelUsage` contains input, output,
+optional cache-read/cache-write breakdowns, and source (`ProviderReported` or
+`Estimated`). `total_tokens()` returns:
 
-| Variant | Evidence carried |
-|---|---|
-| `Completed` | normalized text and usage |
-| `Overflow` | submitted normalized input size and optional accepted-limit evidence |
-| `OutputTruncated` | valid prefix and usage observed so far |
-| `RateBudgetExhausted` | optional retry delay |
-| `PartialCancelled` | valid prefix and usage observed before cancellation |
-| `AuthFailure` | sanitized reason |
-| `ContentViolation` | sanitized reason and optional violated field/category |
-| `ModelUnavailable` | requested model identity |
-| `CircuitBreakerOpen` | adapter target/pool identity |
+- `Known(input + output)` using checked arithmetic;
+- `Unknown` if either component is unknown;
+- `Overflow` when known arithmetic exceeds `u64`.
 
-`InvokeOutcome::kind()` returns a payload-free stable category for metrics and
-exhaustive dispatch. It is not a wire tag commitment.
+Cache fields are breakdowns and are not added to the total. Unknown never
+defaults to zero.
 
-## Normalized usage
+## Ordered items
 
-`ModelUsage` carries input, output, cache-read, and cache-write token counts.
-Counts describe context/accounting evidence, not currency or guaranteed
-provider billing. Cache counts are breakdown fields and are not added again by
-`total_tokens()`, which checks only `input + output`. Unknown values are
-represented by the adapter's surrounding evidence in a later slice; C1a values
-are observed counts and default to zero.
+`ModelItem` is an ordered sum type:
 
-## Invariants
+- `Text { text }`;
+- `Reasoning { content }`, where content is visible text or an opaque reference;
+- `ToolIntent { model_call_id, tool_name, arguments }`;
+- `ToolObservation { model_call_id, result }`;
+- `MediaReference { media_kind, reference }`.
 
-1. Exactly one outcome variant is returned per invocation.
-2. `Completed` is the only success variant.
-3. Truncated and cancelled prefixes are not promoted to completed text.
-4. An `Overflow` is already a verified provider-specific classification; Core
-   never parses an HTTP code.
-5. Reasons are sanitized and must not contain credentials or raw response
-   bodies.
-6. Outcomes report facts only. Retry, failover, prompt revision, suspension,
-   and termination are decisions in later Core/Runtime slices.
-7. Local request deduplication does not claim provider billing idempotency.
+Structured arguments/results use a portable structured value in C4. Until C4,
+they are preserved validated JSON text and are never used as a digest without
+canonicalization.
 
-## Errors and compatibility
+## Fact envelopes
 
-Construction is infallible because adapters already validate and normalize the
-payload. Adding another variant is a source-breaking contract change: all
-dispatch matches and contract tests must be updated deliberately.
+`InvokeOutcome` is exhaustive over four envelopes:
 
-## Acceptance tests
+- `Completed { items, usage, stop_reason }`;
+- `Rejected { kind, sanitized_evidence }`, with kind
+  `ContextOverflow`, `Authentication`, or `ContentPolicy`;
+- `Interrupted { kind, partial_items, usage }`, with kind `Cancelled`,
+  `OutputLimit`, or `Transport`;
+- `Unavailable { kind, retry_after }`, with kind `RateLimited`,
+  `ModelUnavailable`, or `CircuitOpen`.
 
-- all nine variants map to their distinct `InvokeOutcomeKind`;
-- only `Completed` reports success;
-- partial/truncated values retain their prefix and usage without conversion;
-- usage total uses checked addition and returns `None` on overflow.
+`Completed` alone is success. `Interrupted` alone is partial. Outcome values do
+not prescribe retry, failover, prompt rewriting, suspension, stopping, or
+failure. A frozen Core recovery policy owns that mapping.
 
-## Out of scope
+## Validation and safety
 
-- provider request/response encoding and streaming transport;
-- model request/context types (C1b/C2);
-- retry/AIMD/circuit-breaker implementation;
-- durable request identity, receipts, and billing reconciliation.
+- adapter reasons/evidence are sanitized and bounded before construction;
+- partial items are never promoted to completed items;
+- HTTP/provider SDK values never cross this boundary;
+- request dedup does not claim provider billing idempotency;
+- item order is preserved exactly;
+- opaque reasoning/media references are references, not assumed accessible
+  bytes.
+
+## Shared semantic fixture
+
+`spec/fixtures/agent/model-outcome.json` covers known/unknown/overflow totals,
+all envelope and reason kinds, ordered item preservation, and partial/success
+classification. Rust and Kotlin consume every case independently.
+
+## Acceptance
+
+- exhaustive kind mapping for all envelopes/reasons;
+- only Completed reports success and only Interrupted reports partial;
+- unknown and overflowing usage remain distinct;
+- cache counts are not double-counted;
+- all item variants and order survive normalization;
+- Rust and Kotlin native and shared-fixture tests pass.

@@ -1,79 +1,74 @@
-# Core Agent C0 — turn control
+# C0 — Kernel execution control
+
+## Status
+
+Accepted focused contract under `agent-architecture.md` and
+`agent-execution-contract.md`.
 
 ## Responsibility
 
-Own the valid in-memory control states for one bounded Agent execution. It does
-not persist a Session, call a model/tool, or decide crash recovery.
+Represent valid disposable control state for one Kernel Execution. Runtime
+owns the durable Turn and constructs a new control after suspension.
 
-## Interface
+## Types
 
-`garive-core` exposes:
+- `TurnId`: non-empty durable Turn identity supplied by Runtime.
+- `ExecutionId`: non-empty identity unique to this Kernel invocation.
+- `ExecutionLimits { max_iterations: NonZeroU32 }`.
+- `ExecutionOutcomeKind`: `Completed`, `Suspended`, `Stopped`, `Failed`.
+- `ExecutionStatus`: `Active` or `Closed(ExecutionOutcomeKind)`.
+- `ExecutionControl`: identities, completed iteration count, limits and status.
 
-- `TurnId`: opaque, non-empty identity supplied by Runtime;
-- `TurnLimits { max_iterations }`: immutable bound for one execution;
-- `TurnState`: `turn_id`, completed iteration count, limits, and status;
-- `TurnStatus`: `Running`, `Suspended(reason)`, or `Terminal(reason)`;
-- transition methods: `begin_iteration`, `suspend`, `resume`, `terminate`.
+Construction accepts a Runtime-reconstructed `completed_iterations` cursor.
+It rejects a cursor greater than `max_iterations`. Equality is valid but the
+next `begin_iteration` closes as stopped by iteration limit.
 
-`begin_iteration` returns either `Started { iteration }` or
-`Terminated(BudgetExhausted)`. It is the only operation that increments the
-iteration count.
+## Operations
 
-## Status values
+`begin_iteration()`:
 
-Suspension reasons in C0:
+- requires `Active`;
+- if the count is below the limit, increments exactly once and returns the new
+  one-based cumulative iteration number;
+- if the count equals the limit, closes as `Stopped` and returns
+  `IterationLimitReached` without incrementing.
 
-- `ApprovalRequired`;
-- `PartialModelOutput`;
-- `RateBudgetExhausted`.
-
-Terminal reasons in C0:
-
-- `Answered`;
-- `NoMoreToolCalls`;
-- `BudgetExhausted`;
-- `Cancelled`;
-- `ProviderUnavailable`;
-- `Failed`;
-- `OperatorRequired`.
-
-Later slices may enrich payloads without changing the transition rules.
-
-## Invariants
-
-1. A new state is `Running` with zero completed iterations.
-2. `max_iterations` is non-zero and cannot change during an execution.
-3. Only a running turn can begin an iteration or suspend.
-4. Only a suspended turn can resume.
-5. Starting iteration `N` increments the counter exactly once and returns `N`.
-6. When the counter equals the limit, the next `begin_iteration` atomically
-   enters terminal `BudgetExhausted` without incrementing.
-7. A terminal state is immutable: no begin, suspend, resume, or second terminal
-   transition succeeds.
-8. Suspend/resume never changes `turn_id`, limits, or iteration count.
-9. `TurnState` is an in-memory control model, not a serialized recovery record.
+`close(kind)` requires `Active`, closes exactly once, and preserves identities,
+limits and count. There is no `resume()` or `suspend()` mutation. Suspension is
+an execution outcome; continuation is a new `ExecutionControl` with the same
+Turn ID, a new Execution ID and a reconstructed cursor.
 
 ## Errors
 
-- empty `TurnId` → `InvalidTurnId`;
-- operation requiring running status → `NotRunning`;
-- resume while not suspended → `NotSuspended`;
-- any mutation after terminal → `AlreadyTerminal`.
+- empty identity → identity-specific validation error;
+- cursor greater than limit → `CursorBeyondLimit`;
+- any operation after close → `AlreadyClosed`.
 
-Errors do not partially mutate state.
+Errors do not partially mutate control state.
 
-## Acceptance tests
+## Invariants
 
-- construct rejects empty identity and zero iteration limit at the type level;
-- first and last allowed iterations return monotonic one-based numbers;
-- the call after the limit returns `BudgetExhausted` and preserves the count;
-- suspend → resume preserves identity and count;
-- invalid transitions leave the prior state unchanged;
-- every terminal reason prevents all later transitions.
+1. Turn and Execution identities have distinct types and cannot substitute.
+2. The iteration limit is non-zero and immutable.
+3. The counter never exceeds the limit and increments only in
+   `begin_iteration`.
+4. Closing is monotonic and occurs once.
+5. Continuation never reuses an Execution ID or an old in-memory control.
+6. C0 has no persistence/serialization contract; shared JSON fixtures are test
+   protocol only.
 
-## Architecture record
+## Shared semantic fixture
 
-This spec selects one status enum instead of separate `phase` and
-`termination_reason` fields, because the latter permit contradictory values
-such as `Running + Answered`. Runtime persists facts and derives a fresh
-`TurnState` on resume; serialization is intentionally absent from C0.
+`spec/fixtures/agent/execution-control.json` contains operation sequences. Rust
+and Kotlin must consume every case and compare operation results plus final
+status/count. A continuation pair demonstrates same Turn ID, new Execution ID,
+and carried durable count without a resume operation.
+
+## Acceptance
+
+- fresh and reconstructed cursors behave identically for the same remaining
+  limit;
+- last admitted iteration starts once; the next begin stops without overcount;
+- all four close kinds are immutable;
+- invalid cursor and post-close operations preserve prior state;
+- Rust and Kotlin native and shared-fixture tests pass.
