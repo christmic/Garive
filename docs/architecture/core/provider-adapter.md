@@ -13,6 +13,10 @@ This doc covers the **adapter layer** that wraps the
 provider's wire API and translates its failure modes into
 events the loop skeleton can react to.
 
+The normative model boundary is `spec/design/model-invoke-outcome.md`. This
+document may explore provider-specific mechanisms, but it must map them into
+that boundary; it does not add outcome constructors or choose Agent policy.
+
 ## Scope split
 
 | Layer | Lives in | Failure policy |
@@ -109,26 +113,24 @@ action:
   circuit_breaker: open_after(5 consecutive failures in 60s)
 ```
 
-Retry is **scoped to `model.invoke`**. The loop never sees
-the retry; if all retries fail, `model.invoke` returns a
-single "transient" event for the loop to react to (which
-itself goes through the recovery table — usually "halt the
-round, surface to the user").
+Bounded transport retry is **scoped to `model.invoke`**. Core never sees the
+individual attempts; when retries are exhausted, the adapter returns one typed
+factual envelope.
 
 #### Recover (semantic) — loop skeleton observes
 
-| Failure | HTTP / provider signal | Action |
-|---------|------------------------|--------|
-| **Input/context overflow** | Provider-specific status/body/finish signal mapped by the adapter | Return `Overflow` with verified limit evidence; Core decides whether to derive a smaller request. Do not assume every provider uses HTTP 413. |
-| **max_tokens exceeded (output truncation)** | `truncated: true`, `usage.completion_tokens == max_tokens` | Send a **continue** request with the prior response as the prefix. Max 3 continues; if the third still truncates, **terminate** the round and emit `output.truncated` entry. |
-| **Auth failure** | `401`, `403` | Halt the round. Emit `governance.approval_request(question="auth failed: reauth?")`. Do **not** retry — auth failures don't recover via backoff. |
-| **Content policy violation** | Verified provider-specific signal | Return `ContentViolation`. The adapter does not rewrite prompts or intents; Agent/Runtime policy decides whether another request is allowed. |
-| **Model unavailable** | 5xx exhausted; circuit-breaker open; model down for >30 s | **Failover to backup model**. The loop records the failover in `model.usage` (the failed-model entry is kept alongside the backup's success). The user's session continues with reduced capability. |
+| Failure | HTTP / provider signal | Neutral mapping |
+|---------|------------------------|-----------------|
+| **Input/context overflow** | Verified provider-specific status/body/finish signal | `Rejected(ContextOverflow)` with sanitized evidence |
+| **Output limit** | Verified stop reason and any partial output | `Interrupted(OutputLimit, partial_items, usage)` |
+| **Auth failure** | Verified authentication signal such as 401/403 | `Rejected(Authentication)` |
+| **Content policy violation** | Verified provider-specific signal | `Rejected(ContentPolicy)` |
+| **Rate limited** | Retry budget exhausted, optional retry header | `Unavailable(RateLimited, retry_after)` |
+| **Model unavailable / circuit open** | exhausted 5xx or open local circuit | matching `Unavailable` reason |
 
-The recovery table is **declarative**: each entry has a
-`match`, an `action`, and (optionally) a `fallback`. The
-implementation reads this table and dispatches — no
-ad-hoc per-call error handling in code.
+Runtime applies the declarative recovery policy after this normalization. The
+adapter never turns these facts directly into failover, approval, suspension,
+or a follow-up model call.
 
 ## State machine — `model.invoke`
 
@@ -164,10 +166,9 @@ ad-hoc per-call error handling in code.
 │  DONE  │                                       │ TRUNCATED│
 └───┬────┘                                       └────┬─────┘
     │                                                 │
-    │ ok                                              │ continue x 3
+    │ ok                                              │ normalize
     ▼                                                 ▼
- success                                          (continue
-                                                    loop)
+ Completed                              Interrupted(OutputLimit)
     │
     │  4xx/443
     ▼
@@ -180,9 +181,8 @@ The transport state machine is **internal to `model.invoke`**. At that layer,
 requests finish in one of three broad classes:
 
 1. **success** — `model.usage` row + `loop.receipt` row
-2. **transient_exhausted** — backoff retries failed; the
-   loop sees a single "transient" event (which the recovery
-   table handles)
+2. **transient_exhausted** — backoff retries failed; Core receives one
+   `Unavailable` envelope
 3. **classified_failure** — a verified provider signal is normalized to one
    of the outcome kinds below; the Runtime policy dispatches it
 
@@ -251,7 +251,7 @@ policies:
 
   recover:
     input_overflow:
-      match: {normalized_outcome: Overflow}
+      match: {envelope: Rejected, reason: ContextOverflow}
       action:
         - record_overserved_max        # to ledger_meta
         - rebuild_surface             # re-derive, smaller surface
@@ -261,8 +261,7 @@ policies:
             question: "output overflow; abort or split?")
 
     max_tokens_exceeded:
-      match: {truncated: true,
-              usage.completion_tokens == max_tokens}
+      match: {envelope: Interrupted, reason: OutputLimit}
       action:
         - send_continue_request
         - max_continues: 3
@@ -304,11 +303,11 @@ boundary and requires code and conformance tests.
 
 - `loop.md` "Derive in Detail (common path)" — `model.invoke`
   is the call-out from derive/assemble to the adapter.
-- `loop.md` "The Turn State" — `phase = AwaitingApproval` for
-  governance.approval_request emissions.
+- `agent-execution-contract.md` — Runtime converts neutral model facts into
+  retry, failover, suspension or terminal Agent policy.
 - `ledger.md` "Dedup" — stable Runtime request identity and digest.
 - `ledger.md` "ledger_meta" — `overserved_max` recorded here.
-- `compression.md` "Layer 3 — Overflow (`overserved_max`)" —
+- `compression.md` "Layer 3 — context-limit evidence (`overserved_max`)" —
   the recovery action records to the same field the trigger
   reads.
 - `assemble-testing.md` "Dim 1c — Real API smoke" — these
@@ -316,64 +315,25 @@ boundary and requires code and conformance tests.
 
 ## Outcome kinds — what `model.invoke` returns
 
-`model.invoke` returns **one of these outcome kinds** to the
-loop. The kind is the entire contract; the loop does not
-parse the HTTP response, does not know the provider, and
-does not see retry state.
+The adapter returns one of four **factual envelopes**. It reports what happened;
+it does not prescribe what the Agent should do next.
 
-| Outcome kind | Trigger | Carries | What the loop does |
-|--------------|---------|---------|---------------------|
-| `Completed(replay)` | HTTP 2xx, response not truncated, no auth/content issue | `text`, `reasoning.*`, `media.*`, `usage` | Normal — write `model.usage` + `loop.receipt` |
-| `Overflow(learn_max)` | Verified provider-specific context/input-limit signal | `request_size`, optional verified limit evidence | Return the neutral outcome; Runtime records evidence and Core may rebuild a smaller surface. |
-| `OutputTruncated(continuable)` | `truncated == true` AND `usage.completion_tokens == max_tokens` | `prefix_so_far`, `tokens_used` | Send a **continue** request with the prefix as the prior message. Max 3 continues; if the third still truncates, **terminate** the round and emit `output.truncated` entry. |
-| `RateBudgetExhausted` | 429 + AIMD has dropped concurrency to 1 + still rate-limited | `retry_after_ms` (if header) | **Suspend** the round (`state.phase = AwaitingApproval`); emit `governance.approval_request("rate budget exhausted; wait or downgrade model?")`. The user / runtime picks. **Or** failover to a backup model immediately (configurable). |
-| `PartialCancelled(reason, prefix_so_far)` | User / loop / harness cancels **mid-stream** | `prefix_so_far` (bytes already received) | **Partial result goes to the ledger** as a `provider.partial` entry. The round's state is suspended with the partial as the resume baseline. On resume: discard the partial and re-issue from the last clean anchor, **or** continue from the partial (configurable). |
-| `AuthFailure(provider, reason)` | HTTP 401, 403 | `provider`, `reason` | Halt the round. Emit `governance.approval_request("auth failed: reauth?")`. Do **not** retry — auth failures don't recover via backoff. |
-| `ContentViolation(reason)` | Verified provider-specific content-policy signal | `reason`, `violated_field` | Return the neutral outcome. Prompt reformulation, retry, or halt is an Agent/Runtime policy decision. |
-| `ModelUnavailable(circuit_open_s, last_5xx)` | 5xx exhausted; CB open > 30 s | `last_model_id`, `circuit_open_s` | **Failover to backup model**. The failed-model row goes to `model.usage` (audit-visible); the backup's success is the round's actual response. |
-| `CircuitBreakerOpen` | CB opened transiently, not exhausted | `provider`, `opened_at` | Failover to backup model **without retrying the original**. Same record pattern as `ModelUnavailable`. |
+| Envelope | Carries | Provider classifications mapped here |
+|----------|---------|-----------------------------------------|
+| `Completed` | ordered `ModelItem` values, normalized usage, stop reason | complete provider response |
+| `Rejected` | rejection kind + sanitized evidence | context overflow, authentication, content policy |
+| `Interrupted` | interruption kind + ordered partial items + usage | cancellation, output limit, transport interruption |
+| `Unavailable` | unavailable kind + optional retry hint | rate limited, model unavailable, circuit open |
 
-### Outcome as a sealed type
+`ModelItem` preserves provider order across text, reasoning, tool intent, tool
+observation and media references. Usage explicitly distinguishes known from
+unknown; unknown is never converted to zero.
 
-The outcome kinds above are **the runtime's contract** —
-each is a constructor of an enum-like sealed type. There
-are no ad-hoc fields; the kind's *tag* tells the loop how to
-proceed, and the kind's *data* is exactly the payload the
-loop needs.
-
-```python
-class InvokeOutcome(Enum):
-    Completed          = auto()  # text, reasoning, media, usage
-    Overflow           = auto()  # request_size, overserved_max
-    OutputTruncated    = auto()  # prefix_so_far, tokens_used
-    RateBudgetExhausted= auto()  # retry_after_ms
-    PartialCancelled   = auto()  # reason, prefix_so_far
-    AuthFailure        = auto()  # provider, reason
-    ContentViolation   = auto()  # reason, violated_field
-    ModelUnavailable   = auto()  # last_model_id, circuit_open_s
-    CircuitBreakerOpen = auto()  # provider, opened_at
-```
-
-The loop's `match invoke_outcome:` is exhaustive over these **nine** kinds.
-Adding a tenth is a `non_exhaustive_match`
-warning in Rust / `@when` fall-through in Kotlin — the loop
-catches new failure modes without missing a case.
-
-### Why each kind is distinct
-
-- `Completed` ≠ `OutputTruncated`. Truncation **looks like**
-  success — the response is 200, the body is valid — but
-  `truncated == true`. Treating it as success would silently
-  drop the rest of the model's answer.
-- `Overflow` ≠ `RateBudgetExhausted`. The former is a normalized input/context
-  limit signal; 429 is commonly **rate limiting**
-  (too many requests in a window). Different recovery.
-- `ModelUnavailable` ≠ `CircuitBreakerOpen`. The CB can be
-  open transiently (single 5xx wave); `ModelUnavailable` is
-  the exhausted state. Different times to retry.
-- `PartialCancelled` ≠ any failure kind. It's **a normal
-  outcome** with a particular property: the response is
-  partial. The loop should suspend rather than fail.
+Retry, failover, rebuilding a smaller surface, asking for approval, suspending
+or stopping are Runtime/Agent policy. The adapter may perform only the bounded,
+transport-level retries declared by its port contract. Exact constructors and
+reason enums live in `spec/design/model-invoke-outcome.md` and are jointly
+conformance-tested in Rust and Kotlin.
 
 ## Cancellation semantics — partial results ledger-挂账
 
@@ -397,9 +357,9 @@ hit a step timeout, harness aborted):
    }
    ```
 
-3. **The round's state** transitions to
-   `phase = AwaitingConfirm` with the partial as the
-   baseline. The next round either:
+3. The current Kernel Execution returns a typed neutral outcome. Runtime
+   durably decides whether the Turn stops or suspends. A later continuation is
+   a new execution whose reconstructed cursor may either:
    - **Discards** the partial and re-issues from the last
      clean anchor (cheap, may lose work), or
    - **Continues from the partial** (preserves work, may
@@ -447,8 +407,8 @@ If the loop decides to continue from the partial:
 3. The new response is appended to `provider.partial`'s `ref`
    chain (or a new `loop.receipt` carries both).
 4. **`overserved_max` is NOT updated from a continue** —
-   continue doesn't push the input past the model's ceiling.
-   Only `Completed` and `Overflow` update it.
+   continue does not itself prove an input ceiling. Only verified
+   `Rejected(ContextOverflow)` evidence can tighten it.
 
 This follow-up branch is one policy option after a mid-stream cancellation;
 the policy may instead halt, ask for approval, or begin a fresh round.
@@ -474,11 +434,8 @@ remain open until verified against pinned official sources:
 2. **Retry vs Recover** — retries are local to `model.invoke`;
    semantic failures bubble up to the loop skeleton as a
    single outcome event.
-3. **InvokeOutcome** — 9 sealed-type outcome kinds
-   (`Completed`, `Overflow`, `OutputTruncated`,
-   `RateBudgetExhausted`, `PartialCancelled`, `AuthFailure`,
-   `ContentViolation`, `ModelUnavailable`,
-   `CircuitBreakerOpen`).
+3. **InvokeOutcome** — four factual envelopes (`Completed`, `Rejected`,
+   `Interrupted`, `Unavailable`) with typed reason enums and ordered items.
 4. **Cancellation semantics** — mid-stream cancel writes
    `provider.partial` to the ledger (the bridge between the
    two protocols).

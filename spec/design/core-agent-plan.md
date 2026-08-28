@@ -62,7 +62,8 @@ continuation/outcome semantics must remain compatible with the shared contract.
 ### F1 — repair the foundation
 
 - replace C0 cross-call resume state with disposable ExecutionControl;
-- replace C1 text-only/nine-action outcome with ordered items/fact envelopes;
+- replace C1 text-only/action-prescribing outcome with ordered items/fact
+  envelopes;
 - add Kotlin `core` and `llm` modules;
 - add shared fixture readers and wire `just conformance`;
 - remove placeholder parity claims.

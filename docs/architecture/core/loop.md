@@ -10,9 +10,10 @@
 > suspension and recovery for approval, cancellation, provider backoff, and
 > uncertain external effects.
 
-This is **deliberative**, not a spec. Type names, method
-signatures, and exact field shapes will land in
-`spec/design/agent-loop.md` once this design settles.
+This is **deliberative**, not a spec. The normative boundary and lifecycle are
+defined by `spec/design/agent-architecture.md` and
+`spec/design/agent-execution-contract.md`; those specifications win if an
+example here drifts from them.
 
 > **Heads-up: this document is a *possible mechanism*, not
 > final code.** Every pseudo-code snippet, every field name,
@@ -202,75 +203,24 @@ Summarization and external execution are impure operations. Their durable
 inputs, outputs, and recovery classification are recorded by Runtime; a write
 to the durable store is not itself a pure projection.
 
-### The Turn State
+### Execution-local projection
 
-Per-`agent_turn` runtime state — the small set of values the
-loop reads and writes **inside the `while`**. The state is
-**per-turn**, not per-loop or per-process. It is an in-memory projection of
-durable turn facts, rebuilt after restart. Runtime does not serialize this
-struct as a second checkpoint. Anything durable facts can answer is derived;
-loop-local caches may be discarded.
+Each Kernel Execution receives an immutable request and constructs a small,
+typed projection for that invocation only. It may cache iteration count,
+normalized usage, elapsed time and the reconstructed recovery cursor. Core is
+the only writer of this disposable projection; ports return facts and never
+mutate it.
 
-| Field | Type | What it holds |
-|-------|------|---------------|
-| `iteration_count` | `u32` | Iterations since the turn started. Bumped once per `while` pass. |
-| `phase` | enum `{Running, Suspended, Done, Failed, OperatorRequired}` | Projection of the current durable turn facts. A suspension carries a typed reason rather than another overlapping phase enum. |
-| `termination_reason` | enum `{NotDone, Answered, NoMoreToolCalls, BudgetExhausted, Cancelled, ProviderUnavailable, Failed, OperatorRequired}` | The terminal that closes the execution. Set by Runtime/loop policy, never by the model. |
-| `tokens_used` | `{in: u32, out: u32, total: u32}` | Cumulative across all `model.invoke` calls in this turn. Compared against `budget.tokens` on every iteration. |
-| `wall_clock_used_ms` | `u64` | Wall-clock from `agent_turn` entry. Compared against `budget.wall_clock_ms`. |
-| `last_confirm_response` | enum `{None, Approved, Denied}` | Cached projection of the most recent durable approval response. |
-| `circuit_breaker` | struct `{consecutive_failures: u32, last_failure_kind: enum, opened_at_ms: Option<u64>}` | Local throttle. Increments on `model.invoke` / `executor.run` failures; trips to `open` when it crosses a threshold. While `open`, the loop pauses / escalates rather than retrying. |
+Suspension closes the current Kernel Execution. Runtime commits the typed
+`Suspended` outcome and later creates a new request with the same `turn_id`, a
+new `execution_id`, and a cursor reconstructed from durable facts. There is no
+in-memory phase transition back to `Running` and no `resume()` method.
 
-The state is **explicitly typed** — fields are named, not a
-bag of attributes. Anything the loop wants to read or write
-goes through this struct. The list above is a **starting
-shape**; the actual field set will land with the slice and
-must stay small (a dozen fields, no more — anything bigger
-is the ledger pretending to be the state).
-
-### Who Reads / Writes the State
-
-| Field | Read by | Written by |
-|-------|---------|------------|
-| `iteration_count` | loop (`while`, telemetry), `termination.done` | loop (increment per pass) |
-| `phase` | loop (entry protocol), telemetry, `governance.judge` | loop (phase transitions: `Running → AwaitingApproval → Suspended → AwaitingConfirm → Running → ...`) |
-| `termination_reason` | loop (final write to ledger), telemetry | loop (when `termination.done(state)` becomes true) |
-| `tokens_used` | loop (`ledger.derive(kinds, budget)` budget check), telemetry, `circuit_breaker` | loop (sum from `reply.usage` after each `model.invoke`) |
-| `wall_clock_used_ms` | loop (budget check), telemetry, `circuit_breaker` | loop (sampled at the top of each iteration) |
-| `last_confirm_response` | `governance.judge` (sees the answer on Resume), `assembly(surface)` (re-attaches it into the next prompt) | loop (after Resume's synthetic `entry` is processed) |
-| `circuit_breaker` | loop (`while` body — guards `model.invoke` and `executor.run`), telemetry | loop (on each failure / cooldown tick) |
-
-Three rules:
-
-1. **The loop is the only writer.** `governance.judge`,
-   `executor.run`, `assembly`, and `summarize` are pure
-   functions — they take state as input and return values;
-   they never mutate it.
-2. **Reads happen at the top of an iteration**, not scattered
-   throughout it. A `governance.judge` call sees the state as
-   it was when the iteration started; any update from this
-   iteration's `executor.run` lands **before** the next
-   iteration's read.
-3. **Durable facts survive Suspended → Resume.** The in-memory state does not.
-   On Resume, Runtime derives a fresh state and recovery decision from committed
-   facts and exact invocation receipts.
-
-### State vs Ledger
-
-| Question | Answer source |
-|----------|---------------|
-| "How many tokens did the round spend?" | durable normalized usage facts; `state.tokens_used` is only a cache |
-| "Which `model.invoke` calls happened, in order, with what output?" | ledger (durable; replayable) |
-| "Are we currently waiting on the user?" | durable suspension fact projected into `state.phase` |
-| "What was the human's last answer?" | durable approval response projected into `state.last_confirm_response` |
-| "Why was this tool denied?" | ledger (the verdict + reason) |
-| "Why is the loop refusing to retry?" | `state.circuit_breaker` |
-| "What's the round's termination status?" | `state.termination_reason` (this turn's outcome) |
-
-If the question can be answered from the ledger, it lives in
-the ledger. State is **only** for in-flight loop control —
-nothing that needs to outlive the turn, nothing the ledger
-already knows.
+Durable answers—model calls, usage, approvals, tool receipts, cancellation,
+suspension and terminal outcome—come from Runtime storage. Execution-local
+caches are projections only and can always be discarded. The exact request,
+control and outcome types are specified in
+`spec/design/agent-execution-contract.md`.
 
 ### The LLM Never Sees the Ledger
 
@@ -405,10 +355,10 @@ turn_loop round (annotated with protocol split):
    │           │                       [runtime] commit:
    │           │                            - model.request (before dispatch)
    │           │                            - model.response + usage (terminal)
-   │           │                            - provider.partial  (PartialCancelled)
-   │           │                            - overserved_max    (Overflow)
-   │           │                            - content.violation  (ContentViolation)
-   │           │                            - loop.exit          (ModelUnavailable/CB Open)
+   │           │                            - provider.partial  (Interrupted)
+   │           │                            - limit evidence    (Rejected/ContextOverflow)
+   │           │                            - rejection fact    (Rejected)
+   │           │                            - availability fact (Unavailable)
    │
    ▼           ▼
   surface    payload
@@ -434,8 +384,9 @@ cancels:
 2. The bytes already received **must go to the ledger** as
    a `provider.partial` entry. This is the only way to
    recover on resume.
-3. The loop's `state` transitions to `phase = AwaitingConfirm`
-   with the partial as the baseline.
+3. The current Kernel Execution returns a typed `Suspended` or `Stopped`
+   outcome according to Runtime policy. Any later continuation is a new
+   execution reconstructed from the durable partial receipt.
 
 The cancellation rule — **partial goes to the ledger, not
 to in-memory** — is what bridges the two protocols. See
@@ -482,8 +433,7 @@ plugs in without touching the loop.
 ### Cross-references
 
 - `provider-adapter.md` "Outcome kinds" — the provider-neutral outcomes
-  `model.invoke` returns, and the `PartialCancelled` case
-  that bridges the two protocols.
+  `model.invoke` returns, including `Interrupted` with durable partial items.
 - `ledger.md` "Entry kinds" — every fact that affects recovery has a durable
   representation; ephemeral UI deltas do not.
 - `assemble-testing.md` "Dim 1c — Real API smoke" — verifies
@@ -617,10 +567,9 @@ These are open for later iteration; the design above
 - **D6. Usage terminal atomicity.** The request receipt is committed before
   dispatch and both records share `request_id`. Whether response and usage
   commit in one transaction remains a Runtime storage decision.
-- **D7. `state.tokens_used` semantics.** Is the
-  per-round running total **summed across rounds** (full
-  cost) or **the latest round only** (one-round cost)? The
-  current field name is ambiguous. *Resolution deferred.*
+- **D7. Usage projection semantics.** Durable normalized usage is authoritative.
+  A Kernel Execution may cache the total admitted by its request, but it must
+  preserve unknown counts and must not infer cross-Turn billing totals.
 
 **These decisions do not block the design** — each is
 resolvable in its own follow-up commit. The design above
@@ -651,7 +600,7 @@ two changes pretending to be one.
 | **Change the layout mode set** (add a new mode like `striped` for A/B testing) | `assemble` | The layout function updates. The pinning and tier decisions in `derive` don't change. |
 | **Add a new projection** (a new view like `DIFF_VIEW` for round-vs-round comparison) | `derive` + `assemble` | A new branch in the dispatch; but the *content decisions* are the existing rules, only the *serialisation* is new. |
 | **Change the delta-fragment policy** (e.g. seen part is the *last 2* iterations instead of the *last iteration*) | `derive` | `last_seen_seq` definition updates. `assemble` reads it; the new boundary is the new cache key. |
-| **Change the loop boundary** (Suspend/Resume rules; `phase` machine) | `derive` | `state.phase` transitions update. `assemble` doesn't observe `phase`. |
+| **Change the execution boundary** (suspension / continuation rules) | Runtime request reconstruction | Runtime changes the durable cursor projected into the next request. `derive` and `assemble` still operate on the admitted cursor. |
 
 The matrix's **shape** matters more than its size. The
 invariant: every entry in this table fits in **one column**
@@ -900,14 +849,11 @@ the model only sees the prefix + a "no new entries"
 marker — at that point the provider cache is *fully*
 hitting.
 
-The **delta boundary** (`last_seen_seq`) is recorded in
-the round's `state` (see `loop.md` "The Turn State"). On
-Suspend, the boundary is part of the resumable payload;
-on Resume, the loop continues from the same boundary, and
-the next `assemble` uses the same boundary — the
-provider cache's stable prefix **survives a Suspend /
-Resume cycle** as long as the suspended round is the one
-being resumed.
+The **delta boundary** (`last_seen_seq`) is a durable Runtime fact referenced by
+the request cursor. Suspension closes the execution. If Runtime later
+continues the Turn, it reconstructs that boundary into a new request, so the
+next `assemble` can preserve the provider cache's stable prefix without
+depending on in-memory state.
 
 Three properties of the delta fragment that
 **constitutional** to its design:
@@ -1377,7 +1323,7 @@ than requiring the next LLM to re-parse prose.
 | `goal_progress` | Where are we in the user's task? What's done, what's left? | tracked across iterations |
 | `confirmed_facts` | Tool calls that succeeded; their key results (e.g. "file X has 432 lines", "test fails on Y"). | every `tool_result` with `verdict = Approve` |
 | `actions_taken` | The sequence of tools the round called, in order, with their key parameters. | the ledger's `intent` stream |
-| `state_progress` | Where the iteration's `phase` machine is (Running / AwaitingApproval / AwaitingConfirm / Done / Suspended / Failed). | `state.phase` |
+| `state_progress` | Current durable Turn outcome and the active execution cursor, if any. | Runtime facts + request cursor |
 | `open_questions` | Things the model is still trying to figure out. | the model's own beliefs |
 
 These fields are **always shown** in the summary entry, even
@@ -1902,7 +1848,7 @@ def assemble(surface, kinds, budget):
 
     for e in surface.entries:
         if e.kind in {"tool_result", "assistant.tool_call"}:
-            tiers_old = state.iteration_count - e.approx_iteration
+            tiers_old = surface.cursor.iteration_count - e.approx_iteration
             if tiers_old <= 3:
                 out.append(e)                       # tier 0: full
             elif tiers_old <= 10:

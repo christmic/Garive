@@ -675,7 +675,7 @@ distinct lifecycle requirements.
 | `session.redo` | `{target: seq, ref: {session, uid} \| null, reason: string}` | runtime / user | **Cancels a prior `session.undo`** by re-extending the visible range. The most recent `session.undo` whose `target` ≤ `target` of this `redo` is conceptually undone; future derives again include the previously-masked suffix. `ref` may point at the prior `session.undo` entry being reversed. Like undo, redo is itself a row in the ledger. |
 | `branch.open` | `{branch_id: string, from_seq: seq, purpose: string}` | runtime / model | Opens a **lightweight in-session branch** starting at `from_seq`. All entries appended between this row and the matching `branch.verdict` carry `branch_id = branch_id`. **Nested branches** are allowed: a `branch.open` whose `branch_id` contains a `.` (e.g. `A.B`) is a sub-branch of `A`; its `from_seq` must be ≥ the parent branch's `from_seq` and ≤ the parent's `branch.verdict.seq`. Multiple `branch.open` rows from the same `from_seq` are parallel attempts at that level; each carries its own `branch_id`. |
 | `branch.verdict` | `{branch_id: string, decision: enum{adopt, discard}, reason: string, ref: {session, uid} \| null}` | runtime / model / governance | Resolves a branch. `adopt` makes the branch's entries part of the **mainline** (`branch_id` is preserved on the rows for audit, but the surface projection includes them). `discard` retires the branch's entries from the surface (still in the ledger for audit). The verdict is itself a row in the ledger — auditable, like `governance.verdict`. **A verdict's `branch_id` matches a single `branch.open`'s `branch_id`** (the path). A nested branch's verdict operates at that level only; it does not auto-adopt / auto-discard the parent. |
-| `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
+| `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records normalized token usage per `model.invoke` call. Execution-local budget projections derive from these facts. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
 
 #### `media.*` — multimodal payloads
 
@@ -748,8 +748,8 @@ class Tokens:
 
 `model_reported` matters for cost accuracy — providers bill
 on their reported numbers, clients estimate from tokenisers
-that may diverge by a few percent. `state.tokens_used` should
-prefer `model_reported=true` when both sources are available.
+that may diverge by a few percent. Durable usage selection should prefer
+`model_reported=true` when both sources describe the same invocation.
 
 #### `goal.*` — current goal derived, not stored
 
@@ -927,7 +927,7 @@ invariant:
   `tokens_out` / `cache_read` / `cache_write`. Cost reports
   keep the true spend — the agent was paid to think those
   tokens; rolling back the budget would be a billing lie.
-- `state.tokens_used` is a *cache*; it does not store cost.
+- execution-local normalized usage is a *cache*; it does not store cost.
   The authoritative cost is the sum of `model.usage` rows in
   the ledger, which the undo does not touch.
 
@@ -936,11 +936,10 @@ invariant:
 - Entries with `seq > session.undo.target` are **retired**:
   the projection's `PROMPT_FOR_MODEL` view omits them
   (they are past the user's "rewind to here" point).
-- `state.iteration_count` and `state.tokens_used` reflect the
-  **current** iteration (after the rewind), not the sum of
-  pre-rewind history.
-- `state.phase` resumes from `Running` at the target turn's
-  end.
+- the new Kernel Execution receives counters reconstructed for the rewound
+  cursor, not the sum of retired pre-rewind history;
+- undo starts a new Kernel Execution with a new `execution_id`; no prior phase
+  or in-memory control object is resumed.
 - A new `model.usage` row after the undo is **appended** to
   the ledger as the new work happens, in `seq > target`. The
   cost report queries `SUM(tokens) FROM model.usage WHERE

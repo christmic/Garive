@@ -34,7 +34,7 @@ Four adaptive layers stacked on top:
 |-------|-------------|----------|
 | **Mathematical** | Projection formula + trigger structure | Versioned policy |
 | **Self-learning** | EWMA calibration ratio = actual / estimated | Per-round automatic |
-| **Overflow** | verified per-provider/model limit evidence | Recorded with provenance and expiry |
+| **Context-limit evidence** | verified per-provider/model rejection evidence | Recorded with provenance and expiry |
 | **Configuration** | trigger ratio, preserved headroom, calibration policy | Runtime config |
 
 ## Why this design
@@ -141,8 +141,9 @@ After the model call returns:
        0.9 × calibration_ratio            # old
      + 0.1 × (actual / estimated)         # new round
    ```
-3. If the adapter returns a verified `Overflow`, record the normalized input
-   size, provider/model identity, raw classification evidence, and expiry.
+3. If the adapter returns a verified `Rejected(ContextOverflow)`, record the
+   normalized input size, provider/model identity, sanitized classification
+   evidence, and expiry.
 
 The calibration ratio is what `derive` uses to convert
 heuristic estimates into better estimates:
@@ -181,9 +182,9 @@ passed to `derive` as part of its immutable input:
 E_now_corrected = E_now_heuristic × calibration_ratio
 ```
 
-### Layer 3 — Overflow (`overserved_max`)
+### Layer 3 — context-limit evidence (`overserved_max`)
 
-A verified provider-specific overflow outcome is evidence that the submitted
+A verified provider-specific context-overflow rejection is evidence that the submitted
 context exceeded an accepted limit under that request shape. Runtime records
 the normalized input size and its provenance:
 
@@ -268,7 +269,7 @@ trigger holds until the **real** budget is reached.
 
 ```
 A request for 195k normalized tokens receives a provider-specific signal that
-the adapter classifies as `Overflow`.
+the adapter classifies as `Rejected(ContextOverflow)`.
 overserved_max  = 195k × 0.95 = 185.25k
 effective_window = min(200k, 185.25k) = 185.25k
 trigger        = 185.25k × 0.85 = 157.5k
@@ -284,7 +285,7 @@ The four layers work in concert:
   is constant.
 - **Self-learning** — EWMA converges the estimator's
   bias over many rounds.
-- **Overflow** — `overserved_max` corrects the trigger when
+- **Context-limit evidence** — `overserved_max` corrects the trigger when
   the provider's spec is wrong.
 - **Configuration** — `trigger_ratio`, `min_preserve`, and
   the EWMA coefficients are runtime knobs.
@@ -325,7 +326,7 @@ SELECT r.notes AS saw,
 
 | Failure | Layer that catches it | Recovery |
 |---------|----------------------|----------|
-| Provider rejects the submitted context as too large | **Overflow evidence** | Normalize the provider-specific signal, record scoped evidence, and tighten conservatively |
+| Provider rejects the submitted context as too large | **Context-limit evidence** | Normalize the provider-specific signal, record scoped evidence, and tighten conservatively |
 | Estimator drifts over many rounds | **Self-learning** (EWMA) | Ratio converges; trigger stops firing prematurely |
 | First round / model swap | **Mathematical fallback** | No anchor → pure `E_now`; the next round gets a fresh anchor |
 | Calibration ratio out-of-bounds (e.g. 2.0) | **Self-learning alert** | Ratio clamped at runtime; out-of-bounds value recorded in `ops_log` |
