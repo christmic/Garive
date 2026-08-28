@@ -131,14 +131,16 @@ see `entry.superseded_by` below).
 
 | Column | Type | What it holds |
 |--------|------|---------------|
-| `seq` | INTEGER PRIMARY KEY | Monotonic per session. Strictly increasing. |
+| `seq` | INTEGER PRIMARY KEY | Monotonic per session. Strictly increasing. The **physical** ordering key — `derive` reads via `seq`. |
+| `uid` | TEXT NOT NULL UNIQUE | **Global entry identity** within the session. Stable across the entry's lifetime. Generated once at append time (UUID or sortable id). |
 | `turn` | TEXT | `turn_id` (UUID). The agent_turn this entry belongs to. |
 | `step` | INTEGER | Iteration index within the turn. `0` for user entry, `n` for the n-th `iteration`. |
-| `kind` | TEXT NOT NULL | Dotted kind name (e.g. `assistant.text`, `tool.call`, `tool.result`, `summary.v1`, `rewrite_directive`). |
+| `kind` | TEXT NOT NULL | Dotted kind name (e.g. `assistant.text`, `tool.call`, `tool.result`, `compaction.summary`, `compaction.rewrite`). |
 | `provenance` | TEXT | Opaque source tag: which model, which tool, which rule produced this entry. |
 | `surface_visible` | INTEGER (bool) | Whether this entry is *currently* visible on the surface. Defaults to `1`. Gets `0` when the entry has aged out / been compressed / been evicted. |
 | `pinned` | INTEGER (bool) | `1` if the entry is **pinned** — never compressed, never evicted, always on the surface. `goal` and `system` are pinned by default; the model can request pin via intent; `governance.judge` can mark entries as pin-worthy. |
-| `pair_ref` | INTEGER | `seq` of the paired entry (e.g. `tool.call` ↔ `tool.result`, `approval_request` ↔ `approval_response`). `NULL` if unpaired. |
+| `pair_ref` | INTEGER NULL | **In-library** reference: `seq` of the paired entry in the **same session**. `tool.call ↔ tool.result`, `governance.approval_request ↔ governance.approval_response`. `NULL` if unpaired or cross-library. |
+| `ref` | TEXT NULL | **Cross-library** reference: JSON object `{session: <uuid>, uid: <uid>}` pointing at another session. See "Two reference paths" below. `NULL` if no cross-library reference. |
 | `schema_var` | INTEGER | Schema version of this entry's payload. Lets readers tolerate old / new fields without parsing errors. |
 | `wall_ts` | INTEGER | Wall-clock time of append (Unix epoch milliseconds). |
 | `body_hash` | TEXT NULL | Content hash (`sha256:<hex>`) of the body if the body is externalised in the blob store. `NULL` if inline. |
@@ -152,6 +154,84 @@ see `entry.superseded_by` below).
 The pair `(body_inline, body_hash)` is "small body in db" or
 "large body by hash" — pick one per row based on a size
 threshold (e.g. 4 KiB inline, anything larger externalised).
+
+#### Two reference paths: `pair_ref` vs `ref`
+
+Every entry carries **zero, one, or both** reference columns.
+They have different semantics and are **not** interchangeable.
+
+**`pair_ref` (in-library)** — integer `seq` of the paired entry
+in the **same session**.
+
+- UseUse for: `tool.call ↔ tool.result`,
+  `governance.approval_request ↔ governance.approval_response`,
+  any same-session dual.
+- Why: cheap to follow (`SELECT … WHERE seq = ?`), survives
+  a session rename (it's a session-local pointer).
+- Foreign key: `pair_ref REFERENCES entry(seq)` enforces
+  "every pair points at a real entry in this db".
+
+**`ref` (cross-library)** — JSON-encoded object pointing at
+**another session**:
+
+```json
+{"session": "uuid-of-other-session", "uid": "uid-in-that-session"}
+```
+
+- UseUse for: **sub-agent completion messages** (parent session
+  receives a message from a child session it spawned),
+  **memory attribution** (long-term memory notes which
+  session / entry first observed the fact), **fork lineage**
+  (`session.turn_start` carries `fork.from_session.uid`).
+- Why: cross-session references must address by both **where**
+  (session id) and **what** (entry id); `uid` alone is not
+  unique across sessions.
+- The runtime resolves `ref` by **fetching the target
+  session's db** and looking up `entry WHERE uid = ?`. This
+  is a `cross_session_fetch` op, not a within-session query.
+- There is **no** foreign key — the target session may not
+  exist yet (future message) or may have been archived. The
+  reader follows `ref` and handles the not-found gracefully.
+
+A row can have **both** `pair_ref` and `ref` set — e.g. a
+`tool.call` that references a session-shared tool (pair to
+local `tool.result`, ref to the upstream tool registry).
+Most rows set neither; some set one; few set both.
+
+#### `uid` is what makes `ref` decoupled
+
+`uid` is the **stable identity** of an entry across its
+lifetime. It is generated **once** at append time (UUID v4
+or a sortable id like ULID). It does **not** change when:
+
+- The session is renamed.
+- The session is forked (the fork's entries get fresh `seq`,
+  but `uid` carries the lineage by being copied into the
+  fork's `ledger_meta.lineage`).
+- The session is archived / restored from cold storage.
+- The entry is compacted / superseded (the new entry gets a
+  fresh `uid`; the old `uid` lives on as the
+  `superseded_by` chain's anchor).
+
+Critically: **`uid` lets a parent ledger reference a child
+ledger without depending on the child's `seq`.** The parent
+writes `{"session": "<child-uuid>", "uid": "<child-entry-uid>"}`
+into `ref` and that reference is stable forever — even if
+the child's `seq` gets renumbered, compacted, or the child
+session is archived. This is what unblocks:
+
+- **Sub-agent completion messages**: parent waits for child;
+  child writes a completion entry; parent reads `ref` to find
+  it without caring about the child's internal `seq` numbering.
+- **Fork lineage**: a forked session records `parent_session +
+  boundary_uid` (instead of `parent_seq`), and the reference is
+  stable across any compaction of the parent's earlier entries.
+- **Audit / memory attribution**: long-term memory notes
+  "first observed by `ref → {session, uid}`" — the note
+  survives any re-numbering of the source session.
+
+`uid` is what makes cross-ledger references **portable** rather
+than brittle.
 
 #### `blob` — content-addressed registry (no refcount)
 
