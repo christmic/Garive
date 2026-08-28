@@ -74,7 +74,7 @@ fn render_read(result: Result<Vec<DurableFact>, LedgerError>) -> String {
 fn rust_consumes_every_ledger_scenario() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 10);
+    assert_eq!(cases.len(), 11);
     for case in cases {
         let session_id = SessionId::try_from("session").unwrap();
         let mut ledger = LedgerState::default();
@@ -145,6 +145,26 @@ fn rust_consumes_every_ledger_scenario() {
             .map(|value| value.as_str().unwrap().to_owned())
             .collect();
         assert_eq!(uncertain, expected_uncertain, "{}", case["name"]);
+        let uncertain_tools: Vec<_> = ledger
+            .list_uncertain_tool_invocations(&session_id)
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().to_owned())
+            .collect();
+        let expected_uncertain_tools: Vec<_> = expected["uncertain_tools"]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|value| value.as_str().unwrap().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(
+            uncertain_tools, expected_uncertain_tools,
+            "{}",
+            case["name"]
+        );
     }
 }
 

@@ -1,6 +1,6 @@
 use garive_ledger::{
     CanonicalPayload, CommitDisposition, ExecutionId, FactDraft, FactId, FactKind, LedgerError,
-    ModelRequestId, SessionId, TurnId,
+    ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{SqliteLedger, SqliteLedgerError};
 use serde_json::json;
@@ -32,6 +32,12 @@ fn initial_facts() -> Vec<FactDraft> {
         draft("f2", "turn.started", Some("t1"), None, None),
         draft("f3", "execution.started", Some("t1"), Some("e1"), None),
     ]
+}
+
+fn tool_draft(id: &str, kind: &str, tool: &str) -> FactDraft {
+    let mut value = draft(id, kind, Some("t1"), Some("e1"), None);
+    value.tool_invocation_id = Some(ToolInvocationId::try_from(tool).unwrap());
+    value
 }
 
 #[test]
@@ -178,5 +184,31 @@ fn started_model_is_uncertain_after_connection_restart() {
             .map(|value| value.as_str())
             .collect::<Vec<_>>(),
         ["r1"]
+    );
+}
+
+#[test]
+fn started_tool_is_uncertain_after_connection_restart() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("effect-recovery.sqlite3");
+    let session = SessionId::try_from("session").unwrap();
+    {
+        let mut ledger = SqliteLedger::open(&path).unwrap();
+        let mut facts = initial_facts();
+        facts.extend([
+            tool_draft("f4", "effect.prepared", "tool1"),
+            tool_draft("f5", "effect.started", "tool1"),
+        ]);
+        ledger.commit(session.clone(), 0, facts).unwrap();
+    }
+    let reopened = SqliteLedger::open(&path).unwrap();
+    assert_eq!(
+        reopened
+            .list_uncertain_tool_invocations(&session)
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str())
+            .collect::<Vec<_>>(),
+        ["tool1"]
     );
 }

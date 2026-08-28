@@ -194,6 +194,16 @@ impl LedgerState {
             .ok_or(LedgerError::MissingReference)
     }
 
+    pub fn list_uncertain_tool_invocations(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<ToolInvocationId>, LedgerError> {
+        self.sessions
+            .get(session_id)
+            .map(|session| session.projection.uncertain_tool_invocations())
+            .ok_or(LedgerError::MissingReference)
+    }
+
     pub fn session_version(&self, session_id: &SessionId) -> Option<u64> {
         self.sessions.get(session_id).map(|session| session.version)
     }

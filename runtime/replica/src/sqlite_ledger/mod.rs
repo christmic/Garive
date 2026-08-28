@@ -133,6 +133,13 @@ impl SqliteLedger {
         Ok(storage::load_state(&self.connection)?.list_uncertain_model_requests(session_id)?)
     }
 
+    pub fn list_uncertain_tool_invocations(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<ToolInvocationId>, SqliteLedgerError> {
+        Ok(storage::load_state(&self.connection)?.list_uncertain_tool_invocations(session_id)?)
+    }
+
     pub fn find_tool_invocation(
         &self,
         invocation_id: &ToolInvocationId,

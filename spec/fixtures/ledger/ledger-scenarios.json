@@ -67,6 +67,19 @@
       "expected": {"results": ["committed:1:1-8"], "version": 1, "fact_count": 8, "uncertain": []}
     },
     {
+      "name": "started-effect-is-uncertain",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [
+          {"id": "f1", "kind": "session.opened"},
+          {"id": "f2", "kind": "turn.started", "turn": "t1"},
+          {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"},
+          {"id": "f4", "kind": "effect.prepared", "turn": "t1", "execution": "e1", "tool": "tool1"},
+          {"id": "f5", "kind": "effect.started", "turn": "t1", "execution": "e1", "tool": "tool1"}
+        ]}}
+      ],
+      "expected": {"results": ["committed:1:1-5"], "version": 1, "fact_count": 5, "uncertain": [], "uncertain_tools": ["tool1"]}
+    },
+    {
       "name": "multi-fact-transition-rolls-back",
       "operations": [
         {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},

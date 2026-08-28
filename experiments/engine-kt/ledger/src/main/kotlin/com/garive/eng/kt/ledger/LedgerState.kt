@@ -132,6 +132,10 @@ class LedgerState {
         sessions[sessionId]?.let { LedgerResult.Success(it.projection.uncertainModelRequests()) }
             ?: LedgerResult.Failure(LedgerError.MissingReference)
 
+    fun listUncertainToolInvocations(sessionId: SessionId): LedgerResult<List<ToolInvocationId>> =
+        sessions[sessionId]?.let { LedgerResult.Success(it.projection.uncertainToolInvocations()) }
+            ?: LedgerResult.Failure(LedgerError.MissingReference)
+
     fun sessionVersion(sessionId: SessionId) = sessions[sessionId]?.version
 
     fun factCount(sessionId: SessionId) = sessions[sessionId]?.facts?.size ?: 0

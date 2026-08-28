@@ -223,6 +223,8 @@ repositories are insufficient for PostgreSQL transaction claims.
 - terminal immutability;
 - prepared/started/terminal model lifecycle;
 - Started without receipt classified uncertain after restart;
+- Started tool effects without receipt/terminal classified uncertain after
+  restart;
 - atomic multi-fact terminal commit;
 - fixed through-position reads;
 - unknown fact preservation and corruption rejection.

@@ -109,6 +109,15 @@ impl SessionProjection {
             .collect()
     }
 
+    pub(crate) fn uncertain_tool_invocations(&self) -> Vec<ToolInvocationId> {
+        self.tools
+            .iter()
+            .filter_map(|(identity, state)| {
+                (*state == InvocationState::Started).then_some(identity.clone())
+            })
+            .collect()
+    }
+
     fn close_session(&mut self) -> Result<(), LedgerError> {
         if self
             .turns

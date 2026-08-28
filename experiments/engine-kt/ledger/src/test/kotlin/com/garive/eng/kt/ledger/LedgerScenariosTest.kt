@@ -22,7 +22,7 @@ class LedgerScenariosTest {
     @Test
     fun `Kotlin consumes every ledger scenario`() {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(10, cases.size, "fixture coverage changed; review both runners")
+        assertEquals(11, cases.size, "fixture coverage changed; review both runners")
         cases.forEach { runCase(it.jsonObject) }
     }
 
@@ -84,6 +84,14 @@ class LedgerScenariosTest {
             ledger.listUncertainModelRequests(sessionId),
         ).value.map { it.value }
         assertEquals(expected.getValue("uncertain").jsonArray.map { it.jsonPrimitive.content }, uncertain, case.text("name"))
+        val uncertainTools = assertIs<LedgerResult.Success<List<ToolInvocationId>>>(
+            ledger.listUncertainToolInvocations(sessionId),
+        ).value.map { it.value }
+        assertEquals(
+            expected["uncertain_tools"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
+            uncertainTools,
+            case.text("name"),
+        )
     }
 
     private fun draft(value: JsonObject): FactDraft {

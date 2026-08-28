@@ -70,6 +70,11 @@ internal class LedgerProjection(
         .map { it.key }
         .sortedBy { it.value }
 
+    fun uncertainToolInvocations() = tools.entries
+        .filter { it.value == InvocationState.STARTED }
+        .map { it.key }
+        .sortedBy { it.value }
+
     private fun closeSession(): LedgerError? {
         if (turns.values.any { it == TurnState.OPEN || it == TurnState.SUSPENDED }) {
             return LedgerError.InvalidTransition
