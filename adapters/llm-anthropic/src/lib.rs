@@ -1,6 +1,7 @@
 //! Strict Anthropic Messages wire codec. HTTP headers and secrets remain in Runtime.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelFuture, ModelInputContent,
@@ -17,57 +18,88 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Failure to map between the neutral model contract and Anthropic Messages wire values.
 pub enum AnthropicAdapterError {
+    /// Neutral request validation or an adapter-specific bound failed.
     InvalidRequest,
+    /// The request uses a neutral capability this codec does not admit.
     UnsupportedCapability,
+    /// Provider bytes were not valid JSON/SSE JSON.
     InvalidJson,
+    /// Provider events or fields violated the admitted Messages protocol invariants.
     Invariant,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Bounded action derived from a non-success Anthropic HTTP response.
 pub enum HttpErrorAction {
-    Retry { retry_after: Option<Duration> },
+    /// Retry only while the caller's safe-attempt budget remains.
+    Retry {
+        /// Parsed provider delay, if valid and bounded by the caller.
+        retry_after: Option<Duration>,
+    },
+    /// Return this normalized terminal fact without another request.
     Terminal(InvokeOutcome),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Secret-free Anthropic HTTP request produced for a Runtime-owned transport.
 pub struct HttpRequestDescriptor {
+    /// HTTP method required by the Messages endpoint.
     pub method: &'static str,
+    /// Anthropic API path without authority or credentials.
     pub path: &'static str,
+    /// Protocol/version headers safe to freeze in the adapter boundary.
     pub headers: Vec<(&'static str, &'static str)>,
+    /// Encoded JSON request bytes.
     pub body: Vec<u8>,
 }
 
+/// HTTP response inputs needed by the Anthropic protocol classifier/decoder.
 pub struct HttpResponseDescriptor {
+    /// HTTP status code.
     pub status: u16,
+    /// Raw `Retry-After` header value, if present.
     pub retry_after: Option<String>,
+    /// Response or SSE body bytes.
     pub body: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Dispatch-point classification supplied by the Runtime transport.
 pub enum TransportFailure {
+    /// Transport proves no request bytes were dispatched, permitting bounded retry.
     BeforeDispatch,
+    /// Dispatch or provider execution may have occurred; automatic replay is unsafe.
     Ambiguous,
 }
 
+/// Sendable borrowed future used by the Runtime-owned transport boundary.
 pub type TransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Runtime implementation of authenticated Anthropic HTTP execution and waiting.
 pub trait AnthropicTransport: Send + Sync {
+    /// Executes one secret-free descriptor after Runtime adds authority and credentials.
     fn execute<'a>(
         &'a self,
         request: HttpRequestDescriptor,
         cancellation: &'a dyn ModelCancellation,
     ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>>;
 
+    /// Waits using the Runtime scheduler rather than blocking adapter/Core threads.
     fn wait<'a>(&'a self, delay: Duration) -> TransportFuture<'a, ()>;
 }
 
+/// [`ModelPort`] implementation for the Anthropic Messages protocol.
 pub struct AnthropicModelPort<T> {
     transport: T,
     max_attempts: u32,
 }
 
 impl<T> AnthropicModelPort<T> {
+    /// Creates a port with an immutable transport and total safe-attempt bound.
+    ///
+    /// A zero bound is rejected as [`ModelPortFailure::InvalidRequest`] on invocation.
     pub const fn new(transport: T, max_attempts: u32) -> Self {
         Self {
             transport,
@@ -138,6 +170,7 @@ impl<T: AnthropicTransport> ModelPort for AnthropicModelPort<T> {
     }
 }
 
+/// Renders a validated neutral request into a secret-free Messages HTTP descriptor.
 pub fn render_http_request(
     request: &ModelRequest,
     stream: bool,
@@ -163,6 +196,7 @@ pub fn render_http_request(
     })
 }
 
+/// Classifies one Anthropic error response into a bounded retry or normalized terminal fact.
 pub fn classify_http_error(
     status: u16,
     retry_after: Option<&str>,
@@ -220,6 +254,7 @@ pub fn classify_http_error(
     }))
 }
 
+/// Maps a neutral request to the admitted Anthropic Messages JSON body.
 pub fn render_request(
     request: &ModelRequest,
     stream: bool,
@@ -313,6 +348,7 @@ pub fn render_request(
     Ok(Value::Object(body))
 }
 
+/// Parses a complete Anthropic Messages JSON body into one normalized outcome.
 pub fn parse_response(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
     let message: Value =
         serde_json::from_slice(bytes).map_err(|_| AnthropicAdapterError::InvalidJson)?;
@@ -345,6 +381,7 @@ enum ParsedStop {
     OutputLimit,
 }
 
+/// Validates and reduces a complete Anthropic Messages SSE transcript.
 pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
     let text = std::str::from_utf8(bytes).map_err(|_| AnthropicAdapterError::InvalidJson)?;
     let mut blocks = BTreeMap::<u64, (Block, bool)>::new();

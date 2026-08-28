@@ -1,6 +1,7 @@
 //! Strict OpenAI Responses wire codec. HTTP ownership remains in Runtime.
 
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelFuture, ModelInputContent,
@@ -17,57 +18,88 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Failure to map between the neutral model contract and OpenAI Responses wire values.
 pub enum OpenAiAdapterError {
+    /// Neutral request validation or an adapter-specific bound failed.
     InvalidRequest,
+    /// The request uses a neutral capability this codec does not admit.
     UnsupportedCapability,
+    /// Provider bytes were not valid JSON/SSE JSON.
     InvalidJson,
+    /// Provider events or fields violated the admitted Responses protocol invariants.
     Invariant,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Bounded action derived from a non-success OpenAI HTTP response.
 pub enum HttpErrorAction {
-    Retry { retry_after: Option<Duration> },
+    /// Retry only while the caller's safe-attempt budget remains.
+    Retry {
+        /// Parsed provider delay, if valid and bounded by the caller.
+        retry_after: Option<Duration>,
+    },
+    /// Return this normalized terminal fact without another request.
     Terminal(InvokeOutcome),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Secret-free OpenAI HTTP request produced for a Runtime-owned transport.
 pub struct HttpRequestDescriptor {
+    /// HTTP method required by the Responses endpoint.
     pub method: &'static str,
+    /// OpenAI API path without authority or credentials.
     pub path: &'static str,
+    /// Protocol headers safe to freeze in the adapter boundary.
     pub headers: Vec<(&'static str, &'static str)>,
+    /// Encoded JSON request bytes.
     pub body: Vec<u8>,
 }
 
+/// HTTP response inputs needed by the OpenAI protocol classifier/decoder.
 pub struct HttpResponseDescriptor {
+    /// HTTP status code.
     pub status: u16,
+    /// Raw `Retry-After` header value, if present.
     pub retry_after: Option<String>,
+    /// Response or SSE body bytes.
     pub body: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Dispatch-point classification supplied by the Runtime transport.
 pub enum TransportFailure {
+    /// Transport proves no request bytes were dispatched, permitting bounded retry.
     BeforeDispatch,
+    /// Dispatch or provider execution may have occurred; automatic replay is unsafe.
     Ambiguous,
 }
 
+/// Sendable borrowed future used by the Runtime-owned transport boundary.
 pub type TransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Runtime implementation of authenticated OpenAI HTTP execution and waiting.
 pub trait OpenAiTransport: Send + Sync {
+    /// Executes one secret-free descriptor after Runtime adds authority and credentials.
     fn execute<'a>(
         &'a self,
         request: HttpRequestDescriptor,
         cancellation: &'a dyn ModelCancellation,
     ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>>;
 
+    /// Waits using the Runtime scheduler rather than blocking adapter/Core threads.
     fn wait<'a>(&'a self, delay: Duration) -> TransportFuture<'a, ()>;
 }
 
+/// [`ModelPort`] implementation for the OpenAI Responses protocol.
 pub struct OpenAiModelPort<T> {
     transport: T,
     max_attempts: u32,
 }
 
 impl<T> OpenAiModelPort<T> {
+    /// Creates a port with an immutable transport and total safe-attempt bound.
+    ///
+    /// A zero bound is rejected as [`ModelPortFailure::InvalidRequest`] on invocation.
     pub const fn new(transport: T, max_attempts: u32) -> Self {
         Self {
             transport,
@@ -138,6 +170,7 @@ impl<T: OpenAiTransport> ModelPort for OpenAiModelPort<T> {
     }
 }
 
+/// Renders a validated neutral request into a secret-free Responses HTTP descriptor.
 pub fn render_http_request(
     request: &ModelRequest,
     stream: bool,
@@ -162,6 +195,7 @@ pub fn render_http_request(
     })
 }
 
+/// Classifies one OpenAI error response into a bounded retry or normalized terminal fact.
 pub fn classify_http_error(
     status: u16,
     retry_after: Option<&str>,
@@ -211,6 +245,7 @@ pub fn classify_http_error(
     }))
 }
 
+/// Maps a neutral request to the admitted OpenAI Responses JSON body.
 pub fn render_request(request: &ModelRequest, stream: bool) -> Result<Value, OpenAiAdapterError> {
     request
         .validate()
@@ -290,6 +325,7 @@ pub fn render_request(request: &ModelRequest, stream: bool) -> Result<Value, Ope
     Ok(Value::Object(body))
 }
 
+/// Parses a complete OpenAI Responses JSON body into one normalized outcome.
 pub fn parse_response(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     let response: Value =
         serde_json::from_slice(bytes).map_err(|_| OpenAiAdapterError::InvalidJson)?;
@@ -355,6 +391,7 @@ struct StartedItem {
     name: Option<String>,
 }
 
+/// Validates and reduces a complete OpenAI Responses SSE transcript.
 pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     let text = std::str::from_utf8(bytes).map_err(|_| OpenAiAdapterError::InvalidJson)?;
     let mut previous = None;
