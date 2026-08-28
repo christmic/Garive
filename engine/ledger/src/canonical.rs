@@ -4,12 +4,14 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Canonical JSON payload and the SHA-256 digest that binds its stored bytes.
 pub struct CanonicalPayload {
     json: String,
     sha256: String,
 }
 
 impl CanonicalPayload {
+    /// Canonicalizes a JSON value and computes its lowercase SHA-256 digest.
     pub fn from_value(value: &Value) -> Result<Self, CanonicalPayloadError> {
         let mut json = String::new();
         encode(value, &mut json)?;
@@ -17,6 +19,7 @@ impl CanonicalPayload {
         Ok(Self { json, sha256 })
     }
 
+    /// Validates persisted JSON and digest bytes before reconstructing a payload.
     pub fn from_canonical_parts(
         json: String,
         sha256: String,
@@ -33,6 +36,7 @@ impl CanonicalPayload {
         Ok(canonical)
     }
 
+    /// Recomputes the digest and fails when the payload bytes were corrupted.
     pub fn verify(&self) -> Result<(), CanonicalPayloadError> {
         if digest(self.json.as_bytes()) == self.sha256 {
             Ok(())
@@ -41,10 +45,12 @@ impl CanonicalPayload {
         }
     }
 
+    /// Returns the canonical UTF-8 JSON representation.
     pub fn as_json(&self) -> &str {
         &self.json
     }
 
+    /// Returns the lowercase hexadecimal SHA-256 digest.
     pub fn sha256(&self) -> &str {
         &self.sha256
     }
@@ -59,10 +65,15 @@ impl CanonicalPayload {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Failure while canonicalizing or validating a persisted payload.
 pub enum CanonicalPayloadError {
+    /// Stored bytes are not valid JSON.
     InvalidJson,
+    /// The JSON number is outside the admitted integer-only surface.
     UnsupportedNumber,
+    /// Stored JSON is valid but not in the required canonical representation.
     NonCanonical,
+    /// Stored or in-memory payload bytes do not match the bound digest.
     DigestMismatch,
 }
 

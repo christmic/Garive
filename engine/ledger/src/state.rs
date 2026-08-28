@@ -22,19 +22,25 @@ struct FactIndexEntry {
 }
 
 #[derive(Clone, Debug, Default)]
+/// In-memory reference Ledger used to enforce portable append and query semantics.
 pub struct LedgerState {
     sessions: BTreeMap<SessionId, SessionLedger>,
     fact_index: BTreeMap<FactId, FactIndexEntry>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Facts and durable watermark required to reconstruct one Turn.
 pub struct TurnSnapshot {
+    /// Ordered facts belonging to the requested Turn.
     pub facts: Vec<DurableFact>,
+    /// Session version at the snapshot watermark.
     pub session_version: u64,
+    /// Highest Session position frozen by the snapshot.
     pub through_position: u64,
 }
 
 impl LedgerState {
+    /// Atomically validates and appends a batch at one expected Session version.
     pub fn commit(
         &mut self,
         session_id: SessionId,
@@ -124,6 +130,7 @@ impl LedgerState {
         })
     }
 
+    /// Reads an immutable, strictly ordered prefix range with an optional kind filter.
     pub fn read_facts(
         &self,
         session_id: &SessionId,
@@ -157,6 +164,7 @@ impl LedgerState {
         Ok(output)
     }
 
+    /// Reconstructs one Turn's ordered facts and containing Session watermark.
     pub fn load_turn(&self, turn_id: &TurnId) -> Result<TurnSnapshot, LedgerError> {
         for session in self.sessions.values() {
             let facts: Vec<_> = session
@@ -176,14 +184,17 @@ impl LedgerState {
         Err(LedgerError::MissingReference)
     }
 
+    /// Returns all lifecycle facts associated with one model request.
     pub fn find_model_request(&self, request_id: &ModelRequestId) -> Vec<DurableFact> {
         self.find_invocation(|fact| fact.model_request_id.as_ref() == Some(request_id))
     }
 
+    /// Returns all lifecycle facts associated with one tool invocation.
     pub fn find_tool_invocation(&self, invocation_id: &ToolInvocationId) -> Vec<DurableFact> {
         self.find_invocation(|fact| fact.tool_invocation_id.as_ref() == Some(invocation_id))
     }
 
+    /// Lists model requests that reached Started without a recovery-terminal fact.
     pub fn list_uncertain_model_requests(
         &self,
         session_id: &SessionId,
@@ -194,6 +205,7 @@ impl LedgerState {
             .ok_or(LedgerError::MissingReference)
     }
 
+    /// Lists tool invocations that reached Started without a receipt or terminal fact.
     pub fn list_uncertain_tool_invocations(
         &self,
         session_id: &SessionId,
@@ -204,16 +216,19 @@ impl LedgerState {
             .ok_or(LedgerError::MissingReference)
     }
 
+    /// Returns the current Session version, or `None` when the Session is absent.
     pub fn session_version(&self, session_id: &SessionId) -> Option<u64> {
         self.sessions.get(session_id).map(|session| session.version)
     }
 
+    /// Returns the number of durable facts in a Session.
     pub fn fact_count(&self, session_id: &SessionId) -> usize {
         self.sessions
             .get(session_id)
             .map_or(0, |session| session.facts.len())
     }
 
+    /// Returns the fact at one Session-local position when present.
     pub fn fact_at(&self, session_id: &SessionId, position: u64) -> Option<DurableFact> {
         self.sessions
             .get(session_id)
