@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlinx.serialization.json.*
+import kotlinx.coroutines.test.runTest
 import kotlin.time.Duration.Companion.seconds
 
 class AnthropicMessagesCodecTest {
@@ -80,6 +81,23 @@ class AnthropicMessagesCodecTest {
             AnthropicMessagesCodec.classifyHttpError(429, "Thu, 01 Jan 1970 00:00:03 GMT",
                 """{"error":{"type":"rate_limit_error","message":"busy"}}""".encodeToByteArray(), false, Instant.EPOCH)).value
         assertEquals(HttpErrorAction.Retry(3.seconds), retry)
+    }
+    @Test fun `model port retries before ambiguity and returns one terminal`() = runTest {
+        val transport = ScriptTransport(ArrayDeque(listOf(
+            TransportResult.Success(HttpResponseDescriptor(529, "0",
+                """{"type":"error","error":{"type":"overloaded_error","message":"busy"}}""".encodeToByteArray())),
+            TransportResult.Success(HttpResponseDescriptor(200, null, fixture("complete.sse"))),
+        )))
+        val result = AnthropicModelPort(transport, 2).invoke(request(), ModelObserver { ObserverDecision.CONTINUE },
+            ModelCancellation { false })
+        assertIs<InvokeOutcome.Completed>(assertIs<ModelPortResult.Success>(result).outcome)
+        assertEquals(listOf(kotlin.time.Duration.ZERO), transport.waits)
+    }
+
+    private class ScriptTransport(private val responses: ArrayDeque<TransportResult>) : AnthropicTransport {
+        val waits = mutableListOf<kotlin.time.Duration>()
+        override suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation) = responses.removeFirst()
+        override suspend fun wait(delay: kotlin.time.Duration) { waits += delay }
     }
 
     private fun render(action: HttpErrorAction): String = when (action) {
