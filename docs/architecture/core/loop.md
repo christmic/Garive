@@ -283,40 +283,46 @@ class Surface:
     `phase`, `iteration_count`, etc.)."""
     start_seq: int                       # earliest seq in the cache
                                           #   (= 0 if no compression,
-                                          #    or rewrite_directive.
-                                          #    covers.seq_range.end + 1
-                                          #    otherwise)
-    last_seq: int                       # latest seq already in the cache
-    last_directive_seq: int             # latest rewrite_directive seq
-                                          #   already accounted for
+                                          #    or latest directive's
+                                          #    covers.seq_range.end + 1)
+    last_seq: int                       # latest seq in the cache
     entries: list[Entry]                # the cached entries
     always_loaded: dict[Kind, Entry]    # special kinds (e.g. goal)
                                           #   maintained independently
                                           #   of seq range
 
 def derive(kinds, budget):
-    # 1. 检查自上次 derive 后是否有新的 rewrite_directive
-    new_directive = ledger.rewrite_directive_since(
-        surface.last_directive_seq)
-
-    if new_directive is not None:
-        # 压缩标记出现 → 作废从新起点之前的缓存
-        surface.start_seq = new_directive.covers.seq_range.end + 1
-        surface.entries   = []  # 清空缓存
-        surface.last_directive_seq = new_directive.seq
-
-    # 2. 增量追加新条目（没压缩时 = ledger append-only）
+    # 1. 拉所有新条目
+    #    rewrite_directive 也是 ledger 的一种 kind — 自然落在
+    #    entries_since(last_seq) 里，无需单独的 last_directive_seq。
     new_entries = ledger.entries_since(surface.last_seq)
-    surface.entries.extend(new_entries)
+
+    # 2. 检查新条目里是否有 rewrite_directive
+    #    如果有，最新的那条 directive 决定新的 start_seq
+    directives = [e for e in new_entries
+                 if e.kind == "rewrite_directive"]
+    if directives:
+        rw = max(directives, key=lambda e: e.seq)
+        new_start = rw.covers.seq_range.end + 1
+        # 重置到新起点；保留所有 >= new_start 的条目
+        surface.entries = [
+            e for e in (surface.entries + new_entries)
+            if e.seq >= new_start
+        ]
+        surface.start_seq = new_start
+    elif new_entries:
+        # 3. 没有压缩 → 增量 append
+        surface.entries.extend(new_entries)
+
     surface.last_seq = ledger.latest_seq()
 
-    # 3. always-loaded kinds 独立维护（不受压缩影响，始终最新）
+    # 4. always-loaded kinds 独立维护（不受压缩影响，始终最新）
     for k in ALWAYS_LOAD_KINDS:        # {goal, system, ...}
         active = ledger.latest_active(kind=k)
         surface.always_loaded[k] = active   # 全量替换
                                             #   永远取最新版本
 
-    # 4. 按 kinds + budget 装配 → surface
+    # 5. 按 kinds + budget 装配 → surface
     return assemble(surface, kinds, budget)
 ```
 
@@ -351,6 +357,11 @@ since the previous call**.
   the whole ledger; if a corner case requires a fresh build
   (process restart, ledger corruption recovery), that is an
   explicit recovery path, not a per-iteration cost.
+- **No redundant state.** `Surface` carries only the fields
+  it actually reads back. `last_directive_seq` would be
+  derivable from `entries_since(last_seq)` filtered by
+  `kind == rewrite_directive` — so the algorithm inlines it
+  rather than tracking a second cursor.
 
 #### Summary prefix convention
 
