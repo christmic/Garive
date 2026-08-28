@@ -358,58 +358,37 @@ within range, then category.
 ### Assemble (per-projection reshape)
 
 `assemble(surface, projection, last_seen_seq?)` is the stage
-that **shapes the cached surface into the exact bytes the
-consumer sees**. It runs after `derive`, before
-`model.invoke`. Where `derive` is the common path,
-`assemble` is the **per-projection reshape** that turns
-policy and history into the prompt the model actually
-receives.
+that **serialises the derived surface into the exact bytes
+the consumer sees**. It runs after `derive`, before
+`model.invoke`. Where `derive` decides **what** the model
+sees, `assemble` decides **how** — projection, layout,
+delta fragment, and the final `pinned / seen / new` segment
+shape.
 
-#### What assemble does (seven responsibilities)
+> **One-liner split.** `derive` is **content selection** —
+> provider-agnostic. `assemble` is **how to say it** — the
+> serialisation dialect, including provider-specific layout.
+> Content choice and serialisation format are different
+> problems; this split keeps them clean.
 
-1. **Apply masking instructions** — the row stream
-   `compaction.rewrite`, `privacy.redact`, `session.undo`,
-   `session.redo`, `branch.verdict` all live in the
-   `entry` table. The cached surface carries the entries
-   themselves; `assemble` walks the masking timeline
-   (`compaction.rewrite` + `privacy.redact` + `session.undo`
-   + `branch.*`) and projects a `RedactedPlaceholder` /
-   retired entry / hidden-branch view per the rules in
-   `ledger.md`. The mask is **cumulative** — all
-   instructions apply together.
-2. **`kinds` filter** — `projection.kinds` declares which
-   kinds the projection cares about. `assemble` drops
-   anything else. `PROMPT_FOR_MODEL` uses the full default
-   set; `SUMMARIZE_INPUT` narrows to body kinds;
-   `GOVERNANCE_INPUT` narrows further to the intent + the
-   minimum context.
-3. **`pinned` block injection** — `goal.*` and `system`
-   kinds are pinned, so they appear in **every** projection,
-   at the top of the prompt. `assemble` injects them
-   first, **deduplicating** if the same pinned entry would
-   otherwise appear in both the pinned block and the body
-   stream. The pinned block is its own segment of the
-   prompt (separator, then body stream).
-4. **Position-based budget clipping** — the per-tool tier
-   policy in `loop.md` (3-pass `assemble`) does the
-   *content* shaping; a separate position function clips
-   *where* the budget is spent. Examples: the assistant's
-   most recent reply must be visible; the most recent
-   `tool_result` must be visible; everything before gets
-   budget-allocated in reverse-`seq` order. The
-   position function is per-projection.
-5. **Pinned-block dedup** — the pinned block is
-   `goal.*` + `system`; if any of those also exist in the
-   body stream (e.g. a `system` prompt that was written as
-   a regular entry), `assemble` keeps the pinned copy and
-   **removes the duplicate** from the body stream. The
-   model sees one instance of each pinned kind, not two.
-6. **Projection-specific reshape** — the five projections
+#### What assemble does (three responsibilities)
+
+`assemble` is **purely serialisation**. The content
+decisions — masking, kinds filter, dedup, pinned
+injection, position clip — are `derive`'s job (see
+"Derive pipeline (six steps)" above). `assemble` only
+decides *how* to emit what `derive` already chose.
+
+1. **Projection-specific reshape** — the five projections
    (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`,
    `GOVERNANCE_INPUT`, `FORK_BRANCH`, `AUDIT_REPLAY`) each
-   have their own reshape rules. `assemble` dispatches
-   based on the `projection` argument.
-7. **Delta fragment** — *crucial for prompt-cache
+   have their own serialisation rules. `assemble`
+   dispatches based on the `projection` argument.
+2. **Layout mode** (5 modes: `default`, `compact`, `audit`,
+   `governance`, `speculative`) — positions head / middle /
+   tail segments to exploit the model's U-shaped attention.
+   See "Layout-aware assembly" below.
+3. **Delta fragment** — *crucial for prompt-cache
    stability.* If the loop has a `last_seen_seq` for this
    round (which it does after the first iteration), the
    body stream is split into a **seen part** (`seq <=
@@ -421,20 +400,32 @@ receives.
    *delta*. Detail in "Delta fragment and prompt-cache
    prefix" below.
 
-The seven responsibilities run in order: masking first
-(it's a global projection), then kinds filter, then pinned
-injection, then dedup, then position clipping, then
-projection-specific reshape, then delta-fragment
+The three responsibilities run in order: projection
+reshape, then layout positioning, then delta-fragment
 composition.
 
 ```python
 def assemble(surface, projection, last_seen_seq=None):
-    # 1. masking (compaction / redaction / undo / branch)
-    masked = apply_masking(surface, projection)
+    # surface is already masked, deduped, kinds-filtered,
+    # position-clipped, pinned-injected by derive
+    body = projection.reshape(surface.body)        # 1. projection
+    body = layout(body, mode=projection.layout_mode)  # 2. layout
+    seen, new = split_at(body, last_seen_seq)        # 3. delta
 
-    # 2. kinds filter
-    body = [e for e in masked if e.kind in projection.kinds]
+    return Assembled(
+        pinned = surface.pinned,        # already chosen by derive
+        seen   = seen,
+        new    = new,
+        delta_boundary = last_seen_seq,
+    ), DeriveReceipt(...)
+```
 
+`assemble` reads only the `Surface` produced by `derive`. It
+never walks the ledger, never decides which entries to keep,
+never decides which kinds go on the surface — all of that is
+`derive`'s job. `assemble`'s only job is to pick the
+**shape** of the prompt: the layout, the projection, the
+delta boundary.
     # 3. pinned injection (with 5. dedup)
     pinned = collect_pinned(masked)
     body   = [e for e in body if e not in pinned]   # dedup
