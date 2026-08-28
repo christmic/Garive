@@ -10,5 +10,9 @@ publish = false
 garive-ledger = { path = "../../engine/ledger" }
 rusqlite.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+tempfile = "3.27.0"
+
 [lib]
 path = "src/lib.rs"
