@@ -8,3 +8,10 @@ publish = false
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+prost.workspace = true
+
+[build-dependencies]
+prost-build = "0.14.4"
+protoc-bin-vendored = "3.2.0"
