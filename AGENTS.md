@@ -8,11 +8,11 @@
 This file is the canonical Agent entry point for the Garive repo
 (read by OpenAI Codex, Cursor, Claude Code via `CLAUDE.md`, and
 similar tools). Project-level Agent resources (engineering rules,
-git workflow, conventions, multi-language sync, testing pyramid)
-live under `.agents/` and are `@`-referenced from this file.
-**`.agents/` is the code constitution** — every file there is a
-rule that applies repo-wide; tier-specific overrides live in
-`<tier>/AGENTS.md`.
+git workflow, conventions, multi-language sync, testing pyramid,
+doc style) live under `.agents/` and are `@`-referenced from
+this file. **`.agents/` is the code constitution** — every file
+there is a rule that applies repo-wide; tier-specific overrides
+live in `<tier>/AGENTS.md`.
 
 ## The R&D Pipeline
 
@@ -90,5 +90,6 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 @.agents/conventions.md
 @.agents/multi-language.md
 @.agents/testing.md
+@.agents/doc-style.md
 @.agents/ddd.md
 @.agents/architecture.md
