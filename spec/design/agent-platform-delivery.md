@@ -6,6 +6,12 @@ Accepted delivery map for the next Garive implementation phase. It extends the
 Agent architecture and execution contracts without changing their ownership
 rules.
 
+Current implementation has executable evidence for C0-C3, L0, SQLite,
+PostgreSQL, both buffered provider protocol slices, generated Host v1 bindings
+and all fake-host product shells. It does not yet claim the complete phase:
+full durable Turn orchestration/live network hosting and an Android APK gate
+remain open (the current machine has no Android SDK).
+
 ## Purpose
 
 Turn the accepted Agent boundary into two executable server-capable
