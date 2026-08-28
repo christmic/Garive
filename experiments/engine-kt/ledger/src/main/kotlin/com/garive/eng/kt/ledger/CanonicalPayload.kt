@@ -39,10 +39,12 @@ class CanonicalPayload private constructor(val json: String, val sha256: String)
             }
             return when (val canonical = fromValue(value)) {
                 is CanonicalPayloadResult.Failure -> canonical
-                is CanonicalPayloadResult.Success -> if (canonical.payload.sha256 == sha256) {
-                    canonical
-                } else {
-                    CanonicalPayloadResult.Failure(CanonicalPayloadError.DIGEST_MISMATCH)
+                is CanonicalPayloadResult.Success -> when {
+                    canonical.payload.json != json ->
+                        CanonicalPayloadResult.Failure(CanonicalPayloadError.NON_CANONICAL)
+                    canonical.payload.sha256 != sha256 ->
+                        CanonicalPayloadResult.Failure(CanonicalPayloadError.DIGEST_MISMATCH)
+                    else -> canonical
                 }
             }
         }
@@ -54,7 +56,7 @@ sealed interface CanonicalPayloadResult {
     data class Failure(val error: CanonicalPayloadError) : CanonicalPayloadResult
 }
 
-enum class CanonicalPayloadError { INVALID_JSON, UNSUPPORTED_NUMBER, DIGEST_MISMATCH }
+enum class CanonicalPayloadError { INVALID_JSON, UNSUPPORTED_NUMBER, NON_CANONICAL, DIGEST_MISMATCH }
 
 private val minimumInteger = BigInteger.valueOf(Long.MIN_VALUE)
 private val maximumInteger = BigInteger("18446744073709551615")

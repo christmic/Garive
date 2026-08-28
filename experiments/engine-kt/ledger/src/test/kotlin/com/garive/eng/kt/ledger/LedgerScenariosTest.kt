@@ -32,7 +32,12 @@ class LedgerScenariosTest {
         val payload = assertIs<CanonicalPayloadResult.Success>(CanonicalPayload.fromValue(value)).payload
         assertEquals("""{"a":"蟹","escaped":"\n","z":[2,1]}""", payload.json)
         assertEquals(64, payload.sha256.length)
-        assertIs<CanonicalPayloadResult.Success>(CanonicalPayload.fromStoredJson("{ \"z\": [2, 1], \"a\": \"蟹\", \"escaped\": \"\\n\" }", payload.sha256))
+        assertEquals(
+            CanonicalPayloadError.NON_CANONICAL,
+            assertIs<CanonicalPayloadResult.Failure>(
+                CanonicalPayload.fromStoredJson("{ \"z\": [2, 1], \"a\": \"蟹\", \"escaped\": \"\\n\" }", payload.sha256),
+            ).error,
+        )
         assertEquals(
             CanonicalPayloadError.DIGEST_MISMATCH,
             assertIs<CanonicalPayloadResult.Failure>(CanonicalPayload.fromStoredJson(payload.json, "00")).error,
