@@ -460,9 +460,83 @@ abort the round or fail over.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: **draft (possible mechanism)** — the 3-layer split
-  (theory / transport / recovery) and the policy-table
-  shape are settled. Specific retry budgets, the AIMD
-  parameters, the idempotency-key mapping per provider, and
-  the recovery-side effects land with the slice. No final
-  code.
+- Status: **active** — `model.invoke` design is **closed
+  out** (see Summary below).
+
+## Summary — `model.invoke` design complete
+
+This doc covers everything between `derive → assemble` and
+the **provider's wire API**. The design is now closed out:
+
+### Already in this doc (8 layers)
+
+1. **Two protocols** — event stream (lossy realtime for UI /
+   monitor) + ledger stream (lossless durable records). The
+   names are **design properties**, not a specific transport.
+2. **Retry vs Recover** — retries are local to `model.invoke`;
+   semantic failures bubble up to the loop skeleton as a
+   single outcome event.
+3. **InvokeOutcome** — 8 sealed-type outcome kinds
+   (`Completed`, `Overflow`, `OutputTruncated`,
+   `RateBudgetExhausted`, `PartialCancelled`, `AuthFailure`,
+   `ContentViolation`, `ModelUnavailable`,
+   `CircuitBreakerOpen`).
+4. **Cancellation semantics** — mid-stream cancel writes
+   `provider.partial` to the ledger (the bridge between the
+   two protocols).
+5. **AIMD + circuit breaker** — per-pool concurrency control.
+6. **Idempotency** — `client_generation` deduplicates retries
+   across provider + ledger.
+7. **Dead-flow detection** — TTFT / inter-chunk / call-budget
+   timers; **suspending recovery** (user leaves) + **liveness
+   probe** (provider down).
+8. **Multi-model dispatch + per-provider concurrency pools** —
+   `role → (provider, model_id)` table; per-pool AIMD;
+   global cap + priority queue; **`request_id`** ties
+   `model.usage` + `loop.receipt` + provider log + telemetry.
+
+### Round-trips between providers
+
+Provider failure kinds are split into **two distinct
+boundaries**:
+
+- **Transport failures** (5xx / 429 / 413 / truncation /
+  cancel / model-down) live in **`provider-adapter.md`** and
+  are recovered by the **5-strategy declarative policy
+  table**. The recovery is **declarative** (YAML) and
+  **runtime-readable**.
+- **Semantic output failures** (model returns **invalid
+  arguments** to a tool call, schema mismatch, missing
+  fields) are **not** in this doc — they are recovered at
+  the **effect layer** by either `governance.judge`
+  rejecting the intent or by feeding the error back to the
+  model so it regenerates. The boundary is load-bearing:
+  `provider-adapter` does **not** retry on bad model output,
+  because the model is the one that produced the bad output
+  — re-issuing the same call would reproduce the bug. The
+  effect layer is the right place to make the model own its
+  output.
+
+### Design shape (one sentence)
+
+> **`model.invoke` is a streaming caller (transport) with
+> liveness + budget discipline, backed by a declarative
+> recovery-policy table (resilience), dispatching per
+> `role → (provider, model_id)` (economy), and threading a
+> single `request_id` (trace) through every tier.**
+
+The shape is:
+
+- **Transport** — the streaming caller + the 8 outcome kinds
+- **Resilience** — the 5-strategy recovery policy table
+- **Economy** — the per-role dispatch table + AIMD pools
+- **Trace** — `request_id` across provider, ledger, telemetry
+
+### Test impact
+
+The `assemble-testing.md` "Dim 1c — Real API smoke" exercises
+the transport half. The role dispatch table + concurrency
+pool tests live alongside it (forthcoming — same harness).
+The `loop.md` "Two protocols" design asserts the
+event-stream / ledger-stream split; `provider-adapter.md`
+provides the implementation contract.
