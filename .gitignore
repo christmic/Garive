@@ -62,3 +62,7 @@ coverage/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+# Cargo lock for empty / application-only workspaces (Garive
+# currently has no binary crates, so we ignore it; reinstate
+# tracking when the workspace starts producing binaries).
+Cargo.lock
