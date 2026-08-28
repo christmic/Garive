@@ -205,39 +205,111 @@ read often.
 `meta` is the equivalent of `meta.json` but inside the db, so
 it joins naturally with the rest.
 
-### Entry Kinds (dotted names)
+### Entry Kinds (by family, with body schemas)
 
-Kinds are dotted, lower-case, namespace-qualified. Adding a
-new kind is **a row in the catalog** plus a Rust/Kotlin
-typed payload — nothing else changes.
+Kinds are **dotted, lower-case, family-prefixed**. The
+prefix is the family; the suffix names the specific event.
+Adding a new kind is **a row in the catalog** plus a typed
+payload — nothing else changes.
 
-| Kind | Produced by | Notes |
-|------|--------------|-------|
-| `user.text` | runtime | One per user message entry. Inline. |
-| `assistant.text` | model | Model's reply before judge. May be large. |
-| `assistant.tool_call` | model | One per model intent. `pair_ref` → the `tool.result`. |
-| `tool.result` | executor | Pairs with `assistant.tool_call`. The actual bytes are usually in the blob store (output files, large logs). |
-| `tool.result.rejected` | executor | When governance denied. Inline (reasons are short). |
-| `governance.verdict` | governance | One per assistant. on `pair_ref` → the `assistant.tool_call`. |
-| `executor.effects` | executor | What the executor did, in addition to the tool result (side effects, file writes, etc.). |
-| `approval.request` | runtime | AskUser verdict. Round pauses here. |
-| `approval.response` | runtime | Human's reply on Resume. `pair_ref` → the `approval.request`. |
-| `model.usage` | model | Token counts (`tokens_in`, `tokens_out`, `cache_read`, `cache_write`). Inline. |
-| `summary.v1` | model | Structured summary. `covers_start` / `covers_end` set. `ext` is the structured fields (see `loop.md`). |
-| `rewrite_directive` | runtime | `covers_start` / `covers_end` set; signals `derive` to reset its surface cache. |
-| `goal` | system | Pinned. Always-loaded. Frame kind. |
-| `system` | runtime | Pinned. Always-loaded. Frame kind. |
-| `session.urn.start` | runtime | Marks the first entry of the session. `meta` row may follow. |
-| `session.urn.end` | runtime | Marks the last entry of a clean close. |
+Body schemas below are normative: the wire format in
+`spec/proto/` must match these shapes. Inline bodies carry
+the value directly in `entry.body_inline`; large bodies
+reference a blob hash in `entry.body_hash`.
 
-Kinds split into three load classes (see `loop.md`):
+#### `text.*` — text exchanges
+
+The free-form text the model and the user exchange. Both
+share the same body shape (`{text: string}`); the family
+prefix distinguishes the **producer** so `derive` can filter.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `text.user` | `{text: string}` | runtime | One per user message entry. Pinned on the system side per request. |
+| `text.assistant` | `{text: string}` | model | Model's reply text before judge. May be large (long explanations) → externalise. |
+
+#### `tool.*` — tool calls and results
+
+The model's verb (call) is paired with the runtime's
+response (result) via `pair_ref`. Body shape:
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `tool.call` | `{name: string, args: Value, call_id: string}` | model | One per model intent. `call_id` is the model-side identifier; the result row carries the same `call_id` + a `pair_ref` to this `seq`. |
+| `tool.result` | `{call_id: string, status: enum{ok, error, timeout}, output: OutputPayload}` | executor | Pairs with `tool.call`. `output` is one of two shapes (below). |
+| `tool.result.rejected` | `{call_id: string, reason: string}` | executor | When governance denied. Carries the reason back to the model. Inline (reasons are short). |
+
+`OutputPayload` (the `output` field of `tool.result`):
+
+| Shape | When | Form |
+|-------|------|------|
+| `{inline: {text: string}}` | small body (< threshold) | `entry.body_inline` carries the text directly |
+| `{blob: {hash: string, preview: string}}` | large body (≥ threshold) | `entry.body_hash` carries `sha256:<hex>`; `preview` is a one-screen rendering (head + tail + size) for the surface even when the full blob is offloaded |
+
+The threshold for "small vs large" is configurable (default
+~4 KiB) and may eventually be per-kind. The `preview` is a
+** surface hint, not the body itself** — the body lives in
+the blob store.
+
+#### `governance.*` — verdicts, approvals
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `governance.verdict` | `{decision: enum{approve, deny, rewrite, ask_user}, rule_id: string, evidence_ref: seq}` | governance | One per `tool.call`. `evidence_ref` is the `seq` of an entry (typically the `tool.call` itself, or an earlier context entry) that triggered this verdict. |
+| `governance.approval_request` | `{question: string, blocking: bool}` | runtime | AskUser verdict. Round pauses here. `blocking=true` → the round **must** pause; `blocking=false` → optional (the runtime may continue without waiting). |
+| `governance.approval_response` | `{question: string, answer: enum{approve, deny}, notes?: string}` | runtime | Human's reply on Resume. `pair_ref` → the `governance.approval_request`. |
+
+#### `compaction.*` — summarisation and rewrite directives
+
+These replace the older `summary.v1` / `rewrite_directive`
+names. The prefix `compaction.` makes the family explicit;
+together they form the **compression machinery**.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `compaction.summary` | `{text: string, structured: SummaryFields}` | model | Structured summary. `covers_start` / `covers_end` set on the row. `structured` is the `SummaryV1` shape from `loop.md` (`goal_progress`, `confirmed_facts`, `actions_taken`, `state_progress`, `open_questions`). `text` is a free-form narrative companion to the structured fields — the model produces both; `derive` uses `structured` for queryable facts and may show `text` for context. |
+| `compaction.rewrite` | `{covers: {from: seq, to: seq}, generation: u32, summary_seq: seq}` | runtime | Signals `derive` to reset its surface cache. `covers` is a structured range (`from` inclusive, `to` inclusive). `generation` increments each time a re-compression lands on the same prefix (so the model can tell "this is the third summary of these same N turns"). `summary_seq` points at the `compaction.summary` this directive supersedes. |
+
+The `compaction.rewrite.covers` is `{from, to}` — a range
+object — not two flat columns, because the range's semantics
+("from inclusive, to inclusive") belong with the data, not
+with the row schema.
+
+#### `harness.*` — platform-specific injections
+
+Used to feed runtime / harness signals into the ledger so
+the model can read them via `derive`. Examples include
+IDE state snapshots, test runner outputs, env metadata.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `harness.feature` | `{feature: string, content: Value}` | runtime | A single feature flag / injection. `feature` names the feature (`"vscode.diagnostics"`, `"cargo.test_results"`); `content` is its structured payload. Multiple `harness.feature` entries may coexist — each describes one feature of the runtime state. |
+
+`harness.feature` is the **generic slot** for platform-specific
+data. Adding a new feature = appending a new `harness.feature`
+entry; no new kind is needed unless the feature has
+distinct lifecycle requirements.
+
+#### `session.*` — turn and session boundaries
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `session.turn_start` | `{turn: {id: uuid, boundary: enum{user_message, resume, fork}, compression: enum{ok, partial, failed}, fork: option<{from_turn: uuid, reason: string}}}` | runtime | Marks the **legal cut point** for compaction and fork. A `turn_start` with `boundary=user_message` starts a new turn; `boundary=resume` continues a Suspended turn; `boundary=fork` branches from another turn (with `fork.from_turn` set). The `compression` field records whether the round paused with a complete summary or a partial one — useful for `Resume`. |
+| `model.usage` | `{tokens_in: u32, tokens_out: u32, cache_read: u32, cache_write: u32, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. |
+
+#### Load classes (unchanged)
+
+Kinds split into three load classes (see `loop.md` for
+details):
 
 - **Always-loaded** (`goal`, `system`): `pinned=1`,
   `surface_visible=1`, never summarised.
-- **Body**: subject to compression + eviction;
+- **Body** (`text.*`, `tool.*`, `governance.*`, `compaction.*`,
+  `model.usage`): subject to compression + eviction;
   `surface_visible` flips to `0` as the entry ages out.
-- **Meta** (`session.urn.start`/`end`): boundary markers,
-  pinned, always present, but invisible to the model.
+- **Meta** (`session.turn_start`): boundary markers,
+  pinned, always present, but invisible to the model. `meta`
+  table captures session-level tags instead.
 
 ### Why content-addressed blobs
 
