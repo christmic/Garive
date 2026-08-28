@@ -68,6 +68,28 @@ sub-directory lands when its slice is scoped.
 Adding a new engine crate = create the sub-dir + its `Cargo.toml`
 + register it in the root workspace `members`.
 
+## Terminal Surfaces — `cli/` and `tui/`
+
+Two terminal-resident entry points share the same Rust
+workspace and the same engine crates. They split the
+**use-case surface**, not the **protocol**:
+
+| Crate | Position | Use when |
+|-------|----------|----------|
+| `cli/` | **One-shot** command. Single invocation, **pipe-friendly**, script-friendly. | One question → one answer. CI / scripts / Makefiles / shell. Non-interactive. Exit codes follow Unix conventions. No TTY required. |
+| `tui/` | **Resident** terminal UI. Long-lived, interactive, rich output. | Multi-turn conversation with the agent. Streaming token output, in-progress tool calls, syntax-highlighted previews, keyboard shortcuts, multi-pane layouts. |
+
+**Rule of thumb:** if it can run unattended → `cli/`. If the
+user has to be present → `tui/`. The two never overlap;
+neither one calls the other.
+
+Both `cli/` and `tui/` are pure frontends over `engine/` —
+they do not embed business logic. Engine behaviour (agent
+loop, tool execution, memory, knowledge) lives in `engine/`
+and is consumed by both surfaces via Cargo path deps.
+
+See `cli/README.md` and `tui/README.md` for per-crate details.
+
 ## Runtime Tier
 
 The `runtime/` tier hosts the agent core as a service.
