@@ -45,8 +45,8 @@ planned without reopening a narrower completed row.
 
 | ID | Slice | Design | Spec | API | Code | Tests | State | Next evidence |
 |---|---|---|---|---|---|---|---|---|
-| P1-O | OpenAI Responses protocol adapter | accepted | accepted | partial | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
-| P1-A | Anthropic Messages protocol adapter | accepted | accepted | partial | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
+| P1-O | OpenAI Responses protocol adapter | accepted | accepted | documented | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
+| P1-A | Anthropic Messages protocol adapter | accepted | accepted | documented | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | partial | implemented | verified | active | Document compatibility/error policy at each public consumer boundary. |
 | H1 | Live durable Host | accepted | draft | missing | missing | missing | planned | Depends on C6 and one real provider transport. |
 | A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
