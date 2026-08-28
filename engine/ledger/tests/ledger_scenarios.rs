@@ -74,7 +74,7 @@ fn render_read(result: Result<Vec<DurableFact>, LedgerError>) -> String {
 fn rust_consumes_every_ledger_scenario() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 9);
+    assert_eq!(cases.len(), 10);
     for case in cases {
         let session_id = SessionId::try_from("session").unwrap();
         let mut ledger = LedgerState::default();
