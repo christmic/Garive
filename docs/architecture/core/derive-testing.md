@@ -483,7 +483,86 @@ it just costs more).
 - `.agents/testing.md` — the constitutional rule this design
   implements.
 
-## Meta
+## Cache-friendliness benchmark (the *cache* dimension)
+
+The B-series measures **latency** (ms), the T-series measures
+**tokens** (the resource the model is paid in). This series
+measures **cache hits** — the actual win the runtime gives
+back to the user. A 5 ms `derive` that breaks the provider's
+prompt cache on every other iteration is **worse** than a
+50 ms `derive` that always hits the cache.
+
+| Bench | Setup | Target | Tooling |
+|-------|-------|--------|---------|
+| **CF1. Prefix stability ratio** | Run a long round (200+ iterations, naturally growing ledger). For each pair of adjacent iterations, byte-diff the assembled prompt's prefix region. A round is **stable** if the prefix bytes are byte-for-byte identical to the previous round's prefix. | **Steady-state stable rounds ≥ 90 %** — at most 10 % of adjacent rounds are allowed to break the prefix. Any **reordering event** (an instruction that mutates historical-entry order) produces a sharp single-round dip; the bench flags the dip's location and cause. | `criterion` + byte-diff + per-round flag log |
+
+The metric is the **fraction of adjacent-round pairs** whose
+prefix is byte-for-byte stable, computed over a sliding
+window that **excludes** the warm-up window (the first 50
+iterations, where the cache is still stabilising). The
+**prefix** is the `pinned + seen` part of the assembled
+prompt (see `loop.md` "Delta fragment and prompt-cache
+prefix"); the `new` part is allowed to vary.
+
+```
+prefix stability over time:
+
+iter:  50  51  52  53  54  55  56  57  58  59  60
+prev:  49  50  51  52  53  54  55  56  57  58  59
+        ─  ✓  ✓  ✗  ✓  ✓  ✓  ✓  ✓  ✓  ✓
+        1  1  1  0  1  1  1  1  1  1  1
+ratio:  10/11 = 91% ≥ 90% target ✓
+```
+
+A failure looks like a **cluster of ✗ in a row** — the
+runtime's stability broke. The bench also records:
+
+- The `seq` of the first unstable round.
+- The instruction that landed that round
+  (`compaction.rewrite`? `session.undo`? a `branch.verdict`
+  that wasn't there before?).
+- The reason — useful for diagnosing why the cache
+  invalidated.
+
+A **single** unstable round near a `compaction.rewrite`
+boundary is **expected** (the rewrite is supposed to break
+the cache; that's its job). The bench reports a *warning*,
+not a *failure*, for that case. A run that has **3+ consecutive
+unstable rounds** is a failure — something is reordering
+historical entries, which is a `Derive Stability` Rule 1
+violation.
+
+The bench outputs land alongside B1–B4 / T1–T4 in
+`docs/architecture/core/derive-bench/`:
+
+```
+| size   | B1 p99 | B2 p99 | T1 CV | T2 ratio | CF1 stability |
+|--------|--------|--------|-------|----------|----------------|
+| 1k     | 1.1ms  | 11ms   | 0.08  | 64:1     | 96%            |
+| 10k    | 4.8ms  | 42ms   | 0.11  | 51:1     | 92%            |
+| 100k   | 48ms   | 380ms  | 0.13  | 47:1     | 88%            |
+```
+
+A 5 pp regression on CF1 is a P1 issue (cache hits are
+the **single biggest cost saver**; a 5 pp miss-rate is a
+5 % cost spike on the user's bill).
+
+### Cadence
+
+CF1 runs **nightly** on a long round (200+ iterations)
+per ledger size. Per-PR is too slow — the prefix diff at every
+iteration is O(cache_size) and the round is long. The
+constitutional rule "prefix stability is preserved" lives
+in `loop.md` "Derive Stability"; the bench verifies the
+rule quantitatively.
+
+A nightly failure opens a P1 issue and the diff between
+this run and the last green run is the diagnostic — the
+test report shows the `instruction` that landed at the
+unstable boundary, and the `seq` of the first unstable
+round. The fix is almost always a `Derive Stability`
+Rule 1 violation in a new instruction; the test points
+right at it.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
