@@ -10,3 +10,6 @@ publish = false
 garive-llm = { path = "../../engine/llm" }
 httpdate.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+futures.workspace = true

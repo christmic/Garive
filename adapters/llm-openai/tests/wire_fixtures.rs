@@ -1,16 +1,22 @@
 use std::{fs, path::PathBuf};
 
 use garive_llm::{
-    InvokeOutcome, ModelCapability, ModelInputContent, ModelInputItem, ModelOutputSettings,
-    ModelRequest, ModelRequestId, ModelRole, ModelStopReason, ModelTargetId, TextMode, TokenCount,
+    InvokeOutcome, ModelCancellation, ModelCapability, ModelInputContent, ModelInputItem,
+    ModelObserver, ModelOutputSettings, ModelPort, ModelRequest, ModelRequestId, ModelRole,
+    ModelStopReason, ModelStreamEvent, ModelTargetId, ObserverDecision, TextMode, TokenCount,
     ToolDescriptor,
 };
 use garive_llm_openai::{classify_http_error, HttpErrorAction};
 use garive_llm_openai::{
-    parse_response, parse_sse, render_http_request, render_request, OpenAiAdapterError,
+    parse_response, parse_sse, render_http_request, render_request, HttpResponseDescriptor,
+    OpenAiAdapterError, OpenAiModelPort, OpenAiTransport, TransportFailure, TransportFuture,
 };
 use serde_json::Value;
-use std::time::{Duration, SystemTime};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime},
+};
 
 fn fixture(name: &str) -> Vec<u8> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -206,6 +212,62 @@ fn ordinary_incomplete_and_unknown_stream_event_are_exact() {
         parse_sse(malformed.as_bytes()),
         Err(OpenAiAdapterError::Invariant)
     );
+}
+
+#[test]
+fn model_port_retries_before_ambiguity_and_returns_one_terminal() {
+    let state = Arc::new(ScriptState {
+        responses: Mutex::new(VecDeque::from([
+            Ok(HttpResponseDescriptor {
+                status: 429,
+                retry_after: Some("0".into()),
+                body: br#"{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}"#
+                    .to_vec(),
+            }),
+            Ok(HttpResponseDescriptor {
+                status: 200,
+                retry_after: None,
+                body: fixture("complete.sse"),
+            }),
+        ])),
+        waits: Mutex::new(Vec::new()),
+    });
+    let port = OpenAiModelPort::new(ScriptTransport(Arc::clone(&state)), 2);
+    let mut observer = IgnoreObserver;
+    let outcome =
+        futures::executor::block_on(port.invoke(&request(), &mut observer, &NeverCancel)).unwrap();
+    assert!(matches!(outcome, InvokeOutcome::Completed { .. }));
+    assert_eq!(state.waits.lock().unwrap().as_slice(), &[Duration::ZERO]);
+}
+
+struct ScriptState {
+    responses: Mutex<VecDeque<Result<HttpResponseDescriptor, TransportFailure>>>,
+    waits: Mutex<Vec<Duration>>,
+}
+struct ScriptTransport(Arc<ScriptState>);
+impl OpenAiTransport for ScriptTransport {
+    fn execute<'a>(
+        &'a self,
+        _: garive_llm_openai::HttpRequestDescriptor,
+        _: &'a dyn ModelCancellation,
+    ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>> {
+        Box::pin(async move { self.0.responses.lock().unwrap().pop_front().unwrap() })
+    }
+    fn wait<'a>(&'a self, delay: Duration) -> TransportFuture<'a, ()> {
+        Box::pin(async move { self.0.waits.lock().unwrap().push(delay) })
+    }
+}
+struct NeverCancel;
+impl ModelCancellation for NeverCancel {
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+struct IgnoreObserver;
+impl ModelObserver for IgnoreObserver {
+    fn observe(&mut self, _: &ModelStreamEvent) -> ObserverDecision {
+        ObserverDecision::Continue
+    }
 }
 
 fn render_action(action: HttpErrorAction) -> String {

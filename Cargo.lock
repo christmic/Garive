@@ -1023,6 +1023,7 @@ dependencies = [
 name = "garive-llm-openai"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "garive-llm",
  "httpdate",
  "serde_json",
