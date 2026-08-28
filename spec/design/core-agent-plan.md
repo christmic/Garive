@@ -32,21 +32,8 @@ Foundation
 
 ## Current delivery status
 
-Reviewed 2026-08-29:
-
-| Work | Status | Executable evidence |
-|---|---|---|
-| F1-F3 / C0-C3 | production-first in Rust; Kotlin experiment executable | shared fixtures, native/property tests, bounded model-only executions |
-| Provider P1/P2 | implemented protocol slice | shared official-shape bytes, dual parsers, composed buffered transports |
-| Ledger L0 + storage adapters | implemented | shared semantics, real SQLite restart and PostgreSQL transaction tests |
-| Host/client foundation | executable shell | generated Host v1 bindings and fake-host CLI/TUI/Web/Desktop/Mobile/server roots |
-| F4 / C4-C5 | pending focused specs and implementation | umbrella invariants exist; no tool/effect support claim |
-| F5 / full C6 Runtime | partial | durable stores exist; full Turn continuation/effect recovery host does not |
-| C7 and delegation capabilities | deferred | require measured C3/C6 baselines and focused specs |
-
-Database adapters or executable fake shells alone do not complete C6. C6 closes
-only when Runtime composes durable request/terminal writes, continuation and
-uncertain-effect recovery through one live Host workflow.
+[`../STATUS.md`](../STATUS.md) is the authoritative progress board. This file
+owns dependency order and work-package acceptance, not mutable delivery status.
 
 ## Slice contracts
 

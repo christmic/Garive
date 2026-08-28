@@ -6,12 +6,9 @@ Accepted delivery map for the next Garive implementation phase. It extends the
 Agent architecture and execution contracts without changing their ownership
 rules.
 
-Current implementation has production-first Rust evidence for C0-C3, L0 and
-SQLite. The Kotlin Engine experiment independently checks the admitted subset,
-PostgreSQL and both provider protocol slices. Generated Host v1 bindings and
-the fake-host product shells are executable. Full durable Turn orchestration,
-live network hosting and an Android APK gate remain open (the current machine
-has no Android SDK).
+Current implementation evidence and remaining work are tracked only in
+[`../STATUS.md`](../STATUS.md). This document defines acceptance; it does not
+duplicate mutable progress claims.
 
 ## Purpose
 

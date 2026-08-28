@@ -5,6 +5,7 @@ implemented. It is not a catalog of the future system.
 
 ## Layout
 
+- `STATUS.md`: authoritative design/Spec/API/code/test delivery board.
 - `proto/`: protobuf schemas for real wire or independently persisted
   contracts.
 - `fixtures/`: shared inputs for executable conformance checks.
@@ -40,3 +41,4 @@ conformance` is the executable semantic gate for admitted C0-C3 behavior: Rust
 and Kotlin both consume every case in the shared Agent fixtures.
 
 See [`AGENTS.md`](AGENTS.md) for schema and verification rules.
+See [`STATUS.md`](STATUS.md) for current delivery evidence and next slices.
