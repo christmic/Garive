@@ -29,8 +29,8 @@ planned without reopening a narrower completed row.
 | ID | Slice | Design | Spec | API | Code | Tests | State | Next evidence |
 |---|---|---|---|---|---|---|---|---|
 | C0 | Execution identity and bounded control | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs` and shared control fixtures green. |
-| C1 | Model facts and outcomes | accepted | accepted | partial | implemented | verified | active | Complete Rust API docs and normalized error reference. |
-| C1b | Model request and stream contract | accepted | accepted | partial | implemented | verified | active | Complete Rust API docs and stream transition reference. |
+| C1 | Model facts and outcomes | accepted | accepted | documented | implemented | verified | done | Keep the normalized outcome API gate and shared fixtures green. |
+| C1b | Model request and stream contract | accepted | accepted | documented | implemented | verified | done | Keep request/stream docs, validation fixtures, and API gate green. |
 | C2 | Deterministic context derive | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs`, boundary tests, and property tests green. |
 | C3 | Bounded model-only execution | accepted | accepted | documented | implemented | verified | done | Keep the explicit no-tool boundary and model-only scenarios green. |
 | C4 | Tool resolution and prepared calls | accepted | missing | missing | skeleton | missing | planned | Accept a focused Prepared Call/digest/replay Spec before implementation. |
