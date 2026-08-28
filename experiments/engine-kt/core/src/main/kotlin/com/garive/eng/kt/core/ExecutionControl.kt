@@ -20,6 +20,19 @@ value class ExecutionId private constructor(val value: String) {
     }
 }
 
+@JvmInline value class SessionId private constructor(val value: String) {
+    companion object { fun of(value: String) = SessionId(value.also { require(it.isNotEmpty()) }) }
+}
+@JvmInline value class AgentInstanceId private constructor(val value: String) {
+    companion object { fun of(value: String) = AgentInstanceId(value.also { require(it.isNotEmpty()) }) }
+}
+@JvmInline value class AgentDefinitionId private constructor(val value: String) {
+    companion object { fun of(value: String) = AgentDefinitionId(value.also { require(it.isNotEmpty()) }) }
+}
+@JvmInline value class AgentDefinitionRevision private constructor(val value: String) {
+    companion object { fun of(value: String) = AgentDefinitionRevision(value.also { require(it.isNotEmpty()) }) }
+}
+
 data class ExecutionLimits(val maxIterations: UInt) {
     init {
         require(maxIterations > 0u) { "max iterations must be non-zero" }
