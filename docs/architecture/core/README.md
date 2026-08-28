@@ -81,6 +81,13 @@ A mechanism is ready for `spec/` when it has:
 4. acceptance examples that do not depend on an implementation;
 5. a runnable verification plan.
 
+## Implementation specs
+
+- [`../../../spec/design/core-agent-plan.md`](../../../spec/design/core-agent-plan.md)
+  — slice order and first milestone.
+- [`../../../spec/design/core-turn-control.md`](../../../spec/design/core-turn-control.md)
+  — C0 typed turn state and transition contract.
+
 ## Meta
 
 - Owner: `@christmic`
