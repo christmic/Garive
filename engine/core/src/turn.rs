@@ -39,6 +39,10 @@ macro_rules! identity_type {
 
 identity_type!(TurnId, "turn");
 identity_type!(ExecutionId, "execution");
+identity_type!(SessionId, "session");
+identity_type!(AgentInstanceId, "agent instance");
+identity_type!(AgentDefinitionId, "agent definition");
+identity_type!(AgentDefinitionRevision, "agent definition revision");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidIdentity {

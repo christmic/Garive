@@ -3,14 +3,21 @@
 #![forbid(unsafe_code)]
 
 mod context;
+mod model_only_types;
 mod turn;
 
 pub use context::{
     derive_context, CandidateKind, ContextCandidate, ContextDerivationError, ContextItem,
     ContextPurpose, ContextRequest, ContextSurface, FactRef, Retention, Visibility,
 };
-
+pub use model_only_types::{
+    AgentCursor, AgentEntry, AgentEvent, AgentEventKind, AgentExecutionPorts, AgentFailureReason,
+    AgentOutcome, AgentRequestError, AgentTurnRequest, ClockPort, ContextPort, EventSink,
+    ExecutionReport, MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction,
+    PortFailure, ResumeInput, StopReason, SuspensionReason, TerminalRecoveryAction, UsageSummary,
+};
 pub use turn::{
-    BeginIteration, ControlError, ExecutionControl, ExecutionId, ExecutionLimits,
-    ExecutionOutcomeKind, ExecutionStatus, InvalidIdentity, TurnId,
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, BeginIteration, ControlError,
+    ExecutionControl, ExecutionId, ExecutionLimits, ExecutionOutcomeKind, ExecutionStatus,
+    InvalidIdentity, SessionId, TurnId,
 };
