@@ -1,55 +1,97 @@
 # bench/AGENTS.md
 
-> **SWE-bench verification runtime.** `bench/` orchestrates a
-> SWE-bench evaluation: it loads official cases, spins up an
-> environment, runs the agent inside it, captures the patch,
-> and feeds it to the official eval. **`bench` itself is an
-> orchestrator — it does not implement the agent, the
-> environment, or the eval.**
+> **Thin benchmark driver for Agent SWE-style evaluations.**
+> `bench/` orchestrates four steps — **load → drive → adapt →
+> eval** — and does nothing else. It does **not** implement the
+> agent, the environment, or the eval. Every piece is pluggable
+> so Garive's agent design has an **objective, public,
+> reproducible** score without anyone hand-rolling private
+> cases.
 >
 > This file applies to everything under `bench/`. It overrides
 > the root `AGENTS.md` where the two disagree.
 
 @AGENTS.md
 
-## Hard Rules
+## The Four Steps
 
-These are non-negotiable. Violating any of them breaks
-benchmark validity.
+`bench/` is a thin driver. It runs four steps per case:
+
+```
+   ┌────────────┐    ┌──────────┐    ┌─────────────┐    ┌──────┐
+   │   LOAD     │ →  │  DRIVE   │ →  │   ADAPT     │ →  │ EVAL │
+   │            │    │          │    │             │    │      │
+   │  load      │    │  loop:   │    │  intake +   │    │ call │
+   │  cases     │    │  intake  │    │  prefication│    │ offi-│
+   │  from      │    │  run     │    │  translate  │    │ cial │
+   │  official  │    │  collect │    │             │    │ swe- │
+   │  datasets  │    │  diff    │    │             │    │ bench│
+   │            │    │          │    │             │    │  eval│
+   └────────────┘    └──────────┘    └─────────────┘    └──────┘
+   cases/            runner          adapters/          eval/
+```
+
+| Step | Module | What it does |
+|------|--------|--------------|
+| **1. LOAD** | `bench/cases/` | Reads cases from official public datasets (SWE-bench Verified / Lite / Multimodal / Multilingual, Terminal-Bench, …). Immutable input. |
+| **2. DRIVE** | `bench/src/runner.rs` | Thin loop. For each case: setup env, run agent, collect raw output. No translation happens here. |
+| **3. ADAPT** | `bench/adapters/intake/` + `bench/adapters/patch/` | Two translations: (a) **intake** — case → agent-consumable input (problem statement + repo state, formatted for the agent); (b) **prefication** — agent output → canonical unified diff (SWE-bench format). |
+| **4. EVAL** | `bench/eval/` | Calls the official swe-bench eval scripts in an independent env. Computes score. |
+
+Everything else — env adapter, agent, adapters, eval — is
+**pluggable**. `bench/` provides the loop, the interfaces, the
+default implementations, and the tracking. Nothing more.
+
+## Why a Thin Driver
+
+The whole point of `bench/` is to **make the agent's score
+objective and reproducible**:
+
+- The **cases** come from official public datasets. Nobody
+  picks which task favours Garive.
+- The **eval** is the official Python harness shipped with
+  swe-bench. Garive doesn't define pass / fail; the benchmark
+  does.
+- The **adapter layer** lets different agents plug in
+  unchanged.
+- The **driver loop** is a single uniform path — every run
+  flows through the same code, so the score is comparable
+  across runs, across versions, across envs, across runners.
+
+Without `bench/`, every agent change would need a hand-rolled
+"how does this version feel" demo, and the score would be
+opinions. With `bench/`, every agent change has a number
+that anyone can rerun.
+
+## Hard Rules
 
 ### Rule 1 — Cases Are Always From Official Public Datasets
 
-All validation cases in `bench/` come from **publicly
-available, official Agent SWE / SWE-style benchmarks**. We do
-**not** invent cases, we do **not** curate private cases, and
-we do **not** allow Garive-specific cases to masquerade as
-benchmark cases.
-
-Recognised sources (this list grows as new public benchmarks
-land):
+All validation cases come from **publicly available, official
+Agent SWE / SWE-style benchmarks**. We do **not** invent
+cases, we do **not** curate private cases, and we do **not**
+allow Garive-specific cases to masquerade as benchmark
+cases.
 
 | Source | Repository | Notes |
 |--------|-----------|-------|
 | SWE-bench Verified | [princeton-nlp/SWE-bench](https://github.com/princeton-nlp/SWE-bench) `verified/` | 500 cases, human-validated; the headline number to publish. |
-| SWE-bench Lite | same repo `lite/` | 300 cases, lighter; faster iteration. |
+| SWE-bench Lite | same repo `lite/` | 300 cases, faster iteration. |
 | SWE-bench Multimodal | same repo `multimodal/` | cases with visual inputs. |
 | SWE-bench Multilingual | same repo `multilingual/` | non-English issues. |
-| Terminal-Bench | [laude-institute/terminal-bench](https://github.com/laude-institute/terminal-bench) | terminal / shell tasks, complements swe-bench's repo-edit style. |
-| (future) | — | When a new public benchmark is needed, add it here and update the schema doc in `cases/`. |
+| Terminal-Bench | [laude-institute/terminal-bench](https://github.com/laude-institute/terminal-bench) | terminal / shell tasks; complements swe-bench's repo-edit style. |
+| (future) | — | Add a new public benchmark by appending a row and updating ` ` `bench/cases/README.md`. |
 
-A run **must** declare its source (`--source swe-bench-verified |
-` `--env` config` flag).
-`` `--env` config` flag).
-` `--source terminal-bench`). Results from different sources
-are not directly comparable — tracking records the source
-explicitly so historical scores can be filtered by it.
+A run **must** declare its source (`--source swe-bench-verified
+| --source swe-bench-lite | --source terminal-bench | ...`).
+Results from different sources are not directly comparable —
+tracking records the source so historical scores can be
+filtered by it.
 
 If a private / Garive-specific case set is ever needed, it
 goes in a separate non-`bench/` directory (e.g.
 `experiments/private-cases/`) and is explicitly **not**
-counted as benchmark output. The branch never becomes a
-backdoor for Garive-favourable cases to leak into benchmark
-scores.
+counted as benchmark output.
 
 ### Rule 2 — Pooling & Parallelism Are Mandatory
 
@@ -73,14 +115,11 @@ Three pillars (details in `bench/envs/README.md`):
 3. **Bounded case parallelism**. Multiple cases run in
    parallel via async tasks. Concurrency is bounded by a
    configurable `--jobs N` flag (default: `min(cpus, 8)`),
-   and by per-env limits (e.g. Docker's daemon can comfortably
-   run ~16 swe-bench containers before IO thrashes).
+   and by per-env limits.
 
-These three are not optional add-ons. The future impl
-**must** ship with all three wired before the first benchmark
-result is recorded as a version score. Premature sequential
-runs (one case at a time, full image pull per case) are
-explicitly forbidden for any official / published score run.
+These three are not optional add-ons. Sequential runs (one
+case at a time, full image pull per case) are **forbidden**
+for any official / published score run.
 
 ### Rule 3 — Designed for GitHub Actions and Remote Runners
 
@@ -125,151 +164,69 @@ This shapes the design in three ways:
      underperformance produces a low score, not a failed CI
      run.
 
-Concretely, no run is allowed to bypass CI. A local run is
-fine for iterating on the agent, but the same code path that
-the agent and harness exercise in dev must also be exercised
-on a runner before the score is trusted. Local → GH Actions
-sync is a code-review gate, not just a documentation nicety.
+## The Driver Loop (Step 2 in detail)
 
-Implementation notes for the runner environment:
-
-- Docker buildx / buildkit configured for caching across runs.
-- A persistent runner **must** keep the image pool warm
-  between jobs (else we lose the pool between runs and fall
-  back to cold pulls).
-- If the runner has multiple hosts, the pool is per-host —
-  not shared. Use GH Actions matrix strategy carefully.
-- `actions/cache` for swe-bench dataset JSON, `registry` cache
-  for Docker images, both keyed by case set version.
-
-## What `bench/` Is
-
-A **pluggable SWE-bench runner**:
-
-| Piece | Who owns it | What it does |
-|-------|-------------|--------------|
-| **Cases** | bench (downloads official dataset) | Loads SWE-bench Verified / Lite cases (issue → repo → commit → test_patch → fail_to_pass / pass_to_pass). |
-| **Env adapter** | `bench/envs/official/` (Docker) or `bench/envs/self-cow/` (Garive's own) | Provides the agent a place to work. Pluggable — official uses official Docker harness; self-cow uses Garive's own env. |
-| **Agent** | injected (Garive's agent, or any compatible runner) | Reads the issue, edits files, produces a patch. |
-| **Patch adapter** | `bench/adapters/` | Converts agent output → SWE-bench expected diff format. |
-| **Eval** | `bench/eval/` (delegates to official) | Independent env applies patch, runs `fail_to_pass` and `pass_to_pass` test sets. |
-| **Tracking** | `bench/tracking/` | Records per-version + per-case pass/fail, score history. |
-
-`bench/` orchestrates these. It does **not** ship its own
-agent runtime, its own Docker harness, or its own eval
-implementation. Pluggability is the point: every piece above
-can be swapped without touching the orchestrator.
-
-## Flow
+`bench/src/runner.rs` runs the following per case. There is
+**no other code path**:
 
 ```
-case loader ─→ Env adapter (official | self-cow)
-                    │
-                    ▼
-                Agent (injected)
-                    │
-                    ▼ patch
-              Patch adapter ──→ canonical diff
-                    │
-                    ▼
-              Eval env (independent)
-                    │
-                    ▼
-              Score  ──→ tracking
+for case in cases:
+    env_setup = env.setup(case)
+    raw_input = intake_adapter.translate(case, env_setup)
+    raw_output = agent.run(raw_input, env_setup)
+    diff      = prefication_adapter.translate(raw_output, case)
+    eval_result = eval.run(diff, case)
+    record(eval_result)
+    env.teardown(env_setup)
 ```
 
-## Layout
+The loop is the **only** orchestration in the repo. There is
+no parallel code path; no "skip the adapter" mode; no
+"directly use agent's native patch" mode. Every score in
+`bench tracking` came through this loop.
 
-```
-bench/
-├── AGENTS.md                       this file
-├── README.md                       overview + flow diagram
-├── Cargo.toml                      workspace member
-├── src/                            implementation lives here once the slice lands
-│   ├── lib.rs                      public surface
-│   ├── case.rs                     Case struct, loader (reads official SWE-bench JSON)
-│   ├── env.rs                      Env abstraction
-│   ├── adapter.rs                  PatchAdapter abstraction
-│   ├── runner.rs                   orchestration loop
-│   └── main.rs                     CLI entry: bench run | bench conformance | bench track
-├── cases/                          official SWE-bench dataset (git submodule or downloaded JSON)
-├── envs/
-│   ├── official/                   Docker-based env (pulls swe-bench/<id> image, runs docker exec)
-│   └── self-cow/                   Garive's own env (no containers; runs directly on the host)
-├── adapters/                       agent output → SWE-bench patch format
-├── eval/                           calls official swe-bench eval scripts (Python)
-├── tracking/                       version + score history (JSONL or SQLite)
-└── scripts/                        helpers: case download, eval bootstrap, score reports
-```
+## Adapter Contracts (Step 3 in detail)
 
-## Pluggability Contract
+Two adapters, **both pluggable**:
 
-These contracts are documented in prose; concrete types are
-defined once the implementation lands.
+### Intake adapter (`bench/adapters/intake/`)
 
-### Env
+`case + env_setup → agent-consumable input`. Different agents
+expect different input shapes — natural-language prompt,
+structured message, JSON RPC, etc. The adapter translates the
+canonical case + env state into whatever the agent accepts.
 
-The abstraction an Env implementation must satisfy:
+### Prefication adapter (`bench/adapters/patch/`)
 
-| Method | What it does |
-|--------|--------------|
-| `setup(case)` | Bring up a fresh workspace for the given case. Return an opaque handle. |
-| `exec(workspace, cmd)` | Run a shell command inside the workspace. Capture stdout / stderr / exit code. |
-| `read(workspace, path)` | Read a file from inside the workspace. |
-| `write(workspace, path, body)` | Write a file into the workspace. |
-| `patch(workspace, diff)` | Apply a unified diff inside the workspace. |
-| `teardown(workspace)` | Tear the workspace down. Discard all state. |
+`agent output → canonical unified diff`. Different agents emit
+patches in different shapes — raw `diff -u`, full-file
+rewrites, search-and-replace, JSON edits, structured
+patch objects. The adapter normalizes to SWE-bench's
+unified-diff form so the eval harness always sees the same
+input shape.
 
-`Workspace` is opaque to the orchestrator — `official` makes
-it a Docker container id; `self-cow` makes it a temp directory
-path. The orchestrator never touches the contents; it only
-forwards the handle.
+Both adapters are swappable. New agents → add an intake
+adapter + a prefication adapter. The driver loop, env, eval,
+and tracking stay untouched.
 
-### PatchAdapter
+## Env Adapter (the "run" in the loop)
 
-| Method | What it does |
-|--------|--------------|
-| `adapt(agent_output, case)` | Convert whatever the agent emitted into a unified diff that can be `git apply`'d at `base_commit`. |
-| `name()` | Stable identifier for this adapter. Recorded in tracking so score history knows which adapter produced which patch. |
+The driver loop calls into the env adapter for setup / teardown
+only. The agent runs inside the env via the env's `exec`,
+`read`, `write`, `patch` methods. Two concrete envs:
 
-### Case
+- `bench/envs/official/` — Docker harness (matches official
+  swe-bench numbers).
+- `bench/envs/self-cow/` — Host-based, no containers (fast,
+  dev / nightly).
 
-Mirrors the official swe-bench JSON schema. Fields:
-
-| Field | Source |
-|-------|--------|
-| `instance_id` | swe-bench |
-| `repo` | swe-bench |
-| `base_commit` | swe-bench |
-| `patch` (gold) | swe-bench — reference only, not the eval target |
-| `test_patch` | swe-bench |
-| `problem_statement` | swe-bench — what the agent reads |
-| `fail_to_pass` | swe-bench — tests that must pass after patch |
-| `pass_to_pass` | swe-bench — tests that must still pass after patch |
-| env hint / agent config | Garive-side metadata |
-
-These contracts are stable; implementations are pluggable.
-The bench runner accepts a config that names the env and
-adapter; all other code is shared.
-
-## Official vs Self-cow Mode
-
-| Mode | When to use | Pros | Cons |
-|------|-------------|------|------|
-| `official` (Docker) | Comparing against SWE-bench published numbers | Reproduces the official environment exactly; matches published scores | Heavy — Docker pull per case; slow; depends on official Docker registry availability |
-| `self-cow` (host) | Fast iteration during development; regression runs in CI | Lightweight; no containers; fast | May diverge from official env → scores are *Garive's view*, not directly comparable to published SWE-bench numbers |
-
-A run that targets published comparability must use
-`official`. A run that targets Garive-internal regression
-should use `self-cow`.
-
-## Eval
+## Eval (Step 4)
 
 `bench/eval/` does **not** implement the evaluator. It calls
 the official swe-bench evaluation scripts (the Python harness
-that ships with swe-bench Verified / Lite). The official eval
-is run in an **independent env** so the patch cannot
-contaminate the next case.
+that ships with swe-bench Verified / Lite) in an
+**independent env** so the patch cannot contaminate the next
+case.
 
 ## Tracking
 
@@ -280,28 +237,51 @@ version  | date  | env   | agent   | cases_passed | cases_total | score
 v0.4.1   | 2026-08-27 | official | garive | 47 | 500 | 9.4%
 ```
 
-Per-case detail (which tests passed, which failed, agent
-runtime, token cost) lives alongside, keyed by case id.
-Schema is JSONL — append-only, easy to diff between versions.
+Append-only JSONL. Per-case detail alongside.
+
+## Layout
+
+```
+bench/
+├── AGENTS.md                    this file (the 4-step design + hard rules)
+├── README.md                    overview + flow diagram
+├── Cargo.toml                   workspace member
+├── src/
+│   ├── lib.rs                   public surface
+│   ├── case.rs                  Case struct + official loader
+│   ├── runner.rs                 **the driver loop** (Step 2)
+│   └── main.rs                  CLI: bench run | bench score | bench report
+├── cases/                       Step 1 — official public datasets
+├── envs/                        the "run" in the loop
+│   ├── official/                Docker harness
+│   └── self-cow/                host-based
+├── adapters/                    Step 3 — two translations
+│   ├── intake/                  case + env → agent input
+│   └── patch/                   agent output → canonical diff
+├── eval/                        Step 4 — call official swe-bench eval
+├── tracking/                    per-version + per-case JSONL
+└── scripts/                     helpers: fetch-cases, bootstrap-eval, report
+```
 
 ## What NOT to Do
 
 - ❌ Don't implement the agent inside `bench/`. Inject.
 - ❌ Don't reimplement SWE-bench's eval. Call the official
   scripts.
-- ❌ Don't conflate env adapters and patch adapters. They
-  have separate roles.
+- ❌ Don't skip the intake or prefication adapter. Every
+  agent goes through both.
 - ❌ Don't track scores inside the env / adapter. Tracking
   lives in `bench/tracking/` so it's swappable.
 - ❌ Don't run multiple cases in the same env. Per-case env
-  lifetime is non-negotiable — leakage between cases is the
-  #1 source of fake benchmark wins.
+  lifetime is non-negotiable.
+- ❌ Don't bypass the driver loop with a "faster" custom
+  path. The loop is the only path to a recorded score.
+- ❌ Don't invent cases. All cases come from the official
+  public datasets listed above.
 
 ## Build
 
-`bench/` is a Cargo workspace member:
-
 ```
-just bench                # cargo run -p bench
-just conformance          # cargo run -p bench -- conformance
+just bench                  # cargo run -p bench
+just conformance            # cargo run -p bench -- conformance
 ```
