@@ -107,6 +107,12 @@ fn eof_is_transport_interruption_and_bad_sequence_fails_closed() {
         parse_sse(malformed.as_bytes()),
         Err(OpenAiAdapterError::Invariant)
     );
+    let missing_created = br#"data: {"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"msg","type":"message"}}
+"#;
+    assert_eq!(
+        parse_sse(missing_created),
+        Err(OpenAiAdapterError::Invariant)
+    );
 }
 
 #[test]
@@ -197,7 +203,7 @@ fn ordinary_incomplete_and_unknown_stream_event_are_exact() {
         }
     ));
 
-    let unknown = b"data: {\"type\":\"response.some_new_delta\",\"sequence_number\":0}\n\n";
+    let unknown = b"data: {\"type\":\"response.created\",\"sequence_number\":0,\"response\":{\"id\":\"resp\",\"status\":\"in_progress\"}}\n\ndata: {\"type\":\"response.some_new_delta\",\"sequence_number\":1}\n\n";
     assert_eq!(
         parse_sse(unknown),
         Err(OpenAiAdapterError::UnsupportedCapability)

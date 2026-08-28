@@ -367,6 +367,9 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 usage = parse_usage(&event["message"]["usage"])?;
             }
             "content_block_start" => {
+                if !started {
+                    return Err(AnthropicAdapterError::Invariant);
+                }
                 let index = index(&event)?;
                 if blocks.contains_key(&index) {
                     return Err(AnthropicAdapterError::Invariant);
@@ -389,6 +392,9 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 blocks.insert(index, (block, false));
             }
             "content_block_delta" => {
+                if !started {
+                    return Err(AnthropicAdapterError::Invariant);
+                }
                 let (block, stopped) = blocks
                     .get_mut(&index(&event)?)
                     .ok_or(AnthropicAdapterError::Invariant)?;
@@ -413,6 +419,9 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 }
             }
             "content_block_stop" => {
+                if !started {
+                    return Err(AnthropicAdapterError::Invariant);
+                }
                 let (block, stopped) = blocks
                     .get_mut(&index(&event)?)
                     .ok_or(AnthropicAdapterError::Invariant)?;
@@ -426,6 +435,9 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 *stopped = true;
             }
             "message_delta" => {
+                if !started {
+                    return Err(AnthropicAdapterError::Invariant);
+                }
                 stop_reason = Some(parse_stop(
                     required(&event["delta"], "stop_reason")?.as_str(),
                 )?);
@@ -440,7 +452,8 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, AnthropicAdapterError> {
                 usage.output_tokens = TokenCount::Known(output);
             }
             "message_stop" => {
-                if blocks.values().any(|(_, stopped)| !stopped) || stop_reason.is_none() {
+                if !started || blocks.values().any(|(_, stopped)| !stopped) || stop_reason.is_none()
+                {
                     return Err(AnthropicAdapterError::Invariant);
                 }
                 terminal = true;

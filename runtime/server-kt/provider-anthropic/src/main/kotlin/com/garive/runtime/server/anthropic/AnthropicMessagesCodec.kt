@@ -142,27 +142,31 @@ object AnthropicMessagesCodec {
             when (event.text("type")) {
                 "message_start" -> { if (started) fail(AnthropicAdapterError.INVARIANT); started = true
                     usage = usage(event.getValue("message").jsonObject.getValue("usage").jsonObject) }
-                "content_block_start" -> { val index = event.uint("index"); if (index in blocks) fail(AnthropicAdapterError.INVARIANT)
+                "content_block_start" -> { if (!started) fail(AnthropicAdapterError.INVARIANT)
+                    val index = event.uint("index"); if (index in blocks) fail(AnthropicAdapterError.INVARIANT)
                     val value = event.getValue("content_block").jsonObject
                     blocks[index] = (when (value.text("type")) { "text" -> Block.Text(StringBuilder(value.text("text")))
                         "thinking" -> Block.Thinking(StringBuilder(value.text("thinking")), StringBuilder())
                         "redacted_thinking" -> Block.RedactedThinking(value.text("data"))
                         "tool_use" -> Block.Tool(value.text("id"), value.text("name"), StringBuilder())
                         else -> fail(AnthropicAdapterError.UNSUPPORTED_CAPABILITY) }) to false }
-                "content_block_delta" -> { val index = event.uint("index"); val pair = blocks[index] ?: fail(AnthropicAdapterError.INVARIANT)
+                "content_block_delta" -> { if (!started) fail(AnthropicAdapterError.INVARIANT)
+                    val index = event.uint("index"); val pair = blocks[index] ?: fail(AnthropicAdapterError.INVARIANT)
                     if (pair.second) fail(AnthropicAdapterError.INVARIANT); val delta = event.getValue("delta").jsonObject
                     when (val block = pair.first) { is Block.Text -> if (delta.text("type") == "text_delta") block.value.append(delta.text("text")) else fail(AnthropicAdapterError.INVARIANT)
                         is Block.Thinking -> when (delta.text("type")) { "thinking_delta" -> block.value.append(delta.text("thinking"))
                             "signature_delta" -> block.signature.append(delta.text("signature")); else -> fail(AnthropicAdapterError.INVARIANT) }
                         is Block.RedactedThinking -> fail(AnthropicAdapterError.INVARIANT)
                         is Block.Tool -> if (delta.text("type") == "input_json_delta") block.json.append(delta.text("partial_json")) else fail(AnthropicAdapterError.INVARIANT) } }
-                "content_block_stop" -> { val index = event.uint("index"); val pair = blocks[index] ?: fail(AnthropicAdapterError.INVARIANT)
+                "content_block_stop" -> { if (!started) fail(AnthropicAdapterError.INVARIANT)
+                    val index = event.uint("index"); val pair = blocks[index] ?: fail(AnthropicAdapterError.INVARIANT)
                     if (pair.second) fail(AnthropicAdapterError.INVARIANT); val block = pair.first
                     if (block is Block.Tool) parse(block.json.toString()); blocks[index] = block to true }
-                "message_delta" -> { reason = stop(event.getValue("delta").jsonObject.text("stop_reason")); val output = event.getValue("usage").jsonObject.ulong("output_tokens")
+                "message_delta" -> { if (!started) fail(AnthropicAdapterError.INVARIANT)
+                    reason = stop(event.getValue("delta").jsonObject.text("stop_reason")); val output = event.getValue("usage").jsonObject.ulong("output_tokens")
                     val prior = (usage.outputTokens as? TokenCount.Known)?.value ?: 0u; if (output < prior) fail(AnthropicAdapterError.INVARIANT)
                     usage = usage.copy(outputTokens = TokenCount.Known(output)) }
-                "message_stop" -> { if (blocks.values.any { !it.second } || reason == null) fail(AnthropicAdapterError.INVARIANT); terminal = true }
+                "message_stop" -> { if (!started || blocks.values.any { !it.second } || reason == null) fail(AnthropicAdapterError.INVARIANT); terminal = true }
                 "ping" -> Unit; "error" -> {
                     val items = blocks.values.flatMap { items(it.first) }
                     if (items.isNotEmpty()) return@guard InvokeOutcome.Interrupted(InterruptionKind.TRANSPORT, items, usage)

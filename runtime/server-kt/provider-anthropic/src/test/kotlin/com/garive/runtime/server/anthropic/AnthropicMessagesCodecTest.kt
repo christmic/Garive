@@ -56,6 +56,11 @@ class AnthropicMessagesCodecTest {
         val malformed = fixture("complete.sse").decodeToString().replace(
             "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n", "").encodeToByteArray()
         assertEquals(AnthropicResult.Failure(AnthropicAdapterError.INVARIANT), AnthropicMessagesCodec.parseSse(malformed))
+        val missingStart = """data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+""".encodeToByteArray()
+        assertEquals(AnthropicResult.Failure(AnthropicAdapterError.INVARIANT),
+            AnthropicMessagesCodec.parseSse(missingStart))
     }
     @Test fun `thinking evidence matches ordinary and stream`() {
         val ordinary = assertIs<AnthropicResult.Success<InvokeOutcome>>(

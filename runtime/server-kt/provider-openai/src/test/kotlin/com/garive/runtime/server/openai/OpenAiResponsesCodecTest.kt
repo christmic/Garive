@@ -77,7 +77,9 @@ class OpenAiResponsesCodecTest {
     }
 
     @Test fun `unknown semantic stream event fails closed`() {
-        val unknown = """data: {"type":"response.some_new_delta","sequence_number":0}
+        val unknown = """data: {"type":"response.created","sequence_number":0,"response":{"id":"resp","status":"in_progress"}}
+
+data: {"type":"response.some_new_delta","sequence_number":1}
 
 """.encodeToByteArray()
         assertEquals(OpenAiResult.Failure(OpenAiAdapterError.UNSUPPORTED_CAPABILITY),
@@ -88,6 +90,11 @@ class OpenAiResponsesCodecTest {
         ).encodeToByteArray()
         assertEquals(OpenAiResult.Failure(OpenAiAdapterError.INVARIANT),
             OpenAiResponsesCodec.parseSse(malformed))
+        val missingCreated = """data: {"type":"response.output_item.added","sequence_number":0,"output_index":0,"item":{"id":"msg","type":"message"}}
+
+""".encodeToByteArray()
+        assertEquals(OpenAiResult.Failure(OpenAiAdapterError.INVARIANT),
+            OpenAiResponsesCodec.parseSse(missingCreated))
     }
 
     @Test fun `shared HTTP errors and retry date normalize`() {

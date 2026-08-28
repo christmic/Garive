@@ -362,6 +362,7 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     let mut started = BTreeMap::<u64, StartedItem>::new();
     let mut completed = BTreeSet::new();
     let mut terminal = None;
+    let mut created = false;
     for line in text.lines().filter_map(|line| line.strip_prefix("data: ")) {
         if terminal.is_some() {
             return Err(OpenAiAdapterError::Invariant);
@@ -375,10 +376,19 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
             return Err(OpenAiAdapterError::Invariant);
         }
         previous = Some(sequence);
-        match event["type"]
+        let event_type = event["type"]
             .as_str()
-            .ok_or(OpenAiAdapterError::Invariant)?
-        {
+            .ok_or(OpenAiAdapterError::Invariant)?;
+        if event_type != "response.created" && !created {
+            return Err(OpenAiAdapterError::Invariant);
+        }
+        match event_type {
+            "response.created" => {
+                if created || !started.is_empty() {
+                    return Err(OpenAiAdapterError::Invariant);
+                }
+                created = true;
+            }
             "response.output_item.added" => {
                 let index = output_index(&event)?;
                 let item = &event["item"];
@@ -465,8 +475,7 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
                 });
             }
             "response.failed" => return Err(OpenAiAdapterError::Invariant),
-            "response.created"
-            | "response.in_progress"
+            "response.in_progress"
             | "response.queued"
             | "response.output_text.annotation.added" => {}
             _ => return Err(OpenAiAdapterError::UnsupportedCapability),

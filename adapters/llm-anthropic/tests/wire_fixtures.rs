@@ -118,6 +118,12 @@ fn eof_is_transport_interruption_and_unclosed_block_fails_terminal() {
         parse_sse(malformed.as_bytes()),
         Err(AnthropicAdapterError::Invariant)
     );
+    let missing_start = br#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+"#;
+    assert_eq!(
+        parse_sse(missing_start),
+        Err(AnthropicAdapterError::Invariant)
+    );
 }
 
 #[test]

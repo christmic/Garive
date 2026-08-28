@@ -155,13 +155,20 @@ object OpenAiResponsesCodec {
         val started = sortedMapOf<UInt, StartedItem>()
         val completed = sortedSetOf<UInt>()
         var terminal: InvokeOutcome? = null
+        var created = false
         bytes.decodeToString().lineSequence().filter { it.startsWith("data: ") }.forEach { line ->
             if (terminal != null) fail(OpenAiAdapterError.INVARIANT)
             val event = parse(line.removePrefix("data: ")).jsonObject
             val sequence = event.ulong("sequence_number")
             if (previous?.let { sequence <= it } == true) fail(OpenAiAdapterError.INVARIANT)
             previous = sequence
-            when (event.text("type")) {
+            val eventType = event.text("type")
+            if (eventType != "response.created" && !created) fail(OpenAiAdapterError.INVARIANT)
+            when (eventType) {
+                "response.created" -> {
+                    if (created || started.isNotEmpty()) fail(OpenAiAdapterError.INVARIANT)
+                    created = true
+                }
                 "response.output_item.added" -> {
                     val index = event.uint("output_index"); val item = event.getValue("item").jsonObject
                     val state = StartedItem(item.text("id"), item.text("type"), item["call_id"]?.jsonPrimitive?.contentOrNull,
@@ -204,7 +211,7 @@ object OpenAiResponsesCodec {
                     terminal = response(responseValue)
                 }
                 "response.failed" -> fail(OpenAiAdapterError.INVARIANT)
-                "response.created", "response.in_progress", "response.queued",
+                "response.in_progress", "response.queued",
                 "response.output_text.annotation.added" -> Unit
                 else -> fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
             }
