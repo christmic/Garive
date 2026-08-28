@@ -52,6 +52,31 @@ class OpenAiResponsesCodecTest {
         assertEquals("partial", assertIs<ModelItem.Text>(interrupted.partialItems.single()).text)
     }
 
+    @Test fun `composite stream and policy terminals preserve all admitted facts`() {
+        val composite = assertIs<OpenAiResult.Success<InvokeOutcome>>(
+            OpenAiResponsesCodec.parseSse(fixture("composite.sse"))).value
+        val completed = assertIs<InvokeOutcome.Completed>(composite)
+        assertEquals(4, completed.items.size)
+        assertEquals(ModelStopReason.ToolUse, completed.stopReason)
+        assertEquals("plan", assertIs<ReasoningContent.ModelVisible>(
+            assertIs<ModelItem.Reasoning>(completed.items.first()).content).text)
+
+        val filtered = assertIs<OpenAiResult.Success<InvokeOutcome>>(
+            OpenAiResponsesCodec.parseResponse(fixture("content-filter.json"))).value
+        assertEquals(RejectionKind.CONTENT_POLICY, assertIs<InvokeOutcome.Rejected>(filtered).reason)
+        val refusal = assertIs<OpenAiResult.Success<InvokeOutcome>>(
+            OpenAiResponsesCodec.parseResponse(fixture("refusal.json"))).value
+        assertEquals(ModelStopReason.Refusal, assertIs<InvokeOutcome.Completed>(refusal).stopReason)
+    }
+
+    @Test fun `unknown semantic stream event fails closed`() {
+        val unknown = """data: {"type":"response.some_new_delta","sequence_number":0}
+
+""".encodeToByteArray()
+        assertEquals(OpenAiResult.Failure(OpenAiAdapterError.UNSUPPORTED_CAPABILITY),
+            OpenAiResponsesCodec.parseSse(unknown))
+    }
+
     @Test fun `shared HTTP errors and retry date normalize`() {
         val cases = Json.parseToJsonElement(fixture("errors.json").decodeToString())
             .jsonObject.getValue("cases").jsonArray

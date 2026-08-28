@@ -17,6 +17,9 @@ sealed interface HttpErrorAction {
     data class Retry(val retryAfter: Duration?) : HttpErrorAction
     data class Terminal(val outcome: InvokeOutcome) : HttpErrorAction
 }
+private enum class StreamKind { OUTPUT_TEXT, REFUSAL, FUNCTION_ARGUMENTS, REASONING_SUMMARY, REASONING_TEXT }
+private data class StreamField(val kind: StreamKind, val subindex: UInt = 0u)
+private data class StartedItem(val id: String, val kind: String, val callId: String?, val name: String?)
 
 object OpenAiResponsesCodec {
     fun classifyHttpError(
@@ -85,8 +88,8 @@ object OpenAiResponsesCodec {
 
     fun parseSse(bytes: ByteArray): OpenAiResult<InvokeOutcome> = guard {
         var previous: ULong? = null
-        val assembled = sortedMapOf<UInt, StringBuilder>()
-        val started = sortedSetOf<UInt>()
+        val assembled = mutableMapOf<Pair<UInt, StreamField>, StringBuilder>()
+        val started = sortedMapOf<UInt, StartedItem>()
         val completed = sortedSetOf<UInt>()
         var terminal: InvokeOutcome? = null
         bytes.decodeToString().lineSequence().filter { it.startsWith("data: ") }.forEach { line ->
@@ -96,20 +99,34 @@ object OpenAiResponsesCodec {
             if (previous?.let { sequence <= it } == true) fail(OpenAiAdapterError.INVARIANT)
             previous = sequence
             when (event.text("type")) {
-                "response.output_item.added" -> if (!started.add(event.uint("output_index"))) fail(OpenAiAdapterError.INVARIANT)
-                "response.output_text.delta" -> {
-                    val index = event.uint("output_index")
-                    if (index !in started || index in completed) fail(OpenAiAdapterError.INVARIANT)
-                    assembled.getOrPut(index) { StringBuilder() }.append(event.text("delta"))
+                "response.output_item.added" -> {
+                    val index = event.uint("output_index"); val item = event.getValue("item").jsonObject
+                    val state = StartedItem(item.text("id"), item.text("type"), item["call_id"]?.jsonPrimitive?.contentOrNull,
+                        item["name"]?.jsonPrimitive?.contentOrNull)
+                    if (started.put(index, state) != null) fail(OpenAiAdapterError.INVARIANT)
                 }
-                "response.output_text.done" -> if (assembled[event.uint("output_index")]?.toString() != event.text("text"))
-                    fail(OpenAiAdapterError.INVARIANT)
+                "response.output_text.delta", "response.refusal.delta", "response.function_call_arguments.delta",
+                "response.reasoning_summary_text.delta", "response.reasoning_text.delta" -> {
+                    val index = event.uint("output_index"); val field = streamField(event)
+                    requireStarted(started, completed, index, event, field)
+                    assembled.getOrPut(index to field) { StringBuilder() }.append(event.text("delta"))
+                }
+                "response.output_text.done", "response.refusal.done", "response.function_call_arguments.done",
+                "response.reasoning_summary_text.done", "response.reasoning_text.done" -> {
+                    val index = event.uint("output_index"); val field = streamField(event)
+                    requireStarted(started, completed, index, event, field)
+                    val final = when (field.kind) { StreamKind.REFUSAL -> event.text("refusal")
+                        StreamKind.FUNCTION_ARGUMENTS -> event.text("arguments"); else -> event.text("text") }
+                    if (assembled[index to field]?.toString() != final) fail(OpenAiAdapterError.INVARIANT)
+                }
                 "response.output_item.done" -> {
-                    val index = event.uint("output_index")
-                    if (index !in started || !completed.add(index)) fail(OpenAiAdapterError.INVARIANT)
+                    val index = event.uint("output_index"); val item = event.getValue("item").jsonObject
+                    val state = started[index] ?: fail(OpenAiAdapterError.INVARIANT)
+                    if (state.id != item.text("id") || state.kind != item.text("type") || !completed.add(index))
+                        fail(OpenAiAdapterError.INVARIANT)
                 }
                 "response.completed" -> {
-                    if (started != completed) fail(OpenAiAdapterError.INVARIANT)
+                    if (started.keys != completed) fail(OpenAiAdapterError.INVARIANT)
                     verifyAssembled(assembled, event.getValue("response").jsonObject)
                     terminal = response(event.getValue("response"))
                 }
@@ -119,10 +136,14 @@ object OpenAiResponsesCodec {
                     terminal = response(responseValue)
                 }
                 "response.failed" -> fail(OpenAiAdapterError.INVARIANT)
+                "response.created", "response.in_progress", "response.queued", "response.content_part.added",
+                "response.content_part.done", "response.reasoning_summary_part.added",
+                "response.reasoning_summary_part.done", "response.output_text.annotation.added" -> Unit
+                else -> fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
             }
         }
         terminal ?: InvokeOutcome.Interrupted(InterruptionKind.TRANSPORT,
-            assembled.values.map { ModelItem.Text(it.toString()) }, unknownUsage())
+            assembledItems(assembled, started), unknownUsage())
     }
 
     private fun response(element: JsonElement): InvokeOutcome {
@@ -142,8 +163,14 @@ object OpenAiResponsesCodec {
                     }
                 }
                 "function_call" -> items += ModelItem.ToolIntent(item.text("call_id"), item.text("name"), item.text("arguments"))
-                "reasoning" -> item["encrypted_content"]?.jsonPrimitive?.contentOrNull?.let {
-                    items += ModelItem.Reasoning(ReasoningContent.OpaqueReference(it))
+                "reasoning" -> {
+                    (item["summary"] as? JsonArray)?.forEach { items += ModelItem.Reasoning(
+                        ReasoningContent.ModelVisible(it.jsonObject.text("text"))) }
+                    (item["content"] as? JsonArray)?.forEach { items += ModelItem.Reasoning(
+                        ReasoningContent.ModelVisible(it.jsonObject.text("text"))) }
+                    item["encrypted_content"]?.jsonPrimitive?.contentOrNull?.let {
+                        items += ModelItem.Reasoning(ReasoningContent.OpaqueReference(it))
+                    }
                 }
                 else -> fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
             }
@@ -152,24 +179,52 @@ object OpenAiResponsesCodec {
         val stop = when { items.any { it is ModelItem.ToolIntent } -> ModelStopReason.ToolUse
             items.any { it is ModelItem.Refusal } -> ModelStopReason.Refusal else -> ModelStopReason.EndTurn }
         if (status == "incomplete") {
-            if (value.getValue("incomplete_details").jsonObject.text("reason") != "max_output_tokens") {
-                fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
+            when (value.getValue("incomplete_details").jsonObject.text("reason")) {
+                "max_output_tokens" -> Unit
+                "content_filter" -> return InvokeOutcome.Rejected(RejectionKind.CONTENT_POLICY, "incomplete:content_filter")
+                else -> fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
             }
             return InvokeOutcome.Interrupted(InterruptionKind.OUTPUT_LIMIT, items, usage)
         }
         return InvokeOutcome.Completed(items, usage, stop)
     }
 
-    private fun verifyAssembled(assembled: Map<UInt, StringBuilder>, response: JsonObject) {
+    private fun verifyAssembled(assembled: Map<Pair<UInt, StreamField>, StringBuilder>, response: JsonObject) {
         val output = response.getValue("output").jsonArray
-        assembled.forEach { (index, text) ->
+        assembled.forEach { (key, text) -> val (index, field) = key
             val item = output.getOrNull(index.toInt())?.jsonObject ?: fail(OpenAiAdapterError.INVARIANT)
-            val final = item.getValue("content").jsonArray.firstOrNull {
-                it.jsonObject.text("type") == "output_text"
-            }?.jsonObject?.text("text") ?: fail(OpenAiAdapterError.INVARIANT)
+            val final = when (field.kind) {
+                StreamKind.OUTPUT_TEXT -> indexedText(item, "content", field.subindex, "text")
+                StreamKind.REFUSAL -> indexedText(item, "content", field.subindex, "refusal")
+                StreamKind.FUNCTION_ARGUMENTS -> item.text("arguments")
+                StreamKind.REASONING_SUMMARY -> indexedText(item, "summary", field.subindex, "text")
+                StreamKind.REASONING_TEXT -> indexedText(item, "content", field.subindex, "text")
+            }
             if (text.toString() != final) fail(OpenAiAdapterError.INVARIANT)
         }
     }
+
+    private fun streamField(event: JsonObject): StreamField = when (event.text("type")) {
+        "response.output_text.delta", "response.output_text.done" -> StreamField(StreamKind.OUTPUT_TEXT, event.uint("content_index"))
+        "response.refusal.delta", "response.refusal.done" -> StreamField(StreamKind.REFUSAL, event.uint("content_index"))
+        "response.function_call_arguments.delta", "response.function_call_arguments.done" -> StreamField(StreamKind.FUNCTION_ARGUMENTS)
+        "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done" -> StreamField(StreamKind.REASONING_SUMMARY, event.uint("summary_index"))
+        "response.reasoning_text.delta", "response.reasoning_text.done" -> StreamField(StreamKind.REASONING_TEXT, event.uint("content_index"))
+        else -> fail(OpenAiAdapterError.INVARIANT)
+    }
+    private fun requireStarted(started: Map<UInt, StartedItem>, completed: Set<UInt>, index: UInt,
+        event: JsonObject, field: StreamField) { val state = started[index] ?: fail(OpenAiAdapterError.INVARIANT)
+        val expected = when (field.kind) { StreamKind.OUTPUT_TEXT, StreamKind.REFUSAL -> "message"
+            StreamKind.FUNCTION_ARGUMENTS -> "function_call"; StreamKind.REASONING_SUMMARY, StreamKind.REASONING_TEXT -> "reasoning" }
+        if (index in completed || state.kind != expected || state.id != event.text("item_id")) fail(OpenAiAdapterError.INVARIANT) }
+    private fun assembledItems(values: Map<Pair<UInt, StreamField>, StringBuilder>, started: Map<UInt, StartedItem>) =
+        values.entries.sortedWith(compareBy({ it.key.first }, { it.key.second.kind.ordinal }, { it.key.second.subindex }))
+            .map { (key, text) -> val (index, field) = key; when (field.kind) {
+                StreamKind.OUTPUT_TEXT -> ModelItem.Text(text.toString()); StreamKind.REFUSAL -> ModelItem.Refusal(text.toString())
+                StreamKind.FUNCTION_ARGUMENTS -> ModelItem.ToolIntent(started[index]?.callId.orEmpty(), started[index]?.name.orEmpty(), text.toString())
+                StreamKind.REASONING_SUMMARY, StreamKind.REASONING_TEXT -> ModelItem.Reasoning(ReasoningContent.ModelVisible(text.toString())) } }
+    private fun indexedText(item: JsonObject, list: String, index: UInt, key: String) =
+        item.getValue(list).jsonArray.getOrNull(index.toInt())?.jsonObject?.text(key) ?: fail(OpenAiAdapterError.INVARIANT)
 
     private fun usage(value: JsonObject): ModelUsage {
         val input = value.ulong("input_tokens"); val output = value.ulong("output_tokens")
