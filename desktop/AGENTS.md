@@ -175,13 +175,13 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root in
   `engine/`; expose them via the Tauri command / XPC layer.
 
-These commands are future targets. `just desktop` currently reports that no
-Tauri manifest exists; no desktop conformance gate is active.
+The first Tauri shell and embedded fake-host command are active. Its frontend
+is deliberately minimal until product UI slices land.
 
 ## Build
 
 ```
-just desktop                       # truthful placeholder until the slice lands
+just desktop                       # cargo-checks the active Tauri shell
 ```
 
 The macOS release pipeline additionally runs the Xcode project

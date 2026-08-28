@@ -75,13 +75,13 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root,
   push I/O behind a repository interface.
 
-When the first mobile slice lands, add the smallest executable checks required
-by the contracts it actually consumes. `just conformance` is not wired today.
+The first Android Compose and iOS SwiftUI shells reproduce the Host API fake
+session. iOS is verified with SwiftPM; Android requires a local Android SDK.
 
 ## Build
 
 ```
-just mobile                        # truthful placeholder until Gradle lands
+just mobile                        # verifies iOS and prints the Android SDK gate
 ```
 
 iOS uses Xcode (`iosApp/iosApp.xcworkspace`). The KMP framework

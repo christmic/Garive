@@ -9,9 +9,9 @@
 ## Current scope
 
 The Gradle project contains `:agent-core` (C0-C3), `:llm-contract` (C1/C1b),
-`:ledger-contract` (L0), `:persistence-postgres` (L1), and `:proto`. Provider
-and host modules are added only with their implementation slice and native
-boundary tests.
+`:ledger-contract` (L0), `:persistence-postgres` (L1), `:provider-openai`,
+`:provider-anthropic`, and `:proto`. Host modules are added only with their
+implementation slice and native boundary tests.
 
 ```text
 runtime/server-kt/
@@ -23,6 +23,8 @@ runtime/server-kt/
 ├── llm-contract/      supported C1/C1b model contract
 ├── ledger-contract/   supported L0 durable fact semantics
 ├── persistence-postgres/ supported L1 PostgreSQL transactions + recovery
+├── provider-openai/   supported OpenAI Responses wire codec
+├── provider-anthropic/ supported Anthropic Messages wire codec
 └── proto/             generated admitted wire bindings
 ```
 

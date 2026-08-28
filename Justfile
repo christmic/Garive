@@ -46,11 +46,12 @@ architecture:
 
 # Desktop: Tauri build (TS frontend + Rust backend)
 desktop:
-    @echo "desktop: not yet wired — no Tauri manifest has landed"
+    cargo check -p garive-desktop
 
 # Mobile: Gradle Kotlin Multiplatform build
 mobile:
-    @echo "mobile: not yet wired — no KMP settings file has landed"
+    cd mobile/iosApp && swift test
+    @echo "Android SDK gate: cd mobile/androidApp && gradle :app:assembleDebug"
 
 # Bench: SWE-bench verification runtime (orchestrator only).
 # Implementation lands as the slice is scoped; until then this
