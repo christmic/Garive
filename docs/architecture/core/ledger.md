@@ -567,6 +567,8 @@ require an update to this list):
 | 8 | **privacy** | `privacy.redact` | Right-to-erasure masking. The blob may be physically unlinked; the row stays for audit. |
 | 9 | **injection** | `harness.feature`, `system` | The harness-supplied context: env snapshots, skills catalog, `AGENTS.md`, and the framework-pinned system prompt. |
 | 10 | **telemetry** | `model.usage` | Per-call observability: token counts (`in / out / cache_read / cache_write / total`), `model_reported` flag, `model_id`. |
+| 11 | **media** | `media.image`, `media.audio`, `media.video`, `media.document` | Multimodal payloads — image / audio / video / document references. Body points at a `blob_hash`; preview text is in the surface for the model. |
+| 12 | **reasoning** | `reasoning.thought`, `reasoning.tool_selection`, `reasoning.confidence` | Model thinking steps — internal reasoning traces, tool-choice rationales, confidence scores. **Visible to the model** by default; configurable to be hidden from the surface. |
 
 The categories are **ordered by where they sit in the
 agent's mental loop** (which is also the order `derive`
@@ -677,6 +679,66 @@ distinct lifecycle requirements.
 | `branch.open` | `{branch_id: string, from_seq: seq, purpose: string}` | runtime / model | Opens a **lightweight in-session branch** starting at `from_seq`. All entries appended between this row and the matching `branch.verdict` carry `branch_id = branch_id`. **Nested branches** are allowed: a `branch.open` whose `branch_id` contains a `.` (e.g. `A.B`) is a sub-branch of `A`; its `from_seq` must be ≥ the parent branch's `from_seq` and ≤ the parent's `branch.verdict.seq`. Multiple `branch.open` rows from the same `from_seq` are parallel attempts at that level; each carries its own `branch_id`. |
 | `branch.verdict` | `{branch_id: string, decision: enum{adopt, discard}, reason: string, ref: {session, uid} \| null}` | runtime / model / governance | Resolves a branch. `adopt` makes the branch's entries part of the **mainline** (`branch_id` is preserved on the rows for audit, but the surface projection includes them). `discard` retires the branch's entries from the surface (still in the ledger for audit). The verdict is itself a row in the ledger — auditable, like `governance.verdict`. **A verdict's `branch_id` matches a single `branch.open`'s `branch_id`** (the path). A nested branch's verdict operates at that level only; it does not auto-adopt / auto-discard the parent. |
 | `model.usage` | `{tokens: Tokens, model_reported: bool, model_id: string}` | runtime / model | Inline. Records token cost per `model.invoke` call. Used by `state.tokens_used` accounting. `model_reported=true` means the counts are the provider's billed values; `false` means the client estimated them. |
+
+#### `media.*` — multimodal payloads
+
+Multimodal references — image / audio / video / document.
+The body points at a `blob_hash`; a `preview` text lives in
+the surface for the model. The blob itself stays in the
+content-addressed store (`<session>/blobs/<sha256>`); only
+the reference is in the ledger.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `media.image` | `{hash: string, mime: string, alt?: string, dimensions?: {w: u32, h: u32}}` | harness / user | Image reference. `alt` is the text alt description; the model receives it as the `preview` if no other text is supplied. |
+| `media.audio` | `{hash: string, mime: string, duration_ms?: u32, transcript?: string}` | harness / user | Audio reference. `transcript` is an optional cached transcription; the model receives `transcript` if present, else `preview` of the audio's first N seconds. |
+| `media.video` | `{hash: string, mime: string, duration_ms?: u32, dimensions?: {w: u32, h: u32}, keyframes?: [int64]}` | harness / user | Video reference. `keyframes` are timestamps of pre-extracted frames the model can read. |
+| `media.document` | `{hash: string, mime: string, pages?: u32, preview_text?: string}` | harness / user | Document reference (PDF, EPUB). `preview_text` is an optional extracted-text preview; the model receives it as the `preview`. |
+
+All `media.*` kinds are **append-only by content hash** — the
+file's bytes never change, only the references do. A user
+"re-uploads" the same file is a no-op at the blob layer; the
+ledger gets one more `media.*` row pointing at the existing
+hash.
+
+`media.*` is **pinned** by default — multimodal content is
+expensive to recompute (a model can't re-summarise an image
+from a sha), and it's almost always relevant to the round.
+
+#### `reasoning.*` — model thinking steps
+
+The model's **internal reasoning trace** — the parts of the
+response that are not the user-visible answer but explain
+*how* the model got there. New providers (Anthropic extended
+thinking, OpenAI o-series reasoning tokens, Gemini thinking)
+expose this explicitly.
+
+| Kind | Body | Producer | Notes |
+|------|------|----------|-------|
+| `reasoning.thought` | `{content: string, type: enum{analysis, plan, observation, critique, summary}, model_id: string}` | model | A reasoning step. `type` lets the consumer filter ("show only `plan` thoughts"). |
+| `reasoning.tool_selection` | `{alternatives: [{tool: string, reasoning: string}], selected: string, model_id: string}` | model | Why the model chose tool X over Y. Useful for audit ("why did the model call bash instead of read_file?"). |
+| `reasoning.confidence` | `{score: float, reasoning: string, model_id: string}` | model | Self-reported confidence (0..1) on the next emitted answer / action. |
+
+By default, `reasoning.*` is **visible to the model** on
+subsequent turns — the model's own thinking is part of the
+context, which improves continuity. A per-projection toggle
+(`HIDE_REASONING = true` in the assemble step) drops them
+from the surface when the user wants a clean view. This is a
+**policy knob**, not a kind change.
+
+`reasoning.*` rows carry `model_id` so a model swap
+(`reasoning.thought` from `claude-3-5` followed by
+`reasoning.thought` from `gpt-4o` in the same session) is
+preserved in the audit trail.
+
+#### Loading classes (categories in `Load classes` below)
+
+| Class | New kinds in this class |
+|-------|-------------------------|
+| Always-loaded | `media.*` (pinned — multimodal content is expensive to recompute and almost always relevant) |
+| Body | `reasoning.*` (subject to compression + eviction; `HIDE_REASONING` projection toggle drops them from the surface) |
+| Meta | — |
+| Telemetry | — |
 
 ```python
 class Tokens:
@@ -1095,7 +1157,7 @@ details):
   all pinned because they are the model's frame; `derive`
   projects the *current* one (via the algorithm above).
 - **Body** (`text.*`, `tool.*`, `governance.*`, `compaction.*`,
-  `model.usage`): subject to compression + eviction;
+  `model.usage`, `reasoning.*`): subject to compression + eviction;
   `surface_visible` flips to `0` as the entry ages out.
 - **Meta** (`session.turn_start`): boundary markers,
   pinned, always present, but invisible to the model. `meta`
