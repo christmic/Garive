@@ -417,6 +417,105 @@ Rules:
   the `covers.seq_range`; future derives find the latest
   directive and resume from `covers.seq_range.end + 1`.
 
+#### Summary Entry Schema
+
+A summary is **structured**, not a free-form blob. The model
+that produces the summary is asked to fill in named fields —
+not "summarise this prefix". Structure buys two things:
+(1) the next surface is deterministic regardless of who
+summarised; (2) the summary is queryable by field rather
+than requiring the next LLM to re-parse prose.
+
+| Field | What it captures | Source |
+|-------|------------------|--------|
+| `goal_progress` | Where are we in the user's task? What's done, what's left? | tracked across iterations |
+| `confirmed_facts` | Tool calls that succeeded; their key results (e.g. "file X has 432 lines", "test fails on Y"). | every `tool_result` with `verdict = Approve` |
+| `actions_taken` | The sequence of tools the round called, in order, with their key parameters. | the ledger's `intent` stream |
+| `state_progress` | Where the iteration's `phase` machine is (Running / AwaitingApproval / AwaitingConfirm / Done / Suspended / Failed). | `state.phase` |
+| `open_questions` | Things the model is still trying to figure out. | the model's own beliefs |
+
+These fields are **always shown** in the summary entry, even
+when the underlying detail has aged out of the surface. They
+are dense, low-token, high-signal — exactly the "conclusion
+of tool calls" the model needs to avoid re-doing work.
+
+#### Boundary Invariants (Compression Boundaries)
+
+The cover boundary of a summary must be **logically clean**:
+it must not split a logical unit across the boundary.
+Specifically:
+
+- **Tool calls must appear as a pair** (`intent` + its
+  `tool_result`). A summary must not cover an `intent`
+  without its `tool_result`; the model needs the result to
+  reason about whether the call succeeded.
+- **A pending `approval_request`** (AskUser verdict) must be
+  either fully inside the covered range — with its eventual
+  verdict + effects back-filled — or fully outside it. A
+  boundary that chops a pending approval in half leaves
+  `Suspended` and `Resume` unable to reason about the round's
+  pause state.
+- **Respect iteration boundaries**: a summary should end at
+  an iteration boundary, not in the middle of one. Mid-iteration
+  summaries are recoverable only by replay (slow, defeats
+  the point of compression).
+
+The `summarize(prefix)` implementation is responsible for
+**extending the prefix until the boundary is clean** — e.g. if
+a tool call's `tool_result` lands on the edge, pull that
+result in too. The cost is a slightly larger prefix; the
+benefit is a derivable, recoverable surface.
+
+#### Why this shape
+
+- **Start-point is single-valued.** Only the *latest*
+  `rewrite_directive` matters. Older ones are reached
+  transitively through the chain of summaries they describe.
+- **Always-load kinds are exempt.** `goal`, `system`, and any
+  future "frame" kinds are appended to every surface,
+  regardless of what was summarised. The model always
+  remembers the goal.
+- **Budget cuts from the tail, not the middle.** If the
+  range overflows budget, drop the oldest entries first
+  (after the start-point has been re-established). Never
+  excise a summary — a summary is a load-bearing record.
+- **Reads are bounded by deadline.** A `wall_clock_ms`
+  ceiling stops a runaway derive from blocking the loop.
+  Partial surfaces are acceptable; the next iteration
+  extends them.
+
+#### Three-mechanism Recap (Tool-result Trajectory)
+
+The three mechanisms — **structured summary**,
+**clean cover boundary**, and **seq-pointer back-reference**
+— together form a single trajectory for every tool result.
+The surface is **always** a lossy projection; the ledger
+never forgets.
+
+| Phase | Surface form | Ledger form | Recovery |
+|-------|--------------|-------------|----------|
+| **Just called** | full content | full content | (n/a) |
+| **Aged out** | preview + seq pointer | full content | re-resolve via seq |
+| **Compressed away** | structured-summary fields (`goal_progress`, `confirmed_facts`, `actions_taken`, `state_progress`, `open_questions`) | full content + summary entry | re-resolve via seq, or read summary fields |
+
+Three guarantees stack:
+
+1. **No information lost that matters.** Summary fields
+   capture the *conclusion* of tool calls — enough for the
+   model to avoid re-doing work, but not enough for it to
+   re-derive everything.
+2. **No summary chops a split a logical unit.** Cover
+   boundaries respect call/result pairs, pending approvals,
+   and iteration boundaries.
+3. **Detail is always recoverable.** A seq pointer in the
+   surface lets the model re-attach the full content
+   without the runtime round-tripping through the ledger
+   on every reference.
+
+The point: **the model never loses information that
+matters, and never re-pays for information it once saw.**
+Information loss is always **opt-in and recoverable**.
+
 #### Why this shape
 
 - **Start-point is single-valued.** Only the *latest*
