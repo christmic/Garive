@@ -87,6 +87,8 @@ A mechanism is ready for `spec/` when it has:
   — slice order and first milestone.
 - [`../../../spec/design/core-turn-control.md`](../../../spec/design/core-turn-control.md)
   — C0 typed turn state and transition contract.
+- [`../../../spec/design/model-invoke-outcome.md`](../../../spec/design/model-invoke-outcome.md)
+  — C1a provider-neutral invocation facts.
 
 ## Meta
 
