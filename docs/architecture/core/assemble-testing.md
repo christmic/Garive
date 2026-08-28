@@ -30,68 +30,197 @@ they cover the full pipeline.
 
 **The single most important test**: does the assembled
 payload actually pass the provider's API without rejection?
+Dim 1 has **three layers**, each catching a different class
+of bug.
 
-The test runs against a real provider API (test key, nightly
-cadence). For each `(provider, projection, ledger_fixture)`
-triple:
+### Dim 1a — Golden snapshot collection (per provider)
 
-1. Build the surface via `derive`.
-2. Call `assemble` to produce the request payload.
-3. **POST it to the provider** (test mode / mock / live).
-4. Assert the response is `200 OK` and contains a
-   `completion` (or the provider's equivalent) field.
+A **golden snapshot** is `(fixed_surface, expected_wire_json)`
+per provider. The test runs `assemble` on the surface and
+**byte-compares the output to the snapshot**. Any byte
+difference is a failure.
 
-A failure here is **load-bearing** — a payload that the
-provider rejects is unusable, even if every local dim 2-5
-test passes. The bench also captures the rejection reason
-(`400 invalid_role`, `413 too_many_tokens`, etc.) for the
+```
+engine/core/tests/assemble_bench/schema_compliance/golden/
+├── anthropic/
+│   ├── minimal_chat.json
+│   ├── with_tool_use.json
+│   ├── with_tool_result.json
+│   ├── with_cache_control.json
+│   ├── with_system_separated.json
+│   ├── with_developer_role.json
+│   └── ...
+├── openai/
+│   ├── minimal_chat.json
+│   ├── with_tool_calls.json
+│   ├── with_tool_result.json
+│   ├── auto_cache_at_1024.json
+│   ├── with_developer_role.json
+│   └── ...
+├── gemini/
+│   ├── minimal_chat.json
+│   ├── with_function_call.json
+│   ├── with_system_instruction.json
+│   └── ...
+└── local/
+    └── minimal_chat.json
+```
+
+The snapshots are **hand-curated** by a maintainer who:
+
+1. Builds a small surface (a few entries, a few kinds).
+2. Calls `assemble` once to produce the wire JSON.
+3. Inspects the output, confirms it's correct, commits it
+   as the snapshot.
+
+When the maintainer intentionally changes the serialisation
+(e.g. a new `cache_control` field), the snapshot **must** be
+updated in the same commit; CI asserts the snapshot and the
+code are updated together.
+
+**Why byte-for-byte comparison?** Two equivalent
+representations (`{"role":"user","content":"X"}` vs
+`{"content":"X","role":"user"}`) might be semantically equal
+but **the provider's cache key is byte-order-sensitive** in
+some implementations. A byte-exact match catches this.
+
+### Dim 1b — Provider structure validator (executable spec)
+
+A **structural validator** is an executable specification of
+the **hard rules** every provider output must satisfy. It
+operates on the **payload, not the surface** — the same
+shape that the provider's API will see.
+
+The hard rules:
+
+| Rule | Anthropic | OpenAI | Gemini |
+|------|-----------|--------|--------|
+| **Role alternation** | `user → assistant → user` (no two consecutive same-role messages) | same | same |
+| **First message role** | `user` (system goes to top-level `system` array, not as a message) | `user` (system → `developer` role) | `user` (system → top-level `system_instruction`) |
+| **Tool call pairing** | `tool_use` block → immediately followed by `user`-role `tool_result` block in the **same turn group** | `tool_calls` field on `assistant` message → immediately followed by `tool` role message in the **same turn group** | `functionCall` block → immediately followed by `functionResponse` block in the **same turn** |
+| **System handling** | top-level `system` array; each block can carry `cache_control` | `developer` role message (newer) or top-level `system` (older) | `system_instruction` field |
+| **Schema field legality** | every field is one of `messages`, `system`, `tools`, `tool_choice`, `max_tokens`, `temperature`, `cache_control` | every field is one of `messages`, `tools`, `tool_choice`, `max_tokens`, `temperature` | every field is one of `contents`, `system_instruction`, `tools`, `tool_config`, `generation_config` |
+
+The validator is **generated from the same table** — when a
+provider adds a field, the validator gets a new rule. The
+validator runs against **random surfaces** (fuzzed from
+the same synth generator) and asserts the produced payload
+passes 100 %. A failure means either the serialisation has a
+bug or the rule table is out of date — either way, the fix
+is the table.
+
+### Dim 1c — Real API smoke (nightly, live)
+
+The most expensive layer: **POST the payload to the real
+provider API** with a test key, assert a 200 response with a
+`completion` field. Runs **nightly** because real API
+calls cost money and time.
+
+The smoke test uses **minimal requests** — the smallest
+payload that exercises the full pipeline. A failed smoke
+run is a **P0** (provider integration broken); the bench
+captures the response body and the rejection reason for the
 bug report.
 
-**Test corpus** — the 1000+ ledgers from
-`engine/core/tests/derive_bench/fixtures/generators.py`,
-parametrised over `size × branch_density × compression_count`,
-run for each provider (`anthropic`, `openai`, `gemini`,
-`local`). **1000+ live API calls per nightly run** is
-expensive; in CI, the bench uses a **provider stub** that
-parses the payload against the provider's OpenAPI schema
-(no network). The nightly run uses live API.
+```
+# pseudo
+for provider in [anthropic, openai, gemini]:
+    payload = assemble(minimal_surface, provider=provider)
+    response = http.post(provider.endpoint, payload, key=test_key)
+    assert response.status == 200
+    assert 'completion' in response.json()
+    assert response.json()['usage']['prompt_tokens'] > 0
+```
 
-**SLO:** 100 % payload acceptance rate (every payload that
-passes the local schema check must also pass the live
-provider's check). Any rejection is a P1.
+### Dim 1 SLO
 
-## Dim 2 — Role mapping correctness
+- **1a** — 100 % byte-exact match against golden snapshots.
+  Any failure is a P1.
+- **1b** — 100 % pass against the structural validator, on
+  every random surface. Any failure is a P1.
+- **1c** — 100 % live API acceptance rate. Any rejection is a P0.
 
-`assemble` step 1 is the role map. The test asserts:
+The three layers are **independent** — a payload can pass
+the validator (1b) and the golden snapshot (1a) and still be
+rejected by the provider (1c) if the provider changes its
+spec without the validator being updated. All three must pass.
 
-- `text.user` → provider's `user` role.
-- `text.assistant` → `assistant` (Anthropic, OpenAI, Gemini).
-- `harness.feature{feature:"skills_catalog"}` →
-  Anthropic's `system` array (top-level), OpenAI's
-  `developer` role (newer models) or top-level `system` (older
-  models), Gemini's `system_instruction`.
-- `assistant.tool_call` + `tool.result` → `assistant`
-  `tool_use` block (Anthropic) / `assistant` `tool_calls`
-  field (OpenAI) / `functionCall` (Gemini) — and the
-  `tool.result` is the `user`-role `tool_result` block that
-  **immediately follows** the `tool_use` in the same turn
-  group.
-- `compaction.summary`, `compaction.rewrite`,
-  `privacy.redact` — **never** appear in the assembled
-  payload (they're masking-instruction rows; `derive` already
-  collapsed them into the surface).
+## Dim 2 — Semantic fidelity (no mapping loss)
 
-The test enumerates every kind × every projection × every
-provider and asserts the role is **exactly** the expected one.
-A miscount is a **semantic bug** — the model would see
-something the runtime didn't intend to send.
+Dim 2 answers: "when `assemble` serialises the surface, does
+the **information content** survive the round trip?" Two
+complementary tests.
 
-**Test corpus** — a fixed table of `(kind, projection,
-provider) → expected role`. Every entry checked. Coverage is
-the **kind catalog** in `ledger.md` × **the 5 projections**
-× **the supported providers**.
+### Dim 2a — Round-trip test (decoder ↔ surface)
 
-**SLO:** 100 % role correctness. Any mismatch is a P1.
+Write a **decoder** that takes the assembled request
+payload and reconstructs a **canonical `entries[]` list**
+(of the same shape `derive` consumes). The test then asserts
+that:
+
+- The decoded entries are **isomorphic** to the input
+  surface's entries.
+- The **kinds** match.
+- The **pair_ref** graph is preserved.
+- The **pinned / branch_path / surface_visible** flags are
+  preserved.
+- The **body text** is preserved byte-for-byte (modulo
+  provider's own escaping — the round trip is "is the
+  information there, even if the bytes are escaped").
+
+```
+# pseudo
+def round_trip_test(surface, provider):
+    payload = assemble(surface, provider=provider)
+    decoded = decode(payload, provider=provider)
+    # decoded.entries is the canonical surface shape
+    assert canonicalise(decoded.entries) == canonicalise(surface.entries)
+    # pair_ref graph preserved
+    assert decoded_pair_ref_graph == surface_pair_ref_graph
+    # kinds preserved
+    assert set(decoded.kind) == set(surface.kind)
+```
+
+The decoder is **provider-specific** (each provider has its
+own shape to reverse-engineer). The test for each provider
+uses that provider's decoder. The test passes when the
+decoder reproduces the input surface.
+
+A failure means `assemble` **dropped information** — the
+model sees something different from what `derive` produced.
+That's a **mapping loss** bug, caught here.
+
+### Dim 2b — Role mapping matrix (table-driven unit test)
+
+A **matrix** of `(kind × projection × provider) → expected
+role / block type / position`. The test loads the matrix and
+asserts **every cell** matches the expected mapping.
+
+```
+                | anthropic          | openai               | gemini
+text.user       | role=user          | role=user            | role=user
+text.assistant  | role=assistant     | role=assistant       | role=model
+tool.call       | tool_use block     | tool_calls field     | functionCall
+tool.result     | role=user,         | role=tool,            | role=functionResponse,
+                |   tool_result_id    |   tool_call_id       |   functionCall.id
+harness.feature | system[]           | role=developer       | system_instruction
+goal.declare    | role=user (instr.)  | role=user (instr.)    | role=user (instr.)
+                | (the goal text     | (the goal text        | (the goal text
+                |  rides in user role |  rides in user role  |  rides in user role
+                |  in Anthropic)     |  in OpenAI)          |  in Gemini)
+```
+
+(That last row is a subtle point: a `goal.declare` doesn't
+have a dedicated role — it rides in the `user` role as
+instruction text. The bench catches that.)
+
+The matrix lives in `assemble_bench/role_mapping/matrix.json`
+and is **generated** from the kind catalog + provider specs.
+When a new kind is added, the matrix gets a new row; the
+test fails until the new row's expected mapping is filled in.
+
+**SLO:** 100 % role correctness, 100 % matrix coverage.
+Any mismatch is a P1.
 
 ## Dim 3 — Provider dialect (Anthropic / OpenAI / Gemini)
 
@@ -127,35 +256,69 @@ lenient), but we're paying for cache misses we shouldn't be.
 **SLO:** 100 % dialect correctness per provider. Mismatch is
 a P1.
 
-## Dim 4 — Budget enforcement (real-token count + tail drop)
+## Dim 4 — Token accuracy (counting + reserve)
 
-`assemble` step 4 uses the **provider's real tokenizer** to
-count the assembled prompt, compares to the budget, and drops
-the tail of the `new` part if the real count exceeds the
-budget. The output budget is reserved upfront as
-`max_tokens` on the request.
+Dim 4 has two layers: the **counting** must be exact, and
+the **reserve** must be correct.
 
-The test asserts:
+### Dim 4a — Counting accuracy (assemble ↔ provider)
 
-- **Counting accuracy** — assemble's count is within 1 % of
-  the provider's billed count (via the response's
-  `usage.prompt_tokens`). This is **tighter** than derive's
-  T4 (which estimates; assemble must be exact because it
-  gates the budget cut).
-- **Tail-drop correct** — when the prompt is over budget,
-  the dropped entries are the **oldest** of the `new` part
-  (the model has already digested the head / middle from
-  cache).
-- **Output budget reserved** — `max_tokens` on the request is
-  ≥ the configured `output_reserve`.
+`assemble` uses the **provider's real tokenizer** to count the
+assembled prompt. The bench verifies that count against the
+provider's **billed** count.
 
-A failure here means: either we're **sending too much**
-(over-budget payload → 413 from provider), or we're
-**under-spending the cache** (dropped the wrong entries →
-model loses context it had).
+```
+# pseudo — nightly, with test key
+for provider in [anthropic, openai, gemini]:
+    for surface in synth_corpus:
+        payload = assemble(surface, provider=provider)
+        response = http.post(provider.endpoint, payload, key=test_key)
+        billed_tokens = response.json()['usage']['prompt_tokens']
+        assemble_estimate = payload['usage']['estimated_prompt_tokens']
+        error = abs(assemble_estimate - billed_tokens) / billed_tokens
+        assert error < 0.01   # MAE ≤ 1 %
+```
 
-**SLO:** MAE ≤ 1 %; tail-drop order = `new[-N:]` first;
-`max_tokens ≥ output_reserve`. Any violation is a P1.
+**MAE ≤ 1 %** is the target — `derive`'s T4 is an *estimate*
+(may be loose); `assemble`'s count **must be exact** because
+it gates the budget cut. A 1 % miscount on a 10k-token prompt
+is 100 tokens; if the budget gate sees 10100 tokens but the
+real count is 9900, it would over-truncate and lose context.
+
+The **T4 → Dim 4a progression**:
+
+| Stage | Layer | Tolerance |
+|-------|-------|-----------|
+| `derive` T4 | surface estimate | ≤ 5 % |
+| `assemble` 4a | wire count, real | ≤ 1 % |
+
+Tighter because `assemble` actually calls the provider's
+tokenizer (not a generic estimator).
+
+### Dim 4b — Output reserve (`max_tokens` + window slack)
+
+The output budget is reserved upfront as `max_tokens` on the
+request. The bench asserts:
+
+- `max_tokens ≥ output_reserve` (configured in the budget).
+- `max_tokens + prompt_tokens ≤ model.context_window` (the
+  model won't reject for context overflow).
+- `max_tokens ≤ model.max_output` (the model's hard cap).
+
+```
+# pseudo
+response = http.post(...)
+assert response.usage.completion_tokens <= max_tokens
+# and the request itself was within bounds
+assert max_tokens >= state.output_reserve
+assert max_tokens + payload.estimated_prompt_tokens <= model.context_window
+```
+
+A failure here is **load-bearing** — the request gets
+rejected with a 400 / 413, or the model truncates mid-reply.
+
+**SLO:** 100 % pass on the reserve rules. Any violation is a
+P1.
 
 ## Dim 5 — Cache marker byte-stability
 
