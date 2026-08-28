@@ -346,6 +346,154 @@ commit), not one.
 (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`, `GOVERNANCE_INPUT`,
 `FORK_BRANCH`, `AUDIT_REPLAY`) shares it. What each consumer
 
+### Budget Projection (anchored to `model.usage`)
+
+The earlier budget design had `derive` estimating the
+surface's token cost and asking the loop to truncate when
+estimated > budget. That was **pure estimation** — no ground
+truth. The new design **anchors** the budget to the real
+cost reported by the provider.
+
+#### The formula
+
+```
+budget_projection(this_round) =
+    last_actual       # anchor: real cost from previous round's model.usage
+    + est(this_round.current_surface)      # today's surface, estimated
+    - est(this_round.prev_actual_surface)   # yesterday's surface, estimated
+```
+
+- `last_actual` is **`model.usage` from the previous round**:
+  `tokens_in + (cache_read + cache_write)`. This is the
+  provider's *billed* number, not an estimate.
+- `est(...)` is `derive`'s budget-aware estimate of the
+  surface's token cost, in the same units the provider
+  would count.
+- The **difference** is the signal — if the new surface has
+  more entries than the old, the budget grows; if it has
+  fewer (compaction), the budget shrinks. The estimate's
+  absolute accuracy doesn't matter, only its *change*.
+
+#### Budget vs cost (two layers, both from `model.usage`)
+
+- **Budget** = `tokens_in` (pre-cache, what the model
+  receives as the prompt). Used to decide whether the
+  surface fits the model's window.
+- **Cost** = `cache_read + cache_write` (post-cache
+  effective). The dollars the user actually pays.
+- Both come from the same `model.usage` row; they're just
+  different fields. The `tokens` payload carries both
+  nested:
+
+```python
+class Tokens:
+    in:          u32   # pre-cache input (budget gate)
+    out:         u32   # output (the reserve)
+    cache_read:  u32   # post-cache hit (cost reduction)
+    cache_write: u32   # post-cache miss → write (cost)
+    total:       u32   # in + out (computed)
+```
+
+#### Boundary conditions (fallback to pure estimation)
+
+The anchored projection has **three fallback paths** to
+pure estimation, when the anchor is unavailable or
+invalid:
+
+| Condition | Behaviour |
+|-----------|-----------|
+| **First round** of a session (no `last_actual`) | Pure `est(surface)` — the model.usage anchor doesn't exist yet. |
+| **`model_id` changes mid-session** | The previous anchor was for a different tokenizer; the diff is meaningless. Reset to pure `est(surface)`. The next round will have a fresh anchor. |
+| **Provider emits a malformed `model.usage`** (missing fields, garbage cache count) | The runtime flags the round's budget as **unanchored** and falls back to pure estimation. The error is logged to `ops_log`. |
+
+#### Compression / undo delta absorption
+
+The formula is **symmetric** — it doesn't need special
+handling for compression or undo:
+
+- **Compression** shrinks the surface → `est(new) <
+  est(old)` → delta is **negative** → projection is **lower**
+  than the anchor. The cache hit on the prefix + the
+  smaller new part both count toward a smaller bill.
+- **Undo** grows the surface (re-extends a previously
+  masked suffix) → `est(new) > est(old)` → delta is
+  **positive** → projection is **higher**. The model
+  processes more entries; the user pays for them. The undo
+  is **honest** in cost.
+- **Branch verdict (adopt / discard)** — adoption is
+  structurally similar to undo (surface grows); discard is
+  similar to compression (surface shrinks). The formula
+  handles both transparently.
+
+#### Audit link
+
+`model.usage` carries a `ref = {session, uid}` to the
+`loop.receipt` entry that described the round's surface
+(`loop.md` "Derive Receipt"). An audit query joins them:
+
+```sql
+-- "Show me what the model saw and what it cost."
+SELECT r.notes AS saw, u.tokens AS paid
+  FROM entry r
+  JOIN entry u ON u.ref == r.uid
+ WHERE u.kind == 'model.usage'
+   AND r.kind == 'loop.receipt'
+   AND r.round_id == ?
+```
+
+The audit query reconstructs **"what the model saw"** from
+the receipt's `notes` (the cached surface structure) and
+**"what it cost"** from the `model.usage` row. Together
+they are the **full round record**.
+
+#### Pending decisions (recorded, not resolved)
+
+These are open for later iteration; the design above
+**records** them but does not commit to a choice:
+
+- **D1. Error propagation across the diff.** The formula
+  computes a *delta* of two estimates, each with ~1 %
+  error. The diff's noise is bounded, but how the noise
+  propagates (additive, multiplicative) is not modelled.
+  *Resolution deferred to a future iteration.*
+- **D2. First-round and model-swap estimation precision.**
+  When the anchor is unavailable, the fallback uses
+  `est(surface)` — but at **which** error tolerance? 5 % (T4
+  level) or 1 % (Dim 4a level)? *Resolution deferred.*
+- **D3. Cross-model frequency.** Switching `model_id`
+  mid-session is **uncommon** (the user implies); the
+  fallback path is correct, no optimisation is warranted.
+  *No action.*
+- **D4. Provider field normalisation.** Anthropic /
+  OpenAI / Gemini name cache fields differently. The
+  core layer assumes a **unified** `tokens` schema; the
+  per-provider **adaptation layer** (in the runtime
+  provider abstraction) translates provider-specific
+  fields into the unified shape. *Core layer stays
+  simple; per-provider mapping is below.*
+- **D5. Over-budget behaviour.** When
+  `budget_projection > budget`, what does the loop do?
+  Truncate tail, abort the round, ask the user, split into
+  two calls? The decision is **not yet made**. *Recorded
+  as a pending design choice.*
+- **D6. Receipt ↔ `model.usage` link timing.** Does the link
+  happen at **append time** (one transaction writes both)
+  or **at query time** (join by `round_id`)? Append-time
+  is stronger (one place to look) but requires `assemble`
+  to know the receipt's `uid` before it exists. Query-time
+  is simpler but the link is **eventual**. *Resolution
+  deferred.*
+- **D7. `state.tokens_used` semantics.** Is the
+  per-round running total **summed across rounds** (full
+  cost) or **the latest round only** (one-round cost)? The
+  current field name is ambiguous. *Resolution deferred.*
+
+**These decisions do not block the design** — each is
+resolvable in its own follow-up commit. The design above
+is the **stable** structure: anchor + delta + budget/cost
+separation. The seven items above are the **policy** layer
+on top.
+
 ### Change-locality (which side moves for which change)
 
 The split between `derive` and `assemble` is a **boundary
