@@ -285,7 +285,7 @@ history. The LLM is given only this surface. This guarantees:
   runtime didn't already know.
 - The context window is enforced before the call, not after.
 
-### Derive in Detail
+### Derive in Detail (common path)
 
 `ledger.derive(kinds, budget)` is the projection the loop
 calls every iteration. **It is not a full-ledger scan.** It
@@ -465,6 +465,131 @@ The `summarize(prefix)` implementation is responsible for
 a tool call's `tool_result` lands on the edge, pull that
 result in too. The cost is a slightly larger prefix; the
 benefit is a derivable, recoverable surface.
+
+### Derive Projections (purpose-specific views)
+
+**`derive` is not a single function — it is a family of
+projections**, each tuned to a different consumer. The
+cached `Surface` is the *common path* every projection
+starts from; the projection then **filters and reshapes**
+according to its purpose. The same ledger, the same cache,
+five different views.
+
+```python
+class Projection(Enum):
+    PROMPT_FOR_MODEL   # the main loop's full surface
+    SUMMARIZE_INPUT    # the prefix that summarise() will compress
+    GOVERNANCE_INPUT   # intent + minimum context for governance.judge
+    FORK_BRANCH         # per-branch result, side-by-side
+    AUDIT_REPLAY        # append-only chronological, every entry visible
+```
+
+Each projection is a **filter + reshape** over the cached
+surface — it does not re-walk the ledger, and it does not
+build a separate cache.
+
+#### `PROMPT_FOR_MODEL` — the main loop's surface
+
+The full surface the model sees: full content for tier-0,
+preview + seq pointer for tier-1, one-liner + seq pointer
+for tier-2; always-loaded kinds first; `pinned` first;
+budget-cut tail. The model is the primary consumer; this is
+what the loop's `invoke` argument is.
+
+#### `SUMMARIZE_INPUT` — the prefix for compaction
+
+The `summarize(prefix)` op needs **only the entries inside
+the prefix it is summarising** — not the whole surface, not
+the always-loaded frames. The projection extracts the prefix
+range from the cache:
+
+```
+def summarize_input(surface, prefix):
+    return [e for e in surface.entries
+            if prefix.from_seq <= e.seq <= prefix.to_seq]
+```
+
+No tier shrinking, no budget cut. `summarize` reads the
+**un-shrunk** content of the prefix; if it can't see the
+full text, it can't summarise faithfully. Tiering happens
+**after** summarise produces the new `compaction.summary`
+entry; until then, the prefix contents are full-fat.
+
+#### `GOVERNANCE_INPUT` — intent + minimum context
+
+`governance.judge(intent, state)` needs to evaluate **one
+intent** at a time. The projection gives it:
+
+- The **current intent** (the model emitted).
+- The **minimum context** to evaluate it: the recent
+  `assistant.message` (the model's stated intent + the tool
+  it's about to call), the prior `tool_result` chain (what
+  led up to this call), the current `goal.*`, and the latest
+  one or two related entries.
+- **No full surface.** The model can do the talking; the
+  judge just decides. Excess context here is a **confound**:
+  it lets the judge's verdict drift based on what happens to
+  be in the cache.
+
+```
+def governance_input(surface, intent, state):
+    return {
+        'goal':     current_goal(surface),
+        'system':   always_loaded(surface, kind='system'),
+        'recent':   tail(surface, n=2),     # last 2 iterations' context
+        'intent':   intent,
+    }
+```
+
+#### `FORK_BRANCH` — per-branch result for comparison
+
+When the user forks a session at `boundary_seq`, each branch
+runs independently. Comparing branches needs:
+
+- The branch's own append-only stream (no other branch's data).
+- The **shared prefix** up to `boundary_seq` (so each branch
+  can see what came before the fork).
+- A **diff-friendly shape**: wall_ts, kind, summary fields,
+  but **no body content** for entries that exist on both
+  sides of the fork. Diff happens on the **what**, not the
+  **how much detail**.
+
+The projection returns a per-branch view; the comparison
+tool is a separate op (`fork_diff`).
+
+#### `AUDIT_REPLAY` — append-only chronological
+
+The user or an auditor wants the **whole story**, in order,
+with metadata:
+
+- Every entry, in `seq`-ascending order.
+- Each entry's `kind`, `wall_ts`, `provenance`, `seq`, `uid`.
+- Bodies are shown **as they were written** — no tiering, no
+  redaction (unless the row is `privacy.redact`-ed; the
+  redaction placeholder shows instead).
+- No budget cut. The auditor sees everything; the UI
+  virtualises display.
+
+This is the **only** projection that ignores tiering, surface
+shrinking, and budget cuts. Audit is for *truth*, not for
+*fitting a context window*.
+
+#### Why projections, not a single `Surface` type
+
+A single `Surface` type with optional fields is tempting
+but wrong:
+- It conflates the cache update path (common) with the
+  consumer-specific reshape (varies).
+- It makes audit a "really big surface", which collides with
+  the loop's "small surface, please" pressure.
+- It hides the per-consumer trade-off (e.g. governance
+  doesn't need tiered previews; audit doesn't need pinned
+  reordering).
+
+Projections are a **family of view functions** over one
+cache. They share the cache update cost; they differ in the
+filter+reshape. The cache stays simple; the views stay
+honest.
 
 #### Why this shape
 
