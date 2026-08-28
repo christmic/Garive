@@ -276,6 +276,12 @@ from there. A round that runs for a month reads **only the
 delta since the last derive**, not the month's accumulated
 ledger.
 
+> **Compression is the steady state, not an edge case.**
+> Any round that runs long enough crosses a token budget —
+> summarisation lands, a `rewrite_directive` lands, the surface
+> cache resets. The reset / replay path is the **hot path**
+> of `derive`, not the cold one. Design and test accordingly.
+
 ```python
 class Surface:
     """Cached view of the ledger that the loop maintains
@@ -328,17 +334,18 @@ def derive(kinds, budget):
 
 #### Cost model — what actually runs per iteration
 
-| Scenario | What `derive` does | Cost |
-|----------|-------------------|------|
-| No compression, ledger grew by Δ entries since last derive | append Δ to cache | **O(Δ)** — typically a handful of entries |
-| Compression event (`rewrite_directive` lands) | clear cache, replay from `covers.seq_range.end + 1` | O(prefix-size after the cut) — bounded by what the summary captures |
-| `always_loaded` kind updated | swap one entry in `surface.always_loaded` | O(1) |
-| `assemble` for the budget shape | walk the cache, drop tail to fit budget | O(cache-size) — small per iteration |
+| Scenario | What `derive` does | Cost | Frequency |
+|----------|-------------------|------|-----------|
+| No compression, ledger grew by Δ entries since last derive | append Δ to cache | **O(Δ)** — typically a handful of entries | common (early round, short rounds) |
+| **Compression event** (`rewrite_directive` lands) | clear cache, replay from `covers.seq_range.end + 1` | O(prefix-size after the cut) — bounded by what the summary captures | **steady state** — any long-running round hits this repeatedly |
+| `always_loaded` kind updated | swap one entry in `surface.always_loaded` | O(1) | whenever `goal` etc. is rewritten |
+| `assemble` for the budget shape | walk the cache, drop tail to fit budget | O(cache-size) — small per iteration | every iteration |
 
 A round that has run for a month **does not re-scan** the
 month's accumulated ledger on every iteration. The cache
 holds the *current* view; derive only processes **the delta
-since the previous call**.
+since the previous call**. The compression path is exercised
+frequently, not rarely — design and benchmark for it.
 
 #### Why this is safe
 
