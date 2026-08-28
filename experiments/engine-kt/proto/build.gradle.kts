@@ -1,9 +1,9 @@
-// engine/proto/build.gradle.kts — generated Kotlin bindings
-// from `spec/proto/`. The protobuf Gradle plugin points at the
+// proto/build.gradle.kts — generated Kotlin bindings from
+// `spec/proto/`. The protobuf Gradle plugin points at the
 // schema source, generates Kotlin types into
 // `build/generated/source/proto/main/kotlin/`, and exposes them
-// as `com.garive.eng.kt.proto.*` for every other engine
-// module to consume via `implementation(project(":engine:proto"))`.
+// as `com.garive.eng.kt.proto.*` for every other module to
+// consume via `implementation(project(":proto"))`.
 
 import com.google.protobuf.gradle.id
 
@@ -45,7 +45,7 @@ protobuf {
 sourceSets {
     main {
         proto {
-            srcDir("../../../../spec/proto")
+            srcDir("../../spec/proto")
         }
     }
 }

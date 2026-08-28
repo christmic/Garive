@@ -15,77 +15,76 @@
 
 ## Layout
 
-`engine-kt/` is a **Gradle multi-module project**, not a flat
-copy of `engine/`. Each sub-directory is its own Gradle module
-with its own `build.gradle.kts`.
+`engine-kt/` is a **standard Gradle multi-module project**.
+Every sub-directory is a top-level Gradle module — there is
+**no** intermediate `engine/` or `runtime/` grouping (those
+names describe Rust crates, not Gradle modules).
 
 ```
 engine-kt/
-├── AGENTS.md                  this file
-├── settings.gradle.kts        module list (`:engine:*`, `:runtime:*`)
-├── build.gradle.kts           root build (plugin versions, group / version)
-├── gradle.properties          repo-wide Gradle / Kotlin defaults
+├── AGENTS.md                 this file
+├── settings.gradle.kts       Gradle module list (:proto, :replica, ...)
+├── build.gradle.kts          root build (plugin versions, group/version, repos)
+├── gradle.properties         Gradle / Kotlin defaults
 ├── gradle/wrapper/
 │   └── gradle-wrapper.properties   (run `gradle wrapper` once to generate gradlew/jar)
 │
-├── engine/                    Gradle multi-module "engine" group
-│   ├── build.gradle.kts       applies Kotlin JVM to every :engine:* subproject
-│   ├── core/                  Agent loop, runtime primitives
-│   │   ├── build.gradle.kts
-│   │   └── src/main/kotlin/com/garive/eng/kt/core/
-│   ├── ledger/                Append-only event log
-│   ├── llm/                   Language-model abstraction (provider-agnostic)
-│   ├── tools/                 Tool registry
-│   ├── memory/                Short- and long-term memory
-│   ├── knowledge/             Knowledge store + retrieval
-│   ├── skill/                 Skill packaging
-│   ├── multiagent/            Multi-agent coordination
-│   ├── scheduler/             Task scheduling
-│   ├── creativity/            Value discovery
-│   ├── eval/                  Eval harness
-│   ├── observability/         Tracing, metrics, logs
-│   ├── config/                Config schema + loaders
-│   └── proto/                 Generated Kotlin bindings from spec/proto/
-│       ├── build.gradle.kts   protobuf Gradle plugin
-│       └── src/main/proto/    linked source for spec/proto/
+├── proto/                    :proto  — generated Kotlin bindings from spec/proto/
+│   ├── build.gradle.kts
+│   └── src/main/proto/       protobuf Gradle plugin source dir
 │
-└── runtime/
-    └── replica/               Kotlin mirror of runtime/replica (Gradle application module)
-        ├── build.gradle.kts
-        └── src/main/kotlin/com/garive/eng/kt/replica/
+├── replica/                  :replica — Kotlin mirror of Rust runtime/replica
+│   ├── build.gradle.kts
+│   └── src/main/kotlin/com/garive/eng/kt/replica/
+│
+├── core/         placeholders — `include(":core")` when the slice lands
+├── ledger/
+├── llm/
+├── tools/
+├── memory/
+├── knowledge/
+├── skill/
+├── multiagent/
+├── scheduler/
+├── creativity/
+├── eval/
+├── observability/
+└── config/
 ```
 
-## Why Gradle Multi-module (not a 1:1 Rust Copy)
+The placeholder sub-directories (`core/`, `llm/`, `tools/`,
+`memory/`, `knowledge/`, `skill/`, `multiagent/`, `scheduler/`,
+`creativity/`, `eval/`, `observability/`, `config/`, `ledger/`)
+are **not** Gradle modules today — they are reserved for the
+slices that mirror the Rust `engine/*` crates. Add a module to
+`settings.gradle.kts` and drop a `build.gradle.kts` into the
+sub-directory when its slice starts landing code.
 
-Rust uses a Cargo workspace — one repo with N crates, each a
-flat sub-directory. Kotlin uses Gradle — one repo with N
-**modules**, each its own sub-project with its own
-`build.gradle.kts`. The two layouts look superficially
-similar but:
+## Why Standard Gradle Multi-module (no engine/runtime layer)
 
-- Gradle modules share JVM and Kotlin toolchain configuration
-  through the `subprojects { ... }` block in
-  `engine/build.gradle.kts`.
-- A Kotlin module declares its **own dependencies** in its own
-  `build.gradle.kts` (`implementation(project(":engine:proto"))`,
-  etc.), so module boundaries are explicit and enforceable.
-- The protobuf module (`engine/proto/`) is a real Gradle module
-  because it owns the protobuf plugin and generated sources —
-  there is no "Cargo build script" analogue.
-- Each module has the standard `src/main/kotlin/` and
-  `src/test/kotlin/` source sets; tests live next to the code
-  they exercise.
+The Rust side uses a Cargo workspace with a flat list of
+crates — `engine/core`, `engine/llm`, `runtime/replica`, etc.
+Kotlin / Gradle doesn't need a mirror of that nesting. Each
+Gradle module is just a directory with its own
+`build.gradle.kts`; the module's name (`include(":proto")`,
+`include(":replica")`, ...) is the only thing that needs to match
+the directory. There is no need for `engine/` and `runtime/`
+intermediate directories that only exist to mirror Rust's
+crate-name convention.
+
+When the Kotlin mirror grows, each slice becomes its own
+top-level Gradle module. That's the standard layout.
 
 ## Naming
 
 | Rust crate | Gradle module | Kotlin package |
 |------------|---------------|----------------|
-| `garive-core` | `:engine:core` | `com.garive.eng.kt.core` |
-| `garive-ledger` | `:engine:ledger` | `com.garive.eng.kt.ledger` |
-| `garive-1lm` (Rust numeric-prefix workaround) | `:engine:llm` | `com.garive.eng.kt.llm` |
-| `garive-tools` | `:engine:tools` | `com.garive.eng.kt.tools` |
+| `garive-core` | `:core` | `com.garive.eng.kt.core` |
+| `garive-ledger` | `:ledger` | `com.garive.eng.kt.ledger` |
+| `garive-1lm` (Rust numeric-prefix workaround) | `:llm` | `com.garive.eng.kt.llm` |
+| `garive-tools` | `:tools` | `com.garive.eng.kt.tools` |
 | … | … | … |
-| `garive-replica` | `:runtime:replica` | `com.garive.eng.kt.replica` |
+| `garive-replica` | `:replica` | `com.garive.eng.kt.replica` |
 
 The numeric-prefix crate name `garive-1lm` is a Rust identifier
 constraint; the Kotlin mirror uses the natural `llm`. The
@@ -93,12 +92,14 @@ ubiquitous-language mapping in `.agents/ddd.md` applies.
 
 ## Adding a New Module
 
-1. Create `engine/<name>/build.gradle.kts` (start from the
-   placeholder comment already there) and
-   `engine/<name>/src/main/kotlin/com/garive/eng/kt/<name>/`.
-2. Add `include(":engine:<name>")` to `settings.gradle.kts`.
-3. If the module depends on other engine modules, add
-   `implementation(project(":engine:other"))` to its
+1. Create `<module>/build.gradle.kts` (typically a 4-line file
+   that adds module-specific deps on top of the shared
+   `beforeProject` config in the root `build.gradle.kts`).
+2. Create `<module>/src/main/kotlin/com/garive/eng/kt/<module>/`
+   for the source code.
+3. Add `include(":<module>")` to `settings.gradle.kts`.
+4. If the module depends on other engine modules, add
+   `implementation(project(":<other>"))` to its
    `build.gradle.kts`.
 
 ## Build
@@ -106,7 +107,7 @@ ubiquitous-language mapping in `.agents/ddd.md` applies.
 ```
 cd experiments/engine-kt
 gradle build                          # builds every module + tests
-gradle :engine:proto:generateProto    # regenerate Kotlin bindings from spec/proto/
+gradle :proto:generateProto           # regenerate Kotlin bindings from spec/proto/
 ```
 
 Run `gradle wrapper` once in `engine-kt/` to generate
@@ -115,7 +116,7 @@ Run `gradle wrapper` once in `engine-kt/` to generate
 ## Wire Contracts
 
 - Generated Kotlin bindings are produced by the protobuf Gradle
-  plugin (`engine/proto/build.gradle.kts`) from `spec/proto/`.
+  plugin (`proto/build.gradle.kts`) from `spec/proto/`.
 - Hand-written request / response types mirroring `.proto`
   fields are **forbidden**.
 - Bumping a `.proto` package version requires regenerating
@@ -145,3 +146,5 @@ Run `gradle wrapper` once in `engine-kt/` to generate
 - ❌ Don't add Kotlin code under `engine/` (the Rust side). The
   two stay in separate trees so a future contributor can build
   one without the other.
+- ❌ Don't reintroduce an `engine/` or `runtime/` intermediate
+  directory. Each Gradle module sits directly under `engine-kt/`.

@@ -1,5 +1,5 @@
-// runtime/replica/build.gradle.kts — Kotlin mirror of the
-// Rust replica service container.
+// replica/build.gradle.kts — Kotlin mirror of the Rust
+// `runtime/replica` service container.
 
 plugins {
     kotlin("jvm")
@@ -8,10 +8,10 @@ plugins {
 }
 
 dependencies {
-    "implementation"(project(":engine:core"))
-    "implementation"(project(":engine:tools"))
-    "implementation"(project(":engine:memory"))
-    "implementation"(project(":engine:proto"))
+    "implementation"(project(":core"))
+    "implementation"(project(":tools"))
+    "implementation"(project(":memory"))
+    "implementation"(project(":proto"))
 
     "implementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     "implementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
