@@ -180,6 +180,79 @@ The ledger has **one impure step** — `summarize(prefix)` —
 because summarisation requires the LLM. Every other write is a
 pure projection over the existing ledger.
 
+### The Turn State
+
+Per-`agent_turn` runtime state — the small set of values the
+loop reads and writes **inside the `while`**. The state is
+**per-turn** (lives across Suspended / Resume), not per-loop
+or per-process. The state and the ledger are deliberately
+separate: the **ledger** is the durable, replayable record
+("what happened"); the **state** is the in-flight loop
+control ("what's the loop doing right now"). Anything the
+ledger can answer, the state must not.
+
+| Field | Type | What it holds |
+|-------|------|---------------|
+| `iteration_count` | `u32` | Iterations since the turn started. Bumped once per `while` pass. |
+| `phase` | enum `{Running, AwaitingApproval, AwaitingConfirm, Done, Suspended, Failed}` | Where the turn is right now. Drives the entry protocol on Resume. |
+| `termination_reason` | enum `{NotDone, Answered, NoMoreToolCalls, BudgetExhausted, CircuitBroken, GovernanceDenied, Suspended, Failed}` | The verdict that closes the `while`. Set by the loop, never by the model. |
+| `tokens_used` | `{in: u32, out: u32, total: u32}` | Cumulative across all `model.invoke` calls in this turn. Compared against `budget.tokens` on every iteration. |
+| `wall_clock_used_ms` | `u64` | Wall-clock from `agent_turn` entry. Compared against `budget.wall_clock_ms`. |
+| `last_confirm_response` | enum `{None, Approved, Denied}` | The human's answer to the most recent `AskUser`. `None` until a confirm is requested; `Denied` keeps the round alive (the denial is fed back to the model as a `tool_result.rejected`). |
+| `circuit_breaker` | struct `{consecutive_failures: u32, last_failure_kind: enum, opened_at_ms: Option<u64>}` | Local throttle. Increments on `model.invoke` / `executor.run` failures; trips to `open` when it crosses a threshold. While `open`, the loop pauses / escalates rather than retrying. |
+
+The state is **explicitly typed** — fields are named, not a
+bag of attributes. Anything the loop wants to read or write
+goes through this struct. The list above is a **starting
+shape**; the actual field set will land with the slice and
+must stay small (a dozen fields, no more — anything bigger
+is the ledger pretending to be the state).
+
+### Who Reads / Writes the State
+
+| Field | Read by | Written by |
+|-------|---------|------------|
+| `iteration_count` | loop (`while`, telemetry), `termination.done` | loop (increment per pass) |
+| `phase` | loop (entry protocol), telemetry, `governance.judge` | loop (phase transitions: `Running → AwaitingApproval → Suspended → AwaitingConfirm → Running → ...`) |
+| `termination_reason` | loop (final write to ledger), telemetry | loop (when `termination.done(state)` becomes true) |
+| `tokens_used` | loop (`ledger.derive(kinds, budget)` budget check), telemetry, `circuit_breaker` | loop (sum from `reply.usage` after each `model.invoke`) |
+| `wall_clock_used_ms` | loop (budget check), telemetry, `circuit_breaker` | loop (sampled at the top of each iteration) |
+| `last_confirm_response` | `governance.judge` (sees the answer on Resume), `assembly(surface)` (re-attaches it into the next prompt) | loop (after Resume's synthetic `entry` is processed) |
+| `circuit_breaker` | loop (`while` body — guards `model.invoke` and `executor.run`), telemetry | loop (on each failure / cooldown tick) |
+
+Three rules:
+
+1. **The loop is the only writer.** `governance.judge`,
+   `executor.run`, `assembly`, and `summarize` are pure
+   functions — they take state as input and return values;
+   they never mutate it.
+2. **Reads happen at the top of an iteration**, not scattered
+   throughout it. A `governance.judge` call sees the state as
+   it was when the iteration started; any update from this
+   iteration's `executor.run` lands **before** the next
+   iteration's read.
+3. **`state` survives Suspended → Resume.** It is part of the
+   `agent_turn` resumable payload (along with the ledger
+   segment for the turn). On Resume, the state is loaded as-is
+   and the loop resumes from the `phase` it was in.
+
+### State vs Ledger
+
+| Question | Answer source |
+|----------|---------------|
+| "How many tokens did the round spend?" | `state.tokens_used` (fast read; loop-local) |
+| "Which `model.invoke` calls happened, in order, with what output?" | ledger (durable; replayable) |
+| "Are we currently waiting on the user?" | `state.phase` |
+| "What was the human's last answer?" | `state.last_confirm_response` |
+| "Why was this tool denied?" | ledger (the verdict + reason) |
+| "Why is the loop refusing to retry?" | `state.circuit_breaker` |
+| "What's the round's termination status?" | `state.termination_reason` (this turn's outcome) |
+
+If the question can be answered from the ledger, it lives in
+the ledger. State is **only** for in-flight loop control —
+nothing that needs to outlive the turn, nothing the ledger
+already knows.
+
 ### The LLM Never Sees the Ledger
 
 `ledger.derive(kinds, budget)` projects the ledger into a
