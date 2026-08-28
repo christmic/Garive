@@ -414,6 +414,119 @@ Rules:
   Partial surfaces are acceptable; the next iteration
   extends them.
 
+### Surface Optimisation Passes (inside `assemble`)
+
+The `assemble` step in `derive` does more than budget-fit.
+It runs three optimisation passes before returning. **The
+ledger is the source of truth; the surface is a tuned
+projection.** Anything dropped from the surface is **still in
+the ledger** and recoverable via a seq pointer — the surface
+never *deletes* content, it only *compresses visibility*.
+
+#### 1. Tier-based `tool_result` Visibility
+
+`tool_result` entries shrink with age. The model's working
+memory doesn't need the full text of a result from 50
+iterations ago — it needs to know it exists, where to find
+it, and a one-line hint.
+
+| Iterations ago | What the surface shows |
+|----------------|------------------------|
+| **0–3** | full content |
+| **4–10** | preview (head + tail, tool-specific) + seq pointer to ledger |
+| **> 10** | one-liner (tool name + key result) + seq pointer to ledger |
+
+The model is told `full content at <ledger-seq>` if it needs
+to drill back. The original is **never deleted from the
+ledger**; only the surface shrinks.
+
+#### 2. Big-result Eviction
+
+Some tool results are huge (`read_file` on a 50 MB log,
+`bash` with megabytes of stderr). Even when fresh, they may
+push the surface past `budget.tokens`. The eviction rule:
+
+1. Identify the largest `tool_result` in tier 0 (full
+   content) that's still in the surface.
+2. **Evict** it — replace with a `seq_pointer` entry pointing
+   back to the ledger. The model sees
+   `tool_result evicted; full at <ledger-seq>`.
+3. Repeat until the surface fits `budget.tokens`.
+
+Eviction is **lossless** for the model (the ledger retains
+the full content) and **transparent** (the model sees a
+pointer, not a missing entry). When the model asks for the
+full text, the runtime resolves the pointer and re-attaches
+the content into the next iteration's surface.
+
+Eviction never touches tier 1 (preview) or tier 2 (one-liner)
+— those are already small enough.
+
+#### 3. Per-tool Formatting
+
+Different tools have different useful previews. A
+`read_file` benefits from head + tail + size; a `bash`
+benefits from exit code + last lines + line count. The
+`preview_of` / `one_liner_of` functions are per-tool.
+
+**Tier 1 preview shape (per tool):**
+
+| Tool | Preview |
+|------|---------|
+| `read_file` | first 20 lines + last 5 lines + line count + size |
+| `bash` | exit code + last 20 lines + total line count |
+| `grep` | match count + first 5 matches |
+| `web_fetch` | title + first paragraph + content-type |
+| (other) | first 20 lines + last 5 lines + size |
+
+**Tier 2 one-liner shape (per tool):**
+
+| Tool | One-liner |
+|------|-----------|
+| `read_file` | `read_file(<path>): <N> lines, <size> bytes` |
+| `bash` | `bash(<cmd>): exit <code>, <N> lines` |
+| `grep` | `grep(<pattern>): <N> matches` |
+| `web_fetch` | `web_fetch(<url>): <N> bytes, <status>` |
+| (other) | `<tool_kind>(<key_arg>): <key_result>` |
+
+Per-tool formatters are pluggable: adding a new tool = adding
+a new formatter entry. The formatters live with the tool
+definitions, not in the loop.
+
+#### Combined Pseudocode
+
+```python
+def assemble(surface, kinds, budget):
+    out = []
+
+    for e in surface.entries:
+        if e.kind in {"tool_result", "assistant.tool_call"}:
+            tiers_old = state.iteration_count - e.approx_iteration
+            if tiers_old <= 3:
+                out.append(e)                       # tier 0: full
+            elif tiers_old <= 10:
+                out.append(preview_of(e))           # tier 1: head+tail
+                out.append(seq_pointer(e.seq))      # + seq pointer
+            else:
+                out.append(one_liner_of(e))         # tier 2: one-liner
+                out.append(seq_pointer(e.seq))
+        else:
+            out.append(e)                            # non-tool entries: full
+
+    # Big-result eviction until surface fits budget
+    while token_count(out) > budget.tokens and has_evictable(out):
+        big = biggest_tool_result_in_tier0(out)
+        out.remove(big)
+        out.append(seq_pointer_evicted(big.seq))
+
+    return out
+```
+
+The three passes interact in a fixed order: tiering first
+(per-entry visibility), eviction second (budget pressure
+releases big results). They never run in the opposite order —
+eviction always sees the tier-shrunk surface.
+
 ### Governance Is a Port, Not an Actor
 
 Every intent the model emits (tool call, file write, network
