@@ -14,6 +14,12 @@ set shell := ["bash", "-uc"]
 default:
     @just --list
 
+# Setup: wire `.claude/{rules,skills,agents}` as symlinks to the
+# canonical `.agents/` tree so Claude Code auto-loads project
+# rules / skills. Idempotent.
+setup:
+    bash scripts/setup-claude-symlinks.sh
+
 # Codegen: regenerate protobuf bindings from spec/proto/.
 # Pending — wire to `engine/proto/build.rs` once that crate lands.
 codegen:
