@@ -38,6 +38,7 @@ class LedgerScenariosTest {
             assertIs<CanonicalPayloadResult.Failure>(CanonicalPayload.fromStoredJson(payload.json, "00")).error,
         )
         assertIs<CanonicalPayloadResult.Failure>(CanonicalPayload.fromValue(Json.parseToJsonElement("1.5")))
+        assertEquals(LedgerError.InvalidFact, draft(Json.parseToJsonElement("""{"id":"time","kind":"future.opaque"}""").jsonObject).copy(recordedAt = "today").validate())
     }
 
     private fun runCase(case: JsonObject) {

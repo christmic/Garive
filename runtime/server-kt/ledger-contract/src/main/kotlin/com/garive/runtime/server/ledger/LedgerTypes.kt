@@ -1,5 +1,8 @@
 package com.garive.runtime.server.ledger
 
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
+
 @JvmInline value class SessionId private constructor(val value: String) {
     companion object { fun of(value: String) = SessionId(value.also { require(it.isNotEmpty()) }) }
 }
@@ -36,7 +39,7 @@ data class FactDraft(
     val recordedAt: String,
 ) {
     fun validate(): LedgerError? = when {
-        schemaVersion == 0u || recordedAt.isEmpty() -> LedgerError.InvalidFact
+        schemaVersion == 0u || !recordedAt.isRfc3339() -> LedgerError.InvalidFact
         payload.verify() != null -> LedgerError.DigestMismatch
         else -> null
     }
@@ -61,7 +64,7 @@ data class DurableFact(
     val recordedAt: String,
 ) {
     fun verify(): LedgerError? = when {
-        position == 0uL || schemaVersion == 0u || recordedAt.isEmpty() -> LedgerError.Corruption
+        position == 0uL || schemaVersion == 0u || !recordedAt.isRfc3339() -> LedgerError.Corruption
         payload.verify() == CanonicalPayloadError.DIGEST_MISMATCH -> LedgerError.DigestMismatch
         else -> null
     }
@@ -91,4 +94,11 @@ sealed class LedgerError(val code: String) {
 sealed interface LedgerResult<out T> {
     data class Success<T>(val value: T) : LedgerResult<T>
     data class Failure(val error: LedgerError) : LedgerResult<Nothing>
+}
+
+private fun String.isRfc3339() = try {
+    OffsetDateTime.parse(this)
+    true
+} catch (_: DateTimeParseException) {
+    false
 }

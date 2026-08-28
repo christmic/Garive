@@ -157,4 +157,7 @@ fn canonical_payload_is_cross_language_stable() {
     assert!(CanonicalPayload::from_value(&serde_json::json!(1.5)).is_err());
     let kinds = BTreeSet::from([FactKind::new("session.opened").unwrap()]);
     assert_eq!(kinds.len(), 1);
+    let mut invalid_time = draft(&serde_json::json!({"id":"time","kind":"future.opaque"}));
+    invalid_time.recorded_at = "today".into();
+    assert_eq!(invalid_time.validate(), Err(LedgerError::InvalidFact));
 }

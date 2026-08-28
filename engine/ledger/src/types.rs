@@ -92,7 +92,9 @@ impl FactDraft {
     }
 
     pub fn validate(&self) -> Result<(), LedgerError> {
-        if self.schema_version == 0 || self.recorded_at.is_empty() {
+        if self.schema_version == 0
+            || chrono::DateTime::parse_from_rfc3339(&self.recorded_at).is_err()
+        {
             return Err(LedgerError::InvalidFact);
         }
         self.payload.verify().map_err(LedgerError::Corruption)
@@ -116,7 +118,10 @@ pub struct DurableFact {
 
 impl DurableFact {
     pub fn verify(&self) -> Result<(), LedgerError> {
-        if self.position == 0 || self.schema_version == 0 || self.recorded_at.is_empty() {
+        if self.position == 0
+            || self.schema_version == 0
+            || chrono::DateTime::parse_from_rfc3339(&self.recorded_at).is_err()
+        {
             return Err(LedgerError::Corruption(CanonicalPayloadError::InvalidJson));
         }
         self.payload.verify().map_err(LedgerError::Corruption)

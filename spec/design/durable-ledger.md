@@ -58,6 +58,11 @@ contract-declared canonical representation and binds idempotency. Unknown fact
 kinds/schema versions remain readable as opaque audit facts but are not applied
 to a projection without an admitted decoder.
 
+`recorded_at` is a syntactically valid RFC 3339 timestamp with an explicit
+offset. Adapters may normalize its storage representation; it is excluded from
+idempotency equality because a retry may reconstruct transport metadata, and it
+never participates in ordering.
+
 Canonical payload version 1 accepts JSON null, booleans, strings, arrays,
 objects and integer numbers representable as signed or unsigned 64-bit values.
 It rejects floating-point/exponent values and duplicate object keys. Objects
