@@ -6,5 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[dependencies]
+garive-ledger = { path = "../../engine/ledger" }
+rusqlite.workspace = true
+
 [lib]
 path = "src/lib.rs"
