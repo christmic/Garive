@@ -5,7 +5,7 @@ event: response.output_item.added
 data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"msg_1","type":"message","status":"in_progress","role":"assistant","content":[]}}
 
 event: response.output_text.delta
-data: {"type":"response.output_text.delta","sequence_number":2,"output_index":0,"content_index":0,"delta":"partial"}
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"partial","logprobs":[]}
 
 event: response.incomplete
 data: {"type":"response.incomplete","sequence_number":3,"response":{"id":"resp_partial","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"msg_1","type":"message","status":"incomplete","role":"assistant","content":[{"type":"output_text","text":"partial","annotations":[]}]}],"usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":6}}}

@@ -5,17 +5,16 @@ event: response.output_item.added
 data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"msg_1","type":"message","status":"in_progress","role":"assistant","content":[]}}
 
 event: response.output_text.delta
-data: {"type":"response.output_text.delta","sequence_number":2,"output_index":0,"content_index":0,"delta":"hello "}
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"hello ","logprobs":[]}
 
 event: response.output_text.delta
-data: {"type":"response.output_text.delta","sequence_number":3,"output_index":0,"content_index":0,"delta":"back"}
+data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"back","logprobs":[]}
 
 event: response.output_text.done
-data: {"type":"response.output_text.done","sequence_number":4,"output_index":0,"content_index":0,"text":"hello back"}
+data: {"type":"response.output_text.done","sequence_number":4,"item_id":"msg_1","output_index":0,"content_index":0,"text":"hello back","logprobs":[]}
 
 event: response.output_item.done
 data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello back","annotations":[]}]}}
 
 event: response.completed
 data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_stream","status":"completed","output":[{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello back","annotations":[]}]}],"usage":{"input_tokens":4,"input_tokens_details":{"cached_tokens":1},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":6}}}
-

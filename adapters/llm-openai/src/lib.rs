@@ -158,11 +158,31 @@ pub fn render_request(request: &ModelRequest, stream: bool) -> Result<Value, Ope
 pub fn parse_response(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     let response: Value =
         serde_json::from_slice(bytes).map_err(|_| OpenAiAdapterError::InvalidJson)?;
-    if response["status"] != "completed" {
+    let status = response["status"]
+        .as_str()
+        .ok_or(OpenAiAdapterError::Invariant)?;
+    if !matches!(status, "completed" | "incomplete") {
         return Err(OpenAiAdapterError::Invariant);
     }
     let items = parse_items(&response["output"])?;
     let usage = parse_usage(&response["usage"])?;
+    if status == "incomplete" {
+        match response["incomplete_details"]["reason"].as_str() {
+            Some("max_output_tokens") => {}
+            Some("content_filter") => {
+                return Ok(InvokeOutcome::Rejected {
+                    kind: RejectionKind::ContentPolicy,
+                    sanitized_evidence: "incomplete:content_filter".into(),
+                })
+            }
+            _ => return Err(OpenAiAdapterError::UnsupportedCapability),
+        }
+        return Ok(InvokeOutcome::Interrupted {
+            kind: InterruptionKind::OutputLimit,
+            partial_items: items,
+            usage,
+        });
+    }
     let stop_reason = if items
         .iter()
         .any(|item| matches!(item, ModelItem::ToolIntent { .. }))
@@ -183,11 +203,28 @@ pub fn parse_response(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError>
     })
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum StreamField {
+    OutputText(u64),
+    Refusal(u64),
+    FunctionArguments,
+    ReasoningSummary(u64),
+    ReasoningText(u64),
+}
+
+#[derive(Clone, Debug)]
+struct StartedItem {
+    id: String,
+    kind: String,
+    call_id: Option<String>,
+    name: Option<String>,
+}
+
 pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     let text = std::str::from_utf8(bytes).map_err(|_| OpenAiAdapterError::InvalidJson)?;
     let mut previous = None;
-    let mut assembled = BTreeMap::<u64, String>::new();
-    let mut started = BTreeSet::new();
+    let mut assembled = BTreeMap::<(u64, StreamField), String>::new();
+    let mut started = BTreeMap::<u64, StartedItem>::new();
     let mut completed = BTreeSet::new();
     let mut terminal = None;
     for line in text.lines().filter_map(|line| line.strip_prefix("data: ")) {
@@ -208,43 +245,60 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
             .ok_or(OpenAiAdapterError::Invariant)?
         {
             "response.output_item.added" => {
-                let index = event["output_index"]
-                    .as_u64()
-                    .ok_or(OpenAiAdapterError::Invariant)?;
-                if !started.insert(index) {
+                let index = output_index(&event)?;
+                let item = &event["item"];
+                let state = StartedItem {
+                    id: required_text(item, "id")?,
+                    kind: required_text(item, "type")?,
+                    call_id: item["call_id"].as_str().map(str::to_owned),
+                    name: item["name"].as_str().map(str::to_owned),
+                };
+                if started.insert(index, state).is_some() {
                     return Err(OpenAiAdapterError::Invariant);
                 }
             }
-            "response.output_text.delta" => {
-                let index = event["output_index"]
-                    .as_u64()
-                    .ok_or(OpenAiAdapterError::Invariant)?;
-                let delta = event["delta"]
-                    .as_str()
-                    .ok_or(OpenAiAdapterError::Invariant)?;
-                if !started.contains(&index) || completed.contains(&index) {
-                    return Err(OpenAiAdapterError::Invariant);
-                }
-                assembled.entry(index).or_default().push_str(delta);
+            "response.output_text.delta"
+            | "response.refusal.delta"
+            | "response.function_call_arguments.delta"
+            | "response.reasoning_summary_text.delta"
+            | "response.reasoning_text.delta" => {
+                let index = output_index(&event)?;
+                let field = stream_field(&event)?;
+                require_started(&started, &completed, index, &event, &field)?;
+                assembled
+                    .entry((index, field))
+                    .or_default()
+                    .push_str(required_text(&event, "delta")?.as_str());
             }
-            "response.output_text.done" => {
-                let index = event["output_index"]
-                    .as_u64()
-                    .ok_or(OpenAiAdapterError::Invariant)?;
-                if assembled.get(&index).map(String::as_str) != event["text"].as_str() {
+            "response.output_text.done"
+            | "response.refusal.done"
+            | "response.function_call_arguments.done"
+            | "response.reasoning_summary_text.done"
+            | "response.reasoning_text.done" => {
+                let index = output_index(&event)?;
+                let field = stream_field(&event)?;
+                require_started(&started, &completed, index, &event, &field)?;
+                let final_value = match field {
+                    StreamField::Refusal(_) => event["refusal"].as_str(),
+                    StreamField::FunctionArguments => event["arguments"].as_str(),
+                    _ => event["text"].as_str(),
+                };
+                if assembled.get(&(index, field)).map(String::as_str) != final_value {
                     return Err(OpenAiAdapterError::Invariant);
                 }
             }
             "response.output_item.done" => {
-                let index = event["output_index"]
-                    .as_u64()
-                    .ok_or(OpenAiAdapterError::Invariant)?;
-                if !started.contains(&index) || !completed.insert(index) {
+                let index = output_index(&event)?;
+                let state = started.get(&index).ok_or(OpenAiAdapterError::Invariant)?;
+                if state.id != required_text(&event["item"], "id")?
+                    || state.kind != required_text(&event["item"], "type")?
+                    || !completed.insert(index)
+                {
                     return Err(OpenAiAdapterError::Invariant);
                 }
             }
             "response.completed" => {
-                if started != completed {
+                if started.keys().copied().collect::<BTreeSet<_>>() != completed {
                     return Err(OpenAiAdapterError::Invariant);
                 }
                 verify_assembled(&assembled, &event["response"])?;
@@ -263,7 +317,15 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
                 });
             }
             "response.failed" => return Err(OpenAiAdapterError::Invariant),
-            _ => {}
+            "response.created"
+            | "response.in_progress"
+            | "response.queued"
+            | "response.content_part.added"
+            | "response.content_part.done"
+            | "response.reasoning_summary_part.added"
+            | "response.reasoning_summary_part.done"
+            | "response.output_text.annotation.added" => {}
+            _ => return Err(OpenAiAdapterError::UnsupportedCapability),
         }
     }
     if let Some(outcome) = terminal {
@@ -271,35 +333,137 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     }
     Ok(InvokeOutcome::Interrupted {
         kind: InterruptionKind::Transport,
-        partial_items: assembled
-            .into_values()
-            .map(|text| ModelItem::Text { text })
-            .collect(),
+        partial_items: assembled_items(assembled, &started),
         usage: unknown_usage(),
     })
 }
 
 fn verify_assembled(
-    assembled: &BTreeMap<u64, String>,
+    assembled: &BTreeMap<(u64, StreamField), String>,
     response: &Value,
 ) -> Result<(), OpenAiAdapterError> {
     let output = response["output"]
         .as_array()
         .ok_or(OpenAiAdapterError::Invariant)?;
-    for (index, text) in assembled {
+    for ((index, field), text) in assembled {
         let item = output
             .get(usize::try_from(*index).map_err(|_| OpenAiAdapterError::Invariant)?)
             .ok_or(OpenAiAdapterError::Invariant)?;
-        let final_text = item["content"]
-            .as_array()
-            .and_then(|parts| parts.iter().find(|part| part["type"] == "output_text"))
-            .and_then(|part| part["text"].as_str())
-            .ok_or(OpenAiAdapterError::Invariant)?;
+        let final_text = match field {
+            StreamField::OutputText(content_index) => {
+                indexed_text(item, "content", *content_index, "text")?
+            }
+            StreamField::Refusal(content_index) => {
+                indexed_text(item, "content", *content_index, "refusal")?
+            }
+            StreamField::FunctionArguments => item["arguments"]
+                .as_str()
+                .ok_or(OpenAiAdapterError::Invariant)?,
+            StreamField::ReasoningSummary(summary_index) => {
+                indexed_text(item, "summary", *summary_index, "text")?
+            }
+            StreamField::ReasoningText(content_index) => {
+                indexed_text(item, "content", *content_index, "text")?
+            }
+        };
         if text != final_text {
             return Err(OpenAiAdapterError::Invariant);
         }
     }
     Ok(())
+}
+
+fn stream_field(event: &Value) -> Result<StreamField, OpenAiAdapterError> {
+    let kind = required_text(event, "type")?;
+    Ok(match kind.as_str() {
+        "response.output_text.delta" | "response.output_text.done" => {
+            StreamField::OutputText(content_index(event)?)
+        }
+        "response.refusal.delta" | "response.refusal.done" => {
+            StreamField::Refusal(content_index(event)?)
+        }
+        "response.function_call_arguments.delta" | "response.function_call_arguments.done" => {
+            StreamField::FunctionArguments
+        }
+        "response.reasoning_summary_text.delta" | "response.reasoning_summary_text.done" => {
+            StreamField::ReasoningSummary(required_u64(event, "summary_index")?)
+        }
+        "response.reasoning_text.delta" | "response.reasoning_text.done" => {
+            StreamField::ReasoningText(content_index(event)?)
+        }
+        _ => return Err(OpenAiAdapterError::Invariant),
+    })
+}
+
+fn require_started(
+    started: &BTreeMap<u64, StartedItem>,
+    completed: &BTreeSet<u64>,
+    index: u64,
+    event: &Value,
+    field: &StreamField,
+) -> Result<(), OpenAiAdapterError> {
+    let state = started.get(&index).ok_or(OpenAiAdapterError::Invariant)?;
+    let expected_kind = match field {
+        StreamField::OutputText(_) | StreamField::Refusal(_) => "message",
+        StreamField::FunctionArguments => "function_call",
+        StreamField::ReasoningSummary(_) | StreamField::ReasoningText(_) => "reasoning",
+    };
+    if completed.contains(&index)
+        || state.kind != expected_kind
+        || state.id != required_text(event, "item_id")?
+    {
+        return Err(OpenAiAdapterError::Invariant);
+    }
+    Ok(())
+}
+
+fn assembled_items(
+    assembled: BTreeMap<(u64, StreamField), String>,
+    started: &BTreeMap<u64, StartedItem>,
+) -> Vec<ModelItem> {
+    assembled
+        .into_iter()
+        .map(|((index, field), value)| match field {
+            StreamField::OutputText(_) => ModelItem::Text { text: value },
+            StreamField::Refusal(_) => ModelItem::Refusal { text: value },
+            StreamField::FunctionArguments => {
+                let state = &started[&index];
+                ModelItem::ToolIntent {
+                    model_call_id: state.call_id.clone().unwrap_or_default(),
+                    tool_name: state.name.clone().unwrap_or_default(),
+                    arguments_json: value,
+                }
+            }
+            StreamField::ReasoningSummary(_) | StreamField::ReasoningText(_) => {
+                ModelItem::Reasoning {
+                    content: ReasoningContent::ModelVisible(value),
+                }
+            }
+        })
+        .collect()
+}
+
+fn indexed_text<'a>(
+    item: &'a Value,
+    list: &str,
+    index: u64,
+    key: &str,
+) -> Result<&'a str, OpenAiAdapterError> {
+    item[list]
+        .as_array()
+        .and_then(|values| values.get(index as usize))
+        .and_then(|value| value[key].as_str())
+        .ok_or(OpenAiAdapterError::Invariant)
+}
+
+fn required_u64(value: &Value, key: &str) -> Result<u64, OpenAiAdapterError> {
+    value[key].as_u64().ok_or(OpenAiAdapterError::Invariant)
+}
+fn output_index(value: &Value) -> Result<u64, OpenAiAdapterError> {
+    required_u64(value, "output_index")
+}
+fn content_index(value: &Value) -> Result<u64, OpenAiAdapterError> {
+    required_u64(value, "content_index")
 }
 
 fn parse_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
@@ -308,13 +472,11 @@ fn parse_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
     }
     httpdate::parse_http_date(value)
         .ok()
-        .map(|deadline| deadline.duration_since(now).unwrap_or_default())
+        .and_then(|deadline| deadline.duration_since(now).ok())
 }
 
 fn sanitized_evidence(code: &str, kind: &str) -> String {
-    let mut value = format!("{kind}:{code}");
-    value.truncate(128);
-    value
+    format!("{kind}:{code}").chars().take(128).collect()
 }
 
 fn parse_items(value: &Value) -> Result<Vec<ModelItem>, OpenAiAdapterError> {
@@ -350,6 +512,16 @@ fn parse_items(value: &Value) -> Result<Vec<ModelItem>, OpenAiAdapterError> {
                 arguments_json: required_text(value, "arguments")?,
             }),
             "reasoning" => {
+                for summary in value["summary"].as_array().into_iter().flatten() {
+                    items.push(ModelItem::Reasoning {
+                        content: ReasoningContent::ModelVisible(required_text(summary, "text")?),
+                    });
+                }
+                for content in value["content"].as_array().into_iter().flatten() {
+                    items.push(ModelItem::Reasoning {
+                        content: ReasoningContent::ModelVisible(required_text(content, "text")?),
+                    });
+                }
                 if let Some(reference) = value["encrypted_content"].as_str() {
                     items.push(ModelItem::Reasoning {
                         content: ReasoningContent::OpaqueReference(reference.into()),

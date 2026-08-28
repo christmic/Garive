@@ -136,6 +136,54 @@ fn incomplete_and_http_errors_follow_terminal_contract() {
     );
 }
 
+#[test]
+fn composite_stream_preserves_reasoning_text_and_tool_arguments() {
+    let InvokeOutcome::Completed {
+        items, stop_reason, ..
+    } = parse_sse(&fixture("composite.sse")).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(items.len(), 4);
+    assert_eq!(stop_reason, ModelStopReason::ToolUse);
+    assert!(matches!(
+        &items[0],
+        garive_llm::ModelItem::Reasoning {
+            content: garive_llm::ReasoningContent::ModelVisible(value)
+        } if value == "plan"
+    ));
+}
+
+#[test]
+fn ordinary_incomplete_and_unknown_stream_event_are_exact() {
+    let body = br#"{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}],"usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}"#;
+    let InvokeOutcome::Interrupted { kind, .. } = parse_response(body).unwrap() else {
+        panic!()
+    };
+    assert_eq!(kind, garive_llm::InterruptionKind::OutputLimit);
+
+    assert!(matches!(
+        parse_response(&fixture("content-filter.json")).unwrap(),
+        InvokeOutcome::Rejected {
+            kind: garive_llm::RejectionKind::ContentPolicy,
+            ..
+        }
+    ));
+    assert!(matches!(
+        parse_response(&fixture("refusal.json")).unwrap(),
+        InvokeOutcome::Completed {
+            stop_reason: ModelStopReason::Refusal,
+            ..
+        }
+    ));
+
+    let unknown = b"data: {\"type\":\"response.some_new_delta\",\"sequence_number\":0}\n\n";
+    assert_eq!(
+        parse_sse(unknown),
+        Err(OpenAiAdapterError::UnsupportedCapability)
+    );
+}
+
 fn render_action(action: HttpErrorAction) -> String {
     match action {
         HttpErrorAction::Retry { retry_after } => {
