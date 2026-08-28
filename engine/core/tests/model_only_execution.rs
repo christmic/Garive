@@ -96,16 +96,21 @@ impl ContextPort for FakeContext {
 struct FakeModel {
     scripts: Mutex<VecDeque<String>>,
     calls: AtomicUsize,
+    targets: Mutex<Vec<String>>,
 }
 
 impl ModelPort for FakeModel {
     fn invoke<'a>(
         &'a self,
-        _: &'a garive_llm::ModelRequest,
+        request: &'a garive_llm::ModelRequest,
         observer: &'a mut dyn ModelObserver,
         _: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        self.targets
+            .lock()
+            .unwrap()
+            .push(request.target_id.as_str().into());
         let script = self.scripts.lock().unwrap().pop_front().unwrap();
         let result = match script.as_str() {
             "completed-text-known" => Ok(InvokeOutcome::Completed {
@@ -146,6 +151,23 @@ impl ModelPort for FakeModel {
                 kind: UnavailableKind::RateLimited,
                 retry_after: None,
             }),
+            "transport" => Ok(InvokeOutcome::Interrupted {
+                kind: InterruptionKind::Transport,
+                partial_items: vec![],
+                usage: known_usage(),
+            }),
+            "stream-event" => {
+                let decision = observer.observe(&ModelStreamEvent::TextDelta {
+                    output_index: 0,
+                    delta: "x".into(),
+                });
+                assert_eq!(decision, ObserverDecision::Cancel);
+                Ok(InvokeOutcome::Interrupted {
+                    kind: InterruptionKind::Cancelled,
+                    partial_items: vec![],
+                    usage: known_usage(),
+                })
+            }
             "stream-cancel" => {
                 let decision = observer.observe(&ModelStreamEvent::TextDelta {
                     output_index: 0,
@@ -191,10 +213,17 @@ impl EventSink for FakeEvents {
     }
 }
 
-struct FakeClock;
+struct FakeClock {
+    tick: u64,
+    failure: bool,
+}
 impl ClockPort for FakeClock {
     fn now_tick(&self) -> Result<u64, PortFailure> {
-        Ok(0)
+        if self.failure {
+            Err(PortFailure::Clock)
+        } else {
+            Ok(self.tick)
+        }
     }
 }
 
@@ -230,7 +259,14 @@ fn request(case: &Value) -> AgentTurnRequest {
             max_items: 10,
             max_utf8_bytes: 100,
         },
-        model_targets: vec![ModelTargetId::new("primary")],
+        model_targets: if case["unavailable"] == "alternate" {
+            vec![
+                ModelTargetId::new("primary"),
+                ModelTargetId::new("secondary"),
+            ]
+        } else {
+            vec![ModelTargetId::new("primary")]
+        },
         required_capabilities: vec![ModelCapability::Text, ModelCapability::Streaming],
         model_output: ModelOutputSettings {
             max_output_tokens: Some(10),
@@ -239,9 +275,17 @@ fn request(case: &Value) -> AgentTurnRequest {
         },
         recovery_policy: ModelRecoveryPolicy {
             max_context_rebuilds: 1,
-            output_limit: OutputLimitAction::Suspend,
+            output_limit: match case["output_limit"].as_str() {
+                Some("retry:1") => OutputLimitAction::Retry { max_retries: 1 },
+                Some("complete-partial") => OutputLimitAction::CompletePartial,
+                _ => OutputLimitAction::Suspend,
+            },
             transport: TerminalRecoveryAction::Suspend,
-            unavailable: TerminalRecoveryAction::Suspend,
+            unavailable: if case["unavailable"] == "alternate" {
+                TerminalRecoveryAction::AlternateThenSuspend
+            } else {
+                TerminalRecoveryAction::Suspend
+            },
             missing_usage: if case["missing_usage"] == "estimate" {
                 MissingUsagePolicy::Estimate {
                     input_tokens: 3,
@@ -256,7 +300,7 @@ fn request(case: &Value) -> AgentTurnRequest {
                 NonZeroU32::new(case["maximum"].as_u64().unwrap() as u32).unwrap(),
             ),
             max_total_tokens: Some(case["max_tokens"].as_u64().unwrap()),
-            deadline_tick: None,
+            deadline_tick: case["deadline_tick"].as_u64(),
         },
     }
 }
@@ -281,12 +325,18 @@ fn render(outcome: &AgentOutcome) -> &'static str {
         AgentOutcome::Stopped {
             reason: StopReason::Cancelled,
         } => "stopped:cancelled",
+        AgentOutcome::Stopped {
+            reason: StopReason::Deadline,
+        } => "stopped:deadline",
         AgentOutcome::Failed {
             reason: garive_core::AgentFailureReason::RequiredCapabilityUnavailable,
         } => "failed:required-capability",
         AgentOutcome::Failed {
             reason: garive_core::AgentFailureReason::PortFailure,
         } => "failed:port-failure",
+        AgentOutcome::Failed {
+            reason: garive_core::AgentFailureReason::InvalidModelOutput,
+        } => "failed:invalid-model-output",
         other => panic!("unexpected outcome: {other:?}"),
     }
 }
@@ -295,7 +345,7 @@ fn render(outcome: &AgentOutcome) -> &'static str {
 fn rust_consumes_every_model_only_scenario() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 16);
+    assert_eq!(cases.len(), 25);
     for case in cases {
         let mut context = FakeContext {
             scripts: case["contexts"]
@@ -316,6 +366,7 @@ fn rust_consumes_every_model_only_scenario() {
                     .collect(),
             ),
             calls: AtomicUsize::new(0),
+            targets: Mutex::new(vec![]),
         };
         let cancellation = FakeCancellation {
             cancel_after: case["cancel_after_checks"].as_u64().map(|v| v as usize),
@@ -324,12 +375,16 @@ fn rust_consumes_every_model_only_scenario() {
         let mut events = FakeEvents {
             failure: case["event_failure"].as_str().map(str::to_owned),
         };
+        let clock = FakeClock {
+            tick: case["clock_tick"].as_u64().unwrap_or(0),
+            failure: case["clock_failure"].as_bool().unwrap_or(false),
+        };
         let mut ports = AgentExecutionPorts {
             context: &mut context,
             model: &model,
             events: &mut events,
             cancellation: &cancellation,
-            clock: &FakeClock,
+            clock: &clock,
         };
         let report = block_on(execute_model_only(&request(case), &mut ports));
         let expected = &case["expected"];
@@ -357,5 +412,19 @@ fn rust_consumes_every_model_only_scenario() {
             "{}",
             case["name"]
         );
+        if let Some(targets) = expected.get("targets") {
+            let expected_targets: Vec<_> = targets
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap().to_owned())
+                .collect();
+            assert_eq!(
+                *model.targets.lock().unwrap(),
+                expected_targets,
+                "{}",
+                case["name"]
+            );
+        }
     }
 }

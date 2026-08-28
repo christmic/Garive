@@ -45,7 +45,7 @@ class ModelOnlyExecutionTest {
     @Test
     fun `Kotlin consumes every model-only scenario`() = runTest {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(16, cases.size)
+        assertEquals(25, cases.size)
         cases.forEach { element -> runCase(element.jsonObject) }
     }
 
@@ -54,13 +54,22 @@ class ModelOnlyExecutionTest {
         val model = FakeModel(ArrayDeque(case.strings("models")))
         val cancellation = FakeCancellation(case.optionalInt("cancel_after_checks"))
         val events = FakeEvents(case.optionalText("event_failure"))
-        val ports = AgentExecutionPorts(context, model, events, cancellation) { Result.success(0u) }
+        val ports = AgentExecutionPorts(context, model, events, cancellation) {
+            if (case.optionalText("clock_failure") == "true") {
+                Result.failure(IllegalStateException("clock"))
+            } else {
+                Result.success(case.optionalText("clock_tick")?.toULong() ?: 0u)
+            }
+        }
         val report = executeModelOnly(request(case), ports)
         val expected = case.obj("expected")
         assertEquals(expected.text("outcome"), render(report.outcome), case.text("name"))
         assertEquals(expected.uint("iterations"), report.completedIterations, case.text("name"))
         assertEquals(expected.int("context_calls"), context.calls, case.text("name"))
         assertEquals(expected.int("model_calls"), model.calls, case.text("name"))
+        expected["targets"]?.jsonArray?.let { values ->
+            assertEquals(values.map { it.jsonPrimitive.content }, model.targets, case.text("name"))
+        }
     }
 
     private class FakeContext(private val scripts: ArrayDeque<String>) : ContextPort {
@@ -95,12 +104,14 @@ class ModelOnlyExecutionTest {
 
     private class FakeModel(private val scripts: ArrayDeque<String>) : ModelPort {
         var calls = 0
+        val targets = mutableListOf<String>()
         override suspend fun invoke(
             request: ModelRequest,
             observer: ModelObserver,
             cancellation: ModelCancellation,
         ): ModelPortResult {
             calls += 1
+            targets += request.targetId.value
             return when (val script = scripts.removeFirst()) {
                 "completed-text-known" -> success(
                     InvokeOutcome.Completed(listOf(ModelItem.Text("done")), knownUsage(), ModelStopReason.EndTurn),
@@ -124,6 +135,16 @@ class ModelOnlyExecutionTest {
                     ),
                 )
                 "rate-limited" -> success(InvokeOutcome.Unavailable(UnavailableKind.RATE_LIMITED, null))
+                "transport" -> success(
+                    InvokeOutcome.Interrupted(InterruptionKind.TRANSPORT, emptyList(), knownUsage()),
+                )
+                "stream-event" -> {
+                    assertEquals(
+                        ObserverDecision.CANCEL,
+                        observer.observe(ModelStreamEvent.TextDelta(0u, "x")),
+                    )
+                    success(InvokeOutcome.Interrupted(InterruptionKind.CANCELLED, emptyList(), knownUsage()))
+                }
                 "stream-cancel" -> {
                     assertEquals(
                         ObserverDecision.CANCEL,
@@ -164,14 +185,26 @@ class ModelOnlyExecutionTest {
             ContextRequest(
                 "session", "turn", ContextPurpose.INFERENCE, null, maxOf(1uL, lastPosition), 10, 100,
             ),
-            listOf(ModelTargetId("primary")),
+            if (case.optionalText("unavailable") == "alternate") {
+                listOf(ModelTargetId("primary"), ModelTargetId("secondary"))
+            } else {
+                listOf(ModelTargetId("primary"))
+            },
             listOf(ModelCapability.TEXT, ModelCapability.STREAMING),
             ModelOutputSettings(10u, TextMode.Plain, false),
             ModelRecoveryPolicy(
                 1u,
-                OutputLimitAction.Suspend,
+                when (case.optionalText("output_limit")) {
+                    "retry:1" -> OutputLimitAction.Retry(1u)
+                    "complete-partial" -> OutputLimitAction.CompletePartial
+                    else -> OutputLimitAction.Suspend
+                },
                 TerminalRecoveryAction.SUSPEND,
-                TerminalRecoveryAction.SUSPEND,
+                if (case.optionalText("unavailable") == "alternate") {
+                    TerminalRecoveryAction.ALTERNATE_THEN_SUSPEND
+                } else {
+                    TerminalRecoveryAction.SUSPEND
+                },
                 if (case.text("missing_usage") == "estimate") {
                     MissingUsagePolicy.Estimate(3u, 2u)
                 } else {
@@ -181,7 +214,7 @@ class ModelOnlyExecutionTest {
             ModelOnlyLimits(
                 ExecutionLimits(case.uint("maximum")),
                 case.ulong("max_tokens"),
-                null,
+                case.optionalText("deadline_tick")?.toULong(),
             ),
         )
     }
@@ -196,11 +229,13 @@ class ModelOnlyExecutionTest {
             StopReason.ITERATION_LIMIT -> "stopped:iteration-limit"
             StopReason.TOKEN_LIMIT -> "stopped:token-limit"
             StopReason.CANCELLED -> "stopped:cancelled"
+            StopReason.DEADLINE -> "stopped:deadline"
             else -> error("unexpected stop ${outcome.reason}")
         }
         is AgentOutcome.Failed -> when (outcome.reason) {
             AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE -> "failed:required-capability"
             AgentFailureReason.PORT_FAILURE -> "failed:port-failure"
+            AgentFailureReason.INVALID_MODEL_OUTPUT -> "failed:invalid-model-output"
             else -> error("unexpected failure ${outcome.reason}")
         }
     }
@@ -215,7 +250,7 @@ class ModelOnlyExecutionTest {
     }
 
     private fun JsonObject.text(key: String) = getValue(key).jsonPrimitive.content
-    private fun JsonObject.optionalText(key: String) = getValue(key).jsonPrimitive.content.takeUnless { it == "null" }
+    private fun JsonObject.optionalText(key: String) = get(key)?.jsonPrimitive?.content?.takeUnless { it == "null" }
     private fun JsonObject.optionalInt(key: String) = optionalText(key)?.toInt()
     private fun JsonObject.int(key: String) = text(key).toInt()
     private fun JsonObject.uint(key: String) = text(key).toUInt()
