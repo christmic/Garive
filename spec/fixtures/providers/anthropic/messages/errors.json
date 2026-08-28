@@ -1,0 +1,6 @@
+{"reviewed":"2026-08-29","cases":[
+  {"name":"context-overflow","status":400,"body":{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: context window exceeded"},"request_id":"req_1"},"expected":"rejected:context-overflow"},
+  {"name":"authentication","status":401,"body":{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_2"},"expected":"rejected:authentication"},
+  {"name":"rate-limited","status":429,"retry_after":"3","body":{"type":"error","error":{"type":"rate_limit_error","message":"rate limit exceeded"},"request_id":"req_3"},"expected":"unavailable:rate-limited:3"},
+  {"name":"overloaded","status":529,"body":{"type":"error","error":{"type":"overloaded_error","message":"overloaded"},"request_id":"req_4"},"expected":"unavailable:model-unavailable"}
+]}
