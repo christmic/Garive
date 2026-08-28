@@ -6,7 +6,7 @@
 # implementation. Install `just` via `brew install just`.
 #
 # Toolchains (each recipe assumes the relevant ones on PATH):
-#   rustup (rust 1.75+), cargo, protoc, pnpm, gradle, go.
+#   rustup (rust 1.75+), cargo, protoc, pnpm, gradle, go, jq.
 
 set shell := ["bash", "-uc"]
 
@@ -27,7 +27,7 @@ codegen:
     @echo "codegen: Rust engine/proto bindings are not wired yet"
 
 # Build: codegen + Rust workspace
-build: codegen
+build: codegen architecture
     cargo build --workspace
 
 # Test: cargo test across workspace
@@ -35,9 +35,14 @@ test:
     cargo test --workspace
 
 # C0/C1 semantic conformance: both implementations consume the same fixtures.
-conformance:
+conformance: architecture
     cargo test -p garive-core -p garive-llm
     cd experiments/engine-kt && ./gradlew --no-daemon --console=plain :core:test :llm:test
+
+# Architecture: an Engine crate may depend on other Engine crates or external
+# libraries, never on a local Runtime/App package.
+architecture:
+    cargo metadata --locked --format-version 1 | jq -e '[.packages[] | select(.manifest_path | contains("/engine/")) | .dependencies[] | select(.path != null and (.path | contains("/engine/") | not))] | length == 0'
 
 # Desktop: Tauri build (TS frontend + Rust backend)
 desktop:

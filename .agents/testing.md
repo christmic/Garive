@@ -40,6 +40,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+just architecture
 ```
 
 The Kotlin C0/C1 implementation and proto module are verified separately:

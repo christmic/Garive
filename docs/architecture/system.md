@@ -114,7 +114,7 @@ boundaries until their first executable slice lands.
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |
-| `experiments/engine-kt/` | Optional semantic experiment, not a second source of truth. |
+| `experiments/engine-kt/` | Supported C0/C1 semantic implementation; later slices require admission and are not a second source of truth. |
 
 Internal source modules should be named for owned responsibilities, not generic
 buckets such as `common`, `manager`, `utils`, or `engine`.
@@ -156,8 +156,9 @@ boundaries.
 - Provider adapters must not depend on Agent or public API.
 - Runtime is the only layer allowed to depend on both Agent and API.
 
-These rules should become executable dependency checks when the first crates
-land.
+`just architecture` enforces the local Engine → Runtime/App dependency
+boundary from Cargo metadata. Language-external product boundaries require
+their own checks when admitted.
 
 ## See also
 
