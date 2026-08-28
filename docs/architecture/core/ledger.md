@@ -33,6 +33,46 @@ Four invariants define the ledger:
    projection; this document describes the durable store
    underneath.
 
+## Mechanism Map — eight problems, one ledger
+
+The ledger is **append-only**. Every "fix a problem" the
+runtime has is therefore a **masking family** — append a row
+that hides or transforms part of the surface, never delete.
+
+| # | Problem | Mechanism | Where it lives | Key invariant |
+|---|---------|-----------|----------------|----------------|
+| 1 | **Window overflow** — long round doesn't fit the model's context | `compaction.rewrite` + `compaction.summary`: mask the **prefix**, replace with a structured summary; tail stays full-fat. | `compaction.*` family + `loop.md` "Summary Entry Schema" | Compression is **append-only**; original entries stay in the ledger forever. |
+| 2 | **Information density** — even after compression, the model wastes attention on stale content | `derive` rules + 3-pass `assemble` (tier / evict / format) + per-tool policy profiles | `loop.md` "Surface Optimisation Passes" + "Per-tool Policy Profiles" | Tier decisions are **sticky** (one-way within a session); **no re-promotion**. |
+| 3 | **User goes back** — "actually, undo that" | `session.undo` (mask **suffix** after a `turn_start` target) + `session.redo` (re-extend) | `session.*` family + "Undo / Redo (a third masking family)" | **Cost does not roll back** — `model.usage` rows are preserved; only the *context* rewinds. |
+| 4 | **Agent tries multiple strategies, picks the best** | `branch.*` family + `branch_path` column: each attempt gets a `branch_path`; `branch.verdict{adopt\|discard}` resolves. Path-style nesting (`A.alt.deep`) for trees. | `branch.*` family + "Branches (in-session lightweight fork)" | Default `PROMPT_FOR_MODEL` projection is **mainline-only**; discarded branches are kept in the ledger for `dream` extraction but hidden from the surface. |
+| 5 | **Long-task goal** — agent must not lose the thread across hours | `goal.declare` / `goal.update` / `goal.close` rows; `pinned=1`; **current goal = derived**, not stored | `goal.*` family + "current goal derived, not stored" | No "current_goal" field anywhere; `derive` walks the `goal.*` timeline each call. |
+| 6 | **Right to erasure** — user / regulator wants data gone | `privacy.redact` (mask a range or a single `uid`); blob bytes **physically unlinked**; the row stays for audit | `privacy.*` family + "Right to Erasure" | `redactable` is a registry flag — some kinds (`compaction.rewrite` itself, `privacy.redact`) **never** redact. The audit trail survives; the bytes do not. |
+| 7 | **Recovery** — crash, kill, or `AskUser` Suspend/Resume | `pair_ref` (in-library) + `state.phase` + `derive_position` on Resume; `uid` keeps the in-flight turn uniquely identified | `entry.pair_ref` + `session.turn_start.boundary=resume` + "The Turn State" | Pair completeness invariant — every `tool.call` has a `tool.result`, every `approval_request` has a `approval_response`. Resume is **mid-pair safe** (it back-fills unpaired calls). |
+| 8 | **Cross-ledger address** — parent refs child, fork refs source, dream refs origin, audit refs any | `uid` (session-scoped global id) + `ref` (`{session, uid}` JSON) on `entry`; `ledger_meta.lineage` for fork | `entry.uid` + `entry.ref` + "Two reference paths" + "lineage" | `ref` is **decoupled from `seq`** — never breaks across re-numbering, archive, or compaction. |
+| 9 | **Idempotency, backup, compat** — retries, durable storage, schema evolution | `dedup` (`client_generation` PRIMARY KEY) + `backup_watermark` + WAL/sync=NORMAL + `kind_registry` (write-strict read-lenient) + `kind_migration` (forward-only) | `dedup` table + `ops_log` + "Write Discipline" + "Kind Compatibility Principle" | Old rows are **always readable**, even by readers that don't know the kind; the registry is **append-only**; the ledger is the source of truth, **everything else is derived**. |
+
+**The shape of the table matters.** Every row is
+**append-only**. Every problem is solved by **adding a row
+that masks / supersedes / annotates an earlier row**. There
+is no "delete" primitive; the cost of physical deletion
+(of an unlinked blob, of an unreferenced dedup row) is the
+only place where bytes are physically removed, and it is
+**gated by explicit ops** (`blob_redact_unlink`, dedup GC)
+that themselves leave `ops_log` rows for audit.
+
+**Cost of these mechanisms.** Adding rows is cheap;
+reading them is cheap (the `entry` table is indexed by
+`seq`, `kind`, `turn`, `pinned`, `pair_ref`); the
+projection cost (`derive` + `assemble`) is bounded by the
+size of the surface, not the size of the ledger. The
+mechanisms are layered: each one solves one problem, and
+the problems don't step on each other. `branch.*` works
+inside a `compaction.rewrite`; `session.undo` works across
+a `branch.verdict`; `privacy.redact` works on any entry.
+The mechanism that says "we never lose data" is the
+**immutability** of the ledger; every other mechanism is a
+**projection** over it.
+
 ## Context
 
 The loop needs to answer four questions reliably:
