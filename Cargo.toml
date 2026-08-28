@@ -19,6 +19,7 @@ resolver = "2"
 #   spec/proto                — schema source, not a member
 members = [
     "bench",
+    "engine/config",
     "engine/core",
     "engine/creativity",
     "engine/eval",
@@ -27,6 +28,8 @@ members = [
     "engine/llm",
     "engine/memory",
     "engine/multiagent",
+    "engine/observability",
+    "engine/proto",
     "engine/scheduler",
     "engine/skill",
     "engine/tools",
