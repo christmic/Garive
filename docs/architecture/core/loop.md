@@ -591,6 +591,148 @@ cache. They share the cache update cost; they differ in the
 filter+reshape. The cache stays simple; the views stay
 honest.
 
+### Derive Stability (prompt-cache compatibility — constitutional)
+
+LLM providers (Anthropic, OpenAI, others) ship **prompt
+caches** keyed on a stable token prefix. The cache hits when
+the next request's prefix **byte-for-byte matches** an earlier
+one. If `derive` ever returns a surface whose *prefix* changes
+between iterations — even semantically equivalent content
+re-ordered or re-shrunk — the provider cache misses. A
+sustained cache miss rate means paying full input cost every
+iteration, which on long rounds is ruinous.
+
+`derive` is therefore bound by **three stability rules**,
+not by the optimisation pass's output shape alone. These are
+**constitutional** — they govern the algorithm, not a
+particular policy. Empirical validation against each
+provider's cache behaviour is the final arbiter; the rules
+below are the design's commitment to that empirical bar.
+
+#### Rule 1 — Append-only projection
+
+Across iterations within a session, `derive` returns a
+surface whose **historical prefix is monotonic**. The
+projection may *append* new entries (at the tail) and may
+*evict* entries from the surface (replacing them with seq
+pointers), but it must **never re-order** the surviving
+historical entries, and must **never insert** new content
+into a position earlier than the previous iteration's
+tail.
+
+```
+# OK:     [tier-0]  [tier-0]  [tier-1]  [tier-1]  <-- new tail
+# Bad:    [tier-0]  [tier-1]  [tier-0]  [tier-1]  <-- re-order
+# OK:     [tier-0]  [redacted]  [tier-0]  <-- eviction collapses
+# Bad:    [redacted]  [tier-0]  [tier-0]  <-- new entry in old slot
+```
+
+Append-only is the single most important property. It holds
+even when the projection is `AUDIT_REPLAY` (where the
+"prefix" is the whole session — re-ordering would also
+defeat cache).
+
+#### Rule 2 — Sticky tier decisions
+
+Tier transitions are **one-way** within a session. A
+`tool_result` that has been demoted from `tier-0` (full)
+to `tier-1` (preview) **stays in `tier-1`** for the rest of
+the session, even if a later iteration has budget to spare.
+Re-promotion is **forbidden** in the same session.
+
+```
+# Allowed:
+# tier-0 (full)  -> tier-1 (preview)  -> tier-2 (one-liner) -> ...
+# Forbidden:
+# tier-2 (one-liner) -> tier-1 (preview)  <-- re-promote
+# tier-1 (preview)   -> tier-0 (full)     <-- re-promote
+```
+
+Why: oscillating between `tier-0` and `tier-1` would mean
+the *same* surface bytes appearing in different forms on
+adjacent iterations, which defeats the provider cache.
+A demoted entry stays demoted; the model re-reads the
+`seq_pointer` and re-attaches the full body **only if it
+needs to** (via an explicit re-attach call, which the cache
+key changes for, by design).
+
+**Sticky applies within a session.** Across sessions (fork,
+restart from backup), the surface is rebuilt from scratch —
+no cache to break. The "sticky" rule is *intra-session*.
+
+#### Rule 3 — Boundary-anchored reordering
+
+Re-ordering of the surface is **only allowed at a
+boundary**:
+
+- `session.turn_start` — re-ordering the always-loaded
+  block (e.g. `goal.*` rewriting its visible form) is OK
+  because the cache is invalidated by the **turn boundary**
+  anyway.
+- `compaction.rewrite` — the cache breaks by definition; the
+  new prefix starts at the rewrite point.
+- A re-attach of a `seq_pointer` (the model asks for the
+  full content of a previously summarised entry) is a
+  *boundary* — the surface bytes change, and that's
+  expected.
+
+**Within a turn** (between two `compaction.rewrite`s), no
+re-ordering of historical entries. The always-loaded block
+may **append** new pinned entries (`goal.update` lands), but
+the *order* of the already-loaded block does not change.
+
+This is why `goal.*` is **append-only** (see `ledger.md`):
+`goal.declare` appends, `goal.update` appends (with a `ref`
+to the prior), `goal.close` appends. The current-goal
+projection recomputes which is "current", but the visible
+block's *byte order* is stable.
+
+#### What this means for the algorithm
+
+- **Tier decisions are sticky and append-only.** A `tier`
+  column lives on each `tool_result` row in the cache (or
+  on the row in the ledger); demotions are recorded, never
+  reversed.
+- **Order is by `seq` ascending.** The `derive` returns
+  entries in `seq` order; no exceptions, not even for
+  `pinned` rows. Pinned rows are prepended (lower `seq`),
+  but among pinned rows, the original `seq` order is
+  preserved.
+- **Re-attach via `seq_pointer` is a write**, not a
+  transformation. The model asks for a previously summarised
+  entry's full body; the runtime appends a re-attach entry
+  (or inlines it into the next surface) — the prior
+  projection's prefix is not retroactively modified.
+- **Boundary-anchored reordering** is the only escape
+  hatch: at `compaction.rewrite` or `session.turn_start`,
+  the cache resets and any reordering is fine.
+
+#### Empirical validation (when this lands)
+
+The three rules above are the design's **commitment**. The
+actual provider behaviour (Anthropic cache TTL, OpenAI
+auto-cache, Gemini implicit caching) determines how *strict*
+the rules need to be in practice:
+
+- If a provider's cache survives minor re-ordering, Rule 1
+  can be relaxed for adjacent-tiers of the same tool
+  (preserving prefix for the same `tool_result`).
+- If a provider offers a "stability hint" (a hash, a
+  fingerprint), `derive` may emit it for the model's debug.
+
+`docs/bench/perf/cache-stability.md` (forthcoming) holds
+the empirical measurements and the concrete policy
+parameters (e.g. "Anthropic: 5-minute cache TTL; we treat the
+surface as a 4-minute rolling window with re-anchored prefix
+on every `compaction.rewrite`").
+
+Until that file lands, the rules above are **the
+constitution** — implementation is expected to honour them
+even before benchmarks exist. The first regression test for
+this feature should be a unit test that asserts
+"`derive(N+1).prefix_bytes == derive(N).prefix_bytes` for
+the no-reorder, no-promote case."
+
 #### Why this shape
 
 - **Start-point is single-valued.** Only the *latest*
