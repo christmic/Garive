@@ -40,7 +40,7 @@ Foundation
 | C3 | Immutable AgentTurnRequest, frozen ports, model-only bounded execution and AgentOutcome. | Rust/Kotlin fake context/model capability scenarios including cancellation and every model envelope. |
 | C4 | Exact tool definition resolution, argument validation, immutable Prepared Call/digest/replay class. | Shared semantic fixtures; invalid intent never reaches authorization. |
 | C5 | Authorization/interaction/execution reduction and model-visible observations. | approve/deny/replacement/ask-user/uncertain-effect scenarios; no concrete sandbox in Core. |
-| C6 | Runtime Turn facts, request/effect receipts, suspension continuation, crash recovery with real storage. | Rust process-restart integration tests and operator-reconciliation paths. Kotlin consumes public semantics only unless separately admitted. |
+| C6 | Runtime Turn facts, request/effect receipts, suspension continuation, crash recovery with real storage. | Rust/SQLite process-restart tests and Kotlin/PostgreSQL transaction/recovery tests required by `agent-platform-delivery.md`. |
 | C7 | Compression/masking policy selected from measured context pressure. | Quality/cost baseline; thresholds remain proposed until reproducible. |
 
 ## Change-set gate
@@ -54,8 +54,9 @@ For C0-C5, each shared semantic change merges only with:
 5. root `just conformance` consuming all fixture cases in both languages;
 6. architecture/dependency and strict native build checks.
 
-C6 is Runtime-owned Rust behavior. Kotlin parity is not implied, but public
-continuation/outcome semantics must remain compatible with the shared contract.
+C6 storage adapters are Runtime-owned and language-native. SQL/driver parity is
+not implied; portable L0 semantics and public continuation/outcome behavior are
+shared, while SQLite and PostgreSQL each require native integration evidence.
 
 ## Work packages
 
@@ -107,11 +108,17 @@ exceed limits or confuse suspension with continuation.
 
 ## Explicitly deferred
 
-- provider SDK mappings until C1/C3 ports are executable;
 - SQLite index/backup/GC catalog beyond C6's required facts;
 - compression formulas and numeric SLOs before C3/C6 baseline;
-- full Kotlin copies of Runtime, persistence, Gateway or every Engine module;
-- Desktop/Mobile integration before a Runtime host/API slice.
+- Gateway extraction and Kotlin copies of Engine modules outside admitted
+  C0-C5/L0 semantics;
+- production credentials, signing, distribution and deployment for product
+  clients.
+
+Provider adapters, the Kotlin PostgreSQL server, and executable client
+skeletons are active work in `agent-platform-delivery.md`. Product clients may
+use the versioned fake Host boundary before C6 is complete, but cannot claim a
+live end-to-end Agent workflow until the durable Host slice passes.
 
 ## First milestone acceptance
 
