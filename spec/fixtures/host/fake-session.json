@@ -1,0 +1,11 @@
+{
+  "api_version": "garive.host.v1",
+  "command": {"agent_definition_id": "garive.default", "text": "hello"},
+  "events": [
+    {"api_version":"garive.host.v1","session_id":"session-fixture","position":1,"event":"session.created"},
+    {"api_version":"garive.host.v1","session_id":"session-fixture","position":2,"event":"turn.started","turn_id":"turn-fixture","execution_id":"execution-fixture"},
+    {"api_version":"garive.host.v1","session_id":"session-fixture","position":3,"event":"output.delta","turn_id":"turn-fixture","execution_id":"execution-fixture","text":"hello "},
+    {"api_version":"garive.host.v1","session_id":"session-fixture","position":4,"event":"output.delta","turn_id":"turn-fixture","execution_id":"execution-fixture","text":"from Garive"},
+    {"api_version":"garive.host.v1","session_id":"session-fixture","position":5,"event":"turn.completed","turn_id":"turn-fixture","execution_id":"execution-fixture"}
+  ]
+}
