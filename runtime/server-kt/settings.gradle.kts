@@ -3,4 +3,5 @@ rootProject.name = "garive-server"
 
 include(":agent-core")
 include(":llm-contract")
+include(":ledger-contract")
 include(":proto")
