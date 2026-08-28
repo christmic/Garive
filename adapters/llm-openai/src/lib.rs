@@ -4,10 +4,14 @@
 
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelInputContent, ModelInputItem, ModelItem, ModelRequest,
-    ModelRole, ModelStopReason, ModelUsage, ReasoningContent, TextMode, TokenCount, UsageSource,
+    ModelRole, ModelStopReason, ModelUsage, ReasoningContent, RejectionKind, TextMode, TokenCount,
+    UnavailableKind, UsageSource,
 };
 use serde_json::{json, Map, Value};
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::{Duration, SystemTime},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OpenAiAdapterError {
@@ -15,6 +19,61 @@ pub enum OpenAiAdapterError {
     UnsupportedCapability,
     InvalidJson,
     Invariant,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HttpErrorAction {
+    Retry { retry_after: Option<Duration> },
+    Terminal(InvokeOutcome),
+}
+
+pub fn classify_http_error(
+    status: u16,
+    retry_after: Option<&str>,
+    body: &[u8],
+    exhausted: bool,
+    now: SystemTime,
+) -> Result<HttpErrorAction, OpenAiAdapterError> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| OpenAiAdapterError::InvalidJson)?;
+    let error = value
+        .get("error")
+        .and_then(Value::as_object)
+        .ok_or(OpenAiAdapterError::Invariant)?;
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let kind = error
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let evidence = sanitized_evidence(code, kind);
+    if code == "context_length_exceeded" {
+        return Ok(HttpErrorAction::Terminal(InvokeOutcome::Rejected {
+            kind: RejectionKind::ContextOverflow,
+            sanitized_evidence: evidence,
+        }));
+    }
+    if matches!(status, 401 | 403) || code == "invalid_api_key" {
+        return Ok(HttpErrorAction::Terminal(InvokeOutcome::Rejected {
+            kind: RejectionKind::Authentication,
+            sanitized_evidence: evidence,
+        }));
+    }
+    let unavailable = match status {
+        429 => Some(UnavailableKind::RateLimited),
+        500..=599 => Some(UnavailableKind::ModelUnavailable),
+        _ => None,
+    }
+    .ok_or(OpenAiAdapterError::UnsupportedCapability)?;
+    let delay = retry_after.and_then(|value| parse_retry_after(value, now));
+    if !exhausted {
+        return Ok(HttpErrorAction::Retry { retry_after: delay });
+    }
+    Ok(HttpErrorAction::Terminal(InvokeOutcome::Unavailable {
+        kind: unavailable,
+        retry_after: delay,
+    }))
 }
 
 pub fn render_request(request: &ModelRequest, stream: bool) -> Result<Value, OpenAiAdapterError> {
@@ -128,6 +187,8 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
     let text = std::str::from_utf8(bytes).map_err(|_| OpenAiAdapterError::InvalidJson)?;
     let mut previous = None;
     let mut assembled = BTreeMap::<u64, String>::new();
+    let mut started = BTreeSet::new();
+    let mut completed = BTreeSet::new();
     let mut terminal = None;
     for line in text.lines().filter_map(|line| line.strip_prefix("data: ")) {
         if terminal.is_some() {
@@ -146,6 +207,14 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
             .as_str()
             .ok_or(OpenAiAdapterError::Invariant)?
         {
+            "response.output_item.added" => {
+                let index = event["output_index"]
+                    .as_u64()
+                    .ok_or(OpenAiAdapterError::Invariant)?;
+                if !started.insert(index) {
+                    return Err(OpenAiAdapterError::Invariant);
+                }
+            }
             "response.output_text.delta" => {
                 let index = event["output_index"]
                     .as_u64()
@@ -153,6 +222,9 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
                 let delta = event["delta"]
                     .as_str()
                     .ok_or(OpenAiAdapterError::Invariant)?;
+                if !started.contains(&index) || completed.contains(&index) {
+                    return Err(OpenAiAdapterError::Invariant);
+                }
                 assembled.entry(index).or_default().push_str(delta);
             }
             "response.output_text.done" => {
@@ -163,8 +235,32 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
                     return Err(OpenAiAdapterError::Invariant);
                 }
             }
+            "response.output_item.done" => {
+                let index = event["output_index"]
+                    .as_u64()
+                    .ok_or(OpenAiAdapterError::Invariant)?;
+                if !started.contains(&index) || !completed.insert(index) {
+                    return Err(OpenAiAdapterError::Invariant);
+                }
+            }
             "response.completed" => {
+                if started != completed {
+                    return Err(OpenAiAdapterError::Invariant);
+                }
+                verify_assembled(&assembled, &event["response"])?;
                 terminal = Some(parse_response(event["response"].to_string().as_bytes())?)
+            }
+            "response.incomplete" => {
+                verify_assembled(&assembled, &event["response"])?;
+                let response = &event["response"];
+                if response["incomplete_details"]["reason"] != "max_output_tokens" {
+                    return Err(OpenAiAdapterError::UnsupportedCapability);
+                }
+                terminal = Some(InvokeOutcome::Interrupted {
+                    kind: InterruptionKind::OutputLimit,
+                    partial_items: parse_items(&response["output"])?,
+                    usage: parse_usage(&response["usage"])?,
+                });
             }
             "response.failed" => return Err(OpenAiAdapterError::Invariant),
             _ => {}
@@ -181,6 +277,44 @@ pub fn parse_sse(bytes: &[u8]) -> Result<InvokeOutcome, OpenAiAdapterError> {
             .collect(),
         usage: unknown_usage(),
     })
+}
+
+fn verify_assembled(
+    assembled: &BTreeMap<u64, String>,
+    response: &Value,
+) -> Result<(), OpenAiAdapterError> {
+    let output = response["output"]
+        .as_array()
+        .ok_or(OpenAiAdapterError::Invariant)?;
+    for (index, text) in assembled {
+        let item = output
+            .get(usize::try_from(*index).map_err(|_| OpenAiAdapterError::Invariant)?)
+            .ok_or(OpenAiAdapterError::Invariant)?;
+        let final_text = item["content"]
+            .as_array()
+            .and_then(|parts| parts.iter().find(|part| part["type"] == "output_text"))
+            .and_then(|part| part["text"].as_str())
+            .ok_or(OpenAiAdapterError::Invariant)?;
+        if text != final_text {
+            return Err(OpenAiAdapterError::Invariant);
+        }
+    }
+    Ok(())
+}
+
+fn parse_retry_after(value: &str, now: SystemTime) -> Option<Duration> {
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    httpdate::parse_http_date(value)
+        .ok()
+        .map(|deadline| deadline.duration_since(now).unwrap_or_default())
+}
+
+fn sanitized_evidence(code: &str, kind: &str) -> String {
+    let mut value = format!("{kind}:{code}");
+    value.truncate(128);
+    value
 }
 
 fn parse_items(value: &Value) -> Result<Vec<ModelItem>, OpenAiAdapterError> {

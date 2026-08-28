@@ -5,8 +5,10 @@ use garive_llm::{
     ModelRequest, ModelRequestId, ModelRole, ModelStopReason, ModelTargetId, TextMode, TokenCount,
     ToolDescriptor,
 };
+use garive_llm_openai::{classify_http_error, HttpErrorAction};
 use garive_llm_openai::{parse_response, parse_sse, render_request, OpenAiAdapterError};
 use serde_json::Value;
+use std::time::{Duration, SystemTime};
 
 fn fixture(name: &str) -> Vec<u8> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -85,4 +87,76 @@ fn eof_is_transport_interruption_and_bad_sequence_fails_closed() {
         parse_sse(malformed.as_bytes()),
         Err(OpenAiAdapterError::Invariant)
     );
+}
+
+#[test]
+fn incomplete_and_http_errors_follow_terminal_contract() {
+    let outcome = parse_sse(&fixture("incomplete.sse")).unwrap();
+    let InvokeOutcome::Interrupted {
+        kind,
+        partial_items,
+        ..
+    } = outcome
+    else {
+        panic!()
+    };
+    assert_eq!(kind, garive_llm::InterruptionKind::OutputLimit);
+    assert_eq!(partial_items.len(), 1);
+
+    let document: Value = serde_json::from_slice(&fixture("errors.json")).unwrap();
+    for case in document["cases"].as_array().unwrap() {
+        let action = classify_http_error(
+            case["status"].as_u64().unwrap() as u16,
+            case["retry_after"].as_str(),
+            case["body"].to_string().as_bytes(),
+            true,
+            SystemTime::UNIX_EPOCH,
+        )
+        .unwrap();
+        assert_eq!(
+            render_action(action),
+            case["expected"].as_str().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+    let retry = classify_http_error(
+        429,
+        Some("2"),
+        document["cases"][2]["body"].to_string().as_bytes(),
+        false,
+        SystemTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    assert_eq!(
+        retry,
+        HttpErrorAction::Retry {
+            retry_after: Some(Duration::from_secs(2))
+        }
+    );
+}
+
+fn render_action(action: HttpErrorAction) -> String {
+    match action {
+        HttpErrorAction::Retry { retry_after } => {
+            format!("retry:{}", retry_after.unwrap().as_secs())
+        }
+        HttpErrorAction::Terminal(InvokeOutcome::Rejected { kind, .. }) => format!(
+            "rejected:{}",
+            match kind {
+                garive_llm::RejectionKind::ContextOverflow => "context-overflow",
+                garive_llm::RejectionKind::Authentication => "authentication",
+                garive_llm::RejectionKind::ContentPolicy => "content-policy",
+            }
+        ),
+        HttpErrorAction::Terminal(InvokeOutcome::Unavailable { kind, retry_after }) => match kind {
+            garive_llm::UnavailableKind::RateLimited => format!(
+                "unavailable:rate-limited:{}",
+                retry_after.unwrap().as_secs()
+            ),
+            garive_llm::UnavailableKind::ModelUnavailable => "unavailable:model-unavailable".into(),
+            garive_llm::UnavailableKind::CircuitOpen => "unavailable:circuit-open".into(),
+        },
+        HttpErrorAction::Terminal(_) => "unexpected".into(),
+    }
 }
