@@ -623,10 +623,11 @@ happen elsewhere (`summarize` writes summaries;
 # in agent_turn, between derive and model.invoke:
 
 surface = derive(kinds=ALL, budget=BUDGET)
-assembled = assemble(
+assembled, receipt = assemble(
     surface,
     projection=PROMPT_FOR_MODEL,
     last_seen_seq=state.last_seen_seq,
+    round_id=state.round_id,
 )
 state.last_seen_seq = max(state.last_seen_seq or 0, surface.latest_seq)
 
@@ -635,8 +636,145 @@ reply = model.invoke(
     seen   = assembled.seen,
     new    = assembled.new,
 )
-# ... judge, run, record, etc.
+# ... judge, run, record receipt, etc.
+
+record_receipt(receipt)   # log-only, see below
 ```
+
+#### Derive / Assemble Receipt (log-only view description)
+
+`derive` and `assemble` are not just **read** operations —
+they are **read + describe**. Each call returns the data
+the consumer asked for, **plus a receipt** that records
+exactly what that call did. The receipt is **log-only**:
+it does not enter the source-of-truth ledger, but it is
+queryable for analysis, debug, and audit.
+
+**Why:** the ledger captures **what happened** — every
+event, every intent, every result. The receipt captures
+**what the model saw** — which is a function of the ledger
+*and* the masking / projection / layout / dedup state at
+the moment of the call. Without the receipt, an analyst
+sees the ledger and asks "why did the model not see X?"; with
+the receipt, they answer that question by reading one row.
+
+> **Before the receipt, an analyst could only see *what the
+> ledger has*; with the receipt, they can see *what the model
+> actually saw*, and replay each round with the exact prompt
+> the model got.**
+
+```python
+class DeriveReceipt:
+    round_id:        uuid                  # which round this is
+    seq_from, seq_to: int                 # entries fed to derive
+    seq_count:        int                  # entries considered
+    projection:      str                  # PROMPT_FOR_MODEL | SUMMARIZE_INPUT | ...
+    layout_mode:     str                  # default | compact | audit | governance | speculative
+    token_pinned:    int                  # tokens in pinned block
+    token_seen:      int                  # tokens in seen part
+    token_new:       int                  # tokens in new part
+    token_total:     int                  # pinned + seen + new
+    last_seen_seq:   int | None          # the new boundary after this round
+    notes:          dict                  # structured JSON
+
+    @dataclass
+    class MaskApplication:
+        kind:        str                  # compaction.rewrite | privacy.redact | session.undo | session.redo | branch.verdict
+        covers:     [int, int]            # [from, to] or [uid]
+        reason:     str
+
+    @dataclass
+    class DedupAction:
+        kind:        str                  # harness.feature | ...
+        feature:    str                  # which feature was dedup'd
+        shadowed_count: int              # how many older rows shadowed
+
+    @dataclass
+    class Skipped:
+        seq:        int
+        kind:       str
+        reason:     str                  # branch.discard | privacy.redact | unknown_kind | ...
+
+    @dataclass
+    class Warning:
+        kind:       str                  # unknown_kind_skip | partial_coverage | ...
+        detail:     str
+```
+
+**`record_receipt(receipt)` writes to a separate
+`receipt` table** in the same db — distinct from the
+ledger's `entry` table because the receipt is a **view
+description**, not an event:
+
+```sql
+CREATE TABLE receipt (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    round_id        TEXT NOT NULL,            -- uuid
+    seq_from        INTEGER NOT NULL,
+    seq_to          INTEGER NOT NULL,
+    seq_count       INTEGER NOT NULL,
+    projection      TEXT NOT NULL,            -- PROMPT_FOR_MODEL etc.
+    layout_mode     TEXT NOT NULL,            -- default / compact / ...
+    token_pinned    INTEGER NOT NULL,
+    token_seen      INTEGER NOT NULL,
+    token_new       INTEGER NOT NULL,
+    token_total     INTEGER NOT NULL,
+    last_seen_seq   INTEGER,
+    notes           BLOB,                      -- JSON: masks / dedup / skipped / warnings
+    wall_ts         INTEGER NOT NULL
+);
+
+CREATE INDEX receipt_round   ON receipt(round_id);
+CREATE INDEX receipt_wall_ts ON receipt(wall_ts);
+```
+
+**Why a separate table, not a ledger entry?**
+
+- The ledger is **source of truth for events**. A
+  `loop.receipt` entry would conflate "what happened" with
+  "what the model saw" — two different concerns.
+- Receipts are **derived**; if a receipt is wrong, the
+  ledger is still right. If the ledger is wrong, the
+  receipts that describe it are also wrong. Keeping them
+  separate makes the **direction of dependence** explicit:
+  `ledger = truth`, `receipt = derived view`.
+- Receipts are **log-only** and **best-effort** — a
+  crashed / lost receipt is recoverable (replay the round
+  by re-running `derive` / `assemble` with the same state).
+  The ledger cannot be lost; the receipt can.
+
+**What the receipt enables:**
+
+- **Per-round analysis** — which rounds used how much
+  budget, which projections were applied, which rounds hit
+  a compaction event. SQL aggregate over `receipt` answers
+  "what was the model's *typical* surface look like over
+  this round?" — useful for tuning tier policies, optimising
+  `compaction.rewrite` triggers, etc.
+- **Debug** — when the model makes a surprising call, the
+  receipt shows *exactly what it saw* in that round. No more
+  "but the tool_result was in the ledger, why didn't the
+  model use it?" — the receipt says whether the row was
+  masked (branch discard / privacy redact / compaction),
+  dedup'd (harness de-dup), or simply not in `kinds`.
+- **Replay** — given a receipt + the ledger at the moment
+  of the call, the model can be re-invoked with the **exact
+  same prompt bytes**. Useful for testing tier-policy
+  changes against historical rounds ("what would the model
+  have done on this round if the policy were X?").
+- **Audit / privacy** — a user-facing tool can say "on
+  round N, the model saw A, B, C, and D, but not E (which
+  was redacted on day Y)". The receipt carries the
+  redacted-by reference; the user sees what was hidden and
+  why.
+
+**The receipt does not see the body.** It records
+*metadata* — what was masked, what was dedup'd, what was
+skipped, how many tokens. It does **not** record the body
+text itself (that's the ledger's job). The receipt is the
+*index into the round*, not the *content of the round*.
+
+#### Where assemble fits in the loop
 
 The **prompt structure** the model sees is **three
 segments** (`pinned`, `seen`, `new`), separated by
