@@ -371,95 +371,118 @@ shape.
 > Content choice and serialisation format are different
 > problems; this split keeps them clean.
 
-#### What assemble does (three responsibilities)
+#### What assemble does (five responsibilities)
 
-`assemble` is **purely serialisation**. The content
-decisions — masking, kinds filter, dedup, pinned
-injection, position clip — are `derive`'s job (see
-"Derive pipeline (six steps)" above). `assemble` only
-decides *how* to emit what `derive` already chose.
+`assemble` is **purely serialisation — the provider's
+dialect for saying what `derive` already chose**. The
+content decisions (masking, kinds filter, dedup, pinned
+injection, position clip) are `derive`'s job (see
+"Derive pipeline (six steps)" above). `assemble` only has
+authority over **how to emit** what `derive` already chose.
 
-1. **Projection-specific reshape** — the five projections
-   (`PROMPT_FOR_MODEL`, `SUMMARIZE_INPUT`,
-   `GOVERNANCE_INPUT`, `FORK_BRANCH`, `AUDIT_REPLAY`) each
-   have their own serialisation rules. `assemble`
-   dispatches based on the `projection` argument.
-2. **Layout mode** (5 modes: `default`, `compact`, `audit`,
-   `governance`, `speculative`) — positions head / middle /
-   tail segments to exploit the model's U-shaped attention.
-   See "Layout-aware assembly" below.
-3. **Delta fragment** — *crucial for prompt-cache
-   stability.* If the loop has a `last_seen_seq` for this
-   round (which it does after the first iteration), the
-   body stream is split into a **seen part** (`seq <=
-   last_seen_seq`) and a **new part** (`seq >
-   last_seen_seq`). The seen part is byte-for-byte the
-   same as the previous iteration's prompt tail — that's
-   what gives the LLM provider's prompt cache a stable
-   prefix. The new part is what the loop emits as a
-   *delta*. Detail in "Delta fragment and prompt-cache
-   prefix" below.
+The five responsibilities below run in this order: **role →
+provider → layout → budget → cache marker**. Layout is
+*between* provider and budget because the budget count is
+post-layout; cache marker is *last* because the marker lands
+on the final byte boundary.
 
-The three responsibilities run in order: projection
-reshape, then layout positioning, then delta-fragment
-composition.
+1. **Role mapping + message shaping** — convert the
+   internal model (kinds → roles) to the provider's role
+   vocabulary: `text.user` → `user`, `text.assistant` →
+   `assistant`, `harness.feature` → `system` (or `user`,
+   depending on the harness signal), `tool.call` +
+   `tool.result` → `assistant` `tool_use` block + `user`
+   `tool_result` block (must be **paired**, in the right
+   order, in the same turn group). The role map is the
+   **structural skeleton** of the prompt.
+
+2. **Provider translation** — the dialect-level conversion.
+   Each provider has its own shape: Anthropic uses a
+   separate top-level `system` array and `cache_control`
+   markers; OpenAI folds system into a `developer` role
+   (newer models) or a top-level `system` field (older
+   models); tool-call argument schemas differ in strictness;
+   role-alternation rules (`user → assistant → user → ...`)
+   differ; some providers accept `tool` blocks inside
+   `assistant`, others don't. `assemble` carries a `provider`
+   argument and dispatches.
+
+3. **Layout positioning** — *does not reorder.* `derive`
+   hands `assemble` a `pinned` block and a `body` stream
+   already organised by attention value. `assemble` just
+   **places** them: system prompt first, then pinned block,
+   then the body stream in `derive`'s order. Reordering is
+   `derive`'s job; `assemble` only positions. See
+   "Layout-aware assembly" below.
+
+4. **Budget** — *where the planned budget meets the real
+   one.* `derive` operates on a `budget.tokens` number; that
+   number is **estimated** (tokenisers differ from provider
+   counters). `assemble` re-counts the assembled prompt with
+   the **provider's real tokeniser** (or the `model.usage`
+   feedback from the previous round). If the real count
+   exceeds the budget, `assemble` **drops the tail** of the
+   `new` part (the last entries are the cheapest to lose — the
+   model has already digested the head / middle from the
+   cache). The output budget is **reserved upfront**
+   (`max_tokens` on the request) so the model has room to
+   reply. Budget vs actual divergence is handled **at this
+   layer** because it's a serialisation concern (the wire
+   size), not a content concern.
+
+5. **Cache marker** — *the byte-stability guarantee, made
+   real.* Once the prompt is laid out, `assemble` places
+   the provider's cache-control marker on the **stable
+   prefix** — the byte boundary the cache key depends on.
+   For Anthropic, that's the end of the `system` block plus
+   the pinned block plus the start of the `seen` part. For
+   OpenAI, it's the implicit boundary the auto-cache infers
+   (often the first 1024 tokens). `assemble` also **asserts
+   the prefix bytes are stable** vs the previous round
+   (e.g. the `system` block has not changed; the pinned
+   block is byte-equal to the prior round's); a divergence
+   is a **bug in `derive`** (it broke the cache rule) and
+   `assemble` reports it before the call.
 
 ```python
-def assemble(surface, projection, last_seen_seq=None):
-    # surface is already masked, deduped, kinds-filtered,
-    # position-clipped, pinned-injected by derive
-    body = projection.reshape(surface.body)        # 1. projection
-    body = layout(body, mode=projection.layout_mode)  # 2. layout
-    seen, new = split_at(body, last_seen_seq)        # 3. delta
+def assemble(surface, projection, last_seen_seq=None,
+            provider=PROVIDER_DEFAULT, round_id=None):
+    # surface is already: masked, deduped, kinds-filtered,
+    # position-clipped, pinned-injected, last_seen_seq split
 
-    return Assembled(
-        pinned = surface.pinned,        # already chosen by derive
-        seen   = seen,
-        new    = new,
-        delta_boundary = last_seen_seq,
-    ), DeriveReceipt(...)
+    # 1. role mapping
+    role_map = role_map_for(provider)
+    messages = [role_map.to_message(e) for e in surface.body]
+
+    # 2. provider translation
+    payload = provider.render(messages, surface.pinned)
+
+    # 3. layout positioning
+    payload = position_sections(payload, projection.layout_mode)
+
+    # 4. budget enforcement (real-token count + tail drop)
+    real_tokens = provider.count_tokens(payload)
+    if real_tokens > surface.budget.tokens:
+        payload = drop_tail_to_fit(payload, surface.budget.tokens,
+                                  real_tokens)
+
+    # 5. cache marker (assert prefix stability + place marker)
+    assert_prefix_stable(payload, last_seen_seq, provider)
+    payload = provider.mark_cache(payload, where="after_pinned")
+
+    return Assembled(payload=payload,
+                     real_tokens=real_tokens,
+                     surface=surface,
+                     receipt=DeriveReceipt(...))
 ```
 
 `assemble` reads only the `Surface` produced by `derive`. It
 never walks the ledger, never decides which entries to keep,
 never decides which kinds go on the surface — all of that is
-`derive`'s job. `assemble`'s only job is to pick the
-**shape** of the prompt: the layout, the projection, the
-delta boundary.
-    # 3. pinned injection (with 5. dedup)
-    pinned = collect_pinned(masked)
-    body   = [e for e in body if e not in pinned]   # dedup
-
-    # 4. position-based budget clipping
-    body = position_clip(body, projection.position_fn,
-                        projection.budget)
-
-    # 5+6. projection-specific reshape
-    body = projection.reshape(body)                 # tier / format / etc.
-
-    # 7. delta fragment (prompt-cache anchor)
-    if last_seen_seq is not None:
-        seen, new = split_at(body, last_seen_seq)
-        delta_boundary = last_seen_seq
-    else:
-        seen, new = [], body
-        delta_boundary = None
-
-    return Assembled(
-        pinned = pinned,
-        seen    = seen,
-        new     = new,
-        delta_boundary = delta_boundary,
-    )
-```
-
-`assemble` does **not** read the ledger directly — it works
-off the cached surface that `derive` maintains. The
-separation is deliberate: `derive` is the *common*
-incremental update; `assemble` is the *per-projection*
-reshaping. The masking-instructions walk in `assemble` is
-reading rows **from the surface cache**, not from the
-ledger — same cache, just two passes over it.
+`derive`'s job. `assemble`'s only job is to **say** what
+`derive` decided, in the **provider's dialect**, under the
+**real-token budget**, with the **cache marker** in the right
+place.
 
 #### Delta fragment and prompt-cache prefix
 
