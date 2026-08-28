@@ -37,7 +37,7 @@ test:
 # C0/C1 semantic conformance: both implementations consume the same fixtures.
 conformance:
     cargo test -p garive-core -p garive-llm
-    cd experiments/engine-kt && gradle --no-daemon --console=plain :core:test :llm:test
+    cd experiments/engine-kt && ./gradlew --no-daemon --console=plain :core:test :llm:test
 
 # Desktop: Tauri build (TS frontend + Rust backend)
 desktop:

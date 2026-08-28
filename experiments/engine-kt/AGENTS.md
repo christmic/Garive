@@ -40,13 +40,12 @@ Before adding `:<module>`:
 
 ```text
 cd experiments/engine-kt
-gradle projects
-gradle build
+./gradlew projects
+./gradlew build
 ```
 
-The repository currently tracks wrapper properties only. Use the installed
-Gradle executable until a complete wrapper is intentionally generated and
-committed.
+The committed wrapper pins the Gradle distribution. Repository gates must not
+depend on whichever Gradle version happens to be installed globally.
 
 ## Language rules
 

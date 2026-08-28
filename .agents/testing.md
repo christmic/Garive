@@ -46,7 +46,7 @@ The Kotlin C0/C1 implementation and proto module are verified separately:
 
 ```text
 cd experiments/engine-kt
-gradle :core:test :llm:test :proto:test
+./gradlew :core:test :llm:test :proto:test
 ```
 
 `just conformance` is the joint C0/C1 gate; full Gradle build verifies all
