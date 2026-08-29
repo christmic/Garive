@@ -16,7 +16,7 @@ pub use case::{parse_cases, CaseLoadLimits, SweCase, SweDataset};
 pub use error::{BenchError, BenchErrorCode};
 pub use official::{
     OfficialEvaluatorConfig, OfficialInvocation, OfficialProcess, OfficialProcessOutput,
-    SweBenchOfficialEvaluator,
+    StdOfficialProcess, SweBenchOfficialEvaluator,
 };
 pub use runner::{
     run_benchmark, AgentDriver, AgentInput, AgentOutput, BenchFuture, BenchmarkMode,

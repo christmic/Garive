@@ -122,7 +122,13 @@ struct RawCase {
 }
 
 fn validate_case(raw: RawCase, limits: CaseLoadLimits) -> Result<SweCase, BenchError> {
-    if !valid_repository(&raw.repo)
+    if raw.instance_id.is_empty()
+        || raw.instance_id.len() > 256
+        || !raw
+            .instance_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        || !valid_repository(&raw.repo)
         || raw.base_commit.len() != 40
         || !raw.base_commit.bytes().all(|byte| byte.is_ascii_hexdigit())
         || raw.problem_statement.is_empty()

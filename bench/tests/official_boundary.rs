@@ -77,6 +77,14 @@ fn official_invocation_and_prediction_are_exact() {
     assert_eq!(invocation.executable, "/opt/venv/bin/python");
     assert_eq!(invocation.working_directory, "/runs/run-1");
     assert_eq!(
+        invocation.prediction_path,
+        "/runs/run-1/predictions/case-1.jsonl"
+    );
+    assert_eq!(
+        invocation.report_path,
+        "/runs/run-1/garive-1.run-1-case-1.json"
+    );
+    assert_eq!(
         invocation.environment,
         [("DOCKER_HOST".into(), "unix:///docker.sock".into())]
     );
@@ -90,13 +98,13 @@ fn official_invocation_and_prediction_are_exact() {
             "--split",
             "test",
             "--predictions_path",
-            "/runs/run-1/predictions.jsonl",
+            "/runs/run-1/predictions/case-1.jsonl",
             "--instance_ids",
             "case-1",
             "--max_workers",
             "2",
             "--run_id",
-            "run-1",
+            "run-1-case-1",
             "--timeout",
             "1800",
             "--cache_level",
@@ -198,7 +206,7 @@ fn config() -> OfficialEvaluatorConfig {
     OfficialEvaluatorConfig {
         python_executable: "/opt/venv/bin/python".into(),
         dataset: SweDataset::Lite,
-        predictions_path: "/runs/run-1/predictions.jsonl".into(),
+        predictions_directory: "/runs/run-1/predictions".into(),
         run_directory: "/runs/run-1".into(),
         run_id: "run-1".into(),
         model_name: "garive-1".into(),

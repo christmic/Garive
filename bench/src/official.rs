@@ -22,8 +22,8 @@ pub struct OfficialEvaluatorConfig {
     pub python_executable: String,
     /// Exact public dataset.
     pub dataset: SweDataset,
-    /// Explicit predictions JSONL path materialized by the process port.
-    pub predictions_path: String,
+    /// Explicit directory receiving collision-free per-case predictions.
+    pub predictions_directory: String,
     /// Explicit harness working/run directory.
     pub run_directory: String,
     /// Non-empty run identity.
@@ -47,6 +47,10 @@ pub struct OfficialInvocation {
     pub arguments: Vec<String>,
     /// Explicit working directory.
     pub working_directory: String,
+    /// Exact per-case predictions file path.
+    pub prediction_path: String,
+    /// Exact final report file path emitted by the pinned harness.
+    pub report_path: String,
     /// Exact prediction file bytes to materialize at the configured path.
     pub prediction_jsonl: Vec<u8>,
     /// Explicit environment after inherited values are cleared.
@@ -69,6 +73,38 @@ pub trait OfficialProcess: Sync {
         &'a self,
         invocation: OfficialInvocation,
     ) -> BenchFuture<'a, OfficialProcessOutput>;
+}
+
+/// Tokio-backed official process boundary with cleared inherited environment.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StdOfficialProcess;
+
+impl OfficialProcess for StdOfficialProcess {
+    fn invoke<'a>(
+        &'a self,
+        invocation: OfficialInvocation,
+    ) -> BenchFuture<'a, OfficialProcessOutput> {
+        Box::pin(async move {
+            tokio::fs::write(&invocation.prediction_path, &invocation.prediction_jsonl)
+                .await
+                .map_err(|_| invalid_evaluation())?;
+            let status = tokio::process::Command::new(&invocation.executable)
+                .args(&invocation.arguments)
+                .current_dir(&invocation.working_directory)
+                .env_clear()
+                .envs(invocation.environment)
+                .status()
+                .await
+                .map_err(|_| invalid_evaluation())?;
+            let report_json = tokio::fs::read(&invocation.report_path)
+                .await
+                .map_err(|_| invalid_evaluation())?;
+            Ok(OfficialProcessOutput {
+                exit_code: status.code().unwrap_or(-1),
+                report_json,
+            })
+        })
+    }
 }
 
 /// Official evaluator adapter that never interprets test output itself.
@@ -95,6 +131,9 @@ impl OfficialEvaluator for SweBenchOfficialEvaluator<'_> {
         patch: &'a str,
     ) -> BenchFuture<'a, EvaluationVerdict> {
         Box::pin(async move {
+            if !safe_component(case.instance_id.as_str()) {
+                return Err(invalid_evaluation());
+            }
             let prediction = prediction(case, &self.config.model_name, patch)?;
             let invocation = invocation(&self.config, case, prediction);
             let output = self.process.invoke(invocation).await?;
@@ -122,6 +161,18 @@ fn invocation(
     case: &SweCase,
     prediction_jsonl: Vec<u8>,
 ) -> OfficialInvocation {
+    let case_run_id = format!("{}-{}", config.run_id, case.instance_id.as_str());
+    let prediction_path = format!(
+        "{}/{}.jsonl",
+        config.predictions_directory.trim_end_matches('/'),
+        case.instance_id.as_str()
+    );
+    let report_path = format!(
+        "{}/{}.{}.json",
+        config.run_directory.trim_end_matches('/'),
+        config.model_name,
+        case_run_id
+    );
     OfficialInvocation {
         executable: config.python_executable.clone(),
         arguments: vec![
@@ -132,13 +183,13 @@ fn invocation(
             "--split".into(),
             "test".into(),
             "--predictions_path".into(),
-            config.predictions_path.clone(),
+            prediction_path.clone(),
             "--instance_ids".into(),
             case.instance_id.as_str().into(),
             "--max_workers".into(),
             config.jobs.to_string(),
             "--run_id".into(),
-            config.run_id.clone(),
+            case_run_id,
             "--timeout".into(),
             config.timeout_seconds.to_string(),
             "--cache_level".into(),
@@ -147,6 +198,8 @@ fn invocation(
             "true".into(),
         ],
         working_directory: config.run_directory.clone(),
+        prediction_path,
+        report_path,
         prediction_jsonl,
         environment: config.environment.clone(),
     }
@@ -203,7 +256,7 @@ fn parse_single_report(bytes: &[u8], case_id: &str) -> Result<EvaluationVerdict,
 fn validate_config(config: &OfficialEvaluatorConfig) -> Result<(), BenchError> {
     let text = [
         &config.python_executable,
-        &config.predictions_path,
+        &config.predictions_directory,
         &config.run_directory,
         &config.run_id,
         &config.model_name,
@@ -231,6 +284,13 @@ fn validate_config(config: &OfficialEvaluatorConfig) -> Result<(), BenchError> {
         return Err(BenchError::new(BenchErrorCode::InvalidEvaluation));
     }
     Ok(())
+}
+
+fn safe_component(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 fn invalid_evaluation() -> BenchError {
