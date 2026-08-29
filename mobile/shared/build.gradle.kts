@@ -30,8 +30,8 @@ kotlin {
             api("com.squareup.wire:wire-runtime:6.4.7")
             implementation("io.ktor:ktor-client-core:3.5.2")
             implementation("io.ktor:ktor-client-cio:3.5.2")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
         }
         commonTest.dependencies { implementation(kotlin("test")) }
         jvmTest.dependencies { implementation("io.ktor:ktor-client-mock:3.5.2") }

@@ -13,14 +13,14 @@ plugins {
 
 dependencies {
     "implementation"(platform("org.jetbrains.kotlin:kotlin-bom"))
-    "api"("com.google.protobuf:protobuf-kotlin:4.28.2")
+    "api"("com.google.protobuf:protobuf-kotlin:4.36.0")
 
     "testImplementation"(kotlin("test"))
 }
 
 protobuf {
     protoc {
-        artifact = "com.google.protobuf:protoc:4.28.2"
+        artifact = "com.google.protobuf:protoc:4.36.0"
     }
     generateProtoTasks {
         all().forEach { task ->
