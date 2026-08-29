@@ -9,10 +9,11 @@ mod runtime_turn;
 mod sqlite_ledger;
 
 pub use core_bridge::{
-    canonical_model_request_digest, plan_core_terminal, plan_model_prepared, plan_model_started,
-    plan_model_terminal, plan_model_uncertain, CoreTerminalContext, DurableExecutionConfig,
-    DurableExecutionError, DurableExecutionResult, ModelLifecycleContext, PreparedModelRequest,
-    RuntimeModelUncertainReason, TerminalPublicationError, TerminalPublisher,
+    canonical_model_request_digest, execute_durable_model_only, plan_core_terminal,
+    plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,
+    CoreTerminalContext, DurableExecutionConfig, DurableExecutionError, DurableExecutionResult,
+    ModelLifecycleContext, PreparedModelRequest, RuntimeModelUncertainReason,
+    TerminalPublicationError, TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use runtime_turn::{

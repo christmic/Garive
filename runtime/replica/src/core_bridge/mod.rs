@@ -1,11 +1,13 @@
 //! Durable mapping between one disposable Core execution and Runtime facts.
 
 mod encoding;
+mod execution;
 mod execution_types;
 mod model_lifecycle;
 mod terminal;
 
 pub use encoding::canonical_model_request_digest;
+pub use execution::execute_durable_model_only;
 pub use execution_types::{
     DurableExecutionConfig, DurableExecutionError, DurableExecutionResult,
     TerminalPublicationError, TerminalPublisher,
