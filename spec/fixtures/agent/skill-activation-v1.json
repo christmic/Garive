@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "contract": "garive.skill-activation",
+  "definitions": [
+    {
+      "skill_id": "brief", "skill_revision": "1", "name": "Brief", "description": "Keep responses concise.",
+      "instructions": {"digest": "ab018bdb7d92dcdb652e75498db55773bbb1a281f2a436aaebf05ab0d531484c", "inline_utf8": "Be concise."},
+      "activation": {"kind": "tagged", "tags": ["brief"]},
+      "required_capabilities": [], "allowed_tool_references": [],
+      "max_instruction_bytes": 64, "contract_version": "1",
+      "expected_definition_digest": "1b19b18bf4a7ac31a54703152681bca62445722834b883afeb985744a07ade09"
+    },
+    {
+      "skill_id": "code", "skill_revision": "2", "name": "Code", "description": "Produce bounded code changes.",
+      "instructions": {"digest": "768ed6d7f7cb9167671ce443d3ec770646c423daf9092dcd94546c28dabf81b1", "inline_utf8": "Prefer precise patches."},
+      "activation": {"kind": "tagged", "tags": ["code", "rust"]},
+      "required_capabilities": [{"kind": "tool", "name": "filesystem", "exact_revision": "1", "contract_version": "1"}],
+      "allowed_tool_references": [{"name": "read_file", "exact_revision": "1"}],
+      "max_instruction_bytes": 64, "contract_version": "1",
+      "expected_definition_digest": "b9ca5d6a91b5f8c3a02017b0db385947e960eeaad6454a4563b362540a636b55"
+    },
+    {
+      "skill_id": "review", "skill_revision": "1", "name": "Review", "description": "Review exact facts.",
+      "instructions": {"digest": "7dc034067e62fc1497b7c282323880f9385050f1dec385d29c6cb6bd19eae1d4", "inline_utf8": "Check facts."},
+      "activation": {"kind": "explicit_only"},
+      "required_capabilities": [], "allowed_tool_references": [],
+      "max_instruction_bytes": 64, "contract_version": "1",
+      "expected_definition_digest": "2d7cb2d1b7dfe91546056c152a3223d005303c9c37ff5c428b8bd4f58d0981f7"
+    }
+  ],
+  "available_capabilities": [{"kind": "tool", "name": "filesystem", "exact_revision": "1", "contract_version": "1"}],
+  "available_tools": [
+    {"name": "read_file", "exact_revision": "1"},
+    {"name": "write_file", "exact_revision": "1"}
+  ],
+  "cases": [
+    {
+      "name": "explicit-exact",
+      "request": {"activation_id": "activation-1", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "explicit", "requested_skill_id": "review", "trusted_tags": [], "through_position": 7, "max_active_skills": 1, "max_total_instruction_bytes": 64},
+      "expected_request_digest": "8999f3b222f86fff5c447e815ab4a0946da5ab8c37def731aedd0f3d2dca17c4",
+      "expected": {"status": "activated", "skill_ids": ["review"], "truncated": false}
+    },
+    {
+      "name": "tagged-match-count-order",
+      "request": {"activation_id": "activation-2", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "tagged", "trusted_tags": ["code", "rust"], "through_position": 7, "max_active_skills": 2, "max_total_instruction_bytes": 128},
+      "expected_request_digest": "4a276c339b203d568f0e22fb883ed714623f17c7fcb9a5db65cda7d37705eb5f",
+      "expected": {"status": "activated", "skill_ids": ["code"], "truncated": false}
+    },
+    {
+      "name": "tagged-count-prefix-bound",
+      "request": {"activation_id": "activation-3", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "tagged", "trusted_tags": ["brief", "code", "rust"], "through_position": 7, "max_active_skills": 1, "max_total_instruction_bytes": 128},
+      "expected": {"status": "activated", "skill_ids": ["code"], "truncated": true}
+    },
+    {
+      "name": "tagged-byte-prefix-bound",
+      "request": {"activation_id": "activation-4", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "tagged", "trusted_tags": ["brief", "code", "rust"], "through_position": 7, "max_active_skills": 3, "max_total_instruction_bytes": 20},
+      "expected": {"status": "activated", "skill_ids": [], "truncated": true}
+    },
+    {
+      "name": "tagged-none",
+      "request": {"activation_id": "activation-5", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "tagged", "trusted_tags": ["unknown"], "through_position": 7, "max_active_skills": 3, "max_total_instruction_bytes": 128},
+      "expected": {"status": "none"}
+    },
+    {
+      "name": "explicit-over-byte-bound",
+      "request": {"activation_id": "activation-6", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "explicit", "requested_skill_id": "review", "trusted_tags": [], "through_position": 7, "max_active_skills": 1, "max_total_instruction_bytes": 5},
+      "expected": {"status": "error", "code": "instruction_limit_exceeded"}
+    },
+    {
+      "name": "explicit-not-enabled",
+      "request": {"activation_id": "activation-7", "turn_id": "turn-1", "execution_id": "exec-1", "iteration": 1, "mode": "explicit", "requested_skill_id": "missing", "trusted_tags": [], "through_position": 7, "max_active_skills": 1, "max_total_instruction_bytes": 64},
+      "expected": {"status": "error", "code": "skill_not_enabled"}
+    }
+  ],
+  "invalid": [
+    {"name": "unsupported-mode", "mode": "semantic", "expected_code": "activation_mode_unsupported"},
+    {"name": "instruction-digest-mismatch", "expected_code": "instruction_digest_mismatch"},
+    {"name": "conflicting-duplicate", "expected_code": "activation_conflict"},
+    {"name": "required-capability-absent", "expected_code": "required_capability_unavailable"},
+    {"name": "allowed-tool-absent", "expected_code": "skill_not_enabled"}
+  ]
+}

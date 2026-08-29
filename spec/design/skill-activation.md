@@ -34,7 +34,10 @@ SkillDefinition {
 
 IDs and revisions are non-empty typed values. Names/tags use normalized UTF-8
 with explicit length limits; comparison is byte-exact after validation. The
-definition digest uses the D0 RFC 8785 envelope and binds every field above.
+definition digest uses RFC 8785 over
+`{"contract":"garive.skill-definition","version":1,"definition":{...}}`
+and binds every field above. `definition` uses the exact field and enum names
+shown by this Spec.
 
 The effective snapshot contains exact descriptors and instruction content
 digests. Runtime verifies content before execution. A Skill cannot add a tool,
@@ -67,8 +70,9 @@ SkillActivationResult = Activated { ordered_skills, truncated }
                       | None | Unsupported | Failed { code }
 ```
 
-`request_digest` is lowercase SHA-256 over L0 canonical JSON containing
-contract `garive.skill-activation`, version `1`, Turn/Execution/iteration,
+`request_digest` is lowercase SHA-256 over RFC 8785 JSON shaped as
+`{"contract":"garive.skill-activation","version":1,"request":{...}}`.
+The request object contains Turn/Execution/iteration,
 mode, optional requested Skill, ordered trusted tags, through-position and both
 bounds. Activation ID is excluded because its typed outer identity owns
 idempotency; changed semantics under one ID conflict.
