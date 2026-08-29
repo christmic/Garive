@@ -6,13 +6,15 @@ use std::{
 use garive_ledger::{SessionId, TurnId, TurnSnapshot};
 use garive_runtime::{
     derive_runtime_recovery, plan_recovery_action_facts, select_runtime_recovery,
-    RuntimeRecoveryAction, SqliteLedger,
+    ExecutionLeaseError, ExecutionLeaseRequest, RuntimeRecoveryAction, SqliteLedger,
 };
 use tempfile::{tempdir, TempDir};
 
 const CHECKPOINTS: &[&str] = &[
     "before_start",
     "after_start",
+    "iteration_started",
+    "cancel_requested",
     "model_prepared",
     "model_started",
     "model_completed",
@@ -79,6 +81,8 @@ fn killed_process_recovers_every_durable_checkpoint_without_guessing() {
         );
         match *checkpoint {
             "after_start" => assert_eq!(kinds.len(), 3),
+            "iteration_started" => assert_eq!(kinds.last(), Some(&"execution.iteration_started")),
+            "cancel_requested" => assert_eq!(kinds.last(), Some(&"turn.cancel_requested")),
             "model_prepared" => assert_eq!(kinds.last(), Some(&"model.prepared")),
             "model_started" => {
                 assert_eq!(kinds.last(), Some(&"model.started"));
@@ -147,6 +151,25 @@ fn killed_process_recovers_every_durable_checkpoint_without_guessing() {
             _ => unreachable!(),
         }
     }
+}
+
+#[test]
+fn killed_owner_cannot_be_replaced_before_lease_recovery() {
+    let (_directory, mut ledger, _session, snapshot) = killed_snapshot("after_start");
+    let turn = snapshot.facts[0].turn_id.clone().unwrap();
+    let execution = snapshot.facts[2].execution_id.clone().unwrap();
+    let request = ExecutionLeaseRequest {
+        turn_id: turn,
+        execution_id: execution,
+        owner_id: "replacement".into(),
+        lease_token: "replacement-token".into(),
+        now_ms: 110,
+        duration_ms: 10,
+    };
+    assert_eq!(
+        ledger.acquire_execution_lease(&request),
+        Err(ExecutionLeaseError::RecoveryRequired)
+    );
 }
 
 #[test]

@@ -302,6 +302,9 @@ Native process-restart tests must kill the host at each boundary:
 | Boundary | Recovery assertion |
 |---|---|
 | before/after start transaction | absent command or one boundedly abandoned/reconstructed Execution |
+| after execution lease acquisition | killed owner remains fenced; expiry still requires recovery |
+| after `execution.iteration_started` | consumed iteration cursor is reconstructed without guessing |
+| after `turn.cancel_requested` | cancellation remains visible and is delivered on execution restart |
 | before/after `model.prepared` | no dispatch without preparation |
 | before/after `model.started` | safe policy decision; no fabricated terminal |
 | after model terminal before next iteration | normalized result applied once |

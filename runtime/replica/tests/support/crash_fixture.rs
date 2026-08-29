@@ -5,8 +5,9 @@ use garive_ledger::{
     FactDraft, FactId, FactKind, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{
-    plan_continue_turn, plan_start_turn, reconstruct_suspended_turn, ContinuationInput,
-    ContinueTurnCommand, EffectiveRuntimeLimits, InteractionContinuation, InteractionExpiry,
+    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
+    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand,
+    EffectiveRuntimeLimits, ExecutionLeaseRequest, InteractionContinuation, InteractionExpiry,
     RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
 use serde_json::{json, Value};
@@ -38,7 +39,47 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
     let turn = planned.turn_id.clone();
     let execution = planned.execution_id.clone().unwrap();
     ledger.commit(session.clone(), 1, planned.facts).unwrap();
+    ledger
+        .acquire_execution_lease(&ExecutionLeaseRequest {
+            turn_id: turn.clone(),
+            execution_id: execution.clone(),
+            owner_id: "crash-worker".into(),
+            lease_token: "crash-token".into(),
+            now_ms: 100,
+            duration_ms: 10,
+        })
+        .unwrap();
     if checkpoint == "after_start" {
+        return;
+    }
+    if checkpoint == "iteration_started" {
+        ledger
+            .commit(
+                session,
+                2,
+                vec![fact(
+                    repo,
+                    "execution.iteration_started",
+                    &turn,
+                    &execution,
+                    None,
+                    None,
+                )],
+            )
+            .unwrap();
+        return;
+    }
+    if checkpoint == "cancel_requested" {
+        let cancel = plan_cancel_turn(&CancelTurnCommand {
+            command_id: RuntimeCommandId::new("cancel-command").unwrap(),
+            session_id: session.clone(),
+            turn_id: turn,
+            reason: CancelReason::User,
+            requested_through_position: 4,
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        })
+        .unwrap();
+        ledger.commit(session, 2, cancel.facts).unwrap();
         return;
     }
     let model_path = checkpoint.starts_with("model_");
