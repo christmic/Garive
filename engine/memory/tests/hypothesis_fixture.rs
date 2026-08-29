@@ -1,0 +1,161 @@
+use std::{fs, path::PathBuf};
+
+use garive_memory::{
+    import_m0_classification, MemoryAuthority, MemoryAuthorityBinding, MemoryErrorCode, MemoryKind,
+    MemoryScopeBinding, MemoryScopeClass, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
+};
+use serde_json::Value;
+
+#[test]
+fn shared_registry_and_m0_imports_are_exact() {
+    let root = fixture();
+    let registry = registry(&root);
+    for case in root["imports"].as_array().unwrap() {
+        let authority = MemoryAuthorityBinding::new(
+            authority(case["authority"].as_str().unwrap()),
+            case.get("receipt_digest")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        )
+        .unwrap();
+        let imported = import_m0_classification(kind(case["m0_kind"].as_str().unwrap()), authority);
+        assert_eq!(
+            imported.memory_type,
+            memory_type(case["expected_type"].as_str().unwrap())
+        );
+        assert_eq!(imported.role, kind(case["expected_role"].as_str().unwrap()));
+        assert!(registry.admits(
+            imported.memory_type,
+            imported.role,
+            imported.authority.authority()
+        ));
+    }
+}
+
+#[test]
+fn shared_invalid_authority_scope_and_pair_fail_closed() {
+    let root = fixture();
+    let registry = registry(&root);
+    for case in root["invalid"].as_array().unwrap() {
+        let expected = case["expected"].as_str().unwrap();
+        let actual = match case["name"].as_str().unwrap() {
+            "user_without_receipt" | "agent_with_receipt" => MemoryAuthorityBinding::new(
+                authority(case["authority"].as_str().unwrap()),
+                case.get("receipt_digest")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            )
+            .unwrap_err()
+            .code()
+            .wire_name(),
+            "platform_without_policy" => MemoryScopeBinding::new(MemoryScopeClass::Platform, None)
+                .unwrap_err()
+                .code()
+                .wire_name(),
+            "unsupported_pair" => {
+                assert!(!registry.admits(
+                    memory_type(case["type"].as_str().unwrap()),
+                    kind(case["role"].as_str().unwrap()),
+                    authority(case["authority"].as_str().unwrap()),
+                ));
+                MemoryErrorCode::UnknownMemoryType.wire_name()
+            }
+            other => panic!("unknown invalid case: {other}"),
+        };
+        assert_eq!(actual, expected, "{}", case["name"]);
+    }
+}
+
+#[test]
+fn registry_requires_complete_canonical_types_and_platform_policy_is_exact() {
+    let root = fixture();
+    let mut descriptors = descriptors(&root);
+    descriptors.swap(0, 1);
+    assert_eq!(
+        MemoryTypeRegistry::new("r", descriptors)
+            .unwrap_err()
+            .code(),
+        MemoryErrorCode::UnknownMemoryType,
+    );
+    let digest = "b".repeat(64);
+    let platform = MemoryScopeBinding::new(MemoryScopeClass::Platform, Some(digest)).unwrap();
+    assert_eq!(platform.scope(), MemoryScopeClass::Platform);
+    assert_eq!(
+        MemoryScopeBinding::new(MemoryScopeClass::Project, Some("b".repeat(64)))
+            .unwrap_err()
+            .code(),
+        MemoryErrorCode::InvalidMemory,
+    );
+}
+
+fn fixture() -> Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../spec/fixtures/agent/memory-hypothesis-lifecycle-v1.json");
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+
+fn registry(root: &Value) -> MemoryTypeRegistry {
+    MemoryTypeRegistry::new(
+        root["registry"]["revision"].as_str().unwrap(),
+        descriptors(root),
+    )
+    .unwrap()
+}
+
+fn descriptors(root: &Value) -> Vec<MemoryTypeDescriptor> {
+    root["registry"]["descriptors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| {
+            MemoryTypeDescriptor::new(
+                memory_type(value["type"].as_str().unwrap()),
+                value["roles"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| kind(v.as_str().unwrap()))
+                    .collect(),
+                value["authorities"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| authority(v.as_str().unwrap()))
+                    .collect(),
+                value["lifecycle"].as_str().unwrap(),
+                value["recall"].as_str().unwrap(),
+                value["retention"].as_str().unwrap(),
+                value["surface_kind"].as_str().unwrap(),
+            )
+            .unwrap()
+        })
+        .collect()
+}
+
+fn memory_type(value: &str) -> MemoryType {
+    match value {
+        "semantic" => MemoryType::Semantic,
+        "episodic" => MemoryType::Episodic,
+        "lesson" => MemoryType::Lesson,
+        "procedural" => MemoryType::Procedural,
+        other => panic!("unknown type: {other}"),
+    }
+}
+fn kind(value: &str) -> MemoryKind {
+    match value {
+        "preference" => MemoryKind::Preference,
+        "constraint" => MemoryKind::Constraint,
+        "decision" => MemoryKind::Decision,
+        "learned_fact" => MemoryKind::LearnedFact,
+        "summary" => MemoryKind::Summary,
+        other => panic!("unknown role: {other}"),
+    }
+}
+fn authority(value: &str) -> MemoryAuthority {
+    match value {
+        "user_declared" => MemoryAuthority::UserDeclared,
+        "agent_learned" => MemoryAuthority::AgentLearned,
+        "organisation_published" => MemoryAuthority::OrganisationPublished,
+        other => panic!("unknown authority: {other}"),
+    }
+}

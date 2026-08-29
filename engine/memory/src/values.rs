@@ -30,6 +30,12 @@ pub enum MemoryErrorCode {
     DurabilityFailure,
     /// Persisted memory state violates M0 invariants.
     CorruptMemoryState,
+    /// M1 type, role, or registry revision is not admitted.
+    UnknownMemoryType,
+    /// Non-agent authority lacks a frozen receipt digest.
+    AuthorityReceiptRequired,
+    /// Platform scope lacks its aggregation policy binding.
+    ScopePolicyDenied,
 }
 
 impl MemoryErrorCode {
@@ -47,6 +53,9 @@ impl MemoryErrorCode {
             Self::Unsupported => "unsupported",
             Self::DurabilityFailure => "durability_failure",
             Self::CorruptMemoryState => "corrupt_memory_state",
+            Self::UnknownMemoryType => "unknown_memory_type",
+            Self::AuthorityReceiptRequired => "authority_receipt_required",
+            Self::ScopePolicyDenied => "scope_policy_denied",
         }
     }
 }

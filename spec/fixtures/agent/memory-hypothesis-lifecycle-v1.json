@@ -1,0 +1,21 @@
+{
+  "registry": {
+    "revision": "memory-types-v1",
+    "descriptors": [
+      {"type":"semantic","roles":["preference","constraint","decision","learned_fact"],"authorities":["user_declared","agent_learned","organisation_published"],"lifecycle":"semantic-v1","recall":"semantic-v1","retention":"semantic-v1","surface_kind":"memory.semantic"},
+      {"type":"episodic","roles":["summary"],"authorities":["agent_learned"],"lifecycle":"episodic-v1","recall":"episodic-v1","retention":"episodic-v1","surface_kind":"memory.episodic"},
+      {"type":"lesson","roles":["learned_fact"],"authorities":["agent_learned","organisation_published"],"lifecycle":"lesson-v1","recall":"lesson-v1","retention":"lesson-v1","surface_kind":"memory.lesson"},
+      {"type":"procedural","roles":["learned_fact","summary"],"authorities":["agent_learned","organisation_published"],"lifecycle":"procedural-v1","recall":"procedural-v1","retention":"procedural-v1","surface_kind":"memory.procedural"}
+    ]
+  },
+  "imports": [
+    {"m0_kind":"preference","authority":"user_declared","receipt_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_type":"semantic","expected_role":"preference"},
+    {"m0_kind":"summary","authority":"agent_learned","expected_type":"episodic","expected_role":"summary"}
+  ],
+  "invalid": [
+    {"name":"user_without_receipt","authority":"user_declared","expected":"authority_receipt_required"},
+    {"name":"agent_with_receipt","authority":"agent_learned","receipt_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected":"invalid_memory"},
+    {"name":"platform_without_policy","scope":"platform","expected":"scope_policy_denied"},
+    {"name":"unsupported_pair","type":"episodic","role":"preference","authority":"agent_learned","expected":"unknown_memory_type"}
+  ]
+}

@@ -15,6 +15,9 @@ public enum class MemoryErrorCode(public val wireName: String) {
     UNSUPPORTED("unsupported"),
     DURABILITY_FAILURE("durability_failure"),
     CORRUPT_MEMORY_STATE("corrupt_memory_state"),
+    UNKNOWN_MEMORY_TYPE("unknown_memory_type"),
+    AUTHORITY_RECEIPT_REQUIRED("authority_receipt_required"),
+    SCOPE_POLICY_DENIED("scope_policy_denied"),
 }
 
 /** Typed M0 failure. */
