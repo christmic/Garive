@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, sync::Mutex};
 
 use garive_core::{
     execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
-    AgentToolCapabilities, AgentTurnRequest, ClockPort, ContextPort, EventSink, PortFailure,
+    AgentToolCapabilities, AgentTurnRequest, AttributedMemory, ClockPort, ContextPort, EventSink,
+    MemoryEvidenceAttribution, PortFailure,
 };
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId, TurnId,
@@ -18,13 +19,22 @@ use super::encoding::digest;
 use super::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
     plan_model_uncertain, AuthorityPort, CoreTerminalContext, ExecutorPort, GovernedEffectConfig,
-    ModelLifecycleContext, PlannedSkillActivation, RuntimeModelUncertainReason,
-    SqliteGovernedEffectPort,
+    ModelLifecycleContext, PlannedMemoryRetrieval, PlannedSkillActivation,
+    RuntimeModelUncertainReason, SqliteGovernedEffectPort,
 };
 
 use super::execution_types::{
     DurableExecutionConfig, DurableExecutionError, DurableExecutionResult, TerminalPublisher,
 };
+
+/// Optional capability values that Runtime durably commits before Core starts.
+#[derive(Default)]
+pub struct PreparedAgentCapabilities {
+    /// Exact S0 activation, when Skills were requested for this Execution.
+    pub skill_activation: Option<PlannedSkillActivation>,
+    /// Exact M0 retrieval, when Memory was requested for this Execution.
+    pub memory_retrieval: Option<PlannedMemoryRetrieval>,
+}
 
 /// Runs Core with a model port whose external boundaries are durably ordered.
 #[allow(clippy::too_many_arguments)]
@@ -43,7 +53,7 @@ pub async fn execute_durable_model_only(
         ledger,
         config,
         request,
-        None,
+        PreparedAgentCapabilities::default(),
         context,
         model,
         events,
@@ -72,7 +82,39 @@ pub async fn execute_durable_model_only_with_skill_activation(
         ledger,
         config,
         request,
-        Some(activation),
+        PreparedAgentCapabilities {
+            skill_activation: Some(activation),
+            memory_retrieval: None,
+        },
+        context,
+        model,
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
+}
+
+/// Runs model-only Core after committing all supplied capability inputs in order.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_durable_model_only_with_capabilities(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    capabilities: PreparedAgentCapabilities,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_model_only_inner(
+        ledger,
+        config,
+        request,
+        capabilities,
         context,
         model,
         events,
@@ -88,7 +130,7 @@ async fn execute_durable_model_only_inner(
     ledger: &mut SqliteLedger,
     config: &DurableExecutionConfig,
     request: &AgentTurnRequest,
-    activation: Option<PlannedSkillActivation>,
+    capabilities: PreparedAgentCapabilities,
     context: &mut dyn ContextPort,
     model: &dyn ModelPort,
     events: &mut dyn EventSink,
@@ -112,7 +154,7 @@ async fn execute_durable_model_only_inner(
         cancellation_requested,
         failure: None,
     };
-    let effective_request = prepare_activation(&mut coordinator, request, activation)?;
+    let effective_request = prepare_capabilities(&mut coordinator, request, capabilities)?;
     let coordinator = Mutex::new(coordinator);
     let prepared_events = Mutex::new(BTreeMap::new());
     let durable_model = DurableModelPort {
@@ -203,7 +245,7 @@ pub async fn execute_durable_agent(
         ledger,
         config,
         request,
-        None,
+        PreparedAgentCapabilities::default(),
         capabilities,
         context,
         model,
@@ -238,7 +280,10 @@ pub async fn execute_durable_agent_with_skill_activation(
         ledger,
         config,
         request,
-        Some(activation),
+        PreparedAgentCapabilities {
+            skill_activation: Some(activation),
+            memory_retrieval: None,
+        },
         capabilities,
         context,
         model,
@@ -257,7 +302,7 @@ async fn execute_durable_agent_inner(
     ledger: &mut SqliteLedger,
     config: &DurableExecutionConfig,
     request: &AgentTurnRequest,
-    activation: Option<PlannedSkillActivation>,
+    prepared_capabilities: PreparedAgentCapabilities,
     capabilities: &AgentToolCapabilities,
     context: &mut dyn ContextPort,
     model: &dyn ModelPort,
@@ -284,7 +329,7 @@ async fn execute_durable_agent_inner(
         cancellation_requested,
         failure: None,
     };
-    let effective_request = prepare_activation(&mut coordinator, request, activation)?;
+    let effective_request = prepare_capabilities(&mut coordinator, request, prepared_capabilities)?;
     let coordinator = Mutex::new(coordinator);
     let prepared_events = Mutex::new(BTreeMap::new());
     let durable_model = DurableModelPort {
@@ -335,18 +380,91 @@ async fn execute_durable_agent_inner(
     finish_durable_execution(coordinator, config, report, publisher)
 }
 
-fn prepare_activation(
+/// Runs tool-capable Core after committing all supplied capability inputs in order.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_durable_agent_with_capabilities(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    prepared_capabilities: PreparedAgentCapabilities,
+    capabilities: &AgentToolCapabilities,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    authority: &mut dyn AuthorityPort,
+    executor: &mut dyn ExecutorPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_agent_inner(
+        ledger,
+        config,
+        request,
+        prepared_capabilities,
+        capabilities,
+        context,
+        model,
+        authority,
+        executor,
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
+}
+
+fn prepare_capabilities(
     coordinator: &mut CommitCoordinator<'_>,
     request: &AgentTurnRequest,
-    activation: Option<PlannedSkillActivation>,
+    capabilities: PreparedAgentCapabilities,
 ) -> Result<AgentTurnRequest, DurableExecutionError> {
     let mut effective = request.clone();
-    if let Some(activation) = activation {
+    if let Some(activation) = capabilities.skill_activation {
         coordinator.commit(vec![activation.fact])?;
         effective.context_request.through_position = coordinator.position();
         effective.activated_skills = activation.activated_skills;
     }
+    if let Some(memory) = capabilities.memory_retrieval {
+        coordinator.commit(vec![memory.fact])?;
+        effective.context_request.through_position = coordinator.position();
+        effective.attributed_memory = memory
+            .retrieval
+            .matches
+            .into_iter()
+            .map(attributed_memory)
+            .collect::<Result<_, _>>()?;
+    }
     Ok(effective)
+}
+
+fn attributed_memory(
+    value: garive_memory::MemoryMatch,
+) -> Result<AttributedMemory, DurableExecutionError> {
+    let content_utf8 = value
+        .content()
+        .inline_utf8()
+        .ok_or(DurableExecutionError::Command(
+            RuntimeCommandError::InvalidCommand,
+        ))?
+        .to_owned();
+    Ok(AttributedMemory {
+        record_id: value.record_id().into(),
+        revision_id: value.revision_id().into(),
+        content_digest: value.content().digest().into(),
+        content_utf8,
+        evidence: value
+            .evidence()
+            .iter()
+            .map(|item| MemoryEvidenceAttribution {
+                session_id: item.session_id().into(),
+                position: item.position(),
+                fact_id: item.fact_id().into(),
+                payload_digest: item.payload_digest().into(),
+            })
+            .collect(),
+    })
 }
 
 pub(super) struct CommitCoordinator<'a> {

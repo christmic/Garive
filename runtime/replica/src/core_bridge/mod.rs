@@ -13,8 +13,10 @@ mod terminal;
 
 pub use encoding::canonical_model_request_digest;
 pub use execution::{
-    execute_durable_agent, execute_durable_agent_with_skill_activation, execute_durable_model_only,
-    execute_durable_model_only_with_skill_activation,
+    execute_durable_agent, execute_durable_agent_with_capabilities,
+    execute_durable_agent_with_skill_activation, execute_durable_model_only,
+    execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,
+    PreparedAgentCapabilities,
 };
 pub use execution_types::{
     DurableExecutionConfig, DurableExecutionError, DurableExecutionResult,

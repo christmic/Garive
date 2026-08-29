@@ -25,13 +25,18 @@ use garive_llm::{
     ModelPortFailure, ModelRequest, ModelStopReason, ModelTargetId, ModelUsage, TextMode,
     TokenCount, UsageSource,
 };
+use garive_memory::{
+    ContentBinding as MemoryContent, DurableFactReference, MemoryKind, MemoryPurpose, MemoryQuery,
+    MemoryRecord, MemoryScope, MemoryScore, MemorySensitivity, MemoryStatus,
+};
 use garive_runtime::{
     commit_planned_turn, execute_durable_agent, execute_durable_model_only,
-    execute_durable_model_only_with_skill_activation, plan_cancel_turn, plan_skill_activation,
-    plan_start_turn, AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest,
-    CancelReason, CancelTurnCommand, DurableExecutionConfig, DurableExecutionError,
-    EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch, ExecutorFuture, ExecutorPort,
-    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
+    execute_durable_model_only_with_capabilities, plan_cancel_turn, plan_memory_retrieval,
+    plan_skill_activation, plan_start_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
+    AuthorityRequest, CancelReason, CancelTurnCommand, DurableExecutionConfig,
+    DurableExecutionError, EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch,
+    ExecutorFuture, ExecutorPort, MemoryRetrievalContext, ModelLifecycleContext,
+    PreparedAgentCapabilities, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
     SkillActivationContext, SqliteLedger, StartTurnCommand, TerminalPublicationError,
     TerminalPublisher,
 };
@@ -158,11 +163,15 @@ impl ModelPort for SkillCheckingModel {
                 .iter()
                 .position(|kind| kind == "skill.activated")
                 .unwrap();
+            let memory = kinds
+                .iter()
+                .position(|kind| kind == "memory.retrieval_recorded")
+                .unwrap();
             let started = kinds
                 .iter()
                 .position(|kind| kind == "model.started")
                 .unwrap();
-            assert!(skill < started);
+            assert!(skill < memory && memory < started);
             assert!(matches!(
                 &request.input_items[0],
                 ModelInputItem::Message {
@@ -172,6 +181,13 @@ impl ModelPort for SkillCheckingModel {
             ));
             assert!(matches!(
                 &request.input_items[1],
+                ModelInputItem::Message {
+                    role: garive_llm::ModelRole::User,
+                    content,
+                } if matches!(&content[0], ModelInputContent::Text(text) if text.contains("garive.memory"))
+            ));
+            assert!(matches!(
+                &request.input_items[2],
                 ModelInputItem::Message {
                     role: garive_llm::ModelRole::User,
                     ..
@@ -873,6 +889,58 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
     )
     .unwrap();
     let replay_fact = activation.fact.clone();
+    let evidence_fact = ledger.read_facts(&session, 2, 3, None).unwrap().remove(0);
+    let scope = MemoryScope::session(session.as_str()).unwrap();
+    let content = MemoryContent::from_inline("remember");
+    let record = MemoryRecord::new(
+        "record",
+        "revision",
+        "namespace",
+        scope.clone(),
+        MemoryKind::LearnedFact,
+        content.clone(),
+        vec![DurableFactReference::new(
+            session.as_str(),
+            evidence_fact.position,
+            evidence_fact.fact_id.as_str(),
+            evidence_fact.payload.sha256(),
+        )
+        .unwrap()],
+        MemoryStatus::Active,
+        MemorySensitivity::Ordinary,
+        8000,
+        4,
+        None,
+        None,
+    )
+    .unwrap();
+    let query = MemoryQuery::new(
+        "query",
+        "namespace",
+        vec![scope],
+        MemoryPurpose::Context,
+        "retriever-1",
+        MemoryContent::from_inline("remember"),
+        4,
+        "2026-08-29T00:00:01Z",
+        1,
+        64,
+        false,
+        None,
+    )
+    .unwrap();
+    let retrieval = plan_memory_retrieval(
+        &MemoryRetrievalContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        &[record],
+        &[MemoryScore::new("record", "revision", 9000, 8).unwrap()],
+        &query,
+    )
+    .unwrap();
+    let replay_memory_fact = retrieval.fact.clone();
     let config = DurableExecutionConfig {
         session_id: session.clone(),
         expected_session_version: 2,
@@ -903,11 +971,14 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
         calls: 0,
         expected_terminal: ["execution.completed", "turn.completed"],
     };
-    block_on(execute_durable_model_only_with_skill_activation(
+    block_on(execute_durable_model_only_with_capabilities(
         &mut ledger,
         &config,
         &request,
-        activation,
+        PreparedAgentCapabilities {
+            skill_activation: Some(activation),
+            memory_retrieval: Some(retrieval),
+        },
         &mut context,
         &SkillCheckingModel {
             path: path.clone(),
@@ -919,7 +990,7 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
         &mut publisher,
     ))
     .unwrap();
-    assert_eq!(context.positions, [5]);
+    assert_eq!(context.positions, [6]);
 
     drop(ledger);
     let mut restarted = SqliteLedger::open(&path).unwrap();
@@ -927,6 +998,10 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
         .commit(session.clone(), 0, vec![replay_fact])
         .unwrap();
     assert_eq!(replay.disposition, CommitDisposition::Replayed);
+    let replay_memory = restarted
+        .commit(session.clone(), 0, vec![replay_memory_fact])
+        .unwrap();
+    assert_eq!(replay_memory.disposition, CommitDisposition::Replayed);
     let changed = plan_skill_activation(
         &SkillActivationContext {
             turn_id: plan.turn_id,
