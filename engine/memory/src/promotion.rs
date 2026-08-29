@@ -182,6 +182,14 @@ impl MemoryPromotionReceipt {
         }
         Ok(value)
     }
+    /// Returns the originating Memory promotion request identity.
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+    /// Returns the exact Knowledge proposal identity.
+    pub fn knowledge_proposal_id(&self) -> &str {
+        &self.knowledge_proposal_id
+    }
     /// Returns the Knowledge record identity.
     pub fn knowledge_record_id(&self) -> &str {
         &self.knowledge_record_id
