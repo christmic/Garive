@@ -5,8 +5,9 @@ use std::{
 
 use garive_ledger::{SessionId, TurnId, TurnSnapshot};
 use garive_runtime::{
-    derive_runtime_recovery, plan_recovery_action_facts, select_runtime_recovery,
-    ExecutionLeaseError, ExecutionLeaseRequest, RuntimeRecoveryAction, SqliteLedger,
+    derive_runtime_recovery, plan_recovery_action_facts, reconstruct_schedule_state,
+    select_runtime_recovery, ExecutionLeaseError, ExecutionLeaseRequest, RuntimeRecoveryAction,
+    SqliteLedger,
 };
 use tempfile::{tempdir, TempDir};
 
@@ -29,6 +30,59 @@ const CHECKPOINTS: &[&str] = &[
     "before_terminal",
     "after_terminal",
 ];
+
+const SCHEDULE_CHECKPOINTS: &[&str] = &[
+    "scheduler_before_claim",
+    "scheduler_after_claim",
+    "scheduler_after_dispatch",
+];
+
+#[test]
+fn killed_scheduler_preserves_each_dispatch_boundary() {
+    let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for checkpoint in SCHEDULE_CHECKPOINTS {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("scheduler-kill.sqlite3");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_garive-runtime-crash-fixture"))
+            .args([
+                database.to_str().unwrap(),
+                repository.to_str().unwrap(),
+                checkpoint,
+            ])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut ready = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready.trim(), "READY", "{checkpoint}");
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success(), "{checkpoint}");
+
+        let ledger = SqliteLedger::open(&database).unwrap();
+        let session = SessionId::try_from("session").unwrap();
+        let state = reconstruct_schedule_state(&ledger, &session, "schedule-1").unwrap();
+        assert_eq!(
+            state.pending_claim.is_some(),
+            *checkpoint != "scheduler_before_claim",
+            "{checkpoint}"
+        );
+        let turns: i64 = ledger
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM ledger_facts WHERE kind='turn.started'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            turns,
+            i64::from(*checkpoint == "scheduler_after_dispatch"),
+            "{checkpoint}"
+        );
+    }
+}
 
 #[test]
 fn killed_process_recovers_every_durable_checkpoint_without_guessing() {

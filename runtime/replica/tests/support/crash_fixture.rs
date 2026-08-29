@@ -5,10 +5,15 @@ use garive_ledger::{
     FactDraft, FactId, FactKind, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{
-    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
-    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand,
-    EffectiveRuntimeLimits, ExecutionLeaseRequest, InteractionContinuation, InteractionExpiry,
-    RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    plan_cancel_turn, plan_continue_turn, plan_schedule_claimed, plan_schedule_created,
+    plan_start_turn, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
+    ContinuationInput, ContinueTurnCommand, EffectiveRuntimeLimits, ExecutionLeaseRequest,
+    InteractionContinuation, InteractionExpiry, RuntimeCommandId, ScheduleLeaseRequest,
+    ScheduleLifecycleContext, SqliteLedger, StartTurnCommand,
+};
+use garive_scheduler::{
+    next_occurrence, MisfirePolicy, ScheduleDecision, ScheduleIntent, ScheduleSubject,
+    ScheduleTiming,
 };
 use serde_json::{json, Value};
 
@@ -26,6 +31,10 @@ fn main() {
 }
 
 fn run(database: &Path, repo: &Path, checkpoint: &str) {
+    if checkpoint.starts_with("scheduler_") {
+        run_scheduler(database, checkpoint);
+        return;
+    }
     let session = SessionId::try_from("session").unwrap();
     let mut ledger = SqliteLedger::open(database).unwrap();
     ledger
@@ -229,6 +238,91 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
             .commit(session, version, vec![execution_terminal, turn_terminal])
             .unwrap();
     }
+}
+
+fn run_scheduler(database: &Path, checkpoint: &str) {
+    let session = SessionId::try_from("session").unwrap();
+    let intent = ScheduleIntent::new(
+        "schedule-1",
+        "revision-1",
+        ScheduleSubject::StartTurn,
+        "aa".repeat(32),
+        ScheduleTiming::At {
+            due_at_utc: "2026-08-29T00:00:00Z".into(),
+        },
+        MisfirePolicy::FireOnce,
+        500,
+        "bb".repeat(32),
+    )
+    .unwrap();
+    let context = ScheduleLifecycleContext {
+        recorded_at: "2026-08-29T00:00:00Z".into(),
+    };
+    let mut ledger = SqliteLedger::open(database).unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            0,
+            vec![
+                open_session(),
+                plan_schedule_created(&context, "create", &intent).unwrap(),
+            ],
+        )
+        .unwrap();
+    if checkpoint == "scheduler_before_claim" {
+        return;
+    }
+    let occurrence = match next_occurrence(&intent, None, &context.recorded_at).unwrap() {
+        ScheduleDecision::Due(value) => value,
+        _ => unreachable!(),
+    };
+    let lease = ledger
+        .acquire_schedule_lease(&ScheduleLeaseRequest {
+            session_id: session.clone(),
+            schedule_id: "schedule-1".into(),
+            revision_id: "revision-1".into(),
+            occurrence_id: occurrence.occurrence_id.clone(),
+            ordinal: occurrence.ordinal,
+            owner_id: "crash-scheduler".into(),
+            lease_id: "crash-schedule-lease".into(),
+            now_ms: 100,
+            duration_ms: 10,
+        })
+        .unwrap();
+    let claimed = plan_schedule_claimed(
+        &context,
+        &intent,
+        &occurrence,
+        "crash-schedule-lease",
+        lease.epoch,
+        2,
+    )
+    .unwrap();
+    ledger
+        .commit_schedule_leased(&lease, 100, 1, vec![claimed])
+        .unwrap();
+    if checkpoint == "scheduler_after_claim" {
+        return;
+    }
+    let command = StartTurnCommand {
+        command_id: RuntimeCommandId::new(occurrence.runtime_command_id.as_str()).unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: AgentInstanceId::try_from("agent").unwrap(),
+        definition_id: AgentDefinitionId::try_from("definition").unwrap(),
+        definition_revision: AgentDefinitionRevision::try_from("revision").unwrap(),
+        snapshot_digest: "11".repeat(32),
+        trusted_input: "scheduled".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 2,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            deadline_budget_ms: None,
+        },
+        recorded_at: context.recorded_at,
+    };
+    let planned = plan_start_turn(&command, 3).unwrap();
+    ledger.commit(session, 2, planned.facts).unwrap();
+    assert_eq!(checkpoint, "scheduler_after_dispatch");
 }
 
 fn suspension(repo: &Path, kind: &str, turn: &TurnId, execution: &ExecutionId) -> FactDraft {
