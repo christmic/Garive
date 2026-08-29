@@ -3,16 +3,16 @@ use garive_memory::{
     record_memory_erasure, request_memory_promotion, AdmissionAssessment, CandidateStability,
     ContentBinding, DurableFactReference, ErasureTargetKind, ErasureTargetStatus, EvidenceTally,
     HypothesisState, MemoryAuthority, MemoryAuthorityBinding, MemoryCandidate,
-    MemoryCandidateIntent, MemoryCandidateSource, MemoryErasureRequest, MemoryErasureTarget,
-    MemoryErasureTargetResult, MemoryKind, MemoryLifecycle, MemoryMaintenanceDecision,
-    MemoryPromotionPolicy, MemoryPromotionReceipt, MemoryRecord, MemoryScope, MemoryScopeBinding,
-    MemoryScopeClass, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
+    MemoryCandidateIntent, MemoryCandidateSource, MemoryErasureTarget, MemoryErasureTargetResult,
+    MemoryKind, MemoryLifecycle, MemoryMaintenanceDecision, MemoryPromotionPolicy,
+    MemoryPromotionReceipt, MemoryRecord, MemoryScope, MemoryScopeBinding, MemoryScopeClass,
+    MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
 };
 use garive_runtime::{
     plan_memory_erasure_receipt, plan_memory_forget, plan_memory_maintenance_decision,
-    plan_memory_promotion_receipt, plan_memory_promotion_request, plan_memory_tombstone,
+    plan_memory_promotion_receipt, plan_memory_promotion_request,
     reconstruct_memory_maintenance_projection, MemoryMaintenanceContext, MemoryPrefix,
-    MemoryTombstoneContext, MemoryTombstoneReason, SqliteLedger,
+    SqliteLedger,
 };
 use serde_json::json;
 use tempfile::tempdir;
@@ -92,38 +92,22 @@ fn maintenance_promotion_and_erasure_batches_survive_restart() {
     ledger.commit(session.clone(), 3, promoted.facts).unwrap();
 
     let state = memory_state();
-    let tombstone = plan_memory_tombstone(
-        &MemoryTombstoneContext {
-            command_id: "forget-command".into(),
-            recorded_at: context.recorded_at.clone(),
-        },
+    let forget = plan_memory_forget(
+        &context,
+        6,
+        "forget-command",
+        "erasure-request",
         &state,
         &MemoryTombstone {
             record_id: "record".into(),
             revision_id: "revision".into(),
         },
-        MemoryTombstoneReason::UserRequest,
-    )
-    .unwrap();
-    let tombstone_reference = DurableFactReference::new(
-        session.as_str(),
-        7,
-        tombstone.fact.fact_id.as_str(),
-        tombstone.fact.payload.sha256(),
-    )
-    .unwrap();
-    let erasure_request = MemoryErasureRequest::new(
-        "erasure-request",
-        "namespace",
-        "record",
-        "revision",
-        tombstone_reference,
         "erasure-v1",
         erasure_targets(),
     )
     .unwrap();
-    let forget = plan_memory_forget(&context, 6, tombstone, &erasure_request).unwrap();
-    ledger.commit(session.clone(), 4, forget).unwrap();
+    let erasure_request = forget.request.clone();
+    ledger.commit(session.clone(), 4, forget.facts).unwrap();
     let partial = record_memory_erasure(
         &erasure_request,
         "attempt-1",

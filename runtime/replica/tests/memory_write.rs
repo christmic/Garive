@@ -230,7 +230,7 @@ fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
             record_id: "record".into(),
             revision_id: "revision-1".into(),
         },
-        MemoryTombstoneReason::UserRequest,
+        MemoryTombstoneReason::Policy,
     )
     .unwrap();
     ledger
@@ -283,6 +283,23 @@ fn supersession_and_tombstone_require_the_exact_active_revision() {
         RuntimeCommandError::InvalidCommand
     );
 
+    assert_eq!(
+        plan_memory_tombstone(
+            &MemoryTombstoneContext {
+                command_id: "forget".into(),
+                recorded_at: "2026-08-29T00:00:02Z".into(),
+            },
+            &second.next_state,
+            &MemoryTombstone {
+                record_id: "record".into(),
+                revision_id: "revision-2".into(),
+            },
+            MemoryTombstoneReason::UserRequest,
+        )
+        .err()
+        .unwrap(),
+        RuntimeCommandError::InvalidCommand,
+    );
     let tombstone = plan_memory_tombstone(
         &MemoryTombstoneContext {
             command_id: "forget".into(),
@@ -293,7 +310,7 @@ fn supersession_and_tombstone_require_the_exact_active_revision() {
             record_id: "record".into(),
             revision_id: "revision-2".into(),
         },
-        MemoryTombstoneReason::UserRequest,
+        MemoryTombstoneReason::Policy,
     )
     .unwrap();
     assert!(tombstone.fact.turn_id.is_none() && tombstone.fact.execution_id.is_none());
