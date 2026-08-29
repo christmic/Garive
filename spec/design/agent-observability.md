@@ -44,10 +44,19 @@ Attributes are bounded string/bool/integer values. Each signal schema declares
 an allowlist, value length, maximum count and redaction class. Arbitrary maps,
 raw exception text and provider payloads are forbidden.
 
+V1 admits at most 8 attributes and 8 measurements. Attribute and measurement
+names are strictly ascending UTF-8 strings with no duplicates. String values
+are non-empty, trimmed and at most 64 UTF-8 bytes. Correlation domain IDs are
+non-empty, trimmed and at most 128 UTF-8 bytes. `trace_id` is exactly 32 and
+span IDs exactly 16 lowercase non-zero hex characters. `durable_position` is
+non-zero when present. `observed_at_utc` is canonical UTC RFC 3339.
+
 Measurements use checked integer values and explicit units:
 `Count`, `Bytes`, `Milliseconds`, `Tokens`, or `BasisPoints`. Unknown token
 evidence is `Unknown`, never zero. Histograms and floating values are exporter
 projections outside the portable contract.
+Known measurements are non-negative u64. `Unknown` is admitted only for the
+`input_tokens` and `output_tokens` names with unit `Tokens`.
 
 ## Stable signal catalogue
 
@@ -64,6 +73,14 @@ V1 admits these low-cardinality names:
 - `agent.scheduler.claim`, `agent.scheduler.dispatch`;
 - `agent.delegation.requested`, `agent.delegation.terminal`;
 - `agent.telemetry.dropped`.
+
+The executable v1 catalogue in `agent/observability-v1.json` is authoritative
+for each signal's allowed attribute keys/types, enum values, measurement
+names/units and minimum redaction class. Portable enum-valued attributes are:
+`outcome`, `reason`, `phase`, `classification`, `recovery_action`,
+`capability_class`, `protocol_family`, and `disposition`; boolean attributes
+are `success`, `replayed`, and `digest_present`. No other attribute
+key or string value is admitted by v1.
 
 Outcome/reason attributes use accepted Engine/C6 stable enums. Provider model,
 endpoint, HTTP status, raw error and credential values do not enter portable
@@ -114,6 +131,16 @@ never placed in this queue.
 Exporter retry has an independent bounded budget and cannot reuse Agent model
 or tool retry policy. Shutdown performs a bounded flush; timeout drops
 telemetry and does not delay a committed terminal indefinitely.
+
+Queue byte accounting uses canonical signal JSON bytes. V1 priority is
+`Error > Warn > Info > Debug > Trace`, with `agent.telemetry.dropped` treated
+as Error. A full queue may evict only the oldest strictly lower-priority
+signal; otherwise the incoming signal is dropped. Backpressured/unavailable
+flushes retain the batch without reordering. Sampling happens before enqueue,
+is deterministic from signal/correlation fields, and never samples Warn/Error
+or `agent.telemetry.dropped`. Queue limits, sampling denominator, exporter
+retry attempts and shutdown flush attempts are explicit constructor inputs;
+none may be zero and none come from process environment.
 
 ## Stable failures
 

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "contract": "agent-observability-v1",
+  "limits": {"max_attributes":8,"max_measurements":8,"max_attribute_string_bytes":64,"max_correlation_id_bytes":128},
+  "enum_values": {
+    "outcome":["completed","denied","failed","interrupted","rejected","started","stopped","unavailable","uncertain"],
+    "reason":["authority_denied","budget_exhausted","cancelled","corrupt_recovery_state","deadline","durability_failure","invalid_input","invalid_model_output","invariant_violation","iteration_limit","port_failure","required_capability_unavailable","resource_unavailable","sink_backpressured","sink_unavailable","token_limit"],
+    "phase":["authorized","completed","dispatched","prepared","requested","started","terminal"],
+    "classification":["approval","external_input","idempotent","never_replay","operator_reconciliation","policy","pressure","sampling","serialization","shutdown","sink"],
+    "recovery_action":["abandon_and_restart","classify_effect_uncertain","classify_model_uncertain","fail_recovery_bound","recover_receipt_terminal"],
+    "capability_class":["idempotent","read_only","side_effecting"],
+    "protocol_family":["compatible","messages","responses"],
+    "disposition":["accepted","authorized","committed","conflict","denied","failed","reclaimed","rejected","replayed"]
+  },
+  "catalogue": [
+    {"name":"agent.execution.started","minimum_redaction":"operational","attributes":{"recovery_action":"recovery_action","replayed":"bool"},"measurements":{"completed_iterations":"count"}},
+    {"name":"agent.execution.terminal","minimum_redaction":"operational","attributes":{"outcome":"outcome","reason":"reason","replayed":"bool","success":"bool"},"measurements":{"completed_iterations":"count","elapsed_ms":"milliseconds","input_tokens":"tokens","output_tokens":"tokens"}},
+    {"name":"agent.iteration.started","minimum_redaction":"operational","attributes":{"replayed":"bool"},"measurements":{"iteration_count":"count"}},
+    {"name":"agent.context.derived","minimum_redaction":"operational","attributes":{"digest_present":"bool","replayed":"bool"},"measurements":{"input_tokens":"tokens","item_count":"count","total_bytes":"bytes"}},
+    {"name":"agent.model.attempt","minimum_redaction":"operational","attributes":{"phase":"phase","protocol_family":"protocol_family","replayed":"bool"},"measurements":{"attempt_count":"count","elapsed_ms":"milliseconds"}},
+    {"name":"agent.model.terminal","minimum_redaction":"operational","attributes":{"outcome":"outcome","protocol_family":"protocol_family","reason":"reason","replayed":"bool","success":"bool"},"measurements":{"elapsed_ms":"milliseconds","input_tokens":"tokens","output_tokens":"tokens"}},
+    {"name":"agent.effect.prepared","minimum_redaction":"operational","attributes":{"capability_class":"capability_class","classification":"classification","replayed":"bool"},"measurements":{"attempt_count":"count"}},
+    {"name":"agent.effect.terminal","minimum_redaction":"operational","attributes":{"classification":"classification","outcome":"outcome","reason":"reason","replayed":"bool","success":"bool"},"measurements":{"elapsed_ms":"milliseconds"}},
+    {"name":"agent.interaction.required","minimum_redaction":"restricted","attributes":{"classification":"classification","replayed":"bool"},"measurements":{"item_count":"count"}},
+    {"name":"agent.recovery.classified","minimum_redaction":"operational","attributes":{"recovery_action":"recovery_action","replayed":"bool"},"measurements":{"attempt_count":"count"}},
+    {"name":"agent.host.command","minimum_redaction":"operational","attributes":{"disposition":"disposition","replayed":"bool","success":"bool"},"measurements":{"elapsed_ms":"milliseconds"}},
+    {"name":"agent.host.event_page","minimum_redaction":"operational","attributes":{"replayed":"bool","success":"bool"},"measurements":{"item_count":"count","total_bytes":"bytes"}},
+    {"name":"agent.scheduler.claim","minimum_redaction":"operational","attributes":{"disposition":"disposition","replayed":"bool"},"measurements":{"elapsed_ms":"milliseconds","occurrence_count":"count"}},
+    {"name":"agent.scheduler.dispatch","minimum_redaction":"operational","attributes":{"disposition":"disposition","replayed":"bool","success":"bool"},"measurements":{"elapsed_ms":"milliseconds"}},
+    {"name":"agent.delegation.requested","minimum_redaction":"operational","attributes":{"disposition":"disposition","replayed":"bool"},"measurements":{"input_tokens":"tokens","output_tokens":"tokens"}},
+    {"name":"agent.delegation.terminal","minimum_redaction":"operational","attributes":{"outcome":"outcome","reason":"reason","replayed":"bool","success":"bool"},"measurements":{"elapsed_ms":"milliseconds","input_tokens":"tokens","output_tokens":"tokens"}},
+    {"name":"agent.telemetry.dropped","minimum_redaction":"operational","attributes":{"classification":"classification"},"measurements":{"dropped_bytes":"bytes","dropped_count":"count"}}
+  ],
+  "valid_signals": [
+    {"name":"execution-terminal","signal":{"signal_name":"agent.execution.terminal","schema_version":1,"observed_at_utc":"2026-08-29T00:00:00Z","severity":"info","correlation":{"trace_id":"11111111111111111111111111111111","span_id":"2222222222222222","session_id":"session","turn_id":"turn","execution_id":"execution","durable_position":7},"attributes":[{"name":"outcome","value":{"kind":"string","value":"completed"}},{"name":"replayed","value":{"kind":"bool","value":false}},{"name":"success","value":{"kind":"bool","value":true}}],"measurements":[{"name":"completed_iterations","value":{"kind":"known","value":2},"unit":"count"},{"name":"input_tokens","value":{"kind":"unknown"},"unit":"tokens"},{"name":"output_tokens","value":{"kind":"known","value":5},"unit":"tokens"}],"redaction_class":"operational"},"expected_digest":"6e84cf58501a0feef820d546abd5514e9511aad9415142714bf8599c0524dddf"},
+    {"name":"restricted-interaction","signal":{"signal_name":"agent.interaction.required","schema_version":1,"observed_at_utc":"2026-08-29T00:00:01Z","severity":"warn","correlation":{"trace_id":"11111111111111111111111111111111","span_id":"3333333333333333","parent_span_id":"2222222222222222","turn_id":"turn"},"attributes":[{"name":"classification","value":{"kind":"string","value":"approval"}}],"measurements":[{"name":"item_count","value":{"kind":"known","value":1},"unit":"count"}],"redaction_class":"restricted"}},
+    {"name":"dropped","signal":{"signal_name":"agent.telemetry.dropped","schema_version":1,"observed_at_utc":"2026-08-29T00:00:02Z","severity":"error","correlation":{},"attributes":[{"name":"classification","value":{"kind":"string","value":"pressure"}}],"measurements":[{"name":"dropped_bytes","value":{"kind":"known","value":64},"unit":"bytes"},{"name":"dropped_count","value":{"kind":"known","value":2},"unit":"count"}],"redaction_class":"operational"}}
+  ],
+  "invalid_cases": [
+    {"name":"unknown-signal","mutation":"unknown_signal","expected":"unknown_signal"},
+    {"name":"raw-error-attribute","mutation":"attribute_name_raw_error","expected":"attribute_not_allowed"},
+    {"name":"session-label-attribute","mutation":"attribute_name_session_id","expected":"attribute_not_allowed"},
+    {"name":"too-many-attributes","mutation":"attribute_count_9","expected":"attribute_limit_exceeded"},
+    {"name":"wrong-measurement-unit","mutation":"input_tokens_bytes","expected":"measurement_invalid"},
+    {"name":"unknown-byte-count","mutation":"total_bytes_unknown","expected":"measurement_invalid"},
+    {"name":"restricted-downgrade","mutation":"interaction_operational","expected":"redaction_violation"},
+    {"name":"invalid-trace","mutation":"trace_uppercase","expected":"invalid_signal"},
+    {"name":"unsorted-attributes","mutation":"attributes_unsorted","expected":"invalid_signal"}
+  ],
+  "portable_failure_codes": ["invalid_signal","unknown_signal","attribute_not_allowed","attribute_limit_exceeded","measurement_invalid","redaction_violation"]
+}

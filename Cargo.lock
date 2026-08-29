@@ -1181,6 +1181,13 @@ dependencies = [
 [[package]]
 name = "garive-observability"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+]
 
 [[package]]
 name = "garive-proto"
