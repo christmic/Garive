@@ -207,6 +207,8 @@ Spec.
   — Responses-compatible implementation contract.
 - [`../../../spec/design/anthropic-messages-adapter.md`](../../../spec/design/anthropic-messages-adapter.md)
   — Messages-compatible implementation contract.
+- [`../../../spec/design/compatible-provider-mapping.md`](../../../spec/design/compatible-provider-mapping.md)
+  — compatible deployment request/outcome/error/stream mapping contract.
 - [`.agents/testing.md`](../../../.agents/testing.md) — protocol evidence gates.
 
 ## Meta

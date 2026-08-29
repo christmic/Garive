@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "contract": "compatible-provider-mapping",
+  "deployments": {
+    "responses": {
+      "target_id": "responses-target",
+      "model_id": "compatible-responses-model",
+      "capabilities": ["text", "tools", "json_output", "streaming"],
+      "default_max_output_tokens": null
+    },
+    "messages": {
+      "target_id": "messages-target",
+      "model_id": "compatible-messages-model",
+      "capabilities": ["text", "tools", "json_output", "streaming"],
+      "default_max_output_tokens": 512
+    }
+  },
+  "request_cases": [
+    {
+      "name": "responses-portable-request",
+      "protocol": "responses",
+      "request": {
+        "request_id": "request-r",
+        "target_id": "responses-target",
+        "required_capabilities": ["text", "tools", "json_output", "streaming"],
+        "input": [
+          {"kind": "message", "role": "system", "text": "policy"},
+          {"kind": "message", "role": "user", "text": "question"},
+          {"kind": "tool_observation", "model_call_id": "call-0", "result_json": {"ok": true}}
+        ],
+        "tools": [{"name": "lookup", "description": "Lookup.", "revision": "1", "schema": {"type": "object"}, "strict": true}],
+        "max_output_tokens": 128,
+        "text_mode": {"kind": "json_schema", "schema": {"type": "object", "required": ["answer"]}},
+        "reasoning_visibility": false,
+        "metadata": {"trace": "fixture"}
+      },
+      "expected": {
+        "model": "compatible-responses-model",
+        "stream": true,
+        "max_output_tokens": 128,
+        "message_roles": ["system", "user"],
+        "tool_observations": ["call-0"],
+        "tool_names": ["lookup"],
+        "output_mode": "json_schema",
+        "metadata": {"trace": "fixture"}
+      }
+    },
+    {
+      "name": "messages-portable-request",
+      "protocol": "messages",
+      "request": {
+        "request_id": "request-m",
+        "target_id": "messages-target",
+        "required_capabilities": ["text", "tools", "json_output", "streaming"],
+        "input": [
+          {"kind": "message", "role": "system", "text": "policy"},
+          {"kind": "message", "role": "developer", "text": "developer"},
+          {"kind": "message", "role": "user", "text": "question"},
+          {"kind": "tool_observation", "model_call_id": "call-0", "result_json": {"ok": true}}
+        ],
+        "tools": [{"name": "lookup", "description": "Lookup.", "revision": "1", "schema": {"type": "object"}, "strict": true}],
+        "max_output_tokens": null,
+        "text_mode": {"kind": "json_object"},
+        "reasoning_visibility": false,
+        "metadata": {}
+      },
+      "expected": {
+        "model": "compatible-messages-model",
+        "stream": true,
+        "max_output_tokens": 512,
+        "system_blocks": ["policy", "developer"],
+        "message_roles": ["user", "user"],
+        "tool_observations": ["call-0"],
+        "tool_names": ["lookup"],
+        "output_mode": "json_schema"
+      }
+    }
+  ],
+  "outcome_cases": [
+    {
+      "name": "responses-completed-tools-and-usage",
+      "protocol": "responses",
+      "response": {
+        "status": "completed",
+        "items": [
+          {"kind": "text", "text": "answer"},
+          {"kind": "tool", "model_call_id": "call-1", "tool_name": "lookup", "arguments": {"q": "x"}}
+        ],
+        "usage": {"input": 10, "output": 4, "cache_read": 3, "cache_write": 1}
+      },
+      "expected": {"kind": "completed", "stop": "tool_use", "items": ["text", "tool_intent"], "input": 10, "output": 4}
+    },
+    {
+      "name": "responses-output-limit",
+      "protocol": "responses",
+      "response": {"status": "incomplete", "reason": "max_output_tokens", "items": [{"kind": "text", "text": "partial"}], "usage": null},
+      "expected": {"kind": "interrupted", "reason": "output_limit", "items": ["text"], "input": null, "output": null}
+    },
+    {
+      "name": "messages-refusal",
+      "protocol": "messages",
+      "response": {"stop_reason": "refusal", "items": [{"kind": "refusal", "text": "no"}], "usage": {"input": 8, "output": 2, "cache_read": 0, "cache_write": 0}},
+      "expected": {"kind": "completed", "stop": "refusal", "items": ["refusal"], "input": 8, "output": 2}
+    },
+    {
+      "name": "messages-context-window",
+      "protocol": "messages",
+      "response": {"stop_reason": "model_context_window_exceeded", "items": [], "usage": {"input": 20, "output": 0, "cache_read": 0, "cache_write": 0}},
+      "expected": {"kind": "rejected", "reason": "context_overflow", "items": [], "input": null, "output": null}
+    }
+  ],
+  "error_cases": [
+    {"name": "exact-authentication", "status": 401, "type": "authentication_error", "code": null, "expected": "authentication"},
+    {"name": "exact-rate-limit", "status": 429, "type": "rate_limit_error", "code": "rate_limit", "expected": "rate_limited"},
+    {"name": "unknown-is-not-guessed", "status": 400, "type": "unknown", "code": null, "expected": "unclassified_protocol_error"}
+  ],
+  "failure_cases": [
+    {"name": "target-mismatch", "code": "target_mismatch"},
+    {"name": "unsupported-capability", "code": "unsupported_capability"},
+    {"name": "invalid-tool-schema", "code": "invalid_json_object"},
+    {"name": "messages-late-instruction", "code": "unsupported_input"},
+    {"name": "messages-metadata", "code": "unsupported_metadata"},
+    {"name": "reasoning-without-profile", "code": "unsupported_capability"},
+    {"name": "unadmitted-extension", "code": "unsupported_extension"},
+    {"name": "messages-missing-output-limit", "code": "missing_output_limit"}
+  ]
+}
