@@ -1,6 +1,6 @@
 //! Typed incremental Messages events and lifecycle validation.
 
-use crate::{ErrorEnvelope, MessageResponse, MessagesAdapterError, SseDecoder, SseFrame};
+use crate::{wire, ErrorEnvelope, MessageResponse, MessagesAdapterError, SseDecoder, SseFrame};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -115,7 +115,7 @@ impl MessagesStreamDecoder {
             .ok_or(MessagesAdapterError::InvalidJson)?
             .clone();
         let discriminator = object
-            .get("type")
+            .get(wire::FIELD_TYPE)
             .and_then(Value::as_str)
             .ok_or(MessagesAdapterError::InvalidJson)?;
         if frame.event().is_some_and(|event| event != discriminator) {
@@ -160,7 +160,7 @@ impl MessagesStreamDecoder {
             StreamEventKind::Error => {
                 let error: ErrorEnvelope = serde_json::from_value(Value::Object(value.clone()))
                     .map_err(|_| MessagesAdapterError::InvalidJson)?;
-                if error.r#type != "error"
+                if error.r#type != wire::KIND_ERROR
                     || error.error.r#type.is_empty()
                     || error.error.message.is_empty()
                 {
@@ -210,9 +210,9 @@ impl MessagesStreamDecoder {
     fn start_block(&mut self, value: &Map<String, Value>) -> Result<(), MessagesAdapterError> {
         let index = required_index(value)?;
         let kind = value
-            .get("content_block")
+            .get(wire::FIELD_CONTENT_BLOCK)
             .and_then(Value::as_object)
-            .and_then(|block| block.get("type"))
+            .and_then(|block| block.get(wire::FIELD_TYPE))
             .and_then(Value::as_str)
             .ok_or(MessagesAdapterError::InvalidJson)?
             .to_owned();
@@ -253,9 +253,12 @@ impl MessagesStreamDecoder {
             ))?;
         let compatible = matches!(
             (block.kind.as_str(), delta),
-            ("text", DeltaKind::Text | DeltaKind::Citation)
-                | ("tool_use", DeltaKind::InputJson)
-                | ("thinking", DeltaKind::Thinking | DeltaKind::Signature)
+            (wire::KIND_TEXT, DeltaKind::Text | DeltaKind::Citation)
+                | (wire::KIND_TOOL_USE, DeltaKind::InputJson)
+                | (
+                    wire::KIND_THINKING,
+                    DeltaKind::Thinking | DeltaKind::Signature
+                )
         );
         if !compatible && !matches!(delta, DeltaKind::Extension(_)) {
             return Err(MessagesAdapterError::InvalidLifecycle(
@@ -264,9 +267,9 @@ impl MessagesStreamDecoder {
         }
         if matches!(delta, DeltaKind::InputJson) {
             let fragment = value
-                .get("delta")
+                .get(wire::FIELD_DELTA)
                 .and_then(Value::as_object)
-                .and_then(|delta| delta.get("partial_json"))
+                .and_then(|delta| delta.get(wire::FIELD_PARTIAL_JSON))
                 .and_then(Value::as_str)
                 .ok_or(MessagesAdapterError::InvalidJson)?;
             block.partial_json.push_str(fragment);
@@ -282,7 +285,9 @@ impl MessagesStreamDecoder {
             .ok_or(MessagesAdapterError::InvalidLifecycle(
                 "Messages stop targets no open block",
             ))?;
-        if block.kind == "tool_use" && serde_json::from_str::<Value>(&block.partial_json).is_err() {
+        if block.kind == wire::KIND_TOOL_USE
+            && serde_json::from_str::<Value>(&block.partial_json).is_err()
+        {
             return Err(MessagesAdapterError::InvalidJson);
         }
         Ok(())
@@ -294,41 +299,66 @@ fn event_kind(
     value: &Map<String, Value>,
 ) -> Result<StreamEventKind, MessagesAdapterError> {
     Ok(match discriminator {
-        "message_start" => StreamEventKind::MessageStart,
-        "content_block_start" => StreamEventKind::ContentBlockStart,
-        "content_block_delta" => StreamEventKind::ContentBlockDelta(delta_kind(value)?),
-        "content_block_stop" => StreamEventKind::ContentBlockStop,
-        "message_delta" => StreamEventKind::MessageDelta,
-        "message_stop" => StreamEventKind::MessageStop,
-        "ping" => StreamEventKind::Ping,
-        "error" => StreamEventKind::Error,
+        wire::EVENT_MESSAGE_START => StreamEventKind::MessageStart,
+        wire::EVENT_CONTENT_BLOCK_START => StreamEventKind::ContentBlockStart,
+        wire::EVENT_CONTENT_BLOCK_DELTA => StreamEventKind::ContentBlockDelta(delta_kind(value)?),
+        wire::EVENT_CONTENT_BLOCK_STOP => StreamEventKind::ContentBlockStop,
+        wire::EVENT_MESSAGE_DELTA => StreamEventKind::MessageDelta,
+        wire::EVENT_MESSAGE_STOP => StreamEventKind::MessageStop,
+        wire::EVENT_PING => StreamEventKind::Ping,
+        wire::KIND_ERROR => StreamEventKind::Error,
         other => StreamEventKind::Extension(other.to_owned()),
     })
 }
 
 fn delta_kind(value: &Map<String, Value>) -> Result<DeltaKind, MessagesAdapterError> {
     let delta = value
-        .get("delta")
+        .get(wire::FIELD_DELTA)
         .and_then(Value::as_object)
         .ok_or(MessagesAdapterError::InvalidJson)?;
     let kind = delta
-        .get("type")
+        .get(wire::FIELD_TYPE)
         .and_then(Value::as_str)
         .ok_or(MessagesAdapterError::InvalidJson)?;
     Ok(match kind {
-        "text_delta" if delta.get("text").and_then(Value::as_str).is_some() => DeltaKind::Text,
-        "input_json_delta" if delta.get("partial_json").and_then(Value::as_str).is_some() => {
+        wire::DELTA_TEXT
+            if delta
+                .get(wire::FIELD_TEXT)
+                .and_then(Value::as_str)
+                .is_some() =>
+        {
+            DeltaKind::Text
+        }
+        wire::DELTA_INPUT_JSON
+            if delta
+                .get(wire::FIELD_PARTIAL_JSON)
+                .and_then(Value::as_str)
+                .is_some() =>
+        {
             DeltaKind::InputJson
         }
-        "thinking_delta" if delta.get("thinking").and_then(Value::as_str).is_some() => {
+        wire::DELTA_THINKING
+            if delta
+                .get(wire::FIELD_THINKING)
+                .and_then(Value::as_str)
+                .is_some() =>
+        {
             DeltaKind::Thinking
         }
-        "signature_delta" if delta.get("signature").and_then(Value::as_str).is_some() => {
+        wire::DELTA_SIGNATURE
+            if delta
+                .get(wire::FIELD_SIGNATURE)
+                .and_then(Value::as_str)
+                .is_some() =>
+        {
             DeltaKind::Signature
         }
-        "citations_delta" if delta.contains_key("citation") => DeltaKind::Citation,
-        "text_delta" | "input_json_delta" | "thinking_delta" | "signature_delta"
-        | "citations_delta" => return Err(MessagesAdapterError::InvalidJson),
+        wire::DELTA_CITATIONS if delta.contains_key(wire::FIELD_CITATION) => DeltaKind::Citation,
+        wire::DELTA_TEXT
+        | wire::DELTA_INPUT_JSON
+        | wire::DELTA_THINKING
+        | wire::DELTA_SIGNATURE
+        | wire::DELTA_CITATIONS => return Err(MessagesAdapterError::InvalidJson),
         other => DeltaKind::Extension(other.to_owned()),
     })
 }
@@ -338,16 +368,25 @@ fn validate_start_block(
     block: &Map<String, Value>,
 ) -> Result<(), MessagesAdapterError> {
     let valid = match kind {
-        "text" => block.get("text").and_then(Value::as_str).is_some(),
-        "thinking" => {
-            block.get("thinking").and_then(Value::as_str).is_some()
-                && block.get("signature").and_then(Value::as_str).is_some()
+        wire::KIND_TEXT => block
+            .get(wire::FIELD_TEXT)
+            .and_then(Value::as_str)
+            .is_some(),
+        wire::KIND_THINKING => {
+            block
+                .get(wire::FIELD_THINKING)
+                .and_then(Value::as_str)
+                .is_some()
+                && block
+                    .get(wire::FIELD_SIGNATURE)
+                    .and_then(Value::as_str)
+                    .is_some()
         }
-        "redacted_thinking" => block
+        wire::KIND_REDACTED_THINKING => block
             .get("data")
             .and_then(Value::as_str)
             .is_some_and(|data| !data.is_empty()),
-        "tool_use" => {
+        wire::KIND_TOOL_USE => {
             block
                 .get("id")
                 .and_then(Value::as_str)

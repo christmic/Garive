@@ -1,6 +1,6 @@
 //! Typed portable create-request profile derived from the official SDK.
 
-use crate::{HttpRequest, MessagesAdapter, MessagesAdapterError};
+use crate::{wire, HttpRequest, MessagesAdapter, MessagesAdapterError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
@@ -777,26 +777,9 @@ fn finite_range(
 }
 
 fn reject_collisions(extensions: &Map<String, Value>) -> Result<(), MessagesAdapterError> {
-    const RESERVED: [&str; 15] = [
-        "model",
-        "max_tokens",
-        "messages",
-        "stream",
-        "system",
-        "stop_sequences",
-        "temperature",
-        "top_p",
-        "top_k",
-        "tools",
-        "tool_choice",
-        "output_config",
-        "thinking",
-        "metadata",
-        "extensions",
-    ];
     if extensions
         .keys()
-        .any(|key| RESERVED.contains(&key.as_str()))
+        .any(|key| wire::CREATE_FIELDS.contains(&key.as_str()))
     {
         Err(MessagesAdapterError::InvalidRequest(
             "Messages extension collides with a typed field",

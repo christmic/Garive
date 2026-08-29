@@ -1,6 +1,6 @@
 //! Ordinary Messages response, usage, and protocol error envelopes.
 
-use crate::{Header, MessagesAdapter, MessagesAdapterError};
+use crate::{wire, Header, MessagesAdapter, MessagesAdapterError};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
@@ -111,20 +111,20 @@ impl<'de> Deserialize<'de> for OutputBlock {
             .as_object()
             .ok_or_else(|| D::Error::custom("Messages output block must be an object"))?;
         let kind = object
-            .get("type")
+            .get(wire::FIELD_TYPE)
             .and_then(Value::as_str)
             .ok_or_else(|| D::Error::custom("Messages output block requires type"))?;
         match kind {
-            "text" => serde_json::from_value(value)
+            wire::KIND_TEXT => serde_json::from_value(value)
                 .map(Self::Text)
                 .map_err(D::Error::custom),
-            "thinking" => serde_json::from_value(value)
+            wire::KIND_THINKING => serde_json::from_value(value)
                 .map(Self::Thinking)
                 .map_err(D::Error::custom),
-            "redacted_thinking" => serde_json::from_value(value)
+            wire::KIND_REDACTED_THINKING => serde_json::from_value(value)
                 .map(Self::RedactedThinking)
                 .map_err(D::Error::custom),
-            "tool_use" => serde_json::from_value(value)
+            wire::KIND_TOOL_USE => serde_json::from_value(value)
                 .map(Self::ToolUse)
                 .map_err(D::Error::custom),
             _ => Ok(Self::Extension(object.clone())),
@@ -140,7 +140,7 @@ impl OutputBlock {
             Self::RedactedThinking(value) => value.data.is_empty(),
             Self::ToolUse(value) => value.id.is_empty() || value.name.is_empty(),
             Self::Extension(value) => {
-                !matches!(value.get("type"), Some(Value::String(kind)) if !kind.is_empty())
+                !matches!(value.get(wire::FIELD_TYPE), Some(Value::String(kind)) if !kind.is_empty())
             }
         };
         if invalid {
@@ -372,7 +372,7 @@ impl MessagesAdapter {
         } else {
             let error: ErrorEnvelope =
                 serde_json::from_slice(body).map_err(|_| MessagesAdapterError::InvalidJson)?;
-            if error.r#type != "error"
+            if error.r#type != wire::KIND_ERROR
                 || error.error.r#type.is_empty()
                 || error.error.message.is_empty()
             {
@@ -390,10 +390,10 @@ impl MessagesAdapter {
 fn require_json_media(headers: &[Header]) -> Result<(), MessagesAdapterError> {
     let media = headers
         .iter()
-        .find(|header| header.name() == "content-type")
+        .find(|header| header.name() == wire::HEADER_CONTENT_TYPE)
         .map(Header::value)
-        .unwrap_or("application/json");
-    if media.split(';').next() == Some("application/json") {
+        .unwrap_or(wire::MEDIA_JSON);
+    if media.split(';').next() == Some(wire::MEDIA_JSON) {
         Ok(())
     } else {
         Err(MessagesAdapterError::InvalidMediaType)

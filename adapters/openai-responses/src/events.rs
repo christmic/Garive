@@ -1,7 +1,7 @@
 //! Portable Responses stream discriminators with lossless event payloads.
 
 use crate::{
-    OutputContent, ProtocolExtension, ReasoningPart, Response, ResponseOutputItem,
+    wire, OutputContent, ProtocolExtension, ReasoningPart, Response, ResponseOutputItem,
     ResponsesAdapterError,
 };
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
@@ -159,7 +159,7 @@ impl ResponseStreamEvent {
             } => Some(*sequence_number),
             Self::Extension(extension) => extension
                 .object()
-                .get("sequence_number")
+                .get(wire::FIELD_SEQUENCE_NUMBER)
                 .and_then(Value::as_u64),
         }
     }
@@ -186,7 +186,7 @@ impl<'de> Deserialize<'de> for ResponseStreamEvent {
             .as_object()
             .ok_or_else(|| D::Error::custom("Responses event must be an object"))?;
         let discriminator = object
-            .get("type")
+            .get(wire::FIELD_TYPE)
             .and_then(Value::as_str)
             .ok_or_else(|| D::Error::custom("Responses event requires type"))?;
         let Some(kind) = PortableEventKind::parse(discriminator) else {
@@ -194,7 +194,8 @@ impl<'de> Deserialize<'de> for ResponseStreamEvent {
                 .map(Self::Extension)
                 .map_err(D::Error::custom);
         };
-        let sequence_number = required_u64(object, "sequence_number").map_err(D::Error::custom)?;
+        let sequence_number =
+            required_u64(object, wire::FIELD_SEQUENCE_NUMBER).map_err(D::Error::custom)?;
         validate_payload(kind, object).map_err(D::Error::custom)?;
         Ok(Self::Portable {
             kind,
@@ -215,8 +216,9 @@ fn validate_payload(
         | PortableEventKind::Completed
         | PortableEventKind::Failed
         | PortableEventKind::Incomplete => {
-            let response: Response = serde_json::from_value(required(object, "response")?.clone())
-                .map_err(|_| ResponsesAdapterError::InvalidJson)?;
+            let response: Response =
+                serde_json::from_value(required(object, wire::FIELD_RESPONSE)?.clone())
+                    .map_err(|_| ResponsesAdapterError::InvalidJson)?;
             response.validate()?;
         }
         PortableEventKind::OutputItemAdded | PortableEventKind::OutputItemDone => {

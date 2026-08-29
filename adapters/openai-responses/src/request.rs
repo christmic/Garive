@@ -1,6 +1,6 @@
 //! Typed portable create-request profile derived from the official SDK.
 
-use crate::{HttpRequest, ResponsesAdapter, ResponsesAdapterError};
+use crate::{wire, HttpRequest, ResponsesAdapter, ResponsesAdapterError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -497,23 +497,10 @@ fn finite_range(
 }
 
 fn reject_collisions(extensions: &Map<String, Value>) -> Result<(), ResponsesAdapterError> {
-    const TYPED: &[&str] = &[
-        "model",
-        "input",
-        "max_output_tokens",
-        "temperature",
-        "top_p",
-        "truncation",
-        "tools",
-        "tool_choice",
-        "parallel_tool_calls",
-        "text",
-        "reasoning",
-        "metadata",
-        "stream",
-        "stream_options",
-    ];
-    if extensions.keys().any(|key| TYPED.contains(&key.as_str())) {
+    if extensions
+        .keys()
+        .any(|key| wire::CREATE_FIELDS.contains(&key.as_str()))
+    {
         Err(ResponsesAdapterError::InvalidRequest(
             "Responses extension collides with a typed field",
         ))

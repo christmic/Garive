@@ -1,6 +1,6 @@
 //! Explicit endpoint, version, and header construction for one exchange.
 
-use crate::MessagesAdapterError;
+use crate::{wire, MessagesAdapterError};
 use http::{header::HeaderName, uri::Scheme, HeaderValue, Uri};
 use std::{collections::BTreeSet, fmt};
 
@@ -100,13 +100,16 @@ impl MessagesAdapterConfig {
         HeaderValue::from_str(&protocol_version)
             .map_err(|_| MessagesAdapterError::InvalidHeader)?;
         let mut names = BTreeSet::new();
-        if matches!(version_header_name.as_str(), "content-type" | "accept")
-            || headers.iter().any(|header| {
-                matches!(header.name(), "content-type" | "accept")
-                    || header.name() == version_header_name
-                    || !names.insert(header.name())
-            })
-        {
+        if matches!(
+            version_header_name.as_str(),
+            wire::HEADER_CONTENT_TYPE | wire::HEADER_ACCEPT
+        ) || headers.iter().any(|header| {
+            matches!(
+                header.name(),
+                wire::HEADER_CONTENT_TYPE | wire::HEADER_ACCEPT
+            ) || header.name() == version_header_name
+                || !names.insert(header.name())
+        }) {
             return Err(MessagesAdapterError::InvalidHeader);
         }
         Ok(Self {
@@ -159,16 +162,16 @@ impl MessagesAdapter {
             sensitive: false,
         });
         headers.push(Header {
-            name: "content-type".into(),
-            value: "application/json".into(),
+            name: wire::HEADER_CONTENT_TYPE.into(),
+            value: wire::MEDIA_JSON.into(),
             sensitive: false,
         });
         headers.push(Header {
-            name: "accept".into(),
+            name: wire::HEADER_ACCEPT.into(),
             value: if stream {
-                "text/event-stream"
+                wire::MEDIA_SSE
             } else {
-                "application/json"
+                wire::MEDIA_JSON
             }
             .into(),
             sensitive: false,
@@ -192,7 +195,7 @@ pub struct HttpRequest {
 impl HttpRequest {
     /// Returns the required HTTP method.
     pub fn method(&self) -> &'static str {
-        "POST"
+        wire::METHOD_POST
     }
     /// Returns the configured absolute URI.
     pub fn uri(&self) -> &str {

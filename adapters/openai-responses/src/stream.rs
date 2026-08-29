@@ -1,7 +1,8 @@
 //! Responses event lifecycle validation layered over incremental SSE framing.
 
 use crate::{
-    PortableEventKind, ResponseStreamEvent, ResponsesAdapter, ResponsesAdapterError, SseDecoder,
+    wire, PortableEventKind, ResponseStreamEvent, ResponsesAdapter, ResponsesAdapterError,
+    SseDecoder,
 };
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -140,7 +141,7 @@ impl ResponsesStreamDecoder {
             }
             PortableEventKind::FunctionArgumentsDelta
             | PortableEventKind::FunctionArgumentsDone => {
-                self.require_item_kind(object, "function_call")?;
+                self.require_item_kind(object, wire::KIND_FUNCTION_CALL)?;
             }
             PortableEventKind::ReasoningSummaryPartAdded
             | PortableEventKind::ReasoningSummaryPartDone
@@ -148,7 +149,7 @@ impl ResponsesStreamDecoder {
             | PortableEventKind::ReasoningSummaryTextDone
             | PortableEventKind::ReasoningTextDelta
             | PortableEventKind::ReasoningTextDone => {
-                self.require_item_kind(object, "reasoning")?;
+                self.require_item_kind(object, wire::KIND_REASONING)?;
             }
             PortableEventKind::Queued | PortableEventKind::InProgress => {}
         }
@@ -159,7 +160,7 @@ impl ResponsesStreamDecoder {
         let index = u64_field(object, "output_index")?;
         let item = object_field(object, "item")?;
         let id = text_field(item, "id")?;
-        let kind = text_field(item, "type")?;
+        let kind = text_field(item, wire::FIELD_TYPE)?;
         if self.items.contains_key(&index) || self.items.values().any(|state| state.id == id) {
             return Err(lifecycle("Responses output item identity was reused"));
         }
@@ -180,7 +181,7 @@ impl ResponsesStreamDecoder {
         let index = u64_field(object, "output_index")?;
         let item = object_field(object, "item")?;
         let id = text_field(item, "id")?;
-        let kind = text_field(item, "type")?;
+        let kind = text_field(item, wire::FIELD_TYPE)?;
         let state = self
             .items
             .get_mut(&index)
@@ -198,7 +199,7 @@ impl ResponsesStreamDecoder {
     fn add_content(&mut self, object: &Map<String, Value>) -> Result<(), ResponsesAdapterError> {
         let state = self.item_for(object)?;
         let content_index = u64_field(object, "content_index")?;
-        if state.kind != "message" || state.done || !state.content.insert(content_index) {
+        if state.kind != wire::KIND_MESSAGE || state.done || !state.content.insert(content_index) {
             return Err(lifecycle("Responses content part identity was reused"));
         }
         Ok(())

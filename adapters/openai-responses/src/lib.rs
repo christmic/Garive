@@ -11,6 +11,7 @@ mod request;
 mod response;
 mod sse;
 mod stream;
+mod wire;
 
 pub use config::{Header, HttpRequest, ResponsesAdapter, ResponsesAdapterConfig};
 pub use error::ResponsesAdapterError;

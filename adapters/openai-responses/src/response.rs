@@ -1,6 +1,6 @@
 //! Ordinary response, usage, and protocol error envelopes.
 
-use crate::{Header, ResponseOutputItem, ResponsesAdapter, ResponsesAdapterError};
+use crate::{wire, Header, ResponseOutputItem, ResponsesAdapter, ResponsesAdapterError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -252,10 +252,10 @@ impl ResponsesAdapter {
 fn require_json_media(headers: &[Header]) -> Result<(), ResponsesAdapterError> {
     let media = headers
         .iter()
-        .find(|header| header.name() == "content-type")
+        .find(|header| header.name() == wire::HEADER_CONTENT_TYPE)
         .map(Header::value)
-        .unwrap_or("application/json");
-    if media.split(';').next() == Some("application/json") {
+        .unwrap_or(wire::MEDIA_JSON);
+    if media.split(';').next() == Some(wire::MEDIA_JSON) {
         Ok(())
     } else {
         Err(ResponsesAdapterError::InvalidMediaType)

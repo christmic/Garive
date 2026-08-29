@@ -1,6 +1,6 @@
 //! Typed portable output-item and content discriminators.
 
-use crate::ItemStatus;
+use crate::{wire, ItemStatus};
 use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
@@ -21,7 +21,10 @@ impl ProtocolExtension {
         if discriminator.is_empty() {
             return Err("Responses extension discriminator must not be empty");
         }
-        object.insert("type".into(), Value::String(discriminator.clone()));
+        object.insert(
+            wire::FIELD_TYPE.into(),
+            Value::String(discriminator.clone()),
+        );
         Ok(Self {
             discriminator,
             object,
@@ -70,17 +73,17 @@ impl<'de> Deserialize<'de> for ResponseOutputItem {
             .as_object()
             .ok_or_else(|| D::Error::custom("Responses output item must be an object"))?;
         let kind = object
-            .get("type")
+            .get(wire::FIELD_TYPE)
             .and_then(Value::as_str)
             .ok_or_else(|| D::Error::custom("Responses output item requires type"))?;
         match kind {
-            "message" => serde_json::from_value(value)
+            wire::KIND_MESSAGE => serde_json::from_value(value)
                 .map(Self::Message)
                 .map_err(D::Error::custom),
-            "function_call" => serde_json::from_value(value)
+            wire::KIND_FUNCTION_CALL => serde_json::from_value(value)
                 .map(Self::FunctionCall)
                 .map_err(D::Error::custom),
-            "reasoning" => serde_json::from_value(value)
+            wire::KIND_REASONING => serde_json::from_value(value)
                 .map(Self::Reasoning)
                 .map_err(D::Error::custom),
             _ => ProtocolExtension::new(kind, object.clone())
@@ -229,14 +232,14 @@ impl<'de> Deserialize<'de> for OutputContent {
             .as_object()
             .ok_or_else(|| D::Error::custom("Responses content must be an object"))?;
         let kind = object
-            .get("type")
+            .get(wire::FIELD_TYPE)
             .and_then(Value::as_str)
             .ok_or_else(|| D::Error::custom("Responses content requires type"))?;
         match kind {
-            "output_text" => serde_json::from_value(value)
+            wire::KIND_OUTPUT_TEXT => serde_json::from_value(value)
                 .map(Self::OutputText)
                 .map_err(D::Error::custom),
-            "refusal" => serde_json::from_value(value)
+            wire::KIND_REFUSAL => serde_json::from_value(value)
                 .map(Self::Refusal)
                 .map_err(D::Error::custom),
             _ => ProtocolExtension::new(kind, object.clone())

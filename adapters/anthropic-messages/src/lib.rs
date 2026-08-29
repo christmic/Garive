@@ -9,6 +9,7 @@ mod request;
 mod response;
 mod sse;
 mod stream;
+mod wire;
 
 pub use config::{Header, HttpRequest, MessagesAdapter, MessagesAdapterConfig};
 pub use error::MessagesAdapterError;

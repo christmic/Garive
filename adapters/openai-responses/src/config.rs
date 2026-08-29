@@ -1,6 +1,6 @@
 //! Explicit endpoint and header construction for one protocol exchange.
 
-use crate::ResponsesAdapterError;
+use crate::{wire, ResponsesAdapterError};
 use http::{header::HeaderName, uri::Scheme, HeaderValue, Uri};
 use std::fmt;
 
@@ -91,7 +91,10 @@ impl ResponsesAdapterConfig {
         }
         let mut names = std::collections::BTreeSet::new();
         if headers.iter().any(|header| {
-            matches!(header.name(), "content-type" | "accept") || !names.insert(header.name())
+            matches!(
+                header.name(),
+                wire::HEADER_CONTENT_TYPE | wire::HEADER_ACCEPT
+            ) || !names.insert(header.name())
         }) {
             return Err(ResponsesAdapterError::InvalidHeader);
         }
@@ -129,16 +132,16 @@ impl ResponsesAdapter {
     pub(crate) fn build_request(&self, body: Vec<u8>, stream: bool) -> HttpRequest {
         let mut headers = self.config.headers.clone();
         headers.push(Header {
-            name: "content-type".into(),
-            value: "application/json".into(),
+            name: wire::HEADER_CONTENT_TYPE.into(),
+            value: wire::MEDIA_JSON.into(),
             sensitive: false,
         });
         headers.push(Header {
-            name: "accept".into(),
+            name: wire::HEADER_ACCEPT.into(),
             value: if stream {
-                "text/event-stream".into()
+                wire::MEDIA_SSE.into()
             } else {
-                "application/json".into()
+                wire::MEDIA_JSON.into()
             },
             sensitive: false,
         });
@@ -161,7 +164,7 @@ pub struct HttpRequest {
 impl HttpRequest {
     /// Returns the required HTTP method.
     pub fn method(&self) -> &'static str {
-        "POST"
+        wire::METHOD_POST
     }
 
     /// Returns the configured absolute URI.
