@@ -174,7 +174,9 @@ internal suspend fun executeKernel(
                             AgentOutcome.Failed(AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE),
                         )
                     }
-                    when (val step = governToolIntents(outcome.items, catalog, effects, ports, throughPosition)) {
+                    when (val step = governToolIntents(
+                        outcome.items, catalog, effects, ports, requestId, throughPosition,
+                    )) {
                         is ToolStep.Continue -> {
                             throughPosition = step.position
                             continue
@@ -286,6 +288,7 @@ private suspend fun governToolIntents(
     catalog: ToolCatalog,
     effects: GovernedEffectPort,
     ports: AgentExecutionPorts,
+    sourceModelRequestId: String,
     initialPosition: ULong,
 ): ToolStep {
     var position = initialPosition
@@ -294,8 +297,8 @@ private suspend fun governToolIntents(
         if (ports.cancellation.isCancelled()) return ToolStep.Terminal(AgentOutcome.Stopped(StopReason.CANCELLED))
         val intent = ToolIntent(item.modelCallId, item.toolName, item.argumentsJson)
         val committed = when (val prepared = catalog.prepare(intent)) {
-            is ToolContractResult.Success -> effects.invoke(prepared.value)
-            is ToolContractResult.Failure -> effects.reject(intent, prepared.error)
+            is ToolContractResult.Success -> effects.invoke(sourceModelRequestId, prepared.value)
+            is ToolContractResult.Failure -> effects.reject(sourceModelRequestId, intent, prepared.error)
         }.getOrElse {
             return ToolStep.Terminal(AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }

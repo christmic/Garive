@@ -218,7 +218,9 @@ proven-safe retries within the same logical request and never rewrite intent.
 
 The C3 `execute_model_only` entry remains an explicit no-tool capability. The
 C5 `execute_agent` entry receives the full exact C4 definitions plus a
-`GovernedEffectPort`; it never treats a model Tool Intent as an automatic
+`GovernedEffectPort`; each call carries the source `ModelRequestId` required by
+the durable fact binding. The port is single-owner mutable because one Runtime
+writer advances one Session ledger. Core never treats a model Tool Intent as an automatic
 failure merely because the earlier C3 slice had no effect port.
 
 Every governed port result includes the latest committed Session position.

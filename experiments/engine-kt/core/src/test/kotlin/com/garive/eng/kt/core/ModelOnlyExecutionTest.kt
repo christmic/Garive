@@ -233,6 +233,7 @@ class ModelOnlyExecutionTest {
         var rejections = 0
 
         override suspend fun reject(
+            sourceModelRequestId: String,
             intent: ToolIntent,
             error: PreparationError,
         ): Result<CommittedGovernedResult> {
@@ -240,7 +241,10 @@ class ModelOnlyExecutionTest {
             return Result.success(committed(intent, error))
         }
 
-        override suspend fun invoke(prepared: PreparedToolCall): Result<CommittedGovernedResult> {
+        override suspend fun invoke(
+            sourceModelRequestId: String,
+            prepared: PreparedToolCall,
+        ): Result<CommittedGovernedResult> {
             invocations += 1
             return Result.success(
                 committed(

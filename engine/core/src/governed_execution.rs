@@ -29,16 +29,21 @@ pub type GovernedEffectFuture<'a> =
     Pin<Box<dyn Future<Output = Result<CommittedGovernedResult, PortFailure>> + Send + 'a>>;
 
 /// Runtime-owned durable authority/execution boundary used by the Agent loop.
-pub trait GovernedEffectPort: Send + Sync {
+pub trait GovernedEffectPort: Send {
     /// Commits a C4 preparation rejection before returning model feedback.
     fn reject<'a>(
-        &'a self,
+        &'a mut self,
+        source_model_request_id: &'a str,
         intent: &'a ToolIntent,
         error: &'a PreparationError,
     ) -> GovernedEffectFuture<'a>;
 
     /// Allocates, authorizes and executes or suspends one Prepared Call.
-    fn invoke<'a>(&'a self, prepared: &'a PreparedToolCall) -> GovernedEffectFuture<'a>;
+    fn invoke<'a>(
+        &'a mut self,
+        source_model_request_id: &'a str,
+        prepared: &'a PreparedToolCall,
+    ) -> GovernedEffectFuture<'a>;
 }
 
 /// Runs the C0-C5 tool-capable bounded Agent loop.
@@ -46,7 +51,7 @@ pub async fn execute_agent(
     request: &AgentTurnRequest,
     capabilities: &AgentToolCapabilities,
     ports: &mut AgentExecutionPorts<'_>,
-    effects: &dyn GovernedEffectPort,
+    effects: &mut dyn GovernedEffectPort,
 ) -> ExecutionReport {
     crate::model_only::execute_with_tools(request, ports, &capabilities.definitions, effects).await
 }

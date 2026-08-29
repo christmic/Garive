@@ -34,7 +34,7 @@ pub(crate) async fn execute_with_tools(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
     definitions: &[ToolDefinition],
-    effects: &dyn crate::GovernedEffectPort,
+    effects: &mut dyn crate::GovernedEffectPort,
 ) -> ExecutionReport {
     execute_kernel(request, ports, definitions, Some(effects)).await
 }
@@ -43,7 +43,7 @@ async fn execute_kernel(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
     definitions: &[ToolDefinition],
-    effects: Option<&dyn crate::GovernedEffectPort>,
+    mut effects: Option<&mut dyn crate::GovernedEffectPort>,
 ) -> ExecutionReport {
     let mut control = match prepare_control(request) {
         Ok(control) => control,
@@ -253,7 +253,7 @@ async fn execute_kernel(
             ports,
             request,
             AgentEventKind::ModelRequestPrepared {
-                request_id,
+                request_id: request_id.clone(),
                 target_id: model_request.target_id.as_str().into(),
             },
         )
@@ -342,7 +342,7 @@ async fn execute_kernel(
                     .iter()
                     .any(|item| matches!(item, ModelItem::ToolIntent { .. }))
                 {
-                    let Some(effects) = effects else {
+                    let Some(effects) = effects.as_deref_mut() else {
                         return finish(
                             request,
                             ports,
@@ -357,6 +357,7 @@ async fn execute_kernel(
                         &items,
                         &catalog,
                         effects,
+                        &request_id,
                         ports.cancellation,
                         through_position,
                     )
@@ -533,7 +534,8 @@ enum ToolStep {
 async fn govern_tool_intents(
     items: &[ModelItem],
     catalog: &ToolCatalog,
-    effects: &dyn crate::GovernedEffectPort,
+    effects: &mut dyn crate::GovernedEffectPort,
+    source_model_request_id: &str,
     cancellation: &dyn ModelCancellation,
     mut position: u64,
 ) -> ToolStep {
@@ -553,8 +555,12 @@ async fn govern_tool_intents(
         }
         let intent = ToolIntent::new(model_call_id, tool_name, arguments_json);
         let committed = match catalog.prepare(&intent) {
-            Ok(prepared) => effects.invoke(&prepared).await,
-            Err(error) => effects.reject(&intent, &error).await,
+            Ok(prepared) => effects.invoke(source_model_request_id, &prepared).await,
+            Err(error) => {
+                effects
+                    .reject(source_model_request_id, &intent, &error)
+                    .await
+            }
         };
         let Ok(committed) = committed else {
             return ToolStep::Terminal(AgentOutcome::Failed {

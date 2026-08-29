@@ -82,7 +82,8 @@ struct Effects {
 
 impl GovernedEffectPort for Effects {
     fn reject<'a>(
-        &'a self,
+        &'a mut self,
+        _: &'a str,
         intent: &'a ToolIntent,
         error: &'a PreparationError,
     ) -> GovernedEffectFuture<'a> {
@@ -94,7 +95,7 @@ impl GovernedEffectPort for Effects {
             })
         })
     }
-    fn invoke<'a>(&'a self, _: &'a PreparedToolCall) -> GovernedEffectFuture<'a> {
+    fn invoke<'a>(&'a mut self, _: &'a str, _: &'a PreparedToolCall) -> GovernedEffectFuture<'a> {
         Box::pin(async move {
             Ok(CommittedGovernedResult {
                 result: self.result.clone(),
@@ -230,7 +231,7 @@ fn run(
         outcomes: Mutex::new(VecDeque::from([first, text_outcome()])),
         tool_counts: Mutex::new(vec![]),
     };
-    let effects = Effects {
+    let mut effects = Effects {
         result: effect,
         position,
     };
@@ -248,7 +249,7 @@ fn run(
             definitions: vec![tool()],
         },
         &mut ports,
-        &effects,
+        &mut effects,
     ));
     (
         report,

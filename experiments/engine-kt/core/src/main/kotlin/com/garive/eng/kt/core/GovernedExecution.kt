@@ -18,10 +18,17 @@ public data class CommittedGovernedResult(
 /** Runtime-owned durable authority and execution boundary used by the Agent loop. */
 public interface GovernedEffectPort {
     /** Commits a C4 preparation rejection before returning model feedback. */
-    public suspend fun reject(intent: ToolIntent, error: PreparationError): Result<CommittedGovernedResult>
+    public suspend fun reject(
+        sourceModelRequestId: String,
+        intent: ToolIntent,
+        error: PreparationError,
+    ): Result<CommittedGovernedResult>
 
     /** Allocates, authorizes, and executes or suspends one prepared call. */
-    public suspend fun invoke(prepared: PreparedToolCall): Result<CommittedGovernedResult>
+    public suspend fun invoke(
+        sourceModelRequestId: String,
+        prepared: PreparedToolCall,
+    ): Result<CommittedGovernedResult>
 }
 
 /** Runs the C0-C5 tool-capable bounded Agent loop. */
