@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "contract": "anthropic-token-count",
+  "sdk": {
+    "name": "anthropic-sdk-python",
+    "version": "0.121.0",
+    "revision": "009b035305e0724ce108ebd796935f91711fc6e1"
+  },
+  "profile": {
+    "default_endpoint": "https://api.anthropic.com/v1/messages/count_tokens",
+    "version_header": "anthropic-version",
+    "protocol_version": "2023-06-01"
+  },
+  "projection_cases": [
+    {
+      "name": "complete-portable-request",
+      "create_request": {
+        "model": "fixture-model-v1",
+        "max_tokens": 4096,
+        "messages": [
+          {"role": "user", "content": [{"type": "text", "text": "Inspect the ledger."}]},
+          {"role": "assistant", "content": [{"type": "text", "text": "I will inspect it."}]}
+        ],
+        "stream": true,
+        "system": [{"type": "text", "text": "Use committed facts only."}],
+        "stop_sequences": ["STOP"],
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "top_k": 20,
+        "tools": [{
+          "name": "read_ledger",
+          "description": "Read committed ledger facts",
+          "input_schema": {"type": "object", "properties": {}, "required": []},
+          "strict": true
+        }],
+        "tool_choice": {"type": "auto"},
+        "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}},
+        "thinking": {"type": "enabled", "budget_tokens": 1024},
+        "metadata": {"user_id": "fixture-user"}
+      },
+      "expected_count_request": {
+        "model": "fixture-model-v1",
+        "messages": [
+          {"role": "user", "content": [{"type": "text", "text": "Inspect the ledger."}]},
+          {"role": "assistant", "content": [{"type": "text", "text": "I will inspect it."}]}
+        ],
+        "system": [{"type": "text", "text": "Use committed facts only."}],
+        "tools": [{
+          "name": "read_ledger",
+          "description": "Read committed ledger facts",
+          "input_schema": {"type": "object", "properties": {}, "required": []},
+          "strict": true
+        }],
+        "tool_choice": {"type": "auto"},
+        "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}},
+        "thinking": {"type": "enabled", "budget_tokens": 1024}
+      }
+    }
+  ],
+  "response_cases": [
+    {"name": "success", "body": {"input_tokens": 2095}, "expected": 2095}
+  ],
+  "failure_cases": [
+    {"name": "request-extension", "code": "unsupported_extension"},
+    {"name": "response-zero", "body": {"input_tokens": 0}, "code": "invalid_response"},
+    {"name": "response-unknown", "body": {"input_tokens": 12, "extra": true}, "code": "invalid_response"},
+    {"name": "response-missing", "body": {}, "code": "invalid_response"},
+    {"name": "explicit-relative-endpoint", "code": "invalid_endpoint"},
+    {"name": "reserved-version-header", "code": "reserved_header"}
+  ]
+}

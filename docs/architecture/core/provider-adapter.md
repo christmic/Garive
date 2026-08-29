@@ -145,6 +145,14 @@ The portable profile includes:
 Server tools, hosted web/file/code execution, containers, batches, token-count
 endpoints, cloud-provider variants, and beta endpoints are extensions.
 
+An extension may still reuse portable protocol values without becoming part of
+the portable adapter. For example, an official vendor token-count capability
+can project an already mapped Messages request into its smaller documented
+request, while its vendor profile owns the distinct endpoint. Runtime still
+owns credentials and HTTP execution. This keeps exact counting available to
+evidence tooling without claiming that every Messages-compatible deployment
+implements the vendor endpoint.
+
 ### Extensions
 
 An unknown or excluded discriminator decodes as a typed `Extension` containing
