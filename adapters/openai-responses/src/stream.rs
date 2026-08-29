@@ -115,10 +115,7 @@ impl ResponsesStreamDecoder {
                     "Responses event preceded response.created",
                 ));
             }
-            PortableEventKind::Completed
-            | PortableEventKind::Failed
-            | PortableEventKind::Incomplete
-            | PortableEventKind::Error => {
+            PortableEventKind::Completed => {
                 if self.items.values().any(|item| !item.done) {
                     return Err(ResponsesAdapterError::InvalidLifecycle(
                         "Responses terminal has an open output item",
@@ -126,6 +123,9 @@ impl ResponsesStreamDecoder {
                 }
                 self.terminal = true;
             }
+            PortableEventKind::Failed
+            | PortableEventKind::Incomplete
+            | PortableEventKind::Error => self.terminal = true,
             PortableEventKind::OutputItemAdded => self.add_item(object)?,
             PortableEventKind::OutputItemDone => self.finish_item(object)?,
             PortableEventKind::ContentPartAdded => self.add_content(object)?,
