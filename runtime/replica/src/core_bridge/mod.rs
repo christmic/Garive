@@ -11,6 +11,7 @@ mod knowledge_recovery;
 mod memory_authority;
 mod memory_hypothesis;
 mod memory_hypothesis_recovery;
+mod memory_maintenance;
 mod memory_recovery;
 mod memory_retrieval;
 mod memory_write;
@@ -55,6 +56,11 @@ pub use memory_hypothesis::{
 };
 pub use memory_hypothesis_recovery::{
     reconstruct_memory_hypothesis_projection, MemoryHypothesisProjection, RecordedMemoryRecall,
+};
+pub use memory_maintenance::{
+    plan_memory_audit, plan_memory_distillation_checkpoint, plan_memory_erasure_receipt,
+    plan_memory_forget, plan_memory_maintenance_decision, plan_memory_promotion_receipt,
+    plan_memory_promotion_request, MemoryMaintenanceContext, PlannedMemoryPromotion,
 };
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};
 pub use memory_retrieval::{plan_memory_retrieval, MemoryRetrievalContext, PlannedMemoryRetrieval};
