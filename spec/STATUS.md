@@ -36,11 +36,11 @@ planned without reopening a narrower completed row.
 | C3 | Bounded model-only execution | accepted | accepted | documented | implemented | verified | done | Keep the explicit no-tool boundary and model-only scenarios green. |
 | C4 | Tool resolution and prepared calls | accepted | accepted | documented | implemented | verified | done | Keep Portable Tool Schema, canonical digest, native tests, and shared fixtures green. |
 | C5 | Governed effects and observations | accepted | accepted | documented | implemented | verified | done | Keep preparation, authority, interaction, receipt, observation, recovery, and fake-Runtime ordering evidence green. |
-| C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | partial | partial | active | Implement coordinated L0 facts, Runtime command mapping, disposable-execution recovery, and native restart matrices. |
+| C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | implemented | verified | done | Keep command mapping, governed execution, fixed-prefix query, leases, cancellation, continuation/reconciliation, and native restart matrices green. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Record a C3/C6 baseline before accepting thresholds or algorithms. |
-| L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | partial | partial | active | Implement and verify the accepted C6 recovery facts and `execution.abandoned` transition. |
-| L1-R | SQLite Ledger adapter | accepted | accepted | partial | implemented | partial | active | Add migration/backup policy and the remaining process-boundary fault matrix. |
-| L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | partial | active | Complete the remaining process-boundary and concurrency fault matrix. |
+| L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | verified | done | Keep exact C6 payloads, lifecycle ownership, iteration/abandon transitions, and shared Rust/Kotlin matrices green. |
+| L1-R | SQLite Ledger adapter | accepted | accepted | documented | implemented | verified | done | Keep v1→v2/future-schema gates, leased writes, file restart matrix, and all shared ledger scenarios green. |
+| L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | verified | done | Keep real PostgreSQL shared scenarios, writer-race normalization, migration refusal, and admitted recovery-host subset green. |
 
 ## Protocols, Providers, Host, and clients
 
