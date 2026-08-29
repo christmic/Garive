@@ -86,9 +86,10 @@ only from committed facts. R1 never invents replayable token deltas.
 
 Startup discovers Open Turns from SQLite and applies the accepted C6 recovery
 classifier before dispatch. It never blindly repeats an uncertain model
-attempt. A Turn containing only its start transaction may reuse its exact
-Execution. Shutdown stops admission, performs an explicitly bounded drain and
-leaves unfinished durable work discoverable on restart.
+attempt. Even when only the start transaction exists, restart cannot prove that
+the lost process did no work: C6 atomically abandons that Execution and creates
+a replacement before it is queued. Shutdown stops admission, performs an
+explicitly bounded drain and leaves unfinished durable work discoverable.
 
 ## Stable local failures
 

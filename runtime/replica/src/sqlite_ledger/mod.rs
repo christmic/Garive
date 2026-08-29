@@ -66,6 +66,23 @@ impl SqliteLedger {
         Ok(Self { connection })
     }
 
+    /// Lists verified durable Session identities in lexical order.
+    pub fn list_sessions(&self) -> Result<Vec<SessionId>, SqliteLedgerError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT session_id FROM ledger_sessions ORDER BY session_id")?;
+        let sessions = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .map(|value| {
+                value.map_err(SqliteLedgerError::Storage).and_then(|value| {
+                    SessionId::try_from(value.as_str())
+                        .map_err(|_| SqliteLedgerError::InvalidStoredValue("session_id"))
+                })
+            })
+            .collect();
+        sessions
+    }
+
     /// Atomically validates and appends one portable fact batch.
     ///
     /// Uses an immediate transaction so version comparison, contiguous position

@@ -8,7 +8,7 @@ use garive_core::{
     AgentInstanceId as CoreAgentInstanceId, AgentTurnRequest, ContextItem, ContextPort,
     ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
     ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, ModelOnlyLimits, ModelRecoveryPolicy,
-    SessionId as CoreSessionId, TurnId as CoreTurnId,
+    ResumeInput, SessionId as CoreSessionId, TurnId as CoreTurnId,
 };
 use garive_ledger::DurableFact;
 use garive_llm::{
@@ -152,11 +152,14 @@ pub fn reconstruct_local_start(
         || opened_payload["definition_revision"] != started_payload["definition_revision"]
         || opened_payload["snapshot_digest"] != started_payload["snapshot_digest"]
         || execution_payload["snapshot_digest"] != started_payload["snapshot_digest"]
-        || execution_payload["completed_iterations"] != 0
-        || execution_payload["recovery_ordinal"] != 0
     {
         return Err(LocalReconstructionError::ReconstructionFailed);
     }
+    let completed_iterations =
+        u32::try_from(number(&execution_payload, &["completed_iterations"])?)
+            .map_err(|_| LocalReconstructionError::ReconstructionFailed)?;
+    let recovery_ordinal = number(&execution_payload, &["recovery_ordinal"])?;
+    let last_safe_position = number(&execution_payload, &["through_position"])?;
     let max_iterations = number(&execution_payload, &["limits", "max_iterations"])?;
     let max_iterations = u32::try_from(max_iterations)
         .ok()
@@ -204,12 +207,22 @@ pub fn reconstruct_local_start(
             &started_payload,
             "definition_revision",
         )?)?,
-        entry: AgentEntry::Start {
-            trusted_input: trusted_input.to_owned(),
+        entry: if recovery_ordinal == 0 {
+            AgentEntry::Start {
+                trusted_input: trusted_input.to_owned(),
+            }
+        } else {
+            AgentEntry::Continue {
+                resume_input: ResumeInput::ResourceReady,
+            }
         },
         cursor: AgentCursor {
-            completed_iterations: 0,
-            last_durable_position: 0,
+            completed_iterations,
+            last_durable_position: if recovery_ordinal == 0 {
+                0
+            } else {
+                last_safe_position
+            },
         },
         context_request: ContextRequest {
             session_id: committed.session_id.as_str().to_owned(),

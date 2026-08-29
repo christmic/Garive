@@ -13,9 +13,10 @@ use garive_llm::{
     TokenCount, UsageSource,
 };
 use garive_runtime::{
-    local_dispatch_queue, CommittedTurn, EffectiveRuntimeLimits, HostClock, InstalledAgent,
-    LiveHost, LiveHostLimits, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
-    LocalWorkerDisposition, LocalWorkerError,
+    local_dispatch_queue, recover_local_dispatches, CommittedTurn, EffectiveRuntimeLimits,
+    HostClock, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, LocalWorkerError,
+    SqliteLedger,
 };
 use tempfile::tempdir;
 
@@ -168,6 +169,73 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
     assert_eq!(
         queue.try_run_next(&worker, &attempt()).await,
         Err(LocalWorkerError::QueueEmpty)
+    );
+}
+
+#[tokio::test]
+async fn restart_abandons_unproven_execution_before_dispatch() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("garive.db");
+    let (dispatcher, queue) = local_dispatch_queue(1).expect("queue");
+    drop(queue);
+    let host = LiveHost::new(
+        &database,
+        InstalledAgent {
+            definition_id: "definition-main".into(),
+            definition_revision: "revision-1".into(),
+            snapshot_digest: "a".repeat(64),
+            agent_instance_namespace: "local-main".into(),
+            runtime_limits: EffectiveRuntimeLimits {
+                max_iterations: 2,
+                max_input_tokens: Some(20),
+                max_output_tokens: Some(10),
+                deadline_budget_ms: None,
+            },
+        },
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+        },
+        Arc::new(Clock),
+        dispatcher,
+    )
+    .expect("host");
+    let session = host
+        .create_session("create-restart", "definition-main")
+        .expect("session");
+    let original = host
+        .start_turn("start-restart", &session.session_id, "recover me")
+        .expect("commit survives dispatch rejection");
+    let mut ledger = SqliteLedger::open(&database).expect("restart ledger");
+    let recovered =
+        recover_local_dispatches(&mut ledger, 3, "2026-08-29T00:00:02Z").expect("recovery plan");
+    assert_eq!(recovered.len(), 1);
+    assert_ne!(recovered[0].execution_id.as_str(), original.execution_id);
+    assert_eq!(recovered[0].session_version, 3);
+    let kinds: Vec<_> = ledger
+        .load_turn(&recovered[0].turn_id)
+        .expect("turn snapshot")
+        .facts
+        .iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect();
+    assert_eq!(kinds[3..], ["execution.abandoned", "execution.started"]);
+    drop(ledger);
+
+    let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
+    let worker = LocalExecutionWorker::new(&database, policy(), model.clone()).expect("worker");
+    assert!(matches!(
+        worker.execute(&recovered[0], &attempt()).await,
+        Ok(LocalWorkerDisposition::TerminalCommitted { .. })
+    ));
+    assert_eq!(model.0.load(Ordering::SeqCst), 1);
+    let page = host
+        .read_event_page(&session.session_id, 0)
+        .expect("terminal events");
+    assert_eq!(
+        page.events.last().expect("terminal").event,
+        "turn.completed"
     );
 }
 
