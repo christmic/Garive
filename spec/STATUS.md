@@ -45,8 +45,8 @@ planned without reopening a narrower completed row.
 
 | ID | Slice | Design | Spec | API | Code | Tests | State | Next evidence |
 |---|---|---|---|---|---|---|---|---|
-| P1-O | Responses-compatible protocol adapters | accepted | accepted | partial | partial | partial | active | Complete the Rust/Kotlin portable type matrix and negative fixture parity; keep incremental SSE and boundary gates green. |
-| P1-A | Messages-compatible protocol adapters | accepted | accepted | partial | partial | partial | active | Complete the Rust/Kotlin portable block/delta matrix and negative fixture parity; keep incremental SSE and boundary gates green. |
+| P1-O | Responses-compatible protocol adapters | accepted | accepted | documented | implemented | verified | done | Keep shared request/response/error/SSE fixtures, exact event catalogues, strict native builds, and adapter boundary gates green. |
+| P1-A | Messages-compatible protocol adapters | accepted | accepted | documented | implemented | verified | done | Keep shared request/response/error/SSE fixtures, block/delta lifecycle matrices, strict native builds, and adapter boundary gates green. |
 | P2-C | Compatible deployment Provider mapping | accepted | missing | missing | missing | missing | planned | Specify neutral request/outcome mapping, capability admission, and error policy separately from protocol codecs. |
 | P2-V | Vendor-specific Provider profiles | accepted | missing | missing | missing | missing | planned | Admit hosted APIs, default endpoints, credentials, and vendor capabilities only after P2-C. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
