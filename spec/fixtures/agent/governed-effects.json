@@ -68,15 +68,27 @@
     "response_schema": {"type": "boolean"},
     "expiry_policy": "turn_bound"
   },
-  "receipt": {
-    "receipt_id": "receipt-1",
-    "invocation_id": "invocation-1",
-    "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
-    "grant_id": "grant-1",
-    "executor_id": "local.read",
-    "executor_revision": "4",
-    "terminal_classification": "completed",
-    "result_digest": "result-v1"
+  "receipts": {
+    "completed": {
+      "receipt_id": "receipt-1",
+      "invocation_id": "invocation-1",
+      "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+      "grant_id": "grant-1",
+      "executor_id": "local.read",
+      "executor_revision": "4",
+      "terminal_classification": "completed",
+      "result_digest": "result-v1"
+    },
+    "failed": {
+      "receipt_id": "receipt-2",
+      "invocation_id": "invocation-1",
+      "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+      "grant_id": "grant-1",
+      "executor_id": "local.read",
+      "executor_revision": "4",
+      "terminal_classification": "failed",
+      "result_digest": "failure-v1"
+    }
   },
   "scenarios": [
     {
@@ -84,7 +96,7 @@
       "operations": [
         {"kind": "approve", "grant": "good"},
         {"kind": "started", "dispatch_attempt_id": "dispatch-1"},
-        {"kind": "completed", "receipt": "base", "content": {"text": "hello"}, "truncated": false}
+        {"kind": "completed", "receipt": "completed", "content": {"text": "hello"}, "truncated": false}
       ],
       "expected": {
         "actions": ["authorize", "dispatch", "observation_succeeded"],
@@ -110,7 +122,7 @@
         {"kind": "interaction_resolved", "response": true},
         {"kind": "approve", "grant": "good"},
         {"kind": "started", "dispatch_attempt_id": "dispatch-1"},
-        {"kind": "completed", "receipt": "base", "content": {"ok": true}, "truncated": false}
+        {"kind": "completed", "receipt": "completed", "content": {"ok": true}, "truncated": false}
       ],
       "expected": {"actions": ["authorize", "suspend_approval", "authorize", "dispatch", "observation_succeeded"], "execution_command_count": 1, "final_state": "completed", "observation": {"status": "succeeded", "content": {"ok": true}, "truncated": false}}
     },
@@ -126,7 +138,7 @@
     },
     {
       "name": "started-failed-with-receipt",
-      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "failed", "receipt": "base", "code": "read_failed", "details": "File unavailable."}],
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "failed", "receipt": "failed", "code": "read_failed", "details": "File unavailable."}],
       "expected": {"actions": ["authorize", "dispatch", "observation_failed"], "execution_command_count": 1, "final_state": "failed", "observation": {"status": "failed", "code": "read_failed", "details": "File unavailable."}}
     },
     {
