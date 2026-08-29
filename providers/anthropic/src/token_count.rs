@@ -1,9 +1,13 @@
-use std::num::NonZeroU64;
+use std::{fmt, num::NonZeroU64};
 
 use garive_anthropic_messages::{
-    CreateMessageRequest, Message, OutputConfig, SystemPrompt, ThinkingConfig, Tool, ToolChoice,
+    CreateMessageRequest, Header, Message, OutputConfig, SystemPrompt, ThinkingConfig, Tool,
+    ToolChoice,
 };
+use garive_provider_profile::{ConnectionInput, VendorProfileError};
 use serde::{Deserialize, Serialize};
+
+use crate::constants;
 
 /// Stable failure for the exact token-count capability.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +53,129 @@ pub struct CountTokensRequest {
     /// Extended-thinking configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+}
+
+/// Explicit official connection profile for one token-count exchange.
+#[derive(Clone, Eq, PartialEq)]
+pub struct AnthropicTokenCountProfile {
+    endpoint: String,
+    headers: Vec<Header>,
+}
+
+impl AnthropicTokenCountProfile {
+    /// Returns the immutable endpoint selected by Runtime configuration.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// Returns the ordered explicit and protocol-required headers.
+    pub fn headers(&self) -> &[Header] {
+        &self.headers
+    }
+
+    /// Encodes one already projected request without executing HTTP.
+    pub fn prepare(
+        &self,
+        request: &CountTokensRequest,
+    ) -> Result<TokenCountHttpRequest, AnthropicTokenCountError> {
+        let body =
+            serde_json::to_vec(request).map_err(|_| AnthropicTokenCountError::InvalidRequest)?;
+        Ok(TokenCountHttpRequest {
+            uri: self.endpoint.clone(),
+            headers: self.headers.clone(),
+            body,
+        })
+    }
+}
+
+impl fmt::Debug for AnthropicTokenCountProfile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AnthropicTokenCountProfile")
+            .field("endpoint", &self.endpoint)
+            .field("headers", &self.headers)
+            .finish()
+    }
+}
+
+/// Builds the vendor capability only from explicit Runtime-supplied values.
+pub fn build_token_count_profile(
+    input: &ConnectionInput,
+) -> Result<AnthropicTokenCountProfile, VendorProfileError> {
+    let resolved = input.resolve(
+        constants::TOKEN_COUNT_DEFAULT_ENDPOINT,
+        constants::RESERVED_HEADERS,
+    )?;
+    let mut headers = resolved
+        .extra_headers()
+        .iter()
+        .map(|header| Header::new(header.name(), header.value(), header.is_sensitive()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| VendorProfileError::ProfileInvariant)?;
+    for (name, value, sensitive) in [
+        (
+            constants::API_KEY,
+            resolved.credential().expose_secret(),
+            true,
+        ),
+        (
+            constants::VERSION_HEADER,
+            constants::PROTOCOL_VERSION,
+            false,
+        ),
+        (constants::CONTENT_TYPE, constants::MEDIA_JSON, false),
+        (constants::ACCEPT, constants::MEDIA_JSON, false),
+    ] {
+        headers.push(
+            Header::new(name, value, sensitive)
+                .map_err(|_| VendorProfileError::ProfileInvariant)?,
+        );
+    }
+    Ok(AnthropicTokenCountProfile {
+        endpoint: resolved.endpoint().to_owned(),
+        headers,
+    })
+}
+
+/// Fully described vendor token-count HTTP request for Runtime transport.
+#[derive(Clone, Eq, PartialEq)]
+pub struct TokenCountHttpRequest {
+    uri: String,
+    headers: Vec<Header>,
+    body: Vec<u8>,
+}
+
+impl TokenCountHttpRequest {
+    /// Returns the required HTTP method.
+    pub const fn method(&self) -> &'static str {
+        constants::METHOD_POST
+    }
+
+    /// Returns the explicit absolute endpoint.
+    pub fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    /// Returns the ordered headers, including redacted sensitive values.
+    pub fn headers(&self) -> &[Header] {
+        &self.headers
+    }
+
+    /// Returns the exact encoded request body.
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+}
+
+impl fmt::Debug for TokenCountHttpRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TokenCountHttpRequest")
+            .field("uri", &self.uri)
+            .field("headers", &self.headers)
+            .field("body_length", &self.body.len())
+            .finish()
+    }
 }
 
 /// Projects one validated portable create request without generation-only fields.

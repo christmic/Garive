@@ -12,8 +12,9 @@ use garive_provider_compatible::{ErrorDisposition, ErrorSignature, ProtocolError
 use garive_provider_profile::{ConnectionInput, VendorProfileError};
 
 pub use token_count::{
-    decode_token_count, project_token_count_request, AnthropicTokenCountError, CountTokensRequest,
-    TokenCount,
+    build_token_count_profile, decode_token_count, project_token_count_request,
+    AnthropicTokenCountError, AnthropicTokenCountProfile, CountTokensRequest, TokenCount,
+    TokenCountHttpRequest,
 };
 
 /// Adapter configuration and exact P2-C error policy produced together.
