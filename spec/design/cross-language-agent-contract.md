@@ -3,7 +3,7 @@
 ## Status
 
 Kotlin is admitted as an experimental conformance implementation for portable
-C0-C3. It is not a supported product server. Other Engine capabilities remain
+C0-C4. It is not a supported product server. Other Engine capabilities remain
 outside the experiment until admitted by an amended matrix.
 
 Rust remains the production-first implementation. Neither language defines
@@ -25,7 +25,7 @@ domain models.
 | C2 context derive | supported | experimental | semantic fixtures + property tests |
 | C3 model-only turn | supported | experimental | capability scenarios |
 | D0 definition snapshot | planned | experimental planned | semantic resolution + canonical digest fixtures |
-| C4 prepared call | planned | experimental planned | schema/normalization/digest fixtures |
+| C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
 | C5 governed effect reduction | planned | experimental planned | semantic state scenarios; no Kotlin executor claim |
 | C6 Runtime | production planned | PostgreSQL experiment planned | shared public decisions + independent native crash evidence |
 | C7 compression | planned | not admitted | measured admission decision required |
@@ -135,7 +135,8 @@ items are preserved in order. Cache breakdowns are never double-counted.
 The root gate is `just conformance`:
 
 1. Rust native tests including all shared fixtures;
-2. Kotlin `:core:test` and `:llm:test` including the same fixture files;
+2. Kotlin `:core:test`, `:llm:test`, and `:tools:test` including the same
+   fixture files;
 3. a fixture coverage check proving both runners consumed every declared case.
 
 The gate reports Rust and Kotlin results separately. Success requires both;
@@ -170,7 +171,7 @@ The following do not prove parity:
 
 ## Acceptance
 
-C0-C3 carry an experimental Rust/Kotlin conformance claim only when native
+C0-C4 carry an experimental Rust/Kotlin conformance claim only when native
 tests pass, both consume the same complete fixture set, `just conformance`
 invokes both, and the matrix matches executable reality. This evidence does not
 promote Kotlin into a production Engine or Runtime.
