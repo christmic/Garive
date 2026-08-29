@@ -10,6 +10,7 @@ mod items;
 mod request;
 mod response;
 mod sse;
+mod stream;
 
 pub use config::{Header, HttpRequest, ResponsesAdapter, ResponsesAdapterConfig};
 pub use error::ResponsesAdapterError;
@@ -29,3 +30,4 @@ pub use response::{
     OutputTokenDetails, Response, ResponseError, ResponseObject, ResponseStatus, ResponseUsage,
 };
 pub use sse::{SseDecoder, SseFrame};
+pub use stream::ResponsesStreamDecoder;
