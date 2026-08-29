@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "contract": "scheduler-v1",
+  "intent": {
+    "schedule_id": "schedule-1",
+    "revision_id": "revision-1",
+    "subject": "start_turn",
+    "subject_binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timing": {"kind":"fixed_delay","first_due_at_utc":"2026-08-29T00:00:00Z","delay_ms":1000,"max_occurrences":5},
+    "misfire_policy": "fire_once",
+    "max_lateness_ms": 500,
+    "effective_limits_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "expected_intent_digest": "a56a219ea6cb29ac4a8b8380e0125129c346af93e0eaee46cc13bf1382c01460"
+  },
+  "first_occurrence": {
+    "ordinal": 1,
+    "due_at_utc": "2026-08-29T00:00:00Z",
+    "expected_occurrence_id": "occurrence-3034cab4eefeaa7b82b415a39bf09aa968876ecf625765c6d926532dc6b0963d",
+    "expected_runtime_command_id": "schedule-command-0cd3d375f2d385ca0526d2219dafa346a96527ed8e91e15e62b96d2bcafdf566"
+  },
+  "decision_cases": [
+    {"name":"not-due","policy":"fire_once","last_handled":null,"now":"2026-08-28T23:59:59Z","expected":"not_due"},
+    {"name":"due","policy":"fire_once","last_handled":null,"now":"2026-08-29T00:00:00Z","expected":"due"},
+    {"name":"bounded-fire-once","policy":"fire_once","last_handled":null,"now":"2026-08-29T00:00:03.600Z","expected":"due"},
+    {"name":"bounded-skip","policy":"skip","last_handled":null,"now":"2026-08-29T00:00:03.600Z","expected":"skipped","first_skipped":1,"last_skipped":4,"next_ordinal":5},
+    {"name":"misfire-fail","policy":"fail","last_handled":null,"now":"2026-08-29T00:00:01Z","expected":"fail_misfire"},
+    {"name":"exhausted","policy":"fire_once","last_handled":5,"now":"2026-08-29T00:00:10Z","expected":"exhausted"}
+  ],
+  "invalid_cases": ["zero_delay","zero_lateness","invalid_clock","occurrence_overflow"]
+}
