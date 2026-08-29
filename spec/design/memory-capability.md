@@ -198,6 +198,12 @@ Diagnostic text and retrieval scores are not compatibility keys.
 - conflicting proposal/revision tests commit no partial facts;
 - no environment, network, database or embedding dependency in Engine Memory.
 
+Implemented evidence is executable in `engine/memory/tests`, the Kotlin
+`memory` fixture tests, both L0 Runtime-fact suites, and Runtime's
+`memory_write` plus `durable_core_execution` restart tests. The root
+conformance gate includes both portable implementations and the Memory purity
+boundary scan.
+
 ## Meta
 
 - Owner: `@christmic`
