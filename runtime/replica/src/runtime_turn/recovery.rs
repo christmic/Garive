@@ -18,6 +18,8 @@ pub enum ModelRecoveryPosition {
     Prepared,
     /// Provider dispatch was crossed without terminal classification.
     Started,
+    /// Uncertain model dispatch is durably suspended for controlled continuation.
+    Uncertain,
     /// Model lifecycle is terminal.
     Terminal,
 }
@@ -89,7 +91,8 @@ pub fn select_runtime_recovery(snapshot: RuntimeRecoverySnapshot) -> RuntimeReco
     }
     match (snapshot.execution, snapshot.model, snapshot.effect) {
         (Execution::Terminal, _, _) => Action::ReturnCommittedTerminal,
-        (Execution::Suspended, _, Effect::InteractionRequested | Effect::Uncertain) => {
+        (Execution::Suspended, Model::Uncertain, _)
+        | (Execution::Suspended, _, Effect::InteractionRequested | Effect::Uncertain) => {
             Action::AwaitContinuation
         }
         (Execution::Suspended, _, _) => Action::FailCorruptLedger,

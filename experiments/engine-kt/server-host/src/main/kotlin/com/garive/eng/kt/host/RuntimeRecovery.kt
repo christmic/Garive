@@ -4,7 +4,7 @@ package com.garive.eng.kt.host
 public enum class ExecutionRecoveryPosition { ACTIVE, SUSPENDED, TERMINAL }
 
 /** Most advanced model lifecycle position in a lost Execution. */
-public enum class ModelRecoveryPosition { NONE, PREPARED, STARTED, TERMINAL }
+public enum class ModelRecoveryPosition { NONE, PREPARED, STARTED, UNCERTAIN, TERMINAL }
 
 /** Most advanced effect or interaction position in a lost Execution. */
 public enum class EffectRecoveryPosition {
@@ -44,6 +44,9 @@ public fun selectRuntimeRecovery(snapshot: RuntimeRecoverySnapshot): RuntimeReco
     return when {
         snapshot.execution == ExecutionRecoveryPosition.TERMINAL ->
             RuntimeRecoveryAction.RETURN_COMMITTED_TERMINAL
+        snapshot.execution == ExecutionRecoveryPosition.SUSPENDED &&
+            snapshot.model == ModelRecoveryPosition.UNCERTAIN ->
+            RuntimeRecoveryAction.AWAIT_CONTINUATION
         snapshot.execution == ExecutionRecoveryPosition.SUSPENDED &&
             snapshot.effect in setOf(
                 EffectRecoveryPosition.INTERACTION_REQUESTED,

@@ -18,14 +18,21 @@ pub fn plan_recovery_action_facts(
         RuntimeRecoveryAction::ClassifyModelUncertain => {
             let source = latest(snapshot, "model.started")?;
             let payload = payload(source)?;
-            Ok(vec![fact(
+            let uncertain = fact(
                 source,
                 "model.uncertain",
                 json!({
                     "request_digest":text(&payload,"request_digest")?,"reason":"runtime_lost"
                 }),
                 recorded_at,
-            )?])
+            )?;
+            let mut facts = vec![uncertain];
+            facts.extend(suspension_pair(
+                source,
+                "resource_unavailable",
+                recorded_at,
+            )?);
+            Ok(facts)
         }
         RuntimeRecoveryAction::ClassifyEffectUncertain => {
             let source = latest(snapshot, "effect.started")?;
@@ -38,37 +45,13 @@ pub fn plan_recovery_action_facts(
                 }),
                 recorded_at,
             )?;
-            let suspension_id = format!("suspension-{}", digest_text(source.fact_id.as_str()));
-            let continuation = json!({"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""});
-            let usage = json!({"input_tokens":{"kind":"unknown"},"output_tokens":{"kind":"unknown"},"source":"estimated"});
-            let mut execution = fact(
+            let mut facts = vec![uncertain];
+            facts.extend(suspension_pair(
                 source,
-                "execution.suspended",
-                json!({
-                    "suspension_id":suspension_id,"reason":"operator_reconciliation",
-                    "continuation":continuation,"usage":usage
-                }),
+                "operator_reconciliation",
                 recorded_at,
-            )?;
-            execution.model_request_id = None;
-            execution.tool_invocation_id = None;
-            let execution_id = source
-                .execution_id
-                .as_ref()
-                .ok_or(RuntimeCommandError::CorruptLedger)?;
-            let mut turn = fact(
-                source,
-                "turn.suspended",
-                json!({
-                    "suspension_id":suspension_id,"execution_id":execution_id.as_str(),
-                    "reason":"operator_reconciliation","continuation":continuation,"cumulative_usage":usage
-                }),
-                recorded_at,
-            )?;
-            turn.execution_id = None;
-            turn.model_request_id = None;
-            turn.tool_invocation_id = None;
-            Ok(vec![uncertain, execution, turn])
+            )?);
+            Ok(facts)
         }
         RuntimeRecoveryAction::RecoverReceiptTerminal => recover_receipt(snapshot, recorded_at),
         RuntimeRecoveryAction::FailRecoveryBound => recovery_bound_terminal(snapshot, recorded_at),
@@ -77,6 +60,43 @@ pub fn plan_recovery_action_facts(
         RuntimeRecoveryAction::AbandonAndRestart => Err(RuntimeCommandError::InvalidCommand),
         RuntimeRecoveryAction::FailCorruptLedger => Err(RuntimeCommandError::CorruptLedger),
     }
+}
+
+fn suspension_pair(
+    source: &DurableFact,
+    reason: &str,
+    recorded_at: &str,
+) -> Result<Vec<FactDraft>, RuntimeCommandError> {
+    let suspension_id = format!("suspension-{}", digest_text(source.fact_id.as_str()));
+    let continuation = json!({"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""});
+    let usage = json!({"input_tokens":{"kind":"unknown"},"output_tokens":{"kind":"unknown"},"source":"estimated"});
+    let mut execution = fact(
+        source,
+        "execution.suspended",
+        json!({
+            "suspension_id":suspension_id,"reason":reason,"continuation":continuation,"usage":usage
+        }),
+        recorded_at,
+    )?;
+    execution.model_request_id = None;
+    execution.tool_invocation_id = None;
+    let execution_id = source
+        .execution_id
+        .as_ref()
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let mut turn = fact(
+        source,
+        "turn.suspended",
+        json!({
+            "suspension_id":suspension_id,"execution_id":execution_id.as_str(),"reason":reason,
+            "continuation":continuation,"cumulative_usage":usage
+        }),
+        recorded_at,
+    )?;
+    turn.execution_id = None;
+    turn.model_request_id = None;
+    turn.tool_invocation_id = None;
+    Ok(vec![execution, turn])
 }
 
 fn recover_receipt(

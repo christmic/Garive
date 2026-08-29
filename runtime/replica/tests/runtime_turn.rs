@@ -257,7 +257,7 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
 fn recovery_reducer_consumes_every_frozen_restart_case() {
     let fixture = fixture();
     let cases = fixture["recovery_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 9);
+    assert_eq!(cases.len(), 10);
     for case in cases {
         let execution = match case["execution"].as_str().unwrap() {
             "active" => ExecutionRecoveryPosition::Active,
@@ -269,6 +269,7 @@ fn recovery_reducer_consumes_every_frozen_restart_case() {
             "none" => ModelRecoveryPosition::None,
             "prepared" => ModelRecoveryPosition::Prepared,
             "started" => ModelRecoveryPosition::Started,
+            "uncertain" => ModelRecoveryPosition::Uncertain,
             "terminal" => ModelRecoveryPosition::Terminal,
             value => panic!("unknown model position {value}"),
         };

@@ -28,6 +28,7 @@
     {"name":"active-no-dispatched-child","execution":"active","model":"none","effect":"none","expected":"abandon_and_restart"},
     {"name":"prepared-only-children","execution":"active","model":"prepared","effect":"prepared","expected":"abandon_and_restart"},
     {"name":"started-model","execution":"active","model":"started","effect":"none","expected":"classify_model_uncertain"},
+    {"name":"uncertain-model-suspended","execution":"suspended","model":"uncertain","effect":"none","expected":"await_continuation"},
     {"name":"started-effect-no-proof","execution":"active","model":"none","effect":"started","expected":"classify_effect_uncertain"},
     {"name":"uncertain-effect-suspended","execution":"suspended","model":"none","effect":"uncertain","expected":"await_continuation"},
     {"name":"receipt-without-result","execution":"active","model":"none","effect":"receipt","expected":"recover_receipt_terminal"},

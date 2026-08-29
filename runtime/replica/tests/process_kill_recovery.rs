@@ -152,7 +152,7 @@ fn recovery_actions_append_their_classification_to_killed_process_state() {
         (
             "model_started",
             RuntimeRecoveryAction::ClassifyModelUncertain,
-            "model.uncertain",
+            "turn.suspended",
         ),
         (
             "effect_started",
@@ -168,8 +168,9 @@ fn recovery_actions_append_their_classification_to_killed_process_state() {
         let (_directory, mut ledger, session, snapshot) = killed_snapshot(checkpoint);
         let facts = plan_recovery_action_facts(&snapshot, action, "2026-08-29T00:00:10Z").unwrap();
         assert_eq!(facts.last().unwrap().kind.as_str(), terminal);
-        if checkpoint == "effect_started" {
-            assert_eq!(facts[0].kind.as_str(), "effect.uncertain");
+        if checkpoint == "model_started" || checkpoint == "effect_started" {
+            assert_eq!(facts.len(), 3);
+            assert!(facts[0].kind.as_str().ends_with(".uncertain"));
         }
         ledger
             .commit(session, snapshot.session_version, facts)
