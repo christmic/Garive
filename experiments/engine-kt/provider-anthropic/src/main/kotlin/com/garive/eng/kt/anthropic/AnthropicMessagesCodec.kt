@@ -8,25 +8,56 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-enum class AnthropicAdapterError { INVALID_REQUEST, UNSUPPORTED_CAPABILITY, INVALID_JSON, INVARIANT }
-sealed interface AnthropicResult<out T> { data class Success<T>(val value: T) : AnthropicResult<T>
-    data class Failure(val error: AnthropicAdapterError) : AnthropicResult<Nothing> }
+/** Failure mapping neutral values to the admitted Anthropic Messages protocol. */
+public enum class AnthropicAdapterError { INVALID_REQUEST, UNSUPPORTED_CAPABILITY, INVALID_JSON, INVARIANT }
+/** Success/failure envelope for pure Anthropic codec operations. */
+public sealed interface AnthropicResult<out T> {
+    public data class Success<T>(public val value: T) : AnthropicResult<T>
+    public data class Failure(public val error: AnthropicAdapterError) : AnthropicResult<Nothing>
+}
 private sealed interface Block { data class Text(val value: StringBuilder) : Block
     data class Thinking(val value: StringBuilder, val signature: StringBuilder) : Block
     data class RedactedThinking(val data: String) : Block
     data class Tool(val id: String, val name: String, val json: StringBuilder) : Block }
-sealed interface HttpErrorAction { data class Retry(val retryAfter: Duration?) : HttpErrorAction
-    data class Terminal(val outcome: InvokeOutcome) : HttpErrorAction }
-data class HttpRequestDescriptor(val method: String, val path: String,
-    val headers: List<Pair<String, String>>, val body: ByteArray)
-data class HttpResponseDescriptor(val status: Int, val retryAfter: String?, val body: ByteArray)
-enum class TransportFailure { BEFORE_DISPATCH, AMBIGUOUS }
-sealed interface TransportResult { data class Success(val response: HttpResponseDescriptor) : TransportResult
-    data class Failure(val reason: TransportFailure) : TransportResult }
-interface AnthropicTransport { suspend fun execute(request: HttpRequestDescriptor,
-    cancellation: ModelCancellation): TransportResult; suspend fun wait(delay: Duration) }
-class AnthropicModelPort(private val transport: AnthropicTransport, private val maxAttempts: Int) : ModelPort {
-    override suspend fun invoke(request: ModelRequest, observer: ModelObserver,
+/** Bounded action derived from an Anthropic non-success response. */
+public sealed interface HttpErrorAction {
+    public data class Retry(public val retryAfter: Duration?) : HttpErrorAction
+    public data class Terminal(public val outcome: InvokeOutcome) : HttpErrorAction
+}
+/** Secret-free HTTP descriptor rendered for a Runtime-owned transport. */
+public data class HttpRequestDescriptor(
+    public val method: String,
+    public val path: String,
+    public val headers: List<Pair<String, String>>,
+    public val body: ByteArray,
+)
+/** Anthropic response inputs consumed by the protocol classifier/decoder. */
+public data class HttpResponseDescriptor(
+    public val status: Int,
+    public val retryAfter: String?,
+    public val body: ByteArray,
+)
+/** Dispatch-point classification controlling safe retry. */
+public enum class TransportFailure { BEFORE_DISPATCH, AMBIGUOUS }
+/** Success/failure envelope returned by [AnthropicTransport]. */
+public sealed interface TransportResult {
+    public data class Success(public val response: HttpResponseDescriptor) : TransportResult
+    public data class Failure(public val reason: TransportFailure) : TransportResult
+}
+/** Runtime-owned authenticated Anthropic HTTP execution boundary. */
+public interface AnthropicTransport {
+    public suspend fun execute(
+        request: HttpRequestDescriptor,
+        cancellation: ModelCancellation,
+    ): TransportResult
+    public suspend fun wait(delay: Duration): Unit
+}
+/** Neutral [ModelPort] implementation for Anthropic Messages. */
+public class AnthropicModelPort(
+    private val transport: AnthropicTransport,
+    private val maxAttempts: Int,
+) : ModelPort {
+    public override suspend fun invoke(request: ModelRequest, observer: ModelObserver,
         cancellation: ModelCancellation): ModelPortResult {
         if (maxAttempts <= 0) return ModelPortResult.Failure(ModelPortFailure.INVALID_REQUEST)
         if (cancellation.isCancelled()) return ModelPortResult.Success(cancelled(null))
@@ -61,8 +92,10 @@ class AnthropicModelPort(private val transport: AnthropicTransport, private val 
 private sealed interface ParsedStop { data class Completed(val reason: ModelStopReason) : ParsedStop
     data object OutputLimit : ParsedStop }
 
-object AnthropicMessagesCodec {
-    fun renderHttpRequest(request: ModelRequest, stream: Boolean): AnthropicResult<HttpRequestDescriptor> = guard {
+/** Strict pure codec for the admitted Anthropic Messages JSON/SSE surface. */
+public object AnthropicMessagesCodec {
+    /** Renders a validated request into a secret-free HTTP descriptor. */
+    public fun renderHttpRequest(request: ModelRequest, stream: Boolean): AnthropicResult<HttpRequestDescriptor> = guard {
         val body = when (val rendered = renderRequest(request, stream)) {
             is AnthropicResult.Success -> rendered.value.toString().encodeToByteArray()
             is AnthropicResult.Failure -> fail(rendered.error)
@@ -72,7 +105,8 @@ object AnthropicMessagesCodec {
             "anthropic-version" to "2023-06-01"), body)
     }
 
-    fun classifyHttpError(status: Int, retryAfter: String?, body: ByteArray, exhausted: Boolean, now: Instant): AnthropicResult<HttpErrorAction> = guard {
+    /** Reduces an HTTP error to bounded retry or a normalized terminal fact. */
+    public fun classifyHttpError(status: Int, retryAfter: String?, body: ByteArray, exhausted: Boolean, now: Instant): AnthropicResult<HttpErrorAction> = guard {
         val error = parse(body.decodeToString()).jsonObject.getValue("error").jsonObject
         val type = error["type"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val message = error["message"]?.jsonPrimitive?.contentOrNull.orEmpty().lowercase()
@@ -90,7 +124,8 @@ object AnthropicMessagesCodec {
         if (!exhausted) HttpErrorAction.Retry(delay) else HttpErrorAction.Terminal(InvokeOutcome.Unavailable(kind, delay))
     }
 
-    fun renderRequest(request: ModelRequest, stream: Boolean): AnthropicResult<JsonObject> = guard {
+    /** Maps a neutral request to the admitted Anthropic Messages JSON body. */
+    public fun renderRequest(request: ModelRequest, stream: Boolean): AnthropicResult<JsonObject> = guard {
         if (request.validate() != null || request.output.textMode != TextMode.Plain) fail(AnthropicAdapterError.INVALID_REQUEST)
         val limit = request.output.maxOutputTokens ?: fail(AnthropicAdapterError.INVALID_REQUEST)
         if (limit > Long.MAX_VALUE.toULong()) fail(AnthropicAdapterError.INVALID_REQUEST)
@@ -125,7 +160,8 @@ object AnthropicMessagesCodec {
         }
     }
 
-    fun parseResponse(bytes: ByteArray): AnthropicResult<InvokeOutcome> = guard {
+    /** Parses a complete Messages JSON body into one normalized outcome. */
+    public fun parseResponse(bytes: ByteArray): AnthropicResult<InvokeOutcome> = guard {
         val value = parse(bytes.decodeToString()).jsonObject
         val items = content(value.getValue("content").jsonArray); val usage = usage(value.getValue("usage").jsonObject)
         when (val stop = stop(value.text("stop_reason"))) {
@@ -134,7 +170,8 @@ object AnthropicMessagesCodec {
         }
     }
 
-    fun parseSse(bytes: ByteArray): AnthropicResult<InvokeOutcome> = guard {
+    /** Validates and reduces a complete Messages SSE transcript. */
+    public fun parseSse(bytes: ByteArray): AnthropicResult<InvokeOutcome> = guard {
         val blocks = sortedMapOf<UInt, Pair<Block, Boolean>>(); var usage = unknown(); var reason: ParsedStop? = null
         var started = false; var terminal = false
         bytes.decodeToString().lineSequence().filter { it.startsWith("data: ") }.forEach { line ->
