@@ -22,7 +22,8 @@ pub use system_configuration::{
 pub use system_provider::{
     BuiltinDesktopProfileRegistry, DesktopConfigurationProvider, DesktopProfileConfiguration,
     DesktopProfileRegistry, DesktopSecretResolver, FileDesktopConfigurationProvider,
-    ANTHROPIC_MESSAGES_PROFILE_ID, OPENAI_RESPONSES_PROFILE_ID,
+    SystemDesktopSecretResolver, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
+    DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.

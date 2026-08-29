@@ -11,9 +11,14 @@ cargo check -p garive-desktop
 ```
 
 Native tests run the complete embedded model-only loop against temporary
-SQLite. The shipping state reports `not_configured` until the Garive backend
-configuration subsystem installs the explicit composition; it never reads
-credentials from frontend input or process environment.
+SQLite. At Tauri setup, the backend reads the bounded `desktop-v1.json` from
+Tauri's OS app-config directory and resolves its opaque `credential_ref` from
+the OS credential-store service `com.garive.desktop`. Missing configuration
+reports `not_configured`; invalid present configuration aborts startup with a
+stable code. Frontend input and process environment never supply configuration.
+
+The exact schema and failure rules are specified in
+`../../spec/design/desktop-system-configuration.md`.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29

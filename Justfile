@@ -102,7 +102,11 @@ kotlin-experiment:
 web:
     cd web && pnpm install --frozen-lockfile && pnpm test && pnpm build
 
-desktop:
+desktop-config-boundaries:
+    @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' desktop/backend/src; then echo 'Desktop configuration must not read process environment' >&2; exit 1; fi
+    @if rg -n 'credential|profile_id|endpoint|model_id|database' desktop/frontend/src; then echo 'Desktop frontend must not own backend configuration' >&2; exit 1; fi
+
+desktop: desktop-config-boundaries
     cd desktop/frontend && pnpm install --frozen-lockfile && pnpm test && pnpm build
     cargo test -p garive-desktop
     cargo check -p garive-desktop

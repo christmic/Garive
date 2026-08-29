@@ -32,11 +32,38 @@ use crate::{
 pub const OPENAI_RESPONSES_PROFILE_ID: &str = "openai.responses.v1";
 /// Installed profile identity for the official Messages connection profile.
 pub const ANTHROPIC_MESSAGES_PROFILE_ID: &str = "anthropic.messages.v1";
+/// Exact versioned document name under Tauri's app configuration directory.
+pub const DESKTOP_CONFIG_FILE: &str = "desktop-v1.json";
+/// OS credential-store service owned by Garive Desktop.
+pub const DESKTOP_CREDENTIAL_SERVICE: &str = "com.garive.desktop";
 
 /// Backend-only resolver for one opaque credential reference.
 pub trait DesktopSecretResolver: Send + Sync {
     /// Resolves a reference into a redacting value without fallback discovery.
     fn resolve(&self, credential_ref: &str) -> Result<SecretValue, DesktopConfigurationError>;
+}
+
+/// Shipping resolver backed only by the operating-system credential store.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemDesktopSecretResolver;
+
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+impl DesktopSecretResolver for SystemDesktopSecretResolver {
+    fn resolve(&self, credential_ref: &str) -> Result<SecretValue, DesktopConfigurationError> {
+        let entry = keyring::Entry::new(DESKTOP_CREDENTIAL_SERVICE, credential_ref)
+            .map_err(|_| DesktopConfigurationError::SecretUnavailable)?;
+        let credential = entry
+            .get_password()
+            .map_err(|_| DesktopConfigurationError::SecretUnavailable)?;
+        SecretValue::new(credential).map_err(|_| DesktopConfigurationError::SecretUnavailable)
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+impl DesktopSecretResolver for SystemDesktopSecretResolver {
+    fn resolve(&self, _: &str) -> Result<SecretValue, DesktopConfigurationError> {
+        Err(DesktopConfigurationError::SecretUnavailable)
+    }
 }
 
 /// Non-secret values supplied to one installed profile constructor.

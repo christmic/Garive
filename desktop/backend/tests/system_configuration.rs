@@ -1,15 +1,17 @@
 use std::{path::Path, sync::Arc};
 
 use garive_desktop::{
-    DesktopConfigurationError, DesktopProfileConfiguration, DesktopProfileRegistry,
-    DesktopSecretResolver, DesktopState, DesktopSystemConfiguration,
-    FileDesktopConfigurationProvider, MAX_DESKTOP_CONFIG_BYTES,
+    BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopProfileConfiguration,
+    DesktopProfileRegistry, DesktopSecretResolver, DesktopState, DesktopSystemConfiguration,
+    FileDesktopConfigurationProvider, ANTHROPIC_MESSAGES_PROFILE_ID, MAX_DESKTOP_CONFIG_BYTES,
+    OPENAI_RESPONSES_PROFILE_ID,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelFuture, ModelItem, ModelObserver, ModelPort,
     ModelRequest, ModelStopReason, ModelUsage, TokenCount, UsageSource,
 };
 use garive_provider_profile::SecretValue;
+use garive_runtime::RuntimeHttpLimits;
 use tempfile::tempdir;
 
 const FIXTURE: &[u8] = include_bytes!(concat!(
@@ -182,4 +184,47 @@ fn missing_document_is_distinct_from_invalid_configuration() {
     assert!(!DesktopState::default()
         .install_from(&provider)
         .expect("absence is not malformed"));
+}
+
+#[test]
+fn builtin_registry_constructs_exact_profiles_and_rejects_unknown_identity() {
+    let registry = BuiltinDesktopProfileRegistry;
+    for profile_id in [OPENAI_RESPONSES_PROFILE_ID, ANTHROPIC_MESSAGES_PROFILE_ID] {
+        registry
+            .construct(
+                DesktopProfileConfiguration {
+                    profile_id,
+                    endpoint: Some("http://127.0.0.1:4319/v1/model"),
+                    model_target_id: "desktop-target",
+                    model_id: "fixture-model",
+                    max_output_tokens: Some(16),
+                    http_limits: RuntimeHttpLimits {
+                        connect_timeout_ms: 1_000,
+                        request_timeout_ms: 2_000,
+                        max_response_bytes: 65_536,
+                    },
+                },
+                SecretValue::new("registry-secret").unwrap(),
+            )
+            .expect("installed profile");
+    }
+    let failure = registry
+        .construct(
+            DesktopProfileConfiguration {
+                profile_id: "future.uninstalled",
+                endpoint: None,
+                model_target_id: "desktop-target",
+                model_id: "fixture-model",
+                max_output_tokens: Some(16),
+                http_limits: RuntimeHttpLimits {
+                    connect_timeout_ms: 1_000,
+                    request_timeout_ms: 2_000,
+                    max_response_bytes: 65_536,
+                },
+            },
+            SecretValue::new("unknown-secret").unwrap(),
+        )
+        .err()
+        .expect("unknown profile fails");
+    assert_eq!(failure, DesktopConfigurationError::UnknownProfile);
 }
