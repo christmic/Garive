@@ -53,6 +53,11 @@ pub(super) fn build_model_request(
                 content: vec![ModelInputContent::Text(skill.instructions().to_owned())],
             }),
     );
+    let memory_boundary = instruction_boundary + request.activated_skills.len();
+    input_items.splice(
+        memory_boundary..memory_boundary,
+        request.attributed_memory.iter().map(memory_input),
+    );
     let value = ModelRequest {
         request_id: ModelRequestId::new(request_id.clone()),
         target_id: target,
@@ -67,6 +72,35 @@ pub(super) fn build_model_request(
     };
     value.validate().map_err(|_| ())?;
     Ok((value, request_id))
+}
+
+fn memory_input(value: &crate::AttributedMemory) -> ModelInputItem {
+    let evidence = value
+        .evidence
+        .iter()
+        .map(|item| {
+            serde_json::json!({
+                "session_id": item.session_id,
+                "position": item.position,
+                "fact_id": item.fact_id,
+                "payload_digest": item.payload_digest,
+            })
+        })
+        .collect::<Vec<_>>();
+    ModelInputItem::Message {
+        role: ModelRole::User,
+        content: vec![ModelInputContent::Text(
+            serde_json::json!({
+                "type": "garive.memory",
+                "record_id": value.record_id,
+                "revision_id": value.revision_id,
+                "content_digest": value.content_digest,
+                "evidence": evidence,
+                "content": value.content_utf8,
+            })
+            .to_string(),
+        )],
+    }
 }
 
 pub(super) fn prepare_control(

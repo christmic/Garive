@@ -14,6 +14,7 @@ garive-llm = { path = "../llm" }
 garive-skill = { path = "../skill" }
 garive-tools = { path = "../tools" }
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 futures.workspace = true

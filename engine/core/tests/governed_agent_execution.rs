@@ -8,16 +8,16 @@ use futures::executor::block_on;
 use garive_core::{
     execute_agent, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
     AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest,
-    ClockPort, CommittedGovernedResult, ContextItem, ContextPort, ContextPortError, ContextPurpose,
-    ContextRequest, ContextSurface, EventSink, ExecutionId, ExecutionLimits, FactRef,
-    GovernedEffectFuture, GovernedEffectPort, MissingUsagePolicy, ModelOnlyLimits,
-    ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId, SuspensionReason,
-    TerminalRecoveryAction, TurnId,
+    AttributedMemory, ClockPort, CommittedGovernedResult, ContextItem, ContextPort,
+    ContextPortError, ContextPurpose, ContextRequest, ContextSurface, EventSink, ExecutionId,
+    ExecutionLimits, FactRef, GovernedEffectFuture, GovernedEffectPort, MemoryEvidenceAttribution,
+    MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure,
+    SessionId, SuspensionReason, TerminalRecoveryAction, TurnId,
 };
 use garive_llm::{
-    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
-    ModelOutputSettings, ModelPort, ModelRequest, ModelRole, ModelStopReason, ModelTargetId,
-    ModelUsage, TextMode, TokenCount, UsageSource,
+    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputItem, ModelItem,
+    ModelObserver, ModelOutputSettings, ModelPort, ModelRequest, ModelRole, ModelStopReason,
+    ModelTargetId, ModelUsage, TextMode, TokenCount, UsageSource,
 };
 use garive_skill::{
     activate_skills, ActivationMode, ActivationPolicy, ContentBinding, ExactToolReference,
@@ -68,6 +68,7 @@ impl ContextPort for Context {
 struct Model {
     outcomes: Mutex<VecDeque<InvokeOutcome>>,
     tool_counts: Mutex<Vec<usize>>,
+    inputs: Mutex<Vec<Vec<garive_llm::ModelInputItem>>>,
 }
 
 impl ModelPort for Model {
@@ -78,6 +79,10 @@ impl ModelPort for Model {
         _: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         self.tool_counts.lock().unwrap().push(request.tools.len());
+        self.inputs
+            .lock()
+            .unwrap()
+            .push(request.input_items.clone());
         let outcome = self.outcomes.lock().unwrap().pop_front().unwrap();
         Box::pin(async move { Ok(outcome) })
     }
@@ -187,6 +192,7 @@ fn request() -> AgentTurnRequest {
             max_utf8_bytes: 1024,
         },
         activated_skills: vec![],
+        attributed_memory: vec![],
         model_targets: vec![ModelTargetId::new("model")],
         required_capabilities: vec![ModelCapability::Tools],
         model_output: ModelOutputSettings {
@@ -260,6 +266,7 @@ fn run(
     let model = Model {
         outcomes: Mutex::new(VecDeque::from([first, text_outcome()])),
         tool_counts: Mutex::new(vec![]),
+        inputs: Mutex::new(vec![]),
     };
     let mut effects = Effects {
         result: effect,
@@ -373,10 +380,23 @@ fn activated_skill_narrows_model_tools_and_c4_catalog() {
     };
     let mut skilled_request = request();
     skilled_request.activated_skills = activated;
+    skilled_request.attributed_memory = vec![AttributedMemory {
+        record_id: "record".into(),
+        revision_id: "revision".into(),
+        content_digest: "c064fbca9d9de8dd9bb0624984403b28d0da807a69365d4f7fb09123ecb0c405".into(),
+        content_utf8: "memory".into(),
+        evidence: vec![MemoryEvidenceAttribution {
+            session_id: "session".into(),
+            position: 1,
+            fact_id: "fact".into(),
+            payload_digest: "a".repeat(64),
+        }],
+    }];
     let mut context = Context { positions: vec![] };
     let model = Model {
         outcomes: Mutex::new(VecDeque::from([tool_outcome("write_file"), text_outcome()])),
         tool_counts: Mutex::new(vec![]),
+        inputs: Mutex::new(vec![]),
     };
     let mut effects = Effects {
         result: observation(),
@@ -400,5 +420,24 @@ fn activated_skill_narrows_model_tools_and_c4_catalog() {
     ));
     assert!(matches!(report.outcome, AgentOutcome::Completed { .. }));
     assert_eq!(model.tool_counts.into_inner().unwrap(), [1, 1]);
+    let inputs = model.inputs.into_inner().unwrap();
+    assert!(matches!(
+        &inputs[0][0],
+        ModelInputItem::Message {
+            role: ModelRole::Developer,
+            ..
+        }
+    ));
+    assert!(
+        matches!(&inputs[0][1], ModelInputItem::Message { role: ModelRole::User, content }
+        if matches!(&content[0], garive_llm::ModelInputContent::Text(text) if text.contains("garive.memory")))
+    );
+    assert!(matches!(
+        &inputs[0][2],
+        ModelInputItem::Message {
+            role: ModelRole::User,
+            ..
+        }
+    ));
     assert_eq!(context.positions, [1, 5]);
 }

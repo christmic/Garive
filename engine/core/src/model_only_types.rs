@@ -3,6 +3,7 @@ use garive_llm::{
     ModelStreamEvent, ModelTargetId, TokenCount,
 };
 use garive_skill::ActivatedSkill;
+use sha2::{Digest, Sha256};
 
 use crate::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, ContextRequest, ContextSurface,
@@ -116,6 +117,54 @@ pub struct ModelOnlyLimits {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Exact durable evidence attribution attached to model-visible Memory data.
+pub struct MemoryEvidenceAttribution {
+    /// Session containing the supporting fact.
+    pub session_id: String,
+    /// Exact non-zero Session-local fact position.
+    pub position: u64,
+    /// Durable fact identity.
+    pub fact_id: String,
+    /// Canonical payload digest of the supporting fact.
+    pub payload_digest: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Runtime-verified inline Memory content supplied as subordinate attributed data.
+pub struct AttributedMemory {
+    /// Stable logical record identity.
+    pub record_id: String,
+    /// Exact immutable revision identity.
+    pub revision_id: String,
+    /// SHA-256 digest binding `content_utf8`.
+    pub content_digest: String,
+    /// Resolved inline UTF-8 content; references are resolved by Runtime first.
+    pub content_utf8: String,
+    /// Ordered non-empty durable provenance.
+    pub evidence: Vec<MemoryEvidenceAttribution>,
+}
+
+impl AttributedMemory {
+    pub(crate) fn valid(&self) -> bool {
+        !self.record_id.is_empty()
+            && !self.revision_id.is_empty()
+            && !self.content_utf8.is_empty()
+            && digest(self.content_utf8.as_bytes()) == self.content_digest
+            && !self.evidence.is_empty()
+            && self.evidence.iter().all(MemoryEvidenceAttribution::valid)
+    }
+}
+
+impl MemoryEvidenceAttribution {
+    fn valid(&self) -> bool {
+        !self.session_id.is_empty()
+            && self.position != 0
+            && !self.fact_id.is_empty()
+            && valid_digest(&self.payload_digest)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Complete immutable input for one disposable model-only kernel execution.
 pub struct AgentTurnRequest {
     /// Session owning the turn and its ledger facts.
@@ -138,6 +187,8 @@ pub struct AgentTurnRequest {
     pub context_request: ContextRequest,
     /// Exact Skills durably activated before any model request.
     pub activated_skills: Vec<ActivatedSkill>,
+    /// Ordered Runtime-verified optional Memory data committed before model use.
+    pub attributed_memory: Vec<AttributedMemory>,
     /// Ordered frozen model targets available to recovery policy.
     pub model_targets: Vec<ModelTargetId>,
     /// Provider-neutral capabilities every selected target must satisfy.
@@ -163,6 +214,8 @@ pub enum AgentRequestError {
     InvalidModelTarget,
     /// An optional total-token limit was explicitly set to zero.
     InvalidTokenLimit,
+    /// A model-visible Memory value lacks an exact content/evidence binding.
+    InvalidMemoryContext,
 }
 
 impl AgentTurnRequest {
@@ -196,8 +249,22 @@ impl AgentTurnRequest {
         if self.limits.max_total_tokens == Some(0) {
             return Err(AgentRequestError::InvalidTokenLimit);
         }
+        if self.attributed_memory.iter().any(|value| !value.valid()) {
+            return Err(AgentRequestError::InvalidMemoryContext);
+        }
         Ok(())
     }
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn digest(value: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(value))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1108,6 +1108,7 @@ dependencies = [
  "garive-skill",
  "garive-tools",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
