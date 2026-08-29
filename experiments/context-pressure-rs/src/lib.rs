@@ -7,7 +7,6 @@ mod command_counter;
 mod corpus;
 mod counter;
 mod error;
-mod git_attestation;
 mod http_exchange;
 mod provider_counter;
 mod publication_counter;
@@ -18,7 +17,7 @@ pub use command_counter::{CommandTokenCounter, CommandTokenCounterConfig};
 pub use corpus::{load_corpus, ContextPressureCase, ContextPressureCorpus};
 pub use counter::{TokenCounter, TokenCounterDescriptor, TokenCounterFailure};
 pub use error::{ContextPressureError, ContextPressureErrorCode};
-pub use git_attestation::{
+pub use garive_experiment_evidence::{
     attest_clean_revision, GitAttestationConfig, GitAttestationDescriptor, GitAttestationFailure,
 };
 pub use http_exchange::{ReqwestTokenCountExchangePort, TokenCountHttpLimits};

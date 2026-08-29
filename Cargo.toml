@@ -32,6 +32,7 @@ members = [
     "engine/tools",
     "experiments/context-pressure-rs",
     "experiments/creativity-baseline-rs",
+    "experiments/evidence-support-rs",
     "providers/compatible",
     "providers/profile",
     "providers/openai",

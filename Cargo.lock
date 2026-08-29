@@ -1137,6 +1137,7 @@ dependencies = [
  "garive-adapter-anthropic-messages",
  "garive-core",
  "garive-eval",
+ "garive-experiment-evidence",
  "garive-llm",
  "garive-provider-anthropic",
  "garive-provider-compatible",
@@ -1215,6 +1216,15 @@ name = "garive-eval"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "garive-experiment-evidence"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_jcs",
+ "sha2",
 ]
 
 [[package]]

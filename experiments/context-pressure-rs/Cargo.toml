@@ -13,6 +13,7 @@ path = "src/fixture_counter.rs"
 [dependencies]
 garive-core = { path = "../../engine/core" }
 garive-eval = { path = "../../engine/eval" }
+garive-experiment-evidence = { path = "../evidence-support-rs" }
 garive-llm = { path = "../../engine/llm" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 garive-provider-compatible = { path = "../../providers/compatible" }
