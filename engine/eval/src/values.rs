@@ -108,6 +108,12 @@ pub enum EvaluationErrorCode {
     MissingWorkloadClass,
     /// Checked context-pressure arithmetic overflowed.
     PressureArithmeticOverflow,
+    /// One creativity arm measurement was impossible or out of order.
+    InvalidCreativityEvidence,
+    /// A task, arm or required creativity class was missing.
+    MissingCreativityEvidence,
+    /// Checked creativity reduction arithmetic overflowed.
+    CreativityArithmeticOverflow,
 }
 
 impl EvaluationErrorCode {
@@ -127,6 +133,9 @@ impl EvaluationErrorCode {
             Self::InvalidPressureEvidence => "invalid_pressure_evidence",
             Self::MissingWorkloadClass => "missing_workload_class",
             Self::PressureArithmeticOverflow => "pressure_arithmetic_overflow",
+            Self::InvalidCreativityEvidence => "invalid_creativity_evidence",
+            Self::MissingCreativityEvidence => "missing_creativity_evidence",
+            Self::CreativityArithmeticOverflow => "creativity_arithmetic_overflow",
         }
     }
 }
