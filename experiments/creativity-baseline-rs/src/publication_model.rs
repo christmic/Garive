@@ -106,6 +106,13 @@ pub trait CredentialReferenceResolver {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CredentialResolutionFailure;
 
+/// Validates all non-secret endpoint configuration and reports publication eligibility.
+pub fn model_endpoint_publication_eligible(
+    config: &ModelEndpointConfig,
+) -> Result<bool, CreativityBaselineError> {
+    validate(config)
+}
+
 /// Builds one publication-capable generator after strict pre-secret validation.
 pub fn build_publication_generator(
     config: ModelEndpointConfig,

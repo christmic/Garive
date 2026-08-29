@@ -26,9 +26,9 @@ pub use port::{
     ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,
 };
 pub use publication_model::{
-    build_publication_evaluator, build_publication_generator, CredentialReferenceResolver,
-    CredentialResolutionFailure, ModelEndpointConfig, ModelProtocol, NonSecretHeader,
-    PublicationModelCoordinate,
+    build_publication_evaluator, build_publication_generator, model_endpoint_publication_eligible,
+    CredentialReferenceResolver, CredentialResolutionFailure, ModelEndpointConfig, ModelProtocol,
+    NonSecretHeader, PublicationModelCoordinate,
 };
 pub use runner::{run_creativity_baseline, CreativityBaselineRun};
 pub use system_credential::{SystemCredentialReferenceResolver, CREATIVITY_CREDENTIAL_SERVICE};

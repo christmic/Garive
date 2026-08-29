@@ -1175,6 +1175,7 @@ dependencies = [
  "garive-adapter-anthropic-messages",
  "garive-adapter-openai-responses",
  "garive-eval",
+ "garive-experiment-evidence",
  "garive-llm",
  "garive-provider-compatible",
  "garive-provider-profile",

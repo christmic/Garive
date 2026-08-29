@@ -14,8 +14,13 @@ path = "src/fixture_generator.rs"
 name = "garive-fixture-creativity-evaluator"
 path = "src/fixture_evaluator.rs"
 
+[[bin]]
+name = "garive-creativity-publication"
+path = "src/bin/creativity_publication.rs"
+
 [dependencies]
 garive-eval = { path = "../../engine/eval" }
+garive-experiment-evidence = { path = "../evidence-support-rs" }
 garive-llm = { path = "../../engine/llm" }
 garive-openai-responses = { package = "garive-adapter-openai-responses", path = "../../adapters/openai-responses" }
 garive-anthropic-messages = { package = "garive-adapter-anthropic-messages", path = "../../adapters/anthropic-messages" }
