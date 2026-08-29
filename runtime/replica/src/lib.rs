@@ -8,7 +8,7 @@ mod fake_host;
 mod runtime_turn;
 mod sqlite_ledger;
 
-pub use core_bridge::{plan_core_terminal, CoreTerminalContext};
+pub use core_bridge::{canonical_model_request_digest, plan_core_terminal, CoreTerminalContext};
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use runtime_turn::{
     plan_cancel_turn, plan_continue_turn, plan_recovery_restart, plan_start_turn,
