@@ -49,5 +49,24 @@
     {"name":"candidate_requires_exploration","product":"detail","types":["lesson"],"roles":["learned_fact"],"states":["candidate"],"max_items":"1","max_bytes":"100","failure":"selection_unreplayable"},
     {"name":"promoted_is_not_memory_recall","product":"detail","types":["semantic"],"roles":["learned_fact"],"states":["promoted"],"max_items":"1","max_bytes":"100","failure":"selection_unreplayable"},
     {"name":"zero_budget_rejected","product":"detail","types":["semantic"],"roles":["preference"],"states":["active"],"max_items":"0","max_bytes":"100","failure":"invalid_memory"}
+  ],
+  "obligation": {
+    "obligation_id":"obligation-1","record_id":"r4","revision_id":"v4",
+    "application_fact":{"session_id":"session-observe","position":"120","fact_id":"fact-application","payload_digest":"7777777777777777777777777777777777777777777777777777777777777777"},
+    "expected_outcome_digest":"8888888888888888888888888888888888888888888888888888888888888888",
+    "application_scope_digest":"9999999999999999999999999999999999999999999999999999999999999999",
+    "attribution_policy_revision":"attribution-v1","expires_at_position":"140"
+  },
+  "observation_cases": [
+    {"name":"verified_activates_candidate","initial_state":"candidate","kind":"verified","position":"121","evidence_kind":"test_result","expected_state":"active","verified":"1","falsified":"0","neutral":"0","narrowing":false},
+    {"name":"in_scope_falsification","initial_state":"active","kind":"falsified_in_scope","position":"122","evidence_kind":"tool_result","expected_state":"active","verified":"0","falsified":"1","neutral":"0","narrowing":false},
+    {"name":"out_of_scope_narrows","initial_state":"active","kind":"falsified_out_of_scope","position":"123","evidence_kind":"effect_receipt","observed_scope_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_state":"active","verified":"0","falsified":"0","neutral":"1","narrowing":true},
+    {"name":"neutral_is_recorded","initial_state":"active","kind":"neutral","position":"124","evidence_kind":"deterministic_verifier","safe_reason":"inconclusive","expected_state":"active","verified":"0","falsified":"0","neutral":"1","narrowing":false},
+    {"name":"user_correction_is_real_evidence","initial_state":"candidate","kind":"verified","position":"125","evidence_kind":"user_correction","expected_state":"active","verified":"1","falsified":"0","neutral":"0","narrowing":false},
+    {"name":"expired_observation_rejected","initial_state":"active","kind":"verified","position":"141","evidence_kind":"test_result","failure":"invalid_transition"},
+    {"name":"wrong_obligation_rejected","initial_state":"active","kind":"verified","position":"126","evidence_kind":"test_result","obligation_id":"other-obligation","failure":"attribution_unsupported"},
+    {"name":"out_of_scope_requires_digest","initial_state":"active","kind":"falsified_out_of_scope","position":"127","evidence_kind":"effect_receipt","failure":"attribution_unsupported"},
+    {"name":"empty_evidence_rejected","initial_state":"active","kind":"verified","position":"128","evidence_kind":"test_result","empty_evidence":true,"failure":"invalid_memory"},
+    {"name":"duplicate_evidence_rejected","initial_state":"active","kind":"verified","position":"129","evidence_kind":"test_result","duplicate_evidence":true,"failure":"invalid_memory"}
   ]
 }

@@ -22,6 +22,7 @@ public enum class MemoryErrorCode(public val wireName: String) {
     DUPLICATE_OBSERVATION("duplicate_observation"),
     PROMOTION_RECEIPT_REQUIRED("promotion_receipt_required"),
     SELECTION_UNREPLAYABLE("selection_unreplayable"),
+    ATTRIBUTION_UNSUPPORTED("attribution_unsupported"),
 }
 
 /** Typed M0 failure. */

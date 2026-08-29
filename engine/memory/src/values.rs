@@ -44,6 +44,8 @@ pub enum MemoryErrorCode {
     PromotionReceiptRequired,
     /// Selection lacks an admitted deterministic or seeded replay contract.
     SelectionUnreplayable,
+    /// Observation does not bind an admitted obligation or scope attribution.
+    AttributionUnsupported,
 }
 
 impl MemoryErrorCode {
@@ -68,6 +70,7 @@ impl MemoryErrorCode {
             Self::DuplicateObservation => "duplicate_observation",
             Self::PromotionReceiptRequired => "promotion_receipt_required",
             Self::SelectionUnreplayable => "selection_unreplayable",
+            Self::AttributionUnsupported => "attribution_unsupported",
         }
     }
 }

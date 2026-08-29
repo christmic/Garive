@@ -1,11 +1,12 @@
 use std::{fs, path::PathBuf};
 
 use garive_memory::{
-    import_m0_classification, select_recall, EvidenceTally, HypothesisState, LifecycleEvent,
-    MemoryAuthority, MemoryAuthorityBinding, MemoryErrorCode, MemoryKind, MemoryLifecycle,
+    import_m0_classification, reduce_observation, select_recall, DurableFactReference,
+    EvidenceTally, HypothesisState, LifecycleEvent, MemoryAuthority, MemoryAuthorityBinding,
+    MemoryErrorCode, MemoryKind, MemoryLifecycle, MemoryObligation, MemoryObservation,
     MemoryRecallCandidate, MemoryScopeBinding, MemoryScopeClass, MemoryType, MemoryTypeDescriptor,
-    MemoryTypeRegistry, RecallExploration, RecallProduct, RecallScore, RecallSelectionKind,
-    RecallSelectionRequest,
+    MemoryTypeRegistry, ObservationEvidence, ObservationEvidenceKind, ObservationVerdict,
+    RecallExploration, RecallProduct, RecallScore, RecallSelectionKind, RecallSelectionRequest,
 };
 use serde_json::Value;
 
@@ -220,6 +221,64 @@ fn shared_recall_selection_is_bounded_ranked_and_replayable() {
     );
 }
 
+#[test]
+fn shared_observations_require_reality_evidence_and_exact_attribution() {
+    let root = fixture();
+    let obligation = obligation(&root["obligation"]);
+    for case in root["observation_cases"].as_array().unwrap() {
+        let lifecycle = MemoryLifecycle::new(
+            state(case["initial_state"].as_str().unwrap()),
+            EvidenceTally {
+                verified: 0,
+                falsified: 0,
+                neutral: 0,
+            },
+            obligation.application_fact().position(),
+            None,
+        )
+        .unwrap();
+        let observation = observation(case, obligation.obligation_id());
+        let result = match observation {
+            Ok(value) => reduce_observation(&obligation, &value, &lifecycle),
+            Err(error) => Err(error),
+        };
+        if let Some(failure) = case.get("failure") {
+            assert_eq!(
+                result.unwrap_err().code().wire_name(),
+                failure.as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+        } else {
+            let actual = result.unwrap();
+            assert_eq!(
+                actual.lifecycle.state(),
+                state(case["expected_state"].as_str().unwrap())
+            );
+            assert_eq!(
+                actual.lifecycle.tally(),
+                EvidenceTally {
+                    verified: number(case, "verified"),
+                    falsified: number(case, "falsified"),
+                    neutral: number(case, "neutral"),
+                }
+            );
+            assert_eq!(
+                actual.narrowing.is_some(),
+                case["narrowing"].as_bool().unwrap()
+            );
+            if let Some(narrowing) = actual.narrowing {
+                assert_eq!(narrowing.record_id, obligation.record_id());
+                assert_eq!(narrowing.revision_id, obligation.revision_id());
+                assert_eq!(
+                    narrowing.observed_scope_digest,
+                    case["observed_scope_digest"]
+                );
+            }
+        }
+    }
+}
+
 fn fixture() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../spec/fixtures/agent/memory-hypothesis-lifecycle-v1.json");
@@ -394,4 +453,89 @@ fn recall_request(value: &Value) -> Result<RecallSelectionRequest, garive_memory
         number(value, "max_bytes"),
         exploration,
     )
+}
+
+fn obligation(value: &Value) -> MemoryObligation {
+    let fact = &value["application_fact"];
+    MemoryObligation::new(
+        value["obligation_id"].as_str().unwrap(),
+        value["record_id"].as_str().unwrap(),
+        value["revision_id"].as_str().unwrap(),
+        DurableFactReference::new(
+            fact["session_id"].as_str().unwrap(),
+            number(fact, "position"),
+            fact["fact_id"].as_str().unwrap(),
+            fact["payload_digest"].as_str().unwrap(),
+        )
+        .unwrap(),
+        value["expected_outcome_digest"].as_str().unwrap(),
+        value["application_scope_digest"].as_str().unwrap(),
+        value["attribution_policy_revision"].as_str().unwrap(),
+        number(value, "expires_at_position"),
+    )
+    .unwrap()
+}
+
+fn observation(
+    value: &Value,
+    default_obligation: &str,
+) -> Result<MemoryObservation, garive_memory::MemoryError> {
+    let position = number(value, "position");
+    let evidence = ObservationEvidence::new(
+        evidence_kind(value["evidence_kind"].as_str().unwrap()),
+        DurableFactReference::new(
+            "session-observe",
+            position,
+            format!("fact-evidence-{position}"),
+            "c".repeat(64),
+        )
+        .unwrap(),
+    );
+    let verdict = match value["kind"].as_str().unwrap() {
+        "verified" => ObservationVerdict::Verified,
+        "falsified_in_scope" => ObservationVerdict::Falsified {
+            in_scope: true,
+            observed_scope_digest: None,
+        },
+        "falsified_out_of_scope" => ObservationVerdict::Falsified {
+            in_scope: false,
+            observed_scope_digest: value
+                .get("observed_scope_digest")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        },
+        "neutral" => ObservationVerdict::Neutral {
+            safe_reason: value["safe_reason"].as_str().unwrap().into(),
+        },
+        other => panic!("unknown verdict: {other}"),
+    };
+    let evidence = if value.get("empty_evidence").and_then(Value::as_bool) == Some(true) {
+        Vec::new()
+    } else if value.get("duplicate_evidence").and_then(Value::as_bool) == Some(true) {
+        vec![evidence.clone(), evidence]
+    } else {
+        vec![evidence]
+    };
+    MemoryObservation::new(
+        format!("observation-{}", value["name"].as_str().unwrap()),
+        value
+            .get("obligation_id")
+            .and_then(Value::as_str)
+            .unwrap_or(default_obligation),
+        position,
+        "verifier-v1",
+        evidence,
+        verdict,
+    )
+}
+
+fn evidence_kind(value: &str) -> ObservationEvidenceKind {
+    match value {
+        "tool_result" => ObservationEvidenceKind::ToolResult,
+        "test_result" => ObservationEvidenceKind::TestResult,
+        "effect_receipt" => ObservationEvidenceKind::EffectReceipt,
+        "user_correction" => ObservationEvidenceKind::UserCorrection,
+        "deterministic_verifier" => ObservationEvidenceKind::DeterministicVerifier,
+        other => panic!("unknown evidence kind: {other}"),
+    }
 }

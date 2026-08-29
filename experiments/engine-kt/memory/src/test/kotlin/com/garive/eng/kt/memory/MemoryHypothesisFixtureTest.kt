@@ -117,6 +117,36 @@ public class MemoryHypothesisFixtureTest {
         )
     }
 
+    @Test
+    public fun sharedObservationsRequireRealityEvidenceAndExactAttribution(): Unit {
+        val obligation = obligation(root.getValue("obligation").jsonObject)
+        root.values("observation_cases").forEach { value ->
+            val lifecycle = MemoryLifecycle.create(
+                state(value.text("initial_state")), EvidenceTally(0uL, 0uL, 0uL),
+                obligation.applicationFact.position, null,
+            ).success()
+            val result = when (val observed = observation(value, obligation.obligationId)) {
+                is MemoryContractResult.Success -> reduceObservation(obligation, observed.value, lifecycle)
+                is MemoryContractResult.Failure -> observed
+            }
+            value.optional("failure")?.let { expected ->
+                assertEquals(expected, result.failure().code.wireName, value.text("name"))
+            } ?: run {
+                val actual = result.success()
+                assertEquals(state(value.text("expected_state")), actual.lifecycle.state)
+                assertEquals(
+                    EvidenceTally(value.ulong("verified"), value.ulong("falsified"), value.ulong("neutral")),
+                    actual.lifecycle.tally,
+                )
+                assertEquals(value.getValue("narrowing").jsonPrimitive.content.toBooleanStrict(), actual.narrowing != null)
+                actual.narrowing?.let { narrowing ->
+                    assertEquals(obligation.recordId, narrowing.recordId)
+                    assertEquals(value.text("observed_scope_digest"), narrowing.observedScopeDigest)
+                }
+            }
+        }
+    }
+
     private fun registry(): MemoryTypeRegistry = MemoryTypeRegistry.create(
         root.getValue("registry").jsonObject.text("revision"), descriptors(),
     ).success()
@@ -171,6 +201,49 @@ private fun recallRequest(value: JsonObject): MemoryContractResult<RecallSelecti
         value.strings("states").map(::state), "score-sum-v1", value.text("max_items").toUInt(),
         value.ulong("max_bytes"), exploration,
     )
+}
+private fun obligation(value: JsonObject): MemoryObligation {
+    val fact = value.getValue("application_fact").jsonObject
+    return MemoryObligation.create(
+        value.text("obligation_id"), value.text("record_id"), value.text("revision_id"),
+        DurableFactReference.create(
+            fact.text("session_id"), fact.ulong("position"), fact.text("fact_id"), fact.text("payload_digest"),
+        ).success(), value.text("expected_outcome_digest"), value.text("application_scope_digest"),
+        value.text("attribution_policy_revision"), value.ulong("expires_at_position"),
+    ).success()
+}
+private fun observation(value: JsonObject, defaultObligation: String): MemoryContractResult<MemoryObservation> {
+    val position = value.ulong("position")
+    val evidence = ObservationEvidence(
+        evidenceKind(value.text("evidence_kind")),
+        DurableFactReference.create(
+            "session-observe", position, "fact-evidence-$position", "c".repeat(64),
+        ).success(),
+    )
+    val verdict = when (value.text("kind")) {
+        "verified" -> ObservationVerdict.Verified
+        "falsified_in_scope" -> ObservationVerdict.Falsified(true, null)
+        "falsified_out_of_scope" -> ObservationVerdict.Falsified(false, value.optional("observed_scope_digest"))
+        "neutral" -> ObservationVerdict.Neutral(value.text("safe_reason"))
+        else -> error("unknown verdict")
+    }
+    val evidenceList = when {
+        value["empty_evidence"]?.jsonPrimitive?.contentOrNull == "true" -> emptyList()
+        value["duplicate_evidence"]?.jsonPrimitive?.contentOrNull == "true" -> listOf(evidence, evidence)
+        else -> listOf(evidence)
+    }
+    return MemoryObservation.create(
+        "observation-${value.text("name")}", value.optional("obligation_id") ?: defaultObligation,
+        position, "verifier-v1", evidenceList, verdict,
+    )
+}
+private fun evidenceKind(value: String): ObservationEvidenceKind = when (value) {
+    "tool_result" -> ObservationEvidenceKind.TOOL_RESULT
+    "test_result" -> ObservationEvidenceKind.TEST_RESULT
+    "effect_receipt" -> ObservationEvidenceKind.EFFECT_RECEIPT
+    "user_correction" -> ObservationEvidenceKind.USER_CORRECTION
+    "deterministic_verifier" -> ObservationEvidenceKind.DETERMINISTIC_VERIFIER
+    else -> error("unknown evidence kind")
 }
 private fun JsonObject.text(key: String): String = getValue(key).jsonPrimitive.content
 private fun JsonObject.optional(key: String): String? = get(key)?.jsonPrimitive?.contentOrNull

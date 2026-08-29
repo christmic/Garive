@@ -5,6 +5,7 @@
 
 mod hypothesis;
 mod lifecycle;
+mod observation;
 mod query;
 mod recall;
 mod values;
@@ -16,6 +17,10 @@ pub use hypothesis::{
     MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 pub use lifecycle::{EvidenceTally, HypothesisState, LifecycleEvent, MemoryLifecycle};
+pub use observation::{
+    reduce_observation, MemoryObligation, MemoryObservation, ObservationEvidence,
+    ObservationEvidenceKind, ObservationReduction, ObservationVerdict, ScopeNarrowingCandidate,
+};
 pub use query::{
     retrieve_memory, MemoryMatch, MemoryPurpose, MemoryQuery, MemoryRetrieval, MemoryScore,
 };
