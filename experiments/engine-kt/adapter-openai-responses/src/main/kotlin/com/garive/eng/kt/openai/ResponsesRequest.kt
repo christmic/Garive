@@ -94,7 +94,13 @@ public sealed interface TextFormat {
 }
 
 /** Optional reasoning controls from the standard create shape. */
-public data class ReasoningConfig(public val effort: String? = null, public val summary: String? = null)
+public data class ReasoningConfig(public val effort: ReasoningEffort? = null, public val summary: ReasoningSummary? = null)
+
+/** Official portable reasoning effort values. */
+public enum class ReasoningEffort { NONE, MINIMAL, LOW, MEDIUM, HIGH, XHIGH, MAX }
+
+/** Official reasoning summary modes. */
+public enum class ReasoningSummary { AUTO, CONCISE, DETAILED }
 
 /** Context truncation behavior. */
 public enum class Truncation { DISABLED, AUTO }
@@ -237,7 +243,7 @@ private fun ResponseTextConfig.toJson(): JsonObject = buildJsonObject {
 }
 
 private fun ReasoningConfig.toJson(): JsonObject = buildJsonObject {
-    effort?.let { put("effort", it) }; summary?.let { put("summary", it) }
+    effort?.let { put("effort", it.wire()) }; summary?.let { put("summary", it.wire()) }
 }
 private fun StreamOptions.toJson(): JsonObject = buildJsonObject { includeObfuscation?.let { put("include_obfuscation", it) } }
 private fun Enum<*>.wire(): String = name.lowercase()

@@ -255,7 +255,7 @@ pub struct FunctionCallOutput {
     /// Correlation identifier emitted by the model.
     pub call_id: String,
     /// String or official ordered result-content value.
-    pub output: Value,
+    pub output: FunctionOutput,
     /// Optional lifecycle status.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<ItemStatus>,
@@ -264,12 +264,31 @@ pub struct FunctionCallOutput {
 impl FunctionCallOutput {
     fn validate(&self) -> Result<(), ResponsesAdapterError> {
         require_text(&self.call_id, "Responses call_id must not be empty")?;
-        if !matches!(self.output, Value::String(_) | Value::Array(_)) {
-            return Err(ResponsesAdapterError::InvalidRequest(
-                "Responses function output must be a string or content array",
-            ));
+        self.output.validate()
+    }
+}
+
+/// Official function-result string or ordered portable content union.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FunctionOutput {
+    /// String shorthand result.
+    Text(String),
+    /// Ordered text/image result content.
+    Content(Vec<InputContent>),
+}
+
+impl FunctionOutput {
+    fn validate(&self) -> Result<(), ResponsesAdapterError> {
+        match self {
+            Self::Text(_) => Ok(()),
+            Self::Content(content) if content.is_empty() => {
+                Err(ResponsesAdapterError::InvalidRequest(
+                    "Responses function content must not be empty",
+                ))
+            }
+            Self::Content(content) => content.iter().try_for_each(InputContent::validate),
         }
-        Ok(())
     }
 }
 
@@ -302,7 +321,7 @@ pub struct FunctionTool {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// JSON Schema object for arguments.
-    pub parameters: Value,
+    pub parameters: Map<String, Value>,
     /// Whether schema adherence is strict.
     pub strict: bool,
 }
@@ -310,10 +329,7 @@ pub struct FunctionTool {
 impl FunctionTool {
     fn validate(&self) -> Result<(), ResponsesAdapterError> {
         require_text(&self.name, "Responses function name must not be empty")?;
-        require_object(
-            &self.parameters,
-            "Responses function parameters must be an object",
-        )
+        Ok(())
     }
 }
 
@@ -369,7 +385,7 @@ impl ResponseTextConfig {
         } = &self.format
         {
             require_text(name, "Responses JSON Schema name must not be empty")?;
-            require_object(schema, "Responses JSON Schema must be an object")?;
+            let _ = schema;
         }
         Ok(())
     }
@@ -391,7 +407,7 @@ pub enum TextFormat {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
         /// JSON Schema object.
-        schema: Value,
+        schema: Map<String, Value>,
         /// Strict schema adherence.
         strict: bool,
     },
@@ -402,10 +418,42 @@ pub enum TextFormat {
 pub struct ReasoningConfig {
     /// Optional effort discriminator retained as a protocol string.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effort: Option<String>,
+    pub effort: Option<ReasoningEffort>,
     /// Optional summary policy retained as a protocol string.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub summary: Option<String>,
+    pub summary: Option<ReasoningSummary>,
+}
+
+/// Official portable reasoning effort values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningEffort {
+    /// Disable reasoning effort.
+    None,
+    /// Minimal reasoning effort.
+    Minimal,
+    /// Low reasoning effort.
+    Low,
+    /// Medium reasoning effort.
+    Medium,
+    /// High reasoning effort.
+    High,
+    /// Extra-high reasoning effort.
+    Xhigh,
+    /// Maximum reasoning effort.
+    Max,
+}
+
+/// Official reasoning summary modes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningSummary {
+    /// Let the protocol select summary detail.
+    Auto,
+    /// Concise summary.
+    Concise,
+    /// Detailed summary.
+    Detailed,
 }
 
 /// Context truncation selection.
@@ -431,14 +479,6 @@ fn require_text(value: &str, reason: &'static str) -> Result<(), ResponsesAdapte
         Err(ResponsesAdapterError::InvalidRequest(reason))
     } else {
         Ok(())
-    }
-}
-
-fn require_object(value: &Value, reason: &'static str) -> Result<(), ResponsesAdapterError> {
-    if value.is_object() {
-        Ok(())
-    } else {
-        Err(ResponsesAdapterError::InvalidRequest(reason))
     }
 }
 
