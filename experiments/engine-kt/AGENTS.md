@@ -9,8 +9,9 @@
 ## Current scope
 
 The Gradle project contains `:core` (C0-C3), `:llm` (C1/C1b),
-`:ledger` (L0), `:persistence-postgres` (L1), `:provider-openai`,
-`:provider-anthropic`, `:proto`, and an experimental `:server-host` composition
+`:ledger` (L0), `:persistence-postgres` (L1),
+`:adapter-openai-responses`, `:adapter-anthropic-messages`, `:proto`, and an
+experimental `:server-host` composition
 fixture. Passing these modules proves only the declared conformance dimension.
 
 ```text
@@ -23,8 +24,8 @@ experiments/engine-kt/
 ├── llm/                  experimental C1/C1b model contract
 ├── ledger/               experimental L0 durable fact semantics
 ├── persistence-postgres/ PostgreSQL portability experiment
-├── provider-openai/      OpenAI Responses conformance adapter
-├── provider-anthropic/   Anthropic Messages conformance adapter
+├── adapter-openai-responses/    provider-independent Responses protocol
+├── adapter-anthropic-messages/  provider-independent Messages protocol
 ├── proto/                generated admitted wire bindings
 └── server-host/          executable experiment fixture, not product Runtime
 ```

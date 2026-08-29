@@ -44,8 +44,8 @@ engine/                         Rust portable Agent domain
   ledger/                       durable vocabulary and ports
 
 adapters/                       concrete external protocols
-  llm-openai/                   Rust OpenAI Responses adapter
-  llm-anthropic/                Rust Anthropic Messages adapter
+  openai-responses/             Rust Responses-compatible protocol adapter
+  anthropic-messages/           Rust Messages-compatible protocol adapter
 
 runtime/
   replica/                      Rust composition root + SQLite adapter
@@ -56,8 +56,8 @@ experiments/
     llm/                        provider-neutral model values
     ledger/                     durable vocabulary and ports
     persistence-postgres/       PostgreSQL adapter and migrations
-    provider-openai/            OpenAI Responses adapter
-    provider-anthropic/         Anthropic Messages adapter
+    adapter-openai-responses/   Kotlin Responses-compatible protocol adapter
+    adapter-anthropic-messages/ Kotlin Messages-compatible protocol adapter
     proto/                      generated experimental bindings
     server-host/                executable verification fixture
 
