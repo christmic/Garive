@@ -320,7 +320,7 @@ impl SessionProjection {
 
     fn has_recovery_pending_invocation(&self, execution: Option<&ExecutionId>) -> bool {
         let pending = |owner: &ExecutionId, state: InvocationState| {
-            execution.is_none_or(|expected| owner == expected)
+            execution.map_or(true, |expected| owner == expected)
                 && matches!(state, InvocationState::Started | InvocationState::Receipt)
         };
         self.models
