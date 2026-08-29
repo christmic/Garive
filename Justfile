@@ -69,8 +69,14 @@ providers: protocol-adapters provider-boundaries
 runtime-boundaries:
     @if rg -n 'std::env|std::fs|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' runtime/replica/src/model_http_transport.rs runtime/replica/src/live_host; then echo 'Runtime transport and Host configuration must enter explicitly' >&2; exit 1; fi
 
+local-runtime-boundaries:
+    @if rg -n 'std::env|std::fs|System\.getenv|OPENAI|ANTHROPIC|api[_-]?key|credential|SecretValue' runtime/replica/src/local_composition.rs runtime/replica/src/local_worker.rs runtime/replica/src/local_recovery.rs; then echo 'R1 must receive storage, model ports, clocks and limits explicitly' >&2; exit 1; fi
+
 runtime-host: runtime-boundaries
     cargo test -p garive-runtime --test model_http_transport --test live_host
+
+local-runtime: runtime-boundaries local-runtime-boundaries
+    cargo test -p garive-runtime --test local_composition --test local_worker --test local_live_flow --test process_kill_recovery
 
 knowledge-runtime: knowledge-boundaries
     cargo test -p garive-runtime --test durable_core_execution --test knowledge_authority --test knowledge_recovery
@@ -113,7 +119,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance protocol-adapters runtime-host knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters runtime-host local-runtime knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime kotlin-experiment apps rust
 
 bench:
     cargo test -p bench

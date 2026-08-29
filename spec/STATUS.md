@@ -54,7 +54,7 @@ planned without reopening a narrower completed row.
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
 | H1-T | Runtime-owned model HTTP transport | accepted | accepted | documented | implemented | verified | done | Keep explicit no-proxy/no-retry limits, exact failure classification, fragmented SSE, cancellation, and real-loopback matrices green. |
 | H1 | Live durable Host | accepted | accepted | documented | implemented | verified | done | Keep durable command replay/conflict, commit-before-dispatch, restart projection, loopback-only HTTP/SSE, and shared failure fixtures green. |
-| R1 | Local Runtime composition | accepted | accepted | documented | missing | missing | planned | Implement fixed-prefix request reconstruction, bounded post-commit dispatch and restart recovery. |
+| R1 | Local Runtime composition | accepted | accepted | documented | implemented | verified | done | Keep explicit configuration, fixed-prefix reconstruction, post-commit queue, real protocol flow, bounded shutdown and process-kill recovery gates green. |
 | A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Implement A1 against loopback H1/R1, then remove Fake Host from the entry point. |
 | A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Implement A1 ordered event/cursor state against loopback H1/R1. |
 | A-WEB | Web shell | accepted | accepted | partial | partial | verified | active | Implement strict injectable A1 HTTP/SSE client and reducer. |
