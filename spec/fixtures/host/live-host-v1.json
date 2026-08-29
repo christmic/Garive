@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "contract": "garive-live-host-v1",
+  "installed_agent": {
+    "definition_id": "definition-main",
+    "definition_revision": "revision-1",
+    "snapshot_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "agent_instance_namespace": "installed-main"
+  },
+  "command_cases": [
+    {
+      "name": "create-session",
+      "idempotency_key": "create-1",
+      "body": {"agent_definition_id": "definition-main"},
+      "expected_positions": [1],
+      "expected_last_position": 1
+    },
+    {
+      "name": "start-turn",
+      "idempotency_key": "start-1",
+      "body": {"text": "hello"},
+      "expected_positions": [2, 3, 4],
+      "expected_last_position": 4
+    },
+    {
+      "name": "cancel-turn",
+      "idempotency_key": "cancel-1",
+      "body": {"requested_through_position": 4},
+      "expected_positions": [5],
+      "expected_last_position": 5
+    }
+  ],
+  "event_projection": [
+    {"fact_position": 1, "fact": "session.opened", "event": "session.created"},
+    {"fact_position": 2, "fact": "turn.started", "payload_kind": "start", "event": "turn.started"},
+    {"fact_position": 3, "fact": "turn.input", "event": null},
+    {"fact_position": 4, "fact": "execution.started", "event": null},
+    {"fact_position": 8, "fact": "turn.completed", "event": "turn.completed", "text": "done"}
+  ],
+  "failure_cases": [
+    {"name": "missing-idempotency-key", "status": 400, "code": "invalid_request"},
+    {"name": "invalid-idempotency-key", "status": 400, "code": "invalid_request"},
+    {"name": "unknown-definition", "status": 404, "code": "not_found"},
+    {"name": "unknown-session", "status": 404, "code": "not_found"},
+    {"name": "unknown-turn", "status": 404, "code": "not_found"},
+    {"name": "idempotency-conflict", "status": 409, "code": "command_conflict"},
+    {"name": "version-race", "status": 409, "code": "concurrent_modification"},
+    {"name": "suspension-mismatch", "status": 412, "code": "precondition_failed"},
+    {"name": "storage-failure", "status": 503, "code": "durability_unavailable"},
+    {"name": "corrupt-ledger", "status": 500, "code": "corrupt_state"}
+  ]
+}

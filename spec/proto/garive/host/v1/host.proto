@@ -9,7 +9,7 @@ message HostEventV1 {
   string api_version = 1;
   // Session owning this event stream.
   string session_id = 2;
-  // One-based contiguous event position within the fake scenario.
+  // Source Session fact position. Live projections may contain gaps.
   uint64 position = 3;
   // Stable semantic event name; unknown names remain decodable.
   string event = 4;
@@ -37,4 +37,66 @@ message FakeHostScenarioV1 {
   FakeHostCommandV1 command = 2;
   // Ordered event stream returned for the command.
   repeated HostEventV1 events = 3;
+}
+
+// Creates one durable Session for an installed Agent definition.
+message CreateSessionRequestV1 {
+  // Installed definition selected by the caller.
+  string agent_definition_id = 1;
+}
+
+// Durable result of Session creation or exact idempotent replay.
+message CreateSessionResponseV1 {
+  // Stable created Session identity.
+  string session_id = 1;
+  // Runtime-owned Agent instance bound to the Session.
+  string agent_instance_id = 2;
+  // Last durable position committed by this command.
+  uint64 committed_position = 3;
+}
+
+// Starts one durable Turn in an existing Session.
+message StartTurnRequestV1 {
+  // Trusted user text admitted by the local Host.
+  string text = 1;
+}
+
+// Requests cancellation of one Turn under its owning Session.
+message CancelTurnRequestV1 {
+  // Session expected to own the path Turn.
+  string session_id = 1;
+  // Fixed durable watermark observed by the caller.
+  uint64 requested_through_position = 2;
+}
+
+// Continues one exactly suspended Turn.
+message ContinueTurnRequestV1 {
+  // Session expected to own the path Turn.
+  string session_id = 1;
+  // Exact current suspension identity.
+  string suspension_id = 2;
+  // Optimistic Session version observed with the suspension.
+  uint64 expected_session_version = 3;
+  // Trusted external input satisfying the suspension.
+  string input = 4;
+}
+
+// Durable result of a Turn mutation or exact idempotent replay.
+message TurnCommandResponseV1 {
+  // Owning Session identity.
+  string session_id = 1;
+  // Stable durable Turn identity.
+  string turn_id = 2;
+  // Fresh disposable Execution identity when the command created one.
+  string execution_id = 3;
+  // Last durable position committed by this command.
+  uint64 committed_position = 4;
+}
+
+// Stable redacted failure envelope returned by the Host.
+message HostErrorV1 {
+  // Machine-readable failure code frozen by the H1 contract.
+  string code = 1;
+  // Non-secret operator-safe summary.
+  string message = 2;
 }
