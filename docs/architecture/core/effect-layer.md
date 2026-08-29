@@ -636,6 +636,191 @@ A failure is a **P0**: an orphan start means the dispatcher
 lost track of a tool. The recovery is to find which
 scheduler path missed the terminal and add a coverage test.
 
+## Beyond basic conflict detection — tool double-declaration + conflict-graph scheduling
+
+The "Resource conflict detection" section above catches
+write-write and read-write on the same path. That's the
+**basic** layer. The full design extends it with three more
+mechanisms — together they let the dispatcher schedule
+optimally while staying correct.
+
+### 1. Tool double-declaration — `effect_class` + `accesses`
+
+Every tool declares **two** things:
+
+```python
+class Tool:
+    name:           str
+    effect_class:   'ReadOnly' | 'Idempotent' | 'Mutating'
+    accesses:       Accesses        # ← NEW: what resources the tool touches
+    schema:         dict
+    requires:       Capabilities    # filesystem | process | network
+    timeout_ms:     int
+    ...
+
+class Accesses:
+    filesystem:  list[PathPattern]   # e.g. ["/workspace/**", "*.rs"]
+    process:    list[str]            # command names (e.g. ["git", "cargo"])
+    network:    list[HostPattern]    # e.g. ["api.github.com"]
+    env:        list[str]            # env vars read
+```
+
+The `effect_class` says **what happens on a re-run**; the
+`accesses` say **what the tool touches**. Together they give
+the dispatcher the data needed to build a precise conflict
+graph. The contract test (`E1–E5` plus the declarations
+asserted in `dispatcher_contract_tests!`) enforces that
+**every tool declares both** — a missing `accesses`
+declaration fails build.
+
+The **kimi-style `ToolAccesses`** (read / write / all) is a
+weaker ancestor of this design. We require the full
+declaration because the conflict graph needs it.
+
+### 2. Conflict-graph scheduling — beyond naive concurrency
+
+The dispatcher builds a **conflict graph** for each batch of
+intents:
+
+```
+nodes = intents
+edges = (i_a, i_b)  s.t.
+          accesses_overlap(i_a, i_b)
+          AND (i_a.effect is write OR i_b.effect is write)
+```
+
+The graph is then partitioned into **maximal conflict-free
+subgraphs** (independent sets). Each independent set runs in
+**parallel**. Between conflicting sets, the dispatcher runs
+them **serially** in some topological order (cycle-breaking
+on the SCCs).
+
+```
+def schedule(intents):
+    graph = build_conflict_graph(intents)
+    groups = maximal_independent_sets(graph)
+    # run groups in parallel, serialise within group
+    for group in groups:
+        schedule_group(group, parallel=True)
+```
+
+**Why this beats naive concurrency** (e.g. run everything in
+parallel):
+
+- **Two `write_file`s on the same path** → conflict edge →
+  serialised (no torn writes).
+- **Two `read_file`s on the same path** → no edge (both
+  ReadOnly) → parallel.
+- **`grep` + `read_file` on the same path** → no edge (both
+  ReadOnly) → parallel.
+- **`bash` + `read_file` on the same path** → conflict edge
+  (bash is Mutating) → serialised.
+- **Two independent `bash`es** → conflict edge (process
+  resource) → serialised (or split process slots).
+
+The result is **maximum concurrency under correctness**:
+every parallel group is independent; every conflict is
+serialised. The deterministic-simulation test (E2 variant)
+asserts the schedule's order property across random delays.
+
+### 3. Branch × snapshot workspace — physical isolation
+
+`branch.open` was a ledger-level instruction (the branch
+points at a `from_seq` in the ledger). For **physical
+isolation**, a branch also gets a **snapshot workspace**:
+
+```
+branch.open{branch_id: "A", from_seq: 100}
+  → snapshot workspace: <root>/workspaces/<branch_id>/
+                            (a copy of the workspace at from_seq)
+
+tool calls inside branch A run in this snapshot
+  → reads/writes inside the branch don't touch the main
+    workspace
+
+branch.verdict{branch_id: "A", decision: adopt}
+  → fast-forward main workspace to this snapshot
+  → the ledger branch path becomes a physical, fast-forwardable
+    view of the workspace
+
+branch.verdict{branch_id: "A", decision: discard}
+  → drop the snapshot workspace
+  → the ledger branch path remains as audit; the workspace
+    is gone
+```
+
+The branch is now both **a ledger concept** (branch_path on
+each entry) **and a physical concept** (snapshot workspace
+under `/workspaces/<branch_id>/`). The two are linked — the
+branch's `from_seq` in the ledger matches the workspace's
+state at that seq.
+
+This **upgrades branch from ledger-only to physical**:
+multi-branch exploration can run tools **in parallel**,
+each in its own workspace, without polluting the main
+workspace. The audit chain stays clean because every
+tool call lands in the ledger regardless of workspace.
+
+The **priority** of this is medium: the ledger-level branch
+design is in scope now; the workspace snapshot lands with
+the slice that uses git repos.
+
+### 4. Read-cache — same-args, same-result, within session
+
+Two `read_file("/workspace/foo.txt")` calls in the same
+session / same round should be **free** for the second call:
+
+```
+read_cache: dict[Key, ToolResult]
+key = (tool.name, hash(json.dumps(tool.args, sort_keys=True)))
+
+def run_tool(tool, args, ws):
+    if tool.effect_class == 'ReadOnly':
+        k = (tool.name, hash(json.dumps(args, sort_keys=True)))
+        if k in read_cache:
+            return read_cache[k]
+
+    result = tool.run(args, ws)
+
+    if tool.effect_class == 'ReadOnly':
+        # staleness check: file mtime / content hash
+        if not is_stale(ws, tool, args, result):
+            read_cache[k] = result
+    return result
+```
+
+The **staleness check** prevents stale caches:
+
+- For `read_file(path)`: re-`stat` the path; if `mtime` is
+  newer than the cached entry's wall_ts, **invalidate**.
+- For tools that read environment / process state: similar
+  check (e.g. `which bash` returns a different path → invalidate).
+- For **safe-to-cache tools** (the default): the cache is
+  honoured.
+
+**Bypass list** — the following tools skip the cache:
+
+- `read_secret` / `read_token` (security-sensitive)
+- Tools that declare `cacheable: false` in their schema
+- Tools whose args include a `fresh: true` flag (force re-run)
+
+The cache is **bounded**:
+
+- **Size**: LRU with `max_entries: 256` (default)
+- **TTL**: entries expire after `read_cache.ttl_ms`
+  (default 5 minutes) — covers the common case of "session
+  ends, next session starts fresh"
+- **Per-session**: cache lives in `state.read_cache`; not
+  persisted across sessions (no cross-session leaks)
+
+The cache is **observable**:
+
+- A `read_cache.hit` and `read_cache.miss` pair is logged in
+  the `model.usage` row for the round (the cache is
+  observable to the audit).
+- A `read_cache.invalidate(stale)` event is emitted when a
+  cache entry is dropped because of staleness.
+
 ## Cross-references
 
 - `loop.md` "Stage ④ — invoke / judge / run" — the loop's
