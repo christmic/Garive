@@ -81,6 +81,7 @@ KnowledgeEvidence {
   source_id, source_revision
   source_snapshot_digest?
   content: ContentBinding
+  content_byte_length: non-zero u64
   citation: Citation
   retrieved_at_utc
   freshness: Fresh | Cached | Stale
@@ -98,7 +99,9 @@ Citation {
 ```
 
 Runtime sanitizes locators and verifies that the citation content digest binds
-the returned content. Credentials, request headers, private connector errors
+the returned content. `content_byte_length` is the Runtime-verified exact byte
+size behind the ContentBinding and is charged against `max_total_bytes`; inline
+content must match its UTF-8 length. Credentials, request headers, private connector errors
 and unrestricted local paths never enter Engine or model context. A citation
 is attribution, not proof that a claim is correct.
 

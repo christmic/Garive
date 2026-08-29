@@ -181,6 +181,7 @@ KnowledgeEvidenceBinding {
   evidence_id: KnowledgeEvidenceId
   source_snapshot_digest?: Digest
   content: ContentBinding
+  content_byte_length: non-zero u64
   citation_kind: "uri_fragment" | "document_offset" |
                  "record_key" | "opaque_locator"
   citation_locator: non-empty string
@@ -221,6 +222,8 @@ trustworthy terminal response.
 Knowledge facts are scoped to the requesting Turn/Execution.
 `KnowledgeRequestId` remains in the payload because L0 has no dedicated
 Knowledge identity field.
+Every evidence byte length is Runtime-verified; inline UTF-8 must match it and
+the ordered result must remain within the request's committed total-byte bound.
 
 ## Scheduler facts
 
