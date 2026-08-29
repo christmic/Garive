@@ -79,7 +79,7 @@ private fun JsonObject.stopped(turn: Boolean) {
         setOf("evidence"),
     )
     if (turn) nonEmpty("execution_id")
-    enum("reason", setOf("iteration_limit", "token_limit", "deadline", "cancelled"))
+    enum("reason", setOf("iteration_limit", "token_limit", "deadline", "cancelled", "resource_unavailable"))
     optionalContent("evidence")
     usage(if (turn) "cumulative_usage" else "usage")
 }

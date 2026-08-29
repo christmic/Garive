@@ -117,7 +117,8 @@ turn.completed.v1 {
 
 turn.stopped.v1 {
   execution_id: ExecutionId
-  reason: "iteration_limit" | "token_limit" | "deadline" | "cancelled"
+  reason: "iteration_limit" | "token_limit" | "deadline" | "cancelled" |
+          "resource_unavailable"
   cumulative_usage: UsageEvidence
   evidence?: ContentBinding
 }

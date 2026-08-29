@@ -162,7 +162,13 @@ fn stopped(value: &Map<String, Value>, turn: bool) -> Result<(), LedgerError> {
     enumeration(
         value,
         "reason",
-        &["iteration_limit", "token_limit", "deadline", "cancelled"],
+        &[
+            "iteration_limit",
+            "token_limit",
+            "deadline",
+            "cancelled",
+            "resource_unavailable",
+        ],
     )?;
     optional_content(value, "evidence")?;
     usage(value, if turn { "cumulative_usage" } else { "usage" })
