@@ -231,6 +231,30 @@ fn validate_continuation(
                 Ok(("resource_ready", String::new()))
             }
         }
+        (
+            ContinuationInput::DelegationResult {
+                delegation_id,
+                result_id,
+                content,
+            },
+            RuntimeSuspensionKind::DelegationPending,
+        ) => {
+            let binding = state
+                .delegation
+                .as_ref()
+                .ok_or(RuntimeCommandError::ContinuationMismatch)?;
+            if command.interaction.is_some()
+                || state.reconciliation.is_some()
+                || !binding.observed
+                || &binding.delegation_id != delegation_id
+                || binding.result_id.as_deref() != Some(result_id)
+                || binding.result_digest.as_deref() != Some(digest(content.as_bytes()).as_str())
+            {
+                Err(RuntimeCommandError::ContinuationMismatch)
+            } else {
+                Ok(("delegation_result", content.clone()))
+            }
+        }
         _ => Err(RuntimeCommandError::ContinuationMismatch),
     }
 }

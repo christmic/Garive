@@ -231,6 +231,15 @@ pub enum ContinuationInput {
     },
     /// Signal that a previously unavailable resource may be attempted again.
     ResourceReady,
+    /// Exact observed child result admitted for the pending delegation.
+    DelegationResult {
+        /// Logical delegation identity.
+        delegation_id: String,
+        /// Governed result identity.
+        result_id: String,
+        /// Exact canonical result bytes supplied to the parent model.
+        content: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -282,6 +291,25 @@ pub struct ReconciliationTarget {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Exact durable delegation binding reconstructed for parent continuation.
+pub struct DelegationContinuation {
+    /// Logical delegation identity.
+    pub delegation_id: String,
+    /// Authority grant identity.
+    pub grant_id: String,
+    /// Child Agent instance identity.
+    pub child_agent_instance_id: String,
+    /// Child Turn identity.
+    pub child_turn_id: TurnId,
+    /// Governed result identity once terminal.
+    pub result_id: Option<String>,
+    /// Canonical governed result digest once terminal.
+    pub result_digest: Option<String>,
+    /// Whether the bounded result has been durably exposed to the parent.
+    pub observed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// ContinueTurn input supplied by a Host after a typed suspension.
 pub struct ContinueTurnCommand {
     /// Idempotency identity supplied by the caller.
@@ -319,6 +347,8 @@ pub struct SuspendedTurnState {
     pub interaction: Option<InteractionContinuation>,
     /// Uncertain effect binding, when operator reconciliation is required.
     pub reconciliation: Option<ReconciliationTarget>,
+    /// Pending child/result binding when suspended for delegation.
+    pub delegation: Option<DelegationContinuation>,
     /// Installed Agent instance retained from Turn start.
     pub agent_instance_id: AgentInstanceId,
     /// Exact definition identity retained from Turn start.

@@ -2,8 +2,8 @@ use garive_ledger::{ExecutionId, TurnSnapshot};
 use serde_json::{Map, Value};
 
 use super::types::{
-    EffectiveRuntimeLimits, InteractionContinuation, InteractionExpiry, ReconciliationTarget,
-    RuntimeCommandError, RuntimeSuspensionKind, SuspendedTurnState,
+    DelegationContinuation, EffectiveRuntimeLimits, InteractionContinuation, InteractionExpiry,
+    ReconciliationTarget, RuntimeCommandError, RuntimeSuspensionKind, SuspendedTurnState,
 };
 
 /// Reconstructs a resumable Turn exclusively from one verified fixed Ledger prefix.
@@ -74,6 +74,7 @@ pub fn reconstruct_suspended_turn(
     let suspension_kind = RuntimeSuspensionKind::parse(text(&suspended_payload, "reason")?)?;
     let interaction = pending_interaction(snapshot, &execution_id, &suspended_payload)?;
     let reconciliation = reconciliation_target(snapshot, &execution_id)?;
+    let delegation = delegation_target(snapshot, text(&suspended_payload, "suspension_id")?)?;
     if (suspension_kind == RuntimeSuspensionKind::ApprovalRequired && interaction.is_none())
         || (interaction.is_some()
             && !matches!(
@@ -83,6 +84,8 @@ pub fn reconstruct_suspended_turn(
             ))
         || (suspension_kind == RuntimeSuspensionKind::OperatorReconciliation)
             != reconciliation.is_some()
+        || (suspension_kind == RuntimeSuspensionKind::DelegationPending) != delegation.is_some()
+        || (delegation.is_some() && (interaction.is_some() || reconciliation.is_some()))
     {
         return Err(RuntimeCommandError::CorruptLedger);
     }
@@ -94,6 +97,7 @@ pub fn reconstruct_suspended_turn(
         suspension_kind,
         interaction,
         reconciliation,
+        delegation,
         agent_instance_id: identity(text(&started_payload, "agent_instance_id")?)?,
         definition_id: identity(text(&started_payload, "definition_id")?)?,
         definition_revision: identity(text(&started_payload, "definition_revision")?)?,
@@ -104,6 +108,107 @@ pub fn reconstruct_suspended_turn(
         recovery_ordinal: unsigned(&execution_payload, "recovery_ordinal")?,
         limits: limits(&execution_payload)?,
     })
+}
+
+fn delegation_target(
+    snapshot: &TurnSnapshot,
+    suspension_id: &str,
+) -> Result<Option<DelegationContinuation>, RuntimeCommandError> {
+    let starts: Vec<_> = snapshot
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "delegation.child_started")
+        .filter_map(|fact| payload(fact).ok().map(|value| (fact, value)))
+        .filter(|(_, value)| {
+            value.get("suspension_id").and_then(Value::as_str) == Some(suspension_id)
+        })
+        .collect();
+    if starts.len() > 1 {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    let Some((started_fact, started)) = starts.first() else {
+        return Ok(None);
+    };
+    let delegation_id = text(started, "delegation_id")?;
+    let grant_id = text(started, "grant_id")?;
+    let requested = snapshot
+        .facts
+        .iter()
+        .filter(|fact| {
+            fact.position < started_fact.position && fact.kind.as_str() == "delegation.requested"
+        })
+        .filter_map(|fact| payload(fact).ok())
+        .filter(|value| value.get("delegation_id").and_then(Value::as_str) == Some(delegation_id))
+        .count();
+    let authorized = snapshot
+        .facts
+        .iter()
+        .filter(|fact| {
+            fact.position < started_fact.position && fact.kind.as_str() == "delegation.authorized"
+        })
+        .filter_map(|fact| payload(fact).ok())
+        .filter(|value| {
+            value.get("delegation_id").and_then(Value::as_str) == Some(delegation_id)
+                && value.get("grant_id").and_then(Value::as_str) == Some(grant_id)
+        })
+        .count();
+    if requested != 1 || authorized != 1 {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    let terminals: Vec<_> = snapshot
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "delegation.child_terminal")
+        .filter_map(|fact| payload(fact).ok())
+        .filter(|value| value.get("delegation_id").and_then(Value::as_str) == Some(delegation_id))
+        .collect();
+    if terminals.len() > 1 {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    let (result_id, result_digest) = terminals
+        .first()
+        .map(|value| {
+            if text(value, "grant_id")? != grant_id
+                || text(value, "suspension_id")? != suspension_id
+            {
+                return Err(RuntimeCommandError::CorruptLedger);
+            }
+            Ok((
+                text(value, "result_id")?.to_owned(),
+                text(value, "result_digest")?.to_owned(),
+            ))
+        })
+        .transpose()?
+        .map_or((None, None), |(id, digest)| (Some(id), Some(digest)));
+    let observed = match (&result_id, &result_digest) {
+        (Some(id), Some(digest)) => {
+            snapshot
+                .facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == "delegation.observed")
+                .filter_map(|fact| payload(fact).ok())
+                .filter(|value| {
+                    value.get("delegation_id").and_then(Value::as_str) == Some(delegation_id)
+                        && value.get("grant_id").and_then(Value::as_str) == Some(grant_id)
+                        && value.get("result_id").and_then(Value::as_str) == Some(id.as_str())
+                        && value.get("result_digest").and_then(Value::as_str)
+                            == Some(digest.as_str())
+                        && value.get("suspension_id").and_then(Value::as_str) == Some(suspension_id)
+                })
+                .count()
+                == 1
+        }
+        _ => false,
+    };
+    Ok(Some(DelegationContinuation {
+        delegation_id: delegation_id.to_owned(),
+        grant_id: grant_id.to_owned(),
+        child_agent_instance_id: text(started, "child_agent_instance_id")?.to_owned(),
+        child_turn_id: identity(text(started, "child_turn_id")?)?,
+        result_id,
+        result_digest,
+        observed,
+    }))
 }
 
 fn pending_interaction(
