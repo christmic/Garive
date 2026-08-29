@@ -1,9 +1,11 @@
 use std::{fs, path::PathBuf};
 
 use garive_memory::{
-    import_m0_classification, EvidenceTally, HypothesisState, LifecycleEvent, MemoryAuthority,
-    MemoryAuthorityBinding, MemoryErrorCode, MemoryKind, MemoryLifecycle, MemoryScopeBinding,
-    MemoryScopeClass, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
+    import_m0_classification, select_recall, EvidenceTally, HypothesisState, LifecycleEvent,
+    MemoryAuthority, MemoryAuthorityBinding, MemoryErrorCode, MemoryKind, MemoryLifecycle,
+    MemoryRecallCandidate, MemoryScopeBinding, MemoryScopeClass, MemoryType, MemoryTypeDescriptor,
+    MemoryTypeRegistry, RecallExploration, RecallProduct, RecallScore, RecallSelectionKind,
+    RecallSelectionRequest,
 };
 use serde_json::Value;
 
@@ -137,6 +139,87 @@ fn shared_lifecycle_reduces_exact_tallies_and_failures() {
     }
 }
 
+#[test]
+fn shared_recall_selection_is_bounded_ranked_and_replayable() {
+    let root = fixture();
+    let candidates: Vec<_> = root["recall_candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(recall_candidate)
+        .collect();
+    for case in root["recall_cases"].as_array().unwrap() {
+        let request = recall_request(case);
+        if let Some(failure) = case.get("failure") {
+            assert_eq!(
+                request.unwrap_err().code().wire_name(),
+                failure.as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+            continue;
+        }
+        let request = request.unwrap();
+        let first = select_recall(&candidates, &request).unwrap();
+        let second = select_recall(&candidates, &request).unwrap();
+        assert_eq!(first, second, "{}", case["name"]);
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .map(|item| item.candidate().record_id())
+                .collect::<Vec<_>>(),
+            case["expected_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect::<Vec<_>>(),
+            "{}",
+            case["name"],
+        );
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .map(|item| match item.kind() {
+                    RecallSelectionKind::Ranked => "ranked",
+                    RecallSelectionKind::Explored => "explored",
+                })
+                .collect::<Vec<_>>(),
+            case["expected_kinds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect::<Vec<_>>(),
+        );
+        if let Some(draws) = case.get("expected_draws") {
+            assert_eq!(
+                first
+                    .items
+                    .iter()
+                    .map(|item| item.draw_hex())
+                    .collect::<Vec<_>>(),
+                draws
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(Value::as_str)
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert_eq!(first.truncated, case["truncated"].as_bool().unwrap());
+    }
+    let request = recall_request(&root["recall_cases"][0]).unwrap();
+    assert_eq!(
+        select_recall(&[candidates[0].clone(), candidates[0].clone()], &request)
+            .unwrap_err()
+            .code(),
+        MemoryErrorCode::InvalidMemory,
+    );
+}
+
 fn fixture() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../spec/fixtures/agent/memory-hypothesis-lifecycle-v1.json");
@@ -248,4 +331,67 @@ fn event(value: &Value) -> LifecycleEvent {
         },
         other => panic!("unknown event: {other}"),
     }
+}
+
+fn recall_candidate(value: &Value) -> MemoryRecallCandidate {
+    MemoryRecallCandidate::new(
+        value["record_id"].as_str().unwrap(),
+        value["revision_id"].as_str().unwrap(),
+        memory_type(value["type"].as_str().unwrap()),
+        kind(value["role"].as_str().unwrap()),
+        authority(value["authority"].as_str().unwrap()),
+        state(value["state"].as_str().unwrap()),
+        value["safe_label"].as_str().unwrap(),
+        value["content_digest"].as_str().unwrap(),
+        number(value, "content_bytes"),
+        number(value, "evidence_count") as u32,
+        RecallScore {
+            relevance: number(value, "relevance") as u16,
+            recency: number(value, "recency") as u16,
+            importance: number(value, "importance") as u16,
+        },
+    )
+    .unwrap()
+}
+
+fn recall_request(value: &Value) -> Result<RecallSelectionRequest, garive_memory::MemoryError> {
+    let exploration = value
+        .get("exploration")
+        .map(|item| {
+            RecallExploration::new(
+                item["algorithm"].as_str().unwrap(),
+                number(item, "seed"),
+                number(item, "slots") as u32,
+            )
+        })
+        .transpose()?;
+    RecallSelectionRequest::new(
+        if value["product"] == "menu" {
+            RecallProduct::Menu
+        } else {
+            RecallProduct::Detail
+        },
+        value["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| memory_type(v.as_str().unwrap()))
+            .collect(),
+        value["roles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| kind(v.as_str().unwrap()))
+            .collect(),
+        value["states"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| state(v.as_str().unwrap()))
+            .collect(),
+        "score-sum-v1",
+        number(value, "max_items") as u32,
+        number(value, "max_bytes"),
+        exploration,
+    )
 }

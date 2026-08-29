@@ -6,6 +6,7 @@
 mod hypothesis;
 mod lifecycle;
 mod query;
+mod recall;
 mod values;
 mod write;
 
@@ -17,6 +18,10 @@ pub use hypothesis::{
 pub use lifecycle::{EvidenceTally, HypothesisState, LifecycleEvent, MemoryLifecycle};
 pub use query::{
     retrieve_memory, MemoryMatch, MemoryPurpose, MemoryQuery, MemoryRetrieval, MemoryScore,
+};
+pub use recall::{
+    select_recall, MemoryRecallCandidate, RecallExploration, RecallProduct, RecallScore,
+    RecallSelection, RecallSelectionItem, RecallSelectionKind, RecallSelectionRequest,
 };
 
 pub use values::{

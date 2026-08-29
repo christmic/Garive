@@ -1,7 +1,7 @@
 use crate::{values::valid_digest, MemoryError, MemoryErrorCode};
 
 /// Recall and evidence lifecycle independent of M0 revision status.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum HypothesisState {
     /// Awaiting real-world verification.
     Candidate,

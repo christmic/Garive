@@ -42,6 +42,8 @@ pub enum MemoryErrorCode {
     DuplicateObservation,
     /// Promotion lacks a valid Knowledge publication receipt.
     PromotionReceiptRequired,
+    /// Selection lacks an admitted deterministic or seeded replay contract.
+    SelectionUnreplayable,
 }
 
 impl MemoryErrorCode {
@@ -65,6 +67,7 @@ impl MemoryErrorCode {
             Self::InvalidTransition => "invalid_transition",
             Self::DuplicateObservation => "duplicate_observation",
             Self::PromotionReceiptRequired => "promotion_receipt_required",
+            Self::SelectionUnreplayable => "selection_unreplayable",
         }
     }
 }

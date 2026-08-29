@@ -3,6 +3,7 @@ package com.garive.eng.kt.memory
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -86,6 +87,36 @@ public class MemoryHypothesisFixtureTest {
         }
     }
 
+    @Test
+    public fun sharedRecallIsBoundedRankedAndReplayable(): Unit {
+        val candidates = root.getValue("recall_candidates").jsonArray.map(::recallCandidate)
+        root.values("recall_cases").forEach { value ->
+            val request = recallRequest(value)
+            value.optional("failure")?.let { expected ->
+                assertEquals(expected, request.failure().code.wireName, value.text("name"))
+            } ?: run {
+                val admitted = request.success()
+                val first = selectRecall(candidates, admitted).success()
+                val second = selectRecall(candidates, admitted).success()
+                assertEquals(first, second, value.text("name"))
+                assertEquals(value.strings("expected_ids"), first.items.map { it.candidate.recordId })
+                assertEquals(
+                    value.strings("expected_kinds"),
+                    first.items.map { it.kind.name.lowercase() },
+                )
+                value["expected_draws"]?.jsonArray?.let { draws ->
+                    assertEquals(draws.map { it.jsonPrimitive.contentOrNull }, first.items.map { it.drawHex })
+                }
+                assertEquals(value.getValue("truncated").jsonPrimitive.content.toBooleanStrict(), first.truncated)
+            }
+        }
+        val request = recallRequest(root.values("recall_cases").first()).success()
+        assertEquals(
+            MemoryErrorCode.INVALID_MEMORY,
+            selectRecall(listOf(candidates.first(), candidates.first()), request).failure().code,
+        )
+    }
+
     private fun registry(): MemoryTypeRegistry = MemoryTypeRegistry.create(
         root.getValue("registry").jsonObject.text("revision"), descriptors(),
     ).success()
@@ -113,6 +144,33 @@ private fun event(value: JsonObject): LifecycleEvent = when (value.text("kind"))
     "archive" -> LifecycleEvent.Archive(value.ulong("position"))
     "promote" -> LifecycleEvent.Promote(value.ulong("position"), value.optional("receipt_digest"))
     else -> error("unknown event")
+}
+private fun recallCandidate(element: JsonElement): MemoryRecallCandidate {
+    val value = element.jsonObject
+    return MemoryRecallCandidate.create(
+        value.text("record_id"), value.text("revision_id"), type(value.text("type")),
+        role(value.text("role")), authority(value.text("authority")), state(value.text("state")),
+        value.text("safe_label"), value.text("content_digest"), value.ulong("content_bytes"),
+        value.text("evidence_count").toUInt(), RecallScore(
+            value.text("relevance").toInt(), value.text("recency").toInt(), value.text("importance").toInt(),
+        ),
+    ).success()
+}
+private fun recallRequest(value: JsonObject): MemoryContractResult<RecallSelectionRequest> {
+    val exploration = value["exploration"]?.jsonObject?.let { item ->
+        when (val result = RecallExploration.create(
+            item.text("algorithm"), item.ulong("seed"), item.text("slots").toUInt(),
+        )) {
+            is MemoryContractResult.Success -> result.value
+            is MemoryContractResult.Failure -> return result
+        }
+    }
+    return RecallSelectionRequest.create(
+        if (value.text("product") == "menu") RecallProduct.MENU else RecallProduct.DETAIL,
+        value.strings("types").map(::type), value.strings("roles").map(::role),
+        value.strings("states").map(::state), "score-sum-v1", value.text("max_items").toUInt(),
+        value.ulong("max_bytes"), exploration,
+    )
 }
 private fun JsonObject.text(key: String): String = getValue(key).jsonPrimitive.content
 private fun JsonObject.optional(key: String): String? = get(key)?.jsonPrimitive?.contentOrNull
