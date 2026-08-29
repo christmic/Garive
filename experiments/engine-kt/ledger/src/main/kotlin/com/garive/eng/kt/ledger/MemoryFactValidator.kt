@@ -25,8 +25,108 @@ internal fun validateMemoryFact(kind: String, value: JsonObject) {
         "memory.obligation_opened" -> value.obligation()
         "memory.observation_recorded" -> value.observation()
         "memory.lifecycle_transitioned" -> value.lifecycle()
+        "memory.candidate_recorded" -> value.candidate()
+        "memory.maintenance_decided" -> value.maintenanceDecision()
+        "memory.distillation_checkpointed" -> value.distillationCheckpoint()
+        "memory.audit_recorded" -> value.audit()
+        "memory.promotion_requested" -> value.promotionRequest()
+        "memory.promotion_recorded" -> value.promotionReceipt()
+        "memory.erasure_requested" -> value.erasureRequest()
+        "memory.erasure_recorded" -> value.erasureReceipt()
         else -> throw IllegalArgumentException()
     }
+}
+
+private fun JsonObject.candidate() {
+    exact(setOf("candidate_id", "namespace_id", "extractor_revision", "source", "intent_kind", "intent_digest"))
+    listOf("candidate_id", "namespace_id", "extractor_revision").forEach(::nonEmpty)
+    enum("source", setOf("explicit_user_command", "session_end", "exit_summary", "scheduled_distillation"))
+    enum("intent_kind", setOf("learn", "forget"))
+    digest("intent_digest")
+}
+
+private fun JsonObject.maintenanceDecision() {
+    exact(setOf("decision_id", "candidate_id", "namespace_id", "decision_kind", "decision_digest"))
+    listOf("decision_id", "candidate_id", "namespace_id").forEach(::nonEmpty)
+    enum("decision_kind", setOf("add", "update", "delete", "noop"))
+    digest("decision_digest")
+}
+
+private fun JsonObject.distillationCheckpoint() {
+    exact(setOf("checkpoint_id", "namespace_id", "extractor_revision", "session_id", "through_position", "batch_digest"))
+    listOf("checkpoint_id", "namespace_id", "extractor_revision", "session_id").forEach(::nonEmpty)
+    ulong("through_position", true)
+    digest("batch_digest")
+}
+
+private fun JsonObject.audit() {
+    exact(setOf("audit_id", "namespace_id", "through_position", "policy_digest", "inventory_digest", "report_digest", "action_count", "truncated"))
+    listOf("audit_id", "namespace_id").forEach(::nonEmpty)
+    ulong("through_position", true)
+    listOf("policy_digest", "inventory_digest", "report_digest").forEach(::digest)
+    ulong("action_count")
+    require(getValue("truncated").jsonPrimitive.booleanOrNull != null)
+}
+
+private fun JsonObject.promotionRequest() {
+    exact(setOf("request_id", "namespace_id", "record_id", "revision_id", "memory_type", "policy_revision", "knowledge_proposal_id", "evidence_digest"))
+    listOf("request_id", "namespace_id", "record_id", "revision_id", "policy_revision", "knowledge_proposal_id").forEach(::nonEmpty)
+    enum("memory_type", memoryTypes)
+    digest("evidence_digest")
+}
+
+private fun JsonObject.promotionReceipt() {
+    exact(setOf("request_id", "namespace_id", "record_id", "revision_id", "knowledge_proposal_id", "knowledge_record_id", "knowledge_revision_id", "receipt_digest"))
+    listOf("request_id", "namespace_id", "record_id", "revision_id", "knowledge_proposal_id", "knowledge_record_id", "knowledge_revision_id").forEach(::nonEmpty)
+    digest("receipt_digest")
+}
+
+private fun JsonObject.erasureRequest() {
+    exact(setOf("request_id", "namespace_id", "record_id", "revision_id", "tombstone_fact", "policy_revision", "targets"))
+    listOf("request_id", "namespace_id", "record_id", "revision_id", "policy_revision").forEach(::nonEmpty)
+    getValue("tombstone_fact").jsonObject.factReference()
+    val targets = getValue("targets").jsonArray
+    require(targets.isNotEmpty() && targets.size <= 64)
+    var prior: Pair<Int, String>? = null
+    targets.forEach { element ->
+        val target = element.jsonObject
+        target.exact(setOf("target_id", "kind"))
+        target.nonEmpty("target_id")
+        val kind = target.enum("kind", setOf("primary_store", "projection", "cache", "backup"))
+        val order = when (kind) { "primary_store" -> 0; "projection" -> 1; "cache" -> 2; else -> 3 }
+        val current = order to target.text("target_id")
+        prior?.let { previous ->
+            require(current.first > previous.first || current.first == previous.first && current.second > previous.second)
+        }
+        prior = current
+    }
+}
+
+private fun JsonObject.erasureReceipt() {
+    exact(setOf("request_id", "namespace_id", "record_id", "revision_id", "attempt_id", "attempted_at_position", "results", "disposition"))
+    listOf("request_id", "namespace_id", "record_id", "revision_id", "attempt_id").forEach(::nonEmpty)
+    ulong("attempted_at_position", true)
+    val attempted = memoryUlong("attempted_at_position")
+    val results = getValue("results").jsonArray
+    require(results.isNotEmpty() && results.size <= 64)
+    val targets = mutableSetOf<String>()
+    var complete = true
+    results.forEach { element ->
+        val result = element.jsonObject
+        result.exact(setOf("target_id", "status", "receipt_digest"), setOf("not_before_position"))
+        result.nonEmpty("target_id")
+        require(targets.add(result.text("target_id")))
+        val status = result.enum("status", setOf("erased", "not_present", "pending_backup_retention", "pending_retry"))
+        result.digest("receipt_digest")
+        val pendingBackup = status == "pending_backup_retention"
+        require(pendingBackup == ("not_before_position" in result))
+        if (pendingBackup) {
+            result.ulong("not_before_position", true)
+            require(result.memoryUlong("not_before_position") > attempted)
+        }
+        complete = complete && status in setOf("erased", "not_present")
+    }
+    require((enum("disposition", setOf("complete", "partial")) == "complete") == complete)
 }
 
 private fun JsonObject.recall() {
