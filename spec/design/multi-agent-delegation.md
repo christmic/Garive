@@ -38,28 +38,38 @@ DelegationIntent {
     Definition { definition_id, definition_revision }
   objective: ContentBinding
   input_evidence: ordered FactReference[]
-  result_schema: portable JSON schema
+  result_schema: ContentBinding of canonical portable JSON schema
   budget: DelegationBudget
   cancellation_policy: Independent | CancelWithParent
   through_position
 }
 
 DelegationBudget {
-  max_child_turns: non-zero u32
-  max_child_executions: non-zero u32
+  max_child_turns: non-zero u64 (exactly 1 in v1)
+  max_child_executions: non-zero u64
   max_iterations: non-zero u64
-  max_input_tokens?: non-zero u64
-  max_output_tokens?: non-zero u64
+  max_input_tokens: non-zero u64
+  max_output_tokens: non-zero u64
   deadline_budget_ms: non-zero u64
-  max_depth: non-zero u32
+  max_depth: non-zero u64
+  max_objective_bytes: non-zero u64
+  max_input_evidence: non-zero u64
+  max_result_schema_bytes: non-zero u64
+  max_result_bytes: non-zero u64
+  max_result_evidence: non-zero u64
 }
 ```
 
 `FactReference` is CF0's exact fact binding. Objective/evidence are bounded and
 redacted before the child sees them. The requested budget may only narrow the
 parent snapshot's delegation policy and remaining aggregate budget.
-`result_schema` uses C4's portable JSON Schema subset, with the C5 interaction
-rule that any admitted root type is allowed rather than only an argument object.
+`result_schema.inline_utf8` is required, L0-canonical JSON, bounded by
+`max_result_schema_bytes`, and uses C4's portable JSON Schema subset with the
+C5 interaction rule that any admitted root type is allowed rather than only an
+argument object. Objective inline bytes (or the resolved referenced bytes),
+input evidence count, completed result bytes and result evidence count are
+bounded by their exact budget fields. V1 requires `max_child_turns=1`; child
+Execution restarts consume `max_child_executions`.
 
 `intent_digest` is lowercase SHA-256 over L0 canonical JSON containing contract
 `garive.delegation-intent`, version `1`, every field above except delegation
@@ -84,7 +94,7 @@ consumes the corresponding full reservation. Only a committed child terminal
 may release unused reservation; process loss or missing usage never creates
 budget. Checked arithmetic failure rejects before child start.
 
-V1 permits one active delegation per parent Turn and one child Turn per
+V1 permits one active delegation per parent Turn and exactly one child Turn per
 delegation. Parallel fan-out, DAGs, swarms, voting and recursive aggregation are
 future measured slices. A child may delegate only when its own snapshot admits
 it and `current_depth < max_depth`.

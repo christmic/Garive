@@ -327,10 +327,15 @@ DelegationBudgetBinding {
   max_child_turns: non-zero u64
   max_child_executions: non-zero u64
   max_iterations: non-zero u64
-  max_input_tokens?: non-zero u64
-  max_output_tokens?: non-zero u64
+  max_input_tokens: non-zero u64
+  max_output_tokens: non-zero u64
   deadline_budget_ms: non-zero u64
   max_depth: non-zero u64
+  max_objective_bytes: non-zero u64
+  max_input_evidence: non-zero u64
+  max_result_schema_bytes: non-zero u64
+  max_result_bytes: non-zero u64
+  max_result_evidence: non-zero u64
 }
 
 DelegationConsumption {
