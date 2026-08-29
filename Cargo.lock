@@ -1134,6 +1134,7 @@ dependencies = [
 name = "garive-context-pressure"
 version = "0.1.0"
 dependencies = [
+ "garive-adapter-anthropic-messages",
  "garive-core",
  "garive-eval",
  "garive-llm",

@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use garive_adapter_anthropic_messages::ThinkingConfig;
 use garive_context_pressure::{
     load_corpus, measure_context_pressure, AnthropicProviderCounter,
     AnthropicProviderCounterConfig, TokenCountExchangePort, TokenCounter, TokenCounterFailure,
@@ -171,7 +172,11 @@ fn unsupported_input_and_malformed_response_fail_closed() {
 
 #[test]
 fn every_nonsecret_route_value_is_bound_to_the_digest() {
-    let digest = |endpoint: EndpointSelection, model: &str, trace: &str, revision: &'static str| {
+    let digest = |endpoint: EndpointSelection,
+                  model: &str,
+                  trace: &str,
+                  revision: &'static str,
+                  thinking: Option<ThinkingConfig>| {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let profile = build_token_count_profile(&ConnectionInput::new(
             endpoint,
@@ -185,7 +190,7 @@ fn every_nonsecret_route_value_is_bound_to_the_digest() {
             capabilities: BTreeSet::from([ModelCapability::Text]),
             default_max_output_tokens: None,
             media_bindings: BTreeMap::new(),
-            thinking: None,
+            thinking,
             error_policy: ProtocolErrorPolicy::default(),
         };
         AnthropicProviderCounter::new(
@@ -208,17 +213,49 @@ fn every_nonsecret_route_value_is_bound_to_the_digest() {
         .config_digest
         .clone()
     };
-    let base = digest(EndpointSelection::Default, "model-a", "trace-a", "tx-a");
+    let base = digest(
+        EndpointSelection::Default,
+        "model-a",
+        "trace-a",
+        "tx-a",
+        None,
+    );
     for changed in [
         digest(
             EndpointSelection::Explicit("https://example.test/count".into()),
             "model-a",
             "trace-a",
             "tx-a",
+            None,
         ),
-        digest(EndpointSelection::Default, "model-b", "trace-a", "tx-a"),
-        digest(EndpointSelection::Default, "model-a", "trace-b", "tx-a"),
-        digest(EndpointSelection::Default, "model-a", "trace-a", "tx-b"),
+        digest(
+            EndpointSelection::Default,
+            "model-b",
+            "trace-a",
+            "tx-a",
+            None,
+        ),
+        digest(
+            EndpointSelection::Default,
+            "model-a",
+            "trace-b",
+            "tx-a",
+            None,
+        ),
+        digest(
+            EndpointSelection::Default,
+            "model-a",
+            "trace-a",
+            "tx-b",
+            None,
+        ),
+        digest(
+            EndpointSelection::Default,
+            "model-a",
+            "trace-a",
+            "tx-a",
+            Some(ThinkingConfig::Disabled),
+        ),
     ] {
         assert_ne!(base, changed);
     }

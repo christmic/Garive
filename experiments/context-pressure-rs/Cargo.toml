@@ -22,5 +22,6 @@ serde_jcs.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+garive-adapter-anthropic-messages = { path = "../../adapters/anthropic-messages" }
 garive-provider-profile = { path = "../../providers/profile" }
 tempfile = "3"
