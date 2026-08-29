@@ -4,8 +4,13 @@
 #![deny(missing_docs)]
 
 mod values;
+mod write;
 
 pub use values::{
     ContentBinding, DurableFactReference, MemoryError, MemoryErrorCode, MemoryKind, MemoryScope,
     MemorySensitivity, MemoryStatus,
+};
+pub use write::{
+    MemoryCommit, MemoryProposal, MemoryRecord, MemoryState, MemorySupersession, MemoryTombstone,
+    MemoryWriteOutcome,
 };
