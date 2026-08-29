@@ -15,7 +15,7 @@ evidence. Proposed numeric thresholds are not copied into accepted contracts.
 
 | Slice | Decision | Missing evidence before a focused Spec |
 |---|---|---|
-| C7 measured compression | gated | C7-A supplies the corpus/runner and P2-VX-ATC the exact vendor exchange. C7-B now specifies secret-safe normal-provider composition after correcting global instruction assembly. Remaining: its implementation, a credentialed publication run and measured trigger/retention trade-off. |
+| C7 measured compression | gated | C7-A supplies the corpus/runner, P2-VX-ATC the exact vendor exchange, and verified C7-B the secret-safe normal-provider composition. Remaining: a credentialed publication run and measured trigger/retention trade-off. |
 | Creativity | gated | Neutral task taxonomy and bounded alternative-generation hypothesis; reproducible baseline runs using E0/B0 infrastructure; deterministic outcome rubric separating diversity from correctness; authority and budget ownership. Harness unit tests are not a baseline. |
 | P2-VX hosted capability | planned per capability | One concrete capability request; provider-neutral semantics and extension values; exact unsupported/failure behavior; protocol fixtures; proof that ordinary Tool/Knowledge semantics cannot represent it. No generic extension allowlist is admitted. |
 | P2-VX-ATC token count | delivered | Exact non-generating count semantics, official SDK evidence, explicit profiles, strict decoding and shared Rust/Kotlin fixtures are verified. A credentialed publication run remains separate C7-A evidence. |

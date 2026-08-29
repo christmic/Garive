@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted implementation contract. C7 compression remains gated on a live
+Implemented and verified contract. C7 compression remains gated on a live
 publication run and measured retention trade-offs.
 
 ## Purpose
@@ -106,6 +106,11 @@ such a port fails at construction.
 
 A real eligible port plus an externally resolved credential is required to
 write `publishable=true` evidence. C7-B unit/loopback success is not that run.
+
+Repository evidence is `experiments/context-pressure-rs/src/provider_counter.rs`
+plus `tests/provider_counter.rs`. It covers all four reference classes, global
+instruction assembly, capability and response failures, publication refusal,
+secret substitution, and non-secret route configuration binding.
 
 ## Meta
 
