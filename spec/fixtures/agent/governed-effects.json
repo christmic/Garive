@@ -57,6 +57,16 @@
       },
       "constraints_digest": "constraints-v1",
       "authority_revision": "policy-7"
+    },
+    "wrong_invocation": {
+      "grant_id": "grant-4",
+      "invocation_id": "invocation-other",
+      "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+      "tool_name": "read_file",
+      "tool_revision": "1",
+      "granted_requirements": {"capabilities": ["filesystem_read"], "max_duration_ms": 4000, "max_output_bytes": 2048},
+      "constraints_digest": "constraints-v1",
+      "authority_revision": "policy-7"
     }
   },
   "interaction": {
@@ -88,6 +98,16 @@
       "executor_revision": "4",
       "terminal_classification": "failed",
       "result_digest": "failure-v1"
+    },
+    "wrong_grant": {
+      "receipt_id": "receipt-3",
+      "invocation_id": "invocation-1",
+      "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+      "grant_id": "grant-other",
+      "executor_id": "local.read",
+      "executor_revision": "4",
+      "terminal_classification": "completed",
+      "result_digest": "result-v1"
     }
   },
   "scenarios": [
@@ -157,6 +177,26 @@
       "expected": {"actions": ["authorize", "fail_grant_mismatch"], "execution_command_count": 0, "final_state": "failed"}
     },
     {
+      "name": "grant-invocation-mismatch",
+      "operations": [{"kind": "approve", "grant": "wrong_invocation"}],
+      "expected": {"actions": ["authorize", "fail_grant_mismatch"], "execution_command_count": 0, "final_state": "failed"}
+    },
+    {
+      "name": "interaction-response-idempotent",
+      "operations": [{"kind": "interaction_required"}, {"kind": "interaction_resolved", "response": true}, {"kind": "interaction_resolved", "response": true}],
+      "expected": {"actions": ["authorize", "suspend_approval", "authorize", "none"], "execution_command_count": 0, "final_state": "prepared"}
+    },
+    {
+      "name": "interaction-response-conflict",
+      "operations": [{"kind": "interaction_required"}, {"kind": "interaction_resolved", "response": true}, {"kind": "interaction_resolved", "response": false}],
+      "expected": {"actions": ["authorize", "suspend_approval", "authorize", "fail_interaction_conflict"], "execution_command_count": 0, "final_state": "failed"}
+    },
+    {
+      "name": "interaction-response-schema-mismatch",
+      "operations": [{"kind": "interaction_required"}, {"kind": "interaction_resolved", "response": "yes"}],
+      "expected": {"actions": ["authorize", "suspend_approval", "fail_interaction_conflict"], "execution_command_count": 0, "final_state": "failed"}
+    },
+    {
       "name": "duplicate-approval-idempotent",
       "operations": [{"kind": "approve", "grant": "good"}, {"kind": "approve", "grant": "good"}],
       "expected": {"actions": ["authorize", "dispatch", "none"], "execution_command_count": 1, "final_state": "authorized"}
@@ -169,6 +209,11 @@
     {
       "name": "completed-without-receipt-fails",
       "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "completed", "content": {"ok": true}, "truncated": false}],
+      "expected": {"actions": ["authorize", "dispatch", "none", "fail_corrupt_recovery_state"], "execution_command_count": 1, "final_state": "failed"}
+    },
+    {
+      "name": "receipt-grant-mismatch",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "completed", "receipt": "wrong_grant", "content": {"ok": true}, "truncated": false}],
       "expected": {"actions": ["authorize", "dispatch", "none", "fail_corrupt_recovery_state"], "execution_command_count": 1, "final_state": "failed"}
     }
   ],
