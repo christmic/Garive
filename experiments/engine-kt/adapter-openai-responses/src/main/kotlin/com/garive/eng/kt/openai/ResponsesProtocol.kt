@@ -2,16 +2,8 @@ package com.garive.eng.kt.openai
 
 import java.net.URI
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /** Stable protocol-only failure; it contains no deployment or retry policy. */
 public enum class ResponsesProtocolError {
@@ -92,69 +84,7 @@ public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
     }
 }
 
-/** Typed portable response output item with lossless extensions. */
-public sealed interface ResponseOutputItem {
-    /** Assistant message output. */
-    public data class Message(public val value: JsonObject) : ResponseOutputItem
-    /** Client function call. */
-    public data class FunctionCall(public val value: JsonObject) : ResponseOutputItem
-    /** Model reasoning data. */
-    public data class Reasoning(public val value: JsonObject) : ResponseOutputItem
-    /** Hosted or future item with no promoted semantics. */
-    public data class Extension(public val discriminator: String, public val value: JsonObject) : ResponseOutputItem
-}
-
-/** Official response envelope. */
-public data class ResponseEnvelope(
-    public val id: String,
-    public val model: String,
-    public val status: String?,
-    public val output: List<ResponseOutputItem>,
-    public val usage: JsonObject?,
-    public val raw: JsonObject,
-) {
-    public companion object {
-        /** Parses required official fields and portable output variants. */
-        public fun parse(value: JsonObject): ResponseEnvelope {
-            require(value.text("object") == "response")
-            val id = value.text("id"); val model = value.text("model")
-            val output = value.array("output").map { element ->
-                val item = element.jsonObject
-                when (val type = item.text("type")) {
-                    "message" -> ResponseOutputItem.Message(item)
-                    "function_call" -> ResponseOutputItem.FunctionCall(item)
-                    "reasoning" -> ResponseOutputItem.Reasoning(item)
-                    else -> ResponseOutputItem.Extension(type, item)
-                }
-            }
-            return ResponseEnvelope(id, model, value["status"]?.jsonPrimitive?.contentOrNull, output, value["usage"] as? JsonObject, value)
-        }
-    }
-}
-
-/** Official error envelope with an open protocol type. */
-public data class ErrorEnvelope(public val type: String, public val message: String, public val raw: JsonObject) {
-    public companion object {
-        /** Parses the standard outer `error` object. */
-        public fun parse(value: JsonObject): ErrorEnvelope {
-            val error = value.getValue("error").jsonObject
-            return ErrorEnvelope(error.text("type"), error.text("message"), value)
-        }
-    }
-}
-
-/** Ordinary HTTP result without provider classification. */
-public sealed interface DecodedResponse {
-    /** Successful response fact. */
-    public data class Response(public val status: Int, public val headers: List<ProtocolHeader>, public val response: ResponseEnvelope) : DecodedResponse
-    /** Non-success error fact. */
-    public data class Error(public val status: Int, public val headers: List<ProtocolHeader>, public val error: ErrorEnvelope) : DecodedResponse
-}
-
 private val JSON: Json = Json { ignoreUnknownKeys = false }
-
-private fun JsonObject.text(name: String): String = getValue(name).jsonPrimitive.content
-private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonArray
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
     val media = headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json"
     require(media.substringBefore(';') == "application/json")
