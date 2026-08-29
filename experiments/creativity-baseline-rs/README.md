@@ -1,0 +1,25 @@
+# Creativity baseline CR-A
+
+This package implements the accepted CR-A prerequisite in
+`spec/design/creativity-baseline.md`. It runs the same strict corpus through a
+one-candidate control arm and a bounded-alternatives arm, then writes exact
+paired evidence from an arm-blind evaluator.
+
+The command ports clear inherited environment, use only constructor-supplied
+configuration, enforce process and output bounds, and never retry. CR-A command
+runs are permanently non-publishable. The included generator and evaluator are
+deterministic fixtures that verify the harness; their output is not evidence of
+model creativity.
+
+Build and run the fixture route from the repository root:
+
+```sh
+cargo build -p garive-creativity-baseline --bins
+cargo run -p garive-creativity-baseline -- run \
+  experiments/creativity-baseline-rs/config.reference-v1.json
+```
+
+Choose a new `evidence_path` before rerunning. Evidence creation is
+non-overwriting and excludes prompts, rubrics, candidates, environment values
+and selection rationale. CR-B remains responsible for external model/evaluator
+coordinates, clean-revision attestation and publication eligibility.

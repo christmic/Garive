@@ -1,0 +1,32 @@
+{
+  "corpus_path": "spec/fixtures/eval/creativity-corpus-v1.json",
+  "evidence_path": "experiments/creativity-baseline-rs/evidence/reference-v1.json",
+  "garive_revision": "replace-with-exact-revision",
+  "runner_revision": "creativity-baseline-cr-a-v1",
+  "dirty": true,
+  "seed": 20260830,
+  "generator": {
+    "implementation_id": "garive-fixture-creativity-generator",
+    "implementation_revision": "v1",
+    "publishable": false,
+    "executable": "target/debug/garive-fixture-creativity-generator",
+    "argv": [],
+    "cwd": ".",
+    "environment": {},
+    "timeout_ms": 1000,
+    "max_stdout_bytes": 65536,
+    "max_stderr_bytes": 4096
+  },
+  "evaluator": {
+    "implementation_id": "garive-fixture-creativity-evaluator",
+    "implementation_revision": "v1",
+    "publishable": false,
+    "executable": "target/debug/garive-fixture-creativity-evaluator",
+    "argv": [],
+    "cwd": ".",
+    "environment": {},
+    "timeout_ms": 1000,
+    "max_stdout_bytes": 65536,
+    "max_stderr_bytes": 4096
+  }
+}
