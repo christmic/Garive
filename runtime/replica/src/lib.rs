@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod core_bridge;
+mod delegation_runtime;
 mod fake_host;
 mod live_host;
 mod model_http_transport;
@@ -35,6 +36,11 @@ pub use core_bridge::{
     PreparedKnowledgeRequest, PreparedModelRequest, RuntimeModelUncertainReason,
     ScheduleCancelReason, ScheduleDispatchDisposition, ScheduleLifecycleContext,
     SkillActivationContext, SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
+};
+pub use delegation_runtime::{
+    plan_delegation_authorization, plan_delegation_child_start, plan_delegation_child_terminal,
+    plan_delegation_denial, plan_delegation_observation, plan_delegation_request,
+    DelegationChildStartCommand, DelegationRuntimeError,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use live_host::{

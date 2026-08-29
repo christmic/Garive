@@ -12,6 +12,7 @@ garive-knowledge = { path = "../../engine/knowledge" }
 garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
 garive-memory = { path = "../../engine/memory" }
+garive-multiagent = { path = "../../engine/multiagent" }
 garive-scheduler = { path = "../../engine/scheduler" }
 garive-skill = { path = "../../engine/skill" }
 garive-tools = { path = "../../engine/tools" }
@@ -27,6 +28,7 @@ reqwest.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_jcs.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 
