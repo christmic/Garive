@@ -121,6 +121,64 @@ pub struct CancelTurnCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Fixed-prefix query for a redacted durable Turn projection.
+pub struct GetTurnQuery {
+    /// Session expected to own the Turn.
+    pub session_id: SessionId,
+    /// Turn to reconstruct.
+    pub turn_id: TurnId,
+    /// Optional non-zero Session position freezing a historical prefix.
+    pub through_position: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Durable lifecycle visible through one fixed Turn prefix.
+pub enum RuntimeTurnStatus {
+    /// A disposable Execution may be active or awaiting restart recovery.
+    Open,
+    /// The Turn requires a typed continuation.
+    Suspended,
+    /// The Turn completed successfully.
+    Completed,
+    /// A declared limit or cancellation stopped the Turn.
+    Stopped,
+    /// The Turn failed terminally.
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Redacted suspension binding exposed by [`RuntimeTurnView`].
+pub struct RuntimeSuspensionView {
+    /// Stable suspension identity required by continuation commands.
+    pub suspension_id: String,
+    /// Typed continuation category.
+    pub kind: RuntimeSuspensionKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Redacted Turn state derived solely from one verified durable prefix.
+pub struct RuntimeTurnView {
+    /// Session owning the Turn.
+    pub session_id: SessionId,
+    /// Reconstructed Turn identity.
+    pub turn_id: TurnId,
+    /// Exact Session fact position included by this view.
+    pub through_position: u64,
+    /// Latest Session transaction version observed while serving the query.
+    pub observed_session_version: u64,
+    /// Lifecycle at the fixed prefix.
+    pub status: RuntimeTurnStatus,
+    /// Latest disposable Execution created by the included prefix.
+    pub execution_id: Option<ExecutionId>,
+    /// Exact continuation binding when [`RuntimeTurnStatus::Suspended`].
+    pub suspension: Option<RuntimeSuspensionView>,
+    /// Monotonic completed/started iteration cursor at the prefix.
+    pub completed_iterations: u64,
+    /// Whether cancellation had been durably requested by the prefix.
+    pub cancellation_requested: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Optional interaction response consumed by a continuation transaction.
 pub struct InteractionContinuation {
     /// Prior Execution that requested the interaction.

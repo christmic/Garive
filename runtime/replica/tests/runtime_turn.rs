@@ -5,13 +5,13 @@ use garive_ledger::{
     CommitDisposition, FactDraft, FactId, FactKind, SessionId, ToolInvocationId,
 };
 use garive_runtime::{
-    commit_planned_turn, derive_runtime_recovery, plan_cancel_turn, plan_continue_turn,
+    commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,
     plan_reconcile_invocation, plan_recovery_restart, plan_start_turn, reconstruct_suspended_turn,
     select_runtime_recovery, CancelReason, CancelTurnCommand, ContinuationInput,
     ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
-    ModelRecoveryPosition, ReconcileInvocationCommand, ReconciliationDecision,
+    GetTurnQuery, ModelRecoveryPosition, ReconcileInvocationCommand, ReconciliationDecision,
     RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
-    RuntimeRecoverySnapshot, SqliteLedger, StartTurnCommand,
+    RuntimeRecoverySnapshot, RuntimeTurnStatus, SqliteLedger, StartTurnCommand,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -190,6 +190,60 @@ fn sqlite_command_ids_replay_or_conflict_without_partial_append() {
         vec![5]
     );
     assert_eq!(ledger.session_version(&session).unwrap(), Some(3));
+}
+
+#[test]
+fn get_turn_reconstructs_only_the_requested_redacted_prefix() {
+    let directory = tempdir().unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("query.sqlite3")).unwrap();
+    let command = start_command("secret input", "query-start");
+    let session = command.session_id.clone();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let plan = plan_start_turn(&command, 1).unwrap();
+    ledger
+        .commit(session.clone(), 1, plan.facts.clone())
+        .unwrap();
+    let cancel = plan_cancel_turn(&CancelTurnCommand {
+        command_id: RuntimeCommandId::new("query-cancel").unwrap(),
+        session_id: session.clone(),
+        turn_id: plan.turn_id.clone(),
+        reason: CancelReason::User,
+        requested_through_position: 4,
+        recorded_at: "2026-08-29T00:00:01Z".into(),
+    })
+    .unwrap();
+    ledger.commit(session.clone(), 2, cancel.facts).unwrap();
+
+    let at_start = get_turn(
+        &ledger,
+        &GetTurnQuery {
+            session_id: session.clone(),
+            turn_id: plan.turn_id.clone(),
+            through_position: Some(4),
+        },
+    )
+    .unwrap();
+    assert_eq!(at_start.status, RuntimeTurnStatus::Open);
+    assert_eq!(at_start.execution_id, plan.execution_id);
+    assert!(!at_start.cancellation_requested);
+    assert_eq!(
+        (at_start.through_position, at_start.observed_session_version),
+        (4, 3)
+    );
+
+    let latest = get_turn(
+        &ledger,
+        &GetTurnQuery {
+            session_id: session,
+            turn_id: plan.turn_id,
+            through_position: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(latest.through_position, 5);
+    assert!(latest.cancellation_requested);
 }
 
 #[test]

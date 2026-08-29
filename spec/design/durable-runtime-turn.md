@@ -68,6 +68,13 @@ payload returns the committed result; a different payload is a conflict.
 Commands use optimistic Session versioning. A conflict commits nothing and
 returns the latest durable watermark needed to retry deliberately.
 
+`GetTurn` returns a redacted projection, never raw fact payloads. Its
+`through_position` freezes the included Session fact prefix; the separately
+named `observed_session_version` is the latest transaction version seen while
+serving the query and must not be interpreted as the historical prefix's
+position. Status, latest Execution, typed suspension, iteration cursor and
+cancellation-request marker are reconstructed only from the frozen prefix.
+
 ## Start transaction
 
 Before invoking Core, Runtime atomically commits:
