@@ -75,13 +75,15 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root,
   push I/O behind a repository interface.
 
-Android Compose and iOS SwiftUI call the shared live H1 client. KMP and iOS are
-verified natively; the Android APK gate requires a local Android SDK.
+Android Compose and iOS SwiftUI call the shared live H1 client. KMP, iOS and
+the Android SDK 36 APK are verified natively; the Android device gate uses an
+API 36 Compose instrumentation test.
 
 ## Build
 
 ```
-just mobile                        # verifies iOS and prints the Android SDK gate
+just mobile                        # verifies iOS and builds the Android APK
+just mobile-android-device         # also runs the attached API 36 device gate
 ```
 
 iOS uses Xcode (`iosApp/iosApp.xcworkspace`). The KMP framework

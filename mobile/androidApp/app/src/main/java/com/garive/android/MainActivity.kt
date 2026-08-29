@@ -16,8 +16,8 @@ import kotlinx.coroutines.launch
 
 /** Android shell entry point for the shared live H1 client. */
 public class MainActivity : ComponentActivity() {
-    override fun onCreate(state: Bundle?) {
-        super.onCreate(state)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         setContent { GariveApp() }
     }
 }

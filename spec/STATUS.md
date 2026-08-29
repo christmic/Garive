@@ -64,7 +64,7 @@ planned without reopening a narrower completed row.
 | A-WEB | Web shell | accepted | accepted | documented | implemented | verified | done | Keep strict injectable HTTP/SSE, all H1 mutations, shared reducer fixture and production TypeScript build green. |
 | A-DESKTOP | Tauri/React shell | accepted | accepted | documented | implemented | verified | done | Keep embedded R1, typed IPC, backend-only configured startup and temporary-SQLite/real-protocol loops green. |
 | A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | implemented | verified | done | Keep strict document parsing, injected secret/profile registries, OS credential resolution and configured startup gates green. |
-| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | partial | active | Keep the KMP JVM/real-H1, XCFramework and Swift gates green; run the Android APK gate when SDK 36 is installed. |
+| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | verified | done | Keep KMP JVM/real-H1, XCFramework, Swift, Android SDK 36 APK and API 36 Compose instrumentation gates green. Signing and distribution remain later product slices. |
 | G0 | Go Gateway | accepted | missing | missing | missing | missing | gated | Admit only after a live Host requires a separately scaled edge. |
 | B0 | SWE benchmark harness | accepted | accepted | documented | implemented | verified | done | Keep strict official loading, the sole bounded concurrent route, release-once failure matrix, explicit command ports, unified-diff/prediction adapters, pinned official report coverage, JSONL tracking and CLI E2E green. Real Docker publication evidence remains external and gated. |
 

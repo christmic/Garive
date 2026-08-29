@@ -127,7 +127,10 @@ mobile-ios: mobile-shared
     cd mobile/iosApp && swift test
 
 mobile-android:
-    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:assembleDebug
+    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:lintDebug :app:assembleDebug
+
+mobile-android-device: mobile-android
+    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:connectedDebugAndroidTest
 
 mobile: mobile-ios mobile-android
 

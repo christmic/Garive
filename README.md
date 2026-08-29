@@ -22,8 +22,8 @@ only.
 - Host API v1 has generated Rust, Kotlin and KMP bindings plus semantic
   round-trips.
 - CLI, TUI and Web consume live H1; Tauri Desktop embeds R1; Android and iOS
-  consume the shared live KMP H1 client. Android APK verification still
-  requires a local SDK.
+  consume the shared live KMP H1 client. Android SDK 36 APK assembly and API 36
+  Compose instrumentation are verified alongside KMP and Swift native gates.
 
 ## Repository map
 
