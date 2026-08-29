@@ -14,8 +14,8 @@ C3/C6F/L0 and fixture changes still precede each behavior slice.
 Turn the remaining accepted capability ownership descriptions into executable
 contracts without creating a second Runtime inside Engine. This set covers
 Memory, Knowledge, Skill, Scheduler, Multi-Agent delegation and Observability.
-Compression, Creativity, Evaluation and hosted vendor extensions remain gated
-by their existing admission evidence.
+Compression, Creativity and hosted vendor extensions remain gated by their
+existing admission evidence. Evaluation E0 is implemented; B0 remains active.
 
 ## Normative order
 
@@ -23,6 +23,7 @@ by their existing admission evidence.
 |---:|---|---|---|---|
 | 1 | S0 | [`skill-activation.md`](skill-activation.md) | exact instruction-skill values and activation reduction | registry resolution and durable activation commit |
 | 2 | M0 | [`memory-capability.md`](memory-capability.md) | memory proposal/query/result semantics | namespace authority, persistence, retention and receipts |
+| 2a | M1 | [`memory-hypothesis-lifecycle.md`](memory-hypothesis-lifecycle.md) | classification, hypothesis lifecycle, bounded selection and reduction | authentication, indexing, observation, scheduling and erasure receipts |
 | 3 | K0 | [`knowledge-retrieval.md`](knowledge-retrieval.md) | source/query/evidence/citation semantics | connectors, credentials, retrieval durability and freshness |
 | 4 | Q0 | [`durable-scheduler.md`](durable-scheduler.md) | schedule intent and recurrence values | clocks, durable leases, workers and command dispatch |
 | 5 | MA0 | [`multi-agent-delegation.md`](multi-agent-delegation.md) | delegation intent, budget and result reduction | child identity/lifecycle, authority, persistence and recovery |
