@@ -11,6 +11,7 @@ import com.garive.eng.kt.ledger.ModelRequestId
 import com.garive.eng.kt.ledger.SessionId
 import com.garive.eng.kt.ledger.TurnId
 import com.garive.eng.kt.ledger.TurnSnapshot
+import com.garive.eng.kt.ledger.ToolInvocationId
 import java.math.BigDecimal
 import java.sql.Connection
 import java.sql.SQLException
@@ -95,6 +96,14 @@ public class PostgresLedger private constructor(private val config: PostgresConf
     /** Lists model requests still Started without a recovery-terminal fact. */
     public fun listUncertainModelRequests(sessionId: SessionId): List<ModelRequestId> = readState { state ->
         when (val result = state.listUncertainModelRequests(sessionId)) {
+            is LedgerResult.Failure -> throw PostgresLedgerError.Domain(result.error)
+            is LedgerResult.Success -> result.value
+        }
+    }
+
+    /** Lists effects still Started without a receipt or terminal fact. */
+    public fun listUncertainToolInvocations(sessionId: SessionId): List<ToolInvocationId> = readState { state ->
+        when (val result = state.listUncertainToolInvocations(sessionId)) {
             is LedgerResult.Failure -> throw PostgresLedgerError.Domain(result.error)
             is LedgerResult.Success -> result.value
         }
