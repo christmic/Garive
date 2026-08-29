@@ -4,28 +4,34 @@ import com.garive.host.v1.FakeHostCommandV1
 import com.garive.host.v1.FakeHostScenarioV1
 import com.garive.host.v1.HostEventV1
 
-enum class HostTerminalKind { COMPLETED, SUSPENDED, STOPPED, FAILED }
-enum class HostClientError {
+/** Terminal classes admitted by the Host v1 mobile client. */
+public enum class HostTerminalKind { COMPLETED, SUSPENDED, STOPPED, FAILED }
+/** Stable validation failure while reducing a Host v1 event stream. */
+public enum class HostClientError {
     COMMAND_MISMATCH, API_VERSION_MISMATCH, EMPTY_EVENTS, POSITION_GAP,
     IDENTITY_MISMATCH, DELTA_AFTER_TERMINAL, MISSING_TERMINAL, MULTIPLE_TERMINALS,
 }
 
-data class HostRunResult(
-    val sessionId: String,
-    val turnId: String,
-    val executionId: String,
-    val text: String,
-    val terminal: HostTerminalKind,
-    val lastPosition: ULong,
+/** Verified identities, output, terminal, and watermark from one Host run. */
+public data class HostRunResult(
+    public val sessionId: String,
+    public val turnId: String,
+    public val executionId: String,
+    public val text: String,
+    public val terminal: HostTerminalKind,
+    public val lastPosition: ULong,
 )
 
-sealed interface HostClientResult {
-    data class Success(val value: HostRunResult) : HostClientResult
-    data class Failure(val error: HostClientError) : HostClientResult
+/** Success/failure envelope for [FakeHostClient]. */
+public sealed interface HostClientResult {
+    public data class Success(public val value: HostRunResult) : HostClientResult
+    public data class Failure(public val error: HostClientError) : HostClientResult
 }
 
-class FakeHostClient(private val scenario: FakeHostScenarioV1) {
-    fun run(agentDefinitionId: String, text: String): HostClientResult {
+/** Strict reducer for one generated-Proto fake Host scenario. */
+public class FakeHostClient(private val scenario: FakeHostScenarioV1) {
+    /** Validates the command and reduces its ordered event stream. */
+    public fun run(agentDefinitionId: String, text: String): HostClientResult {
         val command = scenario.command ?: return HostClientResult.Failure(HostClientError.COMMAND_MISMATCH)
         if (command.agent_definition_id != agentDefinitionId || command.text != text) {
             return HostClientResult.Failure(HostClientError.COMMAND_MISMATCH)
@@ -76,8 +82,10 @@ class FakeHostClient(private val scenario: FakeHostScenarioV1) {
     }
 }
 
-object EmbeddedFakeHost {
-    fun runDefault(): HostClientResult = FakeHostClient(
+/** Deterministic fake Host shared by Android, iOS, and JVM tests. */
+public object EmbeddedFakeHost {
+    /** Runs the sole admitted default fixture command. */
+    public fun runDefault(): HostClientResult = FakeHostClient(
         FakeHostScenarioV1(
             api_version = "garive.host.v1",
             command = FakeHostCommandV1("garive.default", "hello"),
@@ -103,8 +111,10 @@ object EmbeddedFakeHost {
         )
 }
 
-object EmbeddedFakeHostBridge {
-    fun runText(): String = when (val result = EmbeddedFakeHost.runDefault()) {
+/** Swift-friendly bridge that renders the default fixture to plain text. */
+public object EmbeddedFakeHostBridge {
+    /** Returns output text or a stable failure string. */
+    public fun runText(): String = when (val result = EmbeddedFakeHost.runDefault()) {
         is HostClientResult.Success -> result.value.text
         is HostClientResult.Failure -> "failed:${result.error.name.lowercase()}"
     }

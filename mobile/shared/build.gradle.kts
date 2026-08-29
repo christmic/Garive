@@ -9,6 +9,7 @@ group = "com.garive"
 version = "0.1.0-SNAPSHOT"
 
 kotlin {
+    explicitApi()
     jvm()
     val xcframework = XCFramework("GariveShared")
     listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
