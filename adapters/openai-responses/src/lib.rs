@@ -5,6 +5,7 @@
 
 mod config;
 mod error;
+mod events;
 mod items;
 mod request;
 mod response;
@@ -12,6 +13,7 @@ mod sse;
 
 pub use config::{Header, HttpRequest, ResponsesAdapter, ResponsesAdapterConfig};
 pub use error::ResponsesAdapterError;
+pub use events::{PortableEventKind, ResponseStreamEvent};
 pub use items::{
     AssistantRole, OutputContent, OutputRefusal, OutputText, ProtocolExtension, ReasoningPart,
     ResponseFunctionCall, ResponseMessage, ResponseOutputItem, ResponseReasoning,
