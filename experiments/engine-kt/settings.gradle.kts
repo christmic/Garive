@@ -3,6 +3,7 @@
 rootProject.name = "engine-kt"
 
 include(":core")
+include(":config")
 include(":llm")
 include(":ledger")
 include(":tools")
