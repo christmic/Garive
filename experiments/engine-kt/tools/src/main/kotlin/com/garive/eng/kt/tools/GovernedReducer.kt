@@ -54,6 +54,7 @@ public class GovernedEffect private constructor(
     private val prepared: PreparedToolCall,
 ) {
     private var reducerState: ReducerState = ReducerState.Prepared
+    private var lastInteractionResolution: InteractionResolution? = null
 
     /** Current portable lifecycle state. */
     public val state: EffectState
@@ -98,6 +99,7 @@ public class GovernedEffect private constructor(
                     request.invocationId != invocationId || request.preparedDigest != prepared.inputDigest
                 ) return fail(GovernedFailureCode.INTERACTION_CONFLICT)
                 reducerState = ReducerState.Awaiting(request)
+                lastInteractionResolution = null
                 GovernedAction.Suspend(SuspensionRequirement.Interaction(request))
             }
         }
@@ -105,6 +107,9 @@ public class GovernedEffect private constructor(
 
     /** Reduces committed interaction continuation without inventing authority. */
     public fun applyInteraction(resolution: InteractionResolution): GovernedAction {
+        lastInteractionResolution?.let { existing ->
+            return if (existing == resolution) GovernedAction.None else fail(GovernedFailureCode.INTERACTION_CONFLICT)
+        }
         val request = (reducerState as? ReducerState.Awaiting)?.request
             ?: return fail(GovernedFailureCode.INTERACTION_CONFLICT)
         val matches = when (resolution) {
@@ -113,8 +118,8 @@ public class GovernedEffect private constructor(
         }
         if (!matches) return fail(GovernedFailureCode.INTERACTION_CONFLICT)
         return when (resolution) {
-            is InteractionResolution.Resolved -> { reducerState = ReducerState.Prepared; GovernedAction.Authorize }
-            is InteractionResolution.Cancelled -> { reducerState = ReducerState.Denied; GovernedAction.Observation(observation(ObservationOutcome.Rejected("interaction_cancelled", null))) }
+            is InteractionResolution.Resolved -> { lastInteractionResolution = resolution; reducerState = ReducerState.Prepared; GovernedAction.Authorize }
+            is InteractionResolution.Cancelled -> { lastInteractionResolution = resolution; reducerState = ReducerState.Denied; GovernedAction.Observation(observation(ObservationOutcome.Rejected("interaction_cancelled", null))) }
         }
     }
 
@@ -136,7 +141,7 @@ public class GovernedEffect private constructor(
             }
             current is ReducerState.Started && fact is ExecutionFact.Failed -> {
                 val receipt = fact.receipt ?: return fail(GovernedFailureCode.CORRUPT_RECOVERY_STATE)
-                if (fact.code.isEmpty() || !receiptBinds(receipt, current.grant, TerminalClassification.FAILED)) return fail(GovernedFailureCode.CORRUPT_RECOVERY_STATE)
+                if (fact.code.isEmpty() || !receiptBinds(receipt, current.grant, TerminalClassification.FAILED) || fact.partial?.toString()?.encodeToByteArray()?.size?.toLong()?.let { it > current.grant.grantedRequirements.maxOutputBytes } == true) return fail(GovernedFailureCode.CORRUPT_RECOVERY_STATE)
                 reducerState = ReducerState.Failed
                 GovernedAction.Observation(observation(ObservationOutcome.Failed(fact.code, fact.details, fact.partial)))
             }
@@ -150,7 +155,7 @@ public class GovernedEffect private constructor(
     }
 
     private fun grantBinds(grant: InvocationGrant): Boolean =
-        grant.invocationId == invocationId && grant.preparedDigest == prepared.inputDigest && grant.toolName == prepared.toolName && grant.toolRevision == prepared.toolRevision && grant.grantedRequirements.maxDurationMs <= prepared.requirements.maxDurationMs && grant.grantedRequirements.maxOutputBytes <= prepared.requirements.maxOutputBytes && prepared.requirements.capabilities.containsAll(grant.grantedRequirements.capabilities)
+        grant.constraintsDigest.isNotEmpty() && grant.authorityRevision.isNotEmpty() && grant.invocationId == invocationId && grant.preparedDigest == prepared.inputDigest && grant.toolName == prepared.toolName && grant.toolRevision == prepared.toolRevision && grant.grantedRequirements.maxDurationMs <= prepared.requirements.maxDurationMs && grant.grantedRequirements.maxOutputBytes <= prepared.requirements.maxOutputBytes && prepared.requirements.capabilities.containsAll(grant.grantedRequirements.capabilities)
 
     private fun receiptBinds(receipt: EffectReceipt, grant: InvocationGrant, terminal: TerminalClassification): Boolean =
         receipt.preparedDigest.isNotEmpty() && receipt.executorId.isNotEmpty() && receipt.executorRevision.isNotEmpty() && receipt.resultDigest.isNotEmpty() && receipt.invocationId == invocationId && receipt.preparedDigest == prepared.inputDigest && receipt.grantId == grant.grantId && receipt.terminalClassification == terminal

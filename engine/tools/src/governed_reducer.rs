@@ -45,6 +45,7 @@ pub struct GovernedEffect {
     invocation_id: ToolInvocationId,
     prepared: PreparedToolCall,
     state: ReducerState,
+    last_interaction_resolution: Option<InteractionResolution>,
 }
 
 impl GovernedEffect {
@@ -58,6 +59,7 @@ impl GovernedEffect {
                 invocation_id,
                 prepared,
                 state: ReducerState::Prepared,
+                last_interaction_resolution: None,
             },
             GovernedAction::Authorize,
         )
@@ -125,6 +127,7 @@ impl GovernedEffect {
                     return self.fail(GovernedFailureCode::InteractionConflict);
                 }
                 self.state = ReducerState::AwaitingInteraction(request.clone());
+                self.last_interaction_resolution = None;
                 GovernedAction::Suspend(SuspensionRequirement::Interaction(request))
             }
         }
@@ -132,6 +135,13 @@ impl GovernedEffect {
 
     /// Reduces a committed interaction continuation without inventing authority.
     pub fn apply_interaction(&mut self, resolution: InteractionResolution) -> GovernedAction {
+        if let Some(existing) = &self.last_interaction_resolution {
+            return if existing == &resolution {
+                GovernedAction::None
+            } else {
+                self.fail(GovernedFailureCode::InteractionConflict)
+            };
+        }
         let ReducerState::AwaitingInteraction(request) = &self.state else {
             return self.fail(GovernedFailureCode::InteractionConflict);
         };
@@ -162,10 +172,12 @@ impl GovernedEffect {
         }
         match resolution {
             InteractionResolution::Resolved { .. } => {
+                self.last_interaction_resolution = Some(resolution);
                 self.state = ReducerState::Prepared;
                 GovernedAction::Authorize
             }
             InteractionResolution::Cancelled { .. } => {
+                self.last_interaction_resolution = Some(resolution);
                 self.state = ReducerState::Denied;
                 GovernedAction::Observation(self.observation(ObservationOutcome::Rejected {
                     code: "interaction_cancelled".to_owned(),
@@ -225,6 +237,11 @@ impl GovernedEffect {
                 };
                 if code.is_empty()
                     || !self.receipt_binds(&receipt, grant, TerminalClassification::Failed)
+                    || partial.as_ref().is_some_and(|value| {
+                        serde_json::to_vec(value).map_or(true, |bytes| {
+                            bytes.len() as u64 > grant.granted_requirements.max_output_bytes()
+                        })
+                    })
                 {
                     return self.fail(GovernedFailureCode::CorruptRecoveryState);
                 }
