@@ -30,14 +30,45 @@ pub fn plan_recovery_action_facts(
         RuntimeRecoveryAction::ClassifyEffectUncertain => {
             let source = latest(snapshot, "effect.started")?;
             let payload = payload(source)?;
-            Ok(vec![fact(
+            let uncertain = fact(
                 source,
                 "effect.uncertain",
                 json!({
                     "prepared_digest":text(&payload,"prepared_digest")?,"reason":"executor_state_unknown"
                 }),
                 recorded_at,
-            )?])
+            )?;
+            let suspension_id = format!("suspension-{}", digest_text(source.fact_id.as_str()));
+            let continuation = json!({"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""});
+            let usage = json!({"input_tokens":{"kind":"unknown"},"output_tokens":{"kind":"unknown"},"source":"estimated"});
+            let mut execution = fact(
+                source,
+                "execution.suspended",
+                json!({
+                    "suspension_id":suspension_id,"reason":"operator_reconciliation",
+                    "continuation":continuation,"usage":usage
+                }),
+                recorded_at,
+            )?;
+            execution.model_request_id = None;
+            execution.tool_invocation_id = None;
+            let execution_id = source
+                .execution_id
+                .as_ref()
+                .ok_or(RuntimeCommandError::CorruptLedger)?;
+            let mut turn = fact(
+                source,
+                "turn.suspended",
+                json!({
+                    "suspension_id":suspension_id,"execution_id":execution_id.as_str(),
+                    "reason":"operator_reconciliation","continuation":continuation,"cumulative_usage":usage
+                }),
+                recorded_at,
+            )?;
+            turn.execution_id = None;
+            turn.model_request_id = None;
+            turn.tool_invocation_id = None;
+            Ok(vec![uncertain, execution, turn])
         }
         RuntimeRecoveryAction::RecoverReceiptTerminal => recover_receipt(snapshot, recorded_at),
         RuntimeRecoveryAction::FailRecoveryBound => recovery_bound_terminal(snapshot, recorded_at),
@@ -152,4 +183,12 @@ fn fact(
             .map_err(|_| RuntimeCommandError::InvariantViolation)?,
         recorded_at: recorded_at.into(),
     })
+}
+
+fn digest_text(value: &str) -> String {
+    let mut output = String::with_capacity(64);
+    for byte in Sha256::digest(value.as_bytes()) {
+        write!(&mut output, "{byte:02x}").unwrap();
+    }
+    output
 }
