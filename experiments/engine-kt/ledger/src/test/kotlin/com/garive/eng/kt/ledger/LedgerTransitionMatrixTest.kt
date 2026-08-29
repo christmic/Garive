@@ -56,8 +56,6 @@ class LedgerTransitionMatrixTest {
         assertValid(
             "session.opened",
             "turn.started",
-            "turn.suspended",
-            "turn.started",
             "turn.completed",
             "session.closed",
         )

@@ -1,11 +1,25 @@
 package com.garive.eng.kt.ledger
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
 internal enum class TurnState { OPEN, SUSPENDED, COMPLETED, STOPPED, FAILED }
 internal enum class ExecutionState { ACTIVE, ABANDONED, COMPLETED, SUSPENDED, STOPPED, FAILED }
 internal enum class InvocationState {
     PREPARED, AUTHORIZED, STARTED, RECEIPT, COMPLETED, REJECTED, INTERRUPTED, UNAVAILABLE,
     FAILED, DENIED, UNCERTAIN, OBSERVED,
 }
+
+internal data class InteractionRecord(
+    val execution: ExecutionId,
+    val tool: ToolInvocationId,
+    val suspensionId: String,
+    val preparedDigest: String,
+    var terminal: Boolean,
+)
 
 internal class LedgerProjection(
     private var opened: Boolean = false,
@@ -14,6 +28,9 @@ internal class LedgerProjection(
     private val executions: MutableMap<ExecutionId, Pair<TurnId, ExecutionState>> = mutableMapOf(),
     private val models: MutableMap<ModelRequestId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
     private val tools: MutableMap<ToolInvocationId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
+    private val toolDigests: MutableMap<ToolInvocationId, String> = mutableMapOf(),
+    private val suspensions: MutableMap<TurnId, String> = mutableMapOf(),
+    private val interactions: MutableMap<String, InteractionRecord> = mutableMapOf(),
 ) {
     fun copy() = LedgerProjection(
         opened,
@@ -22,6 +39,9 @@ internal class LedgerProjection(
         executions.toMutableMap(),
         models.toMutableMap(),
         tools.toMutableMap(),
+        toolDigests.toMutableMap(),
+        suspensions.toMutableMap(),
+        interactions.mapValues { (_, value) -> value.copy() }.toMutableMap(),
     )
 
     fun apply(fact: FactDraft): LedgerError? {
@@ -35,8 +55,8 @@ internal class LedgerProjection(
         if (!opened || closed) return LedgerError.InvalidTransition
         return when (kind) {
             "session.closed" -> closeSession()
-            "turn.started" -> startTurn(fact.turnId ?: return LedgerError.MissingReference)
-            "turn.suspended" -> transitionTurn(fact.turnId, TurnState.SUSPENDED)
+            "turn.started" -> startTurn(fact)
+            "turn.suspended" -> suspendTurn(fact)
             "turn.completed" -> transitionTurn(fact.turnId, TurnState.COMPLETED)
             "turn.stopped" -> transitionTurn(fact.turnId, TurnState.STOPPED)
             "turn.failed" -> transitionTurn(fact.turnId, TurnState.FAILED)
@@ -65,6 +85,8 @@ internal class LedgerProjection(
             "effect.uncertain" -> transitionTool(fact, InvocationState.UNCERTAIN)
             "effect.observation" -> observeTool(fact)
             "tool.preparation_rejected" -> rejectToolPreparation(fact)
+            "interaction.requested" -> requestInteraction(fact)
+            "interaction.resolved", "interaction.cancelled" -> finishInteraction(fact)
             else -> null
         }
     }
@@ -90,12 +112,33 @@ internal class LedgerProjection(
         return null
     }
 
-    private fun startTurn(turnId: TurnId): LedgerError? = when (turns[turnId]) {
-        null, TurnState.SUSPENDED -> {
-            turns[turnId] = TurnState.OPEN
-            null
+    private fun startTurn(fact: FactDraft): LedgerError? {
+        val turn = fact.turnId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val kind = payload.text("kind")
+        val prior = payload["prior_suspension_id"]?.jsonPrimitive?.contentOrNull
+        val valid = when (turns[turn]) {
+            null -> kind == "start" && prior == null
+            TurnState.SUSPENDED -> kind == "continue" && suspensions[turn] == prior &&
+                !hasPendingInteractionForTurn(turn)
+            else -> false
         }
-        else -> LedgerError.InvalidTransition
+        if (!valid) return LedgerError.InvalidTransition
+        turns[turn] = TurnState.OPEN
+        suspensions.remove(turn)
+        return null
+    }
+
+    private fun suspendTurn(fact: FactDraft): LedgerError? {
+        val turn = fact.turnId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val execution = ExecutionId.of(payload.text("execution_id"))
+        if (executions[execution] != (turn to ExecutionState.SUSPENDED)) {
+            return LedgerError.InvalidTransition
+        }
+        transitionTurn(turn, TurnState.SUSPENDED)?.let { return it }
+        suspensions[turn] = payload.text("suspension_id")
+        return null
     }
 
     private fun requireOpenTurn(turnId: TurnId?): LedgerError? = when {
@@ -123,6 +166,9 @@ internal class LedgerProjection(
         if (executions.values.any { it.first == turnId && it.second == ExecutionState.ACTIVE }) {
             return LedgerError.InvalidTransition
         }
+        if (next != TurnState.SUSPENDED && hasPendingInteractionForTurn(turnId)) {
+            return LedgerError.InvalidTransition
+        }
         turns[turnId] = next
         return null
     }
@@ -141,7 +187,9 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = executions[execution] ?: return LedgerError.MissingReference
         if (current.first != turn || current.second != ExecutionState.ACTIVE) return LedgerError.InvalidTransition
-        if (hasRecoveryPendingInvocation(execution)) return LedgerError.InvalidTransition
+        if (hasRecoveryPendingInvocation(execution) ||
+            (next != ExecutionState.SUSPENDED && hasPendingInteraction(execution))
+        ) return LedgerError.InvalidTransition
         executions[execution] = turn to next
         return null
     }
@@ -176,6 +224,47 @@ internal class LedgerProjection(
         if (tools.put(tool, execution to InvocationState.PREPARED) != null) {
             return LedgerError.InvalidTransition
         }
+        toolDigests[tool] = fact.payloadObject().text("prepared_digest")
+        return null
+    }
+
+    private fun requestInteraction(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val toolState = tools[tool] ?: return LedgerError.MissingReference
+        if (toolState.first != execution || toolState.second !in setOf(
+                InvocationState.PREPARED,
+                InvocationState.AUTHORIZED,
+            )
+        ) return LedgerError.InvalidTransition
+        val payload = fact.payloadObject()
+        val interactionId = payload.text("interaction_id")
+        val preparedDigest = payload.text("prepared_digest")
+        if (toolDigests[tool] != preparedDigest || interactionId in interactions) {
+            return LedgerError.InvalidTransition
+        }
+        interactions[interactionId] = InteractionRecord(
+            execution,
+            tool,
+            payload.text("suspension_id"),
+            preparedDigest,
+            false,
+        )
+        return null
+    }
+
+    private fun finishInteraction(fact: FactDraft): LedgerError? {
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val interaction = interactions[payload.text("interaction_id")]
+            ?: return LedgerError.MissingReference
+        if (interaction.terminal || interaction.execution != execution || interaction.tool != tool ||
+            interaction.suspensionId != payload.text("suspension_id") ||
+            interaction.preparedDigest != payload.text("prepared_digest")
+        ) return LedgerError.InvalidTransition
+        interaction.terminal = true
         return null
     }
 
@@ -249,4 +338,13 @@ internal class LedgerProjection(
                 (value.second == InvocationState.STARTED || value.second == InvocationState.RECEIPT)
         return models.values.any(::pending) || tools.values.any(::pending)
     }
+
+    private fun hasPendingInteraction(executionId: ExecutionId): Boolean =
+        interactions.values.any { it.execution == executionId && !it.terminal }
+
+    private fun hasPendingInteractionForTurn(turnId: TurnId): Boolean = interactions.values.any {
+        !it.terminal && executions[it.execution]?.first == turnId
+    }
 }
+
+private fun FactDraft.payloadObject(): JsonObject = Json.parseToJsonElement(payload.json).jsonObject
