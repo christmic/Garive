@@ -119,6 +119,13 @@ impl CreateMessageRequest {
         if let Some(ToolChoice::Tool { name, .. }) = &self.tool_choice {
             require_text(name, "Messages selected tool must not be empty")?;
         }
+        if let Some(ThinkingConfig::Enabled { budget_tokens, .. }) = &self.thinking {
+            if *budget_tokens < 1_024 || *budget_tokens >= self.max_tokens {
+                return Err(MessagesAdapterError::InvalidRequest(
+                    "Messages thinking budget must be at least 1024 and below max_tokens",
+                ));
+            }
+        }
         reject_collisions(&self.extensions)
     }
 }
@@ -207,6 +214,12 @@ pub enum ContentBlock {
     Document {
         /// Document source.
         source: DocumentSource,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+        /// Optional citation generation setting.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        citations: Option<CitationsConfig>,
         /// Optional display title.
         #[serde(skip_serializing_if = "Option::is_none")]
         title: Option<String>,
@@ -222,6 +235,9 @@ pub enum ContentBlock {
         name: String,
         /// JSON tool input.
         input: Map<String, Value>,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
     /// Result for a prior client tool invocation.
     ToolResult {
@@ -233,6 +249,9 @@ pub enum ContentBlock {
         /// Whether execution failed.
         #[serde(skip_serializing_if = "Option::is_none")]
         is_error: Option<bool>,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
     /// Prior extended-thinking block.
     Thinking {
@@ -252,12 +271,22 @@ impl ContentBlock {
     fn validate(&self) -> Result<(), MessagesAdapterError> {
         match self {
             Self::Text { text, .. } => require_text(text, "Messages text block must not be empty"),
+            Self::Image { source, .. } => source.validate(),
+            Self::Document { source, .. } => source.validate(),
             Self::ToolUse { id, name, .. } => {
                 require_text(id, "Messages tool-use id must not be empty")?;
                 require_text(name, "Messages tool-use name must not be empty")
             }
-            Self::ToolResult { tool_use_id, .. } => {
-                require_text(tool_use_id, "Messages tool-result id must not be empty")
+            Self::ToolResult {
+                tool_use_id,
+                content,
+                ..
+            } => {
+                require_text(tool_use_id, "Messages tool-result id must not be empty")?;
+                if let Some(content) = content {
+                    content.validate()?;
+                }
+                Ok(())
             }
             Self::Thinking {
                 thinking,
@@ -269,7 +298,6 @@ impl ContentBlock {
             Self::RedactedThinking { data } => {
                 require_text(data, "Messages redacted thinking data must not be empty")
             }
-            Self::Image { .. } | Self::Document { .. } => Ok(()),
         }
     }
 }
@@ -285,6 +313,9 @@ pub struct TextBlock {
     /// Optional prompt-cache marker.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_control: Option<CacheControl>,
+    /// Optional citation objects retained losslessly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub citations: Option<Vec<Value>>,
 }
 
 /// Text-block discriminator.
@@ -309,7 +340,7 @@ pub struct CacheControl {
     pub kind: CacheControlType,
     /// Optional protocol time-to-live.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<String>,
+    pub ttl: Option<CacheTtl>,
 }
 
 /// Cache-control discriminator.
@@ -320,6 +351,17 @@ pub enum CacheControlType {
     Ephemeral,
 }
 
+/// Official prompt-cache time-to-live values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CacheTtl {
+    /// Five-minute cache entry.
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    /// One-hour cache entry.
+    #[serde(rename = "1h")]
+    OneHour,
+}
+
 /// Image source union.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -327,7 +369,7 @@ pub enum ImageSource {
     /// Base64 encoded image.
     Base64 {
         /// Media type.
-        media_type: String,
+        media_type: ImageMediaType,
         /// Encoded bytes.
         data: String,
     },
@@ -338,6 +380,34 @@ pub enum ImageSource {
     },
 }
 
+impl ImageSource {
+    fn validate(&self) -> Result<(), MessagesAdapterError> {
+        match self {
+            Self::Base64 { data, .. } => {
+                require_text(data, "Messages base64 image data must not be empty")
+            }
+            Self::Url { url } => require_text(url, "Messages image URL must not be empty"),
+        }
+    }
+}
+
+/// Official base64 image media types.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ImageMediaType {
+    /// JPEG image.
+    #[serde(rename = "image/jpeg")]
+    Jpeg,
+    /// PNG image.
+    #[serde(rename = "image/png")]
+    Png,
+    /// GIF image.
+    #[serde(rename = "image/gif")]
+    Gif,
+    /// WebP image.
+    #[serde(rename = "image/webp")]
+    Webp,
+}
+
 /// Document source union.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -345,7 +415,7 @@ pub enum DocumentSource {
     /// Base64 encoded PDF.
     Base64 {
         /// Fixed PDF media type.
-        media_type: String,
+        media_type: PdfMediaType,
         /// Encoded bytes.
         data: String,
     },
@@ -358,15 +428,108 @@ pub enum DocumentSource {
     Text {
         /// Text data.
         data: String,
-        /// Optional media type.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        media_type: Option<String>,
+        /// Fixed plain-text media type.
+        media_type: TextMediaType,
     },
     /// Nested content blocks.
     Content {
         /// Portable nested content.
-        content: Vec<TextBlock>,
+        content: DocumentContent,
     },
+}
+
+impl DocumentSource {
+    fn validate(&self) -> Result<(), MessagesAdapterError> {
+        match self {
+            Self::Base64 { data, .. } => {
+                require_text(data, "Messages base64 PDF data must not be empty")
+            }
+            Self::Url { url } => require_text(url, "Messages document URL must not be empty"),
+            Self::Text { data, .. } => {
+                require_text(data, "Messages document text must not be empty")
+            }
+            Self::Content { content } => content.validate(),
+        }
+    }
+}
+
+/// Fixed base64 PDF media type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PdfMediaType {
+    /// PDF document.
+    #[serde(rename = "application/pdf")]
+    Pdf,
+}
+
+/// Fixed plain-text document media type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum TextMediaType {
+    /// Plain UTF-8 text.
+    #[serde(rename = "text/plain")]
+    Plain,
+}
+
+/// Content-source string shorthand or text/image blocks.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DocumentContent {
+    /// String shorthand.
+    Text(String),
+    /// Ordered text/image source blocks.
+    Blocks(Vec<DocumentContentBlock>),
+}
+
+impl DocumentContent {
+    fn validate(&self) -> Result<(), MessagesAdapterError> {
+        match self {
+            Self::Text(text) => require_text(text, "Messages document content must not be empty"),
+            Self::Blocks(blocks) if blocks.is_empty() => Err(MessagesAdapterError::InvalidRequest(
+                "Messages document content blocks must not be empty",
+            )),
+            Self::Blocks(blocks) => blocks.iter().try_for_each(DocumentContentBlock::validate),
+        }
+    }
+}
+
+/// Portable nested document-source content block.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DocumentContentBlock {
+    /// Nested text.
+    Text {
+        /// Text value.
+        text: String,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
+    /// Nested image.
+    Image {
+        /// Image source.
+        source: ImageSource,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
+}
+
+impl DocumentContentBlock {
+    fn validate(&self) -> Result<(), MessagesAdapterError> {
+        match self {
+            Self::Text { text, .. } => {
+                require_text(text, "Messages nested document text must not be empty")
+            }
+            Self::Image { source, .. } => source.validate(),
+        }
+    }
+}
+
+/// Citation generation setting for document blocks.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CitationsConfig {
+    /// Whether citations are enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
 }
 
 /// Tool result string shorthand or portable blocks.
@@ -375,8 +538,74 @@ pub enum DocumentSource {
 pub enum ToolResultContent {
     /// String shorthand.
     Text(String),
-    /// Portable result blocks retained losslessly.
-    Blocks(Vec<Value>),
+    /// Ordered portable result blocks.
+    Blocks(Vec<ToolResultBlock>),
+}
+
+impl ToolResultContent {
+    fn validate(&self) -> Result<(), MessagesAdapterError> {
+        match self {
+            Self::Text(_) => Ok(()),
+            Self::Blocks(blocks) if blocks.is_empty() => Err(MessagesAdapterError::InvalidRequest(
+                "Messages tool-result blocks must not be empty",
+            )),
+            Self::Blocks(blocks) => blocks.iter().try_for_each(ToolResultBlock::validate),
+        }
+    }
+}
+
+/// Portable tool-result content block.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolResultBlock {
+    /// Text tool result.
+    Text {
+        /// Text value.
+        text: String,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+        /// Optional citation objects.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        citations: Option<Vec<Value>>,
+    },
+    /// Image tool result.
+    Image {
+        /// Image source.
+        source: ImageSource,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+    },
+    /// Document tool result.
+    Document {
+        /// Document source.
+        source: DocumentSource,
+        /// Optional prompt-cache marker.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
+        /// Optional citation generation setting.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        citations: Option<CitationsConfig>,
+        /// Optional display title.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        /// Optional context.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context: Option<String>,
+    },
+}
+
+impl ToolResultBlock {
+    fn validate(&self) -> Result<(), MessagesAdapterError> {
+        match self {
+            Self::Text { text, .. } => {
+                require_text(text, "Messages tool-result text must not be empty")
+            }
+            Self::Image { source, .. } => source.validate(),
+            Self::Document { source, .. } => source.validate(),
+        }
+    }
 }
 
 /// Top-level system prompt.
@@ -438,11 +667,7 @@ pub enum ToolChoice {
         disable_parallel_tool_use: Option<bool>,
     },
     /// No tool use.
-    None {
-        /// Whether parallel calls are disabled.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        disable_parallel_tool_use: Option<bool>,
-    },
+    None,
 }
 
 /// Structured output and effort configuration.
@@ -450,10 +675,44 @@ pub enum ToolChoice {
 pub struct OutputConfig {
     /// Optional effort literal retained as protocol text.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effort: Option<String>,
+    pub effort: Option<Effort>,
     /// Official JSON output format object.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub format: Option<Map<String, Value>>,
+    pub format: Option<JsonOutputFormat>,
+}
+
+/// Official output effort levels.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Effort {
+    /// Low effort.
+    Low,
+    /// Medium effort.
+    Medium,
+    /// High effort.
+    High,
+    /// Extra-high effort.
+    Xhigh,
+    /// Maximum effort.
+    Max,
+}
+
+/// Official JSON Schema output format.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct JsonOutputFormat {
+    /// Fixed format discriminator.
+    #[serde(rename = "type")]
+    pub kind: JsonOutputFormatType,
+    /// Output JSON Schema object.
+    pub schema: Map<String, Value>,
+}
+
+/// JSON output format discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JsonOutputFormatType {
+    /// JSON Schema output.
+    JsonSchema,
 }
 
 /// Extended-thinking configuration.
@@ -466,9 +725,26 @@ pub enum ThinkingConfig {
     Enabled {
         /// Thinking token budget.
         budget_tokens: u64,
+        /// Optional display policy.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<ThinkingDisplay>,
     },
     /// Adaptive thinking.
-    Adaptive,
+    Adaptive {
+        /// Optional display policy.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display: Option<ThinkingDisplay>,
+    },
+}
+
+/// Extended-thinking display policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingDisplay {
+    /// Return summarized thinking.
+    Summarized,
+    /// Omit thinking text while preserving signatures.
+    Omitted,
 }
 
 /// Protocol request metadata.
