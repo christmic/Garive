@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted prerequisite implementation contract. CR-A collects paired evidence;
+Implemented and verified prerequisite contract. CR-A collects paired evidence;
 it does not admit `engine/creativity` behavior, a production prompt strategy or
 numeric regression thresholds.
 
@@ -168,6 +168,12 @@ admission evidence.
   without rubric or candidate content;
 - source scans keep Engine evaluation pure and creativity behavior empty;
 - focused and full Rust gates pass.
+
+Repository evidence is the pure reducer in `engine/eval`, the strict corpus,
+ports, runner and CLI in `experiments/creativity-baseline-rs`, their native
+tests, and the `creativity-boundaries` conformance gate. The reference fixture
+proves deterministic collection only. It does not satisfy CR-B or admit
+production Creativity behavior.
 
 ## Meta
 
