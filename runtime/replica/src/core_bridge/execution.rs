@@ -17,10 +17,11 @@ use crate::{ExecutionLease, RuntimeCommandError, SqliteLedger, SqliteLedgerError
 
 use super::encoding::digest;
 use super::{
-    plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
-    plan_model_uncertain, AuthorityPort, CoreTerminalContext, ExecutorPort, GovernedEffectConfig,
+    knowledge_connector::execute_knowledge_capability, plan_core_terminal, plan_model_prepared,
+    plan_model_started, plan_model_terminal, plan_model_uncertain, AuthorityPort,
+    CoreTerminalContext, ExecutorPort, GovernedEffectConfig, KnowledgeLifecycleContext,
     ModelLifecycleContext, PlannedMemoryRetrieval, PlannedSkillActivation,
-    RuntimeModelUncertainReason, SqliteGovernedEffectPort,
+    PreparedKnowledgeCapability, RuntimeModelUncertainReason, SqliteGovernedEffectPort,
 };
 
 use super::execution_types::{
@@ -34,6 +35,8 @@ pub struct PreparedAgentCapabilities {
     pub skill_activation: Option<PlannedSkillActivation>,
     /// Exact M0 retrieval, when Memory was requested for this Execution.
     pub memory_retrieval: Option<PlannedMemoryRetrieval>,
+    /// Exact K0 retrieval executed durably before Core sees its evidence.
+    pub knowledge_retrieval: Option<PreparedKnowledgeCapability>,
 }
 
 /// Runs Core with a model port whose external boundaries are durably ordered.
@@ -85,6 +88,7 @@ pub async fn execute_durable_model_only_with_skill_activation(
         PreparedAgentCapabilities {
             skill_activation: Some(activation),
             memory_retrieval: None,
+            knowledge_retrieval: None,
         },
         context,
         model,
@@ -154,7 +158,8 @@ async fn execute_durable_model_only_inner(
         cancellation_requested,
         failure: None,
     };
-    let effective_request = prepare_capabilities(&mut coordinator, request, capabilities)?;
+    let effective_request =
+        prepare_capabilities(&mut coordinator, request, capabilities, &config.model).await?;
     let coordinator = Mutex::new(coordinator);
     let prepared_events = Mutex::new(BTreeMap::new());
     let durable_model = DurableModelPort {
@@ -283,6 +288,7 @@ pub async fn execute_durable_agent_with_skill_activation(
         PreparedAgentCapabilities {
             skill_activation: Some(activation),
             memory_retrieval: None,
+            knowledge_retrieval: None,
         },
         capabilities,
         context,
@@ -329,7 +335,13 @@ async fn execute_durable_agent_inner(
         cancellation_requested,
         failure: None,
     };
-    let effective_request = prepare_capabilities(&mut coordinator, request, prepared_capabilities)?;
+    let effective_request = prepare_capabilities(
+        &mut coordinator,
+        request,
+        prepared_capabilities,
+        &config.model,
+    )
+    .await?;
     let coordinator = Mutex::new(coordinator);
     let prepared_events = Mutex::new(BTreeMap::new());
     let durable_model = DurableModelPort {
@@ -415,10 +427,11 @@ pub async fn execute_durable_agent_with_capabilities(
     .await
 }
 
-fn prepare_capabilities(
+async fn prepare_capabilities(
     coordinator: &mut CommitCoordinator<'_>,
     request: &AgentTurnRequest,
     capabilities: PreparedAgentCapabilities,
+    lifecycle: &ModelLifecycleContext,
 ) -> Result<AgentTurnRequest, DurableExecutionError> {
     let mut effective = request.clone();
     if let Some(activation) = capabilities.skill_activation {
@@ -435,6 +448,19 @@ fn prepare_capabilities(
             .into_iter()
             .map(attributed_memory)
             .collect::<Result<_, _>>()?;
+    }
+    if let Some(knowledge) = capabilities.knowledge_retrieval {
+        effective.attributed_knowledge = execute_knowledge_capability(
+            coordinator,
+            &KnowledgeLifecycleContext {
+                turn_id: lifecycle.turn_id.clone(),
+                execution_id: lifecycle.execution_id.clone(),
+                recorded_at: lifecycle.recorded_at.clone(),
+            },
+            knowledge,
+        )
+        .await?;
+        effective.context_request.through_position = coordinator.position();
     }
     Ok(effective)
 }

@@ -22,13 +22,15 @@ pub use core_bridge::{
     AuthorityFuture, AuthorityPort, AuthorityRequest, CoreTerminalContext, DurableExecutionConfig,
     DurableExecutionError, DurableExecutionResult, ExecutorDispatch, ExecutorDispatchError,
     ExecutorFuture, ExecutorPort, GovernedEffectConfig, GovernedRuntimePortError,
+    KnowledgeAccessGrant, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
     KnowledgeFailurePhase, KnowledgeFailureReason, KnowledgeLifecycleContext, MemoryAccessGrant,
     MemoryPrefix, MemoryRetrievalContext, MemoryTombstoneContext, MemoryTombstoneReason,
     MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, ModelLifecycleContext,
     PlannedKnowledgeCompletion, PlannedMemoryRetrieval, PlannedMemoryTombstone, PlannedMemoryWrite,
-    PlannedSkillActivation, PreparedAgentCapabilities, PreparedExecution, PreparedKnowledgeRequest,
-    PreparedModelRequest, RuntimeModelUncertainReason, SkillActivationContext,
-    SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
+    PlannedSkillActivation, PreparedAgentCapabilities, PreparedExecution,
+    PreparedKnowledgeCapability, PreparedKnowledgeRequest, PreparedModelRequest,
+    RuntimeModelUncertainReason, SkillActivationContext, SqliteGovernedEffectPort,
+    TerminalPublicationError, TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use live_host::{

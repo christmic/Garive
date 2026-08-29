@@ -85,11 +85,9 @@ pub enum KnowledgeFailureReason {
 /// Plans the exact `knowledge.requested` redispatchable boundary.
 pub fn plan_knowledge_requested(
     context: &KnowledgeLifecycleContext,
-    source: &KnowledgeSourceDescriptor,
     request: &KnowledgeRequest,
 ) -> Result<PreparedKnowledgeRequest, RuntimeCommandError> {
     validate_context(context)?;
-    request.validate_source(source).map_err(command)?;
     let request_digest = request.request_digest().map_err(command)?;
     let mut payload = Map::from_iter([
         ("request_id".into(), json!(request.request_id())),

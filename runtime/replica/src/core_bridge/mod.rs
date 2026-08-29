@@ -5,6 +5,7 @@ mod execution;
 mod execution_types;
 mod governed_effect;
 mod governed_effect_types;
+mod knowledge_connector;
 mod knowledge_lifecycle;
 mod memory_authority;
 mod memory_recovery;
@@ -30,6 +31,10 @@ pub use governed_effect_types::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
     ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
     GovernedRuntimePortError, PreparedExecution,
+};
+pub use knowledge_connector::{
+    KnowledgeAccessGrant, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
+    PreparedKnowledgeCapability,
 };
 pub use knowledge_lifecycle::{
     plan_knowledge_completed, plan_knowledge_dispatched, plan_knowledge_failed,

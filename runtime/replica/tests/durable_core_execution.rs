@@ -978,6 +978,7 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
         PreparedAgentCapabilities {
             skill_activation: Some(activation),
             memory_retrieval: Some(retrieval),
+            knowledge_retrieval: None,
         },
         &mut context,
         &SkillCheckingModel {
