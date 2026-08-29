@@ -21,6 +21,13 @@ internal data class InteractionRecord(
     var terminal: Boolean,
 )
 
+internal data class KnowledgeRecord(
+    val execution: ExecutionId,
+    val requestDigest: String,
+    val dispatchAttempts: MutableSet<String>,
+    var terminal: Boolean,
+)
+
 internal class LedgerProjection(
     private var opened: Boolean = false,
     private var closed: Boolean = false,
@@ -37,6 +44,7 @@ internal class LedgerProjection(
     private val toolReconciledObservations: MutableMap<ToolInvocationId, kotlinx.serialization.json.JsonElement> = mutableMapOf(),
     private val suspensions: MutableMap<TurnId, String> = mutableMapOf(),
     private val interactions: MutableMap<String, InteractionRecord> = mutableMapOf(),
+    private val knowledge: MutableMap<String, KnowledgeRecord> = mutableMapOf(),
 ) {
     fun copy() = LedgerProjection(
         opened,
@@ -54,6 +62,7 @@ internal class LedgerProjection(
         toolReconciledObservations.toMutableMap(),
         suspensions.toMutableMap(),
         interactions.mapValues { (_, value) -> value.copy() }.toMutableMap(),
+        knowledge.mapValues { (_, value) -> value.copy(dispatchAttempts = value.dispatchAttempts.toMutableSet()) }.toMutableMap(),
     )
 
     fun apply(fact: FactDraft): LedgerError? {
@@ -101,6 +110,9 @@ internal class LedgerProjection(
             "tool.preparation_rejected" -> rejectToolPreparation(fact)
             "interaction.requested" -> requestInteraction(fact)
             "interaction.resolved", "interaction.cancelled" -> finishInteraction(fact)
+            "knowledge.requested" -> requestKnowledge(fact)
+            "knowledge.dispatched" -> dispatchKnowledge(fact)
+            "knowledge.completed", "knowledge.failed" -> terminalKnowledge(fact)
             else -> null
         }
     }
@@ -240,7 +252,7 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = executions[execution] ?: return LedgerError.MissingReference
         if (current.first != turn || current.second != ExecutionState.ACTIVE) return LedgerError.InvalidTransition
-        if (hasRecoveryPendingInvocation(execution) ||
+        if (hasRecoveryPendingInvocation(execution) || hasPendingKnowledge(execution) ||
             (next != ExecutionState.SUSPENDED && hasPendingInteraction(execution))
         ) return LedgerError.InvalidTransition
         executions[execution] = turn to next
@@ -465,6 +477,56 @@ internal class LedgerProjection(
                 (value.second == InvocationState.STARTED || value.second == InvocationState.RECEIPT)
         return models.values.any(::pending) || tools.values.any(::pending)
     }
+
+    private fun requestKnowledge(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val requestId = payload.text("request_id")
+        val record = KnowledgeRecord(
+            execution,
+            payload.text("request_digest"),
+            mutableSetOf(),
+            false,
+        )
+        return if (knowledge.put(requestId, record) == null) null else LedgerError.InvalidTransition
+    }
+
+    private fun dispatchKnowledge(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val record = knowledge[payload.text("request_id")] ?: return LedgerError.InvalidTransition
+        val valid = record.execution == execution && !record.terminal &&
+            record.requestDigest == payload.text("request_digest") &&
+            record.dispatchAttempts.add(payload.text("dispatch_attempt_id"))
+        return if (valid) null else LedgerError.InvalidTransition
+    }
+
+    private fun terminalKnowledge(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val record = knowledge[payload.text("request_id")] ?: return LedgerError.InvalidTransition
+        val dispatched = record.dispatchAttempts.isNotEmpty()
+        val validPhase = if (fact.kind.value == "knowledge.completed") {
+            dispatched
+        } else {
+            when (payload.text("phase")) {
+                "pre_dispatch" -> !dispatched
+                "dispatched", "response_validation" -> dispatched
+                else -> false
+            }
+        }
+        if (record.execution != execution || record.terminal ||
+            record.requestDigest != payload.text("request_digest") || !validPhase
+        ) return LedgerError.InvalidTransition
+        record.terminal = true
+        return null
+    }
+
+    private fun hasPendingKnowledge(executionId: ExecutionId): Boolean =
+        knowledge.values.any { it.execution == executionId && !it.terminal }
 
     private fun hasPendingInteraction(executionId: ExecutionId): Boolean =
         interactions.values.any { it.execution == executionId && !it.terminal }

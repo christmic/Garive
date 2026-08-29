@@ -10,14 +10,14 @@ import kotlinx.serialization.json.JsonObject
 class LedgerTransitionMatrixTest {
     private fun fact(id: String, kind: String): FactDraft {
         val lifecycle = kind == "tool.preparation_rejected" || kind.startsWith("turn.") || kind.startsWith("execution.") ||
-            kind.startsWith("model.") || kind.startsWith("effect.")
+            kind.startsWith("model.") || kind.startsWith("effect.") || kind.startsWith("knowledge.")
         val payload = assertIs<CanonicalPayloadResult.Success>(
             CanonicalPayload.fromValue(runtimePayload(kind)),
         ).payload
         return FactDraft(
             FactId.of(id),
             if (lifecycle) TurnId.of("turn") else null,
-            if (kind == "tool.preparation_rejected" || kind.startsWith("execution.") || kind.startsWith("model.") || kind.startsWith("effect.")) {
+            if (kind == "tool.preparation_rejected" || kind.startsWith("execution.") || kind.startsWith("model.") || kind.startsWith("effect.") || kind.startsWith("knowledge.")) {
                 ExecutionId.of("execution")
             } else {
                 null
@@ -228,6 +228,29 @@ class LedgerTransitionMatrixTest {
             "effect.started",
             "effect.uncertain",
             "effect.observation",
+        )
+    }
+
+    @Test
+    fun `every Knowledge terminal requires requested and exact dispatch state`() {
+        assertValid(
+            "session.opened", "turn.started", "execution.started", "knowledge.requested",
+            "knowledge.dispatched", "knowledge.completed", "execution.completed",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started", "knowledge.completed",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started", "knowledge.requested",
+            "knowledge.completed",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started", "knowledge.requested",
+            "knowledge.dispatched", "knowledge.completed", "knowledge.completed",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started", "knowledge.requested",
+            "execution.completed",
         )
     }
 
