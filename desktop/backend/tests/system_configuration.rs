@@ -1,4 +1,11 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::Path,
+    sync::Arc,
+    thread,
+    time::Duration,
+};
 
 use garive_desktop::{
     BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopProfileConfiguration,
@@ -227,4 +234,98 @@ fn builtin_registry_constructs_exact_profiles_and_rejects_unknown_identity() {
         .err()
         .expect("unknown profile fails");
     assert_eq!(failure, DesktopConfigurationError::UnknownProfile);
+}
+
+#[tokio::test]
+async fn configured_builtin_profile_completes_over_real_loopback_http() {
+    let server = OneResponseServer::start();
+    let directory = tempdir().expect("temporary config directory");
+    let document = directory.path().join("desktop-v1.json");
+    let config = String::from_utf8(FIXTURE.to_vec())
+        .unwrap()
+        .replace("fixture.responses", OPENAI_RESPONSES_PROFILE_ID)
+        .replace("http://127.0.0.1:4319/v1/responses", server.url.as_str());
+    std::fs::write(&document, config).expect("write live config");
+    let provider = FileDesktopConfigurationProvider::new(
+        document,
+        directory.path().to_owned(),
+        FixtureSecrets,
+        BuiltinDesktopProfileRegistry,
+    );
+    let state = DesktopState::default();
+    assert!(state.install_from(&provider).expect("installed"));
+    let result = state
+        .run_turn_isolated("definition-main".into(), "hello live desktop".into())
+        .await
+        .expect("live durable terminal");
+    assert_eq!(result.text, "hello back");
+    let request = server.join();
+    assert!(request.contains("authorization: Bearer fixture-secret-never-serialized\r\n"));
+    assert!(!format!("{result:?}").contains("fixture-secret-never-serialized"));
+}
+
+const MODEL_RESPONSE: &str = r#"{"id":"resp_desktop","created_at":1787961600.0,"error":null,"incomplete_details":null,"instructions":null,"metadata":null,"model":"fixture-model","object":"response","output":[{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello back","annotations":[]}]}],"parallel_tool_calls":false,"temperature":null,"tool_choice":"auto","tools":[],"top_p":null,"status":"completed","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}}"#;
+
+struct OneResponseServer {
+    url: String,
+    thread: thread::JoinHandle<String>,
+}
+
+impl OneResponseServer {
+    fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("model listener");
+        let url = format!(
+            "http://{}/v1/responses",
+            listener.local_addr().expect("model address")
+        );
+        let thread = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("model accept");
+            let request = read_request(&mut stream);
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                MODEL_RESPONSE.len(),
+                MODEL_RESPONSE
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("model response");
+            request
+        });
+        Self { url, thread }
+    }
+
+    fn join(self) -> String {
+        self.thread.join().expect("model thread")
+    }
+}
+
+fn read_request(stream: &mut TcpStream) -> String {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("read timeout");
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 4_096];
+    loop {
+        let count = stream.read(&mut buffer).expect("request bytes");
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        if let Some(end) = bytes.windows(4).position(|value| value == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&bytes[..end + 4]);
+            let length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length: ")
+                        .map(str::to_owned)
+                })
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0);
+            if bytes.len() >= end + 4 + length {
+                break;
+            }
+        }
+    }
+    String::from_utf8(bytes).expect("UTF-8 request")
 }

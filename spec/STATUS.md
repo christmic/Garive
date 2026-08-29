@@ -58,8 +58,8 @@ planned without reopening a narrower completed row.
 | A-CLI | CLI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit create/reuse, real-loopback H1, terminal output, stable command identity and exit-code tests green. |
 | A-TUI | TUI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit loopback H1 and ordered durable event/cursor rendering tests green; resident multi-turn UX is a later slice. |
 | A-WEB | Web shell | accepted | accepted | documented | implemented | verified | done | Keep strict injectable HTTP/SSE, all H1 mutations, shared reducer fixture and production TypeScript build green. |
-| A-DESKTOP | Tauri/React shell | accepted | accepted | documented | partial | verified | active | Install constructed model/configuration through a backend-only Garive configuration provider; embedded R1, typed IPC and temporary-SQLite loop are verified. |
-| A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | missing | missing | active | Implement the bounded document, injected secret/profile registries and configured startup gate. |
+| A-DESKTOP | Tauri/React shell | accepted | accepted | documented | implemented | verified | done | Keep embedded R1, typed IPC, backend-only configured startup and temporary-SQLite/real-protocol loops green. |
+| A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | implemented | verified | done | Keep strict document parsing, injected secret/profile registries, OS credential resolution and configured startup gates green. |
 | A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | partial | active | Keep the KMP JVM/real-H1, XCFramework and Swift gates green; run the Android APK gate when SDK 36 is installed. |
 | G0 | Go Gateway | accepted | missing | missing | missing | missing | gated | Admit only after a live Host requires a separately scaled edge. |
 | B0 | SWE benchmark harness | accepted | missing | missing | skeleton | missing | gated | Admit after one real end-to-end Agent workflow exists. |
@@ -90,6 +90,7 @@ planned without reopening a narrower completed row.
 - [`design/core-agent-plan.md`](design/core-agent-plan.md) — dependency DAG and work packages.
 - [`design/agent-platform-delivery.md`](design/agent-platform-delivery.md) — platform acceptance contract.
 - [`design/agent-capability-spec-set.md`](design/agent-capability-spec-set.md) — draft post-H1 capability review set.
+- [`design/desktop-system-configuration.md`](design/desktop-system-configuration.md) — backend-only Desktop configuration contract.
 - [`../.agents/testing.md`](../.agents/testing.md) — evidence levels and repository gates.
 - [`AGENTS.md`](AGENTS.md) — Spec admission and schema rules.
 

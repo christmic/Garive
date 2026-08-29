@@ -133,7 +133,7 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
 | Kotlin Engine experiment | portable conformance experiment | D0, C0-C5 and admitted capability values/reducers use shared fixtures and native tests; no product-server claim. |
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
-| Desktop app | embedded Runtime shell | Tauri backend owns R1 and strict typed IPC; backend-only configuration provisioning remains active. |
+| Desktop app | configured embedded Runtime | Tauri backend owns R1, strict typed IPC, bounded system configuration and OS credential resolution. |
 | Mobile app | live Host client shell | Shared KMP H1 client with Compose and SwiftUI consumers; Android APK evidence remains SDK-gated. |
 | SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
 

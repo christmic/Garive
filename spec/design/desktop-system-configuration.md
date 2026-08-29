@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted implementation contract. This slice makes the Desktop shipping
+Accepted and implemented contract. This slice makes the Desktop shipping
 composition constructible without moving configuration, credentials or model
 selection into the frontend, Engine, protocol adapters or Provider profiles.
 

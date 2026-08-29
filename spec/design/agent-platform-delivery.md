@@ -208,7 +208,7 @@ Each surface starts with a deliberately bounded executable slice:
 | CLI | Submit one Turn, render final/typed terminal, return documented exit code. |
 | TUI | Display ordered durable H1 events, cursor and one terminal state. |
 | Web | Use a strict injectable H1 HTTP/SSE client and render committed Session/Turn state. |
-| Desktop | Tauri backend embeds R1 and React consumes a typed terminal IPC result; backend configuration remains separate. |
+| Desktop | Tauri backend embeds R1, loads bounded backend-only system configuration and React consumes a typed terminal IPC result. |
 | Android | Compose app calls the shared live KMP H1 client and renders terminal state. |
 | iOS | SwiftUI app calls the generated/shared bridge and renders terminal state. |
 
