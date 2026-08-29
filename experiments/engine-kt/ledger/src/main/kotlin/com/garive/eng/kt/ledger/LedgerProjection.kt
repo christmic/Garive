@@ -27,8 +27,12 @@ internal class LedgerProjection(
     private val turns: MutableMap<TurnId, TurnState> = mutableMapOf(),
     private val executions: MutableMap<ExecutionId, Pair<TurnId, ExecutionState>> = mutableMapOf(),
     private val models: MutableMap<ModelRequestId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
+    private val modelDigests: MutableMap<ModelRequestId, String> = mutableMapOf(),
     private val tools: MutableMap<ToolInvocationId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
     private val toolDigests: MutableMap<ToolInvocationId, String> = mutableMapOf(),
+    private val toolGrants: MutableMap<ToolInvocationId, String> = mutableMapOf(),
+    private val toolReceipts: MutableMap<ToolInvocationId, String> = mutableMapOf(),
+    private val toolExecutors: MutableMap<ToolInvocationId, Pair<String, String>> = mutableMapOf(),
     private val suspensions: MutableMap<TurnId, String> = mutableMapOf(),
     private val interactions: MutableMap<String, InteractionRecord> = mutableMapOf(),
 ) {
@@ -38,8 +42,12 @@ internal class LedgerProjection(
         turns.toMutableMap(),
         executions.toMutableMap(),
         models.toMutableMap(),
+        modelDigests.toMutableMap(),
         tools.toMutableMap(),
         toolDigests.toMutableMap(),
+        toolGrants.toMutableMap(),
+        toolReceipts.toMutableMap(),
+        toolExecutors.toMutableMap(),
         suspensions.toMutableMap(),
         interactions.mapValues { (_, value) -> value.copy() }.toMutableMap(),
     )
@@ -201,6 +209,7 @@ internal class LedgerProjection(
         if (models.put(request, execution to InvocationState.PREPARED) != null) {
             return LedgerError.InvalidTransition
         }
+        modelDigests[request] = fact.payloadObject().text("request_digest")
         return null
     }
 
@@ -210,6 +219,9 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = models[request] ?: return LedgerError.MissingReference
         if (current.first != execution) return LedgerError.InvalidTransition
+        if (modelDigests[request] != fact.payloadObject().text("request_digest")) {
+            return LedgerError.InvalidTransition
+        }
         val valid = (current.second == InvocationState.PREPARED && next == InvocationState.STARTED) ||
             (current.second == InvocationState.STARTED && next != InvocationState.PREPARED && next != InvocationState.STARTED)
         if (!valid) return LedgerError.InvalidTransition
@@ -274,6 +286,8 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = tools[tool] ?: return LedgerError.MissingReference
         if (current.first != execution) return LedgerError.InvalidTransition
+        val payload = fact.payloadObject()
+        if (toolDigests[tool] != payload.text("prepared_digest")) return LedgerError.InvalidTransition
         val valid = when (current.second to next) {
             InvocationState.PREPARED to InvocationState.AUTHORIZED,
             InvocationState.PREPARED to InvocationState.STARTED,
@@ -281,7 +295,6 @@ internal class LedgerProjection(
             InvocationState.AUTHORIZED to InvocationState.STARTED,
             InvocationState.AUTHORIZED to InvocationState.DENIED,
             InvocationState.STARTED to InvocationState.RECEIPT,
-            InvocationState.STARTED to InvocationState.COMPLETED,
             InvocationState.STARTED to InvocationState.FAILED,
             InvocationState.STARTED to InvocationState.UNCERTAIN,
             InvocationState.RECEIPT to InvocationState.COMPLETED,
@@ -290,7 +303,40 @@ internal class LedgerProjection(
             else -> false
         }
         if (!valid) return LedgerError.InvalidTransition
+        validateEffectBinding(tool, current.second, next, payload)?.let { return it }
         tools[tool] = execution to next
+        return null
+    }
+
+    private fun validateEffectBinding(
+        tool: ToolInvocationId,
+        current: InvocationState,
+        next: InvocationState,
+        payload: JsonObject,
+    ): LedgerError? {
+        when (next) {
+            InvocationState.AUTHORIZED -> toolGrants[tool] = payload.text("grant_id")
+            InvocationState.STARTED -> {
+                val grant = payload.text("grant_id")
+                if (toolGrants[tool]?.let { it != grant } == true) return LedgerError.InvalidTransition
+                toolGrants[tool] = grant
+                toolExecutors[tool] = payload.text("executor_id") to payload.text("executor_revision")
+            }
+            InvocationState.RECEIPT -> {
+                if (toolGrants[tool] != payload.text("grant_id") ||
+                    toolExecutors[tool] != (payload.text("executor_id") to payload.text("executor_revision"))
+                ) return LedgerError.InvalidTransition
+                toolReceipts[tool] = payload.text("receipt_id")
+            }
+            InvocationState.COMPLETED -> {
+                if (toolReceipts[tool] != payload.text("receipt_id")) return LedgerError.InvalidTransition
+            }
+            InvocationState.FAILED -> if (
+                current == InvocationState.RECEIPT &&
+                toolReceipts[tool] != payload["receipt_id"]?.jsonPrimitive?.contentOrNull
+            ) return LedgerError.InvalidTransition
+            else -> Unit
+        }
         return null
     }
 
@@ -308,6 +354,9 @@ internal class LedgerProjection(
         ) {
             return LedgerError.InvalidTransition
         }
+        if (toolDigests[tool] != fact.payloadObject().text("prepared_digest")) {
+            return LedgerError.InvalidTransition
+        }
         tools[tool] = execution to InvocationState.OBSERVED
         return null
     }
@@ -317,6 +366,9 @@ internal class LedgerProjection(
         if (fact.toolInvocationId != null) return LedgerError.InvalidTransition
         val request = fact.modelRequestId ?: return LedgerError.MissingReference
         val execution = fact.executionId ?: return LedgerError.MissingReference
+        if (fact.payloadObject().text("source_model_request_id") != request.value) {
+            return LedgerError.InvalidTransition
+        }
         val current = models[request] ?: return LedgerError.MissingReference
         return if (current.first == execution && current.second == InvocationState.COMPLETED) {
             null

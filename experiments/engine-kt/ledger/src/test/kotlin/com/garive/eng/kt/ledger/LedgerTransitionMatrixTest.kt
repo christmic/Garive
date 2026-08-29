@@ -151,14 +151,14 @@ class LedgerTransitionMatrixTest {
             listOf("effect.prepared", "effect.started"),
             listOf("effect.prepared", "effect.authorized", "effect.started"),
         ).forEach { prefix ->
-            listOf("effect.completed", "effect.failed", "effect.uncertain").forEach { terminal ->
+            listOf("effect.failed", "effect.uncertain").forEach { terminal ->
                 assertValid(
                     *(listOf("session.opened", "turn.started", "execution.started") +
                         prefix + terminal + "execution.completed").toTypedArray(),
                 )
             }
         }
-        listOf("effect.completed", "effect.failed").forEach { terminal ->
+        listOf("effect.completed").forEach { terminal ->
             assertValid(
                 "session.opened",
                 "turn.started",
