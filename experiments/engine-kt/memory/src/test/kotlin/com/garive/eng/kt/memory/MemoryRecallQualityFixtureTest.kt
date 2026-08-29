@@ -17,6 +17,19 @@ public class MemoryRecallQualityFixtureTest {
     @Test
     public fun pinnedRecallQualityIsExactAndReplayable(): Unit {
         assertEquals("synthetic-semantic-v1", root.text("dataset_revision"))
+        val selectionRoot = Json.parseToJsonElement(
+            File(System.getProperty("garive.repo.root"), "spec/fixtures/agent/memory-hypothesis-lifecycle-v1.json").readText(),
+        ).jsonObject
+        root.getValue("cases").jsonArray.forEach { element ->
+            val value = element.jsonObject
+            val selection = selectionRoot.getValue("recall_cases").jsonArray.map { it.jsonObject }
+                .single { it.text("name") == value.text("selection_case") }
+            assertEquals(
+                selection.getValue("expected_ids").jsonArray.map { it.jsonPrimitive.content },
+                value.getValue("selected").jsonArray.map { it.jsonPrimitive.content.substringBefore(':') },
+                value.text("case_id"),
+            )
+        }
         val cases = root.getValue("cases").jsonArray.map { case(it.jsonObject) }
         val summary = (evaluateRecallQuality(cases) as MemoryContractResult.Success).value
         val expected = root.getValue("expected_summary").jsonObject

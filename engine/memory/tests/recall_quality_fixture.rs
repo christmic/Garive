@@ -14,7 +14,36 @@ fn fixture() -> Value {
 #[test]
 fn pinned_recall_quality_is_exact_and_replayable() {
     let root = fixture();
+    let selection_fixture: Value = serde_json::from_str(
+        &fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../spec/fixtures/agent/memory-hypothesis-lifecycle-v1.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(root["dataset_revision"], "synthetic-semantic-v1");
+    for value in root["cases"].as_array().unwrap() {
+        let selection = selection_fixture["recall_cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == value["selection_case"])
+            .unwrap();
+        let actual = value["selected"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().split_once(':').unwrap().0)
+            .collect::<Vec<_>>();
+        let expected = selection["expected_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "{}", value["case_id"]);
+    }
     let cases = root["cases"]
         .as_array()
         .unwrap()
