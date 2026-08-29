@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "contract": "memory-recall-quality",
+  "dataset_revision": "synthetic-semantic-v1",
+  "cases": [
+    {"case_id":"ranked-menu","selection_case":"menu_rank_and_exact_budget","expected":["r1:v1","r2:v2"],"forbidden":["r6:v6"],"selected":["r1:v1","r2:v2","r3:v3"],"replay":["r1:v1","r2:v2","r3:v3"]},
+    {"case_id":"bounded-detail","selection_case":"prefix_byte_bound","expected":["r1:v1","r2:v2"],"forbidden":["r6:v6"],"selected":["r1:v1"],"replay":["r1:v1"]},
+    {"case_id":"archived-explicit-detail","selection_case":"detail_can_select_archived","expected":["r5:v5"],"forbidden":["r6:v6"],"selected":["r5:v5"],"replay":["r5:v5"]},
+    {"case_id":"seeded-exploration","selection_case":"seeded_exploration_is_replayable","expected":["r1:v1","r4:v4"],"forbidden":["r6:v6"],"selected":["r1:v1","r2:v2","r4:v4"],"replay":["r1:v1","r2:v2","r4:v4"]}
+  ],
+  "expected_summary": {"cases":4,"recall_numerator":6,"recall_denominator":7,"precision_numerator":6,"precision_denominator":8,"forbidden_admissions":0,"replay_mismatches":0}
+}

@@ -12,6 +12,7 @@ mod observation;
 mod promotion;
 mod query;
 mod recall;
+mod recall_quality;
 mod values;
 mod write;
 
@@ -48,6 +49,10 @@ pub use query::{
 pub use recall::{
     select_recall, MemoryRecallCandidate, RecallExploration, RecallProduct, RecallScore,
     RecallSelection, RecallSelectionItem, RecallSelectionKind, RecallSelectionRequest,
+};
+pub use recall_quality::{
+    evaluate_recall_quality, RecallQualityCase, RecallQualityIdentity, RecallQualityRatio,
+    RecallQualitySummary,
 };
 
 pub use values::{
