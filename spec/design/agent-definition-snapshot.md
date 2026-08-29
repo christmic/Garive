@@ -235,6 +235,8 @@ content, credentials, or policy internals.
 - [`agent-architecture.md`](agent-architecture.md) — Agent/Runtime ownership.
 - [`prepared-tool-call.md`](prepared-tool-call.md) — exact tool definitions
   included in the capability snapshot.
+- [`durable-runtime-turn.md`](durable-runtime-turn.md) — Turn binding and
+  continuation validation.
 - [`cross-language-agent-contract.md`](cross-language-agent-contract.md) —
   current and proposed Rust/Kotlin admission rules.
 

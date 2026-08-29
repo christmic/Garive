@@ -57,8 +57,8 @@ name and schema, then produces an immutable prepared call. The model's
 
 ```python
 class PreparedToolCall:
-    invocation_id: uuid      # stable Runtime-derived identity
     model_call_id: str       # untrusted correlation value
+    tool_name: str           # exact admitted provider-neutral name
     tool_revision: str       # exact registered definition
     normalized_args: Value   # validated and immutable
     input_digest: sha256
@@ -66,7 +66,8 @@ class PreparedToolCall:
     replay_class: ReplayClass
 ```
 
-Reusing an `invocation_id` with another digest or tool revision is a conflict.
+Runtime allocates a `ToolInvocationId` only after preparation. Reusing that
+Runtime identity with another digest or tool revision is a conflict.
 Invalid model output becomes a model-visible preparation failure; it never
 reaches authorization or an executor.
 
@@ -80,7 +81,7 @@ the exact invocation, digest, tool revision, target, and limits.
 |---------|---------------------------|
 | `Approve` | Commit the grant, then dispatch the exact prepared call. |
 | `Deny(reason)` | Write `tool.result.rejected{reason}`; feed reason back to model next iteration (no termination) |
-| `ApproveWithRewrite(x)` | Reject the old preparation and create a new prepared call/digest; authorization never mutates an approved call in place. |
+| `ReplacementRequired(x)` | Reject the old preparation and create a new prepared call/digest/invocation; authorization never mutates an approved call in place. |
 | `AskUser(question)` | Write `approval_request`; round returns `Suspended` (per `loop.md` "Stage ④") |
 
 Authorization evaluates requested capabilities, but a declaration does not

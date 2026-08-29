@@ -380,6 +380,8 @@ committed before the correcting observation enters a later model request.
 
 ## See also
 
+- [`durable-runtime-turn.md`](durable-runtime-turn.md) — transaction order and
+  recovery algorithm consuming these payloads.
 - [`durable-ledger.md`](durable-ledger.md) — outer envelope, canonicalization,
   positions and idempotent append.
 - [`governed-effects.md`](governed-effects.md) — semantic meaning of effect and

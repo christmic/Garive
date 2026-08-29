@@ -28,16 +28,17 @@ planned without reopening a narrower completed row.
 
 | ID | Slice | Design | Spec | API | Code | Tests | State | Next evidence |
 |---|---|---|---|---|---|---|---|---|
+| D0 | Agent Definition and effective snapshot | accepted | accepted | documented | missing | missing | planned | Freeze shared resolution/canonical vectors after the C4 fixture contract. |
 | C0 | Execution identity and bounded control | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs` and shared control fixtures green. |
 | C1 | Model facts and outcomes | accepted | accepted | documented | implemented | verified | done | Keep the normalized outcome API gate and shared fixtures green. |
 | C1b | Model request and stream contract | accepted | accepted | documented | implemented | verified | done | Keep request/stream docs, validation fixtures, and API gate green. |
 | C2 | Deterministic context derive | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs`, boundary tests, and property tests green. |
 | C3 | Bounded model-only execution | accepted | accepted | documented | implemented | verified | done | Keep the explicit no-tool boundary and model-only scenarios green. |
-| C4 | Tool resolution and prepared calls | accepted | missing | missing | skeleton | missing | planned | Accept a focused Prepared Call/digest/replay Spec before implementation. |
-| C5 | Governed effects and observations | accepted | missing | missing | skeleton | missing | planned | Accept authorization, interaction, receipt, and uncertain-effect Specs. |
-| C6 | Durable Runtime Turn orchestration | accepted | draft | partial | partial | partial | active | Specify and prove one real persisted Turn across every crash boundary. |
+| C4 | Tool resolution and prepared calls | accepted | accepted | documented | skeleton | missing | active | Freeze shared preparation/schema/digest fixtures, then implement Rust/Kotlin. |
+| C5 | Governed effects and observations | accepted | accepted | documented | skeleton | missing | planned | Depends on C4/D0 fixtures and implementations. |
+| C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | partial | partial | planned | Depends on the coordinated L0 amendment plus C4/C5. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Record a C3/C6 baseline before accepting thresholds or algorithms. |
-| L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | verified | done | Keep Rust/Kotlin scenario and exhaustive transition matrices green. |
+| L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | partial | partial | active | Implement and verify the accepted C6 recovery facts and `execution.abandoned` transition. |
 | L1-R | SQLite Ledger adapter | accepted | accepted | partial | implemented | partial | active | Add migration/backup policy and the remaining process-boundary fault matrix. |
 | L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | partial | active | Complete the remaining process-boundary and concurrency fault matrix. |
 

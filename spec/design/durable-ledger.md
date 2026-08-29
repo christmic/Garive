@@ -83,14 +83,16 @@ The first admitted vocabulary is:
 | Family | Kinds |
 |---|---|
 | Session | `session.opened`, `session.closed` |
-| Turn | `turn.started`, `turn.input`, `turn.suspended`, `turn.completed`, `turn.stopped`, `turn.failed` |
-| Execution | `execution.started`, `execution.completed`, `execution.suspended`, `execution.stopped`, `execution.failed` |
+| Turn | `turn.started`, `turn.input`, `turn.cancel_requested`, `turn.suspended`, `turn.completed`, `turn.stopped`, `turn.failed` |
+| Execution | `execution.started`, `execution.abandoned`, `execution.completed`, `execution.suspended`, `execution.stopped`, `execution.failed` |
 | Model | `model.prepared`, `model.started`, `model.completed`, `model.rejected`, `model.interrupted`, `model.unavailable`, `model.uncertain` |
 | Interaction | `interaction.requested`, `interaction.resolved`, `interaction.cancelled` |
-| Tool/effect | `effect.prepared`, `effect.authorized`, `effect.denied`, `effect.started`, `effect.receipt`, `effect.completed`, `effect.failed`, `effect.uncertain` |
+| Tool/effect | `tool.preparation_rejected`, `effect.prepared`, `effect.authorized`, `effect.denied`, `effect.started`, `effect.receipt`, `effect.completed`, `effect.failed`, `effect.uncertain`, `effect.observation` |
 | Projection | `context.summary`, `privacy.redacted` |
 
 Adding a kind requires a schema-versioned payload spec and recovery decision.
+The accepted C6 shapes are defined by
+[`durable-runtime-facts.md`](durable-runtime-facts.md).
 
 ## Aggregate state
 
@@ -102,13 +104,15 @@ Open -> Suspended -> Open ... -> Completed | Stopped | Failed
 
 `Suspended` keeps the durable Turn resumable. A terminal Turn cannot return to
 Open. Product retry after `Stopped`/`Failed` creates a new Turn.
-`turn.started` creates an absent Turn or reopens the same Turn from Suspended;
-the following `execution.started` must carry a new Execution identity.
+`turn.started(kind=start)` creates an absent Turn;
+`turn.started(kind=continue)` reopens the same Turn from Suspended and binds the
+consumed suspension. The following `execution.started` carries a new Execution
+identity.
 
 ### Execution
 
 ```text
-Active -> Completed | Suspended | Stopped | Failed
+Active -> Abandoned | Completed | Suspended | Stopped | Failed
 ```
 
 Every Execution is terminal exactly once. Continuation creates a new
@@ -120,6 +124,12 @@ active, and a Session cannot close while any Turn, Execution, or dispatched
 invocation remains non-terminal. These ordering checks prevent a parent from
 closing before the child facts needed for deterministic recovery can be
 appended.
+
+`Abandoned` is Runtime-only recovery truth for a lost disposable Kernel
+invocation. It is admitted only after all child invocations are terminal,
+pre-dispatch, or explicitly classified safe/uncertain. It does not terminally
+close the Turn; Runtime may atomically abandon it and start a fresh Execution
+under the still-open Turn, subject to the C6 recovery bound.
 
 ### Invocation
 
@@ -231,11 +241,13 @@ repositories are insufficient for PostgreSQL transaction claims.
 - optimistic version conflict;
 - exact idempotent replay and digest collision;
 - suspension plus new-execution continuation;
+- abandoned-execution recovery with a fresh Execution identity;
 - terminal immutability;
 - prepared/started/terminal model lifecycle;
 - Started without receipt classified uncertain after restart;
 - Started tool effects without receipt/terminal classified uncertain after
   restart;
+- durable preparation rejection, effect observation, and cancellation request;
 - atomic multi-fact terminal commit;
 - fixed through-position reads;
 - unknown fact preservation and corruption rejection.

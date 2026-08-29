@@ -152,20 +152,23 @@ while not termination.done(state):
 
     # ③ 效应：治理是被问询的端口
     for intent in reply.intents:
-        verdict = governance.judge(intent)
+        prepared = tools.prepare(intent)          # invalid never authorizes
+        invocation = runtime.allocate_and_commit(prepared)
+        verdict = governance.judge(invocation, prepared)
         ledger.append(verdict)
 
         match verdict.decision:
-            Approve:
-                effects = executor.run(intent)
+            Approve(grant):
+                effects = executor.run(invocation, prepared, grant)
                 ledger.append(effects.items)
 
             Deny(reason):
                 ledger.append(tool_result.rejected(reason))
                 #   拒绝原因回喂模型（不中断）
 
-            ApproveWithRewrite(x):
-                effects = executor.run(intent.with(x))
+            ReplacementRequired(x):
+                # replacement is not approval; prepare and authorize anew
+                continue_with_new_preparation(new_intent_from(intent, x))
 
             AskUser(question):
                 ledger.append(approval_request{
@@ -1005,10 +1008,9 @@ switches within a round.
   decisions are sticky (see `Derive Stability` Rule 2) and
   are decided once, when the entry is first projected.
 - It does **not** call `governance.judge`. Governance
-  happens **between** `assemble` and `model.invoke` —
-  the model sees the assembled prompt, emits an intent,
-  and the loop asks `governance.judge(intent)` before
-  calling `executor.run(intent)`.
+  happens **after** `model.invoke` emits an intent and C4 has validated it.
+  The loop asks Runtime to authorize the immutable Prepared Call before
+  calling the execution port with its exact invocation and grant.
 - It does **not** call `summarize`. `summarize` is a
   *write* op (it appends a `compaction.summary` row to the
   ledger), not a read op. `assemble` only reads.
@@ -1408,10 +1410,10 @@ entry; until then, the prefix contents are full-fat.
 
 #### `GOVERNANCE_INPUT` — intent + minimum context
 
-`governance.judge(intent, state)` needs to evaluate **one
-intent** at a time. The projection gives it:
+`governance.judge(invocation, prepared, state)` needs to evaluate **one
+Prepared Call** at a time. The projection gives it:
 
-- The **current intent** (the model emitted).
+- The immutable **Prepared Call** plus its Runtime invocation identity.
 - The **minimum context** to evaluate it: the recent
   `assistant.message` (the model's stated intent + the tool
   it's about to call), the prior `tool_result` chain (what
@@ -1928,21 +1930,20 @@ mechanism defines the surface area; the policy populates it.
 
 ### Governance Is a Port, Not an Actor
 
-Every intent the model emits (tool call, file write, network
-request) is **judged** by `governance.judge(intent)` before it
+Every intent the model emits (tool call, file write, network request) is first
+prepared, then **judged** by `governance.judge(invocation, prepared)` before it
 runs. The verdict is one of:
 
 | Verdict | Action |
 |---------|--------|
-| `Approve` | executor runs the intent as-is |
+| `Approve(grant)` | execution port runs the exact invocation and Prepared Call bound by the grant |
 | `Deny(reason)` | a `tool_result.rejected(reason)` is appended; the rejection is fed back to the model next iteration (no termination) |
-| `ApproveWithRewrite(x)` | executor runs `intent.with(x)` — typically used to constrain a parameter |
+| `ReplacementRequired(x)` | reject the old preparation; create a new intent, digest, invocation identity, and authorization decision |
 | `AskUser(question)` | an approval request is committed and the execution returns `Suspended(ApprovalRequired)` |
 
 Governance is **queried** — the loop asks `governance.judge`,
-not the other way around. This keeps the loop the single
-sequencer and governance a side-effect-free function over
-intent + state.
+not the other way around. This keeps the loop the single sequencer while
+Runtime owns authority inputs and durable decision facts.
 
 ### Suspended / Resume
 

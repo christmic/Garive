@@ -213,6 +213,10 @@ provider data is never included.
 
 ## See also
 
+- [`agent-definition-snapshot.md`](agent-definition-snapshot.md) — catalog
+  admission and immutable revision binding.
+- [`governed-effects.md`](governed-effects.md) — authorization and execution
+  after successful preparation.
 - [`agent-execution-contract.md`](agent-execution-contract.md) — accepted
   Kernel boundary and outcome semantics.
 - [`durable-ledger.md`](durable-ledger.md) — separate integer-only durable

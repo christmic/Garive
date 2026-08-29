@@ -42,3 +42,5 @@ and Kotlin both consume every case in the shared Agent fixtures.
 
 See [`AGENTS.md`](AGENTS.md) for schema and verification rules.
 See [`STATUS.md`](STATUS.md) for current delivery evidence and next slices.
+See [`design/agent-core-spec-set.md`](design/agent-core-spec-set.md) for the
+accepted D0/C4/C5/C6 implementation contract set.

@@ -6,6 +6,10 @@ Execution plan derived from the accepted Agent architecture/execution and
 Rust/Kotlin conformance contracts. A slice cannot start behavior implementation
 until its focused spec and acceptance fixtures are accepted.
 
+The accepted D0/C4/C5/C6 implementation set is indexed by
+[`agent-core-spec-set.md`](agent-core-spec-set.md). Shared fixtures still land
+before each behavior slice.
+
 ## Milestones
 
 ```text
@@ -110,6 +114,27 @@ exceed limits or confuse suspension with continuation.
 - implement real storage transactions and exact cursor reconstruction;
 - test every request/effect crash boundary in a separate process;
 - expose redacted status and reconciliation action through Runtime host.
+
+## Post-approval implementation slices
+
+The contract set is accepted. Each behavior row lands green and preserves the
+dependency direction from the milestone DAG.
+
+| Order | Slice | Behavior boundary | Required evidence |
+|---:|---|---|---|
+| 1 | S4-contract | Coordinate L0 fact/identity additions and D0/C4/C5 Kotlin admission; add accepted fixture schemas. | Spec status/link checks; complete fixture catalog, no behavior code. |
+| 2 | C4-R/K | Tool catalog validation, Portable Tool Schema v1, normalization and digest. | Shared vectors plus independent Rust/Kotlin tests. |
+| 3 | D0-R/K | Definition validation, exact resolution and effective snapshot digest. | Shared semantic/canonical fixtures and dependency gates. |
+| 4 | C5a-R/K | Authorization verdict/grant/observation reducer with fake ports. | Shared approve/deny/replacement/unsupported scenarios. |
+| 5 | C5b-R/K | Interaction suspension and typed continuation reduction. | Shared request/resolve/cancel/conflict scenarios. |
+| 6 | C5c-R/K | Receipt and uncertainty recovery decisions. | Shared crash-position matrix; no concrete executor claim. |
+| 7 | C6-domain | Runtime command/idempotency/fact mapping and disposable-execution recovery. | Rust domain tests plus admitted Kotlin semantic subset. |
+| 8 | C6-Rust | SQLite Runtime composition and process restart matrix. | Real-file process-kill tests at every C6 checkpoint. |
+| 9 | C6-Kotlin | PostgreSQL experimental recovery host. | Real PostgreSQL transaction/restart subset, reported separately. |
+
+P2-C Provider mapping, concrete executor enforcement and H1 Host transport are
+separate follow-on slices. Fakes can prove C4-C6 orchestration but cannot be
+used to claim those external boundaries.
 
 ## Explicitly deferred
 

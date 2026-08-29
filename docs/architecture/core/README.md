@@ -83,6 +83,18 @@ A mechanism is ready for `spec/` when it has:
 
 ## Implementation specs
 
+- [`../../../spec/design/agent-core-spec-set.md`](../../../spec/design/agent-core-spec-set.md)
+  — accepted review index for every remaining first-vertical Core/Runtime Spec.
+- [`../../../spec/design/agent-definition-snapshot.md`](../../../spec/design/agent-definition-snapshot.md)
+  — accepted exact definition resolution and frozen snapshot contract.
+- [`../../../spec/design/prepared-tool-call.md`](../../../spec/design/prepared-tool-call.md)
+  — accepted C4 validation, normalization and digest contract.
+- [`../../../spec/design/governed-effects.md`](../../../spec/design/governed-effects.md)
+  — accepted C5 authorization, interaction, receipt and observation contract.
+- [`../../../spec/design/durable-runtime-turn.md`](../../../spec/design/durable-runtime-turn.md)
+  — accepted C6 transaction, continuation and restart contract.
+- [`../../../spec/design/durable-runtime-facts.md`](../../../spec/design/durable-runtime-facts.md)
+  — accepted exact C6 durable fact payload profiles.
 - [`../../../spec/design/agent-architecture.md`](../../../spec/design/agent-architecture.md)
   — normative Agent/product ownership and capability composition.
 - [`../../../spec/design/agent-execution-contract.md`](../../../spec/design/agent-execution-contract.md)

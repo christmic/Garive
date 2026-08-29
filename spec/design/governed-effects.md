@@ -248,6 +248,10 @@ Codes include `authorization_denied`, `replacement_required`,
 ## See also
 
 - [`prepared-tool-call.md`](prepared-tool-call.md) — authority-free C4 input.
+- [`durable-runtime-turn.md`](durable-runtime-turn.md) — orchestration and
+  restart decisions.
+- [`durable-runtime-facts.md`](durable-runtime-facts.md) — exact v1 effect and
+  interaction payloads.
 - [`durable-ledger.md`](durable-ledger.md) — accepted L0 transaction semantics.
 
 ## Meta

@@ -19,6 +19,10 @@ The following are non-empty opaque values with distinct types:
 - `ModelCallId` (untrusted correlation emitted by a model);
 - `ToolInvocationId` (Runtime-owned external-effect identity).
 
+C5/C6 additionally use Runtime-owned `CommandId`, `SuspensionId`,
+`InteractionId`, `GrantId`, `ReceiptId`, and dispatch-attempt identity. These
+remain distinct from Kernel, model, and tool correlation identities.
+
 No implicit conversion exists between identity types.
 
 ## AgentTurnRequest
@@ -198,8 +202,9 @@ proven-safe retries within the same logical request and never rewrite intent.
 4. Core receives only a neutral observation, denial, required interaction, or
    operator-reconciliation suspension.
 
-`ApproveWithRewrite` does not mutate an authorized call. It rejects the old
-preparation and causes a new preparation/digest/authorization decision.
+`ReplacementRequired` is not approval and does not mutate an authorized call.
+It rejects the old preparation and causes a new
+preparation/digest/invocation/authorization decision.
 
 ## Iteration algorithm
 

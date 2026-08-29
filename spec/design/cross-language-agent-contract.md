@@ -24,10 +24,29 @@ domain models.
 | C1b model request/stream | supported | experimental | semantic fixtures + stream invariant tests |
 | C2 context derive | supported | experimental | semantic fixtures + property tests |
 | C3 model-only turn | supported | experimental | capability scenarios |
-| C4-C7 | Rust planned | not admitted | no conformance claim until explicitly admitted |
+| D0 definition snapshot | planned | experimental planned | semantic resolution + canonical digest fixtures |
+| C4 prepared call | planned | experimental planned | schema/normalization/digest fixtures |
+| C5 governed effect reduction | planned | experimental planned | semantic state scenarios; no Kotlin executor claim |
+| C6 Runtime | production planned | PostgreSQL experiment planned | shared public decisions + independent native crash evidence |
+| C7 compression | planned | not admitted | measured admission decision required |
 
 `unsupported` is a valid explicit capability result. It must not silently fall
 back to behavior with different safety semantics.
+
+## Accepted admission target
+
+The accepted Agent Core Spec set defines the following target. This table is a
+delivery plan, not an implementation support claim:
+
+| Slice | Rust target | Kotlin target | Planned evidence |
+|---|---|---|---|
+| D0 definition snapshot | supported | experimental | semantic resolution + canonical digest fixtures |
+| C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
+| C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
+| C6 Runtime | production Rust/SQLite | PostgreSQL experiment subset | shared public decisions plus independent native crash evidence |
+
+Rows change to `supported`/`experimental` only when both native implementations
+and declared evidence exist.
 
 ## Shared source of behavior
 
