@@ -35,9 +35,9 @@ iosApp/
 
 ## Bridge
 
-- Host v1 is synchronous and enters through the generated KMP framework.
-- Add SKIE when a later slice exports `Flow` or `suspend` APIs; do not
-  hand-write coroutine conversion.
+- Host v1 enters through Kotlin/Native generated completion handlers around the
+  shared KMP suspend client. Add SKIE only when a later slice exports `Flow`;
+  do not duplicate HTTP, SSE, or event reduction in Swift.
 
 ## Depends On
 

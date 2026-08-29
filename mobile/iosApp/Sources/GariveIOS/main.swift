@@ -1,13 +1,21 @@
 import SwiftUI
 #if canImport(GariveShared)
-import GariveShared
+@preconcurrency import GariveShared
 #endif
 
-/// Fixture-backed Host facade used while the live durable Host is not composed.
-public struct FakeHost {
-    /// Creates the stateless fixture facade.
+/// UI-safe terminal returned by the shared KMP H1 client.
+public struct MobileHostResult: Equatable, Sendable {
+    public let text: String
+    public let terminal: String
+    public let cursor: Int64
+}
+
+/// Stable Swift bridge failures that never preserve Host content.
+public enum MobileHostError: Error { case sharedFrameworkUnavailable, invalidResponse }
+
+/// Callback bridge around the generated KMP completion-handler surface.
+public struct MobileHostRunner {
     public init() {}
-    /// Whether this build can delegate to the generated Kotlin shared framework.
     public static var usesSharedFramework: Bool {
 #if canImport(GariveShared)
         true
@@ -15,35 +23,85 @@ public struct FakeHost {
         false
 #endif
     }
-    /// Validates the sole admitted input and returns the ordered fixture output.
-    public func run(_ input: String) throws -> String {
-        guard input == "hello" else { throw HostError.unsupportedInput }
+
+    public func run(
+        hostURL: String,
+        definitionID: String,
+        message: String,
+        completion: @escaping @Sendable (Result<MobileHostResult, Error>) -> Void
+    ) {
 #if canImport(GariveShared)
-        return EmbeddedFakeHostBridge.shared.runText()
-#else
-        let events = [(1, "session.created", ""), (2, "turn.started", ""),
-            (3, "output.delta", "hello "), (4, "output.delta", "from Garive"),
-            (5, "turn.completed", "")]
-        var previous = 0, terminal = false, output = ""
-        for (position, kind, text) in events {
-            guard !terminal, position == previous + 1 else { throw HostError.invalidSequence }
-            previous = position
-            if kind == "output.delta" { output += text }
-            if kind == "turn.completed" { terminal = true }
+        do {
+            let limits = HostClientLimits(
+                maxCommandBytes: 4_096, maxEventBytes: 8_192,
+                maxEvents: 256, followDeadlineMs: 120_000
+            )
+            let client = try LiveHostClient(baseUrl: hostURL, limits: limits)
+            let identity = "ios-\(DispatchTime.now().uptimeNanoseconds)"
+            client.createSession(commandId: "create-\(identity)", definitionId: definitionID) { session, error in
+                guard let session else { completion(.failure(error ?? MobileHostError.invalidResponse)); return }
+                client.startTurn(
+                    commandId: "turn-\(identity)", sessionId: session.session_id, text: message
+                ) { turn, error in
+                    guard let turn else { completion(.failure(error ?? MobileHostError.invalidResponse)); return }
+                    client.followUntilTerminal(
+                        sessionId: session.session_id, afterPosition: turn.committed_position
+                    ) { view, error in
+                        guard let view, let terminal = view.terminal else {
+                            completion(.failure(error ?? MobileHostError.invalidResponse)); return
+                        }
+                        completion(.success(MobileHostResult(
+                            text: view.text, terminal: terminal.name.lowercased(), cursor: view.cursor
+                        )))
+                    }
+                }
+            }
+        } catch {
+            completion(.failure(error))
         }
-        guard terminal else { throw HostError.missingTerminal }
-        return output
+#else
+        completion(.failure(MobileHostError.sharedFrameworkUnavailable))
 #endif
     }
-    /// Stable validation failures from the local fallback reducer.
-    public enum HostError: Error { case unsupportedInput, invalidSequence, missingTerminal }
 }
 
-@main struct GariveIOSApp: App {
-    @State private var output = ""
-    var body: some Scene { WindowGroup { VStack(spacing: 16) {
-        Text("Garive Agent").font(.largeTitle); Text("You: hello")
-        Button("Run embedded host") { output = (try? FakeHost().run("hello")) ?? "failed" }
-        Text(output.isEmpty ? "Ready" : "\(output) · completed").foregroundStyle(.mint)
-    }.padding() } }
+@main
+struct GariveIOSApp: App {
+    @State private var hostURL = "http://127.0.0.1:4317/"
+    @State private var definitionID = "definition-main"
+    @State private var message = "hello"
+    @State private var output = "Ready"
+    var body: some Scene {
+        WindowGroup {
+            VStack(spacing: 16) {
+                Text("Garive Agent").font(.largeTitle)
+                TextField("Loopback Host URL", text: $hostURL)
+                TextField("Agent definition", text: $definitionID)
+                TextField("Message", text: $message)
+                Button("Run Agent") {
+                    output = "running"
+                    MobileHostRunner().run(
+                        hostURL: hostURL, definitionID: definitionID, message: message
+                    ) { result in
+                        DispatchQueue.main.async {
+                            output = result.fold(
+                                success: { "\($0.text) · \($0.terminal) @ \($0.cursor)" },
+                                failure: { _ in "transport_failure" }
+                            )
+                        }
+                    }
+                }
+                Text(output).foregroundStyle(.mint)
+            }.padding()
+        }
+    }
+}
+
+private extension Result {
+    func fold<T>(success: (Success) -> T, failure: (Failure) -> T) -> T {
+        switch self {
+        case .success(let value): success(value)
+        case .failure(let error): failure(error)
+        }
+    }
 }

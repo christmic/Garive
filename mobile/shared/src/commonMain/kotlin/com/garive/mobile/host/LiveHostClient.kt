@@ -49,6 +49,7 @@ public class LiveHostClient internal constructor(
     private val client: HttpClient,
 ) {
     /** Creates a production client with fixed no-redirect CIO transport policy. */
+    @Throws(HostClientException::class)
     public constructor(baseUrl: String, limits: HostClientLimits) :
         this(baseUrl, limits, defaultHostHttpClient())
     private val origin: String = validateBaseUrl(baseUrl)
@@ -60,6 +61,7 @@ public class LiveHostClient internal constructor(
     }
 
     /** Creates a Session with a caller-owned stable command identity. */
+    @Throws(HostClientException::class, CancellationException::class)
     public suspend fun createSession(commandId: String, definitionId: String): CreateSessionResponseV1 {
         if (definitionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         val value = post("/v1/sessions", commandId, buildJsonObject { put("agent_definition_id", definitionId) })
@@ -71,6 +73,7 @@ public class LiveHostClient internal constructor(
     }
 
     /** Starts one Turn with a caller-owned stable command identity. */
+    @Throws(HostClientException::class, CancellationException::class)
     public suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         return postTurn(
@@ -80,6 +83,7 @@ public class LiveHostClient internal constructor(
     }
 
     /** Requests cancellation through one observed durable position. */
+    @Throws(HostClientException::class, CancellationException::class)
     public suspend fun cancelTurn(
         commandId: String, sessionId: String, turnId: String, requestedThroughPosition: Long,
     ): TurnCommandResponseV1 {
@@ -95,6 +99,7 @@ public class LiveHostClient internal constructor(
     }
 
     /** Continues one exact durable suspension. */
+    @Throws(HostClientException::class, CancellationException::class)
     public suspend fun continueTurn(
         commandId: String,
         sessionId: String,
@@ -116,6 +121,7 @@ public class LiveHostClient internal constructor(
     }
 
     /** Follows committed events until an explicit durable terminal. */
+    @Throws(HostClientException::class, CancellationException::class)
     public suspend fun followUntilTerminal(sessionId: String, afterPosition: Long = 0): HostView {
         if (sessionId.isEmpty() || afterPosition < 0) fail(HostClientError.INVALID_COMMAND)
         try {
@@ -201,7 +207,7 @@ public class LiveHostClient internal constructor(
 }
 
 /** Creates the default no-retry CIO client; all addresses and bounds remain constructor inputs. */
-public fun defaultHostHttpClient(): HttpClient = HttpClient(CIO) {
+internal fun defaultHostHttpClient(): HttpClient = HttpClient(CIO) {
     followRedirects = false
     install(HttpTimeout)
     install(SSE)

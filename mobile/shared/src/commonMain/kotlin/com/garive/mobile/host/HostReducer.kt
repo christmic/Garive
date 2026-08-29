@@ -34,6 +34,7 @@ public data class HostView(
 )
 
 /** Reduces ordered replay/follow events without treating stream EOF as terminal. */
+@Throws(HostClientException::class)
 public fun reduceHostEvents(
     sessionId: String,
     events: List<HostEventV1>,

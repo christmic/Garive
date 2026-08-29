@@ -47,8 +47,9 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain app:assembleDebug
 ```
 
-The app includes `../shared` as a Gradle project and renders the result returned
-by `EmbeddedFakeHost`; it does not duplicate Host reduction in the UI tier.
+The app includes `../shared` as a Gradle project, accepts an explicit loopback
+Host URL and renders the terminal returned by `LiveHostClient`; it does not
+duplicate Host reduction in the UI tier.
 
 ## Meta
 

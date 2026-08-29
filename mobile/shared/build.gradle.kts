@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 plugins {
     kotlin("multiplatform")
     id("com.squareup.wire")
+    id("com.android.kotlin.multiplatform.library")
 }
 
 group = "com.garive"
@@ -11,6 +12,11 @@ version = "0.1.0-SNAPSHOT"
 kotlin {
     explicitApi()
     jvm()
+    android {
+        namespace = "com.garive.mobile.shared"
+        compileSdk = 36
+        minSdk = 26
+    }
     val xcframework = XCFramework("GariveShared")
     listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
         target.binaries.framework {
