@@ -1079,6 +1079,7 @@ name = "garive-runtime"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures",
  "garive-core",
  "garive-ledger",
  "garive-llm",
