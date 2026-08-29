@@ -76,8 +76,15 @@ impl KnowledgeAccessGrant {
         }
     }
 
-    fn allows(&self, request: &KnowledgeRequest) -> bool {
-        self.source_id == request.source_id() && self.source_revision == request.source_revision()
+    /// Authorizes only the exact configured source and revision.
+    pub fn authorize(&self, request: &KnowledgeRequest) -> Result<(), KnowledgeErrorCode> {
+        if self.source_id == request.source_id()
+            && self.source_revision == request.source_revision()
+        {
+            Ok(())
+        } else {
+            Err(KnowledgeErrorCode::SourceDenied)
+        }
     }
 }
 
@@ -122,7 +129,7 @@ pub(super) async fn execute_knowledge_capability(
     let prepared = plan_knowledge_requested(context, &capability.request)
         .map_err(DurableExecutionError::Command)?;
     coordinator.commit(vec![prepared.fact.clone()])?;
-    if !capability.grant.allows(&capability.request) {
+    if capability.grant.authorize(&capability.request).is_err() {
         return commit_failure(
             coordinator,
             context,
