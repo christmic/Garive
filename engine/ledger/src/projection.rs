@@ -233,7 +233,10 @@ impl SessionProjection {
     fn admit_turn_input(&self, fact: &FactDraft) -> Result<(), LedgerError> {
         let turn = required(&fact.turn_id)?;
         let payload = payload(fact)?;
-        if text(&payload, "input_kind")? == "continuation" {
+        if !matches!(
+            text(&payload, "input_kind")?,
+            "trusted_user" | "trusted_system"
+        ) {
             if self.turns.get(turn) == Some(&TurnState::Suspended)
                 && self.suspensions.get(turn).map(String::as_str)
                     == payload.get("suspension_id").and_then(Value::as_str)

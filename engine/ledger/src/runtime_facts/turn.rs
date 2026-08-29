@@ -62,13 +62,25 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
 fn input(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(value, &["input_kind", "content"], &["suspension_id"])?;
     content(value, "content")?;
-    conditional_identity(
+    let kind = enumeration(
         value,
         "input_kind",
-        "continuation",
-        "suspension_id",
-        &["trusted_user", "trusted_system", "continuation"],
-    )
+        &[
+            "trusted_user",
+            "trusted_system",
+            "external_input",
+            "reconciliation",
+            "resource_ready",
+        ],
+    )?;
+    match (
+        matches!(kind, "trusted_user" | "trusted_system"),
+        value.get("suspension_id"),
+    ) {
+        (true, None) => Ok(()),
+        (false, Some(_)) => non_empty(value, "suspension_id"),
+        _ => Err(LedgerError::InvalidFact),
+    }
 }
 
 fn conditional_identity(

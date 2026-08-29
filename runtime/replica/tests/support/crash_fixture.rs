@@ -5,9 +5,9 @@ use garive_ledger::{
     FactDraft, FactId, FactKind, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{
-    plan_continue_turn, plan_start_turn, reconstruct_suspended_turn, ContinueTurnCommand,
-    EffectiveRuntimeLimits, InteractionContinuation, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand,
+    plan_continue_turn, plan_start_turn, reconstruct_suspended_turn, ContinuationInput,
+    ContinueTurnCommand, EffectiveRuntimeLimits, InteractionContinuation, InteractionExpiry,
+    RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
 use serde_json::{json, Value};
 
@@ -143,12 +143,14 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
                 turn_id: turn.clone(),
                 expected_suspension_id: "suspension".into(),
                 expected_session_version: version,
-                continuation_input: "approved".into(),
+                continuation_input: ContinuationInput::ExternalInput("approved".into()),
                 interaction: Some(InteractionContinuation {
                     execution_id: execution.clone(),
                     tool_invocation_id: ToolInvocationId::try_from("tool").unwrap(),
                     interaction_id: "interaction".into(),
                     prepared_digest: empty_digest().into(),
+                    response_schema_digest: empty_digest().into(),
+                    expiry: InteractionExpiry::None,
                 }),
                 recorded_at: "2026-08-29T00:00:02Z".into(),
             },

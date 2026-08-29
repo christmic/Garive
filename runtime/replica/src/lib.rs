@@ -18,11 +18,12 @@ pub use core_bridge::{
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, plan_cancel_turn, plan_continue_turn,
-    plan_recovery_action_facts, plan_recovery_restart, plan_start_turn, reconstruct_suspended_turn,
-    select_runtime_recovery, CancelReason, CancelTurnCommand, ContinueTurnCommand,
-    EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
-    InteractionContinuation, ModelRecoveryPosition, PlannedTurn, RecoveryRestartCommand,
-    RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction, RuntimeRecoverySnapshot,
-    StartTurnCommand, SuspendedTurnState,
+    plan_reconcile_invocation, plan_recovery_action_facts, plan_recovery_restart, plan_start_turn,
+    reconstruct_suspended_turn, select_runtime_recovery, CancelReason, CancelTurnCommand,
+    ContinuationInput, ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits,
+    ExecutionRecoveryPosition, InteractionContinuation, InteractionExpiry, ModelRecoveryPosition,
+    PlannedTurn, ReconcileInvocationCommand, ReconciliationDecision, ReconciliationTarget,
+    RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
+    RuntimeRecoverySnapshot, RuntimeSuspensionKind, StartTurnCommand, SuspendedTurnState,
 };
 pub use sqlite_ledger::{SqliteLedger, SqliteLedgerError};

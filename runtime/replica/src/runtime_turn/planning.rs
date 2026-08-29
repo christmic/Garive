@@ -7,8 +7,9 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::types::{
-    CancelTurnCommand, ContinueTurnCommand, PlannedTurn, RecoveryRestartCommand,
-    RuntimeCommandError, StartTurnCommand, SuspendedTurnState,
+    CancelTurnCommand, ContinuationInput, ContinueTurnCommand, PlannedTurn,
+    ReconcileInvocationCommand, ReconciliationDecision, RecoveryRestartCommand,
+    RuntimeCommandError, RuntimeSuspensionKind, StartTurnCommand, SuspendedTurnState,
 };
 
 /// Creates the exact three-fact StartTurn transaction with Runtime-owned identities.
@@ -131,7 +132,8 @@ pub fn plan_continue_turn(
         .as_str(),
     )
     .map_err(|_| RuntimeCommandError::InvalidCommand)?;
-    let input_digest = digest(command.continuation_input.as_bytes());
+    let (input_kind, input) = validate_continuation(command, state)?;
+    let input_digest = digest(input.as_bytes());
     let mut facts = Vec::with_capacity(if command.interaction.is_some() { 4 } else { 3 });
     if let Some(interaction) = &command.interaction {
         validate_digest(&interaction.prepared_digest)?;
@@ -144,7 +146,7 @@ pub fn plan_continue_turn(
                 "interaction_id":interaction.interaction_id,
                 "suspension_id":command.expected_suspension_id,
                 "prepared_digest":interaction.prepared_digest,
-                "response":{"digest":input_digest,"inline_utf8":command.continuation_input},
+                "response":{"digest":input_digest,"inline_utf8":input},
             }),
             &command.recorded_at,
         )?);
@@ -155,7 +157,7 @@ pub fn plan_continue_turn(
             "turn.input",
             Some(&command.turn_id),
             None,
-            json!({"input_kind":"continuation","content":{"digest":input_digest,"inline_utf8":command.continuation_input},"suspension_id":command.expected_suspension_id}),
+            json!({"input_kind":input_kind,"content":{"digest":input_digest,"inline_utf8":input},"suspension_id":command.expected_suspension_id}),
             &command.recorded_at,
         )?,
         fact(
@@ -178,6 +180,127 @@ pub fn plan_continue_turn(
     Ok(PlannedTurn {
         turn_id: command.turn_id.clone(),
         execution_id: Some(execution_id),
+        facts,
+    })
+}
+
+fn validate_continuation(
+    command: &ContinueTurnCommand,
+    state: &SuspendedTurnState,
+) -> Result<(&'static str, String), RuntimeCommandError> {
+    match (&command.continuation_input, state.suspension_kind) {
+        (
+            ContinuationInput::ExternalInput(content),
+            RuntimeSuspensionKind::ApprovalRequired
+            | RuntimeSuspensionKind::ExternalInputRequired
+            | RuntimeSuspensionKind::PartialOutput,
+        ) => {
+            if command.interaction != state.interaction {
+                return Err(RuntimeCommandError::ContinuationMismatch);
+            }
+            if let Some(interaction) = &state.interaction {
+                validate_digest(&interaction.prepared_digest)?;
+                validate_digest(&interaction.response_schema_digest)?;
+            }
+            Ok(("external_input", content.clone()))
+        }
+        (
+            ContinuationInput::Reconciliation {
+                invocation_id,
+                content,
+            },
+            RuntimeSuspensionKind::OperatorReconciliation,
+        ) => {
+            let target = state
+                .reconciliation
+                .as_ref()
+                .ok_or(RuntimeCommandError::ContinuationMismatch)?;
+            if command.interaction.is_some()
+                || invocation_id != &target.invocation_id
+                || !target.reconciled
+                || !target.observed
+            {
+                return Err(RuntimeCommandError::ContinuationMismatch);
+            }
+            Ok(("reconciliation", content.clone()))
+        }
+        (ContinuationInput::ResourceReady, RuntimeSuspensionKind::ResourceUnavailable) => {
+            if command.interaction.is_some() {
+                Err(RuntimeCommandError::ContinuationMismatch)
+            } else {
+                Ok(("resource_ready", String::new()))
+            }
+        }
+        _ => Err(RuntimeCommandError::ContinuationMismatch),
+    }
+}
+
+/// Creates the atomic operator-evidence and model-observation transaction.
+pub fn plan_reconcile_invocation(
+    command: &ReconcileInvocationCommand,
+    state: &SuspendedTurnState,
+) -> Result<PlannedTurn, RuntimeCommandError> {
+    validate_time(&command.recorded_at)?;
+    if command.expected_session_version != state.session_version {
+        return Err(RuntimeCommandError::ConcurrentModification);
+    }
+    let target = state
+        .reconciliation
+        .as_ref()
+        .ok_or(RuntimeCommandError::ContinuationMismatch)?;
+    if command.session_id != state.session_id
+        || command.turn_id != state.turn_id
+        || command.expected_suspension_id != state.suspension_id
+        || command.invocation_id != target.invocation_id
+        || state.suspension_kind != RuntimeSuspensionKind::OperatorReconciliation
+        || target.reconciled
+        || target.observed
+        || command.operator_evidence.is_empty()
+    {
+        return Err(RuntimeCommandError::ContinuationMismatch);
+    }
+    validate_digest(&target.prepared_digest)?;
+    let (decision, observation) = match &command.decision {
+        ReconciliationDecision::Completed { model_observation } => ("completed", model_observation),
+        ReconciliationDecision::Failed { model_observation } => ("failed", model_observation),
+    };
+    if observation.is_empty() {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let evidence_digest = digest(command.operator_evidence.as_bytes());
+    let observation_digest = digest(observation.as_bytes());
+    let facts = vec![
+        effect_fact(
+            command.command_id.as_str(),
+            "effect.reconciled",
+            &command.turn_id,
+            &target.execution_id,
+            &command.invocation_id,
+            json!({
+                "prepared_digest":target.prepared_digest,
+                "decision":decision,
+                "operator_evidence":{"digest":evidence_digest,"inline_utf8":command.operator_evidence},
+                "observation":{"digest":observation_digest,"inline_utf8":observation},
+            }),
+            &command.recorded_at,
+        )?,
+        effect_fact(
+            command.command_id.as_str(),
+            "effect.observation",
+            &command.turn_id,
+            &target.execution_id,
+            &command.invocation_id,
+            json!({
+                "prepared_digest":target.prepared_digest,
+                "model_call_id":target.model_call_id,
+                "observation":{"digest":observation_digest,"inline_utf8":observation},
+            }),
+            &command.recorded_at,
+        )?,
+    ];
+    Ok(PlannedTurn {
+        turn_id: command.turn_id.clone(),
+        execution_id: None,
         facts,
     })
 }
@@ -243,6 +366,27 @@ fn tool_fact(
     let mut output = fact(
         command_id,
         "interaction.resolved",
+        Some(turn_id),
+        Some(execution_id),
+        payload,
+        recorded_at,
+    )?;
+    output.tool_invocation_id = Some(tool_id.clone());
+    Ok(output)
+}
+
+fn effect_fact(
+    command_id: &str,
+    kind: &str,
+    turn_id: &TurnId,
+    execution_id: &ExecutionId,
+    tool_id: &ToolInvocationId,
+    payload: Value,
+    recorded_at: &str,
+) -> Result<FactDraft, RuntimeCommandError> {
+    let mut output = fact(
+        command_id,
+        kind,
         Some(turn_id),
         Some(execution_id),
         payload,

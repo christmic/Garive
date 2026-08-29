@@ -35,10 +35,13 @@ private fun JsonObject.started() {
 private fun JsonObject.input() {
     exact(setOf("input_kind", "content"), setOf("suspension_id"))
     content("content")
-    conditionalIdentity(
-        "input_kind", "continuation", "suspension_id",
-        setOf("trusted_user", "trusted_system", "continuation"),
+    val kind = enum(
+        "input_kind",
+        setOf("trusted_user", "trusted_system", "external_input", "reconciliation", "resource_ready"),
     )
+    val continuation = kind != "trusted_user" && kind != "trusted_system"
+    require(continuation == containsKey("suspension_id"))
+    if (continuation) nonEmpty("suspension_id")
 }
 
 private fun JsonObject.conditionalIdentity(enumKey: String, requiring: String, identity: String, allowed: Set<String>) {

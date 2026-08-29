@@ -131,6 +131,93 @@ pub struct InteractionContinuation {
     pub interaction_id: String,
     /// Prepared Call digest bound by the request.
     pub prepared_digest: String,
+    /// Response-schema digest frozen by the interaction request.
+    pub response_schema_digest: String,
+    /// Frozen expiry policy category.
+    pub expiry: InteractionExpiry,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Durable interaction expiry category admitted by payload v1.
+pub enum InteractionExpiry {
+    /// No expiry is configured.
+    None,
+    /// The Turn deadline controls expiry.
+    TurnDeadline,
+    /// A product-policy deadline controls expiry.
+    PolicyDeadline,
+}
+
+impl InteractionExpiry {
+    pub(crate) fn parse(value: &str) -> Result<Self, RuntimeCommandError> {
+        match value {
+            "none" => Ok(Self::None),
+            "turn_deadline" => Ok(Self::TurnDeadline),
+            "policy_deadline" => Ok(Self::PolicyDeadline),
+            _ => Err(RuntimeCommandError::CorruptLedger),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Typed input admitted for one exact suspension reason.
+pub enum ContinuationInput {
+    /// Schema-validated external or approval input.
+    ExternalInput(String),
+    /// Operator reconciliation content for one exact uncertain invocation.
+    Reconciliation {
+        /// Invocation closed by the prior reconciliation command.
+        invocation_id: ToolInvocationId,
+        /// Model-safe continuation content.
+        content: String,
+    },
+    /// Signal that a previously unavailable resource may be attempted again.
+    ResourceReady,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Suspension reason reconstructed from the durable Turn terminal.
+pub enum RuntimeSuspensionKind {
+    /// A governed approval response is required.
+    ApprovalRequired,
+    /// External product input is required.
+    ExternalInputRequired,
+    /// An uncertain effect requires operator evidence.
+    OperatorReconciliation,
+    /// A model or other frozen resource was unavailable.
+    ResourceUnavailable,
+    /// Partial output awaits an explicit continuation input.
+    PartialOutput,
+}
+
+impl RuntimeSuspensionKind {
+    pub(crate) fn parse(value: &str) -> Result<Self, RuntimeCommandError> {
+        match value {
+            "approval_required" => Ok(Self::ApprovalRequired),
+            "external_input_required" => Ok(Self::ExternalInputRequired),
+            "operator_reconciliation" => Ok(Self::OperatorReconciliation),
+            "resource_unavailable" => Ok(Self::ResourceUnavailable),
+            "partial_output" => Ok(Self::PartialOutput),
+            _ => Err(RuntimeCommandError::CorruptLedger),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Exact uncertain-effect target reconstructed for operator reconciliation.
+pub struct ReconciliationTarget {
+    /// Prior Execution that owns the uncertain effect.
+    pub execution_id: ExecutionId,
+    /// Exact uncertain invocation.
+    pub invocation_id: ToolInvocationId,
+    /// Prepared Call digest bound throughout the lifecycle.
+    pub prepared_digest: String,
+    /// Model call correlation needed for the durable observation.
+    pub model_call_id: String,
+    /// Whether operator evidence already closed the uncertainty.
+    pub reconciled: bool,
+    /// Whether the exact reconciliation observation is durable.
+    pub observed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,8 +233,8 @@ pub struct ContinueTurnCommand {
     pub expected_suspension_id: String,
     /// Session version the caller observed.
     pub expected_session_version: u64,
-    /// Validated continuation UTF-8 content.
-    pub continuation_input: String,
+    /// Typed, schema-validated continuation input.
+    pub continuation_input: ContinuationInput,
     /// Optional interaction binding consumed before reopening.
     pub interaction: Option<InteractionContinuation>,
     /// RFC 3339 observation time supplied by the Runtime clock port.
@@ -165,6 +252,12 @@ pub struct SuspendedTurnState {
     pub turn_id: TurnId,
     /// Exact suspension identity.
     pub suspension_id: String,
+    /// Exact reason constraining the accepted continuation input kind.
+    pub suspension_kind: RuntimeSuspensionKind,
+    /// Pending interaction binding, when the suspension requested one.
+    pub interaction: Option<InteractionContinuation>,
+    /// Uncertain effect binding, when operator reconciliation is required.
+    pub reconciliation: Option<ReconciliationTarget>,
     /// Installed Agent instance retained from Turn start.
     pub agent_instance_id: AgentInstanceId,
     /// Exact definition identity retained from Turn start.
@@ -183,6 +276,44 @@ pub struct SuspendedTurnState {
     pub recovery_ordinal: u64,
     /// Limits frozen for the fresh Execution.
     pub limits: EffectiveRuntimeLimits,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Conclusive operator decision for one uncertain effect.
+pub enum ReconciliationDecision {
+    /// Evidence confirms the effect completed.
+    Completed {
+        /// Redacted model-safe observation of the confirmed result.
+        model_observation: String,
+    },
+    /// Evidence confirms the effect failed.
+    Failed {
+        /// Redacted model-safe observation of the confirmed failure.
+        model_observation: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Idempotent command closing one uncertain effect without redispatch.
+pub struct ReconcileInvocationCommand {
+    /// Idempotency identity supplied by the caller.
+    pub command_id: RuntimeCommandId,
+    /// Owning Session.
+    pub session_id: SessionId,
+    /// Suspended Turn.
+    pub turn_id: TurnId,
+    /// Exact uncertain invocation.
+    pub invocation_id: ToolInvocationId,
+    /// Suspension identity observed by the caller.
+    pub expected_suspension_id: String,
+    /// Session version observed by the caller.
+    pub expected_session_version: u64,
+    /// Redacted durable operator evidence.
+    pub operator_evidence: String,
+    /// Conclusive outcome and model-safe observation.
+    pub decision: ReconciliationDecision,
+    /// RFC 3339 observation time supplied by the Runtime clock port.
+    pub recorded_at: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -2,13 +2,14 @@ use std::{fs, path::PathBuf};
 
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
-    CommitDisposition, FactDraft, FactId, FactKind, SessionId,
+    CommitDisposition, FactDraft, FactId, FactKind, SessionId, ToolInvocationId,
 };
 use garive_runtime::{
     commit_planned_turn, derive_runtime_recovery, plan_cancel_turn, plan_continue_turn,
-    plan_recovery_restart, plan_start_turn, reconstruct_suspended_turn, select_runtime_recovery,
-    CancelReason, CancelTurnCommand, ContinueTurnCommand, EffectRecoveryPosition,
-    EffectiveRuntimeLimits, ExecutionRecoveryPosition, ModelRecoveryPosition,
+    plan_reconcile_invocation, plan_recovery_restart, plan_start_turn, reconstruct_suspended_turn,
+    select_runtime_recovery, CancelReason, CancelTurnCommand, ContinuationInput,
+    ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
+    ModelRecoveryPosition, ReconcileInvocationCommand, ReconciliationDecision,
     RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
     RuntimeRecoverySnapshot, SqliteLedger, StartTurnCommand,
 };
@@ -79,6 +80,7 @@ fn suspension_fact(
     kind: &str,
     turn: &garive_ledger::TurnId,
     execution: Option<&garive_ledger::ExecutionId>,
+    reason: &str,
 ) -> FactDraft {
     let mut payload = runtime_payload(kind);
     if kind == "turn.suspended" {
@@ -87,6 +89,10 @@ fn suspension_fact(
             Value::String(execution.unwrap().as_str().into()),
         );
     }
+    payload
+        .as_object_mut()
+        .unwrap()
+        .insert("reason".into(), Value::String(reason.into()));
     FactDraft {
         fact_id: FactId::try_from(id).unwrap(),
         turn_id: Some(turn.clone()),
@@ -98,6 +104,25 @@ fn suspension_fact(
         kind: FactKind::new(kind).unwrap(),
         schema_version: 1,
         payload: CanonicalPayload::from_value(&payload).unwrap(),
+        recorded_at: "2026-08-29T00:00:01Z".into(),
+    }
+}
+
+fn effect_fact(
+    id: &str,
+    kind: &str,
+    turn: &garive_ledger::TurnId,
+    execution: &garive_ledger::ExecutionId,
+) -> FactDraft {
+    FactDraft {
+        fact_id: FactId::try_from(id).unwrap(),
+        turn_id: Some(turn.clone()),
+        execution_id: Some(execution.clone()),
+        model_request_id: None,
+        tool_invocation_id: Some(ToolInvocationId::try_from("tool").unwrap()),
+        kind: FactKind::new(kind).unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&runtime_payload(kind)).unwrap(),
         recorded_at: "2026-08-29T00:00:01Z".into(),
     }
 }
@@ -210,12 +235,14 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
                     "execution.suspended",
                     &started.turn_id,
                     Some(&prior_execution),
+                    "external_input_required",
                 ),
                 suspension_fact(
                     "turn-suspended",
                     "turn.suspended",
                     &started.turn_id,
                     Some(&prior_execution),
+                    "external_input_required",
                 ),
             ],
         )
@@ -230,7 +257,7 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
         turn_id: started.turn_id.clone(),
         expected_suspension_id: "suspension".into(),
         expected_session_version: 3,
-        continuation_input: "approved".into(),
+        continuation_input: ContinuationInput::ExternalInput("approved".into()),
         interaction: None,
         recorded_at: "2026-08-29T00:00:02Z".into(),
     };
@@ -259,6 +286,116 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     stale.session_id = SessionId::try_from("other-session").unwrap();
     assert_eq!(
         plan_continue_turn(&stale, &state),
+        Err(RuntimeCommandError::ContinuationMismatch)
+    );
+}
+
+#[test]
+fn reconciliation_requires_evidence_before_typed_continuation() {
+    let directory = tempdir().unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("reconcile.sqlite3")).unwrap();
+    let start = start_command("hello", "command-start");
+    let session = start.session_id.clone();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let started = plan_start_turn(&start, 1).unwrap();
+    let execution = started.execution_id.clone().unwrap();
+    ledger.commit(session.clone(), 1, started.facts).unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            2,
+            vec![
+                effect_fact("prepared", "effect.prepared", &started.turn_id, &execution),
+                effect_fact(
+                    "effect-started",
+                    "effect.started",
+                    &started.turn_id,
+                    &execution,
+                ),
+                effect_fact(
+                    "uncertain",
+                    "effect.uncertain",
+                    &started.turn_id,
+                    &execution,
+                ),
+            ],
+        )
+        .unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            3,
+            vec![
+                suspension_fact(
+                    "execution-suspended",
+                    "execution.suspended",
+                    &started.turn_id,
+                    Some(&execution),
+                    "operator_reconciliation",
+                ),
+                suspension_fact(
+                    "turn-suspended",
+                    "turn.suspended",
+                    &started.turn_id,
+                    Some(&execution),
+                    "operator_reconciliation",
+                ),
+            ],
+        )
+        .unwrap();
+    let before = reconstruct_suspended_turn(&ledger.load_turn(&started.turn_id).unwrap()).unwrap();
+    let early = ContinueTurnCommand {
+        command_id: RuntimeCommandId::new("continue-early").unwrap(),
+        session_id: session.clone(),
+        turn_id: started.turn_id.clone(),
+        expected_suspension_id: "suspension".into(),
+        expected_session_version: 4,
+        continuation_input: ContinuationInput::Reconciliation {
+            invocation_id: ToolInvocationId::try_from("tool").unwrap(),
+            content: "confirmed".into(),
+        },
+        interaction: None,
+        recorded_at: "2026-08-29T00:00:02Z".into(),
+    };
+    assert_eq!(
+        plan_continue_turn(&early, &before),
+        Err(RuntimeCommandError::ContinuationMismatch)
+    );
+    let reconcile = plan_reconcile_invocation(
+        &ReconcileInvocationCommand {
+            command_id: RuntimeCommandId::new("reconcile-command").unwrap(),
+            session_id: session.clone(),
+            turn_id: started.turn_id.clone(),
+            invocation_id: ToolInvocationId::try_from("tool").unwrap(),
+            expected_suspension_id: "suspension".into(),
+            expected_session_version: 4,
+            operator_evidence: "receipt checked by operator".into(),
+            decision: ReconciliationDecision::Completed {
+                model_observation: "{\"status\":\"succeeded\"}".into(),
+            },
+            recorded_at: "2026-08-29T00:00:02Z".into(),
+        },
+        &before,
+    )
+    .unwrap();
+    assert_eq!(
+        reconcile
+            .facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["effect.reconciled", "effect.observation"]
+    );
+    commit_planned_turn(&mut ledger, session.clone(), 4, &reconcile).unwrap();
+    let after = reconstruct_suspended_turn(&ledger.load_turn(&started.turn_id).unwrap()).unwrap();
+    let mut continued = early;
+    continued.expected_session_version = 5;
+    assert!(plan_continue_turn(&continued, &after).is_ok());
+    continued.continuation_input = ContinuationInput::ExternalInput("confirmed".into());
+    assert_eq!(
+        plan_continue_turn(&continued, &after),
         Err(RuntimeCommandError::ContinuationMismatch)
     );
 }

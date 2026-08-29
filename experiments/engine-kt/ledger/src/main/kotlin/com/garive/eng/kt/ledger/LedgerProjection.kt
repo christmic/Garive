@@ -177,7 +177,7 @@ internal class LedgerProjection(
     private fun admitTurnInput(fact: FactDraft): LedgerError? {
         val turn = fact.turnId ?: return LedgerError.MissingReference
         val payload = fact.payloadObject()
-        return if (payload.text("input_kind") == "continuation") {
+        return if (payload.text("input_kind") !in setOf("trusted_user", "trusted_system")) {
             if (turns[turn] == TurnState.SUSPENDED &&
                 suspensions[turn] == payload["suspension_id"]?.jsonPrimitive?.contentOrNull
             ) null else LedgerError.InvalidTransition

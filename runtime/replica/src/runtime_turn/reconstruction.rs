@@ -1,7 +1,10 @@
 use garive_ledger::{ExecutionId, TurnSnapshot};
 use serde_json::{Map, Value};
 
-use super::types::{EffectiveRuntimeLimits, RuntimeCommandError, SuspendedTurnState};
+use super::types::{
+    EffectiveRuntimeLimits, InteractionContinuation, InteractionExpiry, ReconciliationTarget,
+    RuntimeCommandError, RuntimeSuspensionKind, SuspendedTurnState,
+};
 
 /// Reconstructs a resumable Turn exclusively from one verified fixed Ledger prefix.
 pub fn reconstruct_suspended_turn(
@@ -53,11 +56,29 @@ pub fn reconstruct_suspended_turn(
         .ok_or(RuntimeCommandError::CorruptLedger)?;
     let execution_payload = payload(execution_start)?;
     let started_payload = payload(started)?;
+    let suspension_kind = RuntimeSuspensionKind::parse(text(&suspended_payload, "reason")?)?;
+    let interaction = pending_interaction(snapshot, &execution_id, &suspended_payload)?;
+    let reconciliation = reconciliation_target(snapshot, &execution_id)?;
+    if (suspension_kind == RuntimeSuspensionKind::ApprovalRequired && interaction.is_none())
+        || (interaction.is_some()
+            && !matches!(
+                suspension_kind,
+                RuntimeSuspensionKind::ApprovalRequired
+                    | RuntimeSuspensionKind::ExternalInputRequired
+            ))
+        || (suspension_kind == RuntimeSuspensionKind::OperatorReconciliation)
+            != reconciliation.is_some()
+    {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
     Ok(SuspendedTurnState {
         session_id,
         session_version: snapshot.session_version,
         turn_id,
         suspension_id: text(&suspended_payload, "suspension_id")?.to_owned(),
+        suspension_kind,
+        interaction,
+        reconciliation,
         agent_instance_id: identity(text(&started_payload, "agent_instance_id")?)?,
         definition_id: identity(text(&started_payload, "definition_id")?)?,
         definition_revision: identity(text(&started_payload, "definition_revision")?)?,
@@ -68,6 +89,115 @@ pub fn reconstruct_suspended_turn(
         recovery_ordinal: unsigned(&execution_payload, "recovery_ordinal")?,
         limits: limits(&execution_payload)?,
     })
+}
+
+fn pending_interaction(
+    snapshot: &TurnSnapshot,
+    execution_id: &ExecutionId,
+    suspended: &Map<String, Value>,
+) -> Result<Option<InteractionContinuation>, RuntimeCommandError> {
+    let suspension_id = text(suspended, "suspension_id")?;
+    let mut pending = Vec::new();
+    for requested in snapshot.facts.iter().filter(|fact| {
+        fact.execution_id.as_ref() == Some(execution_id)
+            && fact.kind.as_str() == "interaction.requested"
+    }) {
+        let request = payload(requested)?;
+        if text(&request, "suspension_id")? != suspension_id {
+            continue;
+        }
+        let interaction_id = text(&request, "interaction_id")?;
+        let resolved = snapshot.facts.iter().any(|fact| {
+            fact.position > requested.position
+                && matches!(
+                    fact.kind.as_str(),
+                    "interaction.resolved" | "interaction.cancelled"
+                )
+                && payload(fact)
+                    .ok()
+                    .and_then(|value| value.get("interaction_id").cloned())
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .as_deref()
+                    == Some(interaction_id)
+        });
+        if !resolved {
+            pending.push(InteractionContinuation {
+                execution_id: execution_id.clone(),
+                tool_invocation_id: requested
+                    .tool_invocation_id
+                    .clone()
+                    .ok_or(RuntimeCommandError::CorruptLedger)?,
+                interaction_id: interaction_id.to_owned(),
+                prepared_digest: text(&request, "prepared_digest")?.to_owned(),
+                response_schema_digest: text(&request, "response_schema_digest")?.to_owned(),
+                expiry: InteractionExpiry::parse(text(&request, "expiry_code")?)?,
+            });
+        }
+    }
+    match pending.len() {
+        0 => Ok(None),
+        1 => Ok(pending.pop()),
+        _ => Err(RuntimeCommandError::CorruptLedger),
+    }
+}
+
+fn reconciliation_target(
+    snapshot: &TurnSnapshot,
+    execution_id: &ExecutionId,
+) -> Result<Option<ReconciliationTarget>, RuntimeCommandError> {
+    let uncertain: Vec<_> = snapshot
+        .facts
+        .iter()
+        .filter(|fact| {
+            fact.execution_id.as_ref() == Some(execution_id)
+                && fact.kind.as_str() == "effect.uncertain"
+        })
+        .collect();
+    if uncertain.len() > 1 {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    let Some(uncertain) = uncertain.first() else {
+        return Ok(None);
+    };
+    let invocation_id = uncertain
+        .tool_invocation_id
+        .clone()
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let uncertain_payload = payload(uncertain)?;
+    let prepared_digest = text(&uncertain_payload, "prepared_digest")?;
+    let prepared = snapshot
+        .facts
+        .iter()
+        .find(|fact| {
+            fact.tool_invocation_id.as_ref() == Some(&invocation_id)
+                && fact.kind.as_str() == "effect.prepared"
+        })
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let prepared_payload = payload(prepared)?;
+    if text(&prepared_payload, "prepared_digest")? != prepared_digest {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    let reconciled = snapshot.facts.iter().any(|fact| {
+        fact.position > uncertain.position
+            && fact.tool_invocation_id.as_ref() == Some(&invocation_id)
+            && fact.kind.as_str() == "effect.reconciled"
+    });
+    let observed = snapshot.facts.iter().any(|fact| {
+        fact.position > uncertain.position
+            && fact.tool_invocation_id.as_ref() == Some(&invocation_id)
+            && fact.kind.as_str() == "effect.observation"
+    });
+    if reconciled != observed {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    Ok(Some(ReconciliationTarget {
+        execution_id: execution_id.clone(),
+        invocation_id,
+        prepared_digest: prepared_digest.to_owned(),
+        model_call_id: text(&prepared_payload, "model_call_id")?.to_owned(),
+        reconciled,
+        observed,
+    }))
 }
 
 fn limits(value: &Map<String, Value>) -> Result<EffectiveRuntimeLimits, RuntimeCommandError> {
