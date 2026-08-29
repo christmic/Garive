@@ -186,6 +186,50 @@ pub struct ContextSurface {
     pub utf8_bytes: usize,
 }
 
+/// Assembles admitted C2 inputs in the provider-neutral model presentation order.
+///
+/// Durable/audit order remains unchanged in [`ContextSurface`]. Model-visible
+/// Skill instructions precede Memory and Knowledge evidence, which precede
+/// ordinary history/current input. Redacted reference-only items are omitted.
+pub fn assemble_model_inputs(surface: ContextSurface) -> Vec<ModelInputItem> {
+    let mut skills = Vec::new();
+    let mut memory = Vec::new();
+    let mut knowledge = Vec::new();
+    let mut ordinary = Vec::new();
+    for value in surface.items {
+        if let ContextItem::Input { kind, item, .. } = value {
+            match kind {
+                CandidateKind::Skill => skills.push(item),
+                CandidateKind::Memory => memory.push(item),
+                CandidateKind::Knowledge => knowledge.push(item),
+                _ => ordinary.push(item),
+            }
+        }
+    }
+    let instruction_boundary = ordinary
+        .iter()
+        .take_while(|item| {
+            matches!(
+                item,
+                ModelInputItem::Message {
+                    role: garive_llm::ModelRole::System | garive_llm::ModelRole::Developer,
+                    ..
+                }
+            )
+        })
+        .count();
+    let skill_count = skills.len();
+    ordinary.splice(instruction_boundary..instruction_boundary, skills);
+    let memory_boundary = instruction_boundary + skill_count;
+    let memory_count = memory.len();
+    ordinary.splice(memory_boundary..memory_boundary, memory);
+    ordinary.splice(
+        memory_boundary + memory_count..memory_boundary + memory_count,
+        knowledge,
+    );
+    ordinary
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Contract violation or bounded-derivation failure.
 pub enum ContextDerivationError {

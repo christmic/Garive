@@ -1,13 +1,13 @@
 use garive_llm::{
-    ModelCancellation, ModelInputItem, ModelObserver, ModelRequest, ModelRequestId, ModelRole,
-    ModelStreamEvent, ObserverDecision, TokenCount, ToolDescriptor,
+    ModelCancellation, ModelObserver, ModelRequest, ModelRequestId, ModelStreamEvent,
+    ObserverDecision, TokenCount, ToolDescriptor,
 };
 
 use crate::{
     AgentEvent, AgentEventKind, AgentExecutionPorts, AgentFailureReason, AgentOutcome,
-    AgentTurnRequest, ContextItem, ContextSurface, EventSink, ExecutionControl,
-    ExecutionOutcomeKind, ExecutionReport, ExecutionStatus, MissingUsagePolicy,
-    ModelRecoveryPolicy, StopReason, SuspensionReason, TerminalRecoveryAction, UsageSummary,
+    AgentTurnRequest, ContextSurface, EventSink, ExecutionControl, ExecutionOutcomeKind,
+    ExecutionReport, ExecutionStatus, MissingUsagePolicy, ModelRecoveryPolicy, StopReason,
+    SuspensionReason, TerminalRecoveryAction, UsageSummary,
 };
 
 pub(super) fn build_model_request(
@@ -23,39 +23,7 @@ pub(super) fn build_model_request(
         request.execution_id.as_str()
     );
     let target = request.model_targets[target_index].clone();
-    let mut skill_items = Vec::new();
-    let mut memory_items = Vec::new();
-    let mut knowledge_items = Vec::new();
-    let mut input_items = Vec::new();
-    for value in surface.items {
-        if let ContextItem::Input { kind, item, .. } = value {
-            match kind {
-                crate::CandidateKind::Skill => skill_items.push(item),
-                crate::CandidateKind::Memory => memory_items.push(item),
-                crate::CandidateKind::Knowledge => knowledge_items.push(item),
-                _ => input_items.push(item),
-            }
-        }
-    }
-    let instruction_boundary = input_items
-        .iter()
-        .take_while(|item| {
-            matches!(
-                item,
-                ModelInputItem::Message {
-                    role: ModelRole::System | ModelRole::Developer,
-                    ..
-                }
-            )
-        })
-        .count();
-    let skill_count = skill_items.len();
-    input_items.splice(instruction_boundary..instruction_boundary, skill_items);
-    let memory_boundary = instruction_boundary + skill_count;
-    let memory_count = memory_items.len();
-    input_items.splice(memory_boundary..memory_boundary, memory_items);
-    let knowledge_boundary = memory_boundary + memory_count;
-    input_items.splice(knowledge_boundary..knowledge_boundary, knowledge_items);
+    let input_items = crate::assemble_model_inputs(surface);
     let value = ModelRequest {
         request_id: ModelRequestId::new(request_id.clone()),
         target_id: target,
