@@ -443,6 +443,134 @@ plugs in without touching the loop.
 - `assemble-testing.md` "Dim 1c — Real API smoke" — verifies
   the outcome kinds land in the ledger on every test.
 
+### Layer reversibility — what each tier means
+
+The 4 layers of the agent's runtime stack have **different
+reversibility profiles**. Knowing which layer is which
+determines where retry is safe, where governance is
+mandatory, and where the ledger is the source of truth.
+
+| Layer | What it solves | Reversibility | Retry safe? | Governance | Truth source |
+|-------|---------------|---------------|-------------|-------------|---------------|
+| **derive / assemble** | What the **model sees** | **Information** | ✅ Re-run from scratch | None — pure function | Surface cache |
+| **model.invoke** | What the **model says** | **Generation** | ✅ Retry (idempotency key) | Provider-adapter (transport) | `model.usage` |
+| **Effect layer** (governance + tool exec) | **What the world experiences** | **Irreversible** — touched the world | ❌ Re-run is dangerous | **MANDATORY** | Ledger (must record) |
+| **Ledger** | **What happened** | Append-only | N/A | None — it's the record | N/A |
+
+The rule:
+
+> **derive/assemble are information; mistakes there lose
+> no real work.**
+> **model.invoke is generation; mistakes there are usually
+> recoverable with retry.**
+> **Effect layer is real-world action; mistakes there are
+> irreversible. The model can't tell from inside whether a
+> tool actually succeeded — the ledger has to.**
+
+Consequence:
+
+- **Effect layer must be gated by `governance.judge` before
+  execution.** No intent reaches the executor without a
+  verdict. The verdict is the only place where an
+  irreversible decision is made; that's where the audit
+  chain starts.
+- **Effect layer must record the truth to the ledger.** A
+  tool that succeeds, fails, times out, or cancels all
+  write a `tool.result` (or `tool.result.rejected`) row.
+  The model **never** sees an "I think it succeeded" — it
+  sees the actual outcome.
+- **Effect layer's idempotency must be classified.** A
+  `ReadOnly` tool can re-run without risk; a `Mutating`
+  tool cannot — re-running is the **original failure mode**.
+
+### Recovery is graded by effect class
+
+The `effect_class` declaration on each tool is the boundary
+that decides what the runtime can safely re-run on a
+Suspend / crash recovery:
+
+| Class | Recovery policy | Why |
+|-------|------------------|-----|
+| `ReadOnly` | **Auto re-run** | No side-effects; result is the same; re-run is free |
+| `Idempotent` | **Auto re-run** | Overwrite semantics; result is the same; re-run converges |
+| **`Mutating`** | **DO NOT auto re-run** | **Otherwise the recovery *causes* the failure it's trying to undo.** Mark `interrupted`, feed the model a hint ("this call was interrupted at seq N, here's the partial output"), model decides (or `AskUser`) |
+
+> **Irreversible cannot re-do. Otherwise it's secondary
+> damage.**
+
+The discipline: **trust the `effect_class` declaration**.
+The runtime never overrides it. A `Mutating` tool that was
+mid-run when the process crashed is **not** re-issued
+automatically; the user / model decides. A `ReadOnly`
+tool that was mid-run is re-issued freely.
+
+### Effect layer's two-side rule
+
+The effect layer operates on **two sides** — both required:
+
+- **Pre-execution** (`governance.judge`): stop the model from
+  doing irreversible damage. A hallucinated `delete` or a
+  wrong-path `write` is caught here. **Without this side,
+  a model hallucination is a real failure operation.**
+- **Post-execution** (ledger): record what actually happened.
+  A `tool.result` row is the source of truth. **Without this
+  side, the model thinks it succeeded when it didn't.**
+
+Both sides are required. Pre-execution alone is not enough —
+the executor itself can fail. Post-execution alone is not
+enough — the model can do something wrong before the executor
+sees it.
+
+### Why "all-serial" is too slow, "all-parallel" is too unsafe
+
+The dispatcher's **conflict-graph scheduling** is the
+middle ground:
+
+- **Two tools writing the same file** → conflict edge →
+  serialised (no torn writes).
+- **Two `read_file`s on the same file** → no conflict edge →
+  parallel.
+- **Two `bash` tools (same process resource)** → conflict
+  edge → serialised.
+
+The conflict graph catches **what** must serialise. The
+runtime never assumes "all Mutating tools need serialising" —
+that would be needlessly slow; nor "all parallel" — that
+would be unsafe.
+
+### Tool result must round-trip honestly
+
+A tool's outcome goes to the ledger as **exactly** what
+happened — not what the model wished happened:
+
+- **Succeeded** → `tool.result{status: ok, output: blob}`
+- **Failed** → `tool.result.rejected{reason}`
+- **Timed out** → `tool.result{status: timeout, output_so_far}`
+- **Cancelled** → `tool.result{status: cancelled, output_so_far}`
+- **Exception** (caught at workspace boundary) →
+  `tool.result.rejected{reason: "exception: ..."}`
+
+The model sees the **actual outcome**, never a fabricated
+"success". This is the discipline that lets the agent's
+self-healing ability operate — the model can't fix what it
+doesn't know is broken.
+
+A **half-completed** tool (e.g. exception mid-run) returns
+its partial output. The model sees "I got this far, then
+it failed". It can decide to retry, change strategy, or ask
+the user — but it can't pretend it succeeded.
+
+### Cross-references
+
+- `effect-layer.md` "Failure semantics — data, not exception" —
+  the **specific** failure kinds and where they're caught.
+- `effect-layer.md` "Effect class + recovery profile" —
+  ReadOnly / Idempotent / Mutating; the **recovery table**.
+- `effect-layer.md` "Conflict-graph scheduling" — the
+  scheduler that catches what must serialise.
+- `effect-layer.md` "BDI architecture" — Intention / Filter
+  / Action; the **filter** is `governance.judge`.
+
 ### Budget Projection (anchored to `model.usage`)
 
 The earlier budget design had `derive` estimating the
