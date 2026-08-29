@@ -470,6 +470,172 @@ This is **deferred priority**:
   speed. We don't depend on them; if they land later, they
   sit behind the same `Workspace` interface.
 
+## BDI architecture — Belief / Desire / Intention
+
+The agent's runtime matches the **BDI (Belief-Desire-Intention)
+architecture** — a classical agent theory (Bratman 1987) — at
+the **effect layer**. Naming the pipeline after BDI makes it
+legible to anyone who knows the theory and makes failures
+categorisable.
+
+```
+Belief     = the ledger (everything the agent knows)
+Desire     = `goal.*` (current + subtree of future goals)
+Intention   = `intent` in `model.usage.reply.items` (the model's next-action proposal)
+Filter     = `governance.judge(intent)` → verdict
+Action     = tool call (after dispatch, after filter)
+```
+
+The effect-layer pipeline is **literally BDI's intention
+filtering**:
+
+1. **Intention formation** — model emits `intent`s in its
+   reply. These are *what the model wants to do*.
+2. **Intention filtering** — `governance.judge(intent)` →
+   verdict (Approve / Deny / ApproveWithRewrite / AskUser).
+   This is BDI's "filter" step: not every intention is
+   executable.
+3. **Action execution** —
+   `ToolDispatcher.dispatch(approved_intents)`. The filtered
+   intentions become tool calls.
+
+| BDI term | Garive term | Lives in |
+|----------|-------------|----------|
+| **Belief** | ledger (append-only) | `ledger.md` (whole stack) |
+| **Desire** | `goal.declare / update / close` | `ledger.md` "goal.* family" |
+| **Intention** | `intent` (model reply) | `model.usage.reply.items` |
+| **Filter** | `governance.judge(intent)` | this doc "Stage 2" |
+| **Action** | tool call (after dispatch) | this doc "Stage 3–4" |
+
+### BDI failure modes
+
+Naming the pipeline after BDI gives a **categorical failure
+taxonomy** — each failure maps to a BDI term, and the
+recovery is well-defined:
+
+| Failure | BDI term | Recovery |
+|---------|----------|-----------|
+| Ledger lost / corrupted | **Belief** failure | Replay / reconstruct from backup |
+| `goal.*` is stale / contradictory | **Desire** failure | Model re-derives the goal from current context |
+| Model emits an intent not matching desire (e.g. edits a file not in goal) | **Intention** failure | `governance.judge` → Deny → feedback |
+| `governance.judge` has a wrong policy | **Filter** failure | Edit the policy table; user can override |
+| Tool itself fails | **Action** failure | Per the failure-semantics discipline (data, not exception) |
+
+The **filter** step is the only BDI step that has explicit
+runtime code; the others are emergent from the data
+structures (ledger / `goal.*` / `intent`). Naming makes the
+**policy** the only thing that has to be coded; the rest is
+typed.
+
+### Speculative dispatch — the cost is real
+
+Speculative dispatch (above) has **a real cost** that must
+be acknowledged:
+
+- The model can **abort** the tool call mid-stream. The
+  dispatcher must cooperatively cancel the in-flight tool
+  and write `provider.partial` to the ledger. **Some work
+  the tool did is wasted** — a write_file that was rolled
+  back, a network call that was made. The user's "save
+  latency" is paid in "tool does work that gets undone".
+- A **wrong dispatch** is also wasted — the model emits an
+  intent that the dispatcher starts, then changes its mind
+  before the model finishes streaming. Same cost.
+- **For `Mutating` tools** (per the effect-class discipline)
+  the cost is higher — a partially-written file may need
+  cleanup.
+
+**Why it's worth doing anyway** (deferred, not now):
+
+- The latency win is **measurable** — first-token-to-first-
+  tool-execution drops from `(model-stream-time + tool-
+  start-latency)` to `tool-start-latency` alone.
+- The cleanup cost is bounded — partial results in
+  `provider.partial` + the `Mutating` recovery rule (no auto
+  re-run) keeps the blast radius small.
+- The **alternative** (wait for model stream to finish before
+  dispatching) is the conservative default — speculative
+  is the **layered enhancement** that lands later.
+
+**Layering**:
+- Base dispatcher works correctly without speculative —
+  the deterministic ordering rule still holds.
+- Speculative is added as a **layer on top** that respects
+  the ordering rule and adds a `prefetch_lag` bound.
+- The recovery semantics (cooperative cancel + `provider.partial`)
+  are already designed for both modes.
+
+**The cost is the justification for deferral** — but the
+cost is also bounded, so deferral is a priority choice, not a
+correctness concern.
+
+## Deterministic simulation — exhaustive interleavings
+
+The E1–E5 contract tests verify **specific scenarios**
+(static). The dispatcher needs **stronger** guarantees:
+**byte-determinism across all possible scheduling
+interleavings**, given the same input.
+
+The deterministic simulation is `dispatcher_contract_tests`!
+test suite — distinct from E1–E5:
+
+| Property | Test |
+|----------|------|
+| **Replay determinism** | Run the same batch 1000× with random delays (each tool 0–50 ms); the outcome (events emitted + ledger rows written) is **byte-equal** every time. Seed is fixed; same seed → same outcome. |
+| **Exhaustive scheduling** | For a parallel group of N tools, enumerate **all N! orderings**. Each ordering must produce the same final state. |
+| **Race-condition injection** | Random delay on each tool (0–50 ms); assert the outcome is deterministic regardless of timing. |
+| **State-machine coverage** | Every state in the `ToolDispatcher` (READY / INVOKING / BACKOFF / RESPONDING / DONE / TRUNCATED / ERROR_*) is visited at least once. |
+| **Pairing invariant** | Every `toolStart` has exactly one terminal (`toolEnd` / `toolTimeout` / `toolCalled` / `toolRejected`); orphans are bugs. |
+
+The **two suites together**:
+
+- **E1–E5 (property + fixed)** — "the dispatcher behaves
+  correctly on the canonical scenarios."
+- **Deterministic simulation** — "the dispatcher is
+  byte-deterministic across all interleavings, given the same
+  input."
+
+Both must pass. The deterministic simulation catches what
+E1–E5 cannot:
+
+- Race conditions (concurrent access to shared state).
+- Ordering ambiguity (events emitted in the wrong order).
+- Partial state (interrupted runs leave dangling rows).
+- Cross-pool races (GatedBatch + Passthrough + Sequential
+  dispatcher running concurrently).
+
+The deterministic simulation is **CI-gated** — a
+non-determinism regression fails the build. Failures are
+**P0** because they violate the load-bearing contract that
+the dispatcher is byte-deterministic.
+
+### Pairing invariant (concrete)
+
+Every `toolStart` event **must** be paired with exactly one
+terminal. The contract test asserts this:
+
+```python
+def test_pairing_invariant(intents, simulated_delays):
+    events = run_dispatcher(intents, delays=simulated_delays)
+
+    starts = [e for e in events if e.kind == 'toolStart']
+    terminals = [
+        e for e in events
+        if e.kind in ('toolEnd', 'toolTimeout', 'toolCalled', 'toolRejected')
+    ]
+
+    assert len(starts) == len(intents)
+    assert len(terminals) == len(intents)
+    assert all(s.call_id == t.call_id
+               for s, t in zip(starts, terminals))
+    assert all(start.seq < terminal.seq  # ordering rule
+               for start, terminal in zip(starts, terminals))
+```
+
+A failure is a **P0**: an orphan start means the dispatcher
+lost track of a tool. The recovery is to find which
+scheduler path missed the terminal and add a coverage test.
+
 ## Cross-references
 
 - `loop.md` "Stage ④ — invoke / judge / run" — the loop's
