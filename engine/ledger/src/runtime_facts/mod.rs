@@ -2,6 +2,7 @@
 
 mod effect;
 mod model;
+mod skill;
 mod turn;
 mod values;
 
@@ -25,11 +26,13 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let execution_family = kind.starts_with("execution.");
     let model_family = kind.starts_with("model.");
     let effect_family = kind.starts_with("effect.") || kind.starts_with("interaction.");
+    let skill_family = kind.starts_with("skill.");
     let rejection = kind == "tool.preparation_rejected";
     if !kind.starts_with("turn.")
         && !execution_family
         && !model_family
         && !effect_family
+        && !skill_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -39,7 +42,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     if fact.turn_id.is_none()
         || fact.execution_id.is_some()
-            != (execution_family || model_family || effect_family || rejection)
+            != (execution_family || model_family || effect_family || skill_family || rejection)
         || fact.model_request_id.is_some() != (model_family || rejection)
         || fact.tool_invocation_id.is_some() != effect_family
     {
@@ -47,7 +50,9 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if effect_family || rejection {
+    if skill_family {
+        skill::validate(kind, object(&payload)?)?;
+    } else if effect_family || rejection {
         effect::validate(kind, object(&payload)?)?;
     } else if model_family {
         model::validate(kind, object(&payload)?)?;
