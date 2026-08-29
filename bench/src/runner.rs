@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, future::Future, pin::Pin};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    pin::Pin,
+};
 
 use futures::{stream, StreamExt};
 use garive_eval::{EvaluationCaseOutcome, EvaluationCaseResult};
@@ -225,6 +229,13 @@ fn validate_run(
 ) -> Result<(), BenchError> {
     if cases.is_empty() || !(1..=MAX_JOBS).contains(&config.jobs) {
         return Err(BenchError::new(BenchErrorCode::InvalidLimits));
+    }
+    let mut identities = BTreeSet::new();
+    if cases
+        .iter()
+        .any(|case| !identities.insert(case.instance_id.as_str()))
+    {
+        return Err(BenchError::new(BenchErrorCode::DuplicateCase));
     }
     if config.mode == BenchmarkMode::OfficialPublished
         && (config.jobs == 1 || warm_capacity < config.jobs)

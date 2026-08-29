@@ -60,6 +60,11 @@ impl BenchError {
         Self { code }
     }
 
+    /// Constructs a sanitized failure returned by an injected benchmark port.
+    pub const fn from_port(code: BenchErrorCode) -> Self {
+        Self { code }
+    }
+
     /// Returns the stable failure code.
     pub const fn code(self) -> BenchErrorCode {
         self.code
