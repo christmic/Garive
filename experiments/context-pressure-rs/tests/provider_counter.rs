@@ -7,10 +7,10 @@ use garive_context_pressure::{
     load_corpus, measure_context_pressure, AnthropicProviderCounter,
     AnthropicProviderCounterConfig, TokenCountExchangePort, TokenCounter, TokenCounterFailure,
 };
-use garive_llm::ModelCapability;
+use garive_llm::{ModelCapability, ModelInputContent, ModelInputItem, ModelRole};
 use garive_provider_anthropic::{build_token_count_profile, TokenCountHttpRequest};
 use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy};
-use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
+use garive_provider_profile::{ConnectionInput, EndpointSelection, ExplicitHeader, SecretValue};
 use serde_json::Value;
 
 const CORPUS: &str = include_str!(concat!(
@@ -25,11 +25,13 @@ type TestCounter = AnthropicProviderCounter<RecordingPort>;
 struct RecordingPort {
     requests: RecordedRequests,
     eligible: bool,
+    revision: &'static str,
+    response: &'static [u8],
 }
 
 impl TokenCountExchangePort for RecordingPort {
     fn transport_revision(&self) -> &str {
-        "recording-v1"
+        self.revision
     }
 
     fn publication_eligible(&self) -> bool {
@@ -39,13 +41,27 @@ impl TokenCountExchangePort for RecordingPort {
     fn execute(&self, request: &TokenCountHttpRequest) -> Result<Vec<u8>, TokenCounterFailure> {
         let body = serde_json::from_slice(request.body()).map_err(|_| TokenCounterFailure)?;
         self.requests.lock().unwrap().push(body);
-        Ok(br#"{"input_tokens":32}"#.to_vec())
+        Ok(self.response.to_vec())
     }
 }
 
 fn counter(
     secret: &str,
     publishable: bool,
+) -> Result<(TestCounter, RecordedRequests), TokenCounterFailure> {
+    custom_counter(
+        secret,
+        publishable,
+        BTreeSet::from([ModelCapability::Text, ModelCapability::Tools]),
+        br#"{"input_tokens":32}"#,
+    )
+}
+
+fn custom_counter(
+    secret: &str,
+    publishable: bool,
+    capabilities: BTreeSet<ModelCapability>,
+    response: &'static [u8],
 ) -> Result<(TestCounter, RecordedRequests), TokenCounterFailure> {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let profile = build_token_count_profile(&ConnectionInput::new(
@@ -57,7 +73,7 @@ fn counter(
     let deployment = MessagesDeployment {
         target_id: "evidence-target".into(),
         model_id: "evidence-model".into(),
-        capabilities: BTreeSet::from([ModelCapability::Text, ModelCapability::Tools]),
+        capabilities,
         default_max_output_tokens: None,
         media_bindings: BTreeMap::new(),
         thinking: None,
@@ -74,6 +90,8 @@ fn counter(
         RecordingPort {
             requests: Arc::clone(&requests),
             eligible: false,
+            revision: "recording-v1",
+            response,
         },
     )?;
     Ok((value, requests))
@@ -111,4 +129,97 @@ fn secret_is_not_bound_and_fake_port_cannot_publish() {
         second.descriptor().config_digest
     );
     assert!(counter("first-secret", true).is_err());
+}
+
+#[test]
+fn unsupported_input_and_malformed_response_fail_closed() {
+    let (counter, _) = counter("secret", false).unwrap();
+    assert!(counter
+        .count_input_tokens(&[ModelInputItem::ReasoningReference {
+            reference: "opaque".into(),
+        }])
+        .is_err());
+
+    let (counter, _) = custom_counter(
+        "secret",
+        false,
+        BTreeSet::from([ModelCapability::Text]),
+        br#"{"input_tokens":0}"#,
+    )
+    .unwrap();
+    assert!(counter
+        .count_input_tokens(&[ModelInputItem::Message {
+            role: ModelRole::User,
+            content: vec![ModelInputContent::Text("count this".into())],
+        }])
+        .is_err());
+
+    let (counter, _) = custom_counter(
+        "secret",
+        false,
+        BTreeSet::from([ModelCapability::Text]),
+        br#"{"input_tokens":1}"#,
+    )
+    .unwrap();
+    assert!(counter
+        .count_input_tokens(&[ModelInputItem::ToolObservation {
+            model_call_id: "call-1".into(),
+            result_json: "{}".into(),
+        }])
+        .is_err());
+}
+
+#[test]
+fn every_nonsecret_route_value_is_bound_to_the_digest() {
+    let digest = |endpoint: EndpointSelection, model: &str, trace: &str, revision: &'static str| {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let profile = build_token_count_profile(&ConnectionInput::new(
+            endpoint,
+            SecretValue::new("secret").unwrap(),
+            vec![ExplicitHeader::new("x-trace", trace, false).unwrap()],
+        ))
+        .unwrap();
+        let deployment = MessagesDeployment {
+            target_id: "target".into(),
+            model_id: model.into(),
+            capabilities: BTreeSet::from([ModelCapability::Text]),
+            default_max_output_tokens: None,
+            media_bindings: BTreeMap::new(),
+            thinking: None,
+            error_policy: ProtocolErrorPolicy::default(),
+        };
+        AnthropicProviderCounter::new(
+            AnthropicProviderCounterConfig {
+                counter_revision: "composition-v1".into(),
+                deployment,
+                profile,
+                projection_max_output_tokens: 1,
+                publishable: false,
+            },
+            RecordingPort {
+                requests,
+                eligible: false,
+                revision,
+                response: br#"{"input_tokens":1}"#,
+            },
+        )
+        .unwrap()
+        .descriptor()
+        .config_digest
+        .clone()
+    };
+    let base = digest(EndpointSelection::Default, "model-a", "trace-a", "tx-a");
+    for changed in [
+        digest(
+            EndpointSelection::Explicit("https://example.test/count".into()),
+            "model-a",
+            "trace-a",
+            "tx-a",
+        ),
+        digest(EndpointSelection::Default, "model-b", "trace-a", "tx-a"),
+        digest(EndpointSelection::Default, "model-a", "trace-b", "tx-a"),
+        digest(EndpointSelection::Default, "model-a", "trace-a", "tx-b"),
+    ] {
+        assert_ne!(base, changed);
+    }
 }
