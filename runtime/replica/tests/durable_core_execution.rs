@@ -2,7 +2,10 @@ use std::{
     collections::BTreeSet,
     num::NonZeroU32,
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use futures::executor::block_on;
@@ -13,6 +16,11 @@ use garive_core::{
     ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits,
     ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId as CoreSessionId,
     TerminalRecoveryAction, TurnId as CoreTurnId,
+};
+use garive_knowledge::{
+    Citation, CitationScheme, ContentBinding as KnowledgeContent, FreshnessRequirement,
+    KnowledgeEvidence, KnowledgeFreshness, KnowledgeQueryMode, KnowledgeRequest,
+    KnowledgeSourceDescriptor, KnowledgeSourceKind, KnowledgeTrustClass,
 };
 use garive_ledger::{
     AgentDefinitionId as LedgerDefinitionId, AgentDefinitionRevision as LedgerRevision,
@@ -35,10 +43,11 @@ use garive_runtime::{
     plan_skill_activation, plan_start_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
     AuthorityRequest, CancelReason, CancelTurnCommand, DurableExecutionConfig,
     DurableExecutionError, EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch,
-    ExecutorFuture, ExecutorPort, MemoryRetrievalContext, ModelLifecycleContext,
-    PreparedAgentCapabilities, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
-    SkillActivationContext, SqliteLedger, StartTurnCommand, TerminalPublicationError,
-    TerminalPublisher,
+    ExecutorFuture, ExecutorPort, KnowledgeAccessGrant, KnowledgeConnector,
+    KnowledgeConnectorFuture, KnowledgeConnectorOutcome, MemoryRetrievalContext,
+    ModelLifecycleContext, PreparedAgentCapabilities, PreparedExecution,
+    PreparedKnowledgeCapability, RuntimeCommandError, RuntimeCommandId, SkillActivationContext,
+    SqliteLedger, StartTurnCommand, TerminalPublicationError, TerminalPublisher,
 };
 use garive_skill::{
     ActivationMode, ActivationPolicy, ContentBinding, SkillActivationRequest, SkillDefinition,
@@ -143,6 +152,39 @@ struct SkillCheckingModel {
     turn: garive_ledger::TurnId,
 }
 
+struct CheckingKnowledgeConnector {
+    path: PathBuf,
+    turn: garive_ledger::TurnId,
+}
+
+impl KnowledgeConnector for CheckingKnowledgeConnector {
+    fn retrieve<'a>(
+        &'a self,
+        _: &'a KnowledgeSourceDescriptor,
+        _: &'a KnowledgeRequest,
+    ) -> KnowledgeConnectorFuture<'a> {
+        Box::pin(async move {
+            let ledger = SqliteLedger::open(&self.path).unwrap();
+            let kinds = ledger
+                .load_turn(&self.turn)
+                .unwrap()
+                .facts
+                .into_iter()
+                .map(|fact| fact.kind.as_str().to_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                &kinds[kinds.len() - 2..],
+                ["knowledge.requested", "knowledge.dispatched"]
+            );
+            assert!(!kinds.iter().any(|kind| kind == "knowledge.completed"));
+            KnowledgeConnectorOutcome::Completed {
+                evidence: vec![knowledge_evidence()],
+                connector_order_stable: true,
+            }
+        })
+    }
+}
+
 impl ModelPort for SkillCheckingModel {
     fn invoke<'a>(
         &'a self,
@@ -171,7 +213,11 @@ impl ModelPort for SkillCheckingModel {
                 .iter()
                 .position(|kind| kind == "model.started")
                 .unwrap();
-            assert!(skill < memory && memory < started);
+            let knowledge = kinds
+                .iter()
+                .position(|kind| kind == "knowledge.completed")
+                .unwrap();
+            assert!(skill < memory && memory < knowledge && knowledge < started);
             assert!(matches!(
                 &request.input_items[0],
                 ModelInputItem::Message {
@@ -188,6 +234,13 @@ impl ModelPort for SkillCheckingModel {
             ));
             assert!(matches!(
                 &request.input_items[2],
+                ModelInputItem::Message {
+                    role: garive_llm::ModelRole::User,
+                    content,
+                } if matches!(&content[0], ModelInputContent::Text(text) if text.contains("garive.knowledge"))
+            ));
+            assert!(matches!(
+                &request.input_items[3],
                 ModelInputItem::Message {
                     role: garive_llm::ModelRole::User,
                     ..
@@ -941,6 +994,32 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
     )
     .unwrap();
     let replay_memory_fact = retrieval.fact.clone();
+    let knowledge_request = KnowledgeRequest::new(
+        "knowledge-request",
+        "docs",
+        "1",
+        KnowledgeQueryMode::Keyword,
+        KnowledgeContent::from_inline("garive"),
+        vec![],
+        4,
+        1,
+        64,
+        1_000,
+        FreshnessRequirement::CachedAllowed,
+    )
+    .unwrap();
+    let knowledge_source = knowledge_source();
+    let knowledge = PreparedKnowledgeCapability::new(
+        knowledge_source,
+        knowledge_request,
+        KnowledgeAccessGrant::new("docs", "1").unwrap(),
+        "knowledge-attempt",
+        Arc::new(CheckingKnowledgeConnector {
+            path: path.clone(),
+            turn: plan.turn_id.clone(),
+        }),
+    )
+    .unwrap();
     let config = DurableExecutionConfig {
         session_id: session.clone(),
         expected_session_version: 2,
@@ -978,7 +1057,7 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
         PreparedAgentCapabilities {
             skill_activation: Some(activation),
             memory_retrieval: Some(retrieval),
-            knowledge_retrieval: None,
+            knowledge_retrieval: Some(knowledge),
         },
         &mut context,
         &SkillCheckingModel {
@@ -991,7 +1070,7 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
         &mut publisher,
     ))
     .unwrap();
-    assert_eq!(context.positions, [6]);
+    assert_eq!(context.positions, [9]);
 
     drop(ledger);
     let mut restarted = SqliteLedger::open(&path).unwrap();
@@ -1035,6 +1114,46 @@ fn skill_definition(instructions: &str) -> SkillDefinition {
         vec![],
         64,
         "1",
+    )
+    .unwrap()
+}
+
+fn knowledge_source() -> KnowledgeSourceDescriptor {
+    KnowledgeSourceDescriptor::new(
+        "docs",
+        "1",
+        KnowledgeSourceKind::Documentation,
+        "product-docs",
+        KnowledgeTrustClass::Curated,
+        vec![KnowledgeQueryMode::Keyword],
+        "a".repeat(64),
+        CitationScheme::UriFragment,
+        "b".repeat(64),
+    )
+    .unwrap()
+}
+
+fn knowledge_evidence() -> KnowledgeEvidence {
+    let content = KnowledgeContent::from_inline("knowledge");
+    KnowledgeEvidence::new(
+        "evidence",
+        "docs",
+        "1",
+        None,
+        content.clone(),
+        9,
+        Citation::new(
+            CitationScheme::UriFragment,
+            "intro",
+            None,
+            Some("https://example.test/docs#intro".into()),
+            content.digest(),
+        )
+        .unwrap(),
+        "2026-08-29T00:00:01Z",
+        KnowledgeFreshness::Fresh,
+        KnowledgeTrustClass::Curated,
+        9000,
     )
     .unwrap()
 }
