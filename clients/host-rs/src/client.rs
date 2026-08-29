@@ -109,10 +109,24 @@ impl LiveHostClient {
         session_id: &str,
         after_position: u64,
     ) -> Result<HostView, HostClientError> {
+        self.follow_until_terminal_with(session_id, after_position, |_| {})
+            .await
+    }
+
+    /// Follows until terminal and observes each newly applied durable event.
+    pub async fn follow_until_terminal_with<F>(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        observer: F,
+    ) -> Result<HostView, HostClientError>
+    where
+        F: FnMut(&HostEvent),
+    {
         if session_id.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let operation = self.follow(session_id, after_position);
+        let operation = self.follow(session_id, after_position, observer);
         timeout(
             Duration::from_millis(self.limits.follow_deadline_ms),
             operation,
@@ -121,11 +135,15 @@ impl LiveHostClient {
         .map_err(|_| HostClientError::new(HostClientErrorCode::FollowDeadline))?
     }
 
-    async fn follow(
+    async fn follow<F>(
         &self,
         session_id: &str,
         after_position: u64,
-    ) -> Result<HostView, HostClientError> {
+        mut observer: F,
+    ) -> Result<HostView, HostClientError>
+    where
+        F: FnMut(&HostEvent),
+    {
         let path = format!(
             "v1/sessions/{}/events?after_position={after_position}",
             encode_segment(session_id)
@@ -194,7 +212,16 @@ impl LiveHostClient {
                 }
                 let event: HostEvent = serde_json::from_slice(&data)
                     .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))?;
-                view = reduce_host_events(session_id, &[event], view, self.limits.max_events)?;
+                let previous_cursor = view.cursor;
+                view = reduce_host_events(
+                    session_id,
+                    std::slice::from_ref(&event),
+                    view,
+                    self.limits.max_events,
+                )?;
+                if view.cursor != previous_cursor {
+                    observer(&event);
+                }
                 if view.terminal.is_some() {
                     return Ok(view);
                 }

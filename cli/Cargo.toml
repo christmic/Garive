@@ -7,7 +7,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-garive-runtime = { path = "../runtime/replica" }
+garive-host-client = { path = "../clients/host-rs" }
+tokio.workspace = true
 
 [[bin]]
 name = "garive"

@@ -1,16 +1,15 @@
 # TUI
 
-Rust terminal Host client. The first executable slice renders the ordered
-shared fake-host events and exactly one completion in a terminal frame:
+Rust terminal H1 client. The first live slice receives an explicit loopback
+Host and renders every newly applied durable event in position order:
 
 ```text
-cargo run -p garive-tui
+cargo run -p garive-tui -- http://127.0.0.1:4317/ my-agent "hello"
 ```
 
-This slice proves the Host boundary and terminal state, not a resident
-multi-turn interface. Ratatui/crossterm, live incremental transport,
-keybindings, approvals and reconnectable Sessions remain separately gated.
+This is not yet a resident multi-turn interface. Ratatui/crossterm, keybindings,
+approvals and reconnectable Session UX remain separately gated.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: executable fake-host shell
+- Status: live H1 terminal client
