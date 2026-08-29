@@ -111,7 +111,8 @@ pub fn plan_continue_turn(
     if command.expected_session_version != state.session_version {
         return Err(RuntimeCommandError::ConcurrentModification);
     }
-    if command.turn_id != state.turn_id
+    if command.session_id != state.session_id
+        || command.turn_id != state.turn_id
         || command.expected_suspension_id != state.suspension_id
         || command.expected_suspension_id.is_empty()
     {

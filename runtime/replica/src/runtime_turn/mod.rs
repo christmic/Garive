@@ -1,10 +1,12 @@
 //! C6 command planning and durable Runtime composition.
 
+mod commit;
 mod planning;
 mod reconstruction;
 mod recovery;
 mod types;
 
+pub use commit::commit_planned_turn;
 pub use planning::{plan_cancel_turn, plan_continue_turn, plan_recovery_restart, plan_start_turn};
 pub use reconstruction::reconstruct_suspended_turn;
 pub use recovery::{

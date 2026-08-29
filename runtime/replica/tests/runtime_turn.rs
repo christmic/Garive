@@ -2,14 +2,14 @@ use std::{fs, path::PathBuf};
 
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
-    CommitDisposition, FactDraft, FactId, FactKind, LedgerError, SessionId,
+    CommitDisposition, FactDraft, FactId, FactKind, SessionId,
 };
 use garive_runtime::{
-    plan_cancel_turn, plan_continue_turn, plan_recovery_restart, plan_start_turn,
-    reconstruct_suspended_turn, select_runtime_recovery, CancelReason, CancelTurnCommand,
-    ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
-    ModelRecoveryPosition, RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId,
-    RuntimeRecoveryAction, RuntimeRecoverySnapshot, SqliteLedger, SqliteLedgerError,
+    commit_planned_turn, plan_cancel_turn, plan_continue_turn, plan_recovery_restart,
+    plan_start_turn, reconstruct_suspended_turn, select_runtime_recovery, CancelReason,
+    CancelTurnCommand, ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits,
+    ExecutionRecoveryPosition, ModelRecoveryPosition, RecoveryRestartCommand, RuntimeCommandError,
+    RuntimeCommandId, RuntimeRecoveryAction, RuntimeRecoverySnapshot, SqliteLedger,
     StartTurnCommand,
 };
 use serde_json::{json, Value};
@@ -132,26 +132,22 @@ fn sqlite_command_ids_replay_or_conflict_without_partial_append() {
         .commit(session.clone(), 0, vec![open_session()])
         .unwrap();
     let plan = plan_start_turn(&command, 1).unwrap();
-    let committed = ledger
-        .commit(session.clone(), 1, plan.facts.clone())
-        .unwrap();
+    let committed = commit_planned_turn(&mut ledger, session.clone(), 1, &plan).unwrap();
     assert_eq!(committed.disposition, CommitDisposition::Committed);
     assert_eq!(committed.positions, vec![2, 3, 4]);
 
-    let replayed = ledger.commit(session.clone(), 1, plan.facts).unwrap();
+    let replayed = commit_planned_turn(&mut ledger, session.clone(), 1, &plan).unwrap();
     assert_eq!(replayed.disposition, CommitDisposition::Replayed);
     let changed = plan_start_turn(&start_command("changed", "command-start"), 1).unwrap();
-    assert!(matches!(
-        ledger.commit(session.clone(), 2, changed.facts),
-        Err(SqliteLedgerError::Domain(LedgerError::IdempotencyCollision))
-    ));
+    assert_eq!(
+        commit_planned_turn(&mut ledger, session.clone(), 2, &changed),
+        Err(RuntimeCommandError::CommandConflict)
+    );
     let fresh = plan_start_turn(&start_command("hello", "new-command"), 4).unwrap();
-    assert!(matches!(
-        ledger.commit(session.clone(), 1, fresh.facts),
-        Err(SqliteLedgerError::Domain(
-            LedgerError::ConcurrentModification
-        ))
-    ));
+    assert_eq!(
+        commit_planned_turn(&mut ledger, session.clone(), 1, &fresh),
+        Err(RuntimeCommandError::ConcurrentModification)
+    );
 
     let cancel = plan_cancel_turn(&CancelTurnCommand {
         command_id: RuntimeCommandId::new("cancel-command").unwrap(),
@@ -163,8 +159,7 @@ fn sqlite_command_ids_replay_or_conflict_without_partial_append() {
     })
     .unwrap();
     assert_eq!(
-        ledger
-            .commit(session.clone(), 2, cancel.facts)
+        commit_planned_turn(&mut ledger, session.clone(), 2, &cancel)
             .unwrap()
             .positions,
         vec![5]
@@ -246,6 +241,12 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     );
     stale.expected_session_version = 3;
     stale.expected_suspension_id = "other".into();
+    assert_eq!(
+        plan_continue_turn(&stale, &state),
+        Err(RuntimeCommandError::ContinuationMismatch)
+    );
+    stale.expected_suspension_id = "suspension".into();
+    stale.session_id = SessionId::try_from("other-session").unwrap();
     assert_eq!(
         plan_continue_turn(&stale, &state),
         Err(RuntimeCommandError::ContinuationMismatch)

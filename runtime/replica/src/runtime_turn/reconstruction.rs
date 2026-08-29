@@ -12,6 +12,11 @@ pub fn reconstruct_suspended_turn(
         .first()
         .and_then(|fact| fact.turn_id.clone())
         .ok_or(RuntimeCommandError::TurnNotResumable)?;
+    let session_id = snapshot
+        .facts
+        .first()
+        .map(|fact| fact.session_id.clone())
+        .ok_or(RuntimeCommandError::TurnNotResumable)?;
     let started = snapshot
         .facts
         .iter()
@@ -49,6 +54,7 @@ pub fn reconstruct_suspended_turn(
     let execution_payload = payload(execution_start)?;
     let started_payload = payload(started)?;
     Ok(SuspendedTurnState {
+        session_id,
         session_version: snapshot.session_version,
         turn_id,
         suspension_id: text(&suspended_payload, "suspension_id")?.to_owned(),

@@ -157,6 +157,8 @@ pub struct ContinueTurnCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Durable suspended state reconstructed from a fixed Ledger prefix.
 pub struct SuspendedTurnState {
+    /// Session owning the fixed durable prefix.
+    pub session_id: SessionId,
     /// Session version at the fixed prefix.
     pub session_version: u64,
     /// Suspended Turn identity.
@@ -222,6 +224,8 @@ pub struct PlannedTurn {
 pub enum RuntimeCommandError {
     /// A constructed command violates C6 input invariants.
     InvalidCommand,
+    /// A command identity was previously committed with different semantics.
+    CommandConflict,
     /// Optimistic Session version is stale.
     ConcurrentModification,
     /// Expected suspension or Turn identity does not match durable state.
@@ -232,6 +236,8 @@ pub enum RuntimeCommandError {
     CorruptLedger,
     /// Core supplied internally inconsistent terminal evidence.
     InvariantViolation,
+    /// Required durable storage was unavailable.
+    DurabilityFailure,
 }
 
 impl RuntimeCommandError {
@@ -239,11 +245,13 @@ impl RuntimeCommandError {
     pub const fn code(self) -> &'static str {
         match self {
             Self::InvalidCommand => "invalid_command",
+            Self::CommandConflict => "command_conflict",
             Self::ConcurrentModification => "concurrent_modification",
             Self::ContinuationMismatch => "continuation_mismatch",
             Self::TurnNotResumable => "turn_not_resumable",
             Self::CorruptLedger => "corrupt_ledger",
             Self::InvariantViolation => "invariant_violation",
+            Self::DurabilityFailure => "durability_failure",
         }
     }
 }
