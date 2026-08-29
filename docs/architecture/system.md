@@ -29,7 +29,9 @@ Clients and operator surfaces
       Public API DTOs
            |
            v
-Channels -> Runtime composition root -> provider/infrastructure adapters
+Channels -> Runtime composition root -> Providers -> protocol adapters
+                |
+                +-----------------------> infrastructure adapters
                 |
                 v
           Agent kernel ports
@@ -47,7 +49,8 @@ credentials, authorization, and concrete infrastructure.
 | Layer | Owns | Must not own |
 |---|---|---|
 | Model contract | Provider-neutral request, response, stream, tool-schema, capability, usage, and error values. | HTTP clients, credentials, Sessions, tools, or UI events. |
-| Provider adapter | One verified provider wire protocol and client implementation. | Agent policy, product recovery, or public API DTOs. |
+| Protocol adapter | One verified, portable wire protocol with typed JSON, errors, and incremental stream decoding. | Garive model types, deployments, vendor defaults, retries, credentials, or recovery. |
+| Provider | Deployment/model selection, neutral/protocol mapping, capability admission, and verified provider error policy. | Agent policy, product recovery, environment discovery inside adapters, or public API DTOs. |
 | Agent kernel | One bounded reasoning execution, context shaping, model/tool iteration, prepared tool calls, and internal events/outcome. | Product Sessions, SQLite, credentials, concrete sandboxes, MCP processes, Channels, or client DTOs. |
 | Runtime | Session lifecycle, durable turns, exact revisions, scheduling, interruption, approvals, storage, effect recovery, concrete execution, credentials, and observability. | Provider-specific wire shapes or presentation state. |
 | Public API | Versioned serializable request, response, event, identifier, and redacted view shapes. | Tokio channels, databases, Agent execution, or provider clients. |
@@ -93,7 +96,7 @@ durable terminals, not reconstructed from process memory.
 
 ## Initial source layout
 
-Garive keeps the product layout below. C0-C3, ledger/provider adapters and the
+Garive keeps the product layout below. C0-C3, ledger/protocol adapters and the
 first executable client shells are active; untouched capability crates remain
 explicit boundaries rather than implied implementations.
 
@@ -109,12 +112,14 @@ explicit boundaries rather than implied implementations.
 | `engine/creativity/`, `engine/eval/` | Exploration and evaluation semantics; benchmark I/O remains outside Engine. |
 | `engine/config/`, `engine/observability/` | Validated policy values and neutral Agent events, not environment loaders/exporters. |
 | `engine/proto/` | Rust bindings for wire contracts admitted through `spec/proto/`. |
+| `adapters/` | Provider-independent protocol types, codecs, and incremental stream decoders. |
+| `providers/` | Planned deployment composition from `engine/llm` to a protocol adapter; vendor profiles remain separate. |
 | `runtime/replica/` | Product Runtime, Session lifecycle, storage, execution, recovery, and composition. |
 | `runtime/gateway/` | Planned Go service edge for auth, admission, routing, and load balancing. |
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |
-| `experiments/engine-kt/` | Experimental Kotlin C0-C3 Engine implementation plus PostgreSQL/provider verification adapters. |
+| `experiments/engine-kt/` | Experimental Kotlin C0-C3 Engine implementation plus PostgreSQL/protocol verification adapters. |
 
 Internal source modules should be named for owned responsibilities, not generic
 buckets such as `common`, `manager`, `utils`, or `engine`.
@@ -154,7 +159,10 @@ boundaries.
 - API must not depend on Agent, Runtime implementation, async transports, or
   provider adapters.
 - Channel and clients must not depend on Agent internals.
-- Provider adapters must not depend on Agent or public API.
+- Protocol adapters must not depend on Garive model/Agent/Runtime types or
+  public API, and must not read environment configuration.
+- Providers may depend on the neutral model contract and protocol adapters but
+  must not depend on Agent Core or public API.
 - Runtime is the only layer allowed to depend on both Agent and API.
 
 `just architecture` enforces the local Engine → Runtime/App dependency

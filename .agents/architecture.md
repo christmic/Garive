@@ -10,7 +10,8 @@
 clients -> API/Channel -> Runtime -> Agent -> model contract
                          |           |
                          |           +-> neutral tool/model ports
-                         +-> provider and infrastructure adapters
+                         +-> Providers -> protocol adapters
+                         +-> infrastructure adapters
 ```
 
 Dependencies point downward. Runtime is the application composition root.
@@ -19,7 +20,9 @@ Dependencies point downward. Runtime is the application composition root.
 
 | Layer | Owns |
 |---|---|
-| `engine/llm/` | Provider-neutral model values; admitted provider adapters stay behind that contract. |
+| `engine/llm/` | Provider-neutral model values; Provider composition stays behind that contract. |
+| `adapters/` | Provider-independent protocol types, codecs, error envelopes, and incremental stream decoders. |
+| `providers/` | Deployment/model selection, neutral/protocol mapping, capabilities, and provider-specific error policy. |
 | `engine/core/` | One bounded Agent execution, context shaping, iteration policy, prepared calls, and internal outcomes. |
 | `engine/tools/` | Tool definitions, immutable prepared calls, neutral authorization/execution ports, and result normalization. |
 | `engine/ledger/`, `memory/`, `knowledge/` | Durable-fact vocabulary, memory/knowledge semantics, and neutral storage/retrieval ports. Runtime owns adapters and persistence. |
@@ -37,8 +40,9 @@ Dependencies point downward. Runtime is the application composition root.
   provider HTTP types, SQLite, credentials, or concrete execution adapters.
 - Runtime may depend on Agent, API, provider adapters, and infrastructure.
 - Clients and Channels must not depend on Agent internals or storage.
-- Provider adapters must not own Agent retry policy, Session recovery, or UI
-  events.
+- Protocol adapters must not depend on Garive model types, read environment
+  configuration, or own retries, credentials, Provider policy, or recovery.
+- Providers must not own Agent retry policy, Session recovery, or UI events.
 - Internal Rust domain values do not require protobuf counterparts.
 - A new crate or module must have one named owner and no reverse dependency.
 

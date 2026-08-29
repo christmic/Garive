@@ -66,8 +66,12 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
   C0-C3) from accepted specs and shared semantic fixtures; it is neither a
   product Runtime nor a second source of truth.
 - **Multi-channel capability** — chat surfaces beyond the coding IDE.
+- **Protocol adapters** — provider-independent implementations of admitted LLM
+  wire protocols, with no Garive model or environment dependency.
+- **Providers** — deployment and model composition between the neutral model
+  contract and a protocol adapter.
 - **Runtime** — product Sessions, durable turns, execution, storage, recovery,
-  and the host boundary used by every client.
+  configuration, and the host boundary used by every client.
 - **Agent Gateway Platform** — an optional Go service edge, admitted when
   deployment evidence requires separate scaling or isolation.
 - **Multi-platform Agent Apps** — Tauri/TypeScript desktop and KMP/native

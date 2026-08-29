@@ -22,7 +22,7 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 |---:|---|---|---|
 | 1 | [`../system.md`](../system.md) | Product ownership and dependency direction. | accepted |
 | 2 | [`loop.md`](loop.md) | One bounded Agent execution; derive, assemble, invoke, prepare, and return. | draft |
-| 3 | [`provider-adapter.md`](provider-adapter.md) | Provider-neutral invocation boundary and provider-specific transport recovery. | draft |
+| 3 | [`provider-adapter.md`](provider-adapter.md) | Protocol adapter, Provider, and Runtime ownership boundary. | accepted |
 | 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | draft |
 | 5 | [`ledger.md`](ledger.md) | Runtime-owned durable facts, projections, audit, and recovery. | draft |
 | 6 | [`compression.md`](compression.md) | Context-pressure estimation and compression policy. | research |
@@ -35,8 +35,8 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
   `AgentExecutionPorts` and returns `AgentOutcome`.
 - Runtime owns product Session lifecycle, durable turns, scheduling, storage,
   approvals, concrete execution, and restart recovery.
-- Provider adapters own official wire translation and transport retries; Core
-  sees provider-neutral outcomes.
+- Protocol adapters own official wire types and codecs only. Providers map the
+  neutral contract; Runtime owns transport attempts and recovery.
 - External effects are never blindly replayed after an uncertain crash window.
 - Live UI events and durable facts are separate delivery contracts.
 - Proto describes admitted wire/persistence boundaries, not every internal
@@ -51,7 +51,7 @@ The following remain hypotheses until an executable slice produces evidence:
 - byte-equality requirements outside canonical wire fixtures;
 - cross-language implementation parity;
 - performance and retention numeric gates;
-- provider-specific error mappings and payload legality tables.
+- provider-specific error mappings and extension capability admission.
 
 Keep these details in the current documents, mark unresolved choices, and
 promote only the selected subset to `spec/` before implementation.
@@ -62,7 +62,7 @@ promote only the selected subset to `spec/` before implementation.
 |---|---|
 | Product/module ownership | [`../system.md`](../system.md) |
 | One-execution control flow | [`loop.md`](loop.md) |
-| Provider outcome classification | [`provider-adapter.md`](provider-adapter.md) |
+| Protocol/Provider/Runtime boundary | [`provider-adapter.md`](provider-adapter.md) |
 | Tool effect lifecycle | [`effect-layer.md`](effect-layer.md) |
 | Durable records and projections | [`ledger.md`](ledger.md) |
 | Compression policy | [`compression.md`](compression.md) |
