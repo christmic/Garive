@@ -5,9 +5,9 @@ use garive_ledger::{
     CommitDisposition, FactDraft, FactId, FactKind, LedgerError, SessionId,
 };
 use garive_runtime::{
-    plan_cancel_turn, plan_continue_turn, plan_start_turn, CancelReason, CancelTurnCommand,
-    ContinueTurnCommand, EffectiveRuntimeLimits, RuntimeCommandError, RuntimeCommandId,
-    SqliteLedger, SqliteLedgerError, StartTurnCommand, SuspendedTurnState,
+    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
+    CancelReason, CancelTurnCommand, ContinueTurnCommand, EffectiveRuntimeLimits,
+    RuntimeCommandError, RuntimeCommandId, SqliteLedger, SqliteLedgerError, StartTurnCommand,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -182,7 +182,8 @@ fn invalid_constructed_limits_and_clock_fail_before_a_fact_exists() {
 #[test]
 fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     let directory = tempdir().unwrap();
-    let mut ledger = SqliteLedger::open(directory.path().join("continue.sqlite3")).unwrap();
+    let path = directory.path().join("continue.sqlite3");
+    let mut ledger = SqliteLedger::open(&path).unwrap();
     let start = start_command("hello", "command-start");
     let session = start.session_id.clone();
     ledger
@@ -211,21 +212,10 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
             ],
         )
         .unwrap();
-    let state = SuspendedTurnState {
-        session_version: 3,
-        turn_id: started.turn_id.clone(),
-        suspension_id: "suspension".into(),
-        agent_instance_id: start.agent_instance_id.clone(),
-        definition_id: start.definition_id.clone(),
-        definition_revision: start.definition_revision.clone(),
-        snapshot_digest: start.snapshot_digest.clone(),
-        trusted_input_digest: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-            .into(),
-        through_position: 6,
-        completed_iterations: 1,
-        recovery_ordinal: 0,
-        limits: start.limits,
-    };
+    drop(ledger);
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    let state = reconstruct_suspended_turn(&ledger.load_turn(&started.turn_id).unwrap()).unwrap();
+    assert_eq!((state.session_version, state.through_position), (3, 6));
     let command = ContinueTurnCommand {
         command_id: RuntimeCommandId::new("continue-command").unwrap(),
         session_id: session.clone(),
