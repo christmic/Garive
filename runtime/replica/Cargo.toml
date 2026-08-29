@@ -10,6 +10,7 @@ publish = false
 garive-core = { path = "../../engine/core" }
 garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
+garive-skill = { path = "../../engine/skill" }
 garive-tools = { path = "../../engine/tools" }
 garive-openai-responses = { package = "garive-adapter-openai-responses", path = "../../adapters/openai-responses" }
 garive-anthropic-messages = { package = "garive-adapter-anthropic-messages", path = "../../adapters/anthropic-messages" }

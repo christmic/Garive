@@ -1225,6 +1225,7 @@ dependencies = [
  "garive-provider-compatible",
  "garive-provider-openai",
  "garive-provider-profile",
+ "garive-skill",
  "garive-tools",
  "reqwest 0.12.28",
  "rusqlite",

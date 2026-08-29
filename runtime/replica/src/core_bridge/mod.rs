@@ -6,6 +6,7 @@ mod execution_types;
 mod governed_effect;
 mod governed_effect_types;
 mod model_lifecycle;
+mod skill_activation;
 mod terminal;
 
 pub use encoding::canonical_model_request_digest;
@@ -24,4 +25,5 @@ pub use model_lifecycle::{
     plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,
     ModelLifecycleContext, PreparedModelRequest, RuntimeModelUncertainReason,
 };
+pub use skill_activation::{plan_skill_activation, PlannedSkillActivation, SkillActivationContext};
 pub use terminal::{plan_core_terminal, CoreTerminalContext};
