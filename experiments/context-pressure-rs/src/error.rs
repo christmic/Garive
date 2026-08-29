@@ -11,6 +11,12 @@ pub enum ContextPressureErrorCode {
     InvalidContext,
     /// An uncompressed case dropped an eligible candidate.
     CompressedInput,
+    /// The injected counter descriptor was incomplete or malformed.
+    InvalidCounter,
+    /// The injected counter could not return exact non-zero evidence.
+    CounterFailure,
+    /// Pure evidence construction or reduction failed.
+    ReductionFailure,
 }
 
 /// Content-free C7-A error safe for logs and evidence boundaries.
