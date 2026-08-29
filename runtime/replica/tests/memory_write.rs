@@ -6,13 +6,14 @@ use garive_ledger::{
 };
 use garive_memory::{
     ContentBinding, DurableFactReference, MemoryCommit, MemoryErrorCode, MemoryKind,
-    MemoryProposal, MemoryScope, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone,
+    MemoryProposal, MemoryPurpose, MemoryQuery, MemoryScope, MemorySensitivity, MemoryState,
+    MemoryStatus, MemoryTombstone,
 };
 use garive_runtime::{
-    plan_memory_tombstone, plan_memory_write, reconstruct_memory_state, verify_memory_evidence,
-    MemoryPrefix, MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext,
-    MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError, SqliteLedger,
-    SqliteLedgerError,
+    authorize_memory_query, authorize_memory_write, plan_memory_tombstone, plan_memory_write,
+    reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryPrefix,
+    MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision,
+    MemoryWriteRejection, RuntimeCommandError, SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -162,6 +163,10 @@ fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
     assert_eq!(recovered.revisions().len(), 1);
     assert_eq!(recovered.revisions()[0].status(), MemoryStatus::Active);
     verify_memory_evidence(&ledger, &prefixes, &first_proposal).unwrap();
+    let scope = MemoryScope::session("session").unwrap();
+    let ordinary_grant =
+        MemoryAccessGrant::new("namespace", vec![scope.clone()], prefixes.clone(), None).unwrap();
+    authorize_memory_write(&ledger, &ordinary_grant, &first_proposal).unwrap();
     let mismatch = proposal(None, "dark mode", &"b".repeat(64));
     assert_eq!(
         verify_memory_evidence(&ledger, &prefixes, &mismatch),
@@ -183,6 +188,37 @@ fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
         verify_memory_evidence(&ledger, &prefixes, &foreign),
         Err(MemoryErrorCode::NamespaceDenied)
     );
+    assert_eq!(
+        authorize_memory_write(&ledger, &ordinary_grant, &foreign),
+        Err(MemoryErrorCode::NamespaceDenied)
+    );
+    let restricted_query = MemoryQuery::new(
+        "restricted-query",
+        "namespace",
+        vec![scope.clone()],
+        MemoryPurpose::Context,
+        "retriever-1",
+        ContentBinding::from_inline("dark"),
+        5,
+        "2026-08-29T00:00:02Z",
+        1,
+        64,
+        true,
+        Some("c".repeat(64)),
+    )
+    .unwrap();
+    assert_eq!(
+        authorize_memory_query(&ordinary_grant, &restricted_query),
+        Err(MemoryErrorCode::SensitivityDenied)
+    );
+    let restricted_grant = MemoryAccessGrant::new(
+        "namespace",
+        vec![scope],
+        prefixes.clone(),
+        Some("c".repeat(64)),
+    )
+    .unwrap();
+    authorize_memory_query(&restricted_grant, &restricted_query).unwrap();
 
     let tombstone = plan_memory_tombstone(
         &MemoryTombstoneContext {

@@ -11,7 +11,8 @@ mod runtime_turn;
 mod sqlite_ledger;
 
 pub use core_bridge::{
-    canonical_model_request_digest, execute_durable_agent, execute_durable_agent_with_capabilities,
+    authorize_memory_query, authorize_memory_write, canonical_model_request_digest,
+    execute_durable_agent, execute_durable_agent_with_capabilities,
     execute_durable_agent_with_skill_activation, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,
     plan_core_terminal, plan_memory_retrieval, plan_memory_tombstone, plan_memory_write,
@@ -19,12 +20,13 @@ pub use core_bridge::{
     plan_skill_activation, reconstruct_memory_state, verify_memory_evidence, AuthorityDecision,
     AuthorityFuture, AuthorityPort, AuthorityRequest, CoreTerminalContext, DurableExecutionConfig,
     DurableExecutionError, DurableExecutionResult, ExecutorDispatch, ExecutorDispatchError,
-    ExecutorFuture, ExecutorPort, GovernedEffectConfig, GovernedRuntimePortError, MemoryPrefix,
-    MemoryRetrievalContext, MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext,
-    MemoryWriteDecision, MemoryWriteRejection, ModelLifecycleContext, PlannedMemoryRetrieval,
-    PlannedMemoryTombstone, PlannedMemoryWrite, PlannedSkillActivation, PreparedAgentCapabilities,
-    PreparedExecution, PreparedModelRequest, RuntimeModelUncertainReason, SkillActivationContext,
-    SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
+    ExecutorFuture, ExecutorPort, GovernedEffectConfig, GovernedRuntimePortError,
+    MemoryAccessGrant, MemoryPrefix, MemoryRetrievalContext, MemoryTombstoneContext,
+    MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection,
+    ModelLifecycleContext, PlannedMemoryRetrieval, PlannedMemoryTombstone, PlannedMemoryWrite,
+    PlannedSkillActivation, PreparedAgentCapabilities, PreparedExecution, PreparedModelRequest,
+    RuntimeModelUncertainReason, SkillActivationContext, SqliteGovernedEffectPort,
+    TerminalPublicationError, TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use live_host::{

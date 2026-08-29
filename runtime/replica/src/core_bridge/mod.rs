@@ -5,6 +5,7 @@ mod execution;
 mod execution_types;
 mod governed_effect;
 mod governed_effect_types;
+mod memory_authority;
 mod memory_recovery;
 mod memory_retrieval;
 mod memory_write;
@@ -29,6 +30,7 @@ pub use governed_effect_types::{
     ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
     GovernedRuntimePortError, PreparedExecution,
 };
+pub use memory_authority::{authorize_memory_query, authorize_memory_write, MemoryAccessGrant};
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};
 pub use memory_retrieval::{plan_memory_retrieval, MemoryRetrievalContext, PlannedMemoryRetrieval};
 pub use memory_write::{
