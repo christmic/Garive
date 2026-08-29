@@ -334,6 +334,27 @@ fn scheduler_claims_ranges_terminals_and_updates_are_exact() {
         "schedule.skipped",
         "schedule.cancelled",
     ]);
+    let mut exhausted = fact("exhausted", "schedule.exhausted");
+    exhausted.payload = CanonicalPayload::from_value(&serde_json::json!({
+        "schedule_id":"schedule-1","revision_id":"revision-1","last_handled_ordinal":4
+    }))
+    .unwrap();
+    let mut completed = LedgerState::default();
+    assert!(completed
+        .commit(
+            SessionId::try_from("exhausted-session").unwrap(),
+            0,
+            vec![
+                fact("exhausted-open", "session.opened"),
+                fact("exhausted-create", "schedule.created"),
+                fact("exhausted-claim", "schedule.claimed"),
+                fact("exhausted-fired", "schedule.fired"),
+                fact("exhausted-skipped", "schedule.skipped"),
+                exhausted,
+                fact("exhausted-close", "session.closed"),
+            ],
+        )
+        .is_ok());
     assert_transition_error(&["session.opened", "schedule.claimed"]);
     assert_transition_error(&["session.opened", "schedule.created", "schedule.fired"]);
     assert_transition_error(&[

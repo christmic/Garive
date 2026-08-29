@@ -298,9 +298,17 @@ schedule.failed.v1 {
           "lease_lost" | "dispatch_conflict" |
           "durability_failure" | "corrupt_schedule_state"
 }
+
+schedule.exhausted.v1 {
+  schedule_id: ScheduleId
+  revision_id: ScheduleRevisionId
+  last_handled_ordinal: non-zero u64
+}
 ```
 
 Occurrence ID/ordinal are both present or both absent in `schedule.failed`.
+`schedule.exhausted.last_handled_ordinal` must equal the revision's durable
+fired/skipped prefix and is admitted only when pure recurrence returns Exhausted.
 `schedule.created.intent_digest` must equal `schedule.created.intent.digest`.
 Claimed commits before C6 dispatch. Fired commits only after that exact C6
 command committed/replayed. A lease takeover uses a higher epoch; a stale lease

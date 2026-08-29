@@ -59,9 +59,9 @@ pub use model_lifecycle::{
     ModelLifecycleContext, PreparedModelRequest, RuntimeModelUncertainReason,
 };
 pub use scheduler_lifecycle::{
-    plan_schedule_cancelled, plan_schedule_claimed, plan_schedule_created, plan_schedule_failed,
-    plan_schedule_fired, plan_schedule_skipped, ScheduleCancelReason, ScheduleDispatchDisposition,
-    ScheduleLifecycleContext,
+    plan_schedule_cancelled, plan_schedule_claimed, plan_schedule_created, plan_schedule_exhausted,
+    plan_schedule_failed, plan_schedule_fired, plan_schedule_skipped, ScheduleCancelReason,
+    ScheduleDispatchDisposition, ScheduleLifecycleContext,
 };
 pub use skill_activation::{plan_skill_activation, PlannedSkillActivation, SkillActivationContext};
 pub use terminal::{plan_core_terminal, CoreTerminalContext};

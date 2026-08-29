@@ -13,8 +13,16 @@ internal fun validateSchedulerFact(kind: String, value: JsonObject) {
         "schedule.skipped" -> value.skipped()
         "schedule.cancelled" -> value.cancelled()
         "schedule.failed" -> value.failed()
+        "schedule.exhausted" -> value.exhausted()
         else -> throw IllegalArgumentException()
     }
+}
+
+private fun JsonObject.exhausted() {
+    exact(setOf("schedule_id", "revision_id", "last_handled_ordinal"))
+    nonEmpty("schedule_id")
+    nonEmpty("revision_id")
+    ulong("last_handled_ordinal", true)
 }
 
 private fun JsonObject.created() {

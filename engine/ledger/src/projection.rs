@@ -63,6 +63,7 @@ enum ScheduleState {
     Superseding,
     Cancelled,
     Failed,
+    Exhausted,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -171,6 +172,7 @@ impl SessionProjection {
             "schedule.skipped" => self.skip_schedule(fact),
             "schedule.cancelled" => self.cancel_schedule(fact),
             "schedule.failed" => self.fail_schedule(fact),
+            "schedule.exhausted" => self.exhaust_schedule(fact),
             "context.summary" | "privacy.redacted" => Ok(()),
             _ => Ok(()),
         }
@@ -956,6 +958,18 @@ impl SessionProjection {
         }
         record.pending_claim = None;
         record.state = ScheduleState::Failed;
+        Ok(())
+    }
+
+    fn exhaust_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let record = self.schedule_mut(&value)?;
+        if record.pending_claim.is_some()
+            || record.last_handled_ordinal != unsigned(&value, "last_handled_ordinal")?
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.state = ScheduleState::Exhausted;
         Ok(())
     }
 

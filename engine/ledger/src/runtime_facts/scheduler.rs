@@ -13,8 +13,20 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "schedule.skipped" => skipped(value),
         "schedule.cancelled" => cancelled(value),
         "schedule.failed" => failed(value),
+        "schedule.exhausted" => exhausted(value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn exhausted(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &["schedule_id", "revision_id", "last_handled_ordinal"],
+        EMPTY,
+    )?;
+    non_empty(value, "schedule_id")?;
+    non_empty(value, "revision_id")?;
+    unsigned(value, "last_handled_ordinal", true)
 }
 
 fn created(value: &Map<String, Value>) -> Result<(), LedgerError> {

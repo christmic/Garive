@@ -108,6 +108,7 @@ Created -> Claimed -> Fired
 6. `schedule.skipped` commits one deterministic contiguous misfire range;
 7. losing a lease prevents further writes but does not imply dispatch absence;
 8. restart reconstructs from facts and the C6 command receipt/replay result.
+9. `schedule.exhausted` durably disables a revision after no occurrence remains.
 
 Claiming is operational fencing, not a public success. A fired schedule means
 the C6 command was durably committed or exactly replayed; it does not mean the
@@ -138,6 +139,7 @@ The coordinated C6F amendment must define:
   clock value;
 - `schedule.cancelled`: command, expected revision and safe reason;
 - `schedule.failed`: occurrence/revision and stable failure class.
+- `schedule.exhausted`: revision and exact final handled ordinal.
 
 Leases require adapter-owned expiry columns/transactions; lease heartbeats are
 not portable durable facts.

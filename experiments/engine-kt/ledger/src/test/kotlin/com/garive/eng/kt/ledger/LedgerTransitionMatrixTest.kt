@@ -261,6 +261,29 @@ class LedgerTransitionMatrixTest {
             "session.opened", "schedule.created", "schedule.claimed",
             "schedule.fired", "schedule.skipped", "schedule.cancelled",
         )
+        val exhaustedPayload = Json.parseToJsonElement(
+            """{"last_handled_ordinal":4,"revision_id":"revision-1","schedule_id":"schedule-1"}""",
+        )
+        val exhausted = fact("exhausted", "schedule.exhausted").copy(
+            payload = assertIs<CanonicalPayloadResult.Success>(
+                CanonicalPayload.fromValue(exhaustedPayload),
+            ).payload,
+        )
+        assertIs<LedgerResult.Success<CommitResult>>(
+            LedgerState().commit(
+                SessionId.of("exhausted-session"),
+                0u,
+                listOf(
+                    fact("exhausted-open", "session.opened"),
+                    fact("exhausted-create", "schedule.created"),
+                    fact("exhausted-claim", "schedule.claimed"),
+                    fact("exhausted-fired", "schedule.fired"),
+                    fact("exhausted-skipped", "schedule.skipped"),
+                    exhausted,
+                    fact("exhausted-close", "session.closed"),
+                ),
+            ),
+        )
         assertTransitionError("session.opened", "schedule.claimed")
         assertTransitionError("session.opened", "schedule.created", "schedule.fired")
         assertTransitionError(

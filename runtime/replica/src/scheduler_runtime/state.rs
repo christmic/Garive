@@ -168,6 +168,22 @@ fn apply_fact(
             current.pending_claim = None;
             current.active = false;
         }
+        "schedule.exhausted" => {
+            let current = active_revision(state, &value)?;
+            if current.pending_claim.is_some()
+                || current.last_handled_ordinal != Some(unsigned(&value, "last_handled_ordinal")?)
+                || next_occurrence(
+                    &current.intent,
+                    current.last_handled_ordinal,
+                    &fact.recorded_at,
+                )
+                .map_err(|error| error.code())?
+                    != ScheduleDecision::Exhausted
+            {
+                return Err(ScheduleErrorCode::CorruptScheduleState);
+            }
+            current.active = false;
+        }
         _ => return Err(ScheduleErrorCode::CorruptScheduleState),
     }
     Ok(())

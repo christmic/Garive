@@ -183,6 +183,27 @@ pub fn plan_schedule_failed(
     )
 }
 
+/// Plans the terminal fact proving no occurrence remains after a handled prefix.
+pub fn plan_schedule_exhausted(
+    context: &ScheduleLifecycleContext,
+    intent: &ScheduleIntent,
+    last_handled_ordinal: u64,
+) -> Result<FactDraft, RuntimeCommandError> {
+    if last_handled_ordinal == 0 {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    schedule_fact(
+        context,
+        intent.schedule_id(),
+        "schedule.exhausted",
+        &last_handled_ordinal.to_string(),
+        json!({
+            "schedule_id":intent.schedule_id(),"revision_id":intent.revision_id(),
+            "last_handled_ordinal":last_handled_ordinal,
+        }),
+    )
+}
+
 fn schedule_fact(
     context: &ScheduleLifecycleContext,
     schedule_id: &str,

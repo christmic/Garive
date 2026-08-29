@@ -28,7 +28,7 @@ internal data class KnowledgeRecord(
     var terminal: Boolean,
 )
 
-internal enum class ScheduleState { ACTIVE, SUPERSEDING, CANCELLED, FAILED }
+internal enum class ScheduleState { ACTIVE, SUPERSEDING, CANCELLED, FAILED, EXHAUSTED }
 
 internal data class ScheduleClaim(
     val occurrenceId: String,
@@ -138,6 +138,7 @@ internal class LedgerProjection(
             "schedule.skipped" -> skipSchedule(fact)
             "schedule.cancelled" -> cancelSchedule(fact)
             "schedule.failed" -> failSchedule(fact)
+            "schedule.exhausted" -> exhaustSchedule(fact)
             else -> null
         }
     }
@@ -650,6 +651,16 @@ internal class LedgerProjection(
         if (!matchesClaim) return LedgerError.InvalidTransition
         record.pendingClaim = null
         record.state = ScheduleState.FAILED
+        return null
+    }
+
+    private fun exhaustSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = schedule(payload) ?: return LedgerError.InvalidTransition
+        if (record.pendingClaim != null ||
+            record.lastHandledOrdinal != payload.ulong("last_handled_ordinal")
+        ) return LedgerError.InvalidTransition
+        record.state = ScheduleState.EXHAUSTED
         return null
     }
 

@@ -53,7 +53,8 @@
     {"kind":"schedule.fired","payload":{"schedule_id":"schedule-1","revision_id":"revision-1","occurrence_id":"occurrence-3034cab4eefeaa7b82b415a39bf09aa968876ecf625765c6d926532dc6b0963d","ordinal":1,"runtime_command_id":"schedule-command-0cd3d375f2d385ca0526d2219dafa346a96527ed8e91e15e62b96d2bcafdf566","disposition":"committed","committed_position":8}},
     {"kind":"schedule.skipped","payload":{"schedule_id":"schedule-1","revision_id":"revision-1","first_ordinal":2,"last_ordinal":4,"first_due_at_utc":"2026-08-29T00:00:01Z","last_due_at_utc":"2026-08-29T00:00:03Z","observed_at_utc":"2026-08-29T00:00:03.600Z"}},
     {"kind":"schedule.cancelled","payload":{"command_id":"schedule-cancel","schedule_id":"schedule-1","expected_revision_id":"revision-1","reason":"user"}},
-    {"kind":"schedule.failed","payload":{"schedule_id":"schedule-2","revision_id":"revision-1","reason":"invalid_schedule"}}
+    {"kind":"schedule.failed","payload":{"schedule_id":"schedule-2","revision_id":"revision-1","reason":"invalid_schedule"}},
+    {"kind":"schedule.exhausted","payload":{"schedule_id":"schedule-1","revision_id":"revision-1","last_handled_ordinal":5}}
   ],
   "invalid_mutations": ["missing_required", "extra_field", "wrong_type", "malformed_digest", "missing_envelope_identity"],
   "unknown_schema": {"kind":"turn.started","schema_version":2,"payload":{"future":true},"expected":"opaque"}
