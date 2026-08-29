@@ -86,7 +86,7 @@ impl SessionProjection {
             "turn.completed" => self.terminal_turn(fact, TurnState::Completed),
             "turn.stopped" => self.terminal_turn(fact, TurnState::Stopped),
             "turn.failed" => self.terminal_turn(fact, TurnState::Failed),
-            "turn.input" => self.require_open_turn(required(&fact.turn_id)?),
+            "turn.input" => self.admit_turn_input(fact),
             "turn.cancel_requested" => self.require_non_terminal_turn(required(&fact.turn_id)?),
             "execution.started" => self.start_execution(fact),
             "execution.abandoned" => self.transition_execution(fact, ExecutionState::Abandoned),
@@ -215,6 +215,23 @@ impl SessionProjection {
             Ok(())
         } else {
             Err(LedgerError::InvalidTransition)
+        }
+    }
+
+    fn admit_turn_input(&self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let turn = required(&fact.turn_id)?;
+        let payload = payload(fact)?;
+        if text(&payload, "input_kind")? == "continuation" {
+            if self.turns.get(turn) == Some(&TurnState::Suspended)
+                && self.suspensions.get(turn).map(String::as_str)
+                    == payload.get("suspension_id").and_then(Value::as_str)
+            {
+                Ok(())
+            } else {
+                Err(LedgerError::InvalidTransition)
+            }
+        } else {
+            self.require_open_turn(turn)
         }
     }
 

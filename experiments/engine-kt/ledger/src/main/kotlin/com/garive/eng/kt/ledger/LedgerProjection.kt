@@ -68,7 +68,7 @@ internal class LedgerProjection(
             "turn.completed" -> terminalTurn(fact, TurnState.COMPLETED)
             "turn.stopped" -> terminalTurn(fact, TurnState.STOPPED)
             "turn.failed" -> terminalTurn(fact, TurnState.FAILED)
-            "turn.input" -> requireOpenTurn(fact.turnId)
+            "turn.input" -> admitTurnInput(fact)
             "turn.cancel_requested" -> requireNonTerminalTurn(fact.turnId)
             "execution.started" -> startExecution(fact)
             "execution.abandoned" -> transitionExecution(fact, ExecutionState.ABANDONED)
@@ -169,6 +169,18 @@ internal class LedgerProjection(
         turnId == null -> LedgerError.MissingReference
         turns[turnId] != TurnState.OPEN -> LedgerError.InvalidTransition
         else -> null
+    }
+
+    private fun admitTurnInput(fact: FactDraft): LedgerError? {
+        val turn = fact.turnId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        return if (payload.text("input_kind") == "continuation") {
+            if (turns[turn] == TurnState.SUSPENDED &&
+                suspensions[turn] == payload["suspension_id"]?.jsonPrimitive?.contentOrNull
+            ) null else LedgerError.InvalidTransition
+        } else {
+            requireOpenTurn(turn)
+        }
     }
 
     private fun requireNonTerminalTurn(turnId: TurnId?): LedgerError? = when {
