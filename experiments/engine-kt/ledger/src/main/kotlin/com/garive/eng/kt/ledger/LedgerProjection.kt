@@ -45,6 +45,14 @@ internal data class ScheduleRecord(
     var state: ScheduleState,
 )
 
+internal enum class DelegationState { REQUESTED, AUTHORIZED, DENIED, STARTED, TERMINAL, OBSERVED }
+internal data class DelegationRecord(
+    val parentTurn: TurnId, val parentExecution: ExecutionId, val intentDigest: String,
+    var grantId: String? = null, var suspensionId: String? = null, var childTurn: TurnId? = null,
+    var resultId: String? = null, var resultDigest: String? = null,
+    var inputAdmitted: Boolean = false, var state: DelegationState = DelegationState.REQUESTED,
+)
+
 internal class LedgerProjection(
     private var opened: Boolean = false,
     private var closed: Boolean = false,
@@ -63,6 +71,11 @@ internal class LedgerProjection(
     private val interactions: MutableMap<String, InteractionRecord> = mutableMapOf(),
     private val knowledge: MutableMap<String, KnowledgeRecord> = mutableMapOf(),
     private val schedules: MutableMap<String, ScheduleRecord> = mutableMapOf(),
+    private val turnAgents: MutableMap<TurnId, Pair<String, String>> = mutableMapOf(),
+    private val delegations: MutableMap<String, DelegationRecord> = mutableMapOf(),
+    private val turnsStartedInCommit: MutableSet<TurnId> = mutableSetOf(),
+    private val turnsSuspendedInCommit: MutableSet<TurnId> = mutableSetOf(),
+    private val turnsTerminalInCommit: MutableSet<TurnId> = mutableSetOf(),
 ) {
     fun copy() = LedgerProjection(
         opened,
@@ -82,6 +95,11 @@ internal class LedgerProjection(
         interactions.mapValues { (_, value) -> value.copy() }.toMutableMap(),
         knowledge.mapValues { (_, value) -> value.copy(dispatchAttempts = value.dispatchAttempts.toMutableSet()) }.toMutableMap(),
         schedules.mapValues { (_, value) -> value.copy() }.toMutableMap(),
+        turnAgents.toMutableMap(),
+        delegations.mapValues { (_, value) -> value.copy() }.toMutableMap(),
+        turnsStartedInCommit.toMutableSet(),
+        turnsSuspendedInCommit.toMutableSet(),
+        turnsTerminalInCommit.toMutableSet(),
     )
 
     fun apply(fact: FactDraft): LedgerError? {
@@ -139,12 +157,26 @@ internal class LedgerProjection(
             "schedule.cancelled" -> cancelSchedule(fact)
             "schedule.failed" -> failSchedule(fact)
             "schedule.exhausted" -> exhaustSchedule(fact)
+            "delegation.requested" -> requestDelegation(fact)
+            "delegation.authorized" -> authorizeDelegation(fact)
+            "delegation.denied" -> denyDelegation(fact)
+            "delegation.child_started" -> startDelegationChild(fact)
+            "delegation.child_terminal" -> terminalDelegationChild(fact)
+            "delegation.observed" -> observeDelegation(fact)
             else -> null
         }
     }
 
+    fun beginCommit() {
+        turnsStartedInCommit.clear(); turnsSuspendedInCommit.clear(); turnsTerminalInCommit.clear()
+    }
+
     fun validateCommitBoundary(): LedgerError? =
-        if (schedules.values.any { it.state == ScheduleState.SUPERSEDING }) {
+        if (schedules.values.any { it.state == ScheduleState.SUPERSEDING } || delegations.values.any { record ->
+                turnsSuspendedInCommit.contains(record.parentTurn) && record.state == DelegationState.AUTHORIZED ||
+                    record.childTurn?.let(turnsTerminalInCommit::contains) == true && record.state == DelegationState.STARTED
+            }
+        ) {
             LedgerError.InvalidTransition
         } else {
             null
@@ -165,6 +197,7 @@ internal class LedgerProjection(
             executions.values.any { it.second == ExecutionState.ACTIVE } ||
             hasRecoveryPendingInvocation()
             || schedules.values.any { it.state == ScheduleState.ACTIVE }
+            || delegations.values.any { it.state !in setOf(DelegationState.DENIED, DelegationState.OBSERVED) }
         ) {
             return LedgerError.InvalidTransition
         }
@@ -180,11 +213,15 @@ internal class LedgerProjection(
         val valid = when (turns[turn]) {
             null -> kind == "start" && prior == null
             TurnState.SUSPENDED -> kind == "continue" && suspensions[turn] == prior &&
-                !hasPendingInteractionForTurn(turn)
+                !hasPendingInteractionForTurn(turn) && delegationContinuationReady(turn, prior)
             else -> false
         }
         if (!valid) return LedgerError.InvalidTransition
         turns[turn] = TurnState.OPEN
+        if (kind == "start") {
+            turnAgents[turn] = payload.text("agent_instance_id") to payload.text("snapshot_digest")
+            turnsStartedInCommit += turn
+        }
         suspensions.remove(turn)
         return null
     }
@@ -198,6 +235,7 @@ internal class LedgerProjection(
         }
         transitionTurn(turn, TurnState.SUSPENDED)?.let { return it }
         suspensions[turn] = payload.text("suspension_id")
+        if (payload.text("reason") == "delegation_pending") turnsSuspendedInCommit += turn
         return null
     }
 
@@ -214,7 +252,9 @@ internal class LedgerProjection(
         val suspendedClose = next in setOf(TurnState.STOPPED, TurnState.FAILED) &&
             turns[turn] == TurnState.SUSPENDED && actual == (turn to ExecutionState.SUSPENDED)
         if (actual != (turn to expected) && !suspendedClose) return LedgerError.InvalidTransition
-        return transitionTurn(turn, next)
+        transitionTurn(turn, next)?.let { return it }
+        turnsTerminalInCommit += turn
+        return null
     }
 
     private fun requireOpenTurn(turnId: TurnId?): LedgerError? = when {
@@ -226,6 +266,16 @@ internal class LedgerProjection(
     private fun admitTurnInput(fact: FactDraft): LedgerError? {
         val turn = fact.turnId ?: return LedgerError.MissingReference
         val payload = fact.payloadObject()
+        if (payload.text("input_kind") == "delegation_result") {
+            val suspension = payload.text("suspension_id")
+            val digest = payload.getValue("content").jsonObject.text("digest")
+            val record = delegations.values.singleOrNull {
+                it.parentTurn == turn && it.state == DelegationState.OBSERVED &&
+                    it.suspensionId == suspension && it.resultDigest == digest
+            } ?: return LedgerError.InvalidTransition
+            record.inputAdmitted = true
+            return null
+        }
         return if (payload.text("input_kind") !in setOf("trusted_user", "trusted_system")) {
             if (turns[turn] == TurnState.SUSPENDED &&
                 suspensions[turn] == payload["suspension_id"]?.jsonPrimitive?.contentOrNull
@@ -561,6 +611,77 @@ internal class LedgerProjection(
 
     private fun hasPendingKnowledge(executionId: ExecutionId): Boolean =
         knowledge.values.any { it.execution == executionId && !it.terminal }
+
+    private fun requestDelegation(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val turn = fact.turnId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject(); val id = payload.text("delegation_id")
+        if (id in delegations || delegations.values.any { it.parentTurn == turn && it.state !in setOf(DelegationState.DENIED, DelegationState.OBSERVED) } ||
+            turnAgents[turn]?.first != payload.text("parent_agent_instance_id")
+        ) return LedgerError.InvalidTransition
+        delegations[id] = DelegationRecord(turn, execution, payload.text("intent_digest"))
+        return null
+    }
+
+    private fun authorizeDelegation(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val payload = fact.payloadObject()
+        val record = delegations[payload.text("delegation_id")] ?: return LedgerError.MissingReference
+        if (!record.matchesOwner(fact) || record.state != DelegationState.REQUESTED || record.intentDigest != payload.text("intent_digest")) return LedgerError.InvalidTransition
+        record.grantId = payload.text("grant_id"); record.state = DelegationState.AUTHORIZED
+        return null
+    }
+
+    private fun denyDelegation(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val payload = fact.payloadObject()
+        val record = delegations[payload.text("delegation_id")] ?: return LedgerError.MissingReference
+        if (!record.matchesOwner(fact) || record.state != DelegationState.REQUESTED || record.intentDigest != payload.text("intent_digest")) return LedgerError.InvalidTransition
+        record.state = DelegationState.DENIED
+        return null
+    }
+
+    private fun startDelegationChild(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject(); val childTurn = TurnId.of(payload.text("child_turn_id"))
+        val record = delegations[payload.text("delegation_id")] ?: return LedgerError.MissingReference
+        val child = turnAgents[childTurn]
+        if (!record.matchesOwner(fact) || record.state != DelegationState.AUTHORIZED || record.grantId != payload.text("grant_id") ||
+            record.parentTurn !in turnsSuspendedInCommit || childTurn !in turnsStartedInCommit ||
+            child?.first != payload.text("child_agent_instance_id") || child.second != payload.text("child_snapshot_digest") ||
+            suspensions[record.parentTurn] != payload.text("suspension_id")
+        ) return LedgerError.InvalidTransition
+        record.suspensionId = payload.text("suspension_id"); record.childTurn = childTurn; record.state = DelegationState.STARTED
+        return null
+    }
+
+    private fun terminalDelegationChild(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject(); val childTurn = TurnId.of(payload.text("child_turn_id"))
+        val record = delegations[payload.text("delegation_id")] ?: return LedgerError.MissingReference
+        if (!record.matchesOwner(fact) || record.state != DelegationState.STARTED || record.grantId != payload.text("grant_id") ||
+            record.suspensionId != payload.text("suspension_id") || record.childTurn != childTurn || childTurn !in turnsTerminalInCommit
+        ) return LedgerError.InvalidTransition
+        record.resultId = payload.text("result_id"); record.resultDigest = payload.text("result_digest"); record.state = DelegationState.TERMINAL
+        return null
+    }
+
+    private fun observeDelegation(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = delegations[payload.text("delegation_id")] ?: return LedgerError.MissingReference
+        if (!record.matchesOwner(fact) || record.state != DelegationState.TERMINAL || record.grantId != payload.text("grant_id") ||
+            record.suspensionId != payload.text("suspension_id") || record.resultId != payload.text("result_id") || record.resultDigest != payload.text("result_digest")
+        ) return LedgerError.InvalidTransition
+        record.state = DelegationState.OBSERVED
+        return null
+    }
+
+    private fun delegationContinuationReady(turn: TurnId, suspension: String?): Boolean {
+        val records = delegations.values.filter { it.parentTurn == turn && it.suspensionId == suspension }
+        return records.isEmpty() || records.all { it.state == DelegationState.OBSERVED && it.inputAdmitted }
+    }
+
+    private fun DelegationRecord.matchesOwner(fact: FactDraft): Boolean =
+        parentTurn == fact.turnId && parentExecution == fact.executionId
 
     private fun createSchedule(fact: FactDraft): LedgerError? {
         val payload = fact.payloadObject()

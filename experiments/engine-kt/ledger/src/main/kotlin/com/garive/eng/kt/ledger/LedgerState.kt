@@ -73,6 +73,7 @@ public class LedgerState {
         if (next.version != expectedSessionVersion) {
             return LedgerResult.Failure(LedgerError.ConcurrentModification)
         }
+        next.projection.beginCommit()
         var position = next.facts.lastOrNull()?.position?.incrementOrNull()
             ?: if (next.facts.isEmpty()) 1u else return LedgerResult.Failure(LedgerError.PositionOverflow)
         val positions = mutableListOf<ULong>()
