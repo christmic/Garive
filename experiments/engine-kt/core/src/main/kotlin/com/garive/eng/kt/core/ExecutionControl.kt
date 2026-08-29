@@ -1,9 +1,11 @@
 package com.garive.eng.kt.core
 
 @JvmInline
-value class TurnId private constructor(val value: String) {
-    companion object {
-        fun of(value: String): TurnId {
+/** Validated non-empty Turn identity. */
+public value class TurnId private constructor(public val value: String) {
+    public companion object {
+        /** Validates and constructs a Turn identity. */
+        public fun of(value: String): TurnId {
             require(value.isNotEmpty()) { "turn identity cannot be empty" }
             return TurnId(value)
         }
@@ -11,66 +13,90 @@ value class TurnId private constructor(val value: String) {
 }
 
 @JvmInline
-value class ExecutionId private constructor(val value: String) {
-    companion object {
-        fun of(value: String): ExecutionId {
+/** Validated non-empty disposable Execution identity. */
+public value class ExecutionId private constructor(public val value: String) {
+    public companion object {
+        /** Validates and constructs an Execution identity. */
+        public fun of(value: String): ExecutionId {
             require(value.isNotEmpty()) { "execution identity cannot be empty" }
             return ExecutionId(value)
         }
     }
 }
 
-@JvmInline value class SessionId private constructor(val value: String) {
-    companion object { fun of(value: String) = SessionId(value.also { require(it.isNotEmpty()) }) }
+/** Validated non-empty Session identity. */
+@JvmInline public value class SessionId private constructor(public val value: String) {
+    public companion object {
+        public fun of(value: String): SessionId = SessionId(value.also { require(it.isNotEmpty()) })
+    }
 }
-@JvmInline value class AgentInstanceId private constructor(val value: String) {
-    companion object { fun of(value: String) = AgentInstanceId(value.also { require(it.isNotEmpty()) }) }
+/** Validated Runtime-owned Agent instance identity. */
+@JvmInline public value class AgentInstanceId private constructor(public val value: String) {
+    public companion object {
+        public fun of(value: String): AgentInstanceId = AgentInstanceId(value.also { require(it.isNotEmpty()) })
+    }
 }
-@JvmInline value class AgentDefinitionId private constructor(val value: String) {
-    companion object { fun of(value: String) = AgentDefinitionId(value.also { require(it.isNotEmpty()) }) }
+/** Validated Agent definition identity. */
+@JvmInline public value class AgentDefinitionId private constructor(public val value: String) {
+    public companion object {
+        public fun of(value: String): AgentDefinitionId = AgentDefinitionId(value.also { require(it.isNotEmpty()) })
+    }
 }
-@JvmInline value class AgentDefinitionRevision private constructor(val value: String) {
-    companion object { fun of(value: String) = AgentDefinitionRevision(value.also { require(it.isNotEmpty()) }) }
+/** Validated exact Agent definition revision. */
+@JvmInline public value class AgentDefinitionRevision private constructor(public val value: String) {
+    public companion object {
+        public fun of(value: String): AgentDefinitionRevision =
+            AgentDefinitionRevision(value.also { require(it.isNotEmpty()) })
+    }
 }
 
-data class ExecutionLimits(val maxIterations: UInt) {
+/** Non-zero hard limits for one kernel Execution. */
+public data class ExecutionLimits(public val maxIterations: UInt) {
     init {
         require(maxIterations > 0u) { "max iterations must be non-zero" }
     }
 }
 
-enum class ExecutionOutcomeKind { COMPLETED, SUSPENDED, STOPPED, FAILED }
+/** Terminal class recorded when an Execution closes. */
+public enum class ExecutionOutcomeKind { COMPLETED, SUSPENDED, STOPPED, FAILED }
 
-sealed interface ExecutionStatus {
-    data object Active : ExecutionStatus
-    data class Closed(val kind: ExecutionOutcomeKind) : ExecutionStatus
+/** Lifecycle status of the disposable control projection. */
+public sealed interface ExecutionStatus {
+    public data object Active : ExecutionStatus
+    public data class Closed(public val kind: ExecutionOutcomeKind) : ExecutionStatus
 }
 
-sealed interface BeginIteration {
-    data class Started(val iteration: UInt) : BeginIteration
-    data object IterationLimitReached : BeginIteration
+/** Result of attempting to enter the next bounded iteration. */
+public sealed interface BeginIteration {
+    public data class Started(public val iteration: UInt) : BeginIteration
+    public data object IterationLimitReached : BeginIteration
 }
 
-sealed class ControlException(message: String) : IllegalStateException(message) {
-    data class CursorBeyondLimit(val completed: UInt, val maximum: UInt) :
+/** Rejected transition in [ExecutionControl]. */
+public sealed class ControlException protected constructor(message: String) : IllegalStateException(message) {
+    public data class CursorBeyondLimit(public val completed: UInt, public val maximum: UInt) :
         ControlException("completed iteration cursor $completed exceeds limit $maximum")
 
-    data object AlreadyClosed : ControlException("execution is already closed")
+    public data object AlreadyClosed : ControlException("execution is already closed")
 }
 
-class ExecutionControl private constructor(
-    val turnId: TurnId,
-    val executionId: ExecutionId,
-    val limits: ExecutionLimits,
+/** Disposable bounded control projection reconstructed from durable progress. */
+public class ExecutionControl private constructor(
+    public val turnId: TurnId,
+    public val executionId: ExecutionId,
+    public val limits: ExecutionLimits,
     completedIterations: UInt,
 ) {
-    var completedIterations: UInt = completedIterations
+    /** Iterations entered so far. */
+    public var completedIterations: UInt = completedIterations
         private set
 
-    var status: ExecutionStatus = ExecutionStatus.Active
+    /** Active or exactly one terminal status. */
+    public var status: ExecutionStatus = ExecutionStatus.Active
         private set
 
-    fun beginIteration(): BeginIteration {
+    /** Starts the next iteration or closes as stopped at the iteration cap. */
+    public fun beginIteration(): BeginIteration {
         requireActive()
         if (completedIterations == limits.maxIterations) {
             status = ExecutionStatus.Closed(ExecutionOutcomeKind.STOPPED)
@@ -80,7 +106,8 @@ class ExecutionControl private constructor(
         return BeginIteration.Started(completedIterations)
     }
 
-    fun close(kind: ExecutionOutcomeKind) {
+    /** Closes an active Execution with one terminal class. */
+    public fun close(kind: ExecutionOutcomeKind): Unit {
         requireActive()
         status = ExecutionStatus.Closed(kind)
     }
@@ -89,8 +116,9 @@ class ExecutionControl private constructor(
         if (status is ExecutionStatus.Closed) throw ControlException.AlreadyClosed
     }
 
-    companion object {
-        fun create(
+    public companion object {
+        /** Restores an active controller from a durable completed-iteration cursor. */
+        public fun create(
             turnId: TurnId,
             executionId: ExecutionId,
             completedIterations: UInt,
