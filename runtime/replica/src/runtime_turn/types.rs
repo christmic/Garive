@@ -203,6 +203,10 @@ pub enum RuntimeCommandError {
     ConcurrentModification,
     /// Expected suspension or Turn identity does not match durable state.
     ContinuationMismatch,
+    /// Durable facts do not describe a currently suspended Turn.
+    TurnNotResumable,
+    /// Verified storage rows contain impossible Runtime referents or values.
+    CorruptLedger,
 }
 
 impl RuntimeCommandError {
@@ -212,6 +216,8 @@ impl RuntimeCommandError {
             Self::InvalidCommand => "invalid_command",
             Self::ConcurrentModification => "concurrent_modification",
             Self::ContinuationMismatch => "continuation_mismatch",
+            Self::TurnNotResumable => "turn_not_resumable",
+            Self::CorruptLedger => "corrupt_ledger",
         }
     }
 }

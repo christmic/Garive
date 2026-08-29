@@ -2,7 +2,7 @@ use std::{error::Error, fmt, path::Path, time::Duration};
 
 use garive_ledger::{
     CommitDisposition, CommitResult, DurableFact, FactDraft, FactKind, LedgerError, ModelRequestId,
-    SessionId, ToolInvocationId,
+    SessionId, ToolInvocationId, TurnId, TurnSnapshot,
 };
 use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 
@@ -161,6 +161,11 @@ impl SqliteLedger {
         invocation_id: &ToolInvocationId,
     ) -> Result<Vec<DurableFact>, SqliteLedgerError> {
         Ok(storage::load_state(&self.connection)?.find_tool_invocation(invocation_id))
+    }
+
+    /// Loads one verified Turn fact prefix and its Session watermark.
+    pub fn load_turn(&self, turn_id: &TurnId) -> Result<TurnSnapshot, SqliteLedgerError> {
+        Ok(storage::load_state(&self.connection)?.load_turn(turn_id)?)
     }
 
     /// Returns the durable optimistic-concurrency version of a Session.
