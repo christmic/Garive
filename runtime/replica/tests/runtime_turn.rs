@@ -5,8 +5,9 @@ use garive_ledger::{
     CommitDisposition, FactDraft, FactId, FactKind, LedgerError, SessionId,
 };
 use garive_runtime::{
-    plan_cancel_turn, plan_start_turn, CancelReason, CancelTurnCommand, EffectiveRuntimeLimits,
-    RuntimeCommandId, SqliteLedger, SqliteLedgerError, StartTurnCommand,
+    plan_cancel_turn, plan_continue_turn, plan_start_turn, CancelReason, CancelTurnCommand,
+    ContinueTurnCommand, EffectiveRuntimeLimits, RuntimeCommandError, RuntimeCommandId,
+    SqliteLedger, SqliteLedgerError, StartTurnCommand, SuspendedTurnState,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -54,6 +55,47 @@ fn open_session() -> FactDraft {
         schema_version: 1,
         payload: CanonicalPayload::from_value(&json!({})).unwrap(),
         recorded_at: "2026-08-29T00:00:00Z".into(),
+    }
+}
+
+fn runtime_payload(kind: &str) -> Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../spec/fixtures/ledger/runtime-facts-v1.json");
+    let value: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    value["valid_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["kind"].as_str() == Some(kind))
+        .unwrap()["payload"]
+        .clone()
+}
+
+fn suspension_fact(
+    id: &str,
+    kind: &str,
+    turn: &garive_ledger::TurnId,
+    execution: Option<&garive_ledger::ExecutionId>,
+) -> FactDraft {
+    let mut payload = runtime_payload(kind);
+    if kind == "turn.suspended" {
+        payload.as_object_mut().unwrap().insert(
+            "execution_id".into(),
+            Value::String(execution.unwrap().as_str().into()),
+        );
+    }
+    FactDraft {
+        fact_id: FactId::try_from(id).unwrap(),
+        turn_id: Some(turn.clone()),
+        execution_id: execution
+            .cloned()
+            .filter(|_| kind.starts_with("execution.")),
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new(kind).unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&payload).unwrap(),
+        recorded_at: "2026-08-29T00:00:01Z".into(),
     }
 }
 
@@ -135,4 +177,84 @@ fn invalid_constructed_limits_and_clock_fail_before_a_fact_exists() {
     command.limits.max_iterations = 1;
     command.recorded_at = "today".into();
     assert!(plan_start_turn(&command, 0).is_err());
+}
+
+#[test]
+fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
+    let directory = tempdir().unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("continue.sqlite3")).unwrap();
+    let start = start_command("hello", "command-start");
+    let session = start.session_id.clone();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let started = plan_start_turn(&start, 1).unwrap();
+    let prior_execution = started.execution_id.clone().unwrap();
+    ledger.commit(session.clone(), 1, started.facts).unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            2,
+            vec![
+                suspension_fact(
+                    "execution-suspended",
+                    "execution.suspended",
+                    &started.turn_id,
+                    Some(&prior_execution),
+                ),
+                suspension_fact(
+                    "turn-suspended",
+                    "turn.suspended",
+                    &started.turn_id,
+                    Some(&prior_execution),
+                ),
+            ],
+        )
+        .unwrap();
+    let state = SuspendedTurnState {
+        session_version: 3,
+        turn_id: started.turn_id.clone(),
+        suspension_id: "suspension".into(),
+        agent_instance_id: start.agent_instance_id.clone(),
+        definition_id: start.definition_id.clone(),
+        definition_revision: start.definition_revision.clone(),
+        snapshot_digest: start.snapshot_digest.clone(),
+        trusted_input_digest: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            .into(),
+        through_position: 6,
+        completed_iterations: 1,
+        recovery_ordinal: 0,
+        limits: start.limits,
+    };
+    let command = ContinueTurnCommand {
+        command_id: RuntimeCommandId::new("continue-command").unwrap(),
+        session_id: session.clone(),
+        turn_id: started.turn_id.clone(),
+        expected_suspension_id: "suspension".into(),
+        expected_session_version: 3,
+        continuation_input: "approved".into(),
+        interaction: None,
+        recorded_at: "2026-08-29T00:00:02Z".into(),
+    };
+    let continued = plan_continue_turn(&command, &state).unwrap();
+    assert_ne!(continued.execution_id, Some(prior_execution));
+    assert_eq!(
+        ledger
+            .commit(session, 3, continued.facts)
+            .unwrap()
+            .positions,
+        vec![7, 8, 9]
+    );
+    let mut stale = command.clone();
+    stale.expected_session_version = 2;
+    assert_eq!(
+        plan_continue_turn(&stale, &state),
+        Err(RuntimeCommandError::ConcurrentModification)
+    );
+    stale.expected_session_version = 3;
+    stale.expected_suspension_id = "other".into();
+    assert_eq!(
+        plan_continue_turn(&stale, &state),
+        Err(RuntimeCommandError::ContinuationMismatch)
+    );
 }
