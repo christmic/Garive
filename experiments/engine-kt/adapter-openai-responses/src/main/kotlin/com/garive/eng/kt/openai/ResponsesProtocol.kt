@@ -5,12 +5,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
-/** Stable protocol-only failure; it contains no deployment or retry policy. */
-public enum class ResponsesProtocolError {
-    INVALID_ENDPOINT, INVALID_HEADER, INVALID_REQUEST, INVALID_JSON, INVALID_MEDIA_TYPE,
-    INVALID_SSE, INVALID_LIFECYCLE, TRUNCATED_STREAM,
-}
-
 /** Caller-supplied header with an explicit diagnostic redaction marker. */
 public class ProtocolHeader private constructor(
     public val name: String,
@@ -60,7 +54,7 @@ public class ProtocolHttpRequest internal constructor(
 /** Protocol-only Responses adapter. It performs exactly one wire exchange. */
 public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
     /** Encodes a validated official create request. */
-    public fun prepare(request: CreateResponseRequest): ProtocolHttpRequest {
+    public fun prepare(request: CreateResponseRequest): ProtocolHttpRequest = responseFailure(ResponsesProtocolError.INVALID_REQUEST) {
         request.validate()
         val body = request.toJson()
         val headers = config.headers + listOf(
@@ -71,7 +65,7 @@ public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
     }
 
     /** Decodes ordinary JSON while retaining HTTP status and headers as facts. */
-    public fun decodeResponse(status: Int, headers: List<ProtocolHeader>, body: ByteArray): DecodedResponse {
+    public fun decodeResponse(status: Int, headers: List<ProtocolHeader>, body: ByteArray): DecodedResponse = responseFailure(ResponsesProtocolError.INVALID_JSON) {
         requireJsonMedia(headers)
         val value = JSON.parseToJsonElement(body.decodeToString()).jsonObject
         return if (status in 200..299) {
@@ -87,5 +81,7 @@ public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
 private val JSON: Json = Json { ignoreUnknownKeys = false }
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
     val media = headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json"
-    require(media.substringBefore(';') == "application/json")
+    if (media.substringBefore(';') != "application/json") {
+        throw ResponsesProtocolException(ResponsesProtocolError.INVALID_MEDIA_TYPE)
+    }
 }

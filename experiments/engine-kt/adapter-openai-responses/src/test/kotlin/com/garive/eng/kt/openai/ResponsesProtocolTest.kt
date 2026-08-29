@@ -5,6 +5,7 @@ import kotlin.io.path.readBytes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -127,7 +128,8 @@ class ResponsesProtocolTest {
     fun `truncated stream fails closed`() {
         val decoder = ResponsesStreamDecoder()
         decoder.push(bytes("spec/fixtures/protocols/openai-responses/truncated.sse"))
-        assertFails { decoder.finish() }
+        val failure = assertFailsWith<ResponsesProtocolException> { decoder.finish() }
+        assertEquals(ResponsesProtocolError.TRUNCATED_STREAM, failure.error)
     }
 
     private fun bytes(path: String): ByteArray = root.resolve(path).readBytes()

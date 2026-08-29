@@ -22,7 +22,7 @@ public class ResponsesStreamDecoder {
     private val items: MutableMap<ULong, ItemState> = mutableMapOf()
 
     /** Appends bytes and emits every complete validated protocol event immediately. */
-    public fun push(bytes: ByteArray): List<ResponseStreamEvent> {
+    public fun push(bytes: ByteArray): List<ResponseStreamEvent> = responseFailure(ResponsesProtocolError.INVALID_LIFECYCLE) {
         val events = mutableListOf<ResponseStreamEvent>()
         sse.push(bytes).forEach { frame ->
             if (frame.data == "[DONE]") {
@@ -41,7 +41,7 @@ public class ResponsesStreamDecoder {
     }
 
     /** Requires one protocol terminal and complete SSE framing at EOF. */
-    public fun finish(): Unit {
+    public fun finish(): Unit = responseFailure(ResponsesProtocolError.TRUNCATED_STREAM) {
         sse.finish()
         require(terminal)
     }
