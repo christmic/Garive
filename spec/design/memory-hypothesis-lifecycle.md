@@ -103,7 +103,7 @@ overflow, duplicates, stale revisions and illegal transitions fail closed.
 
 Extraction emits a bounded `MemoryCandidate`, not trusted memory. A maintenance
 decision is exactly `Add`, `Update(expected_revision)`, `Delete(exact_revision,
-safe_reason)`, or `Noop(safe_code)`. All decisions are durable. Delete requests
+reason=explicit_forget)`, or `Noop(safe_code)`. All decisions are durable. Delete requests
 an M0 tombstone; physical erasure is a separate receipt. Noop stores no rejected
 sensitive content.
 
@@ -153,6 +153,70 @@ commit-before-context.
 
 ## Distillation, promotion, quota and forget
 
+```text
+MemoryCandidate {
+  candidate_id, namespace_id, extractor_revision
+  source: ExplicitUserCommand | SessionEnd | ExitSummary |
+          ScheduledDistillation
+  intent: Learn {memory_type, role, authority, scope,
+                 content, evidence, content_bytes}
+          | Forget {record_id, revision_id, authority}
+}
+
+AdmissionAssessment {
+  generalizable: bool
+  stability: Confirmed | Uncertain
+  exact_duplicate_revision_id?
+  conflicting_active_revision_id?
+}
+
+MaintenanceDecision =
+  Add {proposal_id}
+  | Update {proposal_id, expected_active_revision_id}
+  | Delete {command_id, record_id, revision_id, reason=explicit_forget}
+  | Noop {code: not_generalizable | unstable_deferred | duplicate}
+```
+
+Explicit user Learn/Forget requires `UserDeclared` authority and its receipt.
+All three automatic sources require `AgentLearned`; no extraction source can
+produce `OrganisationPublished`. Forget alone produces Delete. Learn evaluates
+generalizability, then stability, then exact duplicate, then conflict, in that
+order; otherwise it produces Add. Duplicate and conflict cannot both be set.
+The reducer only produces a decision: M0 authorization and atomic write/tombstone
+remain required before state changes.
+
+```text
+DistillationWatermark {
+  extractor_revision, session_id, through_position, batch_digest
+}
+
+MemoryAuditPolicy {
+  max_active_records, max_active_bytes, stale_after_positions,
+  low_use_threshold, max_report_items
+}
+
+MemoryAuditEntry {
+  record_id, revision_id, memory_type, state, content_digest,
+  content_bytes, use_count, last_verified_position,
+  retention_score_basis_points
+}
+```
+
+One candidate carries at most 64 ordered evidence references. One audit accepts
+at most 4096 canonical inventory rows and 4096 canonical contradiction pairs;
+all output, including required actions, fits `max_report_items` or fails with
+`limit_exceeded`. These protocol constants are identical in Rust and Kotlin.
+
+A watermark advances only within one extractor revision and Session. Repeating
+the exact position/digest is replay; changing the digest at that position or
+moving backwards is conflict. Audit output deterministically reports duplicate
+digests, explicitly supplied contradiction pairs, stale/low-use identities and
+the minimum score-ordered Cool proposals needed to satisfy the active hot-set
+count/byte quota. Candidate and Promoted entries are never audit-eviction
+targets. Active entries may only be proposed Cold; stale Cold entries may only
+be proposed Archived.
+No audit action deletes, supersedes, promotes, or writes a record.
+
 - Distillation binds an exact ledger prefix, watermark and extractor revision;
   replay is idempotent.
 - Per-namespace/type count and byte quotas are explicit snapshot values.
@@ -175,8 +239,8 @@ External memory services require idempotent receipts bound into ledger facts.
 Projection loss rebuilds from admitted prefixes; mismatch fails closed.
 
 M1 reserves versioned fact families for candidate/maintenance decisions,
-lifecycle transitions, recall results, obligations/observations, distillation checkpoints,
-promotion request/receipt and erasure request/receipt. Exact schemas land with
+lifecycle transitions, recall results, obligations/observations, distillation
+checkpoints, promotion request/receipt and erasure request/receipt. Exact schemas land with
 each behavior slice; older projections treat unknown facts as opaque.
 
 Stable additions are `unknown_memory_type`, `authority_receipt_required`,

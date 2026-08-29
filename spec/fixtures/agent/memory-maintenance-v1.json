@@ -1,0 +1,37 @@
+{
+  "evidence":{"session_id":"session-maintenance","position":"1","fact_id":"fact-source","payload_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "candidate_cases":[
+    {"name":"explicit_learn_adds","source":"explicit_user_command","intent":"learn","authority":"user_declared","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","generalizable":true,"stability":"confirmed","expected":"add"},
+    {"name":"session_detail_is_rejected","source":"session_end","intent":"learn","authority":"agent_learned","generalizable":false,"stability":"confirmed","expected":"noop_not_generalizable"},
+    {"name":"unstable_lesson_is_deferred","source":"exit_summary","intent":"learn","authority":"agent_learned","generalizable":true,"stability":"uncertain","expected":"noop_unstable_deferred"},
+    {"name":"duplicate_is_noop","source":"scheduled_distillation","intent":"learn","authority":"agent_learned","generalizable":true,"stability":"confirmed","duplicate_revision_id":"revision-existing","expected":"noop_duplicate"},
+    {"name":"conflict_updates_exact_revision","source":"scheduled_distillation","intent":"learn","authority":"agent_learned","generalizable":true,"stability":"confirmed","conflicting_revision_id":"revision-old","expected":"update:revision-old"},
+    {"name":"explicit_forget_deletes_exact_revision","source":"explicit_user_command","intent":"forget","authority":"user_declared","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","target_record_id":"record-forget","target_revision_id":"revision-forget","expected":"delete:record-forget:revision-forget"},
+    {"name":"automatic_cannot_claim_user_authority","source":"session_end","intent":"learn","authority":"user_declared","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","failure":"invalid_memory"},
+    {"name":"automatic_cannot_publish_org_truth","source":"exit_summary","intent":"learn","authority":"organisation_published","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","failure":"invalid_memory"},
+    {"name":"automatic_cannot_forget","source":"scheduled_distillation","intent":"forget","authority":"agent_learned","target_record_id":"record","target_revision_id":"revision","failure":"invalid_memory"},
+    {"name":"duplicate_and_conflict_are_ambiguous","source":"scheduled_distillation","intent":"learn","authority":"agent_learned","generalizable":true,"stability":"confirmed","duplicate_revision_id":"revision-a","conflicting_revision_id":"revision-b","failure":"invalid_memory"}
+  ],
+  "watermark_cases":[
+    {"name":"first_checkpoint_advances","next":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"expected":"advanced"},
+    {"name":"later_checkpoint_advances","prior":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"next":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"20","batch_digest":"2222222222222222222222222222222222222222222222222222222222222222"},"expected":"advanced"},
+    {"name":"exact_checkpoint_replays","prior":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"next":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"expected":"replayed"},
+    {"name":"same_position_changed_batch_conflicts","prior":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"next":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"2222222222222222222222222222222222222222222222222222222222222222"},"failure":"invalid_transition"},
+    {"name":"backward_checkpoint_conflicts","prior":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"next":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"9","batch_digest":"2222222222222222222222222222222222222222222222222222222222222222"},"failure":"invalid_transition"},
+    {"name":"revision_change_requires_new_snapshot","prior":{"extractor_revision":"dream-v1","session_id":"session-a","through_position":"10","batch_digest":"1111111111111111111111111111111111111111111111111111111111111111"},"next":{"extractor_revision":"dream-v2","session_id":"session-a","through_position":"20","batch_digest":"2222222222222222222222222222222222222222222222222222222222222222"},"failure":"invalid_transition"}
+  ],
+  "audit":{
+    "current_position":"100",
+    "policy":{"max_active_records":"2","max_active_bytes":"70","stale_after_positions":"50","low_use_threshold":"2","max_report_items":"20"},
+    "entries":[
+      {"record_id":"r1","revision_id":"v1","type":"semantic","state":"active","content_digest":"1111111111111111111111111111111111111111111111111111111111111111","content_bytes":"40","use_count":"10","last_verified_position":"90","retention_score":"9000"},
+      {"record_id":"r2","revision_id":"v2","type":"lesson","state":"active","content_digest":"2222222222222222222222222222222222222222222222222222222222222222","content_bytes":"30","use_count":"1","last_verified_position":"80","retention_score":"1000"},
+      {"record_id":"r3","revision_id":"v3","type":"procedural","state":"active","content_digest":"3333333333333333333333333333333333333333333333333333333333333333","content_bytes":"50","use_count":"0","last_verified_position":"70","retention_score":"2000"},
+      {"record_id":"r4","revision_id":"v4","type":"lesson","state":"cold","content_digest":"2222222222222222222222222222222222222222222222222222222222222222","content_bytes":"30","use_count":"5","last_verified_position":"20","retention_score":"5000"},
+      {"record_id":"r5","revision_id":"v5","type":"semantic","state":"cold","content_digest":"5555555555555555555555555555555555555555555555555555555555555555","content_bytes":"20","use_count":"0","last_verified_position":"10","retention_score":"500"},
+      {"record_id":"r6","revision_id":"v6","type":"lesson","state":"candidate","content_digest":"6666666666666666666666666666666666666666666666666666666666666666","content_bytes":"10","use_count":"0","last_verified_position":"95","retention_score":"100"}
+    ],
+    "contradictions":[{"left_record_id":"r1","left_revision_id":"v1","right_record_id":"r2","right_revision_id":"v2"}],
+    "expected":{"duplicate_groups":[["r2:v2","r4:v4"]],"stale":["r4:v4","r5:v5"],"low_use":["r2:v2","r3:v3","r5:v5","r6:v6"],"actions":["cool:r2:v2","cool:r3:v3","archive:r4:v4","archive:r5:v5"],"truncated":false}
+  }
+}
