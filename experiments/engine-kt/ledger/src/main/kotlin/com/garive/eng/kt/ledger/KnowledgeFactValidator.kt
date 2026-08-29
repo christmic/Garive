@@ -92,11 +92,13 @@ private fun JsonObject.failed() {
     val reason = enum(
         "reason",
         setOf(
-            "source_denied", "unsupported", "unavailable", "rejected", "uncertain", "citation_invalid",
-            "content_digest_mismatch", "limit_exceeded",
+            "invalid_query", "source_not_found", "source_revision_mismatch", "source_denied",
+            "filter_unsupported", "freshness_unavailable", "connector_unavailable", "connector_rejected",
+            "retrieval_uncertain", "citation_invalid", "content_digest_mismatch", "limit_exceeded",
+            "durability_failure", "corrupt_knowledge_state",
         ),
     )
     val ambiguous = getValue("ambiguous").jsonPrimitive.booleanOrNull ?: throw IllegalArgumentException()
-    require(ambiguous == (phase == "dispatched" && reason == "uncertain"))
+    require(ambiguous == (phase == "dispatched" && reason == "retrieval_uncertain"))
     if ("retry_after_ms" in this) ulong("retry_after_ms", true)
 }

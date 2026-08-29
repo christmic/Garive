@@ -174,21 +174,27 @@ fn failed(value: &Map<String, Value>) -> Result<(), LedgerError> {
         value,
         "reason",
         &[
+            "invalid_query",
+            "source_not_found",
+            "source_revision_mismatch",
             "source_denied",
-            "unsupported",
-            "unavailable",
-            "rejected",
-            "uncertain",
+            "filter_unsupported",
+            "freshness_unavailable",
+            "connector_unavailable",
+            "connector_rejected",
+            "retrieval_uncertain",
             "citation_invalid",
             "content_digest_mismatch",
             "limit_exceeded",
+            "durability_failure",
+            "corrupt_knowledge_state",
         ],
     )?;
     let ambiguous = value
         .get("ambiguous")
         .and_then(Value::as_bool)
         .ok_or(LedgerError::InvalidFact)?;
-    if ambiguous != (phase == "dispatched" && reason == "uncertain") {
+    if ambiguous != (phase == "dispatched" && reason == "retrieval_uncertain") {
         return Err(LedgerError::InvalidFact);
     }
     if value.contains_key("retry_after_ms") {

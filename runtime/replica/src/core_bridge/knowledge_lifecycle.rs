@@ -52,10 +52,18 @@ pub enum KnowledgeFailurePhase {
 /// Stable L0 reason for a terminal Knowledge failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KnowledgeFailureReason {
+    /// The portable query is invalid.
+    InvalidQuery,
+    /// The configured source does not exist.
+    SourceNotFound,
+    /// The exact configured source revision differs.
+    SourceRevisionMismatch,
     /// Runtime authority denied the source.
     SourceDenied,
-    /// The connector cannot implement the request.
-    Unsupported,
+    /// A requested filter is unsupported.
+    FilterUnsupported,
+    /// The requested freshness cannot be supplied.
+    FreshnessUnavailable,
     /// The connector is temporarily unavailable.
     Unavailable,
     /// The connector rejected the request.
@@ -68,6 +76,10 @@ pub enum KnowledgeFailureReason {
     ContentDigestMismatch,
     /// The connector response violated a committed bound.
     LimitExceeded,
+    /// A required durable write failed.
+    DurabilityFailure,
+    /// Persisted lifecycle state is impossible.
+    CorruptKnowledgeState,
 }
 
 /// Plans the exact `knowledge.requested` redispatchable boundary.
@@ -301,13 +313,19 @@ const fn phase_name(value: KnowledgeFailurePhase) -> &'static str {
 const fn reason_name(value: KnowledgeFailureReason) -> &'static str {
     match value {
         KnowledgeFailureReason::SourceDenied => "source_denied",
-        KnowledgeFailureReason::Unsupported => "unsupported",
-        KnowledgeFailureReason::Unavailable => "unavailable",
-        KnowledgeFailureReason::Rejected => "rejected",
-        KnowledgeFailureReason::Uncertain => "uncertain",
+        KnowledgeFailureReason::InvalidQuery => "invalid_query",
+        KnowledgeFailureReason::SourceNotFound => "source_not_found",
+        KnowledgeFailureReason::SourceRevisionMismatch => "source_revision_mismatch",
+        KnowledgeFailureReason::FilterUnsupported => "filter_unsupported",
+        KnowledgeFailureReason::FreshnessUnavailable => "freshness_unavailable",
+        KnowledgeFailureReason::Unavailable => "connector_unavailable",
+        KnowledgeFailureReason::Rejected => "connector_rejected",
+        KnowledgeFailureReason::Uncertain => "retrieval_uncertain",
         KnowledgeFailureReason::CitationInvalid => "citation_invalid",
         KnowledgeFailureReason::ContentDigestMismatch => "content_digest_mismatch",
         KnowledgeFailureReason::LimitExceeded => "limit_exceeded",
+        KnowledgeFailureReason::DurabilityFailure => "durability_failure",
+        KnowledgeFailureReason::CorruptKnowledgeState => "corrupt_knowledge_state",
     }
 }
 
