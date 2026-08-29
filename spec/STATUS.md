@@ -74,7 +74,7 @@ planned without reopening a narrower completed row.
 | Scheduler | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin recurrence/failure properties, exact L0 facts, SQLite lease races, authority/update conflicts, real C6 dispatch, restart and process-kill matrices green. |
 | Multi-Agent | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin canonical intent/budget/result properties, exact L0 lifecycle projection, durable grant-before-child ordering, cancellation/isolation, SQLite restart and six-boundary process-kill matrices green. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
-| Evaluation | accepted | accepted | documented | skeleton | missing | active | Implement pure E0 evidence reduction before B0 orchestration. |
+| Evaluation | accepted | accepted | documented | implemented | verified | done | Keep exact rational score, duplicate/bound failures, baseline provenance and pure-Engine boundary gates green. |
 | Observability | accepted | accepted | documented | implemented | verified | done | Keep the shared Rust/Kotlin catalogue, canonical digest, forbidden-label properties, explicit Runtime limits, commit-position, sampling, priority, backpressure, redaction-canary and bounded-shutdown gates green. |
 
 ## Update checklist

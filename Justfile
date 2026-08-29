@@ -42,11 +42,14 @@ observability-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|reqwest|tokio|rusqlite|opentelemetry|tracing' engine/observability/src experiments/engine-kt/observability/src/main; then echo 'O0 Engine must remain a pure signal contract' >&2; exit 1; fi
     @if rg -n 'std::env|System\.getenv|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/observability_runtime.rs; then echo 'O0 Runtime configuration must enter explicitly' >&2; exit 1; fi
 
+evaluation-boundaries:
+    @if rg -n 'std::env|std::fs|std::process|std::net|System\.getenv|java\.io|java\.net|reqwest|tokio|rusqlite' engine/eval/src; then echo 'E0 Engine must remain a pure evidence contract' >&2; exit 1; fi
+
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries
-    cargo test -p garive-config -p garive-core -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
+conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries
+    cargo test -p garive-config -p garive-core -p garive-eval -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :scheduler:test :skill:test :tools:test
 
 adapter-boundaries:
