@@ -188,6 +188,17 @@ impl LedgerState {
         Err(LedgerError::MissingReference)
     }
 
+    /// Lists Open or Suspended Turn identities for recovery discovery.
+    pub fn list_recoverable_turns(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<TurnId>, LedgerError> {
+        self.sessions
+            .get(session_id)
+            .map(|session| session.projection.recoverable_turns())
+            .ok_or(LedgerError::MissingReference)
+    }
+
     /// Returns all lifecycle facts associated with one model request.
     pub fn find_model_request(&self, request_id: &ModelRequestId) -> Vec<DurableFact> {
         self.find_invocation(|fact| fact.model_request_id.as_ref() == Some(request_id))

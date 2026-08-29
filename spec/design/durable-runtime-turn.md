@@ -238,6 +238,15 @@ On startup or lease takeover, Runtime treats the ledger as sole truth:
 7. otherwise append `execution.abandoned` and start a fresh Execution, or
    report an already committed terminal.
 
+The recovery coordinator accepts a verified `TurnSnapshot`, not caller-supplied
+lifecycle enum values. It derives the latest Execution and its model, effect,
+interaction and recovery-ordinal positions from that fixed prefix, then applies
+the shared recovery decision table. More than one dispatch-pending child, more
+than one unresolved interaction, an active child under a suspended/terminal
+parent, or a lifecycle fact owned by another Execution is corruption. A storage
+projection may enumerate candidate Turn IDs, but cannot supply the classification
+used to authorize restart.
+
 Unknown required fact schema, digest mismatch, impossible transition, missing
 referent or projection-ahead-of-ledger is corruption. Runtime fails closed and
 exposes redacted reconciliation status; it does not skip or guess.

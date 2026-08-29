@@ -168,6 +168,14 @@ impl SqliteLedger {
         Ok(storage::load_state(&self.connection)?.load_turn(turn_id)?)
     }
 
+    /// Lists Open or Suspended Turn identities as recovery discovery hints.
+    pub fn list_recoverable_turns(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<TurnId>, SqliteLedgerError> {
+        Ok(storage::load_state(&self.connection)?.list_recoverable_turns(session_id)?)
+    }
+
     /// Returns the durable optimistic-concurrency version of a Session.
     pub fn session_version(
         &self,

@@ -4,7 +4,10 @@ use std::{
 };
 
 use garive_ledger::{SessionId, TurnId, TurnSnapshot};
-use garive_runtime::{plan_recovery_action_facts, RuntimeRecoveryAction, SqliteLedger};
+use garive_runtime::{
+    derive_runtime_recovery, plan_recovery_action_facts, select_runtime_recovery,
+    RuntimeRecoveryAction, SqliteLedger,
+};
 use tempfile::{tempdir, TempDir};
 
 const CHECKPOINTS: &[&str] = &[
@@ -166,6 +169,8 @@ fn recovery_actions_append_their_classification_to_killed_process_state() {
         ),
     ] {
         let (_directory, mut ledger, session, snapshot) = killed_snapshot(checkpoint);
+        let derived = derive_runtime_recovery(&snapshot, 3).unwrap();
+        assert_eq!(select_runtime_recovery(derived), action);
         let facts = plan_recovery_action_facts(&snapshot, action, "2026-08-29T00:00:10Z").unwrap();
         assert_eq!(facts.last().unwrap().kind.as_str(), terminal);
         if checkpoint == "model_started" || checkpoint == "effect_started" {

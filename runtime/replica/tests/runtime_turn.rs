@@ -5,12 +5,12 @@ use garive_ledger::{
     CommitDisposition, FactDraft, FactId, FactKind, SessionId,
 };
 use garive_runtime::{
-    commit_planned_turn, plan_cancel_turn, plan_continue_turn, plan_recovery_restart,
-    plan_start_turn, reconstruct_suspended_turn, select_runtime_recovery, CancelReason,
-    CancelTurnCommand, ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits,
-    ExecutionRecoveryPosition, ModelRecoveryPosition, RecoveryRestartCommand, RuntimeCommandError,
-    RuntimeCommandId, RuntimeRecoveryAction, RuntimeRecoverySnapshot, SqliteLedger,
-    StartTurnCommand,
+    commit_planned_turn, derive_runtime_recovery, plan_cancel_turn, plan_continue_turn,
+    plan_recovery_restart, plan_start_turn, reconstruct_suspended_turn, select_runtime_recovery,
+    CancelReason, CancelTurnCommand, ContinueTurnCommand, EffectRecoveryPosition,
+    EffectiveRuntimeLimits, ExecutionRecoveryPosition, ModelRecoveryPosition,
+    RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
+    RuntimeRecoverySnapshot, SqliteLedger, StartTurnCommand,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -190,6 +190,16 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     let started = plan_start_turn(&start, 1).unwrap();
     let prior_execution = started.execution_id.clone().unwrap();
     ledger.commit(session.clone(), 1, started.facts).unwrap();
+    assert_eq!(
+        ledger.list_recoverable_turns(&session).unwrap(),
+        vec![started.turn_id.clone()]
+    );
+    let recovery =
+        derive_runtime_recovery(&ledger.load_turn(&started.turn_id).unwrap(), 3).unwrap();
+    assert_eq!(
+        select_runtime_recovery(recovery),
+        RuntimeRecoveryAction::AbandonAndRestart
+    );
     ledger
         .commit(
             session.clone(),

@@ -66,6 +66,15 @@ pub(crate) struct SessionProjection {
 }
 
 impl SessionProjection {
+    pub(crate) fn recoverable_turns(&self) -> Vec<TurnId> {
+        self.turns
+            .iter()
+            .filter_map(|(turn, state)| {
+                matches!(state, TurnState::Open | TurnState::Suspended).then_some(turn.clone())
+            })
+            .collect()
+    }
+
     pub(crate) fn apply(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
         fact.validate()?;
         let kind = fact.kind.as_str();

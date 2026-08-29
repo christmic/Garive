@@ -175,10 +175,17 @@ the same ID with another digest returns `IdempotencyCollision`.
 - `read_facts(session_id, after_position, through_position, kinds)` returns
   strictly ordered immutable facts;
 - `load_turn(turn_id)` returns the projection plus its fact/version watermark;
+- `list_recoverable_turns(session_id)` returns the IDs whose projection is Open
+  or Suspended, ordered by Turn ID; callers then freeze each Turn with
+  `load_turn` before selecting a recovery action;
 - `find_model_request(request_id)` and `find_tool_invocation(invocation_id)`
   return lifecycle facts for recovery;
 - `list_uncertain_invocations(session_id)` returns only Started invocations
   lacking an admitted terminal/receipt.
+
+The enumeration is only a discovery hint. Recovery decisions never use its
+possibly stale projection row: they are derived again from the verified fixed
+prefix returned by `load_turn`.
 
 Pagination uses durable position, never offset or wall time. A read captures a
 fixed `through_position` so one Kernel Execution sees a stable prefix.
