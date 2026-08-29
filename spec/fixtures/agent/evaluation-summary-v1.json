@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "contract": "evaluation-summary",
+  "cases": [
+    {
+      "name": "mixed-agent-and-infrastructure-outcomes",
+      "results": [
+        {"case_id": "case-pass", "outcome": "passed", "duration_ms": 10, "input_tokens": 3, "output_tokens": 2},
+        {"case_id": "case-fail", "outcome": "failed", "duration_ms": 20, "input_tokens": null, "output_tokens": null},
+        {"case_id": "case-infra", "outcome": "infrastructure_failure", "duration_ms": 5, "input_tokens": null, "output_tokens": null},
+        {"case_id": "case-skipped", "outcome": "not_attempted", "duration_ms": 0, "input_tokens": null, "output_tokens": null}
+      ],
+      "expected": {"attempted": 2, "passed": 1, "failed": 1, "infrastructure_failed": 1, "not_attempted": 1, "score_numerator": 1, "score_denominator": 2}
+    },
+    {
+      "name": "no-agent-attempt-has-no-score",
+      "results": [
+        {"case_id": "case-infra", "outcome": "infrastructure_failure", "duration_ms": 5, "input_tokens": null, "output_tokens": null}
+      ],
+      "expected": {"attempted": 0, "passed": 0, "failed": 0, "infrastructure_failed": 1, "not_attempted": 0, "score_numerator": null, "score_denominator": null}
+    }
+  ]
+}

@@ -62,7 +62,7 @@ planned without reopening a narrower completed row.
 | A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | implemented | verified | done | Keep strict document parsing, injected secret/profile registries, OS credential resolution and configured startup gates green. |
 | A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | partial | active | Keep the KMP JVM/real-H1, XCFramework and Swift gates green; run the Android APK gate when SDK 36 is installed. |
 | G0 | Go Gateway | accepted | missing | missing | missing | missing | gated | Admit only after a live Host requires a separately scaled edge. |
-| B0 | SWE benchmark harness | accepted | missing | missing | skeleton | missing | gated | Admit after one real end-to-end Agent workflow exists. |
+| B0 | SWE benchmark harness | accepted | accepted | documented | skeleton | missing | active | Implement the four-port driver, official loader/prediction/evaluator descriptors and deterministic tracking gates. |
 
 ## Capability backlog
 
@@ -74,7 +74,7 @@ planned without reopening a narrower completed row.
 | Scheduler | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin recurrence/failure properties, exact L0 facts, SQLite lease races, authority/update conflicts, real C6 dispatch, restart and process-kill matrices green. |
 | Multi-Agent | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin canonical intent/budget/result properties, exact L0 lifecycle projection, durable grant-before-child ordering, cancellation/isolation, SQLite restart and six-boundary process-kill matrices green. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
-| Evaluation | draft | missing | missing | skeleton | missing | gated | Runnable Agent and pinned benchmark evidence. |
+| Evaluation | accepted | accepted | documented | skeleton | missing | active | Implement pure E0 evidence reduction before B0 orchestration. |
 | Observability | accepted | accepted | documented | implemented | verified | done | Keep the shared Rust/Kotlin catalogue, canonical digest, forbidden-label properties, explicit Runtime limits, commit-position, sampling, priority, backpressure, redaction-canary and bounded-shutdown gates green. |
 
 ## Update checklist
