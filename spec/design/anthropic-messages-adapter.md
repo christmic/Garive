@@ -1,147 +1,209 @@
-# P2 — Anthropic Messages adapter
+# P2 — Messages-compatible protocol adapter
 
-## Status
+> Defines the provider-independent Anthropic Messages wire profile implemented
+> by Rust and Kotlin. It covers typed JSON, request construction, incremental
+> SSE decoding, extension preservation, and conformance evidence.
 
-Implemented first protocol slice for Rust `adapters/llm-anthropic` and Kotlin
-`experiments/engine-kt/provider-anthropic`. The supported subset below is exhaustive.
+## Audience
 
-## Evidence coordinates
+Engineers implementing `adapters/anthropic-messages` or the experimental
+Kotlin `adapter-anthropic-messages` module. Provider and Runtime authors consume
+this protocol API without adding deployment behavior to it.
 
-Reviewed 2026-08-29:
+## Why
 
-- official Messages reference: `https://docs.anthropic.com/en/api/messages`;
-- official streaming guide:
-  `https://docs.anthropic.com/en/api/messages-streaming`;
-- official `anthropic-sdk-python` commit
-  `009b035305e0724ce108ebd796935f91711fc6e1`
-  (`v0.121.0-2-g009b035`);
-- inspected create params, message/content-block/usage types, every admitted raw
-  stream event/delta, client/error implementation and shared error types.
+The previous implementation coupled a small Messages subset to Garive outcome
+types and executed retry policy in the codec module. It also buffered an entire
+SSE body before observation. A reusable protocol adapter must instead expose
+the complete portable wire profile independently of current Agent semantics.
 
-Official wire types define protocol truth. Sylvander is only an implementation
-reference.
+## Evidence
 
-## Boundary and composition
+Reviewed local official source on 2026-08-29:
 
-- endpoint: `POST /v1/messages`;
-- JSON request and ordinary response; SSE when `stream=true`;
-- required version header: `anthropic-version: 2023-06-01`;
-- token counting, batches, legacy completions and cloud-provider variants are
-  outside this slice.
+| Source | Coordinate | Inspected paths |
+|---|---|---|
+| `anthropics/anthropic-sdk-python` | `009b035305e0724ce108ebd796935f91711fc6e1` (`v0.121.0-2-g009b035`) | `src/anthropic/types/message_create_params.py`, `message.py`, content block/delta types, raw stream event types, usage and shared errors |
 
-The adapter creates a credential-free request descriptor. Runtime supplies base
-URL, `x-api-key` or configured bearer credential, beta policy, timeout and
-actual I/O. Secrets and transport configuration never enter `ModelRequest`,
-fixtures or public errors.
+The generated SDK owns wire field names, requiredness, discriminators, and
+event shapes. Garive owns only the portable-profile boundary below.
 
-The composed `AnthropicModelPort` accepts a Runtime-selected maximum-attempt
-count. Transport classifies failures as `BeforeDispatch` or `Ambiguous`; only a
-proven pre-dispatch failure may retry. Ambiguity immediately returns
-`Interrupted(Transport)`. Received retryable errors may honor `Retry-After`.
+## Module and dependencies
 
-The current transport returns a complete response body. The adapter validates
-SSE bytes, then emits authoritative completed/partial items and usage to the
-observer. Token-delta observation and mid-body cancellation require a later
-chunk-transport slice and are not claimed here.
+| Language | Module | Allowed dependencies |
+|---|---|---|
+| Rust | `adapters/anthropic-messages` (`garive-adapter-anthropic-messages`) | serialization, URI/header validation; no `garive-*` crate |
+| Kotlin | `experiments/engine-kt/adapter-anthropic-messages` | Kotlin JSON/serialization; no `:llm`, `:core`, or Runtime module |
 
-## Supported request subset
+Neither module implements `ModelPort` or classifies provider availability.
 
-The adapter renders exactly:
+## Public API
 
-- required `model`, positive `max_tokens`, ordered messages and `stream`;
-- user/assistant text messages;
-- leading Core System/Developer text as ordered top-level `system` blocks;
-- client `tool_result` from a non-empty call correlation and valid JSON result;
-  the JSON bytes are carried as official string content, not an invalid object;
-- non-strict client tools with name, description and parsed `input_schema`;
-- either no metadata or exactly one bounded `user_id` entry.
+```text
+MessagesAdapter::new(MessagesAdapterConfig)
+MessagesAdapter::prepare(CreateMessageRequest) -> HttpRequest
+MessagesAdapter::decode_response(status, headers, body)
+  -> Ordinary(Message) | ProtocolError(ErrorEnvelope)
+MessagesAdapter::stream_decoder() -> MessagesStreamDecoder
+MessagesStreamDecoder::push(bytes) -> StreamEvent*
+MessagesStreamDecoder::finish() -> success | TruncatedStream
+```
 
-System/Developer content after conversation start, media, reasoning references,
-strict tools and non-plain output modes fail `UnsupportedCapability`. A tool
-result wire block is supported, but end-to-end paired tool transcripts remain a
-C4/C5 responsibility; this adapter does not invent a preceding assistant
-`tool_use` block.
+Kotlin exposes the same responsibilities with idiomatic sealed interfaces.
 
-## Response blocks and usage
+### Configuration
 
-The ordered `content` array maps:
+| Field | Requirement |
+|---|---|
+| `endpoint` | Required absolute `http` or `https` URI; no default host or path. |
+| `headers` | Ordered explicit headers supplied by Garive composition. |
+| `protocol_version` | Required non-empty value used for the configured version header; no embedded date. |
+| `version_header_name` | Explicit validated name so compatible deployments can select their dialect header. |
+| `sensitive` | Per-header redaction marker; values do not enter debug or errors. |
+| media types | Protocol constants only: JSON request and JSON/SSE response. |
 
-- `text` to `ModelItem.Text`;
-- `thinking` to visible reasoning plus an opaque signature reference when
-  supplied;
-- `redacted_thinking` to an opaque reasoning reference;
-- `tool_use` to `ToolIntent` with ID, name and complete input JSON.
+Header CR/LF, invalid names, duplicate singleton headers, and conflicting media
+headers are rejected. Authentication headers and beta headers are opaque
+constructor values. The adapter performs no environment or credential-store
+lookup.
 
-Unknown, citation and provider-server-tool blocks fail
-`UnsupportedCapability`. Signatures remain opaque and are never parsed or
-presented as ordinary model text. Runtime transport may retain separately
-sanitized protocol telemetry; the adapter does not claim unknown-block storage.
+## Create request profile
 
-Normalized input usage is the checked sum of `input_tokens`,
-`cache_creation_input_tokens` and `cache_read_input_tokens`; output and cache
-breakdowns remain separately available. Missing cache fields mean zero for the
-breakdown. Invalid integers, decreasing cumulative output usage or overflow
-fail the adapter invariant.
+The typed request supports these official portable fields:
 
-## SSE lifecycle
+| Area | Fields and variants |
+|---|---|
+| Identity | required non-empty `model` and non-negative `max_tokens` |
+| Messages | ordered `user` and `assistant` turns; string shorthand or block arrays |
+| System | string shorthand or ordered text blocks |
+| Content | `text`, `image`, `document`, `tool_use`, `tool_result`, `thinking`, and `redacted_thinking` where valid for input |
+| Sources | official base64, URL, plain-text, and content-block source shapes for portable image/document input |
+| Generation | `stop_sequences`, `temperature`, `top_p`, `top_k` |
+| Tools | client tool name, description, input schema, and optional strictness/cache control present in the official shape |
+| Tool choice | `auto`, `any`, `tool`, or `none`, including optional parallel-tool suppression |
+| Output | JSON Schema output configuration admitted by the standard create shape |
+| Thinking | disabled, enabled with budget, or adaptive configuration when present in the pinned SDK |
+| Metadata | optional `user_id` protocol metadata |
+| Streaming | explicit `stream` |
+| Extensions | explicit non-colliding top-level fields admitted by a Provider profile |
 
-`ping` is permitted as liveness and `error` is permitted as a terminal. Every
-content/message event otherwise requires exactly one preceding `message_start`:
+Content-block cache-control values are wire data, not Runtime cache policy.
+The adapter validates fixed literals, required identifiers, source unions,
+finite numeric values, JSON Schema/input objects, block-role legality, and
+extension collisions.
+
+Container reuse, inference geography, service tiers, hosted/server tools,
+batches, token-count endpoints, legacy completions, beta resources, and cloud
+provider variants are excluded from the portable profile. A Provider may carry
+an admitted field through extensions without changing the core adapter.
+
+## Ordinary message profile
+
+`Message` retains:
+
+- `id`, `type`, `role`, `model`;
+- ordered output content blocks;
+- `stop_reason`, `stop_sequence`, and optional stop details;
+- full official usage, including cache and server-tool breakdowns as data;
+- unknown non-colliding envelope fields as extensions.
+
+Typed portable output blocks are:
+
+| Discriminator | Required data |
+|---|---|
+| `text` | text plus lossless citation objects |
+| `thinking` | thinking text and signature |
+| `redacted_thinking` | opaque data |
+| `tool_use` | id, name, JSON input |
+| extension | discriminator plus original JSON object |
+
+Hosted server-tool results and future blocks decode as `Extension`. They remain
+lossless but acquire no client-tool meaning.
+
+Usage integer fields are non-negative and checked for overflow. The adapter
+does not add cache tokens into another field or invent a billing total; Provider
+normalization owns any derived neutral usage.
+
+## Error envelope
+
+The official error response is decoded as an outer error object with required
+message and type plus extension fields and optional request identifier. Error
+type strings are retained even when newer than the pinned SDK.
+
+HTTP status, headers, and error values are returned as protocol facts. Provider
+code decides authentication, overload, rate-limit, context-limit, retry, and
+sanitization policy.
+
+## Stream events
+
+The portable typed event catalogue is:
 
 ```text
 message_start
-  -> (content_block_start -> content_block_delta* -> content_block_stop)*
-  -> message_delta
-  -> message_stop
+content_block_start
+content_block_delta
+  text_delta
+  input_json_delta
+  thinking_delta
+  signature_delta
+  citations_delta
+content_block_stop
+message_delta
+message_stop
+ping
+error
 ```
 
-Block indexes are non-negative and unique. Blocks stop once; delta kind must
-match text, thinking or tool-input state. Tool input must parse as one JSON value
-at block stop. Output usage cannot decrease. `message_stop` requires a stop
-reason and every block closed; it is the only successful stream terminal.
+Unknown event or delta discriminators become lossless extension values.
 
-An `error` before content maps only verified authentication, rate-limit or
-availability types. Once content exists, it returns
-`Interrupted(Transport)` with assembled partial items. EOF returns the same
-interruption (with unknown or last reported usage); HTTP 2xx and
-`message_delta` alone never complete.
+### Incremental SSE
 
-## Terminal and HTTP mapping
+The decoder:
 
-| Verified fact | Garive fact |
-|---|---|
-| `end_turn` | `Completed(EndTurn)` |
-| `tool_use` | `Completed(ToolUse)` |
-| `stop_sequence` | `Completed(StopSequence)` |
-| `pause_turn` | `Completed(PauseTurn)` |
-| `refusal` | `Completed(Refusal)` |
-| `max_tokens` / `model_context_window_exceeded` after output | `Interrupted(OutputLimit)` |
-| observer/Runtime cancellation | `Interrupted(Cancelled)` |
-| EOF or ambiguous transport | `Interrupted(Transport)` |
-| verified long-prompt/context-window invalid request | `Rejected(ContextOverflow)` |
-| HTTP 401/403 or authentication/permission type | `Rejected(Authentication)` |
-| exhausted rate-limit response | `Unavailable(RateLimited)` |
-| exhausted 500/503/504/529 or API/overload type | `Unavailable(ModelUnavailable)` |
+- accepts arbitrary byte chunks, split UTF-8, LF or CRLF;
+- supports comments and repeated `data` lines;
+- requires JSON `type` to agree with a present SSE `event` value;
+- permits liveness `ping` outside the message lifecycle;
+- requires one `message_start` before content or message deltas;
+- enforces unique non-negative block indexes, matching delta/block kinds, and
+  one stop per block;
+- validates partial JSON assembly at `content_block_stop` without rewriting
+  the original delta strings;
+- allows one `message_delta` terminal update and exactly one `message_stop`;
+- treats a protocol `error` as a typed terminal event, not a retry decision;
+- emits each event as soon as its complete SSE frame arrives;
+- returns `TruncatedStream` for partial frames, open blocks, or a missing
+  message terminal at EOF.
 
-Status 413 alone is not enough evidence for context overflow; the current slice
-requires a verified invalid-request type plus bounded long-prompt/context-window
-message evidence. Unrecognized HTTP/error combinations fail
-`UnsupportedCapability`. Public evidence contains only a bounded error type.
+Usage snapshots are retained as reported. Monotonic or additive interpretation
+belongs to a Provider mapping because the wire fields have event-specific
+semantics.
 
-## Fixtures and acceptance
+## Acceptance
 
-`spec/fixtures/providers/anthropic/messages/` contains reviewed metadata,
-ordinary/request/tool-result, complete/truncated/thinking streams, stream error
-and HTTP errors. Native tests in both languages synthesize malformed root,
-block lifecycle, indexes, deltas, terminal and retry/ambiguity cases.
+1. Neither language imports Garive model, Core, Runtime, or Provider types.
+2. Neither adapter reads environment variables, user files, or global clients.
+3. Every portable request block, response block, error, event, and delta has
+   positive and negative native tests in Rust and Kotlin.
+4. Shared official-shape fixtures produce equivalent protocol values.
+5. Hosted/future extension fixtures round-trip without loss or semantic
+   promotion.
+6. SSE tests cover every byte split of representative UTF-8, multi-line data,
+   block assembly, ping, error, truncation, and terminal sequences.
+7. Rust formatting, Clippy, tests, and warning-denied docs pass; Kotlin strict
+   explicit API and module tests pass.
 
-Acceptance requires identical Rust/Kotlin normalization of shared bytes,
-official request/header shape, strict lifecycle and terminal checks,
-ambiguity-safe retry, observer cancellation, native tests, and no live request
-without an explicitly composed Runtime transport and credentials.
+## See also
+
+- [`../../docs/architecture/core/provider-adapter.md`](../../docs/architecture/core/provider-adapter.md)
+  — ownership and composition boundary.
+- [`model-request-stream.md`](model-request-stream.md) — neutral Garive model
+  contract consumed later by Providers.
+- [`../fixtures/providers/anthropic/messages/`](../fixtures/providers/anthropic/messages/)
+  — pinned wire evidence.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: implemented protocol slice
+- Status: accepted
