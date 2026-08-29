@@ -24,7 +24,7 @@ class RuntimeFactPayloadsTest {
     @Test
     fun `every C6 payload fixture is applied as v1`() {
         val cases = document.getValue("valid_cases").jsonArray
-        assertEquals(42, cases.size)
+        assertEquals(46, cases.size)
         cases.forEach { case ->
             assertEquals(
                 LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1),
@@ -72,7 +72,7 @@ class RuntimeFactPayloadsTest {
                 assertInvalid(fact(case).withPayload(payload), case.text("kind"))
             }
         }
-        assertEquals(32, count)
+        assertEquals(36, count)
     }
 
     @Test
