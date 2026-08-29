@@ -16,14 +16,14 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     val knowledgeFamily = kind.startsWith("knowledge.")
     val schedulerFamily = kind.startsWith("schedule.")
     val delegationFamily = kind.startsWith("delegation.")
-    val memoryTombstone = kind == "memory.tombstoned"
+    val memorySessionScoped = kind in setOf("memory.tombstoned", "memory.observation_recorded", "memory.lifecycle_transitioned")
     val rejection = kind == "tool.preparation_rejected"
     if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !delegationFamily && !rejection) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     if (fact.schemaVersion != 1u) return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
-    if ((fact.turnId != null) != !(memoryTombstone || schedulerFamily) ||
-        (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || skillFamily || knowledgeFamily || delegationFamily || rejection || memoryFamily && !memoryTombstone) ||
+    if ((fact.turnId != null) != !(memorySessionScoped || schedulerFamily) ||
+        (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || skillFamily || knowledgeFamily || delegationFamily || rejection || memoryFamily && !memorySessionScoped) ||
         (fact.modelRequestId != null) != (modelFamily || rejection) ||
         (fact.toolInvocationId != null) != effectFamily
     ) {

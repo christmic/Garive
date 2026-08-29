@@ -175,7 +175,7 @@ External memory services require idempotent receipts bound into ledger facts.
 Projection loss rebuilds from admitted prefixes; mismatch fails closed.
 
 M1 reserves versioned fact families for candidate/maintenance decisions,
-lifecycle transitions, menus, obligations/observations, distillation checkpoints,
+lifecycle transitions, recall results, obligations/observations, distillation checkpoints,
 promotion request/receipt and erasure request/receipt. Exact schemas land with
 each behavior slice; older projections treat unknown facts as opaque.
 

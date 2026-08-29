@@ -35,7 +35,10 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let knowledge_family = kind.starts_with("knowledge.");
     let scheduler_family = kind.starts_with("schedule.");
     let delegation_family = kind.starts_with("delegation.");
-    let memory_tombstone = kind == "memory.tombstoned";
+    let memory_session_scoped = matches!(
+        kind,
+        "memory.tombstoned" | "memory.observation_recorded" | "memory.lifecycle_transitioned"
+    );
     let rejection = kind == "tool.preparation_rejected";
     if !kind.starts_with("turn.")
         && !execution_family
@@ -53,14 +56,14 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     if fact.schema_version != 1 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
-    if fact.turn_id.is_some() != !(memory_tombstone || scheduler_family)
+    if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family)
         || fact.execution_id.is_some()
             != (execution_family
                 || model_family
                 || effect_family
                 || skill_family
                 || rejection
-                || memory_family && !memory_tombstone
+                || memory_family && !memory_session_scoped
                 || knowledge_family
                 || delegation_family)
         || fact.model_request_id.is_some() != (model_family || rejection)

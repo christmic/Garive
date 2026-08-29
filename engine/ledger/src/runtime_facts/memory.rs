@@ -15,6 +15,9 @@ const KINDS: &[&str] = &[
     "summary",
 ];
 const SENSITIVITIES: &[&str] = &["ordinary", "restricted"];
+const MEMORY_TYPES: &[&str] = &["semantic", "episodic", "lesson", "procedural"];
+const AUTHORITIES: &[&str] = &["user_declared", "agent_learned", "organisation_published"];
+const STATES: &[&str] = &["candidate", "active", "cold", "archived", "promoted"];
 
 pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), LedgerError> {
     match kind {
@@ -24,8 +27,296 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "memory.superseded" => superseded(value),
         "memory.tombstoned" => tombstoned(value),
         "memory.retrieval_recorded" => retrieval(value),
+        "memory.recall_recorded" => recall(value),
+        "memory.obligation_opened" => obligation(value),
+        "memory.observation_recorded" => observation(value),
+        "memory.lifecycle_transitioned" => lifecycle(value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn recall(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "selection_id",
+            "request_digest",
+            "namespace_id",
+            "product",
+            "selection_policy_revision",
+            "through_position",
+            "max_items",
+            "max_total_bytes",
+            "items",
+            "truncated",
+        ],
+        &["exploration"],
+    )?;
+    for key in ["selection_id", "namespace_id", "selection_policy_revision"] {
+        non_empty(value, key)?;
+    }
+    digest(value, "request_digest")?;
+    let product = enumeration(value, "product", &["menu", "detail"])?;
+    unsigned(value, "through_position", false)?;
+    unsigned(value, "max_items", true)?;
+    unsigned(value, "max_total_bytes", true)?;
+    let exploration = value.get("exploration").map(object).transpose()?;
+    if let Some(exploration) = exploration {
+        fields(exploration, &["algorithm_revision", "seed", "slots"], EMPTY)?;
+        if enumeration(exploration, "algorithm_revision", &["hash-explore-v1"])?
+            != "hash-explore-v1"
+        {
+            return Err(LedgerError::InvalidFact);
+        }
+        unsigned(exploration, "seed", false)?;
+        unsigned(exploration, "slots", true)?;
+    }
+    let items = value
+        .get("items")
+        .and_then(Value::as_array)
+        .ok_or(LedgerError::InvalidFact)?;
+    if items.len() > value["max_items"].as_u64().unwrap() as usize {
+        return Err(LedgerError::InvalidFact);
+    }
+    let mut bytes = 0_u64;
+    for item in items {
+        let item = object(item)?;
+        fields(
+            item,
+            &[
+                "record_id",
+                "revision_id",
+                "memory_type",
+                "role",
+                "authority",
+                "state",
+                "safe_label",
+                "content_digest",
+                "content_byte_length",
+                "evidence_count",
+                "relevance_basis_points",
+                "recency_basis_points",
+                "importance_basis_points",
+                "selection_kind",
+            ],
+            &["draw_hex"],
+        )?;
+        for key in ["record_id", "revision_id", "safe_label"] {
+            non_empty(item, key)?;
+        }
+        if item["safe_label"]
+            .as_str()
+            .map_or(true, |text| text.len() > 256)
+        {
+            return Err(LedgerError::InvalidFact);
+        }
+        enumeration(item, "memory_type", MEMORY_TYPES)?;
+        enumeration(item, "role", KINDS)?;
+        enumeration(item, "authority", AUTHORITIES)?;
+        let state = enumeration(item, "state", STATES)?;
+        if state == "promoted" || product == "menu" && state == "archived" {
+            return Err(LedgerError::InvalidFact);
+        }
+        digest(item, "content_digest")?;
+        unsigned(item, "content_byte_length", true)?;
+        unsigned(item, "evidence_count", true)?;
+        for key in [
+            "relevance_basis_points",
+            "recency_basis_points",
+            "importance_basis_points",
+        ] {
+            basis_points(item, key)?;
+        }
+        let selection = enumeration(item, "selection_kind", &["ranked", "explored"])?;
+        if (selection == "explored") != item.contains_key("draw_hex")
+            || selection == "explored" && exploration.is_none()
+        {
+            return Err(LedgerError::InvalidFact);
+        }
+        if let Some(draw) = item.get("draw_hex").and_then(Value::as_str) {
+            if draw.len() != 16
+                || !draw
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(LedgerError::InvalidFact);
+            }
+        }
+        bytes = bytes
+            .checked_add(item["content_byte_length"].as_u64().unwrap())
+            .ok_or(LedgerError::InvalidFact)?;
+    }
+    if bytes > value["max_total_bytes"].as_u64().unwrap() {
+        return Err(LedgerError::InvalidFact);
+    }
+    boolean(value, "truncated")?;
+    Ok(())
+}
+
+fn obligation(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "obligation_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "application_fact",
+            "expected_outcome_digest",
+            "application_scope_digest",
+            "attribution_policy_revision",
+            "expires_at_position",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "obligation_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "attribution_policy_revision",
+    ] {
+        non_empty(value, key)?;
+    }
+    fact_reference(object(
+        value
+            .get("application_fact")
+            .ok_or(LedgerError::InvalidFact)?,
+    )?)?;
+    digest(value, "expected_outcome_digest")?;
+    digest(value, "application_scope_digest")?;
+    unsigned(value, "expires_at_position", true)?;
+    Ok(())
+}
+
+fn observation(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "observation_id",
+            "obligation_id",
+            "namespace_id",
+            "position",
+            "verifier_revision",
+            "evidence",
+            "verdict",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "observation_id",
+        "obligation_id",
+        "namespace_id",
+        "verifier_revision",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "position", true)?;
+    let evidence = value["evidence"]
+        .as_array()
+        .filter(|items| !items.is_empty())
+        .ok_or(LedgerError::InvalidFact)?;
+    for entry in evidence {
+        let entry = object(entry)?;
+        fields(entry, &["kind", "fact"], EMPTY)?;
+        enumeration(
+            entry,
+            "kind",
+            &[
+                "tool_result",
+                "test_result",
+                "effect_receipt",
+                "user_correction",
+                "deterministic_verifier",
+            ],
+        )?;
+        fact_reference(object(entry.get("fact").ok_or(LedgerError::InvalidFact)?)?)?;
+    }
+    let verdict = object(value.get("verdict").ok_or(LedgerError::InvalidFact)?)?;
+    match verdict.get("kind").and_then(Value::as_str) {
+        Some("verified") => fields(verdict, &["kind"], EMPTY),
+        Some("neutral") => {
+            fields(verdict, &["kind", "safe_reason"], EMPTY)?;
+            non_empty(verdict, "safe_reason")
+        }
+        Some("falsified") => {
+            fields(verdict, &["kind", "in_scope"], &["observed_scope_digest"])?;
+            let in_scope = boolean(verdict, "in_scope")?;
+            if in_scope == verdict.contains_key("observed_scope_digest") {
+                return Err(LedgerError::InvalidFact);
+            }
+            if !in_scope {
+                digest(verdict, "observed_scope_digest")?;
+            }
+            Ok(())
+        }
+        _ => Err(LedgerError::InvalidFact),
+    }
+}
+
+fn lifecycle(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "transition_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "from_state",
+            "to_state",
+            "verified",
+            "falsified",
+            "neutral",
+            "last_observed_position",
+            "cause_kind",
+            "cause_id",
+        ],
+        &["promoted_knowledge_receipt_digest"],
+    )?;
+    for key in [
+        "transition_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "cause_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    enumeration(value, "from_state", STATES)?;
+    let state = enumeration(value, "to_state", STATES)?;
+    for key in ["verified", "falsified", "neutral"] {
+        unsigned(value, key, false)?;
+    }
+    unsigned(value, "last_observed_position", true)?;
+    enumeration(
+        value,
+        "cause_kind",
+        &[
+            "observation",
+            "maintenance",
+            "promotion",
+            "toolchain_changed",
+        ],
+    )?;
+    if (state == "promoted") != value.contains_key("promoted_knowledge_receipt_digest") {
+        return Err(LedgerError::InvalidFact);
+    }
+    if state == "promoted" {
+        digest(value, "promoted_knowledge_receipt_digest")?;
+    }
+    Ok(())
+}
+
+fn fact_reference(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &["session_id", "position", "fact_id", "payload_digest"],
+        EMPTY,
+    )?;
+    non_empty(value, "session_id")?;
+    unsigned(value, "position", true)?;
+    non_empty(value, "fact_id")?;
+    digest(value, "payload_digest")
 }
 
 fn proposal(value: &Map<String, Value>) -> Result<(), LedgerError> {

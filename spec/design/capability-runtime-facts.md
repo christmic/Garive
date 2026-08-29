@@ -139,6 +139,75 @@ memory.retrieval_recorded.v1 {
   ]
   truncated: bool
 }
+
+memory.recall_recorded.v1 {
+  selection_id: non-empty string
+  request_digest: Digest
+  namespace_id: MemoryNamespaceId
+  product: "menu" | "detail"
+  selection_policy_revision: non-empty string
+  through_position: u64
+  max_items: non-zero u64
+  max_total_bytes: non-zero u64
+  exploration?: {
+    algorithm_revision: "hash-explore-v1"
+    seed: u64
+    slots: non-zero u64
+  }
+  items: [{
+    record_id, revision_id
+    memory_type: "semantic" | "episodic" | "lesson" | "procedural"
+    role: same enum as memory.proposed.kind
+    authority: "user_declared" | "agent_learned" |
+               "organisation_published"
+    state: "candidate" | "active" | "cold" | "archived"
+    safe_label: non-empty string
+    content_digest: Digest
+    content_byte_length: non-zero u64
+    evidence_count: non-zero u64
+    relevance_basis_points, recency_basis_points,
+      importance_basis_points: 0..10000
+    selection_kind: "ranked" | "explored"
+    draw_hex?: 16 lowercase hex characters
+  }]
+  truncated: bool
+}
+
+memory.obligation_opened.v1 {
+  obligation_id, namespace_id, record_id, revision_id
+  application_fact: FactReference
+  expected_outcome_digest: Digest
+  application_scope_digest: Digest
+  attribution_policy_revision: non-empty string
+  expires_at_position: non-zero u64
+}
+
+memory.observation_recorded.v1 {
+  observation_id, obligation_id, namespace_id
+  position: non-zero u64
+  verifier_revision: non-empty string
+  evidence: non-empty [{
+    kind: "tool_result" | "test_result" | "effect_receipt" |
+          "user_correction" | "deterministic_verifier"
+    fact: FactReference
+  }]
+  verdict: {kind: "verified"} |
+           {kind: "falsified", in_scope: bool,
+            observed_scope_digest?: Digest} |
+           {kind: "neutral", safe_reason: non-empty string}
+}
+
+memory.lifecycle_transitioned.v1 {
+  transition_id, namespace_id, record_id, revision_id
+  from_state, to_state: "candidate" | "active" | "cold" |
+                              "archived" | "promoted"
+  verified, falsified, neutral: u64
+  last_observed_position: non-zero u64
+  cause_kind: "observation" | "maintenance" | "promotion" |
+              "toolchain_changed"
+  cause_id: non-empty string
+  promoted_knowledge_receipt_digest?: Digest
+}
 ```
 
 `memory.proposed` and `memory.committed` commit atomically for a direct accept;
@@ -152,6 +221,19 @@ forbids it; every restricted match additionally requires the true/granted
 shape.
 Retrieval match order is semantic and every content/evidence/byte-length
 binding is verified before commit.
+Recall item order is semantic. An explored item requires `exploration` and
+`draw_hex`; a ranked item forbids `draw_hex`. Promoted state is never a recall
+item, and menu recall additionally forbids archived state. The exact item byte
+sum and count remain within the committed request bounds.
+
+`memory.obligation_opened` commits with the Turn/Execution that applied the
+memory. `memory.recall_recorded` commits before its items enter that
+Turn/Execution's model request. Observation and lifecycle facts are
+Session-scoped asynchronous facts with no Turn/Execution owner and commit in
+one atomic batch. Their namespace/record/revision/obligation bindings resolve
+against the authorized fixed prefix. An out-of-scope falsification requires
+`observed_scope_digest`; all other verdict shapes forbid it. A promoted
+lifecycle requires the Knowledge receipt digest and all other states forbid it.
 
 Proposal and retrieval facts are parent Turn/Execution scoped. Committed,
 rejected and superseded decisions retain that proposal ownership. A tombstone
