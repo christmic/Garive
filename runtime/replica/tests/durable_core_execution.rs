@@ -18,16 +18,17 @@ use garive_ledger::{
     AgentInstanceId as LedgerAgentId, CanonicalPayload, FactDraft, FactId, FactKind, SessionId,
 };
 use garive_llm::{
-    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputContent,
-    ModelInputItem, ModelItem, ModelObserver, ModelOutputSettings, ModelPort, ModelRequest,
-    ModelStopReason, ModelTargetId, ModelUsage, TextMode, TokenCount, UsageSource,
+    InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
+    ModelInputContent, ModelInputItem, ModelItem, ModelObserver, ModelOutputSettings, ModelPort,
+    ModelRequest, ModelStopReason, ModelTargetId, ModelUsage, TextMode, TokenCount, UsageSource,
 };
 use garive_runtime::{
-    execute_durable_agent, execute_durable_model_only, plan_start_turn, AuthorityDecision,
-    AuthorityFuture, AuthorityPort, AuthorityRequest, DurableExecutionConfig,
-    DurableExecutionError, EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch,
-    ExecutorFuture, ExecutorPort, ModelLifecycleContext, PreparedExecution, RuntimeCommandError,
-    RuntimeCommandId, SqliteLedger, StartTurnCommand, TerminalPublicationError, TerminalPublisher,
+    commit_planned_turn, execute_durable_agent, execute_durable_model_only, plan_cancel_turn,
+    plan_start_turn, AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest,
+    CancelReason, CancelTurnCommand, DurableExecutionConfig, DurableExecutionError,
+    EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch, ExecutorFuture, ExecutorPort,
+    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand, TerminalPublicationError, TerminalPublisher,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
@@ -110,6 +111,54 @@ impl ModelPort for Model {
                     ModelStopReason::ToolUse
                 } else {
                     ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
+struct CancelDuringModel {
+    path: PathBuf,
+    session: SessionId,
+    turn: garive_ledger::TurnId,
+}
+
+impl ModelPort for CancelDuringModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        cancellation: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let mut ledger = SqliteLedger::open(&self.path).unwrap();
+            let snapshot = ledger.load_turn(&self.turn).unwrap();
+            let cancel = plan_cancel_turn(&CancelTurnCommand {
+                command_id: RuntimeCommandId::new("cancel-during-model").unwrap(),
+                session_id: self.session.clone(),
+                turn_id: self.turn.clone(),
+                reason: CancelReason::User,
+                requested_through_position: snapshot.through_position,
+                recorded_at: "2026-08-29T00:00:02Z".into(),
+            })
+            .unwrap();
+            commit_planned_turn(
+                &mut ledger,
+                self.session.clone(),
+                snapshot.session_version,
+                &cancel,
+            )
+            .unwrap();
+            assert!(cancellation.is_cancelled());
+            Ok(InvokeOutcome::Interrupted {
+                kind: InterruptionKind::Cancelled,
+                partial_items: vec![],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(1),
+                    output_tokens: TokenCount::Known(0),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::ProviderReported,
                 },
             })
         })
@@ -202,6 +251,7 @@ struct Publisher {
     turn: garive_ledger::TurnId,
     fail: bool,
     calls: usize,
+    expected_terminal: [&'static str; 2],
 }
 impl TerminalPublisher for Publisher {
     fn publish_terminal(
@@ -216,10 +266,7 @@ impl TerminalPublisher for Publisher {
             .iter()
             .map(|fact| fact.kind.as_str())
             .collect();
-        assert_eq!(
-            &kinds[kinds.len() - 2..],
-            ["execution.completed", "turn.completed"]
-        );
+        assert_eq!(&kinds[kinds.len() - 2..], self.expected_terminal);
         assert_eq!(positions.len(), 2);
         self.calls += 1;
         if self.fail {
@@ -314,6 +361,7 @@ fn sqlite_dispatch_and_publication_cross_only_after_their_commits() {
             turn: plan.turn_id.clone(),
             fail: fail_publication,
             calls: 0,
+            expected_terminal: ["execution.completed", "turn.completed"],
         };
         let mut stale = request.clone();
         stale.context_request.through_position -= 1;
@@ -434,6 +482,7 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
         turn: plan.turn_id.clone(),
         fail: false,
         calls: 0,
+        expected_terminal: ["execution.completed", "turn.completed"],
     };
     let result = block_on(execute_durable_agent(
         &mut ledger,
@@ -486,6 +535,106 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
             "execution.completed",
             "turn.completed",
         ]
+    );
+}
+
+#[test]
+fn durable_cancel_request_reaches_the_frozen_core_signal() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("cancel.sqlite3");
+    let session = SessionId::try_from("cancel-session").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = StartTurnCommand {
+        command_id: RuntimeCommandId::new("cancel-start").unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: LedgerAgentId::try_from("agent").unwrap(),
+        definition_id: LedgerDefinitionId::try_from("definition").unwrap(),
+        definition_revision: LedgerRevision::try_from("revision").unwrap(),
+        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        trusted_input: "hello".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 2,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            deadline_budget_ms: None,
+        },
+        recorded_at: "2026-08-29T00:00:00Z".into(),
+    };
+    let plan = plan_start_turn(&start, 1).unwrap();
+    let execution = plan.execution_id.clone().unwrap();
+    ledger
+        .commit(session.clone(), 1, plan.facts.clone())
+        .unwrap();
+    let request = core_request(&session, &plan.turn_id, &execution);
+    let config = DurableExecutionConfig {
+        session_id: session.clone(),
+        expected_session_version: 2,
+        model: ModelLifecycleContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            deployment_id: "deployment".into(),
+            recovery_policy_revision: "policy".into(),
+            max_attempts: 1,
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        lease: ExecutionLeaseRequest {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution,
+            owner_id: "cancel-worker".into(),
+            lease_token: "cancel-lease".into(),
+            now_ms: 1,
+            duration_ms: 10_000,
+        },
+    };
+    let model = CancelDuringModel {
+        path: path.clone(),
+        session,
+        turn: plan.turn_id.clone(),
+    };
+    let mut context = Context { positions: vec![] };
+    let signals = Signals;
+    let mut events = Signals;
+    let mut publisher = Publisher {
+        path,
+        turn: plan.turn_id.clone(),
+        fail: false,
+        calls: 0,
+        expected_terminal: ["execution.stopped", "turn.stopped"],
+    };
+    let result = block_on(execute_durable_model_only(
+        &mut ledger,
+        &config,
+        &request,
+        &mut context,
+        &model,
+        &mut events,
+        &signals,
+        &signals,
+        &mut publisher,
+    ))
+    .unwrap();
+    assert!(matches!(
+        result.report.outcome,
+        AgentOutcome::Stopped {
+            reason: garive_core::StopReason::Cancelled
+        }
+    ));
+    let kinds = ledger
+        .load_turn(&plan.turn_id)
+        .unwrap()
+        .facts
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(kinds
+        .windows(2)
+        .any(|pair| pair == ["model.started", "turn.cancel_requested"]));
+    assert_eq!(
+        &kinds[kinds.len() - 2..],
+        ["execution.stopped", "turn.stopped"]
     );
 }
 

@@ -333,6 +333,10 @@ Cancellation is durably requested, delivered through the frozen cancellation
 port and checked at existing Core boundaries. If an external invocation is
 Started, cancellation still follows its receipt/uncertainty contract. Runtime
 cannot label an uncertain effect `Cancelled` merely because the caller left.
+The SQLite execution coordinator may absorb a concurrent Session prefix only
+when every newly observed fact is `turn.cancel_requested` for its exact Turn;
+it advances transaction version and fact position separately before its next
+leased append. Any other concurrent fact remains a fail-closed modification.
 
 ## Failure classes
 

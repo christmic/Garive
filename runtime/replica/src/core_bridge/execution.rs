@@ -4,13 +4,15 @@ use garive_core::{
     execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
     AgentToolCapabilities, AgentTurnRequest, ClockPort, ContextPort, EventSink, PortFailure,
 };
-use garive_ledger::{CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, SessionId};
+use garive_ledger::{
+    CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId, TurnId,
+};
 use garive_llm::{
     ModelCancellation, ModelFuture, ModelObserver, ModelPort, ModelPortFailure, ModelRequest,
 };
 use serde_json::json;
 
-use crate::{ExecutionLease, RuntimeCommandError, SqliteLedger};
+use crate::{ExecutionLease, RuntimeCommandError, SqliteLedger, SqliteLedgerError};
 
 use super::encoding::digest;
 use super::{
@@ -38,6 +40,7 @@ pub async fn execute_durable_model_only(
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
     validate_ledger_watermark(ledger, config, request)?;
+    let cancellation_requested = has_cancellation_request(ledger, &config.model.turn_id)?;
     let lease = ledger
         .acquire_execution_lease(&config.lease)
         .map_err(DurableExecutionError::Lease)?;
@@ -45,8 +48,10 @@ pub async fn execute_durable_model_only(
         ledger,
         lease,
         session_id: config.session_id.clone(),
+        turn_id: config.model.turn_id.clone(),
         version: config.expected_session_version,
         position: request.context_request.through_position,
+        cancellation_requested,
         failure: None,
     });
     let prepared_events = Mutex::new(BTreeMap::new());
@@ -62,12 +67,17 @@ pub async fn execute_durable_model_only(
         coordinator: &coordinator,
         lifecycle: &config.model,
     };
+    let durable_cancellation = DurableCancellation {
+        upstream: cancellation,
+        coordinator: &coordinator,
+        turn_id: &config.model.turn_id,
+    };
     let report = {
         let mut ports = AgentExecutionPorts {
             context,
             model: &durable_model,
             events: &mut gated_events,
-            cancellation,
+            cancellation: &durable_cancellation,
             clock,
         };
         execute_model_only(request, &mut ports).await
@@ -84,6 +94,10 @@ fn finish_durable_execution(
     let mut coordinator = coordinator
         .into_inner()
         .map_err(|_| DurableExecutionError::Coordination)?;
+    if let Some(failure) = coordinator.failure.take() {
+        return Err(failure);
+    }
+    coordinator.observe_durable_cancellation(&config.model.turn_id);
     if let Some(failure) = coordinator.failure.take() {
         return Err(failure);
     }
@@ -127,6 +141,7 @@ pub async fn execute_durable_agent(
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
     validate_ledger_watermark(ledger, config, request)?;
+    let cancellation_requested = has_cancellation_request(ledger, &config.model.turn_id)?;
     let lease = ledger
         .acquire_execution_lease(&config.lease)
         .map_err(DurableExecutionError::Lease)?;
@@ -134,8 +149,10 @@ pub async fn execute_durable_agent(
         ledger,
         lease,
         session_id: config.session_id.clone(),
+        turn_id: config.model.turn_id.clone(),
         version: config.expected_session_version,
         position: request.context_request.through_position,
+        cancellation_requested,
         failure: None,
     });
     let prepared_events = Mutex::new(BTreeMap::new());
@@ -150,6 +167,11 @@ pub async fn execute_durable_agent(
         prepared_events: &prepared_events,
         coordinator: &coordinator,
         lifecycle: &config.model,
+    };
+    let durable_cancellation = DurableCancellation {
+        upstream: cancellation,
+        coordinator: &coordinator,
+        turn_id: &config.model.turn_id,
     };
     let report = {
         let mut effects = SqliteGovernedEffectPort::coordinated(
@@ -170,7 +192,7 @@ pub async fn execute_durable_agent(
             context,
             model: &durable_model,
             events: &mut gated_events,
-            cancellation,
+            cancellation: &durable_cancellation,
             clock,
         };
         execute_agent(request, capabilities, &mut ports, &mut effects).await
@@ -182,8 +204,10 @@ pub(super) struct CommitCoordinator<'a> {
     ledger: &'a mut SqliteLedger,
     lease: ExecutionLease,
     session_id: SessionId,
+    turn_id: TurnId,
     version: u64,
     position: u64,
+    cancellation_requested: bool,
     failure: Option<DurableExecutionError>,
 }
 
@@ -192,10 +216,34 @@ impl CommitCoordinator<'_> {
         &mut self,
         facts: Vec<FactDraft>,
     ) -> Result<CommitResult, DurableExecutionError> {
-        let result = self
-            .ledger
-            .commit_leased(&self.lease, self.session_id.clone(), self.version, facts)
-            .map_err(DurableExecutionError::Ledger)?;
+        let turn_id = self.turn_id.clone();
+        self.observe_durable_cancellation(&turn_id);
+        if self.failure.is_some() {
+            return Err(DurableExecutionError::Command(
+                RuntimeCommandError::ConcurrentModification,
+            ));
+        }
+        let first = self.ledger.commit_leased(
+            &self.lease,
+            self.session_id.clone(),
+            self.version,
+            facts.clone(),
+        );
+        let result = match first {
+            Err(SqliteLedgerError::Domain(LedgerError::ConcurrentModification)) => {
+                self.observe_durable_cancellation(&turn_id);
+                if self.failure.is_some() {
+                    return Err(DurableExecutionError::Command(
+                        RuntimeCommandError::ConcurrentModification,
+                    ));
+                }
+                self.ledger
+                    .commit_leased(&self.lease, self.session_id.clone(), self.version, facts)
+                    .map_err(DurableExecutionError::Ledger)?
+            }
+            Err(error) => return Err(DurableExecutionError::Ledger(error)),
+            Ok(result) => result,
+        };
         self.version = result.session_version;
         self.position = result
             .positions
@@ -216,14 +264,65 @@ impl CommitCoordinator<'_> {
     }
 
     pub(super) fn record_failure(&mut self, failure: DurableExecutionError) {
-        self.failure = Some(failure);
+        if self.failure.is_none() {
+            self.failure = Some(failure);
+        }
+    }
+
+    fn observe_durable_cancellation(&mut self, turn_id: &garive_ledger::TurnId) -> bool {
+        if self.failure.is_some() {
+            return true;
+        }
+        let snapshot = match self.ledger.load_turn(turn_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.failure = Some(DurableExecutionError::Ledger(error));
+                return true;
+            }
+        };
+        if snapshot.session_version == self.version {
+            return self.cancellation_requested;
+        }
+        if snapshot.session_version < self.version || snapshot.through_position <= self.position {
+            self.failure = Some(DurableExecutionError::Command(
+                RuntimeCommandError::InvariantViolation,
+            ));
+            return true;
+        }
+        let appended = match self.ledger.read_facts(
+            &self.session_id,
+            self.position,
+            snapshot.through_position,
+            None,
+        ) {
+            Ok(facts) => facts,
+            Err(error) => {
+                self.failure = Some(DurableExecutionError::Ledger(error));
+                return true;
+            }
+        };
+        if appended.is_empty()
+            || appended.iter().any(|fact| {
+                fact.kind.as_str() != "turn.cancel_requested"
+                    || fact.turn_id.as_ref() != Some(turn_id)
+            })
+        {
+            self.failure = Some(DurableExecutionError::Command(
+                RuntimeCommandError::ConcurrentModification,
+            ));
+            return true;
+        }
+        self.version = snapshot.session_version;
+        self.position = snapshot.through_position;
+        self.cancellation_requested = true;
+        true
     }
 
     fn append_for_model(&mut self, fact: FactDraft) -> Result<(), ModelPortFailure> {
         match self.commit(vec![fact]) {
             Ok(_) => Ok(()),
             Err(error) => {
-                self.failure = Some(error);
+                self.record_failure(error);
                 Err(ModelPortFailure::RequiredPortFailure)
             }
         }
@@ -233,9 +332,27 @@ impl CommitCoordinator<'_> {
         match self.commit(vec![fact]) {
             Ok(_) => Ok(()),
             Err(error) => {
-                self.failure = Some(error);
+                self.record_failure(error);
                 Err(PortFailure::Event)
             }
+        }
+    }
+}
+
+struct DurableCancellation<'a, 'ledger> {
+    upstream: &'a dyn ModelCancellation,
+    coordinator: &'a Mutex<CommitCoordinator<'ledger>>,
+    turn_id: &'a garive_ledger::TurnId,
+}
+
+impl ModelCancellation for DurableCancellation<'_, '_> {
+    fn is_cancelled(&self) -> bool {
+        if self.upstream.is_cancelled() {
+            return true;
+        }
+        match self.coordinator.lock() {
+            Ok(mut coordinator) => coordinator.observe_durable_cancellation(self.turn_id),
+            Err(_) => true,
         }
     }
 }
@@ -403,4 +520,16 @@ fn validate_ledger_watermark(
     } else {
         Ok(())
     }
+}
+
+fn has_cancellation_request(
+    ledger: &SqliteLedger,
+    turn_id: &garive_ledger::TurnId,
+) -> Result<bool, DurableExecutionError> {
+    Ok(ledger
+        .load_turn(turn_id)
+        .map_err(DurableExecutionError::Ledger)?
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "turn.cancel_requested"))
 }
