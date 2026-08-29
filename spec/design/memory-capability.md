@@ -107,13 +107,16 @@ MemoryQuery {
   retriever_revision
   query: ContentBinding
   through_position
+  as_of_utc
   max_results: non-zero u32
   max_total_bytes: non-zero u64
   include_restricted: bool
+  restricted_grant_digest?
 }
 
 MemoryMatch {
   record_id, revision_id, kind, content, evidence
+  content_byte_length
   relevance_basis_points: 0..10000
   sensitivity
 }
@@ -121,18 +124,23 @@ MemoryMatch {
 MemoryResult = Completed { ordered_matches } | Unsupported | Failed { code }
 ```
 
-`query_digest` is lowercase SHA-256 over L0 canonical JSON containing contract
-`garive.memory-query`, version `1`, namespace, canonical allowed scopes,
-purpose, retriever revision, query ContentBinding, through-position, both
-bounds and restricted flag. `query_id` is excluded because the outer typed
-identity owns idempotency; changing any semantic field while reusing it is a
-conflict.
+`query_digest` is lowercase SHA-256 over RFC 8785 JSON shaped as
+`{"contract":"garive.memory-query","version":1,"query":{...}}`. The query
+object contains namespace, canonical allowed scopes, purpose, retriever
+revision, query ContentBinding, through-position, canonical UTC `as_of_utc`,
+both bounds, restricted flag and optional frozen restricted-grant digest.
+`query_id` is excluded because the outer typed identity owns idempotency;
+changing any semantic field while reusing it is a conflict.
 
 Runtime returns only active, unexpired, authorized revisions visible through
-the fixed query position. Restricted records require an explicit frozen grant;
-`include_restricted=true` is a request, not authority.
+the fixed query position and frozen `as_of_utc`. Restricted records require an
+explicit frozen grant; `include_restricted=true` requires
+`restricted_grant_digest`, while false forbids it. The digest is a binding to
+Runtime's authority decision, not authority by itself.
 
-Portable ordering is descending relevance, then descending
+`content_byte_length` is the Runtime-verified exact byte size behind the
+ContentBinding and is charged against `max_total_bytes`; inline content must
+match its UTF-8 length. Portable ordering is descending relevance, then descending
 `valid_from_position`, then lexical record/revision identity. Results are
 truncated before return to satisfy both limits. Equal input and fixed durable
 prefix under one retriever revision produce equal scores and ordering. The

@@ -121,13 +121,17 @@ memory.retrieval_recorded.v1 {
   namespace_id: MemoryNamespaceId
   retriever_revision: non-empty string
   through_position: u64
+  as_of_utc: timestamp
   max_results: non-zero u64
   max_total_bytes: non-zero u64
+  include_restricted: bool
+  restricted_grant_digest?: Digest
   matches: [
     {
       record_id: MemoryRecordId
       revision_id: MemoryRevisionId
       content: ContentBinding
+      content_byte_length: non-zero u64
       evidence: non-empty FactReference[]
       relevance_basis_points: 0..10000
       sensitivity: "ordinary" | "restricted"
@@ -142,8 +146,12 @@ memory.retrieval_recorded.v1 {
 an interaction may place a C5/C6 suspension between proposal and decision. A
 commit that
 supersedes an active revision atomically includes `memory.superseded`.
-Tombstone is valid only for the exact active revision. Retrieval match order is
-semantic and every content/evidence binding is verified before commit.
+Tombstone is valid only for the exact active revision.
+`include_restricted=true` requires `restricted_grant_digest`, while false
+forbids it; every restricted match additionally requires the true/granted
+shape.
+Retrieval match order is semantic and every content/evidence/byte-length
+binding is verified before commit.
 
 Proposal and retrieval facts are parent Turn/Execution scoped. Committed,
 rejected and superseded decisions retain that proposal ownership. A tombstone
