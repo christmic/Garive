@@ -1,6 +1,9 @@
 use garive_adapter_anthropic_messages::{
-    CreateMessageRequest, Header, Message, MessageContent, MessageRole, MessagesAdapter,
-    MessagesAdapterConfig, Metadata, SystemPrompt, TextBlock, TextBlockType, Tool,
+    CacheControl, CacheControlType, CacheTtl, CitationsConfig, ContentBlock, CreateMessageRequest,
+    DocumentSource, Effort, Header, ImageMediaType, ImageSource, JsonOutputFormat,
+    JsonOutputFormatType, Message, MessageContent, MessageRole, MessagesAdapter,
+    MessagesAdapterConfig, Metadata, OutputConfig, SystemPrompt, TextBlock, TextBlockType,
+    TextMediaType, ThinkingConfig, ThinkingDisplay, Tool, ToolChoice,
 };
 use serde_json::{json, Map, Value};
 
@@ -41,6 +44,7 @@ fn official_shape_fixture_is_encoded_without_vendor_defaults() {
         kind: TextBlockType::Text,
         text: "be concise".into(),
         cache_control: None,
+        citations: None,
     }]));
     request.metadata = Some(Metadata {
         user_id: Some("fixture".into()),
@@ -85,4 +89,92 @@ fn request_descriptor_contains_only_constructed_configuration() {
     assert!(prepared.headers().iter().any(|header| {
         header.name() == "x-protocol-version" && header.value() == "fixture-version"
     }));
+}
+
+#[test]
+fn portable_source_output_thinking_and_choice_unions_are_typed() {
+    let cache = CacheControl {
+        kind: CacheControlType::Ephemeral,
+        ttl: Some(CacheTtl::OneHour),
+    };
+    let blocks = vec![
+        ContentBlock::Image {
+            source: ImageSource::Base64 {
+                media_type: ImageMediaType::Png,
+                data: "aGVsbG8=".into(),
+            },
+            cache_control: Some(cache.clone()),
+        },
+        ContentBlock::Document {
+            source: DocumentSource::Text {
+                data: "document".into(),
+                media_type: TextMediaType::Plain,
+            },
+            cache_control: Some(cache),
+            citations: Some(CitationsConfig {
+                enabled: Some(true),
+            }),
+            title: Some("title".into()),
+            context: None,
+        },
+    ];
+    let mut request = CreateMessageRequest::new(
+        "model",
+        2_048,
+        vec![Message::new(
+            MessageRole::User,
+            MessageContent::Blocks(blocks),
+        )],
+        false,
+    );
+    request.tool_choice = Some(ToolChoice::None);
+    request.thinking = Some(ThinkingConfig::Enabled {
+        budget_tokens: 1_024,
+        display: Some(ThinkingDisplay::Omitted),
+    });
+    request.output_config = Some(OutputConfig {
+        effort: Some(Effort::Xhigh),
+        format: Some(JsonOutputFormat {
+            kind: JsonOutputFormatType::JsonSchema,
+            schema: Map::from_iter([("type".into(), json!("object"))]),
+        }),
+    });
+    let value: Value = serde_json::from_slice(adapter().prepare(&request).unwrap().body()).unwrap();
+    assert_eq!(
+        value["messages"][0]["content"][0]["source"]["media_type"],
+        "image/png"
+    );
+    assert_eq!(
+        value["messages"][0]["content"][0]["cache_control"]["ttl"],
+        "1h"
+    );
+    assert_eq!(value["tool_choice"]["type"], "none");
+    assert_eq!(value["thinking"]["display"], "omitted");
+    assert_eq!(value["output_config"]["format"]["type"], "json_schema");
+}
+
+#[test]
+fn invalid_sources_and_thinking_budget_fail_before_transport() {
+    let mut request = CreateMessageRequest::new(
+        "model",
+        1_024,
+        vec![Message::new(
+            MessageRole::User,
+            MessageContent::Blocks(vec![ContentBlock::Image {
+                source: ImageSource::Url { url: String::new() },
+                cache_control: None,
+            }]),
+        )],
+        false,
+    );
+    assert!(adapter().prepare(&request).is_err());
+    request.messages = vec![Message::new(
+        MessageRole::User,
+        MessageContent::Text("hello".into()),
+    )];
+    request.thinking = Some(ThinkingConfig::Enabled {
+        budget_tokens: 1_024,
+        display: None,
+    });
+    assert!(adapter().prepare(&request).is_err());
 }
