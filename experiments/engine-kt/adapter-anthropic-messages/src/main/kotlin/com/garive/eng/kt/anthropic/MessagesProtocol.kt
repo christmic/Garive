@@ -209,94 +209,10 @@ public sealed interface DecodedResponse {
     public data class Error(public val status: Int, public val headers: List<ProtocolHeader>, public val error: ErrorEnvelope) : DecodedResponse
 }
 
-/** Typed event kind; unknown types remain extensions. */
-public sealed interface StreamEventKind {
-    /** Known portable event discriminator. */
-    public data class Portable(public val type: String) : StreamEventKind
-    /** Future event discriminator. */
-    public data class Extension(public val type: String) : StreamEventKind
-}
-
-/** One lossless typed Messages event. */
-public data class StreamEvent(public val kind: StreamEventKind, public val raw: JsonObject)
-
-/** Incremental Messages SSE and lifecycle decoder. */
-public class MessagesStreamDecoder {
-    private var buffer: ByteArray = byteArrayOf()
-    private var started: Boolean = false
-    private var terminal: Boolean = false
-    private var messageDelta: Boolean = false
-    private val blocks: MutableMap<UInt, String> = mutableMapOf()
-    private val toolJson: MutableMap<UInt, StringBuilder> = mutableMapOf()
-
-    /** Appends arbitrary transport bytes and emits complete validated events. */
-    public fun push(bytes: ByteArray): List<StreamEvent> {
-        buffer += bytes; val events = mutableListOf<StreamEvent>()
-        while (true) {
-            val boundary = findBoundary(buffer) ?: break
-            val frame = parseFrame(buffer.copyOfRange(0, boundary.first))
-            buffer = buffer.copyOfRange(boundary.first + boundary.second, buffer.size)
-            if (frame != null) events += accept(frame)
-        }
-        return events
-    }
-
-    /** Requires one terminal and no open blocks at EOF. */
-    public fun finish(): Unit {
-        val trailing = runCatching { buffer.decodeToString(throwOnInvalidSequence = true) }.getOrNull()
-        require(trailing != null && trailing.lineSequence().all { it.isBlank() || it.startsWith(':') })
-        require(terminal && blocks.isEmpty()); buffer = byteArrayOf()
-    }
-
-    private fun accept(frame: Pair<String?, String>): StreamEvent {
-        val raw = JSON.parseToJsonElement(frame.second).jsonObject; val type = raw.text("type")
-        require(frame.first == null || frame.first == type); require(!terminal)
-        when (type) {
-            "ping" -> Unit
-            "message_start" -> { require(!started); started = true; require(raw["message"] is JsonObject) }
-            "error" -> terminal = true
-            else -> { require(started); when (type) {
-                "content_block_start" -> { val index = raw.index(); val kind = raw.getValue("content_block").jsonObject.text("type"); require(blocks.put(index, kind) == null); if (kind == "tool_use") toolJson[index] = StringBuilder() }
-                "content_block_delta" -> delta(raw)
-                "content_block_stop" -> { val index = raw.index(); val kind = requireNotNull(blocks.remove(index)); if (kind == "tool_use") JSON.parseToJsonElement(requireNotNull(toolJson.remove(index)).toString()) }
-                "message_delta" -> { require(blocks.isEmpty() && !messageDelta); messageDelta = true }
-                "message_stop" -> { require(blocks.isEmpty() && messageDelta); terminal = true }
-            } }
-        }
-        val kind = if (type in PORTABLE_EVENTS) StreamEventKind.Portable(type) else StreamEventKind.Extension(type)
-        return StreamEvent(kind, raw)
-    }
-
-    private fun delta(raw: JsonObject): Unit {
-        val index = raw.index(); val block = requireNotNull(blocks[index]); val delta = raw.getValue("delta").jsonObject
-        val type = delta.text("type")
-        require(when (block) { "text" -> type in setOf("text_delta", "citations_delta"); "tool_use" -> type == "input_json_delta"; "thinking" -> type in setOf("thinking_delta", "signature_delta"); else -> true })
-        if (type == "input_json_delta") requireNotNull(toolJson[index]).append(delta.text("partial_json"))
-    }
-}
-
 private val JSON: Json = Json { ignoreUnknownKeys = false }
 private val TYPED_FIELDS: Set<String> = setOf("model", "max_tokens", "messages", "stream", "system", "stop_sequences", "temperature", "top_p", "top_k", "tools", "tool_choice", "output_config", "thinking", "metadata")
-private val PORTABLE_EVENTS: Set<String> = setOf("message_start", "content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop", "ping", "error")
 private fun JsonObject.text(name: String): String = getValue(name).jsonPrimitive.content
 private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonArray
-private fun JsonObject.index(): UInt = getValue("index").jsonPrimitive.content.toUInt()
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
     require((headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json").substringBefore(';') == "application/json")
-}
-private fun findBoundary(bytes: ByteArray): Pair<Int, Int>? {
-    for (index in bytes.indices) {
-        if (index + 1 < bytes.size && bytes[index] == 10.toByte() && bytes[index + 1] == 10.toByte()) return index to 2
-        if (index + 3 < bytes.size && bytes[index] == 13.toByte() && bytes[index + 1] == 10.toByte() && bytes[index + 2] == 13.toByte() && bytes[index + 3] == 10.toByte()) return index to 4
-    }; return null
-}
-private fun parseFrame(bytes: ByteArray): Pair<String?, String>? {
-    var event: String? = null; val data = mutableListOf<String>()
-    bytes.decodeToString(throwOnInvalidSequence = true).lineSequence().forEach { raw ->
-        val line = raw.removeSuffix("\r")
-        if (line.isNotEmpty() && !line.startsWith(':')) {
-            val field = line.substringBefore(':'); val value = line.substringAfter(':', "").removePrefix(" ")
-            when (field) { "event" -> event = value; "data" -> data += value; "retry" -> value.toULong(); "id" -> require('\u0000' !in value) }
-        }
-    }; return if (data.isEmpty()) null else event to data.joinToString("\n")
 }
