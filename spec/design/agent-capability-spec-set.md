@@ -14,9 +14,11 @@ C3/C6F/L0 and fixture changes still precede each behavior slice.
 Turn the remaining accepted capability ownership descriptions into executable
 contracts without creating a second Runtime inside Engine. This set covers
 Memory, Knowledge, Skill, Scheduler, Multi-Agent delegation and Observability.
-Compression, Creativity and hosted vendor extensions remain gated by their
-existing admission evidence. Evaluation E0 and B0 are implemented; neither is
-itself representative compression or Creativity evidence. See
+Compression, production Creativity and hosted vendor extensions remain gated
+by their existing admission evidence. Creativity CR-A and CR-B evidence
+infrastructure is implemented, but fixture/loopback verification is not a
+representative external baseline. Evaluation E0 and B0 are implemented;
+neither is itself representative compression or Creativity evidence. See
 [`remaining-admission-audit.md`](remaining-admission-audit.md).
 
 ## Normative order

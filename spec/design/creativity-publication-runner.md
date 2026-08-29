@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted implementation contract. CR-B makes the CR-A paired experiment
+Implemented and verified contract. CR-B makes the CR-A paired experiment
 executable against explicitly configured external model deployments. It does
 not admit production `engine/creativity` behavior, choose a creativity policy,
 or declare that an unreviewed run is representative.
@@ -159,6 +159,13 @@ Failures are content-free stable codes and create no evidence file.
 
 A real credentialed run and review remain external evidence after this slice is
 implemented. Only that review may admit a separate production Creativity Spec.
+
+Repository evidence is the compatible-dialect Runtime constructors, shared
+experiment Git attestation crate, CR-B model ports/configuration/OS credential
+resolver/publication sink and CLI under `experiments/creativity-baseline-rs`.
+Native tests cover both protocol routes, blind request shapes, every strict
+failure boundary, non-secret digests, exact clean Git composition and
+content-free evidence v2. `engine/creativity` remains empty.
 
 ## Meta
 
