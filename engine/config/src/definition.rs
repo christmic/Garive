@@ -51,7 +51,7 @@ impl ResolutionError {
     }
 }
 
-fn require_text(value: &str, path: &str) -> Result<(), ResolutionError> {
+pub(crate) fn require_text(value: &str, path: &str) -> Result<(), ResolutionError> {
     if value.is_empty() {
         Err(ResolutionError::new(
             ResolutionErrorCode::InvalidDefinition,

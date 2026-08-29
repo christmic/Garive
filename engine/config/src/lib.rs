@@ -4,9 +4,11 @@
 #![deny(missing_docs)]
 
 mod definition;
+mod intent;
 
 pub use definition::{
     CapabilityKind, CapabilityReference, ContextPolicyReference, DefaultLimits, DefaultUnmatched,
     GovernancePolicy, InstructionReference, InteractionMode, ModelRoleRequirement, ResolutionError,
     ResolutionErrorCode,
 };
+pub use intent::AgentDefinition;
