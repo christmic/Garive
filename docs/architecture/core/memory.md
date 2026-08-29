@@ -92,6 +92,56 @@ the ledger. No new addressing scheme.
 
 Memory entries come from **two fundamentally different
 authorities**. Treating them as one thing creates a real
+safety bug — see "Write authority + read direction"
+below. Each authority gets its own read path:
+
+| Content | Mechanism | Reason |
+|---------|-----------|--------|
+| **Preferences (`user_declared`)** | **Framework push** — `derive`'s injector, always on every turn | Law must take effect unconditionally; can't rely on agent "remembering to check"; preferences are small (dozens of entries), cheap to push |
+| **Memory (`agent_learned`)** | **Agent pull** — `memory_search` / `recall` tool; agent decides when to call | Memory is large and scenario-scoped; pushing all of it blows the context window; pull is the right shape |
+
+**The pull-mode catch**: agent doesn't know what it doesn't
+know. Pure tool-call recall fails because if the agent
+doesn't think to call the tool, the memory is invisible.
+**Fix: framework pushes a small "memory index" every turn**
+— a list of *what kinds exist* and *which recent entries
+matter*. The agent sees the menu and decides when to pull
+the details.
+
+### Write authority + read direction
+
+The split is **strict**: writes and reads go through
+different paths with different authority.
+
+#### Write authority
+
+| Who | Can write | Authority |
+|-----|-----------|-----------|
+| **User** | Explicit declarations / settings / corrections | `user_declared` — law |
+| **Agent** | Dream extraction, exit_summary, session-end flush | `agent_learned` — hypothesis |
+
+If the agent **observes** something that looks like a
+preference ("user keeps asking for Chinese"), the correct
+action is to **suggest**: "want me to set Chinese as the
+default?" → user confirms → becomes `user_declared`.
+**Observation never upgrades to law on its own.**
+
+#### Read direction
+
+| Content | Direction | Frequency | Budget |
+|---------|-----------|-----------|--------|
+| Preferences | **Push** (`derive` injector) | Every turn | Tens of entries; cheap |
+| Memory index | **Push** (small catalog) | Every turn | ~5 % of surface |
+| Memory detail | **Pull** (tool call) | Agent decides | Varies by query |
+
+The "menu injection" makes the memory's existence **always
+on the agent's radar** without forcing it onto the agent's
+context. The agent pulls the details when relevant. This
+hybrid is also the answer to the "pure tool call" failure
+mode — if the agent never calls the recall tool, the memory
+is still noticed via the menu.
+
+### Platform type — namespace isolation + three-tier scope
 safety bug:
 
 | | User preference / statement | Agent memory (learned) |
@@ -305,9 +355,74 @@ slots `harness.feature` and the reminder channel use:
   fused by re-rank; borrowed from the earlier decide
 - **Ranking** — relevance × recency × importance (per ⑦)
 
-## ⑦ Maintenance policies — placeholder
+## ⑦ Maintenance policies — promotion + anti-bloat
 
-The four-decision model (ADD / UPDATE / DELETE / NOOP) lives
+### Promotion channel — memory graduates to knowledge
+
+The four types are not peers; they're a **distillation tower**
+(see ③). The top of the tower (`playbooks`) is **hand-curated
+from proven memories** — a memory entry graduates to
+knowledge when it's been verified enough times.
+
+```
+memory entry (with source_session + source_seq)
+    ↓  "verified N times, on stable topic"
+    ↓  promoted by dream or by user audit
+    ↓
+knowledge entry (in `engine.proj.md` / wiki / shared knowledge base)
+    ↓
+original memory entry downgrades to "promoted_to: <knowledge-id>"
+```
+
+**Concrete example:**
+- `memory.lesson` — "SDK X has a caching bug" (with
+  `source_session = S42, source_seq = 317`)
+- After N independent sessions reproduce the same lesson →
+  dream (or user audit) writes a `wiki:project/sdk-cache`
+  entry in the **project knowledge base** (per ② — agent
+  only references, doesn't own).
+- The original `memory.lesson` entry is **downgraded** to
+  `status = promoted_to: <wiki-id>` — kept for audit, but no
+  longer surfaces in recall.
+
+**Without this promotion channel**, memory and knowledge
+**duplicate the same fact** — two storage locations, each
+rotting at its own rate. With it: **memory is the raw-material
+library; knowledge is the graduation destination** — a
+**single-direction pipeline**, no duplication.
+
+### Anti-bloat — six defenses
+
+The chronic disease of memory systems: every session
+produces memory → no discipline → infinite growth → recall
+precision drops → inject cost rises → noise drowns signal.
+**Memory health = recall precision**, not entry count.
+
+Six defenses:
+
+| # | Defense | What it does | Where it lives |
+|---|---------|--------------|----------------|
+| 1 | **Distillation (debulk)** | Episodes distilled to conclusions; raw entries down-weighted. The tower structure IS the debulk. | `dream` watermark |
+| 2 | **Quota (hard ceiling)** | Per-type caps: `lessons ≤ 200`, `facts ≤ 300`, `playbooks ≤ 50`, `episodes` rolling window. Overflow → score-based eviction (`relevance × recency × use_count`). Quota is **design parameter**, not safety net — forces ongoing priority judgement. | `MemoryTypeRegistry.lifetime.budget` |
+| 3 | **Admission filter (write gate)** | Three questions before entry: **can it generalise?** (no → reject, one-off detail); **is it stable?** (uncertain → defer + observe); **already present?** (dedup). Borrowed from Mem0's NOOP decision. | `dream` candidate → ADD/UPDATE/DELETE/NOOP pipeline |
+| 4 | **Use feedback (natural selection)** | Recalled and helped → boost score. Never recalled → slow decay. Recalled but linked to failure → downrank. Use it or lose it; entries earn their place. | Recalled entry's `confidence` adjusts based on outcome |
+| 5 | **Memory lint (periodic audit)** | Scheduled task: find duplicates, find contradictions (two memory entries conflict — pick one), find expired (`last_verified` over threshold → flag), find low-score. Output an **audit report** — the user is the ultimate curator. | Scheduled cron job + user-visible report |
+| 6 | **Forgetting right (first-class)** | Delete and `redaction` are equivalent first-class operations. "Forget this" must be legal — both for hygiene (low-quality memory) and privacy (user's right to be forgotten). | `memory.delete(entry_id)` |
+
+**The total principle**: four gates, each at a different stage
+of the memory lifecycle:
+
+```
+入口收紧     (admission filter, write gate)
+内部压缩     (distillation + quota)
+出口淘汰     (use feedback + memory lint)
+用户兜底     (audit right + forgetting right)
+```
+
+Bloat is intercepted at **every** of the four gates — not
+just by one of them.
+
+
 in ③ and lands in angle ⑤'s pipeline. Contradiction resolution,
 falsification of lessons, versioning of procedures — all
 follow-up commits.
