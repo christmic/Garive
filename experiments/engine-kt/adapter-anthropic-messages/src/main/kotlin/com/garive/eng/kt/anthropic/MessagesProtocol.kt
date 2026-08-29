@@ -2,15 +2,8 @@ package com.garive.eng.kt.anthropic
 
 import java.net.URI
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 /** Caller-supplied protocol header with explicit diagnostic redaction. */
 public class ProtocolHeader private constructor(
@@ -83,69 +76,7 @@ public class MessagesAdapter(public val config: MessagesAdapterConfig) {
     }
 }
 
-/** Portable output content plus lossless hosted/future blocks. */
-public sealed interface OutputBlock {
-    /** Text output. */
-    public data class Text(public val value: JsonObject) : OutputBlock
-    /** Extended thinking. */
-    public data class Thinking(public val value: JsonObject) : OutputBlock
-    /** Opaque redacted thinking. */
-    public data class RedactedThinking(public val value: JsonObject) : OutputBlock
-    /** Client tool invocation. */
-    public data class ToolUse(public val value: JsonObject) : OutputBlock
-    /** Hosted or future output without promoted semantics. */
-    public data class Extension(public val discriminator: String, public val value: JsonObject) : OutputBlock
-}
-
-/** Official ordinary Message response. */
-public data class MessageResponse(
-    public val id: String,
-    public val model: String,
-    public val stopReason: String?,
-    public val content: List<OutputBlock>,
-    public val usage: JsonObject,
-    public val raw: JsonObject,
-) {
-    public companion object {
-        /** Parses required fields and portable output variants. */
-        public fun parse(value: JsonObject): MessageResponse {
-            require(value.text("type") == "message" && value.text("role") == "assistant")
-            val content = value.array("content").map { element ->
-                val block = element.jsonObject
-                when (val type = block.text("type")) {
-                    "text" -> OutputBlock.Text(block); "thinking" -> OutputBlock.Thinking(block)
-                    "redacted_thinking" -> OutputBlock.RedactedThinking(block); "tool_use" -> OutputBlock.ToolUse(block)
-                    else -> OutputBlock.Extension(type, block)
-                }
-            }
-            return MessageResponse(value.text("id"), value.text("model"), value["stop_reason"]?.jsonPrimitive?.contentOrNull, content, value.getValue("usage").jsonObject, value)
-        }
-    }
-}
-
-/** Official error envelope with an open error type. */
-public data class ErrorEnvelope(public val type: String, public val message: String, public val requestId: String?, public val raw: JsonObject) {
-    public companion object {
-        /** Parses the standard outer error object. */
-        public fun parse(value: JsonObject): ErrorEnvelope {
-            require(value.text("type") == "error")
-            val error = value.getValue("error").jsonObject
-            return ErrorEnvelope(error.text("type"), error.text("message"), value["request_id"]?.jsonPrimitive?.contentOrNull, value)
-        }
-    }
-}
-
-/** Ordinary HTTP result without provider classification. */
-public sealed interface DecodedResponse {
-    /** Successful message fact. */
-    public data class Message(public val status: Int, public val headers: List<ProtocolHeader>, public val message: MessageResponse) : DecodedResponse
-    /** Non-success error fact. */
-    public data class Error(public val status: Int, public val headers: List<ProtocolHeader>, public val error: ErrorEnvelope) : DecodedResponse
-}
-
 private val JSON: Json = Json { ignoreUnknownKeys = false }
-private fun JsonObject.text(name: String): String = getValue(name).jsonPrimitive.content
-private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonArray
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
     require((headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json").substringBefore(';') == "application/json")
 }
