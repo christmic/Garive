@@ -4,10 +4,12 @@
 #![deny(missing_docs)]
 
 mod audit;
+mod erasure;
 mod hypothesis;
 mod lifecycle;
 mod maintenance;
 mod observation;
+mod promotion;
 mod query;
 mod recall;
 mod values;
@@ -16,6 +18,10 @@ mod write;
 pub use audit::{
     audit_memory, MemoryAuditAction, MemoryAuditEntry, MemoryAuditPolicy, MemoryAuditReport,
     MemoryContradiction,
+};
+pub use erasure::{
+    record_memory_erasure, ErasureDisposition, ErasureTargetKind, ErasureTargetStatus,
+    MemoryErasureReceipt, MemoryErasureRequest, MemoryErasureTarget, MemoryErasureTargetResult,
 };
 pub use hypothesis::{
     import_m0_classification, ImportedMemoryClassification, MemoryAuthority,
@@ -31,6 +37,10 @@ pub use maintenance::{
 pub use observation::{
     reduce_observation, MemoryObligation, MemoryObservation, ObservationEvidence,
     ObservationEvidenceKind, ObservationReduction, ObservationVerdict, ScopeNarrowingCandidate,
+};
+pub use promotion::{
+    complete_memory_promotion, request_memory_promotion, MemoryPromotionPolicy,
+    MemoryPromotionReceipt, MemoryPromotionRequest,
 };
 pub use query::{
     retrieve_memory, MemoryMatch, MemoryPurpose, MemoryQuery, MemoryRetrieval, MemoryScore,
