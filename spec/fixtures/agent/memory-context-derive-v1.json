@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "contract": "memory-context-derive",
+  "cases": [
+    {"name":"detail-admitted","purpose":"inference","max_bytes":4096,"batches":["detail"],"status":"ok","retained":[4],"dropped":[],"filtered":[]},
+    {"name":"menu-hidden-from-governance","purpose":"governance","max_bytes":4096,"batches":["menu"],"status":"ok","retained":[],"dropped":[],"filtered":[3]},
+    {"name":"detail-charged-and-dropped","purpose":"inference","max_bytes":1,"batches":["detail"],"status":"ok","retained":[],"dropped":[4],"filtered":[]},
+    {"name":"duplicate-product-rejected","purpose":"inference","max_bytes":4096,"batches":["detail","detail-2"],"status":"duplicate-recall"},
+    {"name":"archived-menu-rejected","purpose":"inference","max_bytes":4096,"batches":["archived-menu"],"status":"invalid-binding"}
+  ]
+}
