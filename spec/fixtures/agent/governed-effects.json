@@ -99,7 +99,7 @@
         {"kind": "completed", "receipt": "completed", "content": {"text": "hello"}, "truncated": false}
       ],
       "expected": {
-        "actions": ["authorize", "dispatch", "observation_succeeded"],
+        "actions": ["authorize", "dispatch", "none", "observation_succeeded"],
         "execution_command_count": 1,
         "final_state": "completed",
         "observation": {"status": "succeeded", "content": {"text": "hello"}, "truncated": false}
@@ -124,7 +124,7 @@
         {"kind": "started", "dispatch_attempt_id": "dispatch-1"},
         {"kind": "completed", "receipt": "completed", "content": {"ok": true}, "truncated": false}
       ],
-      "expected": {"actions": ["authorize", "suspend_approval", "authorize", "dispatch", "observation_succeeded"], "execution_command_count": 1, "final_state": "completed", "observation": {"status": "succeeded", "content": {"ok": true}, "truncated": false}}
+      "expected": {"actions": ["authorize", "suspend_approval", "authorize", "dispatch", "none", "observation_succeeded"], "execution_command_count": 1, "final_state": "completed", "observation": {"status": "succeeded", "content": {"ok": true}, "truncated": false}}
     },
     {
       "name": "interaction-cancelled",
@@ -139,12 +139,12 @@
     {
       "name": "started-failed-with-receipt",
       "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "failed", "receipt": "failed", "code": "read_failed", "details": "File unavailable."}],
-      "expected": {"actions": ["authorize", "dispatch", "observation_failed"], "execution_command_count": 1, "final_state": "failed", "observation": {"status": "failed", "code": "read_failed", "details": "File unavailable."}}
+      "expected": {"actions": ["authorize", "dispatch", "none", "observation_failed"], "execution_command_count": 1, "final_state": "failed", "observation": {"status": "failed", "code": "read_failed", "details": "File unavailable."}}
     },
     {
       "name": "started-uncertain",
       "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "uncertain", "evidence": "transport_lost"}],
-      "expected": {"actions": ["authorize", "dispatch", "suspend_reconciliation"], "execution_command_count": 1, "final_state": "uncertain"}
+      "expected": {"actions": ["authorize", "dispatch", "none", "suspend_reconciliation"], "execution_command_count": 1, "final_state": "uncertain"}
     },
     {
       "name": "grant-digest-mismatch",
@@ -169,7 +169,7 @@
     {
       "name": "completed-without-receipt-fails",
       "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "completed", "content": {"ok": true}, "truncated": false}],
-      "expected": {"actions": ["authorize", "dispatch", "fail_corrupt_recovery_state"], "execution_command_count": 1, "final_state": "failed"}
+      "expected": {"actions": ["authorize", "dispatch", "none", "fail_corrupt_recovery_state"], "execution_command_count": 1, "final_state": "failed"}
     }
   ],
   "recovery_cases": [
