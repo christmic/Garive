@@ -24,8 +24,15 @@ storage I/O, tokenization, summarization, provider rendering or persistence.
   provider-neutral input items.
 
 Candidate kinds are `Instruction`, `UserInput`, `ModelOutput`,
-`ToolObservation`, `Approval`, `Summary`, and `SystemNotice`. Kind names are
-semantic facts, not database table names.
+`ToolObservation`, `Approval`, `Summary`, `SystemNotice`, `Memory`, and
+`Knowledge`. Kind names are semantic facts, not database table names.
+
+`Memory` and `Knowledge` candidates are committed evidence products, never
+instructions. Their model rendering uses a subordinate data envelope. Assembly
+places admitted evidence after system/developer instructions and activated
+Skill instructions, but before ordinary history and the current trusted input.
+This presentation order does not change durable reference order, admission, or
+audit lists in `ContextSurface`.
 
 ## ContextRequest
 
@@ -76,6 +83,31 @@ its own punctuation bytes. A custom `MediaKind.Other` name is a payload field.
 
 The result records filtered references so Runtime can explain omissions without
 placing hidden content in the model surface.
+
+### Committed Memory recall adapter
+
+M1 recall enters C2 through `MemoryRecallContextBatch`, never through a
+post-derive model-request splice. One batch binds the exact committed
+`memory.recall_recorded` fact reference, fact ID and canonical payload digest,
+plus selection ID, request digest, namespace, product, policy revision, source
+prefix, truncation and ordered items.
+
+- a fact position must be later than its `through_position` and within the C2
+  request window;
+- at most one `Menu` and one `Detail` batch may be supplied per Kernel
+  iteration; identities must be unique within and across them;
+- `Menu` exposes only the committed safe label and metadata; it forbids inline
+  content and `Archived` state;
+- `Detail` requires Runtime-resolved inline content matching the committed
+  digest and byte length;
+- `Promoted` is forbidden for both products;
+- the complete batch becomes one optional, inference-only, atomic `Memory`
+  candidate, so every byte and item is charged by the normal C2 algorithm.
+
+An empty committed result is auditable but contributes no candidate. Invalid
+bindings fail closed before derivation. Runtime verifies that the batch is an
+exact decoding of the durable fact; Core validates the provider-neutral value
+and does no ledger I/O.
 
 ## Deterministic budget algorithm
 

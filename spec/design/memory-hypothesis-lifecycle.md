@@ -124,6 +124,14 @@ them. Menu labels are redacted descriptors, not content. No fixed surface
 percentage is normative: effective snapshots carry item, byte and token bounds.
 At most one menu and one detail query occur per Kernel iteration.
 
+The committed-result adapter is defined by C2. It binds the recall fact and
+turn window, validates product/lifecycle/content invariants, and emits one
+optional atomic Memory candidate. Direct insertion after C2 is prohibited:
+Memory must be visible in C2 retained/dropped references and charged against
+the same item and UTF-8 budgets as durable history. Provider assembly may move
+an admitted Memory envelope ahead of ordinary history/current input solely to
+preserve instruction hierarchy; its durable audit order remains unchanged.
+
 The baseline selection uses integer relevance/recency/importance scores and
 lexical identity tie-breaks. Vector, FTS, RRF and rerank are versioned Runtime
 ports. Stochastic selection is forbidden unless the request freezes an algorithm
@@ -322,6 +330,14 @@ Stable additions are `unknown_memory_type`, `authority_receipt_required`,
 Portable slices require strict Rust evidence plus Kotlin semantic conformance.
 Runtime claims require real SQLite restart/process-kill tests. Quality/latency
 claims require a pinned dataset and reproducible configuration.
+
+M1-G pins a small synthetic semantic regression suite in
+`memory-recall-quality-v1.json`. It measures exact rational recall and
+precision over expected identities, forbidden-admission count, ordered replay
+mismatch and invalid-case count. Passing proves cross-language selector and
+derive semantics only. It is not an empirical user-quality, latency, model, or
+production threshold; such a claim remains gated on a representative versioned
+dataset and frozen retriever/model configuration.
 
 ## Meta
 
