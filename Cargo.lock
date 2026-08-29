@@ -1076,6 +1076,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-provider-compatible"
+version = "0.1.0"
+dependencies = [
+ "garive-adapter-anthropic-messages",
+ "garive-adapter-openai-responses",
+ "garive-llm",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "garive-runtime"
 version = "0.1.0"
 dependencies = [

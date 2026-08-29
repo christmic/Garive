@@ -29,6 +29,7 @@ members = [
     "engine/scheduler",
     "engine/skill",
     "engine/tools",
+    "providers/compatible",
     "runtime/replica",
     "tui",
 ]

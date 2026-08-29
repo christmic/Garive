@@ -1,0 +1,206 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use garive_llm::{
+    ModelCapability, ModelInputContent, ModelInputItem, ModelOutputSettings, ModelRequest,
+    ModelRequestId, ModelRole, ModelTargetId, TextMode, ToolDescriptor,
+};
+use garive_provider_compatible::{
+    map_messages_request, map_responses_request, CompatibleProviderError, MessagesDeployment,
+    ProtocolErrorPolicy, ResponsesDeployment,
+};
+use serde_json::Value;
+
+fn fixture() -> Value {
+    serde_json::from_str(include_str!(
+        "../../../spec/fixtures/providers/compatible-mapping-v1.json"
+    ))
+    .expect("valid shared fixture")
+}
+
+fn capabilities(values: &[Value]) -> Vec<ModelCapability> {
+    values
+        .iter()
+        .map(|value| match value.as_str().expect("capability string") {
+            "text" => ModelCapability::Text,
+            "tools" => ModelCapability::Tools,
+            "json_output" => ModelCapability::JsonOutput,
+            "streaming" => ModelCapability::Streaming,
+            other => panic!("unsupported fixture capability {other}"),
+        })
+        .collect()
+}
+
+fn neutral_request(value: &Value) -> ModelRequest {
+    let input_items = value["input"]
+        .as_array()
+        .expect("input array")
+        .iter()
+        .map(|item| match item["kind"].as_str().expect("item kind") {
+            "message" => ModelInputItem::Message {
+                role: match item["role"].as_str().expect("role") {
+                    "system" => ModelRole::System,
+                    "developer" => ModelRole::Developer,
+                    "user" => ModelRole::User,
+                    "assistant" => ModelRole::Assistant,
+                    other => panic!("unsupported fixture role {other}"),
+                },
+                content: vec![ModelInputContent::Text(
+                    item["text"].as_str().expect("message text").to_owned(),
+                )],
+            },
+            "tool_observation" => ModelInputItem::ToolObservation {
+                model_call_id: item["model_call_id"]
+                    .as_str()
+                    .expect("model call id")
+                    .to_owned(),
+                result_json: item["result_json"].to_string(),
+            },
+            other => panic!("unsupported fixture item {other}"),
+        })
+        .collect();
+    let tools = value["tools"]
+        .as_array()
+        .expect("tools array")
+        .iter()
+        .map(|tool| ToolDescriptor {
+            name: tool["name"].as_str().expect("tool name").to_owned(),
+            description: tool["description"]
+                .as_str()
+                .expect("tool description")
+                .to_owned(),
+            definition_revision: tool["revision"].as_str().expect("tool revision").to_owned(),
+            input_schema_json: tool["schema"].to_string(),
+            strict: tool["strict"].as_bool().expect("tool strict"),
+        })
+        .collect();
+    let text_mode = match value["text_mode"]["kind"].as_str().expect("text mode") {
+        "plain" => TextMode::Plain,
+        "json_object" => TextMode::JsonObject,
+        "json_schema" => TextMode::JsonSchema {
+            schema_json: value["text_mode"]["schema"].to_string(),
+        },
+        other => panic!("unsupported fixture text mode {other}"),
+    };
+    let metadata = value["metadata"]
+        .as_object()
+        .expect("metadata object")
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                value.as_str().expect("metadata string").to_owned(),
+            )
+        })
+        .collect();
+    ModelRequest {
+        request_id: ModelRequestId::new(value["request_id"].as_str().expect("request id")),
+        target_id: ModelTargetId::new(value["target_id"].as_str().expect("target id")),
+        required_capabilities: capabilities(
+            value["required_capabilities"]
+                .as_array()
+                .expect("capabilities array"),
+        ),
+        input_items,
+        tools,
+        output: ModelOutputSettings {
+            max_output_tokens: value["max_output_tokens"].as_u64(),
+            text_mode,
+            reasoning_visibility: value["reasoning_visibility"]
+                .as_bool()
+                .expect("reasoning visibility"),
+        },
+        trace_metadata: metadata,
+    }
+}
+
+fn response_deployment(value: &Value) -> ResponsesDeployment {
+    ResponsesDeployment {
+        target_id: value["target_id"].as_str().expect("target id").to_owned(),
+        model_id: value["model_id"].as_str().expect("model id").to_owned(),
+        capabilities: capabilities(value["capabilities"].as_array().expect("capabilities"))
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        default_max_output_tokens: value["default_max_output_tokens"].as_u64(),
+        media_bindings: BTreeMap::new(),
+        reasoning: None,
+        error_policy: ProtocolErrorPolicy::default(),
+    }
+}
+
+fn messages_deployment(value: &Value) -> MessagesDeployment {
+    MessagesDeployment {
+        target_id: value["target_id"].as_str().expect("target id").to_owned(),
+        model_id: value["model_id"].as_str().expect("model id").to_owned(),
+        capabilities: capabilities(value["capabilities"].as_array().expect("capabilities"))
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        default_max_output_tokens: value["default_max_output_tokens"].as_u64(),
+        media_bindings: BTreeMap::new(),
+        thinking: None,
+        error_policy: ProtocolErrorPolicy::default(),
+    }
+}
+
+#[test]
+fn shared_responses_request_case_maps_without_protocol_extensions() {
+    let fixture = fixture();
+    let case = &fixture["request_cases"][0];
+    let mapped = map_responses_request(
+        &response_deployment(&fixture["deployments"]["responses"]),
+        &neutral_request(&case["request"]),
+    )
+    .expect("fixture maps");
+    let wire = serde_json::to_value(mapped).expect("serialize mapped request");
+    let expected = &case["expected"];
+
+    assert_eq!(wire["model"], expected["model"]);
+    assert_eq!(wire["stream"], expected["stream"]);
+    assert_eq!(wire["max_output_tokens"], expected["max_output_tokens"]);
+    assert_eq!(wire["metadata"], expected["metadata"]);
+    assert_eq!(wire["tools"][0]["name"], expected["tool_names"][0]);
+    assert_eq!(wire["text"]["format"]["type"], "json_schema");
+    assert!(wire.get("extensions").is_none());
+}
+
+#[test]
+fn shared_messages_request_case_uses_leading_system_and_default_limit() {
+    let fixture = fixture();
+    let case = &fixture["request_cases"][1];
+    let mapped = map_messages_request(
+        &messages_deployment(&fixture["deployments"]["messages"]),
+        &neutral_request(&case["request"]),
+    )
+    .expect("fixture maps");
+    let wire = serde_json::to_value(mapped).expect("serialize mapped request");
+    let expected = &case["expected"];
+
+    assert_eq!(wire["model"], expected["model"]);
+    assert_eq!(wire["stream"], expected["stream"]);
+    assert_eq!(wire["max_tokens"], expected["max_output_tokens"]);
+    assert_eq!(wire["system"][0]["text"], expected["system_blocks"][0]);
+    assert_eq!(wire["system"][1]["text"], expected["system_blocks"][1]);
+    assert_eq!(wire["messages"][1]["content"][0]["type"], "tool_result");
+    assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
+}
+
+#[test]
+fn messages_rejects_late_instruction_and_metadata() {
+    let fixture = fixture();
+    let deployment = messages_deployment(&fixture["deployments"]["messages"]);
+    let mut request = neutral_request(&fixture["request_cases"][1]["request"]);
+    request.input_items.push(ModelInputItem::Message {
+        role: ModelRole::Developer,
+        content: vec![ModelInputContent::Text("late".to_owned())],
+    });
+    assert_eq!(
+        map_messages_request(&deployment, &request),
+        Err(CompatibleProviderError::UnsupportedInput)
+    );
+
+    request.input_items.pop();
+    request.trace_metadata.push(("trace".into(), "x".into()));
+    assert_eq!(
+        map_messages_request(&deployment, &request),
+        Err(CompatibleProviderError::UnsupportedMetadata)
+    );
+}
