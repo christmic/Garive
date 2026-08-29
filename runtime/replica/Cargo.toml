@@ -7,7 +7,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+garive-core = { path = "../../engine/core" }
 garive-ledger = { path = "../../engine/ledger" }
+garive-llm = { path = "../../engine/llm" }
 chrono.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true

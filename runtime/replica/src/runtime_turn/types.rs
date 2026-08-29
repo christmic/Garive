@@ -230,6 +230,8 @@ pub enum RuntimeCommandError {
     TurnNotResumable,
     /// Verified storage rows contain impossible Runtime referents or values.
     CorruptLedger,
+    /// Core supplied internally inconsistent terminal evidence.
+    InvariantViolation,
 }
 
 impl RuntimeCommandError {
@@ -241,6 +243,7 @@ impl RuntimeCommandError {
             Self::ContinuationMismatch => "continuation_mismatch",
             Self::TurnNotResumable => "turn_not_resumable",
             Self::CorruptLedger => "corrupt_ledger",
+            Self::InvariantViolation => "invariant_violation",
         }
     }
 }

@@ -1079,7 +1079,9 @@ name = "garive-runtime"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "garive-core",
  "garive-ledger",
+ "garive-llm",
  "garive-tools",
  "rusqlite",
  "serde_json",
