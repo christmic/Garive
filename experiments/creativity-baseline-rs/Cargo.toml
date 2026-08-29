@@ -17,6 +17,12 @@ path = "src/fixture_evaluator.rs"
 [dependencies]
 garive-eval = { path = "../../engine/eval" }
 garive-llm = { path = "../../engine/llm" }
+garive-openai-responses = { package = "garive-adapter-openai-responses", path = "../../adapters/openai-responses" }
+garive-anthropic-messages = { package = "garive-adapter-anthropic-messages", path = "../../adapters/anthropic-messages" }
+garive-provider-compatible = { path = "../../providers/compatible" }
+garive-provider-profile = { path = "../../providers/profile" }
+garive-runtime = { path = "../../runtime/replica" }
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_jcs.workspace = true

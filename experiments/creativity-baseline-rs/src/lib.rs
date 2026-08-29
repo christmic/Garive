@@ -9,6 +9,7 @@ mod corpus;
 mod error;
 mod model_ports;
 mod port;
+mod publication_model;
 mod runner;
 
 pub use command_ports::{CommandCreativityEvaluator, CommandCreativityGenerator};
@@ -22,5 +23,10 @@ pub use model_ports::{
 pub use port::{
     CandidateVerdict, CreativityEvaluatorPort, CreativityGeneratorPort, EvaluatorRequest,
     ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,
+};
+pub use publication_model::{
+    build_publication_evaluator, build_publication_generator, CredentialReferenceResolver,
+    CredentialResolutionFailure, ModelEndpointConfig, ModelProtocol, NonSecretHeader,
+    PublicationModelCoordinate,
 };
 pub use runner::{run_creativity_baseline, CreativityBaselineRun};

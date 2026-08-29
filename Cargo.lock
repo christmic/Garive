@@ -1171,8 +1171,14 @@ version = "0.1.0"
 name = "garive-creativity-baseline"
 version = "0.1.0"
 dependencies = [
+ "garive-adapter-anthropic-messages",
+ "garive-adapter-openai-responses",
  "garive-eval",
  "garive-llm",
+ "garive-provider-compatible",
+ "garive-provider-profile",
+ "garive-runtime",
+ "reqwest 0.12.28",
  "serde",
  "serde_jcs",
  "serde_json",
