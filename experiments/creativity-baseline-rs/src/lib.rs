@@ -7,6 +7,7 @@ mod command_ports;
 mod command_process;
 mod corpus;
 mod error;
+mod model_ports;
 mod port;
 mod runner;
 
@@ -14,6 +15,10 @@ pub use command_ports::{CommandCreativityEvaluator, CommandCreativityGenerator};
 pub use command_process::CommandPortConfig;
 pub use corpus::{load_creativity_corpus, CreativityCorpus, CreativityTask};
 pub use error::{CreativityBaselineError, CreativityBaselineErrorCode};
+pub use model_ports::{
+    ModelCreativityConfig, ModelCreativityEvaluator, ModelCreativityGenerator,
+    EVALUATOR_TEMPLATE_REVISION, GENERATOR_TEMPLATE_REVISION,
+};
 pub use port::{
     CandidateVerdict, CreativityEvaluatorPort, CreativityGeneratorPort, EvaluatorRequest,
     ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,

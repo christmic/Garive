@@ -1172,11 +1172,13 @@ name = "garive-creativity-baseline"
 version = "0.1.0"
 dependencies = [
  "garive-eval",
+ "garive-llm",
  "serde",
  "serde_jcs",
  "serde_json",
  "sha2",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
