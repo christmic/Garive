@@ -9,6 +9,7 @@ import com.garive.eng.kt.llm.ModelStreamEvent
 import com.garive.eng.kt.llm.ModelTargetId
 import com.garive.eng.kt.llm.TokenCount
 import com.garive.eng.kt.skill.ActivatedSkill
+import java.security.MessageDigest
 
 /** Typed durable evidence used to continue an open Turn. */
 public sealed interface ResumeInput {
@@ -63,6 +64,30 @@ public data class ModelOnlyLimits(
     public val deadlineTick: ULong?,
 )
 
+/** Exact durable evidence attribution attached to model-visible Memory data. */
+public data class MemoryEvidenceAttribution(
+    public val sessionId: String,
+    public val position: ULong,
+    public val factId: String,
+    public val payloadDigest: String,
+)
+
+/** Runtime-verified inline Memory supplied as subordinate attributed data. */
+public data class AttributedMemory(
+    public val recordId: String,
+    public val revisionId: String,
+    public val contentDigest: String,
+    public val contentUtf8: String,
+    public val evidence: List<MemoryEvidenceAttribution>,
+) {
+    internal fun valid(): Boolean = recordId.isNotEmpty() && revisionId.isNotEmpty() && contentUtf8.isNotEmpty() &&
+        contentDigest == sha256(contentUtf8.encodeToByteArray()) && evidence.isNotEmpty() &&
+        evidence.all { it.valid() }
+}
+
+private fun MemoryEvidenceAttribution.valid(): Boolean =
+    sessionId.isNotEmpty() && position != 0uL && factId.isNotEmpty() && payloadDigest.matches(Regex("[0-9a-f]{64}"))
+
 /** Complete immutable input for one model-only kernel Execution. */
 public data class AgentTurnRequest(
     public val sessionId: SessionId,
@@ -80,6 +105,7 @@ public data class AgentTurnRequest(
     public val recoveryPolicy: ModelRecoveryPolicy,
     public val limits: ModelOnlyLimits,
     public val activatedSkills: List<ActivatedSkill> = emptyList(),
+    public val attributedMemory: List<AttributedMemory> = emptyList(),
 ) {
     /** Validates cross-field invariants before any port is invoked. */
     public fun validate(): AgentRequestError? {
@@ -93,6 +119,7 @@ public data class AgentTurnRequest(
         if (modelTargets.isEmpty()) return AgentRequestError.MISSING_MODEL_TARGET
         if (modelTargets.any { it.value.isEmpty() }) return AgentRequestError.INVALID_MODEL_TARGET
         if (limits.maxTotalTokens == 0uL) return AgentRequestError.INVALID_TOKEN_LIMIT
+        if (attributedMemory.any { !it.valid() }) return AgentRequestError.INVALID_MEMORY_CONTEXT
         return null
     }
 }
@@ -104,7 +131,11 @@ public enum class AgentRequestError {
     MISSING_MODEL_TARGET,
     INVALID_MODEL_TARGET,
     INVALID_TOKEN_LIMIT,
+    INVALID_MEMORY_CONTEXT,
 }
+
+private fun sha256(value: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
 
 /** Checked usage accumulated across all model attempts. */
 public data class UsageSummary(

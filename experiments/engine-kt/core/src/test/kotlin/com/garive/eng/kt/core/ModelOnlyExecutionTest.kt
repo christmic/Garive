@@ -50,6 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -108,7 +109,18 @@ class ModelOnlyExecutionTest {
             Result.success(0uL)
         }
         val report = executeAgent(
-            toolRequest().copy(activatedSkills = activated),
+            toolRequest().copy(
+                activatedSkills = activated,
+                attributedMemory = listOf(
+                    AttributedMemory(
+                        "record",
+                        "revision",
+                        "c064fbca9d9de8dd9bb0624984403b28d0da807a69365d4f7fb09123ecb0c405",
+                        "memory",
+                        listOf(MemoryEvidenceAttribution("session", 1uL, "fact", "a".repeat(64))),
+                    ),
+                ),
+            ),
             AgentToolCapabilities(listOf(toolDefinition(), writeDefinition())),
             ports,
             effects,
@@ -122,6 +134,11 @@ class ModelOnlyExecutionTest {
             model.inputs.first()[0],
         )
         assertEquals(ModelRole.USER, (model.inputs.first()[1] as ModelInputItem.Message).role)
+        assertTrue(
+            ((model.inputs.first()[1] as ModelInputItem.Message).content.first() as ModelInputContent.Text)
+                .text.contains("garive.memory"),
+        )
+        assertEquals(ModelRole.USER, (model.inputs.first()[2] as ModelInputItem.Message).role)
     }
 
     private suspend fun runCase(case: JsonObject) {

@@ -23,6 +23,10 @@ import com.garive.eng.kt.tools.ToolCatalog
 import com.garive.eng.kt.tools.ToolContractResult
 import com.garive.eng.kt.tools.ToolDefinition
 import com.garive.eng.kt.tools.ToolIntent
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Runs one bounded model-only kernel Execution against frozen ports.
@@ -125,6 +129,10 @@ internal suspend fun executeKernel(
             request.activatedSkills.map { skill ->
                 ModelInputItem.Message(ModelRole.DEVELOPER, listOf(ModelInputContent.Text(skill.instructions)))
             },
+        )
+        inputItems.addAll(
+            instructionBoundary + request.activatedSkills.size,
+            request.attributedMemory.map(::memoryInput),
         )
         val modelRequest = ModelRequest(
             ModelRequestId(requestId),
@@ -288,6 +296,31 @@ internal suspend fun executeKernel(
             }
         }
     }
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+private fun memoryInput(value: AttributedMemory): ModelInputItem.Message {
+    val evidence = JsonArray(value.evidence.map { item ->
+        JsonObject(
+            mapOf(
+                "session_id" to JsonPrimitive(item.sessionId),
+                "position" to JsonPrimitive(item.position),
+                "fact_id" to JsonPrimitive(item.factId),
+                "payload_digest" to JsonPrimitive(item.payloadDigest),
+            ),
+        )
+    })
+    val payload = JsonObject(
+        mapOf(
+            "type" to JsonPrimitive("garive.memory"),
+            "record_id" to JsonPrimitive(value.recordId),
+            "revision_id" to JsonPrimitive(value.revisionId),
+            "content_digest" to JsonPrimitive(value.contentDigest),
+            "evidence" to evidence,
+            "content" to JsonPrimitive(value.contentUtf8),
+        ),
+    )
+    return ModelInputItem.Message(ModelRole.USER, listOf(ModelInputContent.Text(payload.toString())))
 }
 
 private fun modelFailure(failure: ModelPortFailure): AgentFailureReason = when (failure) {
