@@ -28,6 +28,7 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 | 6 | [`compression.md`](compression.md) | Context-pressure estimation and compression policy. | research |
 | 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | research |
 | 8 | [`assemble-testing.md`](assemble-testing.md) | Provider assembly contract tests. | research |
+| 9 | [`memory.md`](memory.md) | Memory layer (next continent after `loop`): 4-type classification (semantic / episodic / lessons / procedural) + distillation pyramid + lifetime rules. Angles ②–⑧ are placeholders. | research |
 
 ## Settled boundaries
 
