@@ -266,6 +266,7 @@ fn request(case: &Value) -> AgentTurnRequest {
         },
         activated_skills: vec![],
         attributed_memory: vec![],
+        attributed_knowledge: vec![],
         model_targets: if case["unavailable"] == "alternate" {
             vec![
                 ModelTargetId::new("primary"),

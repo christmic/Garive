@@ -8,11 +8,12 @@ use futures::executor::block_on;
 use garive_core::{
     execute_agent, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
     AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest,
-    AttributedMemory, ClockPort, CommittedGovernedResult, ContextItem, ContextPort,
-    ContextPortError, ContextPurpose, ContextRequest, ContextSurface, EventSink, ExecutionId,
-    ExecutionLimits, FactRef, GovernedEffectFuture, GovernedEffectPort, MemoryEvidenceAttribution,
-    MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure,
-    SessionId, SuspensionReason, TerminalRecoveryAction, TurnId,
+    AttributedKnowledge, AttributedMemory, ClockPort, CommittedGovernedResult, ContextItem,
+    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface, EventSink,
+    ExecutionId, ExecutionLimits, FactRef, GovernedEffectFuture, GovernedEffectPort,
+    KnowledgeCitationAttribution, MemoryEvidenceAttribution, MissingUsagePolicy, ModelOnlyLimits,
+    ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId, SuspensionReason,
+    TerminalRecoveryAction, TurnId,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputItem, ModelItem,
@@ -193,6 +194,7 @@ fn request() -> AgentTurnRequest {
         },
         activated_skills: vec![],
         attributed_memory: vec![],
+        attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new("model")],
         required_capabilities: vec![ModelCapability::Tools],
         model_output: ModelOutputSettings {
@@ -392,6 +394,27 @@ fn activated_skill_narrows_model_tools_and_c4_catalog() {
             payload_digest: "a".repeat(64),
         }],
     }];
+    skilled_request.attributed_knowledge = vec![AttributedKnowledge {
+        source_id: "docs".into(),
+        source_revision: "1".into(),
+        evidence_id: "evidence".into(),
+        source_snapshot_digest: None,
+        content_digest: "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b".into(),
+        content_utf8: "knowledge".into(),
+        content_byte_length: 9,
+        citation: KnowledgeCitationAttribution {
+            locator_kind: "uri_fragment".into(),
+            locator: "intro".into(),
+            title: None,
+            canonical_uri: Some("https://example.test/docs#intro".into()),
+            content_digest: "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b"
+                .into(),
+        },
+        retrieved_at_utc: "2026-08-29T00:00:00Z".into(),
+        freshness: "fresh".into(),
+        trust_class: "curated".into(),
+        rank_basis_points: 9000,
+    }];
     let mut context = Context { positions: vec![] };
     let model = Model {
         outcomes: Mutex::new(VecDeque::from([tool_outcome("write_file"), text_outcome()])),
@@ -434,6 +457,11 @@ fn activated_skill_narrows_model_tools_and_c4_catalog() {
     );
     assert!(matches!(
         &inputs[0][2],
+        ModelInputItem::Message { role: ModelRole::User, content }
+        if matches!(&content[0], garive_llm::ModelInputContent::Text(text) if text.contains("garive.knowledge"))
+    ));
+    assert!(matches!(
+        &inputs[0][3],
         ModelInputItem::Message {
             role: ModelRole::User,
             ..

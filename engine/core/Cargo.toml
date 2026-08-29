@@ -10,6 +10,7 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
+chrono.workspace = true
 garive-llm = { path = "../llm" }
 garive-skill = { path = "../skill" }
 garive-tools = { path = "../tools" }

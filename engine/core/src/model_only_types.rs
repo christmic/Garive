@@ -1,3 +1,4 @@
+use chrono::{DateTime, SecondsFormat, Utc};
 use garive_llm::{
     ModelCancellation, ModelCapability, ModelItem, ModelOutputSettings, ModelPort,
     ModelStreamEvent, ModelTargetId, TokenCount,
@@ -165,6 +166,88 @@ impl MemoryEvidenceAttribution {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Exact sanitized citation attached to model-visible Knowledge evidence.
+pub struct KnowledgeCitationAttribution {
+    /// Portable citation locator kind.
+    pub locator_kind: String,
+    /// Sanitized connector locator.
+    pub locator: String,
+    /// Optional display title.
+    pub title: Option<String>,
+    /// Optional canonical public URI.
+    pub canonical_uri: Option<String>,
+    /// Digest binding the cited content.
+    pub content_digest: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Runtime-verified Knowledge evidence supplied as subordinate attributed data.
+pub struct AttributedKnowledge {
+    /// Exact configured source identity.
+    pub source_id: String,
+    /// Exact configured source revision.
+    pub source_revision: String,
+    /// Stable evidence identity within the source response.
+    pub evidence_id: String,
+    /// Optional exact source snapshot.
+    pub source_snapshot_digest: Option<String>,
+    /// SHA-256 digest binding `content_utf8`.
+    pub content_digest: String,
+    /// Runtime-resolved inline UTF-8 evidence.
+    pub content_utf8: String,
+    /// Runtime-verified UTF-8 byte length.
+    pub content_byte_length: u64,
+    /// Exact sanitized citation.
+    pub citation: KnowledgeCitationAttribution,
+    /// Canonical UTC retrieval timestamp.
+    pub retrieved_at_utc: String,
+    /// `fresh`, `cached`, or `stale`.
+    pub freshness: String,
+    /// `curated`, `first_party`, `third_party`, or `untrusted`.
+    pub trust_class: String,
+    /// Connector rank metadata in basis points.
+    pub rank_basis_points: u16,
+}
+
+impl AttributedKnowledge {
+    pub(crate) fn valid(&self) -> bool {
+        !self.source_id.is_empty()
+            && !self.source_revision.is_empty()
+            && !self.evidence_id.is_empty()
+            && self
+                .source_snapshot_digest
+                .as_deref()
+                .map_or(true, valid_digest)
+            && !self.content_utf8.is_empty()
+            && digest(self.content_utf8.as_bytes()) == self.content_digest
+            && self.content_byte_length == self.content_utf8.len() as u64
+            && self.citation.valid(&self.content_digest)
+            && canonical_utc(&self.retrieved_at_utc)
+            && matches!(self.freshness.as_str(), "fresh" | "cached" | "stale")
+            && matches!(
+                self.trust_class.as_str(),
+                "curated" | "first_party" | "third_party" | "untrusted"
+            )
+            && self.rank_basis_points <= 10_000
+    }
+}
+
+impl KnowledgeCitationAttribution {
+    fn valid(&self, content_digest: &str) -> bool {
+        matches!(
+            self.locator_kind.as_str(),
+            "uri_fragment" | "document_offset" | "record_key" | "opaque_locator"
+        ) && !self.locator.is_empty()
+            && self.title.as_ref().map_or(true, |value| !value.is_empty())
+            && self
+                .canonical_uri
+                .as_ref()
+                .map_or(true, |value| !value.is_empty())
+            && self.content_digest == content_digest
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Complete immutable input for one disposable model-only kernel execution.
 pub struct AgentTurnRequest {
     /// Session owning the turn and its ledger facts.
@@ -189,6 +272,8 @@ pub struct AgentTurnRequest {
     pub activated_skills: Vec<ActivatedSkill>,
     /// Ordered Runtime-verified optional Memory data committed before model use.
     pub attributed_memory: Vec<AttributedMemory>,
+    /// Ordered Runtime-verified Knowledge evidence committed before model use.
+    pub attributed_knowledge: Vec<AttributedKnowledge>,
     /// Ordered frozen model targets available to recovery policy.
     pub model_targets: Vec<ModelTargetId>,
     /// Provider-neutral capabilities every selected target must satisfy.
@@ -216,6 +301,8 @@ pub enum AgentRequestError {
     InvalidTokenLimit,
     /// A model-visible Memory value lacks an exact content/evidence binding.
     InvalidMemoryContext,
+    /// A model-visible Knowledge value lacks an exact content/citation binding.
+    InvalidKnowledgeContext,
 }
 
 impl AgentTurnRequest {
@@ -252,6 +339,9 @@ impl AgentTurnRequest {
         if self.attributed_memory.iter().any(|value| !value.valid()) {
             return Err(AgentRequestError::InvalidMemoryContext);
         }
+        if self.attributed_knowledge.iter().any(|value| !value.valid()) {
+            return Err(AgentRequestError::InvalidKnowledgeContext);
+        }
         Ok(())
     }
 }
@@ -265,6 +355,14 @@ fn valid_digest(value: &str) -> bool {
 
 fn digest(value: &[u8]) -> String {
     format!("{:x}", Sha256::digest(value))
+}
+
+fn canonical_utc(value: &str) -> bool {
+    DateTime::parse_from_rfc3339(value).is_ok_and(|time| {
+        time.with_timezone(&Utc)
+            .to_rfc3339_opts(SecondsFormat::AutoSi, true)
+            == value
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

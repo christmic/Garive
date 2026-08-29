@@ -1068,6 +1068,7 @@ fn core_request(
         },
         activated_skills: vec![],
         attributed_memory: vec![],
+        attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new("target")],
         required_capabilities: vec![ModelCapability::Text],
         model_output: ModelOutputSettings {

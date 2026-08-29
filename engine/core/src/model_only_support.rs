@@ -58,6 +58,11 @@ pub(super) fn build_model_request(
         memory_boundary..memory_boundary,
         request.attributed_memory.iter().map(memory_input),
     );
+    let knowledge_boundary = memory_boundary + request.attributed_memory.len();
+    input_items.splice(
+        knowledge_boundary..knowledge_boundary,
+        request.attributed_knowledge.iter().map(knowledge_input),
+    );
     let value = ModelRequest {
         request_id: ModelRequestId::new(request_id.clone()),
         target_id: target,
@@ -96,6 +101,36 @@ fn memory_input(value: &crate::AttributedMemory) -> ModelInputItem {
                 "revision_id": value.revision_id,
                 "content_digest": value.content_digest,
                 "evidence": evidence,
+                "content": value.content_utf8,
+            })
+            .to_string(),
+        )],
+    }
+}
+
+fn knowledge_input(value: &crate::AttributedKnowledge) -> ModelInputItem {
+    ModelInputItem::Message {
+        role: ModelRole::User,
+        content: vec![ModelInputContent::Text(
+            serde_json::json!({
+                "type": "garive.knowledge",
+                "source_id": value.source_id,
+                "source_revision": value.source_revision,
+                "evidence_id": value.evidence_id,
+                "source_snapshot_digest": value.source_snapshot_digest,
+                "content_digest": value.content_digest,
+                "content_byte_length": value.content_byte_length,
+                "citation": {
+                    "locator_kind": value.citation.locator_kind,
+                    "locator": value.citation.locator,
+                    "title": value.citation.title,
+                    "canonical_uri": value.citation.canonical_uri,
+                    "content_digest": value.citation.content_digest,
+                },
+                "retrieved_at_utc": value.retrieved_at_utc,
+                "freshness": value.freshness,
+                "trust_class": value.trust_class,
+                "rank_basis_points": value.rank_basis_points,
                 "content": value.content_utf8,
             })
             .to_string(),
