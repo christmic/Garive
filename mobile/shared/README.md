@@ -1,8 +1,7 @@
 # mobile/shared/
 
-> **KMP shared module.** Pure business logic — agent client,
-> tool registry, memory / knowledge stores, protocol bindings.
-> No UI.
+> **KMP shared module.** Generated Host v1 wire types, bounded live H1 client,
+> and durable-event reducer. No UI and no Agent Engine semantics.
 
 This is the only place in `mobile/` that holds business code.
 UI tiers (`androidApp/`, `iosApp/`) depend on this module but
@@ -13,7 +12,7 @@ this module depends on neither.
 ```
 shared/
 ├── src/
-│   ├── commonMain/kotlin/   generated-wire H1 client and reducer
+│   ├── commonMain/kotlin/   live H1 client and reducer
 │   └── jvmTest/kotlin/      shared fixture, real-loopback and wire tests
 ├── build.gradle.kts         KMP + Square Wire generation
 └── README.md
@@ -23,11 +22,10 @@ shared/
 
 | Allowed | Examples |
 |---------|----------|
-| Agent loop client, tool registry | `AgentLoop`, `ToolRegistry`, `ToolResult` |
-| Domain types | `Agent`, `Session`, `MemoryEntry`, `Knowledge` |
-| Repositories | `SessionRepository`, `MemoryRepository` |
+| Live Host client | H1 commands, SSE follow and terminal reduction |
+| Client view types | Session/Turn command results and reduced terminal view |
 | Generated proto bindings (Kotlin) | from `spec/proto/` via Square Wire Gradle plugin |
-| Platform interfaces | `Clock`, `SecureStorage`, `PushNotifications` |
+| Explicit client inputs | loopback URL and response/event bounds |
 
 | Forbidden | Why |
 |-----------|-----|

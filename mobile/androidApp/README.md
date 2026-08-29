@@ -3,11 +3,10 @@
 > **Android app.** Jetpack Compose UI, Material 3, AndroidX.
 > Thin tier — calls into `mobile/shared/` for business logic.
 
-## Stack
+## Implemented slice
 
 - **UI**: Jetpack Compose + Material 3
-- **DI**: Hilt (or Kotlin-Inject; pick one and stay consistent)
-- **Async**: Kotlin Coroutines + Flow (already idiomatic in KMP)
+- **Async**: Kotlin Coroutines
 - **Min SDK**: 26 (Android 8.0); Target SDK: latest stable
 - **Build**: Gradle (Kotlin DSL)
 
@@ -15,24 +14,12 @@
 
 ```
 androidApp/
-├── src/main/kotlin/com/garive/mobile/   application code
-│   ├── ui/        Compose screens, themes, components
-│   ├── nav/       Navigation graph
-│   ├── platform/  Android-specific glue (push, permissions)
-│   └── MainActivity.kt
-├── src/main/res/  resources (drawables, strings, themes)
+├── app/src/main/java/com/garive/android/MainActivity.kt
+├── app/src/main/res/                         theme and network policy
+├── app/build.gradle.kts
 ├── build.gradle.kts
 └── README.md
 ```
-
-## Conventions
-
-- All screens are `@Composable` functions; no XML layouts.
-- ViewModels expose `StateFlow<UiState>`; screens `collectAsState`.
-- Navigation via `androidx.navigation:navigation-compose`.
-- Push notifications via FCM (Android) wired in `platform/`.
-- Permissions: `accompanist-permissions` or the Activity Result
-  API.
 
 ## Depends On
 
@@ -54,6 +41,6 @@ duplicate Host reduction in the UI tier.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-27
-- Status: active Compose shell; Gradle configuration verified, APK gate requires
-  a local Android SDK.
+- Last reviewed: 2026-08-29
+- Status: live-H1 Compose shell implemented; APK gate requires local Android
+  SDK 36.

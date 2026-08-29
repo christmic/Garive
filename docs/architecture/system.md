@@ -131,10 +131,10 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Technology | Initial status | Admission evidence |
 |---|---|---|
 | Rust implementation | accepted | First vertical slice and reliability requirements. |
-| Kotlin Engine experiment | C0-C3 conformance experiment; later slices gated | Shared fixtures and native tests per `cross-language-agent-contract.md`; no product-server claim. |
+| Kotlin Engine experiment | portable conformance experiment | D0, C0-C5 and admitted capability values/reducers use shared fixtures and native tests; no product-server claim. |
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
 | Desktop app | embedded Runtime shell | Tauri backend owns R1 and strict typed IPC; backend-only configuration provisioning remains active. |
-| Mobile app | executable shell | Generated KMP Host client with Compose and SwiftUI shells. |
+| Mobile app | live Host client shell | Shared KMP H1 client with Compose and SwiftUI consumers; Android APK evidence remains SDK-gated. |
 | SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
 
 Only slices listed in the cross-language matrix carry a conformance claim;

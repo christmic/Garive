@@ -107,10 +107,16 @@ desktop:
     cargo test -p garive-desktop
     cargo check -p garive-desktop
 
-mobile:
+mobile-shared:
     cd mobile/shared && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain jvmTest assembleGariveSharedDebugXCFramework
+
+mobile-ios: mobile-shared
     cd mobile/iosApp && swift test
-    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain tasks --all
+
+mobile-android:
+    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:assembleDebug
+
+mobile: mobile-ios mobile-android
 
 apps: host-client web desktop mobile
     cargo test -p garive-cli -p garive-tui

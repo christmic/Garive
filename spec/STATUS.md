@@ -59,7 +59,7 @@ planned without reopening a narrower completed row.
 | A-TUI | TUI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit loopback H1 and ordered durable event/cursor rendering tests green; resident multi-turn UX is a later slice. |
 | A-WEB | Web shell | accepted | accepted | documented | implemented | verified | done | Keep strict injectable HTTP/SSE, all H1 mutations, shared reducer fixture and production TypeScript build green. |
 | A-DESKTOP | Tauri/React shell | accepted | accepted | documented | partial | verified | active | Install constructed model/configuration through a backend-only Garive configuration provider; embedded R1, typed IPC and temporary-SQLite loop are verified. |
-| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | partial | partial | partial | active | Implement KMP A1 client/reducer, then add Android APK gate when an SDK is available. |
+| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | partial | active | Keep the KMP JVM/real-H1, XCFramework and Swift gates green; run the Android APK gate when SDK 36 is installed. |
 | G0 | Go Gateway | accepted | missing | missing | skeleton | missing | gated | Admit only after a live Host requires a separately scaled edge. |
 | B0 | SWE benchmark harness | accepted | missing | missing | skeleton | missing | gated | Admit after one real end-to-end Agent workflow exists. |
 

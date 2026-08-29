@@ -2,9 +2,9 @@
 
 ## Status
 
-Kotlin is admitted as an experimental conformance implementation for portable
-D0 and C0-C5. It is not a supported product server. Other Engine capabilities
-remain outside the experiment until admitted by an amended matrix.
+Kotlin is admitted as an experimental conformance implementation for the
+portable slices listed in the matrices below. It is not a supported product
+server and carries no Rust Runtime implementation claim.
 
 Rust remains the production-first implementation. Neither language defines
 shared behavior alone: accepted specs plus shared fixtures define it.
@@ -27,7 +27,7 @@ domain models.
 | D0 definition snapshot | supported | experimental | semantic resolution + canonical digest fixtures |
 | C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
 | C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
-| C6 Runtime | production planned | PostgreSQL experiment planned | shared public decisions + independent native crash evidence |
+| C6 Runtime | supported | admitted PostgreSQL recovery subset | shared public decisions + independent native crash evidence |
 | C7 compression | planned | not admitted | measured admission decision required |
 
 `unsupported` is a valid explicit capability result. It must not silently fall
