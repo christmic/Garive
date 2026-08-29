@@ -5,11 +5,12 @@ use garive_ledger::{
     CommitDisposition, FactDraft, FactId, FactKind, LedgerError, SessionId,
 };
 use garive_runtime::{
-    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
-    select_runtime_recovery, CancelReason, CancelTurnCommand, ContinueTurnCommand,
-    EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
-    ModelRecoveryPosition, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
-    RuntimeRecoverySnapshot, SqliteLedger, SqliteLedgerError, StartTurnCommand,
+    plan_cancel_turn, plan_continue_turn, plan_recovery_restart, plan_start_turn,
+    reconstruct_suspended_turn, select_runtime_recovery, CancelReason, CancelTurnCommand,
+    ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
+    ModelRecoveryPosition, RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId,
+    RuntimeRecoveryAction, RuntimeRecoverySnapshot, SqliteLedger, SqliteLedgerError,
+    StartTurnCommand,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -302,4 +303,64 @@ fn recovery_reducer_consumes_every_frozen_restart_case() {
             case["name"]
         );
     }
+}
+
+#[test]
+fn restart_atomically_abandons_the_lost_execution_and_starts_one_replacement() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("recovery.sqlite3");
+    let start = start_command("hello", "command-start");
+    let session = start.session_id.clone();
+    let started = plan_start_turn(&start, 1).unwrap();
+    let lost = started.execution_id.clone().unwrap();
+    {
+        let mut ledger = SqliteLedger::open(&path).unwrap();
+        ledger
+            .commit(session.clone(), 0, vec![open_session()])
+            .unwrap();
+        ledger.commit(session.clone(), 1, started.facts).unwrap();
+    }
+    let command = RecoveryRestartCommand {
+        recovery_id: RuntimeCommandId::new("recovery-1").unwrap(),
+        turn_id: started.turn_id.clone(),
+        lost_execution_id: lost.clone(),
+        snapshot_digest: start.snapshot_digest.clone(),
+        last_safe_position: 4,
+        completed_iterations: 0,
+        recovery_ordinal: 1,
+        limits: start.limits,
+        recorded_at: "2026-08-29T00:00:02Z".into(),
+    };
+    let recovery = plan_recovery_restart(&command).unwrap();
+    let replacement = recovery.execution_id.clone().unwrap();
+    assert_ne!(lost, replacement);
+    {
+        let mut ledger = SqliteLedger::open(&path).unwrap();
+        assert_eq!(
+            ledger
+                .commit(session.clone(), 2, recovery.facts)
+                .unwrap()
+                .positions,
+            vec![5, 6]
+        );
+    }
+    let ledger = SqliteLedger::open(&path).unwrap();
+    let snapshot = ledger.load_turn(&started.turn_id).unwrap();
+    assert_eq!(snapshot.session_version, 3);
+    assert_eq!(
+        snapshot
+            .facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "execution.abandoned")
+            .count(),
+        1
+    );
+    assert_eq!(
+        snapshot
+            .facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "execution.started")
+            .count(),
+        2
+    );
 }
