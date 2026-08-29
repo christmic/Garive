@@ -1235,6 +1235,7 @@ dependencies = [
  "garive-adapter-anthropic-messages",
  "garive-adapter-openai-responses",
  "garive-core",
+ "garive-knowledge",
  "garive-ledger",
  "garive-llm",
  "garive-memory",
