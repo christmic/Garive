@@ -272,6 +272,9 @@ retryable failure remain `Partial`; a backup-pending result must state a later
 position. Erasure receipts never reverse the tombstone and never make content
 model-visible again.
 
+One request contains 1–64 targets. The bound is a protocol constant shared by
+Rust and Kotlin; larger configured target sets fail before any erasure attempt.
+
 - Distillation binds an exact ledger prefix, watermark and extractor revision;
   replay is idempotent.
 - Per-namespace/type count and byte quotas are explicit snapshot values.
