@@ -6,8 +6,10 @@ use garive_ledger::{
 };
 use garive_runtime::{
     plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
-    CancelReason, CancelTurnCommand, ContinueTurnCommand, EffectiveRuntimeLimits,
-    RuntimeCommandError, RuntimeCommandId, SqliteLedger, SqliteLedgerError, StartTurnCommand,
+    select_runtime_recovery, CancelReason, CancelTurnCommand, ContinueTurnCommand,
+    EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
+    ModelRecoveryPosition, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
+    RuntimeRecoverySnapshot, SqliteLedger, SqliteLedgerError, StartTurnCommand,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -247,4 +249,57 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
         plan_continue_turn(&stale, &state),
         Err(RuntimeCommandError::ContinuationMismatch)
     );
+}
+
+#[test]
+fn recovery_reducer_consumes_every_frozen_restart_case() {
+    let fixture = fixture();
+    let cases = fixture["recovery_cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 8);
+    for case in cases {
+        let execution = match case["execution"].as_str().unwrap() {
+            "active" => ExecutionRecoveryPosition::Active,
+            "suspended" => ExecutionRecoveryPosition::Suspended,
+            "terminal" => ExecutionRecoveryPosition::Terminal,
+            value => panic!("unknown execution position {value}"),
+        };
+        let model = match case["model"].as_str().unwrap() {
+            "none" => ModelRecoveryPosition::None,
+            "prepared" => ModelRecoveryPosition::Prepared,
+            "started" => ModelRecoveryPosition::Started,
+            "terminal" => ModelRecoveryPosition::Terminal,
+            value => panic!("unknown model position {value}"),
+        };
+        let effect = match case["effect"].as_str().unwrap() {
+            "none" => EffectRecoveryPosition::None,
+            "prepared" => EffectRecoveryPosition::Prepared,
+            "started" => EffectRecoveryPosition::Started,
+            "receipt" => EffectRecoveryPosition::Receipt,
+            "interaction_requested" => EffectRecoveryPosition::InteractionRequested,
+            "terminal" => EffectRecoveryPosition::Terminal,
+            value => panic!("unknown effect position {value}"),
+        };
+        let expected = match case["expected"].as_str().unwrap() {
+            "abandon_and_restart" => RuntimeRecoveryAction::AbandonAndRestart,
+            "classify_model_uncertain" => RuntimeRecoveryAction::ClassifyModelUncertain,
+            "classify_effect_uncertain" => RuntimeRecoveryAction::ClassifyEffectUncertain,
+            "recover_receipt_terminal" => RuntimeRecoveryAction::RecoverReceiptTerminal,
+            "await_continuation" => RuntimeRecoveryAction::AwaitContinuation,
+            "return_committed_terminal" => RuntimeRecoveryAction::ReturnCommittedTerminal,
+            "fail_recovery_bound" => RuntimeRecoveryAction::FailRecoveryBound,
+            value => panic!("unknown recovery action {value}"),
+        };
+        assert_eq!(
+            select_runtime_recovery(RuntimeRecoverySnapshot {
+                execution,
+                model,
+                effect,
+                recovery_ordinal: case["recovery_ordinal"].as_u64().unwrap_or(0),
+                max_recoveries: case["max_recoveries"].as_u64().unwrap_or(3),
+            }),
+            expected,
+            "{}",
+            case["name"]
+        );
+    }
 }
