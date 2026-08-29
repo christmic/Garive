@@ -107,6 +107,11 @@ pub(super) fn content(items: &[ModelItem]) -> Result<Value, RuntimeCommandError>
     Ok(json!({"digest":canonical.sha256(),"inline_utf8":canonical.as_json()}))
 }
 
+pub(super) fn text_content(value: &str) -> Result<Value, RuntimeCommandError> {
+    let digest = digest(value.as_bytes());
+    Ok(json!({"digest":digest,"inline_utf8":value}))
+}
+
 fn model_item(item: &ModelItem) -> Value {
     match item {
         ModelItem::Text { text } => json!({"kind":"text","text":text}),
