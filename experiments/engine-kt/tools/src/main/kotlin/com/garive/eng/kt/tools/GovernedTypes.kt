@@ -207,6 +207,32 @@ public enum class GovernedFailureCode {
     INVALID_MODEL_OUTPUT,
 }
 
+/** Safe model feedback for C4 rejection before invocation allocation. */
+public data class PreparationRejectedFeedback(
+    public val modelCallId: String,
+    public val proposedToolName: String,
+    public val code: PreparationErrorCode,
+    public val failurePaths: List<String>,
+)
+
+/** Model-visible feedback after preparation or governance. */
+public sealed interface ToolFeedback {
+    /** C4 rejected untrusted model output. */
+    public data class PreparationRejected(public val feedback: PreparationRejectedFeedback) : ToolFeedback
+    /** Runtime invocation reached a governed observation. */
+    public data class Governed(public val observation: GovernedObservation) : ToolFeedback
+}
+
+/** Final portable C5 reduction result toward the Agent loop. */
+public sealed interface GovernedToolResult {
+    /** Safe feedback can enter later model context after durability. */
+    public data class Observation(public val feedback: ToolFeedback) : GovernedToolResult
+    /** Current Execution terminates suspended. */
+    public data class Suspend(public val requirement: SuspensionRequirement) : GovernedToolResult
+    /** Current Execution fails closed. */
+    public data class Fail(public val code: GovernedFailureCode) : GovernedToolResult
+}
+
 /** Portable lifecycle state. */
 public enum class EffectState { PREPARED, DENIED, REPLACED, AWAITING_INTERACTION, AUTHORIZED, STARTED, COMPLETED, FAILED, UNCERTAIN }
 

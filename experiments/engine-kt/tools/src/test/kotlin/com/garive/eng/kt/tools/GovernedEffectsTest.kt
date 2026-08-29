@@ -170,4 +170,47 @@ class GovernedEffectsTest {
         assertTrue(ReceiptId.create("") is GovernedValueResult.Failure)
         assertTrue(DispatchAttemptId.create("") is GovernedValueResult.Failure)
     }
+
+    @Test
+    fun sharedPreparationFailuresReduceSafely() {
+        fixture.getValue("preparation_cases").jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val input = case.getValue("intent").jsonObject
+            val intent = ToolIntent(
+                input.getValue("model_call_id").jsonPrimitive.content,
+                input.getValue("tool_name").jsonPrimitive.content,
+                input.getValue("arguments_json").jsonPrimitive.content,
+            )
+            val error = (
+                toolSuccess(
+                    ToolCatalog.create(
+                        listOf(
+                            toolSuccess(
+                                ToolDefinition.create(
+                                    "read_file",
+                                    "1",
+                                    "Read one admitted file.",
+                                    Json.parseToJsonElement("""{"type":"object","properties":{"path":{"type":"string","minLength":1}},"required":["path"],"additionalProperties":false}"""),
+                                    toolSuccess(ExecutionRequirements.create(listOf(ExecutionCapability.FILESYSTEM_READ), 5000, 4096)),
+                                    ReplayClass.READ_ONLY,
+                                ),
+                            ),
+                        ),
+                    ),
+                ).prepare(intent) as ToolContractResult.Failure
+            ).error
+            when (val result = reducePreparationFailure(intent, error)) {
+                is GovernedToolResult.Observation -> {
+                    val feedback = (result.feedback as ToolFeedback.PreparationRejected).feedback
+                    assertEquals(error.code, feedback.code)
+                    assertEquals(
+                        case.getValue("expected").jsonObject.getValue("failure_paths").jsonArray.map { it.jsonPrimitive.content },
+                        feedback.failurePaths,
+                    )
+                }
+                is GovernedToolResult.Fail -> assertEquals(GovernedFailureCode.INVALID_MODEL_OUTPUT, result.code)
+                is GovernedToolResult.Suspend -> error("preparation cannot suspend")
+            }
+        }
+    }
 }

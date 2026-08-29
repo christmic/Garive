@@ -1,5 +1,25 @@
 package com.garive.eng.kt.tools
 
+/** Maps a C4 rejection to safe feedback only with valid model correlation. */
+public fun reducePreparationFailure(
+    intent: ToolIntent,
+    error: PreparationError,
+): GovernedToolResult =
+    if (intent.modelCallId.isEmpty()) {
+        GovernedToolResult.Fail(GovernedFailureCode.INVALID_MODEL_OUTPUT)
+    } else {
+        GovernedToolResult.Observation(
+            ToolFeedback.PreparationRejected(
+                PreparationRejectedFeedback(
+                    intent.modelCallId,
+                    intent.toolName,
+                    error.code,
+                    error.failures.map(SchemaFailure::instancePath),
+                ),
+            ),
+        )
+    }
+
 /** Durable authorization verdict for one exact invocation. */
 public sealed interface AuthorizationVerdict {
     /** Exact authority grant. */
