@@ -41,14 +41,16 @@ planned without reopening a narrower completed row.
 | L1-R | SQLite Ledger adapter | accepted | accepted | partial | implemented | partial | active | Add migration/backup policy and the remaining process-boundary fault matrix. |
 | L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | partial | active | Complete the remaining process-boundary and concurrency fault matrix. |
 
-## Providers, Host, and clients
+## Protocols, Providers, Host, and clients
 
 | ID | Slice | Design | Spec | API | Code | Tests | State | Next evidence |
 |---|---|---|---|---|---|---|---|---|
-| P1-O | OpenAI Responses protocol adapter | accepted | accepted | documented | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
-| P1-A | Anthropic Messages protocol adapter | accepted | accepted | documented | partial | verified | active | Add the real authenticated HTTP transport without changing normalized semantics. |
+| P1-O | Responses-compatible protocol adapters | accepted | accepted | partial | partial | partial | active | Complete the Rust/Kotlin portable type matrix and negative fixture parity; keep incremental SSE and boundary gates green. |
+| P1-A | Messages-compatible protocol adapters | accepted | accepted | partial | partial | partial | active | Complete the Rust/Kotlin portable block/delta matrix and negative fixture parity; keep incremental SSE and boundary gates green. |
+| P2-C | Compatible deployment Provider mapping | accepted | missing | missing | missing | missing | planned | Specify neutral request/outcome mapping, capability admission, and error policy separately from protocol codecs. |
+| P2-V | Vendor-specific Provider profiles | accepted | missing | missing | missing | missing | planned | Admit hosted APIs, default endpoints, credentials, and vendor capabilities only after P2-C. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
-| H1 | Live durable Host | accepted | draft | missing | missing | missing | planned | Depends on C6 and one real provider transport. |
+| H1 | Live durable Host | accepted | draft | missing | missing | missing | planned | Depends on C6, P2-C, and one Runtime-owned transport. |
 | A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
 | A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
 | A-WEB | Web shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |

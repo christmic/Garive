@@ -24,9 +24,16 @@ conformance: architecture
     cargo test -p garive-core -p garive-llm
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :core:test :llm:test
 
-providers:
+adapter-boundaries:
+    @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not read process configuration' >&2; exit 1; fi
+    @if rg -n 'garive-(core|llm|runtime|ledger)|project\(\":(core|llm|runtime|ledger)' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not depend on Garive semantic layers' >&2; exit 1; fi
+
+protocol-adapters: adapter-boundaries
     cargo test -p garive-adapter-openai-responses -p garive-adapter-anthropic-messages
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :adapter-openai-responses:test :adapter-anthropic-messages:test
+
+# Compatibility alias for existing local workflows; this target does not build Providers.
+providers: protocol-adapters
 
 kotlin-experiment:
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
@@ -57,7 +64,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance providers kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters kotlin-experiment apps rust
 
 bench:
     cargo test -p bench
