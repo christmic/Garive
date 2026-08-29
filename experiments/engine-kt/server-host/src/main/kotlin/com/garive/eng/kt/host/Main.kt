@@ -2,8 +2,10 @@ package com.garive.eng.kt.host
 
 import com.garive.host.v1.Host
 
-object EmbeddedServerHost {
-    fun runFixture(input: String): Host.FakeHostScenarioV1 {
+/** Deterministic generated-Proto Host fixture used by JVM shell conformance. */
+public object EmbeddedServerHost {
+    /** Runs the sole admitted fake command and returns its ordered Host v1 events. */
+    public fun runFixture(input: String): Host.FakeHostScenarioV1 {
         require(input == "hello") { "fixture host accepts only hello" }
         val scenario = Host.FakeHostScenarioV1.newBuilder()
             .setApiVersion("garive.host.v1")
@@ -31,7 +33,8 @@ object EmbeddedServerHost {
             .build()
 }
 
-fun main() {
+/** Prints the deterministic fake Host response for local smoke execution. */
+public fun main(): Unit {
     EmbeddedServerHost.runFixture("hello").eventsList
         .filter { it.event == "output.delta" }
         .forEach { print(it.text) }
