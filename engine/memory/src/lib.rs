@@ -3,20 +3,31 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod audit;
 mod hypothesis;
 mod lifecycle;
+mod maintenance;
 mod observation;
 mod query;
 mod recall;
 mod values;
 mod write;
 
+pub use audit::{
+    audit_memory, MemoryAuditAction, MemoryAuditEntry, MemoryAuditPolicy, MemoryAuditReport,
+    MemoryContradiction,
+};
 pub use hypothesis::{
     import_m0_classification, ImportedMemoryClassification, MemoryAuthority,
     MemoryAuthorityBinding, MemoryRole, MemoryScopeBinding, MemoryScopeClass, MemoryType,
     MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 pub use lifecycle::{EvidenceTally, HypothesisState, LifecycleEvent, MemoryLifecycle};
+pub use maintenance::{
+    advance_distillation, decide_candidate, AdmissionAssessment, CandidateStability,
+    DistillationWatermark, MaintenanceNoopCode, MemoryCandidate, MemoryCandidateIntent,
+    MemoryCandidateSource, MemoryMaintenanceDecision, WatermarkDisposition,
+};
 pub use observation::{
     reduce_observation, MemoryObligation, MemoryObservation, ObservationEvidence,
     ObservationEvidenceKind, ObservationReduction, ObservationVerdict, ScopeNarrowingCandidate,
