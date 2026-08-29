@@ -1,7 +1,9 @@
 use garive_llm::{RejectionKind, UnavailableKind};
 use garive_provider_compatible::{ErrorDisposition, ErrorSignature};
 use garive_provider_openai::build_profile;
-use garive_provider_profile::{ConnectionInput, EndpointSelection, ExplicitHeader, SecretValue};
+use garive_provider_profile::{
+    ConnectionInput, EndpointSelection, ExplicitHeader, SecretValue, VendorProfileError,
+};
 use serde_json::Value;
 
 fn fixture() -> Value {
@@ -90,4 +92,23 @@ fn shared_openai_error_rules_are_exact() {
             other => panic!("unknown expectation {other}"),
         }
     }
+}
+
+#[test]
+fn shared_openai_reserved_header_case_returns_stable_code() {
+    let fixture = fixture();
+    let case = fixture["failure_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "openai-reserved-auth")
+        .unwrap();
+    let input = ConnectionInput::new(
+        EndpointSelection::Default,
+        SecretValue::new("secret").unwrap(),
+        vec![ExplicitHeader::new("Authorization", "caller", true).unwrap()],
+    );
+    let error = build_profile(&input).unwrap_err();
+    assert_eq!(error, VendorProfileError::ReservedHeader);
+    assert_eq!(error.code(), case["code"].as_str().unwrap());
 }

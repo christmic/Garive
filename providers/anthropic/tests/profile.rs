@@ -1,7 +1,9 @@
 use garive_llm::{RejectionKind, UnavailableKind};
 use garive_provider_anthropic::build_profile;
 use garive_provider_compatible::{ErrorDisposition, ErrorSignature};
-use garive_provider_profile::{ConnectionInput, EndpointSelection, ExplicitHeader, SecretValue};
+use garive_provider_profile::{
+    ConnectionInput, EndpointSelection, ExplicitHeader, SecretValue, VendorProfileError,
+};
 use serde_json::Value;
 
 fn fixture() -> Value {
@@ -94,5 +96,31 @@ fn shared_anthropic_error_rules_are_exact_and_context_is_unclassified() {
             "unclassified_protocol_error" => assert_eq!(disposition, None),
             other => panic!("unknown expectation {other}"),
         }
+    }
+}
+
+#[test]
+fn shared_anthropic_reserved_header_cases_return_stable_codes() {
+    let fixture = fixture();
+    for name in ["anthropic-reserved-version", "anthropic-reserved-bearer"] {
+        let case = fixture["failure_cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap();
+        let header = if name == "anthropic-reserved-version" {
+            "Anthropic-Version"
+        } else {
+            "Authorization"
+        };
+        let input = ConnectionInput::new(
+            EndpointSelection::Default,
+            SecretValue::new("secret").unwrap(),
+            vec![ExplicitHeader::new(header, "caller", true).unwrap()],
+        );
+        let error = build_profile(&input).unwrap_err();
+        assert_eq!(error, VendorProfileError::ReservedHeader);
+        assert_eq!(error.code(), case["code"].as_str().unwrap(), "{name}");
     }
 }
