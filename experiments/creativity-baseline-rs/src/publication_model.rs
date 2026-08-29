@@ -200,11 +200,17 @@ fn validate(config: &ModelEndpointConfig) -> Result<bool, CreativityBaselineErro
     {
         return Err(error());
     }
-    let messages_shape = matches!(config.protocol, ModelProtocol::MessagesCompatible);
-    if messages_shape
-        != (config.messages_version_header_name.is_some()
-            && config.messages_protocol_version.is_some())
-    {
+    let dialect_shape = match config.protocol {
+        ModelProtocol::ResponsesCompatible => {
+            config.messages_version_header_name.is_none()
+                && config.messages_protocol_version.is_none()
+        }
+        ModelProtocol::MessagesCompatible => {
+            config.messages_version_header_name.is_some()
+                && config.messages_protocol_version.is_some()
+        }
+    };
+    if !dialect_shape {
         return Err(error());
     }
     validate_headers(config)?;

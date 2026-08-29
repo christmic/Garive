@@ -11,6 +11,7 @@ mod model_ports;
 mod port;
 mod publication_model;
 mod runner;
+mod system_credential;
 
 pub use command_ports::{CommandCreativityEvaluator, CommandCreativityGenerator};
 pub use command_process::CommandPortConfig;
@@ -30,3 +31,4 @@ pub use publication_model::{
     PublicationModelCoordinate,
 };
 pub use runner::{run_creativity_baseline, CreativityBaselineRun};
+pub use system_credential::{SystemCredentialReferenceResolver, CREATIVITY_CREDENTIAL_SERVICE};

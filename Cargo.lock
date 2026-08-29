@@ -1178,6 +1178,7 @@ dependencies = [
  "garive-provider-compatible",
  "garive-provider-profile",
  "garive-runtime",
+ "keyring",
  "reqwest 0.12.28",
  "serde",
  "serde_jcs",
