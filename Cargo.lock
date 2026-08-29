@@ -999,6 +999,13 @@ dependencies = [
 [[package]]
 name = "garive-config"
 version = "0.1.0"
+dependencies = [
+ "garive-tools",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+]
 
 [[package]]
 name = "garive-core"

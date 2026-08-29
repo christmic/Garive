@@ -158,7 +158,7 @@ pub enum ReplayClass {
 }
 
 /// Exact immutable definition admitted to one execution snapshot.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ToolDefinition {
     name: String,
     revision: String,
