@@ -12,8 +12,9 @@ mod model_only_types;
 mod turn;
 
 pub use context::{
-    derive_context, CandidateKind, ContextCandidate, ContextDerivationError, ContextItem,
-    ContextPurpose, ContextRequest, ContextSurface, FactRef, Retention, Visibility,
+    derive_context, merge_context_candidates, CandidateKind, ContextCandidate,
+    ContextDerivationError, ContextItem, ContextPurpose, ContextRequest, ContextSurface, FactRef,
+    Retention, Visibility,
 };
 pub use governed_execution::{
     execute_agent, AgentToolCapabilities, CommittedGovernedResult, GovernedEffectFuture,

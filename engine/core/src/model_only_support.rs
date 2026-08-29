@@ -1,6 +1,6 @@
 use garive_llm::{
-    ModelCancellation, ModelInputContent, ModelInputItem, ModelObserver, ModelRequest,
-    ModelRequestId, ModelRole, ModelStreamEvent, ObserverDecision, TokenCount, ToolDescriptor,
+    ModelCancellation, ModelInputItem, ModelObserver, ModelRequest, ModelRequestId, ModelRole,
+    ModelStreamEvent, ObserverDecision, TokenCount, ToolDescriptor,
 };
 
 use crate::{
@@ -23,14 +23,17 @@ pub(super) fn build_model_request(
         request.execution_id.as_str()
     );
     let target = request.model_targets[target_index].clone();
+    let mut skill_items = Vec::new();
     let mut memory_items = Vec::new();
+    let mut knowledge_items = Vec::new();
     let mut input_items = Vec::new();
     for value in surface.items {
         if let ContextItem::Input { kind, item, .. } = value {
-            if kind == crate::CandidateKind::Memory {
-                memory_items.push(item);
-            } else {
-                input_items.push(item);
+            match kind {
+                crate::CandidateKind::Skill => skill_items.push(item),
+                crate::CandidateKind::Memory => memory_items.push(item),
+                crate::CandidateKind::Knowledge => knowledge_items.push(item),
+                _ => input_items.push(item),
             }
         }
     }
@@ -46,29 +49,13 @@ pub(super) fn build_model_request(
             )
         })
         .count();
-    input_items.splice(
-        instruction_boundary..instruction_boundary,
-        request
-            .activated_skills
-            .iter()
-            .map(|skill| ModelInputItem::Message {
-                role: ModelRole::Developer,
-                content: vec![ModelInputContent::Text(skill.instructions().to_owned())],
-            }),
-    );
-    let memory_boundary = instruction_boundary + request.activated_skills.len();
+    let skill_count = skill_items.len();
+    input_items.splice(instruction_boundary..instruction_boundary, skill_items);
+    let memory_boundary = instruction_boundary + skill_count;
     let memory_count = memory_items.len();
-    input_items.splice(
-        memory_boundary..memory_boundary,
-        memory_items
-            .into_iter()
-            .chain(request.attributed_memory.iter().map(memory_input)),
-    );
-    let knowledge_boundary = memory_boundary + memory_count + request.attributed_memory.len();
-    input_items.splice(
-        knowledge_boundary..knowledge_boundary,
-        request.attributed_knowledge.iter().map(knowledge_input),
-    );
+    input_items.splice(memory_boundary..memory_boundary, memory_items);
+    let knowledge_boundary = memory_boundary + memory_count;
+    input_items.splice(knowledge_boundary..knowledge_boundary, knowledge_items);
     let value = ModelRequest {
         request_id: ModelRequestId::new(request_id.clone()),
         target_id: target,
@@ -83,60 +70,6 @@ pub(super) fn build_model_request(
     };
     value.validate().map_err(|_| ())?;
     Ok((value, request_id))
-}
-
-fn memory_input(value: &crate::AttributedMemory) -> ModelInputItem {
-    let evidence = value
-        .evidence
-        .iter()
-        .map(|item| {
-            serde_json::json!({
-                "session_id": item.session_id, "position": item.position,
-                "fact_id": item.fact_id, "payload_digest": item.payload_digest,
-            })
-        })
-        .collect::<Vec<_>>();
-    ModelInputItem::Message {
-        role: ModelRole::User,
-        content: vec![ModelInputContent::Text(
-            serde_json::json!({
-                "type": "garive.memory", "record_id": value.record_id,
-                "revision_id": value.revision_id, "content_digest": value.content_digest,
-                "evidence": evidence, "content": value.content_utf8,
-            })
-            .to_string(),
-        )],
-    }
-}
-
-fn knowledge_input(value: &crate::AttributedKnowledge) -> ModelInputItem {
-    ModelInputItem::Message {
-        role: ModelRole::User,
-        content: vec![ModelInputContent::Text(
-            serde_json::json!({
-                "type": "garive.knowledge",
-                "source_id": value.source_id,
-                "source_revision": value.source_revision,
-                "evidence_id": value.evidence_id,
-                "source_snapshot_digest": value.source_snapshot_digest,
-                "content_digest": value.content_digest,
-                "content_byte_length": value.content_byte_length,
-                "citation": {
-                    "locator_kind": value.citation.locator_kind,
-                    "locator": value.citation.locator,
-                    "title": value.citation.title,
-                    "canonical_uri": value.citation.canonical_uri,
-                    "content_digest": value.citation.content_digest,
-                },
-                "retrieved_at_utc": value.retrieved_at_utc,
-                "freshness": value.freshness,
-                "trust_class": value.trust_class,
-                "rank_basis_points": value.rank_basis_points,
-                "content": value.content_utf8,
-            })
-            .to_string(),
-        )],
-    }
 }
 
 pub(super) fn prepare_control(

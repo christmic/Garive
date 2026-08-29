@@ -7,7 +7,7 @@ use garive_skill::ActivatedSkill;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, ContextRequest, ContextSurface,
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, ContextCandidate, ContextRequest,
     ExecutionId, ExecutionLimits, SessionId, TurnId,
 };
 
@@ -270,6 +270,8 @@ pub struct AgentTurnRequest {
     pub context_request: ContextRequest,
     /// Exact Skills durably activated before any model request.
     pub activated_skills: Vec<ActivatedSkill>,
+    /// Frozen committed capability products merged into the C2 candidate stream.
+    pub capability_context_candidates: Vec<ContextCandidate>,
     /// Legacy M0 attributed retrieval pending migration to the C2 adapter.
     pub attributed_memory: Vec<AttributedMemory>,
     /// Ordered Runtime-verified Knowledge evidence committed before model use.
@@ -535,14 +537,14 @@ pub enum ContextPortError {
     PortFailure,
 }
 
-/// Frozen port that derives purpose-specific context from durable facts.
+/// Frozen port that reads purpose-specific candidates from durable facts.
 pub trait ContextPort {
-    /// Derives the requested surface for one bounded rebuild attempt.
-    fn derive(
+    /// Reads ordered candidates for one bounded rebuild attempt.
+    fn read_candidates(
         &mut self,
         request: &ContextRequest,
         rebuild_attempt: u32,
-    ) -> Result<ContextSurface, ContextPortError>;
+    ) -> Result<Vec<ContextCandidate>, ContextPortError>;
 }
 
 /// Sink for ordered semantic progress; emission is not proof of persistence.

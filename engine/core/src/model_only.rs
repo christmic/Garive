@@ -158,8 +158,11 @@ async fn execute_kernel(
         }
         let mut context_request = request.context_request.clone();
         context_request.through_position = through_position;
-        let surface = match ports.context.derive(&context_request, rebuild_attempt) {
-            Ok(surface) => surface,
+        let candidates = match ports
+            .context
+            .read_candidates(&context_request, rebuild_attempt)
+        {
+            Ok(candidates) => candidates,
             Err(crate::ContextPortError::RequiredFactsExceedBudget) => {
                 return finish(
                     request,
@@ -172,6 +175,36 @@ async fn execute_kernel(
                 );
             }
             Err(crate::ContextPortError::PortFailure) => {
+                return finish(
+                    request,
+                    ports,
+                    &mut control,
+                    &usage,
+                    AgentOutcome::Failed {
+                        reason: AgentFailureReason::PortFailure,
+                    },
+                );
+            }
+        };
+        let surface = match crate::merge_context_candidates(
+            candidates,
+            &request.capability_context_candidates,
+        )
+        .and_then(|values| crate::derive_context(&context_request, &values))
+        {
+            Ok(surface) => surface,
+            Err(crate::ContextDerivationError::RequiredFactsExceedBudget { .. }) => {
+                return finish(
+                    request,
+                    ports,
+                    &mut control,
+                    &usage,
+                    AgentOutcome::Stopped {
+                        reason: StopReason::TokenLimit,
+                    },
+                );
+            }
+            Err(_) => {
                 return finish(
                     request,
                     ports,

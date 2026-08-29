@@ -8,12 +8,11 @@ use futures::executor::block_on;
 use garive_core::{
     execute_agent, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
     AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest,
-    AttributedKnowledge, AttributedMemory, CandidateKind, ClockPort, CommittedGovernedResult,
-    ContextItem, ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
-    EventSink, ExecutionId, ExecutionLimits, FactRef, GovernedEffectFuture, GovernedEffectPort,
-    KnowledgeCitationAttribution, MemoryEvidenceAttribution, MissingUsagePolicy, ModelOnlyLimits,
-    ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId, SuspensionReason,
-    TerminalRecoveryAction, TurnId,
+    CandidateKind, ClockPort, CommittedGovernedResult, ContextCandidate, ContextPort,
+    ContextPortError, ContextPurpose, ContextRequest, EventSink, ExecutionId, ExecutionLimits,
+    FactRef, GovernedEffectFuture, GovernedEffectPort, MissingUsagePolicy, ModelOnlyLimits,
+    ModelRecoveryPolicy, OutputLimitAction, PortFailure, Retention, SessionId, SuspensionReason,
+    TerminalRecoveryAction, TurnId, Visibility,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputItem, ModelItem,
@@ -37,33 +36,25 @@ struct Context {
 }
 
 impl ContextPort for Context {
-    fn derive(
+    fn read_candidates(
         &mut self,
         request: &ContextRequest,
         _: u32,
-    ) -> Result<ContextSurface, ContextPortError> {
+    ) -> Result<Vec<ContextCandidate>, ContextPortError> {
         self.positions.push(request.through_position);
-        Ok(ContextSurface {
-            purpose: ContextPurpose::Inference,
-            from_position: 1,
-            through_position: request.through_position.max(1),
-            items: vec![ContextItem::Input {
-                fact_ref: FactRef {
-                    session_id: request.session_id.clone(),
-                    position: 1,
-                },
-                kind: CandidateKind::UserInput,
-                item: garive_llm::ModelInputItem::Message {
-                    role: ModelRole::User,
-                    content: vec![garive_llm::ModelInputContent::Text("hi".into())],
-                },
+        Ok(vec![ContextCandidate {
+            fact_ref: FactRef {
+                session_id: request.session_id.clone(),
+                position: 1,
+            },
+            kind: CandidateKind::UserInput,
+            retention: Retention::Required,
+            visibility: Visibility::Visible,
+            items: vec![garive_llm::ModelInputItem::Message {
+                role: ModelRole::User,
+                content: vec![garive_llm::ModelInputContent::Text("hi".into())],
             }],
-            retained_refs: vec![],
-            dropped_refs: vec![],
-            filtered_refs: vec![],
-            item_count: 1,
-            utf8_bytes: 2,
-        })
+        }])
     }
 }
 
@@ -194,6 +185,7 @@ fn request() -> AgentTurnRequest {
             max_utf8_bytes: 1024,
         },
         activated_skills: vec![],
+        capability_context_candidates: vec![],
         attributed_memory: vec![],
         attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new("model")],
@@ -382,40 +374,42 @@ fn activated_skill_narrows_model_tools_and_c4_catalog() {
         SkillActivationResult::None => panic!("explicit activation must select"),
     };
     let mut skilled_request = request();
+    let skill_items = activated
+        .iter()
+        .map(|skill| ModelInputItem::Message {
+            role: ModelRole::Developer,
+            content: vec![garive_llm::ModelInputContent::Text(
+                skill.instructions().into(),
+            )],
+        })
+        .collect();
     skilled_request.activated_skills = activated;
-    skilled_request.attributed_memory = vec![AttributedMemory {
-        record_id: "record".into(),
-        revision_id: "revision".into(),
-        content_digest: "c064fbca9d9de8dd9bb0624984403b28d0da807a69365d4f7fb09123ecb0c405".into(),
-        content_utf8: "memory".into(),
-        evidence: vec![MemoryEvidenceAttribution {
-            session_id: "session".into(),
-            position: 1,
-            fact_id: "fact".into(),
-            payload_digest: "a".repeat(64),
-        }],
-    }];
-    skilled_request.attributed_knowledge = vec![AttributedKnowledge {
-        source_id: "docs".into(),
-        source_revision: "1".into(),
-        evidence_id: "evidence".into(),
-        source_snapshot_digest: None,
-        content_digest: "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b".into(),
-        content_utf8: "knowledge".into(),
-        content_byte_length: 9,
-        citation: KnowledgeCitationAttribution {
-            locator_kind: "uri_fragment".into(),
-            locator: "intro".into(),
-            title: None,
-            canonical_uri: Some("https://example.test/docs#intro".into()),
-            content_digest: "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b"
-                .into(),
-        },
-        retrieved_at_utc: "2026-08-29T00:00:00Z".into(),
-        freshness: "fresh".into(),
-        trust_class: "curated".into(),
-        rank_basis_points: 9000,
-    }];
+    skilled_request.context_request.through_position = 4;
+    skilled_request.capability_context_candidates = vec![
+        capability_candidate(2, CandidateKind::Skill, Retention::Required, skill_items),
+        capability_candidate(
+            3,
+            CandidateKind::Memory,
+            Retention::Optional,
+            vec![ModelInputItem::Message {
+                role: ModelRole::User,
+                content: vec![garive_llm::ModelInputContent::Text(
+                    json!({"type":"garive.memory","content":"memory"}).to_string(),
+                )],
+            }],
+        ),
+        capability_candidate(
+            4,
+            CandidateKind::Knowledge,
+            Retention::Optional,
+            vec![ModelInputItem::Message {
+                role: ModelRole::User,
+                content: vec![garive_llm::ModelInputContent::Text(
+                    json!({"type":"garive.knowledge","content":"knowledge"}).to_string(),
+                )],
+            }],
+        ),
+    ];
     let mut context = Context { positions: vec![] };
     let model = Model {
         outcomes: Mutex::new(VecDeque::from([tool_outcome("write_file"), text_outcome()])),
@@ -468,5 +462,23 @@ fn activated_skill_narrows_model_tools_and_c4_catalog() {
             ..
         }
     ));
-    assert_eq!(context.positions, [1, 5]);
+    assert_eq!(context.positions, [4, 5]);
+}
+
+fn capability_candidate(
+    position: u64,
+    kind: CandidateKind,
+    retention: Retention,
+    items: Vec<ModelInputItem>,
+) -> ContextCandidate {
+    ContextCandidate {
+        fact_ref: FactRef {
+            session_id: "session".into(),
+            position,
+        },
+        kind,
+        retention,
+        visibility: Visibility::Purposes(BTreeSet::from([ContextPurpose::Inference])),
+        items,
+    }
 }

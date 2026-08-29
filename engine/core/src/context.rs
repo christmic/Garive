@@ -20,6 +20,8 @@ pub enum ContextPurpose {
 pub enum CandidateKind {
     /// Trusted instruction that constrains the agent.
     Instruction,
+    /// Durably activated Skill instructions.
+    Skill,
     /// User-provided input.
     UserInput,
     /// Prior model output.
@@ -36,6 +38,47 @@ pub enum CandidateKind {
     Memory,
     /// Committed attributed Knowledge evidence.
     Knowledge,
+}
+
+/// Merges two independently ordered candidate streams without repairing either.
+///
+/// A duplicate position means the same durable fact was projected twice. Both
+/// inputs must already be strictly increasing so Runtime ordering bugs cannot
+/// be hidden by sorting inside Core.
+pub fn merge_context_candidates(
+    base: Vec<ContextCandidate>,
+    capability: &[ContextCandidate],
+) -> Result<Vec<ContextCandidate>, ContextDerivationError> {
+    validate_stream_order(&base)?;
+    validate_stream_order(capability)?;
+    let mut merged = Vec::with_capacity(base.len() + capability.len());
+    let (mut left, mut right) = (
+        base.into_iter().peekable(),
+        capability.iter().cloned().peekable(),
+    );
+    while let (Some(a), Some(b)) = (left.peek(), right.peek()) {
+        match a.fact_ref.position.cmp(&b.fact_ref.position) {
+            std::cmp::Ordering::Less => merged.push(left.next().expect("peeked")),
+            std::cmp::Ordering::Greater => merged.push(right.next().expect("peeked")),
+            std::cmp::Ordering::Equal => return Err(ContextDerivationError::DuplicateReference),
+        }
+    }
+    merged.extend(left);
+    merged.extend(right);
+    Ok(merged)
+}
+
+fn validate_stream_order(values: &[ContextCandidate]) -> Result<(), ContextDerivationError> {
+    for pair in values.windows(2) {
+        match pair[0].fact_ref.position.cmp(&pair[1].fact_ref.position) {
+            std::cmp::Ordering::Less => {}
+            std::cmp::Ordering::Equal => return Err(ContextDerivationError::DuplicateReference),
+            std::cmp::Ordering::Greater => {
+                return Err(ContextDerivationError::NonIncreasingPosition)
+            }
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

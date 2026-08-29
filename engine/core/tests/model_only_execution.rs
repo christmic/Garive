@@ -13,10 +13,10 @@ use futures::executor::block_on;
 use garive_core::{
     execute_model_only, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry,
     AgentEvent, AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentTurnRequest,
-    CandidateKind, ClockPort, ContextItem, ContextPort, ContextPortError, ContextPurpose,
-    ContextRequest, ContextSurface, EventSink, ExecutionId, ExecutionLimits, FactRef,
-    MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure,
-    ResumeInput, SessionId, StopReason, SuspensionReason, TerminalRecoveryAction, TurnId,
+    CandidateKind, ClockPort, ContextCandidate, ContextPort, ContextPortError, ContextPurpose,
+    ContextRequest, EventSink, ExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy,
+    ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure, ResumeInput, Retention,
+    SessionId, StopReason, SuspensionReason, TerminalRecoveryAction, TurnId, Visibility,
 };
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
@@ -58,39 +58,39 @@ struct FakeContext {
 }
 
 impl ContextPort for FakeContext {
-    fn derive(
+    fn read_candidates(
         &mut self,
         request: &ContextRequest,
         _: u32,
-    ) -> Result<ContextSurface, ContextPortError> {
+    ) -> Result<Vec<ContextCandidate>, ContextPortError> {
         self.calls += 1;
         match self.scripts.pop_front().as_deref() {
             Some("failure") => return Err(ContextPortError::PortFailure),
-            Some("required-budget") => return Err(ContextPortError::RequiredFactsExceedBudget),
+            Some("required-budget") => {
+                return Ok(vec![candidate(
+                    request,
+                    "x".repeat(request.max_utf8_bytes + 1),
+                )]);
+            }
             _ => {}
         }
-        let fact_ref = FactRef {
+        Ok(vec![candidate(request, "hi".into())])
+    }
+}
+
+fn candidate(request: &ContextRequest, text: String) -> ContextCandidate {
+    ContextCandidate {
+        fact_ref: FactRef {
             session_id: request.session_id.clone(),
             position: request.through_position,
-        };
-        Ok(ContextSurface {
-            purpose: ContextPurpose::Inference,
-            from_position: 1,
-            through_position: request.through_position,
-            items: vec![ContextItem::Input {
-                fact_ref: fact_ref.clone(),
-                kind: CandidateKind::UserInput,
-                item: ModelInputItem::Message {
-                    role: ModelRole::User,
-                    content: vec![ModelInputContent::Text("hi".into())],
-                },
-            }],
-            retained_refs: vec![fact_ref],
-            dropped_refs: vec![],
-            filtered_refs: vec![],
-            item_count: 1,
-            utf8_bytes: 2,
-        })
+        },
+        kind: CandidateKind::UserInput,
+        retention: Retention::Required,
+        visibility: Visibility::Visible,
+        items: vec![ModelInputItem::Message {
+            role: ModelRole::User,
+            content: vec![ModelInputContent::Text(text)],
+        }],
     }
 }
 
@@ -266,6 +266,7 @@ fn request(case: &Value) -> AgentTurnRequest {
             max_utf8_bytes: 100,
         },
         activated_skills: vec![],
+        capability_context_candidates: vec![],
         attributed_memory: vec![],
         attributed_knowledge: vec![],
         model_targets: if case["unavailable"] == "alternate" {
