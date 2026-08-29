@@ -13,6 +13,7 @@ garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
 garive-memory = { path = "../../engine/memory" }
 garive-multiagent = { path = "../../engine/multiagent" }
+garive-observability = { path = "../../engine/observability" }
 garive-scheduler = { path = "../../engine/scheduler" }
 garive-skill = { path = "../../engine/skill" }
 garive-tools = { path = "../../engine/tools" }

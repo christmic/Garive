@@ -1254,6 +1254,7 @@ dependencies = [
  "garive-llm",
  "garive-memory",
  "garive-multiagent",
+ "garive-observability",
  "garive-provider-anthropic",
  "garive-provider-compatible",
  "garive-provider-openai",

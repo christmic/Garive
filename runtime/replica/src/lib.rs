@@ -8,6 +8,7 @@ mod delegation_runtime;
 mod fake_host;
 mod live_host;
 mod model_http_transport;
+mod observability_runtime;
 mod runtime_turn;
 mod scheduler_runtime;
 mod sqlite_ledger;
@@ -50,6 +51,10 @@ pub use live_host::{
 };
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
+};
+pub use observability_runtime::{
+    EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,
+    ObservabilitySink, RedactionPolicy, ShutdownReport, SinkDisposition,
 };
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,
