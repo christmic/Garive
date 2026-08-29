@@ -70,6 +70,34 @@ impl MemoryProposal {
     pub fn proposal_id(&self) -> &str {
         &self.proposal_id
     }
+    /// Returns the authorized namespace requested by the proposal.
+    pub fn namespace_id(&self) -> &str {
+        &self.namespace_id
+    }
+    /// Returns the requested record scope.
+    pub const fn scope(&self) -> &MemoryScope {
+        &self.scope
+    }
+    /// Returns the proposed record kind.
+    pub const fn kind(&self) -> MemoryKind {
+        self.kind
+    }
+    /// Returns the exact proposed content binding.
+    pub const fn content(&self) -> &ContentBinding {
+        &self.content
+    }
+    /// Returns ordered durable evidence references.
+    pub fn evidence(&self) -> &[DurableFactReference] {
+        &self.evidence
+    }
+    /// Returns the proposed sensitivity class.
+    pub const fn sensitivity(&self) -> MemorySensitivity {
+        self.sensitivity
+    }
+    /// Returns the provenance confidence metadata.
+    pub const fn confidence_basis_points(&self) -> u16 {
+        self.confidence_basis_points
+    }
     /// Returns the expected active revision, when updating.
     pub fn expected_active_revision_id(&self) -> Option<&str> {
         self.expected_active_revision_id.as_deref()
@@ -121,6 +149,31 @@ impl MemoryCommit {
             return Err(MemoryError::new(MemoryErrorCode::InvalidMemory));
         }
         Ok(value)
+    }
+
+    /// Returns the stable logical record identity.
+    pub fn record_id(&self) -> &str {
+        &self.record_id
+    }
+    /// Returns the new immutable revision identity.
+    pub fn revision_id(&self) -> &str {
+        &self.revision_id
+    }
+    /// Returns the frozen retention-policy binding.
+    pub fn retention_policy_digest(&self) -> &str {
+        &self.retention_policy_digest
+    }
+    /// Returns the first durable position at which the revision is visible.
+    pub const fn valid_from_position(&self) -> u64 {
+        self.valid_from_position
+    }
+    /// Returns the canonical expiry time, when any.
+    pub fn expires_at_utc(&self) -> Option<&str> {
+        self.expires_at_utc.as_deref()
+    }
+    /// Returns the exact prior revision replaced by this commit.
+    pub fn supersedes_revision_id(&self) -> Option<&str> {
+        self.supersedes_revision_id.as_deref()
     }
 }
 
@@ -234,6 +287,10 @@ impl MemoryRecord {
     pub const fn sensitivity(&self) -> MemorySensitivity {
         self.sensitivity
     }
+    /// Returns provenance confidence metadata.
+    pub const fn confidence_basis_points(&self) -> u16 {
+        self.confidence_basis_points
+    }
     /// Returns the durable visibility position.
     pub const fn valid_from_position(&self) -> u64 {
         self.valid_from_position
@@ -241,6 +298,10 @@ impl MemoryRecord {
     /// Returns the canonical expiry time, when any.
     pub fn expires_at_utc(&self) -> Option<&str> {
         self.expires_at_utc.as_deref()
+    }
+    /// Returns the exact prior revision named by this revision.
+    pub fn supersedes_revision_id(&self) -> Option<&str> {
+        self.supersedes_revision_id.as_deref()
     }
 }
 

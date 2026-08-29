@@ -203,6 +203,26 @@ impl DurableFactReference {
         }
         Ok(value)
     }
+
+    /// Returns the Session containing the referenced fact.
+    pub fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    /// Returns the exact non-zero Session-local position.
+    pub const fn position(&self) -> u64 {
+        self.position
+    }
+
+    /// Returns the referenced durable fact identity.
+    pub fn fact_id(&self) -> &str {
+        &self.fact_id
+    }
+
+    /// Returns the expected canonical payload digest.
+    pub fn payload_digest(&self) -> &str {
+        &self.payload_digest
+    }
 }
 
 /// Portable semantic class of a memory record.

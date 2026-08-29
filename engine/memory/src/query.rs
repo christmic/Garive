@@ -106,6 +106,18 @@ impl MemoryQuery {
     pub fn namespace_id(&self) -> &str {
         &self.namespace_id
     }
+    /// Returns the canonical allowed-scope set.
+    pub fn allowed_scopes(&self) -> &[MemoryScope] {
+        &self.allowed_scopes
+    }
+    /// Returns the declared consumer purpose.
+    pub const fn purpose(&self) -> MemoryPurpose {
+        self.purpose
+    }
+    /// Returns the exact content query binding.
+    pub const fn query(&self) -> &ContentBinding {
+        &self.query
+    }
     /// Returns the exact retriever revision.
     pub fn retriever_revision(&self) -> &str {
         &self.retriever_revision
