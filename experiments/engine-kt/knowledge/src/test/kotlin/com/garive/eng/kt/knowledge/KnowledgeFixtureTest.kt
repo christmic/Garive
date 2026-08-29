@@ -36,6 +36,18 @@ class KnowledgeFixtureTest {
                 ),
             ).code,
         )
+        assertEquals(
+            KnowledgeErrorCode.FILTER_UNSUPPORTED,
+            assertIs<KnowledgeContractResult.Failure>(
+                KnowledgeFilterOperator.fromWireName("future_operator"),
+            ).code,
+        )
+        val mismatchedSource = KnowledgeSourceDescriptor.create(
+            "docs", "2", KnowledgeSourceKind.DOCUMENTATION, "product-docs",
+            KnowledgeTrustClass.CURATED, listOf(KnowledgeQueryMode.KEYWORD),
+            "a".repeat(64), CitationScheme.URI_FRAGMENT, "b".repeat(64),
+        ).success()
+        assertEquals(KnowledgeErrorCode.SOURCE_REVISION_MISMATCH, request.validateSource(mismatchedSource))
     }
 
     @Test
@@ -64,6 +76,19 @@ class KnowledgeFixtureTest {
             exact, source(), evidence(KnowledgeFreshness.CACHED, "d".repeat(64)), false,
         )
         assertEquals(KnowledgeErrorCode.INVALID_QUERY, assertIs<KnowledgeContractResult.Failure>(wrong).code)
+        val content = ContentBinding.fromInline("bound")
+        val citation = Citation.create(
+            CitationScheme.URI_FRAGMENT, "bad", null, null, "f".repeat(64),
+        ).success()
+        assertEquals(
+            KnowledgeErrorCode.CONTENT_DIGEST_MISMATCH,
+            KnowledgeEvidence(
+                "bad", "docs", "1", null, content, 5uL, citation,
+                "2026-08-29T00:00:00Z", KnowledgeFreshness.FRESH,
+                KnowledgeTrustClass.CURATED, 1,
+            ).validate(),
+        )
+        assertEquals(6, root.getValue("invalid_cases").jsonArray.size)
     }
 
     private fun source(): KnowledgeSourceDescriptor {

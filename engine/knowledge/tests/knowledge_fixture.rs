@@ -148,6 +148,31 @@ fn request_digest_and_filter_binding_are_frozen() {
         .code(),
         KnowledgeErrorCode::InvalidQuery,
     );
+    assert_eq!(
+        KnowledgeFilterOperator::from_wire_name("future_operator")
+            .unwrap_err()
+            .code(),
+        KnowledgeErrorCode::FilterUnsupported,
+    );
+    let mismatched_source = KnowledgeSourceDescriptor::new(
+        "docs",
+        "2",
+        KnowledgeSourceKind::Documentation,
+        "product-docs",
+        KnowledgeTrustClass::Curated,
+        vec![KnowledgeQueryMode::Keyword],
+        "a".repeat(64),
+        CitationScheme::UriFragment,
+        "b".repeat(64),
+    )
+    .unwrap();
+    assert_eq!(
+        ordinary
+            .validate_source(&mismatched_source)
+            .unwrap_err()
+            .code(),
+        KnowledgeErrorCode::SourceRevisionMismatch,
+    );
 }
 
 #[test]
@@ -212,4 +237,32 @@ fn ordering_freshness_and_bounds_follow_shared_vectors() {
         .code(),
         KnowledgeErrorCode::InvalidQuery,
     );
+    let content = ContentBinding::from_inline("bound");
+    let citation = Citation::new(
+        CitationScheme::UriFragment,
+        "bad",
+        None,
+        None,
+        "f".repeat(64),
+    )
+    .unwrap();
+    assert_eq!(
+        KnowledgeEvidence::new(
+            "bad",
+            "docs",
+            "1",
+            None,
+            content,
+            5,
+            citation,
+            "2026-08-29T00:00:00Z",
+            KnowledgeFreshness::Fresh,
+            KnowledgeTrustClass::Curated,
+            1,
+        )
+        .unwrap_err()
+        .code(),
+        KnowledgeErrorCode::ContentDigestMismatch,
+    );
+    assert_eq!(root["invalid_cases"].as_array().unwrap().len(), 6);
 }

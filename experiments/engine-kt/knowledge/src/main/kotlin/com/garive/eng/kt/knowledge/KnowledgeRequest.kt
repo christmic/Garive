@@ -12,6 +12,14 @@ import org.erdtman.jcs.JsonCanonicalizer
 public enum class KnowledgeFilterOperator(public val wireName: String) {
     EQUAL("equal"), LESS_THAN("less_than"), LESS_THAN_OR_EQUAL("less_than_or_equal"),
     GREATER_THAN("greater_than"), GREATER_THAN_OR_EQUAL("greater_than_or_equal"),
+    ;
+
+    public companion object {
+        /** Parses an exact wire name and rejects unknown operators. */
+        public fun fromWireName(value: String): KnowledgeContractResult<KnowledgeFilterOperator> =
+            entries.firstOrNull { it.wireName == value }?.let(::success)
+                ?: failure(KnowledgeErrorCode.FILTER_UNSUPPORTED)
+    }
 }
 
 /** Strict I-JSON filter value subset. */

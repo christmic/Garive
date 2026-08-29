@@ -39,5 +39,5 @@
     {"name":"normalized-prefix","connector_order_stable":false,"expected_ids":["first","second"],"truncated":true},
     {"name":"stable-prefix","connector_order_stable":true,"expected_ids":["third","second"],"truncated":true}
   ],
-  "invalid_cases": ["duplicate_filter_field","source_revision_mismatch","citation_digest_mismatch","stale_revalidate","wrong_snapshot"]
+  "invalid_cases": ["duplicate_filter_field","unknown_filter_operator","source_revision_mismatch","citation_digest_mismatch","stale_revalidate","wrong_snapshot"]
 }

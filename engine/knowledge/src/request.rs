@@ -28,6 +28,19 @@ pub enum KnowledgeFilterOperator {
     /// Inclusive greater-than relation.
     GreaterThanOrEqual,
 }
+impl KnowledgeFilterOperator {
+    /// Parses one exact portable wire name and rejects unknown operators.
+    pub fn from_wire_name(value: &str) -> Result<Self, KnowledgeError> {
+        match value {
+            "equal" => Ok(Self::Equal),
+            "less_than" => Ok(Self::LessThan),
+            "less_than_or_equal" => Ok(Self::LessThanOrEqual),
+            "greater_than" => Ok(Self::GreaterThan),
+            "greater_than_or_equal" => Ok(Self::GreaterThanOrEqual),
+            _ => Err(KnowledgeError::new(KnowledgeErrorCode::FilterUnsupported)),
+        }
+    }
+}
 
 /// Strict I-JSON filter value subset.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
