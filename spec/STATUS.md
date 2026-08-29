@@ -80,6 +80,7 @@ planned without reopening a narrower completed row.
 | Multi-Agent | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin canonical intent/budget/result properties, exact L0 lifecycle projection, durable grant-before-child ordering, cancellation/isolation, SQLite restart and six-boundary process-kill matrices green. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
 | Creativity CR-A | accepted | accepted | documented | implemented | verified | done | Keep the four-class strict corpus, exact paired reducer, blind bounded command ports, content-free evidence CLI and empty production Creativity boundary green; CR-B external evidence remains gated. |
+| Creativity CR-B | accepted | accepted | missing | missing | missing | active | Implement compatible-protocol model ports, explicit OS credential resolution, clean-revision attestation and content-free publication evidence v2; a real reviewed run remains external. |
 | Evaluation | accepted | accepted | documented | implemented | verified | done | Keep exact rational score, duplicate/bound failures, baseline provenance and pure-Engine boundary gates green. |
 | Observability | accepted | accepted | documented | implemented | verified | done | Keep the shared Rust/Kotlin catalogue, canonical digest, forbidden-label properties, explicit Runtime limits, commit-position, sampling, priority, backpressure, redaction-canary and bounded-shutdown gates green. |
 
