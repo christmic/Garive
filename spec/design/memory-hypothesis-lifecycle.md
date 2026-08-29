@@ -339,6 +339,11 @@ derive semantics only. It is not an empirical user-quality, latency, model, or
 production threshold; such a claim remains gated on a representative versioned
 dataset and frozen retriever/model configuration.
 
+The admitted v1 synthetic suite contains four selector-linked cases. Its pinned
+aggregate is recall `6/7`, precision `6/8`, zero forbidden admissions and zero
+ordered replay mismatches. These unreduced fractions are regression evidence,
+not a production quality target.
+
 ## Meta
 
 - Owner: `@christmic`

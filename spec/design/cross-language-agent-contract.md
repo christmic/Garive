@@ -61,6 +61,7 @@ child lifecycle, workers or exporters.
 |---|---|---|---|
 | S0 Skill | supported | experimental | activation/digest fixtures + native tests |
 | M0 Memory | supported | experimental | record/query/order fixtures + native tests |
+| M1 Memory | supported | experimental | lifecycle/maintenance/derive/quality fixtures + native tests |
 | K0 Knowledge | supported | experimental | source/evidence/citation fixtures + native tests |
 | Q0 Scheduler | supported | experimental | recurrence/misfire fixtures + native tests |
 | MA0 Multi-Agent | supported | experimental | intent/budget/result fixtures + native tests |

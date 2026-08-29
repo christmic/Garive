@@ -190,6 +190,11 @@ reasoning references. Rust evidence lives in
 Rust and Kotlin must consume every case. Canonical serialized bytes are not a
 C2 contract; normalized semantic fields are compared.
 
+`spec/fixtures/agent/memory-context-derive-v1.json` separately covers committed
+detail admission, non-inference filtering, exact budget dropping, duplicate
+product rejection and archived-menu rejection in Rust and Kotlin. Runtime tests
+decode the actual committed durable fact before invoking the same Core adapter.
+
 ## Properties
 
 For every valid request/candidate set:
