@@ -42,6 +42,8 @@ pub enum MemoryErrorCode {
     DuplicateObservation,
     /// Promotion lacks a valid Knowledge publication receipt.
     PromotionReceiptRequired,
+    /// Lifecycle evidence or policy does not admit Knowledge promotion.
+    PromotionNotEligible,
     /// Selection lacks an admitted deterministic or seeded replay contract.
     SelectionUnreplayable,
     /// Observation does not bind an admitted obligation or scope attribution.
@@ -71,6 +73,7 @@ impl MemoryErrorCode {
             Self::InvalidTransition => "invalid_transition",
             Self::DuplicateObservation => "duplicate_observation",
             Self::PromotionReceiptRequired => "promotion_receipt_required",
+            Self::PromotionNotEligible => "promotion_not_eligible",
             Self::SelectionUnreplayable => "selection_unreplayable",
             Self::AttributionUnsupported => "attribution_unsupported",
             Self::ProjectionStale => "projection_stale",
