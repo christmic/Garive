@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-# Active Rust members include the portable Engine, provider adapters, SQLite
+# Active Rust members include the portable Engine, protocol adapters, SQLite
 # Runtime, CLI/TUI shells, Tauri backend and benchmark scaffold.
 #
 # NOT in this workspace (different language / different repo role):
@@ -10,8 +10,8 @@ resolver = "2"
 #   experiments/engine-kt     — experimental Kotlin Engine (independent Gradle)
 #   spec/proto                — schema source, not a member
 members = [
-    "adapters/llm-openai",
-    "adapters/llm-anthropic",
+    "adapters/openai-responses",
+    "adapters/anthropic-messages",
     "bench",
     "cli",
     "desktop/backend",

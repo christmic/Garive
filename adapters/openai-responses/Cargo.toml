@@ -1,5 +1,5 @@
 [package]
-name = "garive-llm-openai"
+name = "garive-adapter-openai-responses"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

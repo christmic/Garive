@@ -1,5 +1,5 @@
 [package]
-name = "garive-llm-anthropic"
+name = "garive-adapter-anthropic-messages"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -972,6 +972,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-adapter-anthropic-messages"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "garive-llm",
+ "httpdate",
+ "serde_json",
+]
+
+[[package]]
+name = "garive-adapter-openai-responses"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "garive-llm",
+ "httpdate",
+ "serde_json",
+]
+
+[[package]]
 name = "garive-cli"
 version = "0.1.0"
 dependencies = [
@@ -1025,26 +1045,6 @@ dependencies = [
 name = "garive-llm"
 version = "0.1.0"
 dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "garive-llm-anthropic"
-version = "0.1.0"
-dependencies = [
- "futures",
- "garive-llm",
- "httpdate",
- "serde_json",
-]
-
-[[package]]
-name = "garive-llm-openai"
-version = "0.1.0"
-dependencies = [
- "futures",
- "garive-llm",
- "httpdate",
  "serde_json",
 ]
 

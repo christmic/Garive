@@ -6,8 +6,8 @@ use garive_llm::{
     ModelStopReason, ModelStreamEvent, ModelTargetId, ObserverDecision, TextMode, TokenCount,
     ToolDescriptor,
 };
-use garive_llm_openai::{classify_http_error, HttpErrorAction};
-use garive_llm_openai::{
+use garive_adapter_openai_responses::{classify_http_error, HttpErrorAction};
+use garive_adapter_openai_responses::{
     parse_response, parse_sse, render_http_request, render_request, HttpResponseDescriptor,
     OpenAiAdapterError, OpenAiModelPort, OpenAiTransport, TransportFailure, TransportFuture,
 };
@@ -302,7 +302,7 @@ struct ScriptTransport(Arc<ScriptState>);
 impl OpenAiTransport for ScriptTransport {
     fn execute<'a>(
         &'a self,
-        _: garive_llm_openai::HttpRequestDescriptor,
+        _: garive_adapter_openai_responses::HttpRequestDescriptor,
         _: &'a dyn ModelCancellation,
     ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>> {
         Box::pin(async move { self.0.responses.lock().unwrap().pop_front().unwrap() })

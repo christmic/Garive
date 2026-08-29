@@ -25,7 +25,7 @@ conformance: architecture
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :core:test :llm:test
 
 providers:
-    cargo test -p garive-llm-openai -p garive-llm-anthropic
+    cargo test -p garive-adapter-openai-responses -p garive-adapter-anthropic-messages
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :provider-openai:test :provider-anthropic:test
 
 kotlin-experiment:

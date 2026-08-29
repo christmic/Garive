@@ -4,7 +4,7 @@ use garive_llm::{
     ModelRole, ModelStopReason, ModelStreamEvent, ModelTargetId, ObserverDecision, TextMode,
     TokenCount, ToolDescriptor,
 };
-use garive_llm_anthropic::{
+use garive_adapter_anthropic_messages::{
     classify_http_error, parse_response, parse_sse, render_http_request, render_request,
     AnthropicAdapterError, AnthropicModelPort, AnthropicTransport, HttpErrorAction,
     HttpResponseDescriptor, TransportFailure, TransportFuture,
@@ -314,7 +314,7 @@ struct ScriptTransport(Arc<ScriptState>);
 impl AnthropicTransport for ScriptTransport {
     fn execute<'a>(
         &'a self,
-        _: garive_llm_anthropic::HttpRequestDescriptor,
+        _: garive_adapter_anthropic_messages::HttpRequestDescriptor,
         _: &'a dyn ModelCancellation,
     ) -> TransportFuture<'a, Result<HttpResponseDescriptor, TransportFailure>> {
         Box::pin(async move { self.0.responses.lock().unwrap().pop_front().unwrap() })
