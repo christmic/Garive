@@ -404,7 +404,7 @@ fn reconciliation_requires_evidence_before_typed_continuation() {
 fn recovery_reducer_consumes_every_frozen_restart_case() {
     let fixture = fixture();
     let cases = fixture["recovery_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 10);
+    assert_eq!(cases.len(), 11);
     for case in cases {
         let execution = match case["execution"].as_str().unwrap() {
             "active" => ExecutionRecoveryPosition::Active,
@@ -426,6 +426,7 @@ fn recovery_reducer_consumes_every_frozen_restart_case() {
             "started" => EffectRecoveryPosition::Started,
             "receipt" => EffectRecoveryPosition::Receipt,
             "uncertain" => EffectRecoveryPosition::Uncertain,
+            "reconciled" => EffectRecoveryPosition::Reconciled,
             "interaction_requested" => EffectRecoveryPosition::InteractionRequested,
             "terminal" => EffectRecoveryPosition::Terminal,
             value => panic!("unknown effect position {value}"),

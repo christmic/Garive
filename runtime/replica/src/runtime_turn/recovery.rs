@@ -37,6 +37,8 @@ pub enum EffectRecoveryPosition {
     Receipt,
     /// Uncertain effect is durably suspended for operator reconciliation.
     Uncertain,
+    /// Operator evidence and the matching observation are durable.
+    Reconciled,
     /// Interaction is durably awaiting continuation.
     InteractionRequested,
     /// Effect lifecycle is terminal.
@@ -235,8 +237,20 @@ fn effect_position(
             "effect.started" => Ok(EffectRecoveryPosition::Started),
             "effect.receipt" => Ok(EffectRecoveryPosition::Receipt),
             "effect.uncertain" => Ok(EffectRecoveryPosition::Uncertain),
-            "effect.completed" | "effect.failed" | "effect.denied" | "effect.reconciled"
-            | "effect.observation" => Ok(EffectRecoveryPosition::Terminal),
+            "effect.reconciled" => Ok(EffectRecoveryPosition::Reconciled),
+            "effect.observation"
+                if fact.tool_invocation_id.as_ref().is_some_and(|tool| {
+                    turn.facts.iter().any(|candidate| {
+                        candidate.tool_invocation_id.as_ref() == Some(tool)
+                            && candidate.kind.as_str() == "effect.reconciled"
+                    })
+                }) =>
+            {
+                Ok(EffectRecoveryPosition::Reconciled)
+            }
+            "effect.completed" | "effect.failed" | "effect.denied" | "effect.observation" => {
+                Ok(EffectRecoveryPosition::Terminal)
+            }
             _ => Err(RuntimeCommandError::CorruptLedger),
         }),
         EffectRecoveryPosition::None,
@@ -286,9 +300,11 @@ pub fn select_runtime_recovery(snapshot: RuntimeRecoverySnapshot) -> RuntimeReco
     match (snapshot.execution, snapshot.model, snapshot.effect) {
         (Execution::Terminal, _, _) => Action::ReturnCommittedTerminal,
         (Execution::Suspended, Model::Uncertain, _)
-        | (Execution::Suspended, _, Effect::InteractionRequested | Effect::Uncertain) => {
-            Action::AwaitContinuation
-        }
+        | (
+            Execution::Suspended,
+            _,
+            Effect::InteractionRequested | Effect::Uncertain | Effect::Reconciled,
+        ) => Action::AwaitContinuation,
         (Execution::Suspended, _, _) => Action::FailCorruptLedger,
         (Execution::Active, _, _) if snapshot.recovery_ordinal >= snapshot.max_recoveries => {
             Action::FailRecoveryBound
