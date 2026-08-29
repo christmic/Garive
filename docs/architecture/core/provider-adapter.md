@@ -210,6 +210,8 @@ Spec.
   — Messages-compatible implementation contract.
 - [`../../../spec/design/compatible-provider-mapping.md`](../../../spec/design/compatible-provider-mapping.md)
   — compatible deployment request/outcome/error/stream mapping contract.
+- [`../../../spec/design/vendor-connection-profiles.md`](../../../spec/design/vendor-connection-profiles.md)
+  — explicit official connection/authentication/error profiles and the hosted-capability split.
 - [`.agents/testing.md`](../../../.agents/testing.md) — protocol evidence gates.
 
 ## Meta

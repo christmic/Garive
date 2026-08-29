@@ -78,7 +78,9 @@ required only for the D0/C4 digest preimages explicitly named by those Specs.
 ## External dependencies, not Core contracts
 
 - `P2-C` maps neutral model requests/outcomes to one compatible deployment;
-- `P2-V` adds vendor credentials, endpoints and special capabilities;
+- `P2-V0` formats Runtime-supplied endpoint/credential values and exact vendor
+  error policy without loading or owning those values;
+- `P2-VX` admits special vendor capabilities one semantic extension at a time;
 - `H1` exposes committed Runtime commands/events/status to clients;
 - concrete executors prove filesystem/process/network enforcement;
 - `C7` compression remains gated until a measured C3/C6 workload baseline

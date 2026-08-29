@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "contract": "vendor-connection-profiles",
+  "profiles": [
+    {
+      "name": "openai-default",
+      "vendor": "openai",
+      "endpoint": {"kind": "default"},
+      "credential": "fixture-openai-token",
+      "extra_headers": [{"name": "x-garive-trace", "value": "trace-1", "sensitive": false}],
+      "expected": {
+        "endpoint": "https://api.openai.com/v1/responses",
+        "credential_header": "authorization",
+        "credential_value": "Bearer fixture-openai-token",
+        "debug_contains_credential": false
+      }
+    },
+    {
+      "name": "openai-explicit-endpoint",
+      "vendor": "openai",
+      "endpoint": {"kind": "explicit", "value": "https://relay.example.test/openai/responses"},
+      "credential": "fixture-openai-token",
+      "extra_headers": [],
+      "expected": {"endpoint": "https://relay.example.test/openai/responses"}
+    },
+    {
+      "name": "anthropic-default",
+      "vendor": "anthropic",
+      "endpoint": {"kind": "default"},
+      "credential": "fixture-anthropic-key",
+      "extra_headers": [{"name": "x-garive-trace", "value": "trace-2", "sensitive": false}],
+      "expected": {
+        "endpoint": "https://api.anthropic.com/v1/messages",
+        "credential_header": "x-api-key",
+        "credential_value": "fixture-anthropic-key",
+        "version_header": "anthropic-version",
+        "protocol_version": "2023-06-01",
+        "debug_contains_credential": false
+      }
+    },
+    {
+      "name": "anthropic-explicit-endpoint",
+      "vendor": "anthropic",
+      "endpoint": {"kind": "explicit", "value": "https://relay.example.test/anthropic/messages"},
+      "credential": "fixture-anthropic-key",
+      "extra_headers": [],
+      "expected": {"endpoint": "https://relay.example.test/anthropic/messages"}
+    }
+  ],
+  "error_rules": {
+    "openai": [
+      {"status": 400, "type": "invalid_request_error", "code": "context_length_exceeded", "expected": "context_overflow"},
+      {"status": 401, "type": "invalid_request_error", "code": "invalid_api_key", "expected": "authentication"},
+      {"status": 429, "type": "rate_limit_error", "code": "rate_limit_exceeded", "expected": "rate_limited"},
+      {"status": 503, "type": "server_error", "code": "server_error", "expected": "model_unavailable"}
+    ],
+    "anthropic": [
+      {"status": 401, "type": "authentication_error", "code": null, "expected": "authentication"},
+      {"status": 429, "type": "rate_limit_error", "code": null, "expected": "rate_limited"},
+      {"status": 529, "type": "overloaded_error", "code": null, "expected": "model_unavailable"},
+      {"status": 400, "type": "invalid_request_error", "code": null, "expected": "unclassified_protocol_error"}
+    ]
+  },
+  "failure_cases": [
+    {"name": "empty-credential", "code": "empty_credential"},
+    {"name": "credential-line-break", "code": "invalid_credential"},
+    {"name": "relative-endpoint", "code": "invalid_endpoint"},
+    {"name": "invalid-header-name", "code": "invalid_header"},
+    {"name": "duplicate-header", "code": "duplicate_header"},
+    {"name": "openai-reserved-auth", "code": "reserved_header"},
+    {"name": "anthropic-reserved-version", "code": "reserved_header"},
+    {"name": "anthropic-reserved-bearer", "code": "reserved_header"}
+  ]
+}

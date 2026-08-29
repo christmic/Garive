@@ -174,6 +174,12 @@ Provider fixtures are sanitized captures or minimal examples derived directly
 from those official schemas. Fixtures invented from Garive domain types are
 not protocol evidence.
 
+Vendor connection profiles are a separate Provider slice. They format only
+explicit Runtime-supplied endpoint and credential values, produce exact error
+policy, and own no environment lookup, credential store, HTTP attempt or retry.
+Hosted capabilities require individual extension Specs rather than a generic
+allowlist.
+
 ### OpenAI module
 
 The first admitted protocol is `POST /v1/responses` with SSE streaming. Chat

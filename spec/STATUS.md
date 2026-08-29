@@ -49,7 +49,8 @@ planned without reopening a narrower completed row.
 | P1-O | Responses-compatible protocol adapters | accepted | accepted | documented | implemented | verified | done | Keep shared request/response/error/SSE fixtures, exact event catalogues, strict native builds, and adapter boundary gates green. |
 | P1-A | Messages-compatible protocol adapters | accepted | accepted | documented | implemented | verified | done | Keep shared request/response/error/SSE fixtures, block/delta lifecycle matrices, strict native builds, and adapter boundary gates green. |
 | P2-C | Compatible deployment Provider mapping | accepted | accepted | documented | implemented | verified | done | Keep explicit deployment boundaries, every shared failure case, and buffered/streamed Rust/Kotlin normalization green. |
-| P2-V | Vendor-specific Provider profiles | accepted | missing | missing | missing | missing | planned | Admit hosted APIs, default endpoints, credentials, and vendor capabilities only after P2-C. |
+| P2-V0 | Official vendor connection profiles | accepted | accepted | missing | missing | missing | active | Implement explicit OpenAI/Anthropic adapter configuration and exact error policies in Rust/Kotlin; no Runtime or environment ownership. |
+| P2-VX | Hosted vendor capabilities | accepted | missing | missing | missing | missing | planned | Admit each hosted tool/special API only with its own neutral semantics, extension types and fixtures; never allowlist arbitrary extensions. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
 | H1 | Live durable Host | accepted | draft | missing | missing | missing | planned | Depends on C6, P2-C, and one Runtime-owned transport. |
 | A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |

@@ -132,9 +132,10 @@ dependency direction from the milestone DAG.
 | 8 | C6-Rust | SQLite Runtime composition and process restart matrix. | Real-file process-kill tests at every C6 checkpoint. |
 | 9 | C6-Kotlin | PostgreSQL experimental recovery host. | Real PostgreSQL transaction/restart subset, reported separately. |
 
-P2-C Provider mapping, concrete executor enforcement and H1 Host transport are
-separate follow-on slices. Fakes can prove C4-C6 orchestration but cannot be
-used to claim those external boundaries.
+P2-C Provider mapping is complete. P2-V0 vendor connection profiles, concrete
+executor enforcement and H1 Host transport are separate follow-on slices.
+Fakes can prove C4-C6 orchestration but cannot be used to claim those external
+boundaries.
 
 ## Explicitly deferred
 
