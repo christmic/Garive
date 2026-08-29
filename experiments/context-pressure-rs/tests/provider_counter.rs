@@ -24,6 +24,7 @@ type TestCounter = AnthropicProviderCounter<RecordingPort>;
 
 #[derive(Clone)]
 struct RecordingPort {
+    endpoint: String,
     requests: RecordedRequests,
     eligible: bool,
     revision: &'static str,
@@ -31,6 +32,10 @@ struct RecordingPort {
 }
 
 impl TokenCountExchangePort for RecordingPort {
+    fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
     fn transport_revision(&self) -> &str {
         self.revision
     }
@@ -80,6 +85,7 @@ fn custom_counter(
         thinking: None,
         error_policy: ProtocolErrorPolicy::default(),
     };
+    let endpoint = profile.endpoint().to_owned();
     let value = AnthropicProviderCounter::new(
         AnthropicProviderCounterConfig {
             counter_revision: "composition-v1".into(),
@@ -89,6 +95,7 @@ fn custom_counter(
             publishable,
         },
         RecordingPort {
+            endpoint,
             requests: Arc::clone(&requests),
             eligible: false,
             revision: "recording-v1",
@@ -193,6 +200,7 @@ fn every_nonsecret_route_value_is_bound_to_the_digest() {
             thinking,
             error_policy: ProtocolErrorPolicy::default(),
         };
+        let endpoint = profile.endpoint().to_owned();
         AnthropicProviderCounter::new(
             AnthropicProviderCounterConfig {
                 counter_revision: "composition-v1".into(),
@@ -202,6 +210,7 @@ fn every_nonsecret_route_value_is_bound_to_the_digest() {
                 publishable: false,
             },
             RecordingPort {
+                endpoint,
                 requests,
                 eligible: false,
                 revision,

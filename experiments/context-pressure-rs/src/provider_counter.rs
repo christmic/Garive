@@ -20,6 +20,8 @@ const SECRET_PLACEHOLDER: &str = "<secret>";
 
 /// One explicitly bounded execution boundary for the vendor count exchange.
 pub trait TokenCountExchangePort {
+    /// Returns the exact endpoint accepted by this frozen transport.
+    fn endpoint(&self) -> &str;
     /// Returns the exact transport implementation/policy revision.
     fn transport_revision(&self) -> &str;
     /// Reports whether this exact port is admitted for publication evidence.
@@ -63,6 +65,7 @@ impl<P: TokenCountExchangePort> AnthropicProviderCounter<P> {
             || config.deployment.model_id.is_empty()
             || config.projection_max_output_tokens == 0
             || transport_revision.is_empty()
+            || port.endpoint() != config.profile.endpoint()
             || (config.publishable && !port.publication_eligible())
             || !config
                 .deployment

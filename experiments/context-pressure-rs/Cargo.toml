@@ -16,6 +16,7 @@ garive-eval = { path = "../../engine/eval" }
 garive-llm = { path = "../../engine/llm" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 garive-provider-compatible = { path = "../../providers/compatible" }
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_jcs.workspace = true
