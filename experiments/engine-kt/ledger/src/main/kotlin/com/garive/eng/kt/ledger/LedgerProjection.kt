@@ -65,9 +65,9 @@ internal class LedgerProjection(
             "session.closed" -> closeSession()
             "turn.started" -> startTurn(fact)
             "turn.suspended" -> suspendTurn(fact)
-            "turn.completed" -> transitionTurn(fact.turnId, TurnState.COMPLETED)
-            "turn.stopped" -> transitionTurn(fact.turnId, TurnState.STOPPED)
-            "turn.failed" -> transitionTurn(fact.turnId, TurnState.FAILED)
+            "turn.completed" -> terminalTurn(fact, TurnState.COMPLETED)
+            "turn.stopped" -> terminalTurn(fact, TurnState.STOPPED)
+            "turn.failed" -> terminalTurn(fact, TurnState.FAILED)
             "turn.input" -> requireOpenTurn(fact.turnId)
             "turn.cancel_requested" -> requireNonTerminalTurn(fact.turnId)
             "execution.started" -> startExecution(fact)
@@ -147,6 +147,22 @@ internal class LedgerProjection(
         transitionTurn(turn, TurnState.SUSPENDED)?.let { return it }
         suspensions[turn] = payload.text("suspension_id")
         return null
+    }
+
+    private fun terminalTurn(fact: FactDraft, next: TurnState): LedgerError? {
+        val turn = fact.turnId ?: return LedgerError.MissingReference
+        val execution = ExecutionId.of(fact.payloadObject().text("execution_id"))
+        val expected = when (next) {
+            TurnState.COMPLETED -> ExecutionState.COMPLETED
+            TurnState.STOPPED -> ExecutionState.STOPPED
+            TurnState.FAILED -> ExecutionState.FAILED
+            else -> return LedgerError.InvalidTransition
+        }
+        val actual = executions[execution]
+        val suspendedClose = next in setOf(TurnState.STOPPED, TurnState.FAILED) &&
+            turns[turn] == TurnState.SUSPENDED && actual == (turn to ExecutionState.SUSPENDED)
+        if (actual != (turn to expected) && !suspendedClose) return LedgerError.InvalidTransition
+        return transitionTurn(turn, next)
     }
 
     private fun requireOpenTurn(turnId: TurnId?): LedgerError? = when {
