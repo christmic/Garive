@@ -65,6 +65,9 @@ fn secrets_do_not_change_digest_and_every_nonsecret_coordinate_is_bound() {
     variants.push(with(base.clone(), |v| {
         v.non_secret_headers[0].value.push('x')
     }));
+    variants.push(with(base.clone(), |v| {
+        v.non_secret_headers[0].name = "x-other-route".into()
+    }));
     variants.push(with(base.clone(), |v| v.max_output_tokens += 1));
     variants.push(with(base.clone(), |v| v.connect_timeout_ms += 1));
     variants.push(with(base.clone(), |v| v.request_timeout_ms += 1));
@@ -72,6 +75,16 @@ fn secrets_do_not_change_digest_and_every_nonsecret_coordinate_is_bound() {
     for variant in variants {
         assert_ne!(digest(variant), base_digest);
     }
+
+    let messages_base = messages();
+    let messages_digest = digest(messages_base.clone());
+    assert_ne!(messages_digest, base_digest);
+    let mut version_name = messages_base.clone();
+    version_name.messages_version_header_name = Some("other-version".into());
+    assert_ne!(digest(version_name), messages_digest);
+    let mut version_value = messages_base;
+    version_value.messages_protocol_version = Some("2026-02-02".into());
+    assert_ne!(digest(version_value), messages_digest);
 
     let evaluator = build_publication_evaluator(responses(), &Resolver::new("secret"))
         .unwrap()

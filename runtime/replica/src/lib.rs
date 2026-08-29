@@ -70,6 +70,7 @@ pub use local_worker::{
 };
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
+    RUNTIME_MODEL_HTTP_TRANSPORT_REVISION,
 };
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,

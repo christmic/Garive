@@ -5,7 +5,9 @@ use garive_llm::ModelCapability;
 use garive_openai_responses::{Header as ResponsesHeader, ResponsesAdapterConfig};
 use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment};
 use garive_provider_profile::SecretValue;
-use garive_runtime::{RuntimeHttpLimits, RuntimeModelHttpTransport};
+use garive_runtime::{
+    RuntimeHttpLimits, RuntimeModelHttpTransport, RUNTIME_MODEL_HTTP_TRANSPORT_REVISION,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -152,7 +154,7 @@ fn build(
         role,
         template_revision,
         config: &config,
-        transport_revision: "runtime-http.no-proxy.no-redirect.single-attempt.v1",
+        transport_revision: RUNTIME_MODEL_HTTP_TRANSPORT_REVISION,
     })
     .map_err(|_| error())?;
     let descriptor = ExperimentPortDescriptor::new(

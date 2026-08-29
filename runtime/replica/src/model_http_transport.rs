@@ -16,6 +16,10 @@ use garive_provider_compatible::{
 };
 use garive_provider_openai::OpenAiProfile;
 
+/// Exact behavior revision of the bounded no-proxy/no-redirect model HTTP transport.
+pub const RUNTIME_MODEL_HTTP_TRANSPORT_REVISION: &str =
+    "runtime-http.no-proxy.no-redirect.single-attempt.v1";
+
 /// Explicit bounds for one Runtime-owned HTTP client and response.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeHttpLimits {
