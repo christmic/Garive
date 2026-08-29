@@ -12,7 +12,7 @@ class LedgerTransitionMatrixTest {
         val lifecycle = kind == "tool.preparation_rejected" || kind.startsWith("turn.") || kind.startsWith("execution.") ||
             kind.startsWith("model.") || kind.startsWith("effect.")
         val payload = assertIs<CanonicalPayloadResult.Success>(
-            CanonicalPayload.fromValue(JsonObject(emptyMap())),
+            CanonicalPayload.fromValue(runtimePayload(kind)),
         ).payload
         return FactDraft(
             FactId.of(id),

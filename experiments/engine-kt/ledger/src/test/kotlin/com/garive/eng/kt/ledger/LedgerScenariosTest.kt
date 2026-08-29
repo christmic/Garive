@@ -100,7 +100,7 @@ class LedgerScenariosTest {
     }
 
     private fun draft(value: JsonObject): FactDraft {
-        val payloadValue: JsonElement = value["payload"] ?: JsonObject(emptyMap())
+        val payloadValue: JsonElement = value["payload"] ?: runtimePayload(value.text("kind"))
         val payload = assertIs<CanonicalPayloadResult.Success>(CanonicalPayload.fromValue(payloadValue)).payload
         return FactDraft(
             FactId.of(value.text("id")),

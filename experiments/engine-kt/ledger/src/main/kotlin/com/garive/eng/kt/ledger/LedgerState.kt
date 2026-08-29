@@ -44,6 +44,10 @@ public class LedgerState {
         var replayed = 0
         for (draft in drafts) {
             draft.validate()?.let { return LedgerResult.Failure(it) }
+            when (val validation = validateRuntimeFact(draft)) {
+                is LedgerResult.Failure -> return validation
+                is LedgerResult.Success -> Unit
+            }
             if (identityOwnedByOtherSession(sessionId, draft)) {
                 return LedgerResult.Failure(LedgerError.InvalidTransition)
             }
