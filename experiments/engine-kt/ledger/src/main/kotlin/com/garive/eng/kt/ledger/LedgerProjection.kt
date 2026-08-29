@@ -642,7 +642,8 @@ internal class LedgerProjection(
         val ordinal = payload["ordinal"]?.jsonPrimitive?.contentOrNull?.toULongOrNull()
         val pending = record.pendingClaim
         val matchesClaim = if (pending == null) {
-            occurrenceId == null && ordinal == null
+            (occurrenceId == null && ordinal == null) ||
+                (occurrenceId != null && record.lastHandledOrdinal.nextOrdinalOrNull() == ordinal)
         } else {
             pending.occurrenceId == occurrenceId && pending.ordinal == ordinal
         }

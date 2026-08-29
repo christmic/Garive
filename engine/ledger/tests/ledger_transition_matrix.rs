@@ -349,6 +349,24 @@ fn scheduler_claims_ranges_terminals_and_updates_are_exact() {
         "schedule.fired",
         "schedule.fired",
     ]);
+    let mut fail_due = fact("fail-due", "schedule.failed");
+    fail_due.payload = CanonicalPayload::from_value(&serde_json::json!({
+        "schedule_id":"schedule-1","revision_id":"revision-1",
+        "occurrence_id":"occurrence-1","ordinal":1,"reason":"misfire_limit_exceeded"
+    }))
+    .unwrap();
+    let mut failed = LedgerState::default();
+    assert!(failed
+        .commit(
+            SessionId::try_from("failed-session").unwrap(),
+            0,
+            vec![
+                fact("failed-open", "session.opened"),
+                fact("failed-create", "schedule.created"),
+                fail_due,
+            ],
+        )
+        .is_ok());
 
     let mut superseded = fact("supersede", "schedule.cancelled");
     superseded.payload = CanonicalPayload::from_value(&serde_json::json!({

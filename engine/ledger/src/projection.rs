@@ -943,6 +943,9 @@ impl SessionProjection {
         let ordinal = value.get("ordinal").and_then(Value::as_u64);
         let matches_claim = match (&record.pending_claim, occurrence, ordinal) {
             (None, None, None) => true,
+            (None, Some(_), Some(number)) => {
+                record.last_handled_ordinal.checked_add(1) == Some(number)
+            }
             (Some(pending), Some(id), Some(number)) => {
                 pending.occurrence_id == id && pending.ordinal == number
             }

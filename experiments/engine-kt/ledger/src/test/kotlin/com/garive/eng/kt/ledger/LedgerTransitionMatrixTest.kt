@@ -270,6 +270,25 @@ class LedgerTransitionMatrixTest {
             "session.opened", "schedule.created", "schedule.claimed",
             "schedule.fired", "schedule.fired",
         )
+        val failDuePayload = Json.parseToJsonElement(
+            """{"occurrence_id":"occurrence-1","ordinal":1,"reason":"misfire_limit_exceeded","revision_id":"revision-1","schedule_id":"schedule-1"}""",
+        )
+        val failDue = fact("fail-due", "schedule.failed").copy(
+            payload = assertIs<CanonicalPayloadResult.Success>(
+                CanonicalPayload.fromValue(failDuePayload),
+            ).payload,
+        )
+        assertIs<LedgerResult.Success<CommitResult>>(
+            LedgerState().commit(
+                SessionId.of("failed-session"),
+                0u,
+                listOf(
+                    fact("failed-open", "session.opened"),
+                    fact("failed-create", "schedule.created"),
+                    failDue,
+                ),
+            ),
+        )
 
         val supersededPayload = Json.parseToJsonElement(
             """{"command_id":"supersede","expected_revision_id":"revision-1","reason":"superseded","schedule_id":"schedule-1"}""",
