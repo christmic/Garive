@@ -3,14 +3,11 @@ package com.garive.eng.kt.core
 import com.garive.eng.kt.llm.InterruptionKind
 import com.garive.eng.kt.llm.InvokeOutcome
 import com.garive.eng.kt.llm.ModelItem
-import com.garive.eng.kt.llm.ModelInputContent
-import com.garive.eng.kt.llm.ModelInputItem
 import com.garive.eng.kt.llm.ModelObserver
 import com.garive.eng.kt.llm.ModelPortFailure
 import com.garive.eng.kt.llm.ModelPortResult
 import com.garive.eng.kt.llm.ModelRequest
 import com.garive.eng.kt.llm.ModelRequestId
-import com.garive.eng.kt.llm.ModelRole
 import com.garive.eng.kt.llm.ObserverDecision
 import com.garive.eng.kt.llm.RejectionKind
 import com.garive.eng.kt.llm.TokenCount
@@ -127,28 +124,7 @@ internal suspend fun executeKernel(
         }
         requestOrdinal += 1u
         val requestId = "${request.executionId.value}:$iteration:$requestOrdinal"
-        val visible = surface.items.mapNotNull { it as? ContextItem.Input }
-        val skillItems = visible.filter { it.kind == CandidateKind.SKILL }.map { it.item }
-        val memoryItems = visible.filter { it.kind == CandidateKind.MEMORY }.map { it.item }
-        val knowledgeItems = visible.filter { it.kind == CandidateKind.KNOWLEDGE }.map { it.item }
-        val inputItems = visible.filter {
-            it.kind !in setOf(CandidateKind.SKILL, CandidateKind.MEMORY, CandidateKind.KNOWLEDGE)
-        }.map { it.item }.toMutableList()
-        val instructionBoundary = inputItems.indexOfFirst { item ->
-            item !is ModelInputItem.Message || item.role !in setOf(ModelRole.SYSTEM, ModelRole.DEVELOPER)
-        }.let { if (it < 0) inputItems.size else it }
-        inputItems.addAll(
-            instructionBoundary,
-            skillItems,
-        )
-        inputItems.addAll(
-            instructionBoundary + skillItems.size,
-            memoryItems,
-        )
-        inputItems.addAll(
-            instructionBoundary + skillItems.size + memoryItems.size,
-            knowledgeItems,
-        )
+        val inputItems = assembleModelInputs(surface)
         val modelRequest = ModelRequest(
             ModelRequestId(requestId),
             target,

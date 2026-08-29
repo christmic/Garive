@@ -3,6 +3,7 @@ package com.garive.eng.kt.core
 import com.garive.eng.kt.llm.MediaKind
 import com.garive.eng.kt.llm.ModelInputContent
 import com.garive.eng.kt.llm.ModelInputItem
+import com.garive.eng.kt.llm.ModelRole
 
 /** Consumer-specific reason for deriving a bounded context surface. */
 public enum class ContextPurpose { INFERENCE, GOVERNANCE, TOOL_PREPARATION, SUMMARIZATION }
@@ -298,3 +299,21 @@ private fun itemUtf8Bytes(item: ModelInputItem): Int? {
 
 private fun checkedAdd(left: Int, right: Int): Int? =
     if (right < 0 || Int.MAX_VALUE - left < right) null else left + right
+
+/** Assembles model inputs into instruction, Skill, evidence, then history groups. */
+public fun assembleModelInputs(surface: ContextSurface): List<ModelInputItem> {
+    val visible = surface.items.mapNotNull { it as? ContextItem.Input }
+    val skills = visible.filter { it.kind == CandidateKind.SKILL }.map { it.item }
+    val memory = visible.filter { it.kind == CandidateKind.MEMORY }.map { it.item }
+    val knowledge = visible.filter { it.kind == CandidateKind.KNOWLEDGE }.map { it.item }
+    val ordinary = visible.filter {
+        it.kind !in setOf(CandidateKind.SKILL, CandidateKind.MEMORY, CandidateKind.KNOWLEDGE)
+    }.map { it.item }
+    val instructions = ordinary.filter { item ->
+        item is ModelInputItem.Message && item.role in setOf(ModelRole.SYSTEM, ModelRole.DEVELOPER)
+    }
+    val history = ordinary.filterNot { item ->
+        item is ModelInputItem.Message && item.role in setOf(ModelRole.SYSTEM, ModelRole.DEVELOPER)
+    }
+    return instructions + skills + memory + knowledge + history
+}

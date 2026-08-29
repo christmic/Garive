@@ -1,8 +1,9 @@
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use garive_core::{
-    derive_context, merge_context_candidates, CandidateKind, ContextCandidate, ContextItem,
-    ContextPurpose, ContextRequest, FactRef, Retention, Visibility,
+    assemble_model_inputs, derive_context, merge_context_candidates, CandidateKind,
+    ContextCandidate, ContextItem, ContextPurpose, ContextRequest, ContextSurface, FactRef,
+    Retention, Visibility,
 };
 use garive_llm::{ModelInputContent, ModelInputItem, ModelRole};
 use serde_json::Value;
@@ -89,6 +90,71 @@ fn rust_consumes_every_capability_context_case() {
         })
         .collect::<Vec<_>>();
     assert_eq!(kinds, strings(&case["item_kinds"]));
+
+    let case = &document["assembly_case"];
+    let items = case["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| ContextItem::Input {
+            fact_ref: FactRef {
+                session_id: "session".into(),
+                position: value["position"].as_u64().unwrap(),
+            },
+            kind: fixture_kind(value["kind"].as_str().unwrap()),
+            item: ModelInputItem::Message {
+                role: fixture_role(value["role"].as_str().unwrap()),
+                content: vec![ModelInputContent::Text(
+                    value["text"].as_str().unwrap().into(),
+                )],
+            },
+        })
+        .collect::<Vec<_>>();
+    let surface = ContextSurface {
+        purpose: ContextPurpose::Inference,
+        from_position: 1,
+        through_position: items.len() as u64,
+        item_count: items.len(),
+        utf8_bytes: 1,
+        items,
+        retained_refs: vec![],
+        dropped_refs: vec![],
+        filtered_refs: vec![],
+    };
+    let texts = assemble_model_inputs(surface)
+        .into_iter()
+        .map(|item| match item {
+            ModelInputItem::Message { content, .. } => match &content[0] {
+                ModelInputContent::Text(text) => text.clone(),
+                _ => panic!("fixture text"),
+            },
+            _ => panic!("fixture message"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(texts, strings(case.get("expected_texts").unwrap()));
+}
+
+fn fixture_kind(value: &str) -> CandidateKind {
+    match value {
+        "instruction" => CandidateKind::Instruction,
+        "user_input" => CandidateKind::UserInput,
+        "skill" => CandidateKind::Skill,
+        "memory" => CandidateKind::Memory,
+        "knowledge" => CandidateKind::Knowledge,
+        "system_notice" => CandidateKind::SystemNotice,
+        "model_output" => CandidateKind::ModelOutput,
+        _ => panic!("unknown kind"),
+    }
+}
+
+fn fixture_role(value: &str) -> ModelRole {
+    match value {
+        "system" => ModelRole::System,
+        "developer" => ModelRole::Developer,
+        "user" => ModelRole::User,
+        "assistant" => ModelRole::Assistant,
+        _ => panic!("unknown role"),
+    }
 }
 
 fn candidates(value: &Value) -> Vec<ContextCandidate> {

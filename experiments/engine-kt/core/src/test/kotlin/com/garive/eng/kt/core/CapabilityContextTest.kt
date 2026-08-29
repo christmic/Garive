@@ -48,7 +48,47 @@ class CapabilityContextTest {
             case.strings("item_kinds"),
             result.surface.items.mapNotNull { (it as? ContextItem.Input)?.kind?.fixtureName() },
         )
+
+        val assembly = document.getValue("assembly_case").jsonObject
+        val items = assembly.getValue("items").jsonArray.map { element ->
+            val item = element.jsonObject
+            ContextItem.Input(
+                FactRef("session", item.text("position").toULong()),
+                fixtureKind(item.text("kind")),
+                ModelInputItem.Message(
+                    fixtureRole(item.text("role")),
+                    listOf(ModelInputContent.Text(item.text("text"))),
+                ),
+            )
+        }
+        val surface = ContextSurface(
+            ContextPurpose.INFERENCE, 1uL, items.size.toULong(), items,
+            emptyList(), emptyList(), emptyList(), items.size, 1,
+        )
+        val texts = assembleModelInputs(surface).map { item ->
+            ((item as ModelInputItem.Message).content.single() as ModelInputContent.Text).text
+        }
+        assertEquals(assembly.strings("expected_texts"), texts)
     }
+}
+
+private fun fixtureKind(value: String): CandidateKind = when (value) {
+    "instruction" -> CandidateKind.INSTRUCTION
+    "user_input" -> CandidateKind.USER_INPUT
+    "skill" -> CandidateKind.SKILL
+    "memory" -> CandidateKind.MEMORY
+    "knowledge" -> CandidateKind.KNOWLEDGE
+    "system_notice" -> CandidateKind.SYSTEM_NOTICE
+    "model_output" -> CandidateKind.MODEL_OUTPUT
+    else -> error("unknown kind")
+}
+
+private fun fixtureRole(value: String): ModelRole = when (value) {
+    "system" -> ModelRole.SYSTEM
+    "developer" -> ModelRole.DEVELOPER
+    "user" -> ModelRole.USER
+    "assistant" -> ModelRole.ASSISTANT
+    else -> error("unknown role")
 }
 
 private fun JsonObject.candidates(name: String): List<ContextCandidate> = positions(name).map(::candidate)

@@ -192,42 +192,36 @@ pub struct ContextSurface {
 /// Skill instructions precede Memory and Knowledge evidence, which precede
 /// ordinary history/current input. Redacted reference-only items are omitted.
 pub fn assemble_model_inputs(surface: ContextSurface) -> Vec<ModelInputItem> {
+    let mut instructions = Vec::new();
     let mut skills = Vec::new();
     let mut memory = Vec::new();
     let mut knowledge = Vec::new();
-    let mut ordinary = Vec::new();
+    let mut history = Vec::new();
     for value in surface.items {
         if let ContextItem::Input { kind, item, .. } = value {
             match kind {
                 CandidateKind::Skill => skills.push(item),
                 CandidateKind::Memory => memory.push(item),
                 CandidateKind::Knowledge => knowledge.push(item),
-                _ => ordinary.push(item),
+                _ if matches!(
+                    item,
+                    ModelInputItem::Message {
+                        role: garive_llm::ModelRole::System | garive_llm::ModelRole::Developer,
+                        ..
+                    }
+                ) =>
+                {
+                    instructions.push(item)
+                }
+                _ => history.push(item),
             }
         }
     }
-    let instruction_boundary = ordinary
-        .iter()
-        .take_while(|item| {
-            matches!(
-                item,
-                ModelInputItem::Message {
-                    role: garive_llm::ModelRole::System | garive_llm::ModelRole::Developer,
-                    ..
-                }
-            )
-        })
-        .count();
-    let skill_count = skills.len();
-    ordinary.splice(instruction_boundary..instruction_boundary, skills);
-    let memory_boundary = instruction_boundary + skill_count;
-    let memory_count = memory.len();
-    ordinary.splice(memory_boundary..memory_boundary, memory);
-    ordinary.splice(
-        memory_boundary + memory_count..memory_boundary + memory_count,
-        knowledge,
-    );
-    ordinary
+    instructions.extend(skills);
+    instructions.extend(memory);
+    instructions.extend(knowledge);
+    instructions.extend(history);
+    instructions
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
