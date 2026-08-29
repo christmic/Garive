@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "database_file": "garive-desktop.db",
+  "installed_agent": {
+    "definition_id": "definition-main",
+    "definition_revision": "revision-1",
+    "snapshot_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "agent_instance_namespace": "desktop-main",
+    "max_iterations": 2,
+    "max_input_tokens": 64,
+    "max_output_tokens": 16,
+    "deadline_budget_ms": 2000
+  },
+  "host": {
+    "max_command_bytes": 4096,
+    "event_batch_size": 64,
+    "event_poll_interval_ms": 10
+  },
+  "execution": {
+    "profile_id": "fixture.responses",
+    "credential_ref": "desktop-fixture",
+    "endpoint": "http://127.0.0.1:4319/v1/responses",
+    "model_target_id": "desktop-target",
+    "model_id": "fixture-model",
+    "deployment_id": "desktop-deployment",
+    "recovery_policy_revision": "recovery-1",
+    "max_output_tokens": 16,
+    "max_context_items": 8,
+    "max_context_utf8_bytes": 2048,
+    "max_model_attempts": 1,
+    "output_limit_action": "suspend",
+    "transport_action": "suspend",
+    "unavailable_action": "suspend",
+    "missing_usage_policy": "stop"
+  },
+  "http": {
+    "connect_timeout_ms": 1000,
+    "request_timeout_ms": 2000,
+    "max_response_bytes": 65536
+  },
+  "dispatch_capacity": 2,
+  "execution_lease_duration_ms": 5000
+}
