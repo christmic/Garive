@@ -11,17 +11,25 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 
-class CanonicalPayload private constructor(val json: String, val sha256: String) {
-    fun verify(): CanonicalPayloadError? =
+/** Canonical UTF-8 JSON bytes and the lowercase SHA-256 digest binding them. */
+public class CanonicalPayload private constructor(
+    public val json: String,
+    public val sha256: String,
+) {
+    /** Recomputes the digest and reports persisted/in-memory corruption. */
+    public fun verify(): CanonicalPayloadError? =
         if (digest(json.encodeToByteArray()) == sha256) null else CanonicalPayloadError.DIGEST_MISMATCH
 
-    fun withDigestForCorruptionTest(value: String) = CanonicalPayload(json, value)
+    internal fun withDigestForCorruptionTest(value: String): CanonicalPayload = CanonicalPayload(json, value)
 
-    override fun equals(other: Any?) = other is CanonicalPayload && json == other.json && sha256 == other.sha256
-    override fun hashCode() = 31 * json.hashCode() + sha256.hashCode()
+    public override fun equals(other: Any?): Boolean =
+        other is CanonicalPayload && json == other.json && sha256 == other.sha256
 
-    companion object {
-        fun fromValue(value: JsonElement): CanonicalPayloadResult {
+    public override fun hashCode(): Int = 31 * json.hashCode() + sha256.hashCode()
+
+    public companion object {
+        /** Canonicalizes an admitted JSON value and computes its digest. */
+        public fun fromValue(value: JsonElement): CanonicalPayloadResult {
             val output = StringBuilder()
             val error = encode(value, output)
             if (error != null) return CanonicalPayloadResult.Failure(error)
@@ -29,7 +37,8 @@ class CanonicalPayload private constructor(val json: String, val sha256: String)
             return CanonicalPayloadResult.Success(CanonicalPayload(json, digest(json.encodeToByteArray())))
         }
 
-        fun fromStoredJson(json: String, sha256: String): CanonicalPayloadResult {
+        /** Validates stored JSON canonical form and its separately stored digest. */
+        public fun fromStoredJson(json: String, sha256: String): CanonicalPayloadResult {
             val value = try {
                 Json.parseToJsonElement(json)
             } catch (_: SerializationException) {
@@ -51,12 +60,14 @@ class CanonicalPayload private constructor(val json: String, val sha256: String)
     }
 }
 
-sealed interface CanonicalPayloadResult {
-    data class Success(val payload: CanonicalPayload) : CanonicalPayloadResult
-    data class Failure(val error: CanonicalPayloadError) : CanonicalPayloadResult
+/** Success/failure envelope for canonical payload construction. */
+public sealed interface CanonicalPayloadResult {
+    public data class Success(public val payload: CanonicalPayload) : CanonicalPayloadResult
+    public data class Failure(public val error: CanonicalPayloadError) : CanonicalPayloadResult
 }
 
-enum class CanonicalPayloadError { INVALID_JSON, UNSUPPORTED_NUMBER, NON_CANONICAL, DIGEST_MISMATCH }
+/** Stable validation or integrity failure for canonical JSON. */
+public enum class CanonicalPayloadError { INVALID_JSON, UNSUPPORTED_NUMBER, NON_CANONICAL, DIGEST_MISMATCH }
 
 private val minimumInteger = BigInteger.valueOf(Long.MIN_VALUE)
 private val maximumInteger = BigInteger("18446744073709551615")

@@ -1,9 +1,10 @@
 package com.garive.eng.kt.ledger
 
-data class TurnSnapshot(
-    val facts: List<DurableFact>,
-    val sessionVersion: ULong,
-    val throughPosition: ULong,
+/** Ordered Turn facts plus the containing Session's durable watermark. */
+public data class TurnSnapshot(
+    public val facts: List<DurableFact>,
+    public val sessionVersion: ULong,
+    public val throughPosition: ULong,
 )
 
 private data class SessionLedger(
@@ -26,11 +27,13 @@ private data class FactIndexEntry(
     val draft: FactDraft,
 )
 
-class LedgerState {
+/** In-memory reference Ledger enforcing the portable append/query contract. */
+public class LedgerState {
     private val sessions = mutableMapOf<SessionId, SessionLedger>()
     private val factIndex = mutableMapOf<FactId, FactIndexEntry>()
 
-    fun commit(
+    /** Atomically validates and appends one batch at an expected Session version. */
+    public fun commit(
         sessionId: SessionId,
         expectedSessionVersion: ULong,
         drafts: List<FactDraft>,
@@ -93,7 +96,8 @@ class LedgerState {
         )
     }
 
-    fun readFacts(
+    /** Reads a verified fixed-prefix range in ascending durable position. */
+    public fun readFacts(
         sessionId: SessionId,
         afterPosition: ULong,
         throughPosition: ULong,
@@ -114,7 +118,8 @@ class LedgerState {
         return LedgerResult.Success(output)
     }
 
-    fun loadTurn(turnId: TurnId): LedgerResult<TurnSnapshot> {
+    /** Reconstructs one Turn and its Session watermark. */
+    public fun loadTurn(turnId: TurnId): LedgerResult<TurnSnapshot> {
         for (session in sessions.values) {
             val facts = session.facts.filter { it.turnId == turnId }
             if (facts.isNotEmpty()) {
@@ -126,24 +131,32 @@ class LedgerState {
         return LedgerResult.Failure(LedgerError.MissingReference)
     }
 
-    fun findModelRequest(requestId: ModelRequestId) = findInvocation { it.modelRequestId == requestId }
+    /** Returns every lifecycle fact associated with one model request. */
+    public fun findModelRequest(requestId: ModelRequestId): List<DurableFact> =
+        findInvocation { it.modelRequestId == requestId }
 
-    fun findToolInvocation(invocationId: ToolInvocationId) =
+    /** Returns every lifecycle fact associated with one tool invocation. */
+    public fun findToolInvocation(invocationId: ToolInvocationId): List<DurableFact> =
         findInvocation { it.toolInvocationId == invocationId }
 
-    fun listUncertainModelRequests(sessionId: SessionId): LedgerResult<List<ModelRequestId>> =
+    /** Lists model requests still Started without a recovery-terminal fact. */
+    public fun listUncertainModelRequests(sessionId: SessionId): LedgerResult<List<ModelRequestId>> =
         sessions[sessionId]?.let { LedgerResult.Success(it.projection.uncertainModelRequests()) }
             ?: LedgerResult.Failure(LedgerError.MissingReference)
 
-    fun listUncertainToolInvocations(sessionId: SessionId): LedgerResult<List<ToolInvocationId>> =
+    /** Lists effects still Started without a receipt or terminal fact. */
+    public fun listUncertainToolInvocations(sessionId: SessionId): LedgerResult<List<ToolInvocationId>> =
         sessions[sessionId]?.let { LedgerResult.Success(it.projection.uncertainToolInvocations()) }
             ?: LedgerResult.Failure(LedgerError.MissingReference)
 
-    fun sessionVersion(sessionId: SessionId) = sessions[sessionId]?.version
+    /** Returns the current optimistic-concurrency Session version. */
+    public fun sessionVersion(sessionId: SessionId): ULong? = sessions[sessionId]?.version
 
-    fun factCount(sessionId: SessionId) = sessions[sessionId]?.facts?.size ?: 0
+    /** Returns the number of durable facts in a Session. */
+    public fun factCount(sessionId: SessionId): Int = sessions[sessionId]?.facts?.size ?: 0
 
-    fun factAt(sessionId: SessionId, position: ULong) =
+    /** Returns the fact at one Session-local position when present. */
+    public fun factAt(sessionId: SessionId, position: ULong): DurableFact? =
         sessions[sessionId]?.facts?.find { it.position == position }
 
     private fun findInvocation(predicate: (DurableFact) -> Boolean) =
