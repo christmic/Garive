@@ -30,12 +30,16 @@ knowledge-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/knowledge/src experiments/engine-kt/knowledge/src/main; then echo 'K0 Engine must remain a pure retrieval value and reduction contract' >&2; exit 1; fi
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|reqwest|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/core_bridge/knowledge_*.rs; then echo 'K0 Runtime ports must receive connector configuration explicitly' >&2; exit 1; fi
 
+scheduler-boundaries:
+    @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/scheduler/src experiments/engine-kt/scheduler/src/main; then echo 'Q0 Engine must remain a pure recurrence contract' >&2; exit 1; fi
+    @if rg -n 'std::env|System\.getenv|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/scheduler_runtime; then echo 'Q0 Runtime must receive clock, authority, worker and dispatch configuration explicitly' >&2; exit 1; fi
+
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries
-    cargo test -p garive-config -p garive-core -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-skill -p garive-tools
-    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :skill:test :tools:test
+conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries
+    cargo test -p garive-config -p garive-core -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-scheduler -p garive-skill -p garive-tools
+    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :scheduler:test :skill:test :tools:test
 
 adapter-boundaries:
     @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not read process configuration' >&2; exit 1; fi
@@ -62,6 +66,9 @@ runtime-host: runtime-boundaries
 
 knowledge-runtime: knowledge-boundaries
     cargo test -p garive-runtime --test durable_core_execution --test knowledge_authority --test knowledge_recovery
+
+scheduler-runtime: scheduler-boundaries
+    cargo test -p garive-runtime --test schedule_lease --test scheduler_lifecycle --test scheduler_management --test scheduler_worker --test process_kill_recovery
 
 kotlin-experiment:
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
@@ -92,7 +99,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance protocol-adapters runtime-host knowledge-runtime kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters runtime-host knowledge-runtime scheduler-runtime kotlin-experiment apps rust
 
 bench:
     cargo test -p bench

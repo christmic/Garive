@@ -194,11 +194,13 @@ pub fn run_schedule_once(
             authority,
         ),
         ScheduleDecision::Exhausted => {
-            authority.authorize(
+            if let Err(code) = authority.authorize(
                 session_id,
                 &state.intent,
                 ScheduleAuthorityOperation::Exhaust,
-            )?;
+            ) {
+                return fail_unclaimed(ledger, session_id, &state, &context, code);
+            }
             let handled = state
                 .last_handled_ordinal
                 .ok_or(ScheduleErrorCode::CorruptScheduleState)?;

@@ -26,5 +26,10 @@
     {"name":"misfire-fail","policy":"fail","last_handled":null,"now":"2026-08-29T00:00:01Z","expected":"fail_misfire"},
     {"name":"exhausted","policy":"fire_once","last_handled":5,"now":"2026-08-29T00:00:10Z","expected":"exhausted"}
   ],
-  "invalid_cases": ["zero_delay","zero_lateness","invalid_clock","occurrence_overflow"]
+  "invalid_cases": ["zero_delay","zero_lateness","invalid_clock","occurrence_overflow"],
+  "failure_codes": [
+    "invalid_schedule","schedule_not_found","revision_conflict","subject_not_resumable",
+    "authority_denied","clock_invalid","occurrence_overflow","misfire_limit_exceeded",
+    "lease_lost","dispatch_conflict","durability_failure","corrupt_schedule_state"
+  ]
 }

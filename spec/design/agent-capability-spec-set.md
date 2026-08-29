@@ -76,7 +76,8 @@ amendment. The focused Specs define their exact payloads and transitions:
 - `knowledge.requested`, `knowledge.dispatched`, `knowledge.completed`,
   `knowledge.failed`;
 - `schedule.created`, `schedule.claimed`, `schedule.fired`,
-  `schedule.skipped`, `schedule.cancelled`, `schedule.failed`;
+  `schedule.skipped`, `schedule.cancelled`, `schedule.failed`,
+  `schedule.exhausted`;
 - `delegation.requested`, `delegation.authorized`, `delegation.denied`,
   `delegation.child_started`, `delegation.child_terminal`,
   `delegation.observed`.
@@ -99,7 +100,7 @@ claimed.
 | S0 | `agent/skill-activation-v1.json` | native + fixture | native + fixture | SQLite commit-before-model test |
 | M0 | `agent/memory-capability-v1.json` | native + fixture | native + fixture | restart, authority and retention tests |
 | K0 | `agent/knowledge-retrieval-v1.json` | native + fixture | native + fixture | fake connector + crash-position tests |
-| Q0 | `agent/durable-scheduler-v1.json` | native + fixture | value/reducer fixture | real SQLite clock/lease/restart tests |
+| Q0 | `agent/scheduler-v1.json` | native + fixture | native + fixture | real SQLite clock/lease/process-kill tests |
 | MA0 | `agent/multi-agent-delegation-v1.json` | native + fixture | native + fixture | SQLite parent/child process-kill matrix |
 | O0 | `agent/observability-v1.json` | native + fixture | native + fixture | exporter backpressure/redaction tests |
 

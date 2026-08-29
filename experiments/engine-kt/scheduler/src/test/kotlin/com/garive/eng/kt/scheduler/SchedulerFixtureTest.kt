@@ -1,6 +1,7 @@
 package com.garive.eng.kt.scheduler
 
 import java.nio.file.Path
+import java.time.Instant
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -94,6 +95,42 @@ class SchedulerFixtureTest {
             ).code,
         )
         assertEquals(4, root.getValue("invalid_cases").jsonArray.size)
+        assertEquals(
+            root.getValue("failure_codes").jsonArray.map { it.jsonPrimitive.content },
+            ScheduleErrorCode.entries.map { it.wireName },
+        )
+    }
+
+    @Test
+    fun `recurrence properties hold across delays and large misfires`() {
+        listOf(1uL, 7uL, 1_000uL, UInt.MAX_VALUE.toULong()).forEach { delayMs ->
+            val value = ScheduleIntent.create(
+                "schedule-$delayMs", "revision", ScheduleSubject.START_TURN, "a".repeat(64),
+                ScheduleTiming.FixedDelay("2026-08-29T00:00:00Z", delayMs, 64uL),
+                MisfirePolicy.FIRE_ONCE, 1uL, "b".repeat(64),
+            ).success()
+            var previous: Instant? = null
+            val identities = mutableSetOf<String>()
+            (1uL..64uL).forEach { ordinal ->
+                val occurrence = scheduleOccurrence(value, ordinal).success()!!
+                val due = Instant.parse(occurrence.dueAtUtc)
+                assertTrue(previous == null || due > previous)
+                assertTrue(identities.add(occurrence.occurrenceId))
+                previous = due
+            }
+            assertEquals(null, scheduleOccurrence(value, 65uL).success())
+        }
+        val unbounded = ScheduleIntent.create(
+            "large-misfire", "revision", ScheduleSubject.START_TURN, "a".repeat(64),
+            ScheduleTiming.FixedDelay("2026-08-29T00:00:00Z", 1uL, null),
+            MisfirePolicy.SKIP, 1uL, "b".repeat(64),
+        ).success()
+        val skipped = assertIs<ScheduleDecision.Skipped>(
+            nextOccurrence(unbounded, null, "2026-08-30T00:00:00Z").success(),
+        ).value
+        assertEquals(1uL, skipped.firstOrdinal)
+        assertTrue(skipped.lastOrdinal > 80_000_000uL)
+        assertEquals(skipped.lastOrdinal + 1uL, skipped.nextDue!!.ordinal)
     }
 
     private fun intent(policy: MisfirePolicy): ScheduleIntent {

@@ -1,6 +1,6 @@
 use garive_scheduler::{
-    next_occurrence, MisfirePolicy, ScheduleDecision, ScheduleErrorCode, ScheduleIntent,
-    ScheduleSubject, ScheduleTiming,
+    next_occurrence, schedule_occurrence, MisfirePolicy, ScheduleDecision, ScheduleErrorCode,
+    ScheduleIntent, ScheduleSubject, ScheduleTiming,
 };
 use serde_json::Value;
 
@@ -145,4 +145,82 @@ fn monotonicity_and_invalid_matrix_fail_closed() {
         ScheduleErrorCode::OccurrenceOverflow,
     );
     assert_eq!(root["invalid_cases"].as_array().unwrap().len(), 4);
+    let codes = [
+        ScheduleErrorCode::InvalidSchedule,
+        ScheduleErrorCode::ScheduleNotFound,
+        ScheduleErrorCode::RevisionConflict,
+        ScheduleErrorCode::SubjectNotResumable,
+        ScheduleErrorCode::AuthorityDenied,
+        ScheduleErrorCode::ClockInvalid,
+        ScheduleErrorCode::OccurrenceOverflow,
+        ScheduleErrorCode::MisfireLimitExceeded,
+        ScheduleErrorCode::LeaseLost,
+        ScheduleErrorCode::DispatchConflict,
+        ScheduleErrorCode::DurabilityFailure,
+        ScheduleErrorCode::CorruptScheduleState,
+    ];
+    assert_eq!(
+        codes.map(ScheduleErrorCode::wire_name).as_slice(),
+        root["failure_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn recurrence_properties_hold_across_delays_and_large_misfires() {
+    for delay_ms in [1, 7, 1_000, u32::MAX as u64] {
+        let value = ScheduleIntent::new(
+            format!("schedule-{delay_ms}"),
+            "revision",
+            ScheduleSubject::StartTurn,
+            "a".repeat(64),
+            ScheduleTiming::FixedDelay {
+                first_due_at_utc: "2026-08-29T00:00:00Z".into(),
+                delay_ms,
+                max_occurrences: Some(64),
+            },
+            MisfirePolicy::FireOnce,
+            1,
+            "b".repeat(64),
+        )
+        .unwrap();
+        let mut previous = None;
+        let mut identities = std::collections::BTreeSet::new();
+        for ordinal in 1..=64 {
+            let occurrence = schedule_occurrence(&value, ordinal).unwrap().unwrap();
+            let due = chrono::DateTime::parse_from_rfc3339(&occurrence.due_at_utc).unwrap();
+            assert!(previous.as_ref().is_none_or(|prior| &due > prior));
+            assert!(identities.insert(occurrence.occurrence_id));
+            previous = Some(due);
+        }
+        assert!(schedule_occurrence(&value, 65).unwrap().is_none());
+    }
+
+    let unbounded = ScheduleIntent::new(
+        "large-misfire",
+        "revision",
+        ScheduleSubject::StartTurn,
+        "a".repeat(64),
+        ScheduleTiming::FixedDelay {
+            first_due_at_utc: "2026-08-29T00:00:00Z".into(),
+            delay_ms: 1,
+            max_occurrences: None,
+        },
+        MisfirePolicy::Skip,
+        1,
+        "b".repeat(64),
+    )
+    .unwrap();
+    let ScheduleDecision::Skipped(range) =
+        next_occurrence(&unbounded, None, "2026-08-30T00:00:00Z").unwrap()
+    else {
+        panic!("expected one bounded skip range")
+    };
+    assert_eq!(range.first_ordinal, 1);
+    assert!(range.last_ordinal > 80_000_000);
+    assert_eq!(range.next_due.unwrap().ordinal, range.last_ordinal + 1);
 }
