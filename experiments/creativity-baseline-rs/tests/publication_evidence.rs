@@ -1,13 +1,18 @@
-use std::fs;
+use std::{fs, process::Command};
 
 use garive_creativity_baseline::{
-    load_creativity_corpus, reserve_publication_evidence, run_creativity_baseline,
-    CandidateVerdict, CreativityBaselineError, CreativityEvaluatorPort, CreativityGeneratorPort,
-    EvaluatorRequest, ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,
-    ModelProtocol, PublicationEvidenceProvenance, PublicationModelCoordinate,
+    build_publication_evaluator, build_publication_generator, load_creativity_corpus,
+    reserve_publication_evidence, run_creativity_baseline, CandidateVerdict,
+    CreativityBaselineError, CreativityEvaluatorPort, CreativityGeneratorPort,
+    CredentialReferenceResolver, CredentialResolutionFailure, EvaluatorRequest,
+    ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,
+    ModelEndpointConfig, ModelProtocol, PublicationEvidenceProvenance, PublicationModelCoordinate,
 };
 use garive_eval::CreativityArm;
-use garive_experiment_evidence::GitAttestationDescriptor;
+use garive_experiment_evidence::{
+    attest_clean_revision, GitAttestationConfig, GitAttestationDescriptor,
+};
+use garive_provider_profile::SecretValue;
 use serde_json::Value;
 use tempfile::tempdir;
 
@@ -91,6 +96,123 @@ fn abandoned_or_invalid_reservations_leave_no_evidence_document() {
         .is_err());
     drop(reservation);
     assert!(!invalid.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn eligible_models_clean_git_and_publication_sink_compose() {
+    let directory = tempdir().unwrap();
+    let repository = directory.path().join("repository");
+    fs::create_dir(&repository).unwrap();
+    git(&repository, &["init"]);
+    fs::write(repository.join("tracked"), "evidence").unwrap();
+    git(&repository, &["add", "tracked"]);
+    git(
+        &repository,
+        &[
+            "-c",
+            "user.name=Garive Test",
+            "-c",
+            "user.email=garive@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+    );
+    let head = String::from_utf8(
+        Command::new("/usr/bin/git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repository)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+    let git_config: GitAttestationConfig = serde_json::from_value(serde_json::json!({
+        "executable":"/usr/bin/git","repository_path":repository,"timeout_ms":1000,
+        "max_executable_bytes":104857600,"max_stdout_bytes":4096,"max_stderr_bytes":4096
+    }))
+    .unwrap();
+    let attestation = attest_clean_revision(&git_config, &head).unwrap();
+    let generator_coordinate =
+        build_publication_generator(endpoint(ModelProtocol::ResponsesCompatible), &Resolver)
+            .unwrap()
+            .1;
+    let evaluator_coordinate =
+        build_publication_evaluator(endpoint(ModelProtocol::MessagesCompatible), &Resolver)
+            .unwrap()
+            .1;
+    assert!(generator_coordinate.port.publishable && evaluator_coordinate.port.publishable);
+    let run = run_creativity_baseline(
+        &load_creativity_corpus(CORPUS).unwrap(),
+        &Generator(generator_coordinate.port.clone()),
+        &Evaluator(evaluator_coordinate.port.clone()),
+        2,
+    )
+    .unwrap();
+    let evidence = directory.path().join("publication.json");
+    reserve_publication_evidence(evidence.clone())
+        .unwrap()
+        .commit(
+            &run,
+            &generator_coordinate,
+            &evaluator_coordinate,
+            PublicationEvidenceProvenance {
+                garive_revision: head,
+                runner_revision: "cr-b-v1".into(),
+                git_attestation: attestation,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(evidence).unwrap()).unwrap()["publishable"],
+        true
+    );
+}
+
+#[cfg(unix)]
+fn git(repository: &std::path::Path, arguments: &[&str]) {
+    assert!(Command::new("/usr/bin/git")
+        .args(arguments)
+        .current_dir(repository)
+        .status()
+        .unwrap()
+        .success());
+}
+
+fn endpoint(protocol: ModelProtocol) -> ModelEndpointConfig {
+    let messages = protocol == ModelProtocol::MessagesCompatible;
+    ModelEndpointConfig {
+        protocol,
+        target_id: "target".into(),
+        model_id: "model".into(),
+        model_revision: "model-v1".into(),
+        endpoint: if messages {
+            "https://messages.example/v1/messages"
+        } else {
+            "https://responses.example/v1/responses"
+        }
+        .into(),
+        credential_ref: "fixture".into(),
+        credential_header_name: if messages { "x-token" } else { "authorization" }.into(),
+        credential_header_prefix: if messages { "" } else { "Bearer " }.into(),
+        non_secret_headers: Vec::new(),
+        messages_version_header_name: messages.then(|| "protocol-version".into()),
+        messages_protocol_version: messages.then(|| "v1".into()),
+        max_output_tokens: 100,
+        connect_timeout_ms: 100,
+        request_timeout_ms: 100,
+        max_response_bytes: 4096,
+    }
+}
+
+struct Resolver;
+impl CredentialReferenceResolver for Resolver {
+    fn resolve(&self, _: &str) -> Result<SecretValue, CredentialResolutionFailure> {
+        SecretValue::new("secret").map_err(|_| CredentialResolutionFailure)
+    }
 }
 
 fn descriptor(kind: &str) -> ExperimentPortDescriptor {
