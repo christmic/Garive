@@ -5,6 +5,7 @@
 
 mod definition;
 mod intent;
+mod resolve;
 mod snapshot;
 
 pub use definition::{
@@ -13,6 +14,7 @@ pub use definition::{
     ResolutionErrorCode,
 };
 pub use intent::AgentDefinition;
+pub use resolve::{digest_canonical_value, resolve_definition};
 pub use snapshot::{
     CapabilityDescriptor, ContextPolicyCandidate, EffectiveAgentSnapshot,
     EffectiveCapabilitySnapshot, EffectiveGovernancePolicy, EffectiveLimits,

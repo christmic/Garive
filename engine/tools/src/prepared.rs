@@ -101,6 +101,18 @@ pub enum ExecutionCapability {
     Network,
 }
 
+impl ExecutionCapability {
+    /// Returns the stable portable capability name.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::FilesystemRead => "filesystem_read",
+            Self::FilesystemWrite => "filesystem_write",
+            Self::Process => "process",
+            Self::Network => "network",
+        }
+    }
+}
+
 /// Immutable executor requirements carried by a Prepared Call.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ExecutionRequirements {
