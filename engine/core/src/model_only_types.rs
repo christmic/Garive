@@ -271,6 +271,8 @@ pub enum AgentOutcome {
         partial_items: Vec<ModelItem>,
         /// Durable ledger cursor from the immutable request.
         last_durable_position: u64,
+        /// Exact Runtime-owned binding for governed suspensions only.
+        governed_binding: Option<crate::GovernedSuspensionBinding>,
     },
     /// Work ended at an expected policy boundary.
     Stopped {

@@ -124,6 +124,12 @@ produces a rejected observation bound to the original model call. This rule
 applies to both approval and external-input interactions; a response that
 proposes changed arguments must become a new ToolIntent and pass C4 again.
 
+The governed port result carries the exact `suspension_id`, `interaction_id`,
+`invocation_id` and Prepared digest into the Core terminal proposal.
+`execution.suspended` and `turn.suspended` reuse that `suspension_id`; terminal
+mapping must not allocate a second identity. Operator-reconciliation carries
+the corresponding suspension, invocation and digest binding.
+
 ## Effect lifecycle
 
 ```text

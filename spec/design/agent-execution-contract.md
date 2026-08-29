@@ -122,7 +122,9 @@ Completed {
 Suspended {
   reason: ApprovalRequired | ExternalInputRequired |
           OperatorReconciliation | ResourceUnavailable | PartialOutput,
-  continuation_requirement
+  continuation_requirement,
+  governed_binding?: suspension_id + interaction_id? +
+                       invocation_id + prepared_digest
 }
 Stopped {
   reason: IterationLimit | TokenLimit | Deadline | Cancelled
@@ -136,6 +138,13 @@ Failed {
 `Completed` alone is success. `Suspended` keeps the durable Turn open. `Stopped`
 and `Failed` close it unless a later product action explicitly creates a new
 Turn; they are not disguised suspensions.
+
+Approval, external-input and operator-reconciliation suspensions require the
+exact Runtime-owned governed binding returned after the corresponding fact
+commits. Core verifies the binding against the portable C5 requirement and
+carries it unchanged to the terminal proposal. Runtime rejects a governed
+suspension without that binding; it must never derive a second unrelated
+Suspension identity during terminal mapping.
 
 `ExecutionReport` carries the outcome, completed-iteration cursor, and one
 cumulative `UsageSummary` for every exit path. Each input/output count is

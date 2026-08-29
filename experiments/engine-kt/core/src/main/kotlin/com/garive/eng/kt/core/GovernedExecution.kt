@@ -13,7 +13,26 @@ public data class AgentToolCapabilities(public val definitions: List<ToolDefinit
 public data class CommittedGovernedResult(
     public val result: GovernedToolResult,
     public val throughPosition: ULong,
+    public val suspensionBinding: GovernedSuspensionBinding?,
 )
+
+/** Runtime-owned durable identities carried into the Execution terminal. */
+public sealed interface GovernedSuspensionBinding {
+    /** One committed approval or external-input interaction. */
+    public data class Interaction(
+        public val suspensionId: String,
+        public val interactionId: String,
+        public val invocationId: String,
+        public val preparedDigest: String,
+    ) : GovernedSuspensionBinding
+
+    /** One uncertain invocation requiring conclusive operator evidence. */
+    public data class OperatorReconciliation(
+        public val suspensionId: String,
+        public val invocationId: String,
+        public val preparedDigest: String,
+    ) : GovernedSuspensionBinding
+}
 
 /** Runtime-owned durable authority and execution boundary used by the Agent loop. */
 public interface GovernedEffectPort {

@@ -92,6 +92,7 @@ impl GovernedEffectPort for Effects {
             Ok(CommittedGovernedResult {
                 result,
                 through_position: self.position,
+                suspension_binding: None,
             })
         })
     }
@@ -100,6 +101,17 @@ impl GovernedEffectPort for Effects {
             Ok(CommittedGovernedResult {
                 result: self.result.clone(),
                 through_position: self.position,
+                suspension_binding: match &self.result {
+                    GovernedToolResult::Suspend(SuspensionRequirement::Interaction(request)) => {
+                        Some(garive_core::GovernedSuspensionBinding::Interaction {
+                            suspension_id: "suspension".into(),
+                            interaction_id: request.interaction_id.as_str().into(),
+                            invocation_id: request.invocation_id.as_str().into(),
+                            prepared_digest: request.prepared_digest.clone(),
+                        })
+                    }
+                    _ => None,
+                },
             })
         })
     }

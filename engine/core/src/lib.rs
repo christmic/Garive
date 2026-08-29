@@ -16,7 +16,7 @@ pub use context::{
 };
 pub use governed_execution::{
     execute_agent, AgentToolCapabilities, CommittedGovernedResult, GovernedEffectFuture,
-    GovernedEffectPort,
+    GovernedEffectPort, GovernedSuspensionBinding,
 };
 pub use model_only::execute_model_only;
 pub use model_only_types::{

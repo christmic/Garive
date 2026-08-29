@@ -112,6 +112,12 @@ pub(super) fn text_content(value: &str) -> Result<Value, RuntimeCommandError> {
     Ok(json!({"digest":digest,"inline_utf8":value}))
 }
 
+pub(super) fn value_content(value: &Value) -> Result<Value, RuntimeCommandError> {
+    let canonical =
+        CanonicalPayload::from_value(value).map_err(|_| RuntimeCommandError::InvariantViolation)?;
+    Ok(json!({"digest":canonical.sha256(),"inline_utf8":canonical.as_json()}))
+}
+
 fn model_item(item: &ModelItem) -> Value {
     match item {
         ModelItem::Text { text } => json!({"kind":"text","text":text}),

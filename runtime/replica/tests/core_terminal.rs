@@ -37,6 +37,7 @@ fn report(kind: &str) -> ExecutionReport {
                 text: "partial".into(),
             }],
             last_durable_position: 4,
+            governed_binding: None,
         },
         "stopped" => AgentOutcome::Stopped {
             reason: StopReason::ResourceUnavailable,

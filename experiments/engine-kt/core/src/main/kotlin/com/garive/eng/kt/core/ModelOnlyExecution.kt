@@ -240,6 +240,7 @@ internal suspend fun executeKernel(
                                     SuspensionReason.PARTIAL_OUTPUT,
                                     outcome.partialItems,
                                     throughPosition,
+                                    null,
                                 ),
                             )
                         }
@@ -252,6 +253,7 @@ internal suspend fun executeKernel(
                                 SuspensionReason.PARTIAL_OUTPUT,
                                 outcome.partialItems,
                                 throughPosition,
+                                null,
                             ),
                         )
                         OutputLimitAction.Stop -> return finish(
@@ -309,6 +311,11 @@ private suspend fun governToolIntents(
         when (val result = committed.result) {
             is GovernedToolResult.Observation -> Unit
             is GovernedToolResult.Suspend -> {
+                val binding = committed.suspensionBinding
+                    ?: return ToolStep.Terminal(AgentOutcome.Failed(AgentFailureReason.INVARIANT_VIOLATION))
+                if (!suspensionBinds(result.requirement, binding)) {
+                    return ToolStep.Terminal(AgentOutcome.Failed(AgentFailureReason.INVARIANT_VIOLATION))
+                }
                 val reason = when (val requirement = result.requirement) {
                     is SuspensionRequirement.Interaction -> when (requirement.request.kind) {
                         InteractionKind.APPROVAL -> SuspensionReason.APPROVAL_REQUIRED
@@ -316,7 +323,7 @@ private suspend fun governToolIntents(
                     }
                     is SuspensionRequirement.OperatorReconciliation -> SuspensionReason.OPERATOR_RECONCILIATION
                 }
-                return ToolStep.Terminal(AgentOutcome.Suspended(reason, items, position))
+                return ToolStep.Terminal(AgentOutcome.Suspended(reason, items, position, binding))
             }
             is GovernedToolResult.Fail -> {
                 val reason = if (result.code == GovernedFailureCode.INVALID_MODEL_OUTPUT) {
@@ -329,6 +336,21 @@ private suspend fun governToolIntents(
         }
     }
     return ToolStep.Continue(position)
+}
+
+private fun suspensionBinds(
+    requirement: SuspensionRequirement,
+    binding: GovernedSuspensionBinding,
+): Boolean = when {
+    requirement is SuspensionRequirement.Interaction && binding is GovernedSuspensionBinding.Interaction ->
+        binding.suspensionId.isNotEmpty() &&
+            binding.interactionId == requirement.request.interactionId.value &&
+            binding.invocationId == requirement.request.invocationId.value &&
+            binding.preparedDigest == requirement.request.preparedDigest
+    requirement is SuspensionRequirement.OperatorReconciliation &&
+        binding is GovernedSuspensionBinding.OperatorReconciliation ->
+        binding.suspensionId.isNotEmpty() && binding.invocationId.isNotEmpty() && binding.preparedDigest.isNotEmpty()
+    else -> false
 }
 
 private class UsageAccumulator {
@@ -425,7 +447,7 @@ private fun finishRecovery(
     usage,
     when (action) {
         TerminalRecoveryAction.SUSPEND, TerminalRecoveryAction.ALTERNATE_THEN_SUSPEND -> AgentOutcome.Suspended(
-            SuspensionReason.RESOURCE_UNAVAILABLE, emptyList(), throughPosition,
+            SuspensionReason.RESOURCE_UNAVAILABLE, emptyList(), throughPosition, null,
         )
         TerminalRecoveryAction.STOP -> AgentOutcome.Stopped(StopReason.RESOURCE_UNAVAILABLE)
         TerminalRecoveryAction.FAIL -> AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE)

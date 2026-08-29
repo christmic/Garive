@@ -139,6 +139,7 @@ public sealed interface AgentOutcome {
         public val reason: SuspensionReason,
         public val partialItems: List<ModelItem>,
         public val lastDurablePosition: ULong,
+        public val governedBinding: GovernedSuspensionBinding?,
     ) : AgentOutcome
     public data class Stopped(public val reason: StopReason) : AgentOutcome
     public data class Failed(public val reason: AgentFailureReason) : AgentOutcome

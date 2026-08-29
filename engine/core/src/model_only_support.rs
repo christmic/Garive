@@ -48,9 +48,9 @@ pub(super) fn build_model_request(
 
 pub(super) fn prepare_control(
     request: &AgentTurnRequest,
-) -> Result<ExecutionControl, ExecutionReport> {
+) -> Result<ExecutionControl, Box<ExecutionReport>> {
     if request.validate().is_err() {
-        return Err(invalid_report(request));
+        return Err(Box::new(invalid_report(request)));
     }
     ExecutionControl::new(
         request.turn_id.clone(),
@@ -58,7 +58,7 @@ pub(super) fn prepare_control(
         request.cursor.completed_iterations,
         request.limits.execution,
     )
-    .map_err(|_| invalid_report(request))
+    .map_err(|_| Box::new(invalid_report(request)))
 }
 
 fn invalid_report(request: &AgentTurnRequest) -> ExecutionReport {
@@ -198,6 +198,7 @@ pub(super) fn finish_recovery(
                 reason: SuspensionReason::ResourceUnavailable,
                 partial_items: vec![],
                 last_durable_position: through_position,
+                governed_binding: None,
             }
         }
         TerminalRecoveryAction::Stop => AgentOutcome::Stopped {

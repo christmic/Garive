@@ -22,6 +22,33 @@ pub struct CommittedGovernedResult {
     pub result: GovernedToolResult,
     /// Latest committed Session position after this result.
     pub through_position: u64,
+    /// Runtime-owned exact binding required when this result suspends.
+    pub suspension_binding: Option<GovernedSuspensionBinding>,
+}
+
+/// Runtime-owned durable identities carried into the Execution terminal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GovernedSuspensionBinding {
+    /// One committed approval or external-input interaction.
+    Interaction {
+        /// Durable suspension identity shared with `interaction.requested`.
+        suspension_id: String,
+        /// Runtime-owned interaction identity.
+        interaction_id: String,
+        /// Runtime-owned invocation identity.
+        invocation_id: String,
+        /// Exact Prepared Call digest.
+        prepared_digest: String,
+    },
+    /// One uncertain invocation requiring conclusive operator evidence.
+    OperatorReconciliation {
+        /// Durable suspension identity.
+        suspension_id: String,
+        /// Runtime-owned invocation identity.
+        invocation_id: String,
+        /// Exact Prepared Call digest.
+        prepared_digest: String,
+    },
 }
 
 /// Asynchronous result for one governed Runtime operation.

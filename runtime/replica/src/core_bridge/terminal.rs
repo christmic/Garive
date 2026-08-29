@@ -1,5 +1,6 @@
 use garive_core::{
-    AgentFailureReason, AgentOutcome, ExecutionReport, StopReason, SuspensionReason, UsageSummary,
+    AgentFailureReason, AgentOutcome, ExecutionReport, GovernedSuspensionBinding, StopReason,
+    SuspensionReason, UsageSummary,
 };
 use garive_ledger::{CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, TurnId};
 use garive_llm::TokenCount;
@@ -7,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::RuntimeCommandError;
 
-use super::encoding::{content, digest};
+use super::encoding::{content, digest, value_content};
 
 /// Immutable envelope values needed to map one Core terminal proposal.
 pub struct CoreTerminalContext {
@@ -46,21 +47,12 @@ pub fn plan_core_terminal(
         AgentOutcome::Suspended {
             reason,
             partial_items,
+            governed_binding,
             ..
         } => {
-            let continuation = content(partial_items)?;
+            let (continuation, suspension_id) =
+                suspension_content(context, *reason, partial_items, governed_binding.as_ref())?;
             let reason = suspension_reason(*reason);
-            let suspension_id = format!(
-                "suspension-{}",
-                digest(
-                    format!(
-                        "{}:{}",
-                        context.execution_id.as_str(),
-                        continuation["digest"]
-                    )
-                    .as_bytes()
-                )
-            );
             (
                 "execution.suspended",
                 "turn.suspended",
@@ -91,6 +83,68 @@ pub fn plan_core_terminal(
         fact(context, execution_kind, true, execution_payload)?,
         fact(context, turn_kind, false, turn_payload)?,
     ])
+}
+
+fn suspension_content(
+    context: &CoreTerminalContext,
+    reason: SuspensionReason,
+    partial_items: &[garive_llm::ModelItem],
+    binding: Option<&GovernedSuspensionBinding>,
+) -> Result<(Value, String), RuntimeCommandError> {
+    let governed_reason = matches!(
+        reason,
+        SuspensionReason::ApprovalRequired
+            | SuspensionReason::ExternalInputRequired
+            | SuspensionReason::OperatorReconciliation
+    );
+    match binding {
+        Some(GovernedSuspensionBinding::Interaction {
+            suspension_id,
+            interaction_id,
+            invocation_id,
+            prepared_digest,
+        }) if matches!(
+            reason,
+            SuspensionReason::ApprovalRequired | SuspensionReason::ExternalInputRequired
+        ) =>
+        {
+            Ok((
+                value_content(&json!({
+                    "kind":"interaction","interaction_id":interaction_id,
+                    "invocation_id":invocation_id,"prepared_digest":prepared_digest,
+                }))?,
+                suspension_id.clone(),
+            ))
+        }
+        Some(GovernedSuspensionBinding::OperatorReconciliation {
+            suspension_id,
+            invocation_id,
+            prepared_digest,
+        }) if reason == SuspensionReason::OperatorReconciliation => Ok((
+            value_content(&json!({
+                "kind":"operator_reconciliation","invocation_id":invocation_id,
+                "prepared_digest":prepared_digest,
+            }))?,
+            suspension_id.clone(),
+        )),
+        Some(_) | None if governed_reason => Err(RuntimeCommandError::InvariantViolation),
+        Some(_) => Err(RuntimeCommandError::InvariantViolation),
+        None => {
+            let continuation = content(partial_items)?;
+            let suspension_id = format!(
+                "suspension-{}",
+                digest(
+                    format!(
+                        "{}:{}",
+                        context.execution_id.as_str(),
+                        continuation["digest"]
+                    )
+                    .as_bytes()
+                )
+            );
+            Ok((continuation, suspension_id))
+        }
+    }
 }
 
 fn fact(

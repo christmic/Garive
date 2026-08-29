@@ -47,7 +47,7 @@ async fn execute_kernel(
 ) -> ExecutionReport {
     let mut control = match prepare_control(request) {
         Ok(control) => control,
-        Err(report) => return report,
+        Err(report) => return *report,
     };
     let mut usage = UsageAccumulator::default();
     let mut rebuild_attempt = 0;
@@ -467,6 +467,7 @@ async fn execute_kernel(
                                     reason: SuspensionReason::PartialOutput,
                                     partial_items,
                                     last_durable_position: through_position,
+                                    governed_binding: None,
                                 },
                             );
                         }
@@ -576,6 +577,16 @@ async fn govern_tool_intents(
         match committed.result {
             GovernedToolResult::Observation(_) => {}
             GovernedToolResult::Suspend(requirement) => {
+                let Some(binding) = committed.suspension_binding else {
+                    return ToolStep::Terminal(AgentOutcome::Failed {
+                        reason: AgentFailureReason::InvariantViolation,
+                    });
+                };
+                if !suspension_binds(&requirement, &binding) {
+                    return ToolStep::Terminal(AgentOutcome::Failed {
+                        reason: AgentFailureReason::InvariantViolation,
+                    });
+                }
                 let reason = match requirement {
                     SuspensionRequirement::Interaction(request) => match request.kind {
                         InteractionKind::Approval => SuspensionReason::ApprovalRequired,
@@ -589,6 +600,7 @@ async fn govern_tool_intents(
                     reason,
                     partial_items: items.to_vec(),
                     last_durable_position: position,
+                    governed_binding: Some(binding),
                 });
             }
             GovernedToolResult::Fail(failure) => {
@@ -603,6 +615,37 @@ async fn govern_tool_intents(
         }
     }
     ToolStep::Continue { position }
+}
+
+fn suspension_binds(
+    requirement: &SuspensionRequirement,
+    binding: &crate::GovernedSuspensionBinding,
+) -> bool {
+    match (requirement, binding) {
+        (
+            SuspensionRequirement::Interaction(request),
+            crate::GovernedSuspensionBinding::Interaction {
+                suspension_id,
+                interaction_id,
+                invocation_id,
+                prepared_digest,
+            },
+        ) => {
+            !suspension_id.is_empty()
+                && interaction_id == request.interaction_id.as_str()
+                && invocation_id == request.invocation_id.as_str()
+                && prepared_digest == &request.prepared_digest
+        }
+        (
+            SuspensionRequirement::OperatorReconciliation { .. },
+            crate::GovernedSuspensionBinding::OperatorReconciliation {
+                suspension_id,
+                invocation_id,
+                prepared_digest,
+            },
+        ) => !suspension_id.is_empty() && !invocation_id.is_empty() && !prepared_digest.is_empty(),
+        _ => false,
+    }
 }
 
 fn tool_descriptor(definition: &ToolDefinition) -> Result<ToolDescriptor, ()> {
