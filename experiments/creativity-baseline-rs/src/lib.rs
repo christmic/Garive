@@ -9,6 +9,7 @@ mod corpus;
 mod error;
 mod model_ports;
 mod port;
+mod publication_evidence;
 mod publication_model;
 mod runner;
 mod system_credential;
@@ -24,6 +25,10 @@ pub use model_ports::{
 pub use port::{
     CandidateVerdict, CreativityEvaluatorPort, CreativityGeneratorPort, EvaluatorRequest,
     ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,
+};
+pub use publication_evidence::{
+    reserve_publication_evidence, PublicationEvidenceError, PublicationEvidenceProvenance,
+    PublicationEvidenceReservation,
 };
 pub use publication_model::{
     build_publication_evaluator, build_publication_generator, model_endpoint_publication_eligible,
