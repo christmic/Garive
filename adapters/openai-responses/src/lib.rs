@@ -7,6 +7,7 @@ mod config;
 mod error;
 mod items;
 mod request;
+mod response;
 
 pub use config::{Header, HttpRequest, ResponsesAdapter, ResponsesAdapterConfig};
 pub use error::ResponsesAdapterError;
@@ -19,4 +20,8 @@ pub use request::{
     InputContent, InputItem, ItemStatus, MessageRole, ReasoningConfig, ResponseInput,
     ResponseTextConfig, ResponseTool, StreamOptions, TextFormat, ToolChoice, ToolChoiceMode,
     Truncation,
+};
+pub use response::{
+    ApiError, DecodedResponse, ErrorEnvelope, IncompleteDetails, InputTokenDetails,
+    OutputTokenDetails, Response, ResponseError, ResponseObject, ResponseStatus, ResponseUsage,
 };

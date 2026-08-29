@@ -24,12 +24,6 @@ impl Header {
         name.parse::<HeaderName>()
             .map_err(|_| ResponsesAdapterError::InvalidHeader)?;
         HeaderValue::from_str(&value).map_err(|_| ResponsesAdapterError::InvalidHeader)?;
-        if matches!(
-            name.to_ascii_lowercase().as_str(),
-            "content-type" | "accept"
-        ) {
-            return Err(ResponsesAdapterError::InvalidHeader);
-        }
         Ok(Self {
             name: name.to_ascii_lowercase(),
             value,
@@ -96,7 +90,9 @@ impl ResponsesAdapterConfig {
             return Err(ResponsesAdapterError::InvalidEndpoint);
         }
         let mut names = std::collections::BTreeSet::new();
-        if headers.iter().any(|header| !names.insert(header.name())) {
+        if headers.iter().any(|header| {
+            matches!(header.name(), "content-type" | "accept") || !names.insert(header.name())
+        }) {
             return Err(ResponsesAdapterError::InvalidHeader);
         }
         Ok(Self { endpoint, headers })

@@ -16,8 +16,9 @@ fn construction_requires_explicit_absolute_endpoint() {
 
 #[test]
 fn headers_are_validated_deduplicated_and_redacted() {
+    let reserved = Header::new("accept", "application/json", false).unwrap();
     assert_eq!(
-        Header::new("accept", "application/json", false),
+        ResponsesAdapterConfig::new("https://example.test/inference", vec![reserved]),
         Err(ResponsesAdapterError::InvalidHeader)
     );
     assert_eq!(
