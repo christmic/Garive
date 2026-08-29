@@ -67,7 +67,7 @@ pub fn next_occurrence(
             .ok_or_else(|| ScheduleError::new(ScheduleErrorCode::OccurrenceOverflow))?,
         None => 1,
     };
-    let Some(next) = occurrence(intent, ordinal)? else {
+    let Some(next) = schedule_occurrence(intent, ordinal)? else {
         return Ok(ScheduleDecision::Exhausted);
     };
     let due = canonical_utc(&next.due_at_utc)
@@ -126,12 +126,12 @@ fn skip_overdue(
                 .min(max_ordinal)
         }
     };
-    let last = occurrence(intent, last_ordinal)?
+    let last = schedule_occurrence(intent, last_ordinal)?
         .ok_or_else(|| ScheduleError::new(ScheduleErrorCode::OccurrenceOverflow))?;
     let next_due = if last_ordinal == max_ordinal {
         None
     } else {
-        occurrence(
+        schedule_occurrence(
             intent,
             last_ordinal
                 .checked_add(1)
@@ -147,7 +147,8 @@ fn skip_overdue(
     }))
 }
 
-fn occurrence(
+/// Derives one exact ordinal's due instant and deterministic identities.
+pub fn schedule_occurrence(
     intent: &ScheduleIntent,
     ordinal: u64,
 ) -> Result<Option<DueOccurrence>, ScheduleError> {

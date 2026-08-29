@@ -8,6 +8,7 @@ mod fake_host;
 mod live_host;
 mod model_http_transport;
 mod runtime_turn;
+mod scheduler_runtime;
 mod sqlite_ledger;
 
 pub use core_bridge::{
@@ -54,6 +55,9 @@ pub use runtime_turn::{
     ReconciliationTarget, RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId,
     RuntimeRecoveryAction, RuntimeRecoverySnapshot, RuntimeSuspensionKind, RuntimeSuspensionView,
     RuntimeTurnStatus, RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
+};
+pub use scheduler_runtime::{
+    reconstruct_schedule_state, PendingScheduleClaim, ScheduleRuntimeState,
 };
 pub use sqlite_ledger::{
     ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, ScheduleLease, ScheduleLeaseError,

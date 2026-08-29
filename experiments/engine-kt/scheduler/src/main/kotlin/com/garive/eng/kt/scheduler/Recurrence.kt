@@ -50,7 +50,7 @@ public fun nextOccurrence(
         ULong.MAX_VALUE -> return failure(ScheduleErrorCode.OCCURRENCE_OVERFLOW)
         else -> lastHandledOrdinal + 1uL
     }
-    val next = when (val result = occurrence(intent, ordinal)) {
+    val next = when (val result = scheduleOccurrence(intent, ordinal)) {
         is ScheduleContractResult.Failure -> return result
         is ScheduleContractResult.Success -> result.value ?: return success(ScheduleDecision.Exhausted)
     }
@@ -95,7 +95,7 @@ private fun skipOverdue(
             minOf(first.ordinal + additional, maxOrdinal)
         }
     }
-    val last = when (val result = occurrence(intent, lastOrdinal)) {
+    val last = when (val result = scheduleOccurrence(intent, lastOrdinal)) {
         is ScheduleContractResult.Failure -> return result
         is ScheduleContractResult.Success -> result.value
             ?: return failure(ScheduleErrorCode.OCCURRENCE_OVERFLOW)
@@ -103,7 +103,7 @@ private fun skipOverdue(
     val next = if (lastOrdinal == maxOrdinal) {
         null
     } else {
-        when (val result = occurrence(intent, lastOrdinal + 1uL)) {
+        when (val result = scheduleOccurrence(intent, lastOrdinal + 1uL)) {
             is ScheduleContractResult.Failure -> return result
             is ScheduleContractResult.Success -> result.value
         }
@@ -117,7 +117,8 @@ private fun skipOverdue(
     )
 }
 
-private fun occurrence(
+/** Derives one exact ordinal's due instant and deterministic identities. */
+public fun scheduleOccurrence(
     intent: ScheduleIntent,
     ordinal: ULong,
 ): ScheduleContractResult<DueOccurrence?> {

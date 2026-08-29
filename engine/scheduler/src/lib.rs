@@ -6,7 +6,9 @@
 mod recurrence;
 mod values;
 
-pub use recurrence::{next_occurrence, DueOccurrence, ScheduleDecision, SkippedOccurrences};
+pub use recurrence::{
+    next_occurrence, schedule_occurrence, DueOccurrence, ScheduleDecision, SkippedOccurrences,
+};
 pub use values::{
     MisfirePolicy, ScheduleError, ScheduleErrorCode, ScheduleIntent, ScheduleIntentBinding,
     ScheduleSubject, ScheduleTiming,
