@@ -1257,6 +1257,13 @@ dependencies = [
 [[package]]
 name = "garive-scheduler"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+]
 
 [[package]]
 name = "garive-skill"
