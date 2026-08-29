@@ -11,13 +11,15 @@ mod runtime_turn;
 mod sqlite_ledger;
 
 pub use core_bridge::{
-    canonical_model_request_digest, execute_durable_agent, execute_durable_model_only,
-    plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
-    plan_model_uncertain, plan_skill_activation, AuthorityDecision, AuthorityFuture, AuthorityPort,
-    AuthorityRequest, CoreTerminalContext, DurableExecutionConfig, DurableExecutionError,
-    DurableExecutionResult, ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort,
-    GovernedEffectConfig, GovernedRuntimePortError, ModelLifecycleContext, PlannedSkillActivation,
-    PreparedExecution, PreparedModelRequest, RuntimeModelUncertainReason, SkillActivationContext,
+    canonical_model_request_digest, execute_durable_agent,
+    execute_durable_agent_with_skill_activation, execute_durable_model_only,
+    execute_durable_model_only_with_skill_activation, plan_core_terminal, plan_model_prepared,
+    plan_model_started, plan_model_terminal, plan_model_uncertain, plan_skill_activation,
+    AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, CoreTerminalContext,
+    DurableExecutionConfig, DurableExecutionError, DurableExecutionResult, ExecutorDispatch,
+    ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
+    GovernedRuntimePortError, ModelLifecycleContext, PlannedSkillActivation, PreparedExecution,
+    PreparedModelRequest, RuntimeModelUncertainReason, SkillActivationContext,
     SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};

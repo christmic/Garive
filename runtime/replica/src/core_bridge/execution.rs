@@ -18,7 +18,8 @@ use super::encoding::digest;
 use super::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
     plan_model_uncertain, AuthorityPort, CoreTerminalContext, ExecutorPort, GovernedEffectConfig,
-    ModelLifecycleContext, RuntimeModelUncertainReason, SqliteGovernedEffectPort,
+    ModelLifecycleContext, PlannedSkillActivation, RuntimeModelUncertainReason,
+    SqliteGovernedEffectPort,
 };
 
 use super::execution_types::{
@@ -38,13 +39,70 @@ pub async fn execute_durable_model_only(
     clock: &dyn ClockPort,
     publisher: &mut dyn TerminalPublisher,
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_model_only_inner(
+        ledger,
+        config,
+        request,
+        None,
+        context,
+        model,
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
+}
+
+/// Runs model-only Core after atomically committing one exact S0 activation.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_durable_model_only_with_skill_activation(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    activation: PlannedSkillActivation,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_model_only_inner(
+        ledger,
+        config,
+        request,
+        Some(activation),
+        context,
+        model,
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_durable_model_only_inner(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    activation: Option<PlannedSkillActivation>,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
     validate_ledger_watermark(ledger, config, request)?;
     let cancellation_requested = has_cancellation_request(ledger, &config.model.turn_id)?;
     let lease = ledger
         .acquire_execution_lease(&config.lease)
         .map_err(DurableExecutionError::Lease)?;
-    let coordinator = Mutex::new(CommitCoordinator {
+    let mut coordinator = CommitCoordinator {
         ledger,
         lease,
         session_id: config.session_id.clone(),
@@ -53,7 +111,9 @@ pub async fn execute_durable_model_only(
         position: request.context_request.through_position,
         cancellation_requested,
         failure: None,
-    });
+    };
+    let effective_request = prepare_activation(&mut coordinator, request, activation)?;
+    let coordinator = Mutex::new(coordinator);
     let prepared_events = Mutex::new(BTreeMap::new());
     let durable_model = DurableModelPort {
         inner: model,
@@ -80,7 +140,7 @@ pub async fn execute_durable_model_only(
             cancellation: &durable_cancellation,
             clock,
         };
-        execute_model_only(request, &mut ports).await
+        execute_model_only(&effective_request, &mut ports).await
     };
     finish_durable_execution(coordinator, config, report, publisher)
 }
@@ -139,13 +199,82 @@ pub async fn execute_durable_agent(
     clock: &dyn ClockPort,
     publisher: &mut dyn TerminalPublisher,
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_agent_inner(
+        ledger,
+        config,
+        request,
+        None,
+        capabilities,
+        context,
+        model,
+        authority,
+        executor,
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
+}
+
+/// Runs tool-capable Core after atomically committing one exact S0 activation.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_durable_agent_with_skill_activation(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    activation: PlannedSkillActivation,
+    capabilities: &AgentToolCapabilities,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    authority: &mut dyn AuthorityPort,
+    executor: &mut dyn ExecutorPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_agent_inner(
+        ledger,
+        config,
+        request,
+        Some(activation),
+        capabilities,
+        context,
+        model,
+        authority,
+        executor,
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_durable_agent_inner(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    activation: Option<PlannedSkillActivation>,
+    capabilities: &AgentToolCapabilities,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    authority: &mut dyn AuthorityPort,
+    executor: &mut dyn ExecutorPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
     validate_ledger_watermark(ledger, config, request)?;
     let cancellation_requested = has_cancellation_request(ledger, &config.model.turn_id)?;
     let lease = ledger
         .acquire_execution_lease(&config.lease)
         .map_err(DurableExecutionError::Lease)?;
-    let coordinator = Mutex::new(CommitCoordinator {
+    let mut coordinator = CommitCoordinator {
         ledger,
         lease,
         session_id: config.session_id.clone(),
@@ -154,7 +283,9 @@ pub async fn execute_durable_agent(
         position: request.context_request.through_position,
         cancellation_requested,
         failure: None,
-    });
+    };
+    let effective_request = prepare_activation(&mut coordinator, request, activation)?;
+    let coordinator = Mutex::new(coordinator);
     let prepared_events = Mutex::new(BTreeMap::new());
     let durable_model = DurableModelPort {
         inner: model,
@@ -180,8 +311,11 @@ pub async fn execute_durable_agent(
             executor,
             GovernedEffectConfig {
                 session_id: config.session_id.clone(),
-                expected_session_version: config.expected_session_version,
-                initial_through_position: request.context_request.through_position,
+                expected_session_version: coordinator
+                    .lock()
+                    .map_err(|_| DurableExecutionError::Coordination)?
+                    .version(),
+                initial_through_position: effective_request.context_request.through_position,
                 turn_id: config.model.turn_id.clone(),
                 execution_id: config.model.execution_id.clone(),
                 recorded_at: config.model.recorded_at.clone(),
@@ -195,9 +329,23 @@ pub async fn execute_durable_agent(
             cancellation: &durable_cancellation,
             clock,
         };
-        execute_agent(request, capabilities, &mut ports, &mut effects).await
+        execute_agent(&effective_request, capabilities, &mut ports, &mut effects).await
     };
     finish_durable_execution(coordinator, config, report, publisher)
+}
+
+fn prepare_activation(
+    coordinator: &mut CommitCoordinator<'_>,
+    request: &AgentTurnRequest,
+    activation: Option<PlannedSkillActivation>,
+) -> Result<AgentTurnRequest, DurableExecutionError> {
+    let mut effective = request.clone();
+    if let Some(activation) = activation {
+        coordinator.commit(vec![activation.fact])?;
+        effective.context_request.through_position = coordinator.position();
+        effective.activated_skills = activation.activated_skills;
+    }
+    Ok(effective)
 }
 
 pub(super) struct CommitCoordinator<'a> {
@@ -245,13 +393,15 @@ impl CommitCoordinator<'_> {
             Ok(result) => result,
         };
         self.version = result.session_version;
-        self.position = result
-            .positions
-            .last()
-            .copied()
-            .ok_or(DurableExecutionError::Command(
-                RuntimeCommandError::InvariantViolation,
-            ))?;
+        let committed_position =
+            result
+                .positions
+                .last()
+                .copied()
+                .ok_or(DurableExecutionError::Command(
+                    RuntimeCommandError::InvariantViolation,
+                ))?;
+        self.position = self.position.max(committed_position);
         Ok(result)
     }
 
