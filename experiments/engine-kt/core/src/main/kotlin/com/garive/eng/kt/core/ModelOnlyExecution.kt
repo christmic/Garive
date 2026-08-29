@@ -40,40 +40,40 @@ public suspend fun executeModelOnly(
     var targetIndex = 0
 
     if (!emit(request, ports, AgentEventKind.ExecutionStarted)) {
-        return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+        return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
     }
     while (true) {
         if (ports.cancellation.isCancelled()) {
-            return finish(request, ports, control, AgentOutcome.Stopped(StopReason.CANCELLED))
+            return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.CANCELLED))
         }
         when (deadlineReached(request, ports)) {
-            DeadlineResult.REACHED -> return finish(request, ports, control, AgentOutcome.Stopped(StopReason.DEADLINE))
-            DeadlineResult.FAILURE -> return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            DeadlineResult.REACHED -> return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.DEADLINE))
+            DeadlineResult.FAILURE -> return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
             DeadlineResult.OPEN -> Unit
         }
         val iteration = when (val begin = control.beginIteration()) {
             BeginIteration.IterationLimitReached -> {
-                return finish(request, ports, control, AgentOutcome.Stopped(StopReason.ITERATION_LIMIT))
+                return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.ITERATION_LIMIT))
             }
             is BeginIteration.Started -> begin.iteration
         }
         if (!emit(request, ports, AgentEventKind.IterationStarted(iteration))) {
-            return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
         val surface = when (val context = ports.context.derive(request.contextRequest, rebuildAttempt)) {
             is ContextPortResult.Success -> context.surface
             ContextPortResult.RequiredFactsExceedBudget -> {
-                return finish(request, ports, control, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT))
+                return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT))
             }
             is ContextPortResult.Failure -> {
-                return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+                return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
             }
         }
         if (!emit(request, ports, AgentEventKind.ContextDerived(surface.itemCount, surface.utf8Bytes))) {
-            return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
         if (ports.cancellation.isCancelled()) {
-            return finish(request, ports, control, AgentOutcome.Stopped(StopReason.CANCELLED))
+            return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.CANCELLED))
         }
         val target = request.modelTargets[targetIndex]
         val requestId = "${request.executionId.value}:$iteration"
@@ -87,10 +87,10 @@ public suspend fun executeModelOnly(
             listOf("turn_id" to request.turnId.value, "execution_id" to request.executionId.value),
         )
         if (modelRequest.validate() != null) {
-            return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.INVALID_INPUT))
+            return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVALID_INPUT))
         }
         if (!emit(request, ports, AgentEventKind.ModelRequestPrepared(requestId, target.value))) {
-            return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
         var observerFailure = false
         val observer = ModelObserver { event ->
@@ -105,7 +105,7 @@ public suspend fun executeModelOnly(
         }
         val result = ports.model.invoke(modelRequest, observer, ports.cancellation)
         if (observerFailure) {
-            return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
         val outcome = when (result) {
             is ModelPortResult.Success -> result.outcome
@@ -116,27 +116,28 @@ public suspend fun executeModelOnly(
                     ModelPortFailure.ADAPTER_INVARIANT -> AgentFailureReason.INVALID_MODEL_OUTPUT
                     ModelPortFailure.REQUIRED_PORT_FAILURE -> AgentFailureReason.PORT_FAILURE
                 }
-                return finish(request, ports, control, AgentOutcome.Failed(reason))
+                return finish(request, ports, control, usage, AgentOutcome.Failed(reason))
             }
         }
 
         when (outcome) {
             is InvokeOutcome.Completed -> {
                 accountOrLimit(usage, outcome.usage, request)?.let {
-                    return finish(request, ports, control, it)
+                    return finish(request, ports, control, usage, it)
                 }
                 if (outcome.items.any { it is ModelItem.ToolIntent }) {
                     return finish(
                         request,
                         ports,
                         control,
+                        usage,
                         AgentOutcome.Failed(AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE),
                     )
                 }
                 if (outcome.items.any { it is ModelItem.ToolObservation }) {
-                    return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT))
+                    return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT))
                 }
-                return finish(request, ports, control, AgentOutcome.Completed(outcome.items, usage.summary()))
+                return finish(request, ports, control, usage, AgentOutcome.Completed(outcome.items, usage.summary()))
             }
             is InvokeOutcome.Rejected -> {
                 if (outcome.reason == RejectionKind.CONTEXT_OVERFLOW &&
@@ -145,18 +146,18 @@ public suspend fun executeModelOnly(
                     rebuildAttempt += 1u
                     continue
                 }
-                return finish(request, ports, control, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT))
+                return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT))
             }
             is InvokeOutcome.Interrupted -> {
                 accountOrLimit(usage, outcome.usage, request)?.let {
-                    return finish(request, ports, control, it)
+                    return finish(request, ports, control, usage, it)
                 }
                 when (outcome.reason) {
                     InterruptionKind.CANCELLED -> {
-                        return finish(request, ports, control, AgentOutcome.Stopped(StopReason.CANCELLED))
+                        return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.CANCELLED))
                     }
                     InterruptionKind.TRANSPORT -> {
-                        return finishRecovery(request, ports, control, request.recoveryPolicy.transport)
+                        return finishRecovery(request, ports, control, usage, request.recoveryPolicy.transport)
                     }
                     InterruptionKind.OUTPUT_LIMIT -> when (val action = request.recoveryPolicy.outputLimit) {
                         OutputLimitAction.CompletePartial -> {
@@ -165,6 +166,7 @@ public suspend fun executeModelOnly(
                                     request,
                                     ports,
                                     control,
+                                    usage,
                                     AgentOutcome.Failed(AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE),
                                 )
                             }
@@ -172,6 +174,7 @@ public suspend fun executeModelOnly(
                                 request,
                                 ports,
                                 control,
+                                usage,
                                 AgentOutcome.Completed(outcome.partialItems, usage.summary()),
                             )
                         }
@@ -183,6 +186,7 @@ public suspend fun executeModelOnly(
                                 request,
                                 ports,
                                 control,
+                                usage,
                                 AgentOutcome.Suspended(
                                     SuspensionReason.PARTIAL_OUTPUT,
                                     outcome.partialItems,
@@ -194,6 +198,7 @@ public suspend fun executeModelOnly(
                             request,
                             ports,
                             control,
+                            usage,
                             AgentOutcome.Suspended(
                                 SuspensionReason.PARTIAL_OUTPUT,
                                 outcome.partialItems,
@@ -201,10 +206,10 @@ public suspend fun executeModelOnly(
                             ),
                         )
                         OutputLimitAction.Stop -> return finish(
-                            request, ports, control, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT),
+                            request, ports, control, usage, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT),
                         )
                         OutputLimitAction.Fail -> return finish(
-                            request, ports, control, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT),
+                            request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT),
                         )
                     }
                 }
@@ -216,40 +221,58 @@ public suspend fun executeModelOnly(
                     targetIndex += 1
                     continue
                 }
-                return finishRecovery(request, ports, control, request.recoveryPolicy.unavailable)
+                return finishRecovery(request, ports, control, usage, request.recoveryPolicy.unavailable)
             }
         }
     }
 }
 
 private class UsageAccumulator {
-    var input = 0uL
-    var output = 0uL
+    var input: TokenCount = TokenCount.Known(0uL)
+    var output: TokenCount = TokenCount.Known(0uL)
     var estimated = false
 
     fun add(value: com.garive.eng.kt.llm.ModelUsage, policy: MissingUsagePolicy): Boolean {
-        val inputValue = knownOrEstimate(value.inputTokens, policy, true) ?: return false
-        val outputValue = knownOrEstimate(value.outputTokens, policy, false) ?: return false
-        if (ULong.MAX_VALUE - input < inputValue.first || ULong.MAX_VALUE - output < outputValue.first) return false
-        input += inputValue.first
-        output += outputValue.first
-        estimated = estimated || inputValue.second || outputValue.second
-        return true
+        val nextInput = accumulate(input, value.inputTokens, policy, true) ?: return false
+        val nextOutput = accumulate(output, value.outputTokens, policy, false) ?: return false
+        input = nextInput.count
+        output = nextOutput.count
+        estimated = estimated || nextInput.estimated || nextOutput.estimated
+        return !nextInput.missing && !nextOutput.missing
     }
 
-    fun total(): ULong? = if (ULong.MAX_VALUE - input < output) null else input + output
+    fun total(): ULong? {
+        val knownInput = (input as? TokenCount.Known)?.value ?: return null
+        val knownOutput = (output as? TokenCount.Known)?.value ?: return null
+        return if (ULong.MAX_VALUE - knownInput < knownOutput) null else knownInput + knownOutput
+    }
     fun summary() = UsageSummary(input, output, estimated)
 }
 
-private fun knownOrEstimate(
-    count: TokenCount,
+private data class AccumulatedCount(val count: TokenCount, val estimated: Boolean, val missing: Boolean)
+
+private fun accumulate(
+    current: TokenCount,
+    next: TokenCount,
     policy: MissingUsagePolicy,
     input: Boolean,
-): Pair<ULong, Boolean>? = when (count) {
-    is TokenCount.Known -> count.value to false
-    TokenCount.Unknown -> when (policy) {
-        MissingUsagePolicy.Stop -> null
-        is MissingUsagePolicy.Estimate -> (if (input) policy.inputTokens else policy.outputTokens) to true
+): AccumulatedCount? = when (current) {
+    TokenCount.Unknown -> AccumulatedCount(TokenCount.Unknown, false, next == TokenCount.Unknown)
+    is TokenCount.Known -> when (next) {
+        is TokenCount.Known -> {
+            if (ULong.MAX_VALUE - current.value < next.value) null else {
+                AccumulatedCount(TokenCount.Known(current.value + next.value), false, false)
+            }
+        }
+        TokenCount.Unknown -> when (policy) {
+            MissingUsagePolicy.Stop -> AccumulatedCount(TokenCount.Unknown, false, true)
+            is MissingUsagePolicy.Estimate -> {
+                val estimate = if (input) policy.inputTokens else policy.outputTokens
+                if (ULong.MAX_VALUE - current.value < estimate) null else {
+                    AccumulatedCount(TokenCount.Known(current.value + estimate), true, false)
+                }
+            }
+        }
     }
 }
 
@@ -270,6 +293,7 @@ private fun accountOrLimit(
 private fun invalidReport(request: AgentTurnRequest) = ExecutionReport(
     AgentOutcome.Failed(AgentFailureReason.INVALID_INPUT),
     request.cursor.completedIterations,
+    UsageAccumulator().summary(),
 )
 
 private enum class DeadlineResult { OPEN, REACHED, FAILURE }
@@ -287,11 +311,13 @@ private fun finishRecovery(
     request: AgentTurnRequest,
     ports: AgentExecutionPorts,
     control: ExecutionControl,
+    usage: UsageAccumulator,
     action: TerminalRecoveryAction,
 ): ExecutionReport = finish(
     request,
     ports,
     control,
+    usage,
     when (action) {
         TerminalRecoveryAction.SUSPEND, TerminalRecoveryAction.ALTERNATE_THEN_SUSPEND -> AgentOutcome.Suspended(
             SuspensionReason.RESOURCE_UNAVAILABLE, emptyList(), request.cursor.lastDurablePosition,
@@ -305,6 +331,7 @@ private fun finish(
     request: AgentTurnRequest,
     ports: AgentExecutionPorts,
     control: ExecutionControl,
+    usage: UsageAccumulator,
     proposed: AgentOutcome,
 ): ExecutionReport {
     var outcome = proposed
@@ -324,5 +351,5 @@ private fun finish(
             outcome = AgentOutcome.Failed(AgentFailureReason.INVARIANT_VIOLATION)
         }
     }
-    return ExecutionReport(outcome, control.completedIterations)
+    return ExecutionReport(outcome, control.completedIterations, usage.summary())
 }

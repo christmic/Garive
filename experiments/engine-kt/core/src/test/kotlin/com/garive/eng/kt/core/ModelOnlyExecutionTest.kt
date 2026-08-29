@@ -67,6 +67,15 @@ class ModelOnlyExecutionTest {
         assertEquals(expected.uint("iterations"), report.completedIterations, case.text("name"))
         assertEquals(expected.int("context_calls"), context.calls, case.text("name"))
         assertEquals(expected.int("model_calls"), model.calls, case.text("name"))
+        document.getValue("usage_summary_cases").jsonArray
+            .map { it.jsonObject }
+            .find { it.text("execution_case") == case.text("name") }
+            ?.obj("expected")
+            ?.let { usage ->
+                assertEquals(usage.text("input"), renderCount(report.usage.inputTokens))
+                assertEquals(usage.text("output"), renderCount(report.usage.outputTokens))
+                assertEquals(usage.text("estimated").toBoolean(), report.usage.estimated)
+            }
         expected["targets"]?.jsonArray?.let { values ->
             assertEquals(values.map { it.jsonPrimitive.content }, model.targets, case.text("name"))
         }
@@ -238,6 +247,11 @@ class ModelOnlyExecutionTest {
             AgentFailureReason.INVALID_MODEL_OUTPUT -> "failed:invalid-model-output"
             else -> error("unexpected failure ${outcome.reason}")
         }
+    }
+
+    private fun renderCount(count: TokenCount): String = when (count) {
+        is TokenCount.Known -> count.value.toString()
+        TokenCount.Unknown -> "unknown"
     }
 
     companion object {

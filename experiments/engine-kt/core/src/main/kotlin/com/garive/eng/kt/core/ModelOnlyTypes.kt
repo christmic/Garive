@@ -7,6 +7,7 @@ import com.garive.eng.kt.llm.ModelOutputSettings
 import com.garive.eng.kt.llm.ModelPort
 import com.garive.eng.kt.llm.ModelStreamEvent
 import com.garive.eng.kt.llm.ModelTargetId
+import com.garive.eng.kt.llm.TokenCount
 
 /** Typed durable evidence used to continue an open Turn. */
 public sealed interface ResumeInput {
@@ -105,8 +106,8 @@ public enum class AgentRequestError {
 
 /** Checked usage accumulated across all model attempts. */
 public data class UsageSummary(
-    public val inputTokens: ULong,
-    public val outputTokens: ULong,
+    public val inputTokens: TokenCount,
+    public val outputTokens: TokenCount,
     public val estimated: Boolean,
 )
 /** Requirement that keeps the durable Turn resumable. */
@@ -198,4 +199,5 @@ public data class AgentExecutionPorts(
 public data class ExecutionReport(
     public val outcome: AgentOutcome,
     public val completedIterations: UInt,
+    public val usage: UsageSummary,
 )
