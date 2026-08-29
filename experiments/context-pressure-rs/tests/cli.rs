@@ -78,6 +78,15 @@ fn dirty_publication_and_unknown_configuration_fail_before_output() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid_provenance"));
 }
 
+#[test]
+fn provider_template_parses_and_stops_before_secret_on_unattested_revision() {
+    let template =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config.provider-reference-v1.json");
+    let output = run(&template);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid_provenance"));
+}
+
 fn run(config: &std::path::Path) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_garive-context-pressure"))
         .args(["run", config.to_str().unwrap()])

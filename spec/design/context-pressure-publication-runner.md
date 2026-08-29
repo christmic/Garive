@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted implementation contract. This slice makes a real C7 baseline
+Implemented and verified contract. This slice makes a real C7 baseline
 executable; it does not claim that a credentialed run has occurred and does not
 admit compression behavior or numeric thresholds.
 

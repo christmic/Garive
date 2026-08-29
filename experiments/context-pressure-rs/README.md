@@ -29,7 +29,24 @@ one bounded exchange. No environment or configuration lookup occurs in this
 module. Fake and loopback ports must be non-publishable; an eligible production
 port and externally resolved credential are required for publication evidence.
 
+`config.provider-reference-v1.json` is the strict non-secret publication
+template. Replace its clean full Git revision and exact supported model ID,
+then install the credential under OS credential-store service
+`com.garive.context-pressure` with account/reference
+`anthropic-context-pressure`. Do not add a credential field or environment
+entry to the document. The runner independently verifies the configured HEAD
+and empty porcelain status before resolving the credential or opening HTTP.
+
+```text
+target/debug/garive-context-pressure run \
+  experiments/context-pressure-rs/config.provider-reference-v1.json
+```
+
+Provider publication uses only the in-process exact descriptor. The legacy
+`command` counter remains useful for deterministic development evidence but is
+permanently non-publishable regardless of its executable identity.
+
 All executable, argv, cwd, environment and resource limits are explicit in the
 configuration. The counter child inherits no environment. Evidence contains
 only identities, digests and numeric measurements; it excludes context content,
-environment values and stderr.
+environment values, credential references, secrets and stderr.

@@ -1,0 +1,30 @@
+{
+  "corpus_path": "spec/fixtures/agent/context-pressure-corpus-v1.json",
+  "evidence_path": "experiments/context-pressure-rs/evidence/provider-v1.json",
+  "garive_revision": "replace-with-clean-full-head",
+  "runner_revision": "garive.context-pressure-publication-runner.v1",
+  "dirty": false,
+  "git": {
+    "executable": "/usr/bin/git",
+    "repository_path": ".",
+    "timeout_ms": 5000,
+    "max_stdout_bytes": 1024,
+    "max_stderr_bytes": 4096
+  },
+  "counter": {
+    "kind": "anthropic_messages_exact",
+    "counter_revision": "garive.anthropic-messages-count-tokens.v1",
+    "publishable": true,
+    "credential_ref": "anthropic-context-pressure",
+    "target_id": "context-pressure-target",
+    "model_id": "replace-with-supported-model-id",
+    "capabilities": ["text", "tools"],
+    "projection_max_output_tokens": 1,
+    "extra_headers": [],
+    "http": {
+      "connect_timeout_ms": 5000,
+      "request_timeout_ms": 30000,
+      "max_response_bytes": 16384
+    }
+  }
+}

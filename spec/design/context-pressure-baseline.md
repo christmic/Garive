@@ -102,12 +102,16 @@ A publication-grade baseline binds:
 
 - clean Garive revision and runner revision;
 - canonical corpus SHA-256 and explicit corpus identity/revision;
-- token counter identity/revision and command-configuration SHA-256;
+- token counter identity/revision and canonical non-secret configuration SHA-256;
 - ordered case evidence and exact aggregate reduction;
 - `publishable=true`, which is forbidden for a heuristic/fake counter.
 
 The output is created without overwrite. Secrets, executable environment
 values, raw context content and subprocess stderr never enter evidence.
+
+Command-backed counters are development-only and permanently non-publishable.
+Publication uses the C7-B/C7-C in-process exact provider descriptor plus bounded
+clean-revision attestation.
 
 ## Acceptance
 
