@@ -38,6 +38,24 @@ pub enum SkillErrorCode {
     CorruptSkillState,
 }
 
+impl SkillErrorCode {
+    /// Returns the stable portable failure name.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::InvalidSkill => "invalid_skill",
+            Self::SkillNotEnabled => "skill_not_enabled",
+            Self::SkillRevisionMismatch => "skill_revision_mismatch",
+            Self::InstructionDigestMismatch => "instruction_digest_mismatch",
+            Self::ActivationModeUnsupported => "activation_mode_unsupported",
+            Self::RequiredCapabilityUnavailable => "required_capability_unavailable",
+            Self::InstructionLimitExceeded => "instruction_limit_exceeded",
+            Self::ActivationConflict => "activation_conflict",
+            Self::DurabilityFailure => "durability_failure",
+            Self::CorruptSkillState => "corrupt_skill_state",
+        }
+    }
+}
+
 /// Typed S0 failure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SkillError {
