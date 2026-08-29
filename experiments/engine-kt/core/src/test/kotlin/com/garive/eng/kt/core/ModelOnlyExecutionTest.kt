@@ -24,6 +24,15 @@ import com.garive.eng.kt.llm.TextMode
 import com.garive.eng.kt.llm.TokenCount
 import com.garive.eng.kt.llm.UnavailableKind
 import com.garive.eng.kt.llm.UsageSource
+import com.garive.eng.kt.skill.ActivationMode
+import com.garive.eng.kt.skill.ActivationPolicy
+import com.garive.eng.kt.skill.ContentBinding
+import com.garive.eng.kt.skill.ExactToolReference
+import com.garive.eng.kt.skill.SkillActivationRequest
+import com.garive.eng.kt.skill.SkillActivationResult
+import com.garive.eng.kt.skill.SkillContractResult
+import com.garive.eng.kt.skill.SkillDefinition
+import com.garive.eng.kt.skill.activateSkills
 import com.garive.eng.kt.tools.ExecutionCapability
 import com.garive.eng.kt.tools.ExecutionRequirements
 import com.garive.eng.kt.tools.GovernedToolResult
@@ -75,6 +84,44 @@ class ModelOnlyExecutionTest {
         assertEquals(listOf(1uL, 5uL), rejected.positions)
         assertEquals(0, rejected.effects.invocations)
         assertEquals(1, rejected.effects.rejections)
+    }
+
+    @Test
+    fun `activated Skill narrows model tools and C4 catalog`() = runTest {
+        val allowed = ExactToolReference.create("read_file", "1").skillSuccess()
+        val skill = SkillDefinition.create(
+            "read-only", "1", "Read only", "Permit only exact reads.",
+            ContentBinding.fromInline("Use only read_file."), ActivationPolicy.ExplicitOnly,
+            emptyList(), listOf(allowed), 64, "1",
+        ).skillSuccess()
+        val activationRequest = SkillActivationRequest.create(
+            "activation", "turn", "execution", 1, ActivationMode.EXPLICIT,
+            "read-only", emptyList(), 1, 1, 64,
+        ).skillSuccess()
+        val activated = (activateSkills(
+            listOf(skill), emptySet(), setOf(allowed), activationRequest,
+        ).skillSuccess() as SkillActivationResult.Activated).orderedSkills
+        val context = FakeContext(ArrayDeque(listOf("success", "success")))
+        val model = FakeModel(ArrayDeque(listOf("completed-tool-write", "completed-text-known")))
+        val effects = FakeEffects()
+        val ports = AgentExecutionPorts(context, model, FakeEvents(null), FakeCancellation(null)) {
+            Result.success(0uL)
+        }
+        val report = executeAgent(
+            toolRequest().copy(activatedSkills = activated),
+            AgentToolCapabilities(listOf(toolDefinition(), writeDefinition())),
+            ports,
+            effects,
+        )
+        assertEquals("completed", render(report.outcome))
+        assertEquals(listOf(1, 1), model.toolCounts)
+        assertEquals(0, effects.invocations)
+        assertEquals(1, effects.rejections)
+        assertEquals(
+            ModelInputItem.Message(ModelRole.DEVELOPER, listOf(ModelInputContent.Text("Use only read_file."))),
+            model.inputs.first()[0],
+        )
+        assertEquals(ModelRole.USER, (model.inputs.first()[1] as ModelInputItem.Message).role)
     }
 
     private suspend fun runCase(case: JsonObject) {
@@ -147,6 +194,7 @@ class ModelOnlyExecutionTest {
         val targets = mutableListOf<String>()
         val requestIds = mutableListOf<String>()
         val toolCounts = mutableListOf<Int>()
+        val inputs = mutableListOf<List<ModelInputItem>>()
         override suspend fun invoke(
             request: ModelRequest,
             observer: ModelObserver,
@@ -156,6 +204,7 @@ class ModelOnlyExecutionTest {
             targets += request.targetId.value
             requestIds += request.requestId.value
             toolCounts += request.tools.size
+            inputs += request.inputItems
             return when (val script = scripts.removeFirst()) {
                 "completed-text-known" -> success(
                     InvokeOutcome.Completed(listOf(ModelItem.Text("done")), knownUsage(), ModelStopReason.EndTurn),
@@ -180,6 +229,13 @@ class ModelOnlyExecutionTest {
                 "completed-tool-missing" -> success(
                     InvokeOutcome.Completed(
                         listOf(ModelItem.ToolIntent("call", "missing", "{}")),
+                        knownUsage(),
+                        ModelStopReason.ToolUse,
+                    ),
+                )
+                "completed-tool-write" -> success(
+                    InvokeOutcome.Completed(
+                        listOf(ModelItem.ToolIntent("call", "write_file", "{\"path\":\"a\"}")),
                         knownUsage(),
                         ModelStopReason.ToolUse,
                     ),
@@ -329,6 +385,20 @@ class ModelOnlyExecutionTest {
         ) as ToolContractResult.Success).value
     }
 
+    private fun writeDefinition(): ToolDefinition {
+        val requirements = ExecutionRequirements.create(
+            listOf(ExecutionCapability.FILESYSTEM_WRITE), 1_000, 1_024,
+        ) as ToolContractResult.Success
+        return (ToolDefinition.create(
+            "write_file", "1", "Write one file.",
+            Json.parseToJsonElement(
+                """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}""",
+            ),
+            requirements.value,
+            ReplayClass.NEVER_REPLAY,
+        ) as ToolContractResult.Success).value
+    }
+
     private fun request(case: JsonObject): AgentTurnRequest {
         val continuing = case.text("entry") == "continue"
         val lastPosition = case.ulong("last_position")
@@ -424,4 +494,9 @@ class ModelOnlyExecutionTest {
     private fun JsonObject.ulong(key: String) = text(key).toULong()
     private fun JsonObject.obj(key: String) = getValue(key).jsonObject
     private fun JsonObject.strings(key: String) = getValue(key).jsonArray.map { it.jsonPrimitive.content }
+}
+
+private fun <T> SkillContractResult<T>.skillSuccess(): T = when (this) {
+    is SkillContractResult.Success -> value
+    is SkillContractResult.Failure -> error("unexpected Skill failure: $error")
 }

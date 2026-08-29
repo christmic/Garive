@@ -56,4 +56,14 @@ public suspend fun executeAgent(
     capabilities: AgentToolCapabilities,
     ports: AgentExecutionPorts,
     effects: GovernedEffectPort,
-): ExecutionReport = executeKernel(request, ports, capabilities.definitions, effects)
+): ExecutionReport {
+    val definitions = if (request.activatedSkills.isEmpty()) {
+        capabilities.definitions
+    } else {
+        val allowed = request.activatedSkills.flatMap { it.allowedToolReferences }.toSet()
+        capabilities.definitions.filter { definition ->
+            allowed.any { it.name == definition.name && it.exactRevision == definition.revision }
+        }
+    }
+    return executeKernel(request, ports, definitions, effects)
+}

@@ -8,6 +8,7 @@ import com.garive.eng.kt.llm.ModelPort
 import com.garive.eng.kt.llm.ModelStreamEvent
 import com.garive.eng.kt.llm.ModelTargetId
 import com.garive.eng.kt.llm.TokenCount
+import com.garive.eng.kt.skill.ActivatedSkill
 
 /** Typed durable evidence used to continue an open Turn. */
 public sealed interface ResumeInput {
@@ -78,6 +79,7 @@ public data class AgentTurnRequest(
     public val modelOutput: ModelOutputSettings,
     public val recoveryPolicy: ModelRecoveryPolicy,
     public val limits: ModelOnlyLimits,
+    public val activatedSkills: List<ActivatedSkill> = emptyList(),
 ) {
     /** Validates cross-field invariants before any port is invoked. */
     public fun validate(): AgentRequestError? {

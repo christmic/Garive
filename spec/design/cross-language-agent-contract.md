@@ -153,7 +153,7 @@ items are preserved in order. Cache breakdowns are never double-counted.
 The root gate is `just conformance`:
 
 1. Rust native tests including all shared fixtures;
-2. Kotlin `:config:test`, `:core:test`, `:llm:test`, and `:tools:test` including
+2. Kotlin `:config:test`, `:core:test`, `:llm:test`, `:skill:test`, and `:tools:test` including
    the same fixture files;
 3. a fixture coverage check proving both runners consumed every declared case.
 
