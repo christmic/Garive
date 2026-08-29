@@ -13,6 +13,7 @@ mod memory_recovery;
 mod memory_retrieval;
 mod memory_write;
 mod model_lifecycle;
+mod scheduler_lifecycle;
 mod skill_activation;
 mod terminal;
 
@@ -56,6 +57,11 @@ pub use memory_write::{
 pub use model_lifecycle::{
     plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,
     ModelLifecycleContext, PreparedModelRequest, RuntimeModelUncertainReason,
+};
+pub use scheduler_lifecycle::{
+    plan_schedule_cancelled, plan_schedule_claimed, plan_schedule_created, plan_schedule_failed,
+    plan_schedule_fired, plan_schedule_skipped, ScheduleCancelReason, ScheduleDispatchDisposition,
+    ScheduleLifecycleContext,
 };
 pub use skill_activation::{plan_skill_activation, PlannedSkillActivation, SkillActivationContext};
 pub use terminal::{plan_core_terminal, CoreTerminalContext};

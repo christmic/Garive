@@ -12,6 +12,7 @@ garive-knowledge = { path = "../../engine/knowledge" }
 garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
 garive-memory = { path = "../../engine/memory" }
+garive-scheduler = { path = "../../engine/scheduler" }
 garive-skill = { path = "../../engine/skill" }
 garive-tools = { path = "../../engine/tools" }
 garive-openai-responses = { package = "garive-adapter-openai-responses", path = "../../adapters/openai-responses" }
