@@ -184,6 +184,29 @@ pub struct SuspendedTurnState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Inputs for atomically abandoning a lost Kernel and starting its replacement.
+pub struct RecoveryRestartCommand {
+    /// Stable internal recovery operation identity.
+    pub recovery_id: RuntimeCommandId,
+    /// Still-open owning Turn.
+    pub turn_id: TurnId,
+    /// Lost active Execution to classify as abandoned.
+    pub lost_execution_id: ExecutionId,
+    /// Effective snapshot digest retained from Turn start.
+    pub snapshot_digest: String,
+    /// Last fixed Ledger position proven safe for cursor reconstruction.
+    pub last_safe_position: u64,
+    /// Cumulative completed iteration count.
+    pub completed_iterations: u64,
+    /// Non-zero ordinal assigned to the replacement Execution.
+    pub recovery_ordinal: u64,
+    /// Frozen effective limits.
+    pub limits: EffectiveRuntimeLimits,
+    /// RFC 3339 observation time supplied by the Runtime clock port.
+    pub recorded_at: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Runtime-created identities and exact fact batch for one command.
 pub struct PlannedTurn {
     /// Runtime-created Turn identity.

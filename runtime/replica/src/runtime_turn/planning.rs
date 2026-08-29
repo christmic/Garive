@@ -7,8 +7,8 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::types::{
-    CancelTurnCommand, ContinueTurnCommand, PlannedTurn, RuntimeCommandError, StartTurnCommand,
-    SuspendedTurnState,
+    CancelTurnCommand, ContinueTurnCommand, PlannedTurn, RecoveryRestartCommand,
+    RuntimeCommandError, StartTurnCommand, SuspendedTurnState,
 };
 
 /// Creates the exact three-fact StartTurn transaction with Runtime-owned identities.
@@ -174,6 +174,56 @@ pub fn plan_continue_turn(
             &command.recorded_at,
         )?,
     ]);
+    Ok(PlannedTurn {
+        turn_id: command.turn_id.clone(),
+        execution_id: Some(execution_id),
+        facts,
+    })
+}
+
+/// Creates one atomic `execution.abandoned` plus replacement start transaction.
+pub fn plan_recovery_restart(
+    command: &RecoveryRestartCommand,
+) -> Result<PlannedTurn, RuntimeCommandError> {
+    validate_time(&command.recorded_at)?;
+    validate_digest(&command.snapshot_digest)?;
+    command.limits.validate()?;
+    if command.recovery_ordinal == 0 {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let execution_id = ExecutionId::try_from(
+        format!(
+            "execution-{}",
+            digest(
+                format!(
+                    "{}:{}",
+                    command.recovery_id.as_str(),
+                    command.recovery_ordinal
+                )
+                .as_bytes()
+            )
+        )
+        .as_str(),
+    )
+    .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+    let facts = vec![
+        fact(
+            command.recovery_id.as_str(),
+            "execution.abandoned",
+            Some(&command.turn_id),
+            Some(&command.lost_execution_id),
+            json!({"reason":"runtime_lost","last_safe_position":command.last_safe_position,"recovery_ordinal":command.recovery_ordinal}),
+            &command.recorded_at,
+        )?,
+        fact(
+            command.recovery_id.as_str(),
+            "execution.started",
+            Some(&command.turn_id),
+            Some(&execution_id),
+            json!({"snapshot_digest":command.snapshot_digest,"through_position":command.last_safe_position,"completed_iterations":command.completed_iterations,"limits":limits(&command.limits),"recovery_ordinal":command.recovery_ordinal}),
+            &command.recorded_at,
+        )?,
+    ];
     Ok(PlannedTurn {
         turn_id: command.turn_id.clone(),
         execution_id: Some(execution_id),
