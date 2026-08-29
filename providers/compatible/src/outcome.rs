@@ -111,7 +111,7 @@ pub fn normalize_messages(
     }
 }
 
-fn responses_items(
+pub(crate) fn responses_items(
     output: &[responses::ResponseOutputItem],
     reasoning_visibility: bool,
 ) -> Result<Vec<ModelItem>, CompatibleProviderError> {
@@ -144,9 +144,11 @@ fn responses_items(
             responses::ResponseOutputItem::Reasoning(reasoning) => {
                 if reasoning_visibility {
                     let parts = reasoning.content.as_ref().unwrap_or(&reasoning.summary);
-                    for part in parts {
+                    if !parts.is_empty() {
                         items.push(ModelItem::Reasoning {
-                            content: ReasoningContent::ModelVisible(part.text.clone()),
+                            content: ReasoningContent::ModelVisible(
+                                parts.iter().map(|part| part.text.as_str()).collect(),
+                            ),
                         });
                     }
                 } else if let Some(reference) = &reasoning.encrypted_content {
