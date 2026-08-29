@@ -85,7 +85,8 @@ required only for the D0/C4 digest preimages explicitly named by those Specs.
   exposes committed Runtime commands/events/status to clients;
 - concrete executors prove filesystem/process/network enforcement;
 - `C7` compression remains gated until a measured C3/C6 workload baseline
-  exists.
+  exists. [`context-pressure-baseline.md`](context-pressure-baseline.md) is the
+  accepted C7-A evidence contract; implementing it does not admit compression.
 
 These dependencies need focused Specs before their own implementation, but
 their absence does not justify provider, transport, database, or sandbox types
