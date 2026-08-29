@@ -177,6 +177,12 @@ knowledge.requested.v1 {
   exact_snapshot_digest?: Digest
 }
 
+knowledge.dispatched.v1 {
+  request_id: KnowledgeRequestId
+  request_digest: Digest
+  dispatch_attempt_id: non-empty string
+}
+
 KnowledgeEvidenceBinding {
   evidence_id: KnowledgeEvidenceId
   source_snapshot_digest?: Digest
@@ -214,8 +220,10 @@ knowledge.failed.v1 {
 ```
 
 `freshness_kind=exact_snapshot` requires `exact_snapshot_digest`; other kinds
-forbid it. Requested commits before connector dispatch. Exactly one completed
-or failed terminal is admitted. Completed evidence may be empty and is ordered
+forbid it. Requested commits while redispatch remains safe. Dispatched commits
+with a unique attempt identity immediately before the connector boundary and
+marks that the request may have crossed it. Exactly one completed or failed
+terminal is admitted. Completed evidence may be empty and is ordered
 semantically. `ambiguous=true` is required for a dispatched attempt without a
 trustworthy terminal response.
 

@@ -73,7 +73,8 @@ amendment. The focused Specs define their exact payloads and transitions:
 - `skill.activated`;
 - `memory.proposed`, `memory.committed`, `memory.rejected`, `memory.superseded`,
   `memory.tombstoned`, `memory.retrieval_recorded`;
-- `knowledge.requested`, `knowledge.completed`, `knowledge.failed`;
+- `knowledge.requested`, `knowledge.dispatched`, `knowledge.completed`,
+  `knowledge.failed`;
 - `schedule.created`, `schedule.claimed`, `schedule.fired`,
   `schedule.cancelled`, `schedule.failed`;
 - `delegation.requested`, `delegation.authorized`, `delegation.denied`,

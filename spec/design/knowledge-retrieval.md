@@ -113,19 +113,23 @@ by descending connector rank basis points, citation locator and evidence ID.
 
 ## Durability and crash behavior
 
-Runtime commits `knowledge.requested` before crossing a connector boundary.
-It commits exactly one terminal `knowledge.completed` or `knowledge.failed`
-before evidence enters the next model request. Completed binds the exact
-ordered evidence IDs, content/citation digests, freshness, bounds and
-truncation.
+Runtime commits `knowledge.requested` while the request is still redispatchable,
+then commits `knowledge.dispatched` with a fresh dispatch-attempt identity
+immediately before crossing a connector boundary. The dispatch fact is the
+durable uncertainty boundary: it proves dispatch was authorized and may have
+occurred, not that the connector received it. Runtime commits exactly one
+terminal `knowledge.completed` or `knowledge.failed` before evidence enters the
+next model request. Completed binds the exact ordered evidence IDs,
+content/citation digests, freshness, bounds and truncation.
 
 After a crash:
 
 - terminal result: return it idempotently;
-- prepared but not dispatched: same-ID dispatch is permitted after policy
-  revalidation;
-- dispatched with no trustworthy result: classify `Uncertain`; retry only when
-  the connector proves read-only/idempotent semantics and policy allows it;
+- requested without a dispatch fact: same-ID dispatch is permitted after
+  policy revalidation;
+- dispatch fact with no trustworthy result: classify `Uncertain`; retry only
+  with a fresh dispatch-attempt identity when the connector proves
+  read-only/idempotent semantics and policy allows it;
 - stale cache never satisfies `Revalidate` or `ExactSnapshot` silently.
 
 The model request that consumes evidence binds the committed knowledge result
@@ -149,6 +153,8 @@ The coordinated C6F amendment must define:
 
 - `knowledge.requested`: request/source identity, canonical request digest,
   fixed prefix, bounds and freshness requirement;
+- `knowledge.dispatched`: request/digest identity and the unique dispatch
+  attempt crossing the connector boundary;
 - `knowledge.completed`: ordered evidence/citation bindings, snapshot/freshness
   data and truncation;
 - `knowledge.failed`: stable class, ambiguity flag and retry hint.
