@@ -39,7 +39,7 @@ planned without reopening a narrower completed row.
 | C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | implemented | verified | done | Keep command mapping, governed execution, fixed-prefix query, leases, cancellation, continuation/reconciliation, and native restart matrices green. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Record a C3/C6 baseline before accepting thresholds or algorithms. |
 | L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | verified | done | Keep exact C6 payloads, lifecycle ownership, iteration/abandon transitions, and shared Rust/Kotlin matrices green. |
-| L1-R | SQLite Ledger adapter | accepted | accepted | documented | implemented | verified | done | Keep v1→v2/future-schema gates, leased writes, file restart matrix, and all shared ledger scenarios green. |
+| L1-R | SQLite Ledger adapter | accepted | accepted | documented | implemented | verified | done | Keep v1→v3/future-schema gates, execution/schedule fenced writes, file restart matrices, and all shared ledger scenarios green. |
 | L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | verified | done | Keep real PostgreSQL shared scenarios, writer-race normalization, migration refusal, and admitted recovery-host subset green. |
 
 ## Protocols, Providers, Host, and clients
@@ -69,7 +69,7 @@ planned without reopening a narrower completed row.
 | Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds and revision fixtures, exact L0 payloads, Runtime namespace/restricted authority, atomic writes, and SQLite commit-before-context/restart evidence green. |
 | Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure fixtures, exact L0 lifecycle transitions, explicit source authority, connector commit ordering, Core attribution, and SQLite crash-position recovery green. |
 | Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds fixtures, Rust/Kotlin Core narrowing, L0 validation, and SQLite commit-before-model/restart evidence green. |
-| Scheduler | accepted | accepted | documented | skeleton | missing | planned | Freeze Q0/CF0 fixtures, then implement recurrence and SQLite occurrence leasing. |
+| Scheduler | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin recurrence/failure properties, exact L0 facts, SQLite lease races, authority/update conflicts, real C6 dispatch, restart and process-kill matrices green. |
 | Multi-Agent | accepted | accepted | documented | skeleton | missing | planned | Coordinate DelegationPending/result continuation fixtures, then implement budgeted parent/child recovery. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
 | Evaluation | draft | missing | missing | skeleton | missing | gated | Runnable Agent and pinned benchmark evidence. |
