@@ -985,9 +985,8 @@ dependencies = [
 name = "garive-adapter-openai-responses"
 version = "0.1.0"
 dependencies = [
- "futures",
- "garive-llm",
- "httpdate",
+ "http",
+ "serde",
  "serde_json",
 ]
 
