@@ -7,6 +7,8 @@ mod config;
 mod error;
 mod request;
 mod response;
+mod sse;
+mod stream;
 
 pub use config::{Header, HttpRequest, MessagesAdapter, MessagesAdapterConfig};
 pub use error::MessagesAdapterError;
@@ -20,3 +22,5 @@ pub use response::{
     OutputRedactedThinkingType, OutputText, OutputTextType, OutputThinking, OutputThinkingType,
     OutputToolUse, OutputToolUseType, ResponseRole, ResponseType, StopReason, Usage,
 };
+pub use sse::{SseDecoder, SseFrame};
+pub use stream::{DeltaKind, MessagesStreamDecoder, StreamEvent, StreamEventKind};
