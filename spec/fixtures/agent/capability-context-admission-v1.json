@@ -15,5 +15,20 @@
     "retained": [1,2,4],
     "dropped": [3],
     "item_kinds": ["user_input","skill","knowledge"]
+  },
+  "assembly_case": {
+    "items": [
+      {"position":1,"kind":"instruction","role":"system","text":"initial-instruction"},
+      {"position":2,"kind":"user_input","role":"user","text":"history-user"},
+      {"position":3,"kind":"skill","role":"developer","text":"activated-skill"},
+      {"position":4,"kind":"memory","role":"user","text":"memory-evidence"},
+      {"position":5,"kind":"knowledge","role":"user","text":"knowledge-evidence"},
+      {"position":6,"kind":"system_notice","role":"developer","text":"late-system-notice"},
+      {"position":7,"kind":"model_output","role":"assistant","text":"history-assistant"}
+    ],
+    "expected_texts": [
+      "initial-instruction","late-system-notice","activated-skill",
+      "memory-evidence","knowledge-evidence","history-user","history-assistant"
+    ]
   }
 }

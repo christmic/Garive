@@ -45,6 +45,11 @@ candidates obey C2 ordering/session/window rules. The request budgets must
 retain every eligible candidate: any C2 dropped reference makes the run invalid
 because this is the uncompressed baseline.
 
+The assembled request must also pass the selected Provider's normal request
+mapping before counting. A counter cannot repair, reorder or reinterpret an
+otherwise unsupported request. Shared Core assembly therefore guarantees the
+portable leading-instruction invariant before provider-specific projection.
+
 The corpus is public reference evidence, not production telemetry. A result may
 be called representative only for the exact named workload classes and corpus
 revision; it is never generalized to user traffic.

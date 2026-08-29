@@ -29,9 +29,13 @@ Candidate kinds are `Instruction`, `Skill`, `UserInput`, `ModelOutput`,
 
 `Skill` candidates are committed activation products rendered as developer
 instructions. `Memory` and `Knowledge` candidates are committed evidence
-products, never instructions. Their model rendering uses a subordinate data envelope. Assembly
-places admitted evidence after system/developer instructions and activated
-Skill instructions, but before ordinary history and the current trusted input.
+products, never instructions. Their model rendering uses a subordinate data
+envelope. Assembly partitions every ordinary `System`/`Developer` message into
+one leading instruction group while preserving their relative durable order;
+this includes a `SystemNotice` committed after conversational history. Activated
+Skill instructions follow that group, then Memory and Knowledge evidence, then
+all remaining history/current input in relative order. Assembly never leaves a
+late instruction inside the conversation and never silently changes its role.
 This presentation order does not change durable reference order, admission, or
 audit lists in `ContextSurface`.
 
@@ -219,7 +223,9 @@ decode the actual committed durable fact before invoking the same Core adapter.
 `spec/fixtures/agent/capability-context-admission-v1.json` covers strict
 base/capability stream merging, duplicate and ordering failures, required Skill
 charging, newest-first Memory/Knowledge selection and exact retained/dropped
-references in both languages.
+references in both languages. Its assembly case additionally proves that a
+late durable SystemNotice joins the leading instruction group before Skill,
+evidence and ordinary history.
 
 ## Properties
 
