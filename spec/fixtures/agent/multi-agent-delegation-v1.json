@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "contract": "multi-agent-delegation-v1",
+  "intent": {
+    "delegation_id": "delegation-1",
+    "parent_agent_instance_id": "parent-agent",
+    "parent_turn_id": "parent-turn",
+    "parent_execution_id": "parent-execution",
+    "child_requirement": {"kind":"definition","definition_id":"reviewer","definition_revision":"1"},
+    "objective": {"digest":"9b30b6d324e72347d331f52c5dacd869b0b4e7f72a201b4532c7a04c9a430969","inline_utf8":"Review child task."},
+    "input_evidence": [{"session_id":"session","position":1,"fact_id":"fact-1","payload_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}],
+    "result_schema": {"digest":"d7f69ea25824f613d0b60198abe050adc66a3bf45d9f2045d1997214a55498e5","inline_utf8":"{\"additionalProperties\":false,\"properties\":{\"answer\":{\"type\":\"string\"}},\"required\":[\"answer\"],\"type\":\"object\"}"},
+    "budget": {
+      "max_child_turns":1,"max_child_executions":3,"max_iterations":8,
+      "max_input_tokens":100,"max_output_tokens":50,"deadline_budget_ms":5000,
+      "max_depth":2,"max_objective_bytes":64,"max_input_evidence":4,
+      "max_result_schema_bytes":256,"max_result_bytes":64,"max_result_evidence":4
+    },
+    "cancellation_policy": "cancel_with_parent",
+    "through_position": 7,
+    "expected_intent_digest": "e85aeb69974c0b24353ca19aba86a166c26508fd47cf3a243dc21ce8a7ea1846"
+  },
+  "completed_result": {
+    "content": {"digest":"83497274cc7affcc460bca7452c14d5e72eaa019a33055df2bc39cd9a5202774","inline_utf8":"{\"answer\":\"done\"}"},
+    "usage": {"input_tokens":{"kind":"known","value":10},"output_tokens":{"kind":"known","value":5}},
+    "consumption": {"child_turns":1,"child_executions":2,"completed_iterations":4,"elapsed_ms":1200},
+    "expected_charged": {"child_turns":1,"child_executions":2,"iterations":4,"input_tokens":10,"output_tokens":5,"elapsed_ms":1200},
+    "expected_released": {"child_turns":0,"child_executions":1,"iterations":4,"input_tokens":90,"output_tokens":45,"elapsed_ms":3800}
+  },
+  "failure_codes": [
+    "invalid_delegation","child_not_found","child_revision_mismatch","authority_denied",
+    "budget_exhausted","budget_overflow","depth_exceeded","concurrency_exceeded",
+    "result_schema_mismatch","delegation_conflict","child_state_corrupt",
+    "durability_failure","corrupt_delegation_state"
+  ],
+  "invalid_cases": [
+    "zero_bound","more_than_one_child_turn","evidence_after_prefix","duplicate_evidence",
+    "noncanonical_schema","unsupported_schema","objective_too_large","result_schema_mismatch",
+    "result_too_large","budget_exhausted","depth_exceeded","concurrency_exceeded"
+  ]
+}
