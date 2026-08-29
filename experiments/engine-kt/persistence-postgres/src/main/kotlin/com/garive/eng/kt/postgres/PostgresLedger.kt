@@ -14,9 +14,11 @@ import java.sql.Connection
 import java.sql.SQLException
 import java.time.OffsetDateTime
 
-class PostgresLedger private constructor(private val config: PostgresConfig) {
-    companion object {
-        fun open(config: PostgresConfig): PostgresLedger {
+/** PostgreSQL durable Ledger experiment using real serializable transactions. */
+public class PostgresLedger private constructor(private val config: PostgresConfig) {
+    public companion object {
+        /** Opens the adapter and applies/refuses schema migrations before use. */
+        public fun open(config: PostgresConfig): PostgresLedger {
             try {
                 config.connect().use(PostgresMigrations::migrate)
             } catch (error: PostgresLedgerError) {
@@ -28,7 +30,8 @@ class PostgresLedger private constructor(private val config: PostgresConfig) {
         }
     }
 
-    fun commit(
+    /** Atomically validates and appends a batch at an expected Session version. */
+    public fun commit(
         sessionId: SessionId,
         expectedSessionVersion: ULong,
         drafts: List<FactDraft>,
@@ -74,7 +77,8 @@ class PostgresLedger private constructor(private val config: PostgresConfig) {
         result
     }
 
-    fun readFacts(
+    /** Reads a verified fixed-prefix fact range in durable position order. */
+    public fun readFacts(
         sessionId: SessionId,
         afterPosition: ULong,
         throughPosition: ULong,
@@ -86,14 +90,16 @@ class PostgresLedger private constructor(private val config: PostgresConfig) {
         }
     }
 
-    fun listUncertainModelRequests(sessionId: SessionId): List<ModelRequestId> = readState { state ->
+    /** Lists model requests still Started without a recovery-terminal fact. */
+    public fun listUncertainModelRequests(sessionId: SessionId): List<ModelRequestId> = readState { state ->
         when (val result = state.listUncertainModelRequests(sessionId)) {
             is LedgerResult.Failure -> throw PostgresLedgerError.Domain(result.error)
             is LedgerResult.Success -> result.value
         }
     }
 
-    fun sessionVersion(sessionId: SessionId): ULong? = readState { it.sessionVersion(sessionId) }
+    /** Returns the current durable optimistic-concurrency Session version. */
+    public fun sessionVersion(sessionId: SessionId): ULong? = readState { it.sessionVersion(sessionId) }
 
     private fun insertFacts(
         connection: Connection,

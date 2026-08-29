@@ -3,13 +3,20 @@ package com.garive.eng.kt.postgres
 import java.sql.Connection
 import java.sql.DriverManager
 
-data class PostgresConfig(
-    val jdbcUrl: String,
-    val username: String,
-    val password: String,
-    val statementTimeoutMs: UInt = 5_000u,
-    val lockTimeoutMs: UInt = 2_000u,
+/**
+ * PostgreSQL connection policy for the experimental adapter.
+ *
+ * Password is intentionally excluded from data-class printing/copy/equality.
+ */
+public class PostgresConfig(
+    public val jdbcUrl: String,
+    public val username: String,
+    password: String,
+    public val statementTimeoutMs: UInt = 5_000u,
+    public val lockTimeoutMs: UInt = 2_000u,
 ) {
+    internal val password: String = password
+
     init {
         require(jdbcUrl.startsWith("jdbc:postgresql:"))
         require(username.isNotEmpty())
@@ -20,11 +27,15 @@ data class PostgresConfig(
     internal fun connect(): Connection = DriverManager.getConnection(jdbcUrl, username, password)
 }
 
-sealed class PostgresLedgerError(val code: String, cause: Throwable? = null) : Exception(code, cause) {
-    class Domain(val error: com.garive.eng.kt.ledger.LedgerError) :
+/** Domain, integrity, migration, or storage failure from [PostgresLedger]. */
+public sealed class PostgresLedgerError protected constructor(
+    public val code: String,
+    cause: Throwable? = null,
+) : Exception(code, cause) {
+    public class Domain(public val error: com.garive.eng.kt.ledger.LedgerError) :
         PostgresLedgerError(error.code)
-    class Storage(cause: Throwable) : PostgresLedgerError("postgres-storage", cause)
-    class Corrupt(val detail: String, cause: Throwable? = null) :
+    public class Storage(cause: Throwable) : PostgresLedgerError("postgres-storage", cause)
+    public class Corrupt(public val detail: String, cause: Throwable? = null) :
         PostgresLedgerError("ledger-corruption:$detail", cause)
-    class UnsupportedSchema(val version: Int) : PostgresLedgerError("unsupported-schema:$version")
+    public class UnsupportedSchema(public val version: Int) : PostgresLedgerError("unsupported-schema:$version")
 }

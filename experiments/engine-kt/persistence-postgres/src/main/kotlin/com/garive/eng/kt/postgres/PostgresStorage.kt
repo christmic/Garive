@@ -17,6 +17,8 @@ import java.math.BigDecimal
 import java.sql.Connection
 import java.sql.ResultSet
 import java.time.OffsetDateTime
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 
 internal object PostgresStorage {
     fun loadState(connection: Connection): LedgerState {
@@ -77,14 +79,19 @@ internal object PostgresStorage {
     }
 
     private fun ResultSet.draft(): FactDraft {
-        val payload = when (
-            val result = CanonicalPayload.fromStoredJson(
-                getString("payload_json"),
-                getString("payload_sha256").trimEnd(),
-            )
-        ) {
+        val value = try {
+            Json.parseToJsonElement(getString("payload_json"))
+        } catch (_: SerializationException) {
+            corrupt("invalid payload json")
+        } catch (_: IllegalArgumentException) {
+            corrupt("invalid payload json")
+        }
+        val payload = when (val result = CanonicalPayload.fromValue(value)) {
             is CanonicalPayloadResult.Failure -> corrupt("invalid payload:${result.error}")
             is CanonicalPayloadResult.Success -> result.payload
+        }
+        if (payload.sha256 != getString("payload_sha256").trimEnd()) {
+            corrupt("invalid payload:DIGEST_MISMATCH")
         }
         val schema = getLong("schema_version")
         if (schema !in 1..UInt.MAX_VALUE.toLong()) corrupt("invalid schema version")
