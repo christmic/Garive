@@ -130,7 +130,7 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
     let state = DesktopState::default();
     state.install(host).expect("one install");
     let result = state
-        .run_turn("definition-main", "hello desktop")
+        .run_turn_isolated("definition-main".into(), "hello desktop".into())
         .await
         .expect("durable turn");
     assert_eq!(result.terminal, DesktopTerminal::Completed);

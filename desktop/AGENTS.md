@@ -175,8 +175,9 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root in
   `engine/`; expose them via the Tauri command / XPC layer.
 
-The first Tauri shell and embedded fake-host command are active. Its frontend
-is deliberately minimal until product UI slices land.
+The first Tauri shell embeds the durable local Runtime behind typed IPC. Its
+frontend is deliberately minimal until product UI and backend-only Garive
+configuration provisioning slices land.
 
 ## Build
 
