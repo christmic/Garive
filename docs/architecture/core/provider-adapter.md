@@ -220,6 +220,8 @@ Spec.
   — compatible deployment request/outcome/error/stream mapping contract.
 - [`../../../spec/design/vendor-connection-profiles.md`](../../../spec/design/vendor-connection-profiles.md)
   — explicit official connection/authentication/error profiles and the hosted-capability split.
+- [`../../../spec/design/anthropic-token-count.md`](../../../spec/design/anthropic-token-count.md)
+  — the first independently admitted vendor capability and exact count projection.
 - [`.agents/testing.md`](../../../.agents/testing.md) — protocol evidence gates.
 
 ## Meta

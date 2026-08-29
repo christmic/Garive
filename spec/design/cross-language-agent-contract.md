@@ -29,6 +29,7 @@ domain models.
 | C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
 | C6 Runtime | supported | admitted PostgreSQL recovery subset | shared public decisions + independent native crash evidence |
 | C7 compression | planned | not admitted | measured admission decision required |
+| P2-VX-ATC token count | supported | experimental | provider request/response/profile fixture + native tests |
 
 `unsupported` is a valid explicit capability result. It must not silently fall
 back to behavior with different safety semantics.

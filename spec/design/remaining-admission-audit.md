@@ -15,10 +15,10 @@ evidence. Proposed numeric thresholds are not copied into accepted contracts.
 
 | Slice | Decision | Missing evidence before a focused Spec |
 |---|---|---|
-| C7 measured compression | gated | C7-A now supplies the versioned C3/C6 reference corpus, runner and non-publishable pipeline evidence. Remaining: an admitted provider token counter, publication-grade uncompressed baseline and measured trigger/retention trade-off. B0 SWE outcomes do not measure context pressure. |
+| C7 measured compression | gated | C7-A supplies the versioned C3/C6 corpus and runner; P2-VX-ATC supplies an admitted exact vendor count exchange. Remaining: a secret-safe credentialed publication run and measured trigger/retention trade-off. B0 SWE outcomes do not measure context pressure. |
 | Creativity | gated | Neutral task taxonomy and bounded alternative-generation hypothesis; reproducible baseline runs using E0/B0 infrastructure; deterministic outcome rubric separating diversity from correctness; authority and budget ownership. Harness unit tests are not a baseline. |
 | P2-VX hosted capability | planned per capability | One concrete capability request; provider-neutral semantics and extension values; exact unsupported/failure behavior; protocol fixtures; proof that ordinary Tool/Knowledge semantics cannot represent it. No generic extension allowlist is admitted. |
-| P2-VX-ATC token count | admitted | Exact non-generating count semantics and official SDK evidence now exist in `anthropic-token-count.md`; implementation and a credentialed publication run remain separate steps. |
+| P2-VX-ATC token count | delivered | Exact non-generating count semantics, official SDK evidence, explicit profiles, strict decoding and shared Rust/Kotlin fixtures are verified. A credentialed publication run remains separate C7-A evidence. |
 | G0 Go Gateway | gated | A live H1 edge workflow requiring independent scaling; load/failure measurements; authentication/routing ownership not already held by Host; deployment and recovery boundary. Language preference alone is insufficient. |
 | A-MOBILE Android evidence | active external gate | Android SDK 36, real APK assembly and device/emulator evidence. This does not require a new architecture Spec. |
 
