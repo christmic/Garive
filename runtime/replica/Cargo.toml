@@ -20,3 +20,9 @@ tempfile = "3.27.0"
 
 [lib]
 path = "src/lib.rs"
+
+[[bin]]
+name = "garive-runtime-crash-fixture"
+path = "tests/support/crash_fixture.rs"
+test = false
+bench = false
