@@ -37,6 +37,11 @@ event shapes. Garive owns only the portable-profile boundary below.
 
 Neither module implements `ModelPort` or classifies provider availability.
 
+Source ownership and constant placement follow
+[`protocol-adapter-layout.md`](protocol-adapter-layout.md). Repeated HTTP,
+field, and discriminator literals are internal wire vocabulary; typed enums
+remain the public source of truth.
+
 ## Public API
 
 ```text

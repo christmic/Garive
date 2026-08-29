@@ -27,6 +27,7 @@ conformance: architecture
 adapter-boundaries:
     @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not read process configuration' >&2; exit 1; fi
     @if rg -n 'garive-(core|llm|runtime|ledger)|project\(\":(core|llm|runtime|ledger)' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not depend on Garive semantic layers' >&2; exit 1; fi
+    @if rg -n '"(application/json|text/event-stream|content-type)"' adapters/openai-responses/src adapters/anthropic-messages/src experiments/engine-kt/adapter-openai-responses/src/main experiments/engine-kt/adapter-anthropic-messages/src/main --glob '!**/wire.rs' --glob '!**/Wire.kt'; then echo 'Repeated protocol HTTP literals belong in wire.rs or Wire.kt' >&2; exit 1; fi
 
 protocol-adapters: adapter-boundaries
     cargo test -p garive-adapter-openai-responses -p garive-adapter-anthropic-messages

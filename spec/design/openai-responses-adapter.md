@@ -40,6 +40,11 @@ selection and validation described below.
 Both modules expose protocol values and equivalent behavior. They do not
 implement `ModelPort`.
 
+Source ownership and constant placement follow
+[`protocol-adapter-layout.md`](protocol-adapter-layout.md). Repeated HTTP,
+field, and discriminator literals are internal wire vocabulary; typed enums
+remain the public source of truth.
+
 ## Public API
 
 ```text
