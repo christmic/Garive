@@ -38,6 +38,7 @@ public suspend fun executeModelOnly(
     var rebuildAttempt = 0u
     var outputRetries = 0u
     var targetIndex = 0
+    var requestOrdinal = 0u
 
     if (!emit(request, ports, AgentEventKind.ExecutionStarted)) {
         return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
@@ -76,7 +77,11 @@ public suspend fun executeModelOnly(
             return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.CANCELLED))
         }
         val target = request.modelTargets[targetIndex]
-        val requestId = "${request.executionId.value}:$iteration"
+        if (requestOrdinal == UInt.MAX_VALUE) {
+            return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVARIANT_VIOLATION))
+        }
+        requestOrdinal += 1u
+        val requestId = "${request.executionId.value}:$iteration:$requestOrdinal"
         val modelRequest = ModelRequest(
             ModelRequestId(requestId),
             target,

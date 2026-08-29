@@ -28,6 +28,7 @@ pub async fn execute_model_only(
     let mut rebuild_attempt = 0;
     let mut output_retries = 0;
     let mut target_index = 0;
+    let mut request_ordinal = 0u32;
 
     if emit(ports, request, AgentEventKind::ExecutionStarted).is_err() {
         return finish(
@@ -179,8 +180,22 @@ pub async fn execute_model_only(
                 },
             );
         }
+        request_ordinal = match request_ordinal.checked_add(1) {
+            Some(value) => value,
+            None => {
+                return finish(
+                    request,
+                    ports,
+                    &mut control,
+                    &usage,
+                    AgentOutcome::Failed {
+                        reason: AgentFailureReason::InvariantViolation,
+                    },
+                );
+            }
+        };
         let (model_request, request_id) =
-            match build_model_request(request, surface, iteration, target_index) {
+            match build_model_request(request, surface, iteration, request_ordinal, target_index) {
                 Ok(value) => value,
                 Err(()) => {
                     return finish(

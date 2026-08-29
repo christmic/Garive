@@ -14,9 +14,13 @@ pub(super) fn build_model_request(
     request: &AgentTurnRequest,
     surface: ContextSurface,
     iteration: u32,
+    request_ordinal: u32,
     target_index: usize,
 ) -> Result<(ModelRequest, String), ()> {
-    let request_id = format!("{}:{iteration}", request.execution_id.as_str());
+    let request_id = format!(
+        "{}:{iteration}:{request_ordinal}",
+        request.execution_id.as_str()
+    );
     let target = request.model_targets[target_index].clone();
     let value = ModelRequest {
         request_id: ModelRequestId::new(request_id.clone()),

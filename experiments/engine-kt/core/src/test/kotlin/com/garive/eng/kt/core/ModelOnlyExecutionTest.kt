@@ -67,6 +67,7 @@ class ModelOnlyExecutionTest {
         assertEquals(expected.uint("iterations"), report.completedIterations, case.text("name"))
         assertEquals(expected.int("context_calls"), context.calls, case.text("name"))
         assertEquals(expected.int("model_calls"), model.calls, case.text("name"))
+        assertEquals(model.requestIds.size, model.requestIds.toSet().size, case.text("name"))
         document.getValue("usage_summary_cases").jsonArray
             .map { it.jsonObject }
             .find { it.text("execution_case") == case.text("name") }
@@ -114,6 +115,7 @@ class ModelOnlyExecutionTest {
     private class FakeModel(private val scripts: ArrayDeque<String>) : ModelPort {
         var calls = 0
         val targets = mutableListOf<String>()
+        val requestIds = mutableListOf<String>()
         override suspend fun invoke(
             request: ModelRequest,
             observer: ModelObserver,
@@ -121,6 +123,7 @@ class ModelOnlyExecutionTest {
         ): ModelPortResult {
             calls += 1
             targets += request.targetId.value
+            requestIds += request.requestId.value
             return when (val script = scripts.removeFirst()) {
                 "completed-text-known" -> success(
                     InvokeOutcome.Completed(listOf(ModelItem.Text("done")), knownUsage(), ModelStopReason.EndTurn),

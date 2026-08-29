@@ -150,6 +150,13 @@ are identical. Runtime uses the report summary for every durable terminal.
 input items, admitted tool definitions, output constraints, and trace-safe
 metadata. It contains neither provider credentials nor HTTP fields.
 
+Every semantically new neutral request receives a fresh `ModelRequestId`.
+Context rebuilds, alternate targets, output-limit retries and later Agent
+iterations therefore advance an Execution-local request ordinal. Only a
+Provider adapter retry proven to preserve the exact logical request may reuse
+that ID; changing target, context, tools or output constraints while reusing it
+is an invariant violation.
+
 Input/output uses an ordered `ModelItem` sum type:
 
 - `Text`;

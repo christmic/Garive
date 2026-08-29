@@ -97,6 +97,7 @@ struct FakeModel {
     scripts: Mutex<VecDeque<String>>,
     calls: AtomicUsize,
     targets: Mutex<Vec<String>>,
+    request_ids: Mutex<Vec<String>>,
 }
 
 impl ModelPort for FakeModel {
@@ -111,6 +112,10 @@ impl ModelPort for FakeModel {
             .lock()
             .unwrap()
             .push(request.target_id.as_str().into());
+        self.request_ids
+            .lock()
+            .unwrap()
+            .push(request.request_id.as_str().into());
         let script = self.scripts.lock().unwrap().pop_front().unwrap();
         let result = match script.as_str() {
             "completed-text-known" => Ok(InvokeOutcome::Completed {
@@ -374,6 +379,7 @@ fn rust_consumes_every_model_only_scenario() {
             ),
             calls: AtomicUsize::new(0),
             targets: Mutex::new(vec![]),
+            request_ids: Mutex::new(vec![]),
         };
         let cancellation = FakeCancellation {
             cancel_after: case["cancel_after_checks"].as_u64().map(|v| v as usize),
@@ -416,6 +422,16 @@ fn rust_consumes_every_model_only_scenario() {
         assert_eq!(
             model.calls.load(Ordering::SeqCst),
             expected["model_calls"].as_u64().unwrap() as usize,
+            "{}",
+            case["name"]
+        );
+        let request_ids = model.request_ids.lock().unwrap();
+        assert_eq!(
+            request_ids
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            request_ids.len(),
             "{}",
             case["name"]
         );
