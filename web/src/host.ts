@@ -94,6 +94,28 @@ export class FetchHostClient {
     if (result.session_id !== sessionId) throw new HostClientError("invalid_event");
     return result;
   }
+  public async cancelTurn(
+    commandId: string, sessionId: string, turnId: string, requestedThroughPosition: number,
+  ): Promise<TurnCommandResponse> {
+    if (!sessionId || !turnId || !position(requestedThroughPosition)) throw new HostClientError("invalid_command");
+    return validateOwnedTurnResponse(await this.post(
+      `/v1/turns/${encodeURIComponent(turnId)}:cancel`, commandId,
+      { session_id: sessionId, requested_through_position: requestedThroughPosition },
+    ), sessionId, turnId);
+  }
+  public async continueTurn(
+    commandId: string, sessionId: string, turnId: string, suspensionId: string,
+    expectedSessionVersion: number, input: string,
+  ): Promise<TurnCommandResponse> {
+    if (!sessionId || !turnId || !suspensionId || !position(expectedSessionVersion) || !input) {
+      throw new HostClientError("invalid_command");
+    }
+    return validateOwnedTurnResponse(await this.post(
+      `/v1/turns/${encodeURIComponent(turnId)}:continue`, commandId,
+      { session_id: sessionId, suspension_id: suspensionId,
+        expected_session_version: expectedSessionVersion, input },
+    ), sessionId, turnId);
+  }
   public async followUntilTerminal(sessionId: string, afterPosition = 0): Promise<HostView> {
     if (!sessionId || !Number.isSafeInteger(afterPosition) || afterPosition < 0) throw new HostClientError("invalid_command");
     const controller = new AbortController();
@@ -135,7 +157,7 @@ export class FetchHostClient {
       throw new HostClientError("transport_failure");
     } finally { globalThis.clearTimeout(timeout); }
   }
-  private async post(path: string, commandId: string, body: Record<string, string>): Promise<unknown> {
+  private async post(path: string, commandId: string, body: Record<string, string | number>): Promise<unknown> {
     if (!validCommandId(commandId) || Object.values(body).some((value) => !value)) throw new HostClientError("invalid_command");
     const encoded = JSON.stringify(body);
     if (new TextEncoder().encode(encoded).length > this.limits.maxCommandBytes) throw new HostClientError("invalid_command");
@@ -177,6 +199,11 @@ function validateTurnResponse(value: unknown): TurnCommandResponse {
   if (!isRecord(value) || !text(value.session_id) || !text(value.turn_id) || !text(value.execution_id) ||
       !position(value.committed_position)) throw new HostClientError("invalid_event");
   return value as unknown as TurnCommandResponse;
+}
+function validateOwnedTurnResponse(value: unknown, sessionId: string, turnId: string): TurnCommandResponse {
+  const response = validateTurnResponse(value);
+  if (response.session_id !== sessionId || response.turn_id !== turnId) throw new HostClientError("invalid_event");
+  return response;
 }
 async function throwHostFailure(response: Response): Promise<never> {
   let code: unknown;

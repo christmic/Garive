@@ -82,6 +82,28 @@ describe("A1 fetch transport", () => {
       code: "host_failure", status: 404, message: "host_failure",
     });
   });
+
+  it("maps cancel and continuation to the exact H1 mutations", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const turn = { session_id: fixture.session_id, turn_id: "turn-client",
+      execution_id: "execution-client", committed_position: 12 };
+    const client = new FetchHostClient("http://127.0.0.1:1234/", limits(), async (input, init) => {
+      calls.push({ url: String(input), init }); return jsonResponse(turn);
+    });
+    await client.cancelTurn("cancel-stable", fixture.session_id, "turn-client", 9);
+    await client.continueTurn(
+      "continue-stable", fixture.session_id, "turn-client", "suspension-client", 4, "approved input",
+    );
+    expect(calls[0]?.url).toContain("/v1/turns/turn-client:cancel");
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({
+      session_id: fixture.session_id, requested_through_position: 9,
+    }));
+    expect(calls[1]?.url).toContain("/v1/turns/turn-client:continue");
+    expect(calls[1]?.init?.body).toBe(JSON.stringify({
+      session_id: fixture.session_id, suspension_id: "suspension-client",
+      expected_session_version: 4, input: "approved input",
+    }));
+  });
 });
 
 function mutation(name: string): HostEvent[] {
