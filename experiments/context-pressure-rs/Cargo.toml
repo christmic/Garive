@@ -6,6 +6,10 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[[bin]]
+name = "garive-fixture-token-counter"
+path = "src/fixture_counter.rs"
+
 [dependencies]
 garive-core = { path = "../../engine/core" }
 garive-eval = { path = "../../engine/eval" }

@@ -56,6 +56,7 @@ impl CommandTokenCounter {
                 .environment
                 .iter()
                 .any(|(name, _)| name.is_empty() || name.contains('=') || name.contains('\0'))
+            || (config.publishable && config.counter_id.starts_with("garive-fixture-"))
         {
             return Err(TokenCounterFailure);
         }
