@@ -4,9 +4,11 @@ import com.garive.eng.kt.llm.MediaKind
 import com.garive.eng.kt.llm.ModelInputContent
 import com.garive.eng.kt.llm.ModelInputItem
 
-enum class ContextPurpose { INFERENCE, GOVERNANCE, TOOL_PREPARATION, SUMMARIZATION }
+/** Consumer-specific reason for deriving a bounded context surface. */
+public enum class ContextPurpose { INFERENCE, GOVERNANCE, TOOL_PREPARATION, SUMMARIZATION }
 
-enum class CandidateKind {
+/** Semantic class of a durable fact considered for context. */
+public enum class CandidateKind {
     INSTRUCTION,
     USER_INPUT,
     MODEL_OUTPUT,
@@ -16,66 +18,78 @@ enum class CandidateKind {
     SYSTEM_NOTICE,
 }
 
-enum class Retention { REQUIRED, OPTIONAL }
+/** Whether a candidate may be dropped under budget pressure. */
+public enum class Retention { REQUIRED, OPTIONAL }
 
-sealed interface Visibility {
-    data object Visible : Visibility
-    data object Redacted : Visibility
-    data class Purposes(val purposes: Set<ContextPurpose>) : Visibility
+/** Purpose-based disclosure rule applied before budgeting. */
+public sealed interface Visibility {
+    public data object Visible : Visibility
+    public data object Redacted : Visibility
+    public data class Purposes(public val purposes: Set<ContextPurpose>) : Visibility
 }
 
-data class FactRef(val sessionId: String, val position: ULong)
+/** Stable reference to one ordered Session ledger fact. */
+public data class FactRef(public val sessionId: String, public val position: ULong)
 
-data class ContextCandidate(
-    val factRef: FactRef,
-    val kind: CandidateKind,
-    val retention: Retention,
-    val visibility: Visibility,
-    val items: List<ModelInputItem>,
+/** Input candidate presented to the pure derivation algorithm. */
+public data class ContextCandidate(
+    public val factRef: FactRef,
+    public val kind: CandidateKind,
+    public val retention: Retention,
+    public val visibility: Visibility,
+    public val items: List<ModelInputItem>,
 )
 
-data class ContextRequest(
-    val sessionId: String,
-    val turnId: String,
-    val purpose: ContextPurpose,
-    val afterPosition: ULong?,
-    val throughPosition: ULong,
-    val maxItems: Int,
-    val maxUtf8Bytes: Int,
+/** Frozen ledger window and budgets for deterministic context derivation. */
+public data class ContextRequest(
+    public val sessionId: String,
+    public val turnId: String,
+    public val purpose: ContextPurpose,
+    public val afterPosition: ULong?,
+    public val throughPosition: ULong,
+    public val maxItems: Int,
+    public val maxUtf8Bytes: Int,
 )
 
-sealed interface ContextItem {
-    data class Input(val factRef: FactRef, val item: ModelInputItem) : ContextItem
-    data class RedactedItem(val factRef: FactRef) : ContextItem
+/** Auditable visible input or redaction emitted in a surface. */
+public sealed interface ContextItem {
+    public data class Input(public val factRef: FactRef, public val item: ModelInputItem) : ContextItem
+    public data class RedactedItem(public val factRef: FactRef) : ContextItem
 }
 
-data class ContextSurface(
-    val purpose: ContextPurpose,
-    val fromPosition: ULong,
-    val throughPosition: ULong,
-    val items: List<ContextItem>,
-    val retainedRefs: List<FactRef>,
-    val droppedRefs: List<FactRef>,
-    val filteredRefs: List<FactRef>,
-    val itemCount: Int,
-    val utf8Bytes: Int,
+/** Deterministic bounded projection supplied to one context consumer. */
+public data class ContextSurface(
+    public val purpose: ContextPurpose,
+    public val fromPosition: ULong,
+    public val throughPosition: ULong,
+    public val items: List<ContextItem>,
+    public val retainedRefs: List<FactRef>,
+    public val droppedRefs: List<FactRef>,
+    public val filteredRefs: List<FactRef>,
+    public val itemCount: Int,
+    public val utf8Bytes: Int,
 )
 
-sealed interface ContextDerivationResult {
-    data class Success(val surface: ContextSurface) : ContextDerivationResult
-    data class Failure(val error: ContextDerivationError) : ContextDerivationResult
+/** Success/failure envelope for pure context derivation. */
+public sealed interface ContextDerivationResult {
+    public data class Success(public val surface: ContextSurface) : ContextDerivationResult
+    public data class Failure(public val error: ContextDerivationError) : ContextDerivationResult
 }
 
-sealed class ContextDerivationError(val code: String) {
-    data object InvalidRequest : ContextDerivationError("invalid-request")
-    data object SessionMismatch : ContextDerivationError("session-mismatch")
-    data object PositionBeyondSurface : ContextDerivationError("position-beyond-surface")
-    data object NonIncreasingPosition : ContextDerivationError("non-increasing-position")
-    data object DuplicateReference : ContextDerivationError("duplicate-reference")
-    data object EmptyRequiredContent : ContextDerivationError("empty-required-content")
-    data object InvalidVisibility : ContextDerivationError("invalid-visibility")
-    data object BudgetOverflow : ContextDerivationError("budget-overflow")
-    data class RequiredFactsExceedBudget(val itemCount: Int, val utf8Bytes: Int) :
+/** Stable contract violation or bounded-derivation failure. */
+public sealed class ContextDerivationError protected constructor(public val code: String) {
+    public data object InvalidRequest : ContextDerivationError("invalid-request")
+    public data object SessionMismatch : ContextDerivationError("session-mismatch")
+    public data object PositionBeyondSurface : ContextDerivationError("position-beyond-surface")
+    public data object NonIncreasingPosition : ContextDerivationError("non-increasing-position")
+    public data object DuplicateReference : ContextDerivationError("duplicate-reference")
+    public data object EmptyRequiredContent : ContextDerivationError("empty-required-content")
+    public data object InvalidVisibility : ContextDerivationError("invalid-visibility")
+    public data object BudgetOverflow : ContextDerivationError("budget-overflow")
+    public data class RequiredFactsExceedBudget(
+        public val itemCount: Int,
+        public val utf8Bytes: Int,
+    ) :
         ContextDerivationError("required-facts-exceed-budget")
 }
 
@@ -86,7 +100,13 @@ private data class Eligible(
     val redacted: Boolean,
 )
 
-fun deriveContext(
+/**
+ * Derives a deterministic surface from strictly ordered candidates.
+ *
+ * Visibility filtering precedes budgeting; required candidates must fit and
+ * newest optional candidates are retained until either budget is exhausted.
+ */
+public fun deriveContext(
     request: ContextRequest,
     candidates: List<ContextCandidate>,
 ): ContextDerivationResult {
