@@ -234,6 +234,27 @@ fn every_effect_terminal_and_receipt_path_is_explicit() {
         "effect.prepared",
         "effect.completed",
     ]);
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "effect.prepared",
+        "effect.started",
+        "effect.uncertain",
+        "execution.suspended",
+        "turn.suspended",
+        "effect.reconciled",
+        "effect.observation",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "effect.prepared",
+        "effect.started",
+        "effect.uncertain",
+        "effect.observation",
+    ]);
 }
 
 #[test]

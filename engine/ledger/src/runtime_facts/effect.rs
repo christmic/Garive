@@ -21,6 +21,7 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "effect.completed" => completed(value),
         "effect.failed" => failed(value),
         "effect.uncertain" => uncertain(value),
+        "effect.reconciled" => reconciled(value),
         "effect.observation" => observation(value),
         _ => Err(LedgerError::InvalidFact),
     }
@@ -259,6 +260,23 @@ fn uncertain(value: &Map<String, Value>) -> Result<(), LedgerError> {
         ],
     )?;
     optional_content(value, "evidence")
+}
+
+fn reconciled(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "prepared_digest",
+            "decision",
+            "operator_evidence",
+            "observation",
+        ],
+        EMPTY,
+    )?;
+    digest(value, "prepared_digest")?;
+    enumeration(value, "decision", &["completed", "failed"])?;
+    content(value, "operator_evidence")?;
+    content(value, "observation")
 }
 
 fn observation(value: &Map<String, Value>) -> Result<(), LedgerError> {

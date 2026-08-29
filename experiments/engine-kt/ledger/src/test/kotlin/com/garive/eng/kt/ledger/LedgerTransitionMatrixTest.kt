@@ -191,6 +191,27 @@ class LedgerTransitionMatrixTest {
             "effect.prepared",
             "effect.completed",
         )
+        assertValid(
+            "session.opened",
+            "turn.started",
+            "execution.started",
+            "effect.prepared",
+            "effect.started",
+            "effect.uncertain",
+            "execution.suspended",
+            "turn.suspended",
+            "effect.reconciled",
+            "effect.observation",
+        )
+        assertTransitionError(
+            "session.opened",
+            "turn.started",
+            "execution.started",
+            "effect.prepared",
+            "effect.started",
+            "effect.uncertain",
+            "effect.observation",
+        )
     }
 
     @Test

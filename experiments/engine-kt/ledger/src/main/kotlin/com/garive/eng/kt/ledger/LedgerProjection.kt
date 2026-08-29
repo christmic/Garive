@@ -10,7 +10,7 @@ internal enum class TurnState { OPEN, SUSPENDED, COMPLETED, STOPPED, FAILED }
 internal enum class ExecutionState { ACTIVE, ABANDONED, COMPLETED, SUSPENDED, STOPPED, FAILED }
 internal enum class InvocationState {
     PREPARED, AUTHORIZED, STARTED, RECEIPT, COMPLETED, REJECTED, INTERRUPTED, UNAVAILABLE,
-    FAILED, DENIED, UNCERTAIN, OBSERVED,
+    FAILED, DENIED, UNCERTAIN, RECONCILED, OBSERVED,
 }
 
 internal data class InteractionRecord(
@@ -33,6 +33,7 @@ internal class LedgerProjection(
     private val toolGrants: MutableMap<ToolInvocationId, String> = mutableMapOf(),
     private val toolReceipts: MutableMap<ToolInvocationId, String> = mutableMapOf(),
     private val toolExecutors: MutableMap<ToolInvocationId, Pair<String, String>> = mutableMapOf(),
+    private val toolReconciledObservations: MutableMap<ToolInvocationId, kotlinx.serialization.json.JsonElement> = mutableMapOf(),
     private val suspensions: MutableMap<TurnId, String> = mutableMapOf(),
     private val interactions: MutableMap<String, InteractionRecord> = mutableMapOf(),
 ) {
@@ -48,6 +49,7 @@ internal class LedgerProjection(
         toolGrants.toMutableMap(),
         toolReceipts.toMutableMap(),
         toolExecutors.toMutableMap(),
+        toolReconciledObservations.toMutableMap(),
         suspensions.toMutableMap(),
         interactions.mapValues { (_, value) -> value.copy() }.toMutableMap(),
     )
@@ -91,6 +93,7 @@ internal class LedgerProjection(
             "effect.failed" -> transitionTool(fact, InvocationState.FAILED)
             "effect.denied" -> transitionTool(fact, InvocationState.DENIED)
             "effect.uncertain" -> transitionTool(fact, InvocationState.UNCERTAIN)
+            "effect.reconciled" -> reconcileTool(fact)
             "effect.observation" -> observeTool(fact)
             "tool.preparation_rejected" -> rejectToolPreparation(fact)
             "interaction.requested" -> requestInteraction(fact)
@@ -369,7 +372,6 @@ internal class LedgerProjection(
     }
 
     private fun observeTool(fact: FactDraft): LedgerError? {
-        requireActiveExecution(fact)?.let { return it }
         val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = tools[tool] ?: return LedgerError.MissingReference
@@ -377,15 +379,37 @@ internal class LedgerProjection(
                 InvocationState.COMPLETED,
                 InvocationState.FAILED,
                 InvocationState.DENIED,
-                InvocationState.UNCERTAIN,
+                InvocationState.RECONCILED,
             )
         ) {
             return LedgerError.InvalidTransition
         }
-        if (toolDigests[tool] != fact.payloadObject().text("prepared_digest")) {
+        val payload = fact.payloadObject()
+        if (current.second == InvocationState.RECONCILED) {
+            requireSuspendedExecution(fact)?.let { return it }
+            if (toolReconciledObservations[tool] != payload["observation"]) {
+                return LedgerError.InvalidTransition
+            }
+        } else {
+            requireActiveExecution(fact)?.let { return it }
+        }
+        if (toolDigests[tool] != payload.text("prepared_digest")) {
             return LedgerError.InvalidTransition
         }
         tools[tool] = execution to InvocationState.OBSERVED
+        return null
+    }
+
+    private fun reconcileTool(fact: FactDraft): LedgerError? {
+        requireSuspendedExecution(fact)?.let { return it }
+        val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        if (toolDigests[tool] != payload.text("prepared_digest") ||
+            tools[tool] != (execution to InvocationState.UNCERTAIN)
+        ) return LedgerError.InvalidTransition
+        tools[tool] = execution to InvocationState.RECONCILED
+        toolReconciledObservations[tool] = payload["observation"] ?: return LedgerError.InvalidFact
         return null
     }
 
@@ -410,6 +434,14 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         val current = executions[execution] ?: return LedgerError.MissingReference
         return if (current.first == turn && current.second == ExecutionState.ACTIVE) null else LedgerError.InvalidTransition
+    }
+
+    private fun requireSuspendedExecution(fact: FactDraft): LedgerError? {
+        val turn = fact.turnId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        return if (turns[turn] == TurnState.SUSPENDED &&
+            executions[execution] == (turn to ExecutionState.SUSPENDED)
+        ) null else LedgerError.InvalidTransition
     }
 
     private fun hasRecoveryPendingInvocation(executionId: ExecutionId? = null): Boolean {

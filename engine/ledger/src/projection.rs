@@ -36,6 +36,7 @@ enum InvocationState {
     Failed,
     Denied,
     Uncertain,
+    Reconciled,
     Observed,
 }
 
@@ -61,6 +62,7 @@ pub(crate) struct SessionProjection {
     tool_grants: BTreeMap<ToolInvocationId, String>,
     tool_receipts: BTreeMap<ToolInvocationId, String>,
     tool_executors: BTreeMap<ToolInvocationId, (String, String)>,
+    tool_reconciled_observations: BTreeMap<ToolInvocationId, Value>,
     suspensions: BTreeMap<TurnId, String>,
     interactions: BTreeMap<String, InteractionRecord>,
 }
@@ -118,6 +120,7 @@ impl SessionProjection {
             "effect.failed" => self.transition_tool(fact, InvocationState::Failed),
             "effect.denied" => self.transition_tool(fact, InvocationState::Denied),
             "effect.uncertain" => self.transition_tool(fact, InvocationState::Uncertain),
+            "effect.reconciled" => self.reconcile_tool(fact),
             "effect.observation" => self.observe_tool(fact),
             "tool.preparation_rejected" => self.reject_tool_preparation(fact),
             "interaction.requested" => self.request_interaction(fact),
@@ -547,30 +550,64 @@ impl SessionProjection {
     }
 
     fn observe_tool(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
-        self.require_active_execution(fact)?;
         let tool = required(&fact.tool_invocation_id)?;
         let execution = required(&fact.execution_id)?;
-        let (owner, state) = self
-            .tools
-            .get_mut(tool)
-            .ok_or(LedgerError::MissingReference)?;
+        let payload = payload(fact)?;
+        let (owner, state) = self.tools.get(tool).ok_or(LedgerError::MissingReference)?;
+        let state = *state;
         if owner != execution
             || !matches!(
-                *state,
+                state,
                 InvocationState::Completed
                     | InvocationState::Failed
                     | InvocationState::Denied
-                    | InvocationState::Uncertain
+                    | InvocationState::Reconciled
             )
         {
             return Err(LedgerError::InvalidTransition);
         }
+        if state == InvocationState::Reconciled {
+            self.require_suspended_execution(fact)?;
+            if self.tool_reconciled_observations.get(tool) != payload.get("observation") {
+                return Err(LedgerError::InvalidTransition);
+            }
+        } else {
+            self.require_active_execution(fact)?;
+        }
         if self.tool_digests.get(tool).map(String::as_str)
-            != Some(text(&payload(fact)?, "prepared_digest")?)
+            != Some(text(&payload, "prepared_digest")?)
         {
             return Err(LedgerError::InvalidTransition);
         }
-        *state = InvocationState::Observed;
+        self.tools
+            .get_mut(tool)
+            .expect("validated tool remains present")
+            .1 = InvocationState::Observed;
+        Ok(())
+    }
+
+    fn reconcile_tool(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_suspended_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let execution = required(&fact.execution_id)?;
+        let payload = payload(fact)?;
+        if self.tool_digests.get(tool).map(String::as_str)
+            != Some(text(&payload, "prepared_digest")?)
+            || self.tools.get(tool) != Some(&(execution.clone(), InvocationState::Uncertain))
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        self.tools
+            .get_mut(tool)
+            .expect("validated tool remains present")
+            .1 = InvocationState::Reconciled;
+        self.tool_reconciled_observations.insert(
+            tool.clone(),
+            payload
+                .get("observation")
+                .cloned()
+                .ok_or(LedgerError::InvalidFact)?,
+        );
         Ok(())
     }
 
@@ -598,6 +635,18 @@ impl SessionProjection {
             Some((owned_turn, ExecutionState::Active)) if owned_turn == turn => Ok(()),
             Some(_) => Err(LedgerError::InvalidTransition),
             None => Err(LedgerError::MissingReference),
+        }
+    }
+
+    fn require_suspended_execution(&self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let turn = required(&fact.turn_id)?;
+        let execution = required(&fact.execution_id)?;
+        if self.turns.get(turn) == Some(&TurnState::Suspended)
+            && self.executions.get(execution) == Some(&(turn.clone(), ExecutionState::Suspended))
+        {
+            Ok(())
+        } else {
+            Err(LedgerError::InvalidTransition)
         }
     }
 

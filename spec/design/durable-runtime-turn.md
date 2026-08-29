@@ -42,12 +42,19 @@ StartTurn {
 
 ContinueTurn {
   command_id, session_id, turn_id,
-  continuation_input,
+  continuation_input: ExternalInput(content) |
+                      Reconciliation(invocation_id, content) |
+                      ResourceReady,
   expected_suspension_id, expected_session_version
 }
 
 CancelTurn { command_id, session_id, turn_id, reason }
-ReconcileInvocation { command_id, invocation_id, operator_evidence, decision }
+ReconcileInvocation {
+  command_id, session_id, turn_id, invocation_id,
+  expected_suspension_id, expected_session_version,
+  operator_evidence,
+  decision: Completed(model_observation) | Failed(model_observation)
+}
 GetTurn { session_id, turn_id, through_position? }
 ```
 
@@ -224,6 +231,21 @@ digest. It then atomically:
 There is no `resume()` call on old Core state. Equal replay returns the same
 committed continuation; conflicting/replayed-after-consumption input fails.
 Stopped, Failed and Completed Turns cannot continue.
+
+Suspension/input matching is exact: approval or external-input suspension
+accepts `ExternalInput`; operator reconciliation accepts `Reconciliation` for
+the exact uncertain invocation only after a committed `effect.reconciled` plus
+matching `effect.observation`; resource unavailability accepts
+`ResourceReady`; partial output accepts `ExternalInput`. An interaction
+response must match the durable interaction, Prepared Call, schema and expiry
+bindings. No generic continuation string can bypass these checks.
+
+`ReconcileInvocation` never re-dispatches an effect. Against the fixed
+Suspended Turn prefix it verifies the uncertain invocation and suspension,
+then atomically commits `effect.reconciled` and the exact model-safe
+`effect.observation`. Inconclusive evidence is not a decision and commits
+nothing. Reopening the Turn remains a separate idempotent `ContinueTurn`
+command so a crash between reconciliation and continuation is recoverable.
 
 ## Restart reconstruction
 

@@ -16,6 +16,7 @@ internal fun validateEffectFact(kind: String, value: JsonObject) {
         "effect.completed" -> value.completed()
         "effect.failed" -> value.failed()
         "effect.uncertain" -> value.uncertain()
+        "effect.reconciled" -> value.reconciled()
         "effect.observation" -> value.observation()
         else -> throw IllegalArgumentException()
     }
@@ -107,6 +108,14 @@ private fun JsonObject.uncertain() {
     digest("prepared_digest")
     enum("reason", setOf("started_without_receipt", "receipt_invalid", "executor_state_unknown"))
     optionalContent("evidence")
+}
+
+private fun JsonObject.reconciled() {
+    exact(setOf("prepared_digest", "decision", "operator_evidence", "observation"))
+    digest("prepared_digest")
+    enum("decision", setOf("completed", "failed"))
+    content("operator_evidence")
+    content("observation")
 }
 
 private fun JsonObject.observation() {

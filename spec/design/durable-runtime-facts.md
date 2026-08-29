@@ -88,7 +88,8 @@ turn.started.v1 {
 }
 
 turn.input.v1 {
-  input_kind: "trusted_user" | "trusted_system" | "continuation"
+  input_kind: "trusted_user" | "trusted_system" | "external_input" |
+              "reconciliation" | "resource_ready"
   content: ContentBinding
   suspension_id?: SuspensionId
 }
@@ -380,6 +381,13 @@ effect.uncertain.v1 {
   evidence?: ContentBinding
 }
 
+effect.reconciled.v1 {
+  prepared_digest: Digest
+  decision: "completed" | "failed"
+  operator_evidence: ContentBinding
+  observation: ContentBinding
+}
+
 effect.observation.v1 {
   prepared_digest: Digest
   model_call_id: non-empty string
@@ -387,8 +395,16 @@ effect.observation.v1 {
 }
 ```
 
-The outer fact binds one `ToolInvocationId` throughout. `effect.observation`
-follows a denial or effect terminal and is committed before any later model
+The outer fact binds one `ToolInvocationId` throughout. `effect.reconciled` is
+legal only after `effect.uncertain`, while its owning Execution and Turn remain
+Suspended for `operator_reconciliation`; it is the only transition that can
+close that uncertainty from operator evidence. It commits atomically with an
+`effect.observation` carrying the exact same `observation` binding. A caller
+that cannot make a conclusive `completed` or `failed` decision leaves the Turn
+Suspended and appends nothing.
+
+`effect.observation` follows a denial, ordinary effect terminal, or reconciled
+effect and is committed before any later model
 request that contains the corresponding LLM `ToolObservation`.
 `tool.preparation_rejected` has no Tool Invocation ID because invalid input
 never receives one; it binds the outer Model Request/Execution IDs and is also

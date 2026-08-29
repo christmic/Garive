@@ -235,9 +235,8 @@ fn effect_position(
             "effect.started" => Ok(EffectRecoveryPosition::Started),
             "effect.receipt" => Ok(EffectRecoveryPosition::Receipt),
             "effect.uncertain" => Ok(EffectRecoveryPosition::Uncertain),
-            "effect.completed" | "effect.failed" | "effect.denied" | "effect.observation" => {
-                Ok(EffectRecoveryPosition::Terminal)
-            }
+            "effect.completed" | "effect.failed" | "effect.denied" | "effect.reconciled"
+            | "effect.observation" => Ok(EffectRecoveryPosition::Terminal),
             _ => Err(RuntimeCommandError::CorruptLedger),
         }),
         EffectRecoveryPosition::None,

@@ -135,6 +135,7 @@ under the still-open Turn, subject to the C6 recovery bound.
 
 ```text
 Prepared -> Started -> terminal fact
+effect.uncertain -> effect.reconciled -> effect.observation
 ```
 
 The request/effect digest is committed in `Prepared` before dispatch. A
@@ -146,6 +147,10 @@ Tool authorization is an optional transition between `Prepared` and
 `Started`. A trustworthy `effect.receipt` proves that the effect returned and
 may be followed by `effect.completed`; it is recovery-terminal for uncertainty
 queries but does not replace the explicit completion fact.
+
+`effect.uncertain` cannot transition directly to an observation or ordinary
+executor terminal. Only the C6 operator-reconciliation transaction may append
+`effect.reconciled`, with durable evidence and a model-safe observation.
 
 ## Append transaction
 

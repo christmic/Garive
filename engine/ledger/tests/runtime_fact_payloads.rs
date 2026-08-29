@@ -43,7 +43,7 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 fn every_c6_payload_fixture_is_applied_as_v1() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 33);
+    assert_eq!(cases.len(), 34);
     for case in cases {
         assert_eq!(
             validate_runtime_fact(&fact(case, 1)),
@@ -120,7 +120,7 @@ fn malformed_digests_and_inline_content_mismatches_are_rejected() {
             );
         }
     }
-    assert_eq!(digest_cases, 27);
+    assert_eq!(digest_cases, 28);
 }
 
 #[test]
