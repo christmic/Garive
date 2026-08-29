@@ -84,8 +84,8 @@ amendment. The focused Specs define their exact payloads and transitions:
 O0 adds no durable fact family. It derives signals from existing committed
 facts and live events. Each name becomes a valid L0 fact only when its focused
 behavior slice lands with the matching C6F schema, validators and shared
-fixture. S0 and M0 have admitted their listed facts; later families stay opaque
-until their slices land.
+fixture. S0, M0 and K0 have admitted their listed facts; later families stay
+opaque until their slices land.
 
 ## Cross-language delivery target
 

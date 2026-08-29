@@ -67,7 +67,7 @@ planned without reopening a narrower completed row.
 | Slice | Design | Spec | API | Code | Tests | State | Admission dependency |
 |---|---|---|---|---|---|---|---|
 | Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds and revision fixtures, exact L0 payloads, Runtime namespace/restricted authority, atomic writes, and SQLite commit-before-context/restart evidence green. |
-| Knowledge | accepted | accepted | documented | skeleton | missing | planned | Freeze K0/CF0 fixtures after M0, then implement connector lifecycle and committed evidence. |
+| Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure fixtures, exact L0 lifecycle transitions, explicit source authority, connector commit ordering, Core attribution, and SQLite crash-position recovery green. |
 | Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds fixtures, Rust/Kotlin Core narrowing, L0 validation, and SQLite commit-before-model/restart evidence green. |
 | Scheduler | accepted | accepted | documented | skeleton | missing | planned | Freeze Q0/CF0 fixtures, then implement recurrence and SQLite occurrence leasing. |
 | Multi-Agent | accepted | accepted | documented | skeleton | missing | planned | Coordinate DelegationPending/result continuation fixtures, then implement budgeted parent/child recovery. |
