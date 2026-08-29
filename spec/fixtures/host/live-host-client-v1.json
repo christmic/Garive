@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "contract": "garive-live-host-client-v1",
+  "limits": {"max_command_bytes":4096,"max_event_bytes":8192,"max_events":16},
+  "session_id": "session-client",
+  "valid_stream": [
+    {"api_version":"v1","session_id":"session-client","position":1,"event":"session.created","turn_id":"","execution_id":"","text":""},
+    {"api_version":"v1","session_id":"session-client","position":2,"event":"turn.started","turn_id":"turn-client","execution_id":"execution-client","text":""},
+    {"api_version":"v1","session_id":"session-client","position":5,"event":"future.event","turn_id":"turn-client","execution_id":"execution-client","text":""},
+    {"api_version":"v1","session_id":"session-client","position":9,"event":"turn.completed","turn_id":"turn-client","execution_id":"execution-client","text":"durable answer"}
+  ],
+  "expected": {"cursor":9,"terminal":"completed","text":"durable answer","unknown_events":["future.event"]},
+  "reconnect": {
+    "after_position":2,
+    "events":[
+      {"api_version":"v1","session_id":"session-client","position":2,"event":"turn.started","turn_id":"turn-client","execution_id":"execution-client","text":""},
+      {"api_version":"v1","session_id":"session-client","position":5,"event":"future.event","turn_id":"turn-client","execution_id":"execution-client","text":""},
+      {"api_version":"v1","session_id":"session-client","position":9,"event":"turn.completed","turn_id":"turn-client","execution_id":"execution-client","text":"durable answer"}
+    ],
+    "expected_applied_positions":[5,9]
+  },
+  "disconnect_before_terminal": [
+    {"api_version":"v1","session_id":"session-client","position":1,"event":"session.created","turn_id":"","execution_id":"","text":""},
+    {"api_version":"v1","session_id":"session-client","position":2,"event":"turn.started","turn_id":"turn-client","execution_id":"execution-client","text":""}
+  ],
+  "invalid_streams": [
+    {"name":"wrong-version","mutation":"api_version_v2","expected":"invalid_event"},
+    {"name":"wrong-session","mutation":"session_other","expected":"invalid_event"},
+    {"name":"zero-position","mutation":"position_zero","expected":"invalid_event"},
+    {"name":"backward-position","mutation":"position_backward","expected":"event_order_violation"},
+    {"name":"conflicting-duplicate","mutation":"duplicate_conflict","expected":"event_order_violation"},
+    {"name":"too-many-events","mutation":"event_count_17","expected":"event_limit_exceeded"}
+  ],
+  "host_errors": [
+    {"status":400,"code":"invalid_request"},
+    {"status":404,"code":"not_found"},
+    {"status":409,"code":"command_conflict"},
+    {"status":409,"code":"concurrent_modification"},
+    {"status":412,"code":"precondition_failed"},
+    {"status":503,"code":"durability_unavailable"},
+    {"status":500,"code":"corrupt_state"}
+  ],
+  "failure_codes":["invalid_configuration","invalid_command","invalid_event","event_order_violation","event_limit_exceeded","host_failure","unknown_host_error","transport_failure","follow_deadline"]
+}

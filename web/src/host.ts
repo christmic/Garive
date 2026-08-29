@@ -1,30 +1,191 @@
-/** Minimal Host v1 event fields consumed by the web fake-shell reducer. */
+/** Exact H1 public event consumed by browser presentation state. */
 export interface HostEvent {
-  readonly position: number;
-  readonly event: string;
-  readonly text?: string;
+  readonly api_version: string; readonly session_id: string; readonly position: number;
+  readonly event: string; readonly turn_id: string; readonly execution_id: string; readonly text: string;
 }
-
-/** Deterministic ordered event stream used until a live durable Host exists. */
-export const fakeEvents: readonly HostEvent[] = [
-  { position: 1, event: "session.created" },
-  { position: 2, event: "turn.started" },
-  { position: 3, event: "output.delta", text: "hello " },
-  { position: 4, event: "output.delta", text: "from Garive" },
-  { position: 5, event: "turn.completed" },
-];
-
-/** Validates a complete fake Host stream and returns its concatenated output. */
-export function runFakeHost(events: readonly HostEvent[] = fakeEvents): string {
-  let previous = 0;
-  let terminal = false;
-  let output = "";
-  for (const item of events) {
-    if (terminal || item.position !== previous + 1) throw new Error("invalid Host API sequence");
-    previous = item.position;
-    if (item.event === "output.delta") output += item.text ?? "";
-    if (item.event === "turn.completed") terminal = true;
+export type HostTerminal = "completed" | "suspended" | "stopped" | "failed";
+/** Ephemeral browser projection; durable truth remains in H1. */
+export interface HostView {
+  readonly cursor: number; readonly terminal?: HostTerminal; readonly text: string;
+  readonly unknownEvents: readonly string[]; readonly fingerprints: Readonly<Record<number, string>>;
+}
+export interface HostClientLimits {
+  readonly maxCommandBytes: number; readonly maxEventBytes: number;
+  readonly maxEvents: number; readonly followDeadlineMs: number;
+}
+export const HOST_CLIENT_FAILURES = [
+  "invalid_configuration", "invalid_command", "invalid_event", "event_order_violation",
+  "event_limit_exceeded", "host_failure", "unknown_host_error", "transport_failure", "follow_deadline",
+] as const;
+export type HostClientFailure = typeof HOST_CLIENT_FAILURES[number];
+/** Stable safe client failure without command, event, header, or body content. */
+export class HostClientError extends Error {
+  public constructor(public readonly code: HostClientFailure, public readonly status?: number) {
+    super(code); this.name = "HostClientError";
   }
-  if (!terminal) throw new Error("missing Host API terminal");
-  return output;
 }
+export interface CreateSessionResponse {
+  readonly session_id: string; readonly agent_instance_id: string; readonly committed_position: number;
+}
+export interface TurnCommandResponse {
+  readonly session_id: string; readonly turn_id: string;
+  readonly execution_id: string; readonly committed_position: number;
+}
+
+const KNOWN_EVENTS = new Set([
+  "session.created", "turn.started", "turn.completed", "turn.suspended", "turn.stopped", "turn.failed",
+]);
+const KNOWN_HOST_ERRORS = new Set([
+  "invalid_request", "not_found", "command_conflict", "concurrent_modification",
+  "precondition_failed", "durability_unavailable", "corrupt_state",
+]);
+
+/** Reduces ordered replay/follow events without treating EOF as terminal. */
+export function reduceHostEvents(
+  sessionId: string, events: readonly HostEvent[],
+  initial: HostView = { cursor: 0, text: "", unknownEvents: [], fingerprints: {} }, maxEvents = 16,
+): HostView {
+  if (!sessionId || maxEvents <= 0) throw new HostClientError("invalid_configuration");
+  if (events.length > maxEvents) throw new HostClientError("event_limit_exceeded");
+  let cursor = initial.cursor; let terminal = initial.terminal; let text = initial.text;
+  const savedCursor = initial.cursor;
+  const unknownEvents = [...initial.unknownEvents];
+  const fingerprints: Record<number, string> = { ...initial.fingerprints };
+  for (const event of events) {
+    if (event.api_version !== "v1" || event.session_id !== sessionId ||
+        !Number.isSafeInteger(event.position) || event.position <= 0) throw new HostClientError("invalid_event");
+    const fingerprint = JSON.stringify(event); const prior = fingerprints[event.position];
+    if (prior !== undefined) {
+      if (prior !== fingerprint) throw new HostClientError("event_order_violation");
+      continue;
+    }
+    if (event.position <= savedCursor) continue;
+    if (event.position <= cursor) throw new HostClientError("event_order_violation");
+    if (terminal !== undefined) throw new HostClientError("event_order_violation");
+    cursor = event.position; fingerprints[event.position] = fingerprint;
+    switch (event.event) {
+      case "turn.completed": terminal = "completed"; text = event.text; break;
+      case "turn.suspended": terminal = "suspended"; break;
+      case "turn.stopped": terminal = "stopped"; break;
+      case "turn.failed": terminal = "failed"; break;
+      default: if (!KNOWN_EVENTS.has(event.event) && !unknownEvents.includes(event.event)) unknownEvents.push(event.event);
+    }
+  }
+  return { cursor, terminal, text, unknownEvents, fingerprints };
+}
+
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+/** Explicit loopback HTTP/SSE implementation of A1. */
+export class FetchHostClient {
+  private readonly baseUrl: string;
+  public constructor(baseUrl: string, private readonly limits: HostClientLimits, private readonly fetcher: FetchLike = fetch) {
+    this.baseUrl = validateBaseUrl(baseUrl);
+    if ([limits.maxCommandBytes, limits.maxEventBytes, limits.maxEvents, limits.followDeadlineMs]
+      .some((value) => !Number.isSafeInteger(value) || value <= 0)) throw new HostClientError("invalid_configuration");
+  }
+  public async createSession(commandId: string, definitionId: string): Promise<CreateSessionResponse> {
+    return validateSessionResponse(await this.post("/v1/sessions", commandId, { agent_definition_id: definitionId }));
+  }
+  public async startTurn(commandId: string, sessionId: string, text: string): Promise<TurnCommandResponse> {
+    if (!sessionId) throw new HostClientError("invalid_command");
+    const result = validateTurnResponse(await this.post(
+      `/v1/sessions/${encodeURIComponent(sessionId)}/turns`, commandId, { text },
+    ));
+    if (result.session_id !== sessionId) throw new HostClientError("invalid_event");
+    return result;
+  }
+  public async followUntilTerminal(sessionId: string, afterPosition = 0): Promise<HostView> {
+    if (!sessionId || !Number.isSafeInteger(afterPosition) || afterPosition < 0) throw new HostClientError("invalid_command");
+    const controller = new AbortController();
+    const timeout = globalThis.setTimeout(() => controller.abort(), this.limits.followDeadlineMs);
+    let view: HostView = { cursor: afterPosition, text: "", unknownEvents: [], fingerprints: {} };
+    try {
+      const response = await this.fetcher(
+        `${this.baseUrl}/v1/sessions/${encodeURIComponent(sessionId)}/events?after_position=${afterPosition}`,
+        { method: "GET", redirect: "error", signal: controller.signal },
+      );
+      if (response.redirected) throw new HostClientError("transport_failure");
+      if (!response.ok) await throwHostFailure(response);
+      if (!response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream") || !response.body) {
+        throw new HostClientError("transport_failure");
+      }
+      const reader = response.body.getReader(); const decoder = new TextDecoder("utf-8", { fatal: true });
+      let pending = ""; let count = 0;
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new HostClientError("transport_failure");
+        pending += decoder.decode(chunk.value, { stream: true });
+        let boundary: number;
+        while ((boundary = pending.indexOf("\n\n")) >= 0) {
+          const block = pending.slice(0, boundary).replaceAll("\r", ""); pending = pending.slice(boundary + 2);
+          const data = block.split("\n").filter((line) => line.startsWith("data: "))
+            .map((line) => line.slice(6)).join("\n");
+          if (!data) continue;
+          if (new TextEncoder().encode(data).length > this.limits.maxEventBytes) throw new HostClientError("event_limit_exceeded");
+          if (++count > this.limits.maxEvents) throw new HostClientError("event_limit_exceeded");
+          let event: HostEvent;
+          try { event = JSON.parse(data) as HostEvent; } catch { throw new HostClientError("invalid_event"); }
+          view = reduceHostEvents(sessionId, [event], view, this.limits.maxEvents);
+          if (view.terminal !== undefined) { await reader.cancel(); return view; }
+        }
+      }
+    } catch (error) {
+      if (error instanceof HostClientError) throw error;
+      if (controller.signal.aborted) throw new HostClientError("follow_deadline");
+      throw new HostClientError("transport_failure");
+    } finally { globalThis.clearTimeout(timeout); }
+  }
+  private async post(path: string, commandId: string, body: Record<string, string>): Promise<unknown> {
+    if (!validCommandId(commandId) || Object.values(body).some((value) => !value)) throw new HostClientError("invalid_command");
+    const encoded = JSON.stringify(body);
+    if (new TextEncoder().encode(encoded).length > this.limits.maxCommandBytes) throw new HostClientError("invalid_command");
+    let response: Response;
+    try {
+      response = await this.fetcher(`${this.baseUrl}${path}`, {
+        method: "POST", redirect: "error",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": commandId }, body: encoded,
+      });
+    } catch { throw new HostClientError("transport_failure"); }
+    if (response.redirected) throw new HostClientError("transport_failure");
+    if (!response.ok) await throwHostFailure(response);
+    const raw = await response.text();
+    if (new TextEncoder().encode(raw).length > this.limits.maxEventBytes) throw new HostClientError("invalid_event");
+    try { return JSON.parse(raw) as unknown; } catch { throw new HostClientError("invalid_event"); }
+  }
+}
+
+function validateBaseUrl(value: string): string {
+  let url: URL; try { url = new URL(value); } catch { throw new HostClientError("invalid_configuration"); }
+  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) ||
+      url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new HostClientError("invalid_configuration");
+  }
+  return url.origin;
+}
+function validCommandId(value: string): boolean {
+  return value.length > 0 && value.length <= 128 && [...value].every((character) => {
+    const code = character.charCodeAt(0); return code >= 0x21 && code <= 0x7e;
+  });
+}
+function validateSessionResponse(value: unknown): CreateSessionResponse {
+  if (!isRecord(value) || !text(value.session_id) || !text(value.agent_instance_id) || !position(value.committed_position)) {
+    throw new HostClientError("invalid_event");
+  }
+  return value as unknown as CreateSessionResponse;
+}
+function validateTurnResponse(value: unknown): TurnCommandResponse {
+  if (!isRecord(value) || !text(value.session_id) || !text(value.turn_id) || !text(value.execution_id) ||
+      !position(value.committed_position)) throw new HostClientError("invalid_event");
+  return value as unknown as TurnCommandResponse;
+}
+async function throwHostFailure(response: Response): Promise<never> {
+  let code: unknown;
+  try { code = (JSON.parse(await response.text()) as Record<string, unknown>).code; } catch { /* safe fallback */ }
+  if (typeof code === "string" && KNOWN_HOST_ERRORS.has(code)) throw new HostClientError("host_failure", response.status);
+  throw new HostClientError("unknown_host_error", response.status);
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function text(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
+function position(value: unknown): value is number { return Number.isSafeInteger(value) && Number(value) > 0; }
