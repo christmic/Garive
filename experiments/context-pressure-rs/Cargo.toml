@@ -16,6 +16,7 @@ garive-eval = { path = "../../engine/eval" }
 garive-llm = { path = "../../engine/llm" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 garive-provider-compatible = { path = "../../providers/compatible" }
+garive-provider-profile = { path = "../../providers/profile" }
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -24,5 +25,4 @@ sha2.workspace = true
 
 [dev-dependencies]
 garive-adapter-anthropic-messages = { path = "../../adapters/anthropic-messages" }
-garive-provider-profile = { path = "../../providers/profile" }
 tempfile = "3"
