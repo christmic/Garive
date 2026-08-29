@@ -36,21 +36,23 @@ class MessagesProtocolTest {
     @Test
     fun `official request fixture is encoded exactly`() {
         val fixture = json("spec/fixtures/protocols/anthropic-messages/request.json")
-        val messages = (fixture.getValue("messages") as JsonArray).map { element ->
-            val turn = element.jsonObject
-            Message(
-                turn.getValue("role").jsonPrimitive.content,
-                MessageContent.Blocks((turn.getValue("content") as JsonArray).map { block -> block.jsonObject }),
-            )
-        }
+        val messages = listOf(Message(
+            MessageRole.USER,
+            MessageContent.Blocks(listOf(ContentBlock.Text("hello"))),
+        ))
+        val fixtureTool = (fixture["tools"] as JsonArray)[0].jsonObject
         val request = CreateMessageRequest(
             model = fixture.getValue("model").jsonPrimitive.content,
             maxTokens = fixture.getValue("max_tokens").jsonPrimitive.content.toULong(),
             messages = messages,
             stream = true,
-            system = fixture["system"],
-            tools = (fixture["tools"] as JsonArray).map { it.jsonObject },
-            metadata = fixture["metadata"]?.jsonObject,
+            system = SystemPrompt.Blocks(listOf(ContentBlock.Text("be concise"))),
+            tools = listOf(Tool(
+                name = "weather",
+                inputSchema = fixtureTool.getValue("input_schema").jsonObject,
+                description = "Lookup weather",
+            )),
+            metadata = Metadata("fixture"),
         )
         val prepared = adapter.prepare(request)
         assertEquals("https://compatible.example/messages", prepared.uri)
@@ -81,6 +83,66 @@ class MessagesProtocolTest {
     }
 
     @Test
+    fun `portable source output thinking and choice unions are typed`() {
+        val request = CreateMessageRequest(
+            model = "model",
+            maxTokens = 2_048u,
+            messages = listOf(Message(MessageRole.USER, MessageContent.Blocks(listOf(
+                ContentBlock.Image(
+                    ImageSource.Base64(ImageMediaType.PNG, "aGVsbG8="),
+                    CacheControl(CacheTtl.ONE_HOUR),
+                ),
+                ContentBlock.Document(
+                    DocumentSource.Text("document"),
+                    citations = CitationsConfig(true),
+                ),
+            )))),
+            stream = false,
+            toolChoice = ToolChoice.None,
+            thinking = ThinkingConfig.Enabled(1_024u, ThinkingDisplay.OMITTED),
+            outputConfig = OutputConfig(
+                effort = Effort.XHIGH,
+                format = JsonOutputFormat(inlineJson("""{"type":"object"}""")),
+            ),
+        )
+        val value = Json.parseToJsonElement(adapter.prepare(request).body.decodeToString()).jsonObject
+        assertEquals("image/png", value.getValue("messages").let { it as JsonArray }[0].jsonObject
+            .getValue("content").let { it as JsonArray }[0].jsonObject
+            .getValue("source").jsonObject.getValue("media_type").jsonPrimitive.content)
+        assertEquals("none", value.getValue("tool_choice").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals("omitted", value.getValue("thinking").jsonObject.getValue("display").jsonPrimitive.content)
+        assertEquals("json_schema", value.getValue("output_config").jsonObject
+            .getValue("format").jsonObject.getValue("type").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `invalid source thinking and tool-result block fail before transport`() {
+        val invalidSource = CreateMessageRequest(
+            "model", 2_048u,
+            listOf(Message(MessageRole.USER, MessageContent.Blocks(listOf(
+                ContentBlock.Image(ImageSource.Url("")),
+            )))), false,
+        )
+        assertFails { adapter.prepare(invalidSource) }
+        val invalidThinking = invalidSource.copy(
+            messages = listOf(Message(MessageRole.USER, MessageContent.Text("hello"))),
+            maxTokens = 1_024u,
+            thinking = ThinkingConfig.Enabled(1_024u),
+        )
+        assertFails { adapter.prepare(invalidThinking) }
+        val invalidResult = invalidThinking.copy(
+            maxTokens = 2_048u,
+            thinking = null,
+            messages = listOf(Message(MessageRole.USER, MessageContent.Blocks(listOf(
+                ContentBlock.ToolResult("call", ToolResultContent.Blocks(listOf(
+                    ContentBlock.ToolUse("nested", "bad", JsonObject(emptyMap())),
+                ))),
+            )))),
+        )
+        assertFails { adapter.prepare(invalidResult) }
+    }
+
+    @Test
     fun `stream is invariant under every byte split`() {
         val bytes = bytes("spec/fixtures/protocols/anthropic-messages/complete.sse")
         fun decode(first: ByteArray, second: ByteArray): List<String> {
@@ -102,4 +164,7 @@ class MessagesProtocolTest {
 
     private fun bytes(path: String): ByteArray = root.resolve(path).readBytes()
     private fun json(path: String): JsonObject = Json.parseToJsonElement(bytes(path).decodeToString()).jsonObject
+
+    private fun inlineJson(value: String): JsonObject =
+        Json.parseToJsonElement(value).jsonObject
 }
