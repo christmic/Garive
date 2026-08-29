@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "contract": "governed-effects",
+  "prepared_call": {
+    "model_call_id": "call-a",
+    "tool_name": "read_file",
+    "tool_revision": "1",
+    "normalized_arguments": "{\"path\":\"src/main.rs\"}",
+    "input_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+    "requirements": {
+      "capabilities": ["filesystem_read"],
+      "max_duration_ms": 5000,
+      "max_output_bytes": 4096
+    },
+    "replay_class": "read_only"
+  },
+  "invocation_id": "invocation-1",
+  "grants": {
+    "good": {
+      "grant_id": "grant-1",
+      "invocation_id": "invocation-1",
+      "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+      "tool_name": "read_file",
+      "tool_revision": "1",
+      "granted_requirements": {
+        "capabilities": ["filesystem_read"],
+        "max_duration_ms": 4000,
+        "max_output_bytes": 2048
+      },
+      "constraints_digest": "constraints-v1",
+      "authority_revision": "policy-7"
+    },
+    "wrong_digest": {
+      "grant_id": "grant-2",
+      "invocation_id": "invocation-1",
+      "prepared_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "tool_name": "read_file",
+      "tool_revision": "1",
+      "granted_requirements": {
+        "capabilities": ["filesystem_read"],
+        "max_duration_ms": 4000,
+        "max_output_bytes": 2048
+      },
+      "constraints_digest": "constraints-v1",
+      "authority_revision": "policy-7"
+    },
+    "wider": {
+      "grant_id": "grant-3",
+      "invocation_id": "invocation-1",
+      "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+      "tool_name": "read_file",
+      "tool_revision": "1",
+      "granted_requirements": {
+        "capabilities": ["filesystem_read", "network"],
+        "max_duration_ms": 6000,
+        "max_output_bytes": 8192
+      },
+      "constraints_digest": "constraints-v1",
+      "authority_revision": "policy-7"
+    }
+  },
+  "interaction": {
+    "interaction_id": "interaction-1",
+    "invocation_id": "invocation-1",
+    "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+    "kind": "approval",
+    "prompt": {"title": "Approve file read", "risk": "read_only"},
+    "response_schema": {"type": "boolean"},
+    "expiry_policy": "turn_bound"
+  },
+  "receipt": {
+    "receipt_id": "receipt-1",
+    "invocation_id": "invocation-1",
+    "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
+    "grant_id": "grant-1",
+    "executor_id": "local.read",
+    "executor_revision": "4",
+    "terminal_classification": "completed",
+    "result_digest": "result-v1"
+  },
+  "scenarios": [
+    {
+      "name": "approve-completed",
+      "operations": [
+        {"kind": "approve", "grant": "good"},
+        {"kind": "started", "dispatch_attempt_id": "dispatch-1"},
+        {"kind": "completed", "receipt": "base", "content": {"text": "hello"}, "truncated": false}
+      ],
+      "expected": {
+        "actions": ["authorize", "dispatch", "observation_succeeded"],
+        "execution_command_count": 1,
+        "final_state": "completed",
+        "observation": {"status": "succeeded", "content": {"text": "hello"}, "truncated": false}
+      }
+    },
+    {
+      "name": "deny-without-dispatch",
+      "operations": [{"kind": "deny", "code": "actor_denied", "details": "Not allowed."}],
+      "expected": {"actions": ["authorize", "observation_rejected"], "execution_command_count": 0, "final_state": "denied", "observation": {"status": "rejected", "code": "actor_denied", "details": "Not allowed."}}
+    },
+    {
+      "name": "replacement-is-not-approval",
+      "operations": [{"kind": "replacement_required"}],
+      "expected": {"actions": ["authorize", "observation_rejected"], "execution_command_count": 0, "final_state": "replaced", "observation": {"status": "rejected", "code": "replacement_required"}}
+    },
+    {
+      "name": "interaction-resolved-reauthorizes",
+      "operations": [
+        {"kind": "interaction_required"},
+        {"kind": "interaction_resolved", "response": true},
+        {"kind": "approve", "grant": "good"},
+        {"kind": "started", "dispatch_attempt_id": "dispatch-1"},
+        {"kind": "completed", "receipt": "base", "content": {"ok": true}, "truncated": false}
+      ],
+      "expected": {"actions": ["authorize", "suspend_approval", "authorize", "dispatch", "observation_succeeded"], "execution_command_count": 1, "final_state": "completed", "observation": {"status": "succeeded", "content": {"ok": true}, "truncated": false}}
+    },
+    {
+      "name": "interaction-cancelled",
+      "operations": [{"kind": "interaction_required"}, {"kind": "interaction_cancelled"}],
+      "expected": {"actions": ["authorize", "suspend_approval", "observation_rejected"], "execution_command_count": 0, "final_state": "denied", "observation": {"status": "rejected", "code": "interaction_cancelled"}}
+    },
+    {
+      "name": "unsupported-before-start",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "unsupported", "requirement": "sandbox.filesystem_read"}],
+      "expected": {"actions": ["authorize", "dispatch", "fail_requirement_unsupported"], "execution_command_count": 1, "final_state": "failed"}
+    },
+    {
+      "name": "started-failed-with-receipt",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "failed", "receipt": "base", "code": "read_failed", "details": "File unavailable."}],
+      "expected": {"actions": ["authorize", "dispatch", "observation_failed"], "execution_command_count": 1, "final_state": "failed", "observation": {"status": "failed", "code": "read_failed", "details": "File unavailable."}}
+    },
+    {
+      "name": "started-uncertain",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "uncertain", "evidence": "transport_lost"}],
+      "expected": {"actions": ["authorize", "dispatch", "suspend_reconciliation"], "execution_command_count": 1, "final_state": "uncertain"}
+    },
+    {
+      "name": "grant-digest-mismatch",
+      "operations": [{"kind": "approve", "grant": "wrong_digest"}],
+      "expected": {"actions": ["authorize", "fail_grant_mismatch"], "execution_command_count": 0, "final_state": "failed"}
+    },
+    {
+      "name": "grant-requirements-widened",
+      "operations": [{"kind": "approve", "grant": "wider"}],
+      "expected": {"actions": ["authorize", "fail_grant_mismatch"], "execution_command_count": 0, "final_state": "failed"}
+    },
+    {
+      "name": "duplicate-approval-idempotent",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "approve", "grant": "good"}],
+      "expected": {"actions": ["authorize", "dispatch", "none"], "execution_command_count": 1, "final_state": "authorized"}
+    },
+    {
+      "name": "conflicting-verdict-fails",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "deny", "code": "late_denial"}],
+      "expected": {"actions": ["authorize", "dispatch", "fail_invocation_conflict"], "execution_command_count": 1, "final_state": "failed"}
+    },
+    {
+      "name": "completed-without-receipt-fails",
+      "operations": [{"kind": "approve", "grant": "good"}, {"kind": "started", "dispatch_attempt_id": "dispatch-1"}, {"kind": "completed", "content": {"ok": true}, "truncated": false}],
+      "expected": {"actions": ["authorize", "dispatch", "fail_corrupt_recovery_state"], "execution_command_count": 1, "final_state": "failed"}
+    }
+  ],
+  "recovery_cases": [
+    {"name": "before-started", "position": "authorized", "replay_class": "never_replay", "executor_proves_replay": false, "expected": "revalidate_grant"},
+    {"name": "read-only-proof", "position": "started_no_receipt", "replay_class": "read_only", "executor_proves_replay": true, "expected": "retry_same_invocation"},
+    {"name": "read-only-no-proof", "position": "started_no_receipt", "replay_class": "read_only", "executor_proves_replay": false, "expected": "reconcile_operator"},
+    {"name": "idempotent-proof", "position": "started_no_receipt", "replay_class": "idempotent", "executor_proves_replay": true, "expected": "retry_same_invocation"},
+    {"name": "receipt-recoverable", "position": "started_no_receipt", "replay_class": "receipt_recoverable", "executor_proves_replay": true, "expected": "recover_executor_receipt"},
+    {"name": "never-replay", "position": "started_no_receipt", "replay_class": "never_replay", "executor_proves_replay": true, "expected": "reconcile_operator"},
+    {"name": "receipt-without-result", "position": "receipt_no_result", "replay_class": "never_replay", "executor_proves_replay": false, "expected": "reconstruct_from_receipt"},
+    {"name": "terminal", "position": "terminal", "replay_class": "never_replay", "executor_proves_replay": false, "expected": "return_terminal"}
+  ],
+  "durable_order": ["effect.prepared", "effect.authorized", "effect.started", "effect.receipt", "effect.completed", "effect.observation"]
+}
