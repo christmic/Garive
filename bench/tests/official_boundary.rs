@@ -181,7 +181,7 @@ fn official_configuration_has_no_implicit_defaults() {
         invocation: Mutex::new(None),
     };
     let mut invalid = config();
-    invalid.jobs = 1;
+    invalid.jobs = 0;
     assert_eq!(
         SweBenchOfficialEvaluator::new(invalid, &process)
             .err()
