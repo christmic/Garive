@@ -23,10 +23,6 @@ import com.garive.eng.kt.tools.ToolCatalog
 import com.garive.eng.kt.tools.ToolContractResult
 import com.garive.eng.kt.tools.ToolDefinition
 import com.garive.eng.kt.tools.ToolIntent
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Runs one bounded model-only kernel Execution against frozen ports.
@@ -315,61 +311,6 @@ internal suspend fun executeKernel(
             }
         }
     }
-}
-
-@OptIn(ExperimentalSerializationApi::class)
-private fun memoryInput(value: AttributedMemory): ModelInputItem.Message {
-    val evidence = JsonArray(value.evidence.map { item ->
-        JsonObject(
-            mapOf(
-                "session_id" to JsonPrimitive(item.sessionId),
-                "position" to JsonPrimitive(item.position),
-                "fact_id" to JsonPrimitive(item.factId),
-                "payload_digest" to JsonPrimitive(item.payloadDigest),
-            ),
-        )
-    })
-    val payload = JsonObject(
-        mapOf(
-            "type" to JsonPrimitive("garive.memory"),
-            "record_id" to JsonPrimitive(value.recordId),
-            "revision_id" to JsonPrimitive(value.revisionId),
-            "content_digest" to JsonPrimitive(value.contentDigest),
-            "evidence" to evidence,
-            "content" to JsonPrimitive(value.contentUtf8),
-        ),
-    )
-    return ModelInputItem.Message(ModelRole.USER, listOf(ModelInputContent.Text(payload.toString())))
-}
-
-@OptIn(ExperimentalSerializationApi::class)
-private fun knowledgeInput(value: AttributedKnowledge): ModelInputItem.Message {
-    val citation = buildMap {
-        put("locator_kind", JsonPrimitive(value.citation.locatorKind))
-        put("locator", JsonPrimitive(value.citation.locator))
-        value.citation.title?.let { put("title", JsonPrimitive(it)) }
-        value.citation.canonicalUri?.let { put("canonical_uri", JsonPrimitive(it)) }
-        put("content_digest", JsonPrimitive(value.citation.contentDigest))
-    }
-    val payload = buildMap {
-        put("type", JsonPrimitive("garive.knowledge"))
-        put("source_id", JsonPrimitive(value.sourceId))
-        put("source_revision", JsonPrimitive(value.sourceRevision))
-        put("evidence_id", JsonPrimitive(value.evidenceId))
-        value.sourceSnapshotDigest?.let { put("source_snapshot_digest", JsonPrimitive(it)) }
-        put("content_digest", JsonPrimitive(value.contentDigest))
-        put("content_byte_length", JsonPrimitive(value.contentByteLength))
-        put("citation", JsonObject(citation))
-        put("retrieved_at_utc", JsonPrimitive(value.retrievedAtUtc))
-        put("freshness", JsonPrimitive(value.freshness))
-        put("trust_class", JsonPrimitive(value.trustClass))
-        put("rank_basis_points", JsonPrimitive(value.rankBasisPoints))
-        put("content", JsonPrimitive(value.contentUtf8))
-    }
-    return ModelInputItem.Message(
-        ModelRole.USER,
-        listOf(ModelInputContent.Text(JsonObject(payload).toString())),
-    )
 }
 
 private fun modelFailure(failure: ModelPortFailure): AgentFailureReason = when (failure) {

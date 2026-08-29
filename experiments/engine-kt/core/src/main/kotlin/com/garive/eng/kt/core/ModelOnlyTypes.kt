@@ -9,8 +9,6 @@ import com.garive.eng.kt.llm.ModelStreamEvent
 import com.garive.eng.kt.llm.ModelTargetId
 import com.garive.eng.kt.llm.TokenCount
 import com.garive.eng.kt.skill.ActivatedSkill
-import java.security.MessageDigest
-import java.time.Instant
 
 /** Typed durable evidence used to continue an open Turn. */
 public sealed interface ResumeInput {
@@ -65,70 +63,6 @@ public data class ModelOnlyLimits(
     public val deadlineTick: ULong?,
 )
 
-/** Exact durable evidence attribution attached to model-visible Memory data. */
-public data class MemoryEvidenceAttribution(
-    public val sessionId: String,
-    public val position: ULong,
-    public val factId: String,
-    public val payloadDigest: String,
-)
-
-/** Runtime-verified inline Memory supplied as subordinate attributed data. */
-public data class AttributedMemory(
-    public val recordId: String,
-    public val revisionId: String,
-    public val contentDigest: String,
-    public val contentUtf8: String,
-    public val evidence: List<MemoryEvidenceAttribution>,
-) {
-    internal fun valid(): Boolean = recordId.isNotEmpty() && revisionId.isNotEmpty() && contentUtf8.isNotEmpty() &&
-        contentDigest == sha256(contentUtf8.encodeToByteArray()) && evidence.isNotEmpty() &&
-        evidence.all { it.valid() }
-}
-
-private fun MemoryEvidenceAttribution.valid(): Boolean =
-    sessionId.isNotEmpty() && position != 0uL && factId.isNotEmpty() && payloadDigest.matches(Regex("[0-9a-f]{64}"))
-
-/** Exact sanitized citation attached to model-visible Knowledge evidence. */
-public data class KnowledgeCitationAttribution(
-    public val locatorKind: String,
-    public val locator: String,
-    public val title: String?,
-    public val canonicalUri: String?,
-    public val contentDigest: String,
-)
-
-/** Runtime-verified Knowledge evidence supplied as subordinate attributed data. */
-public data class AttributedKnowledge(
-    public val sourceId: String,
-    public val sourceRevision: String,
-    public val evidenceId: String,
-    public val sourceSnapshotDigest: String?,
-    public val contentDigest: String,
-    public val contentUtf8: String,
-    public val contentByteLength: ULong,
-    public val citation: KnowledgeCitationAttribution,
-    public val retrievedAtUtc: String,
-    public val freshness: String,
-    public val trustClass: String,
-    public val rankBasisPoints: UShort,
-) {
-    internal fun valid(): Boolean = sourceId.isNotEmpty() && sourceRevision.isNotEmpty() && evidenceId.isNotEmpty() &&
-        (sourceSnapshotDigest == null || sourceSnapshotDigest.isDigest()) && contentUtf8.isNotEmpty() &&
-        contentDigest == sha256(contentUtf8.encodeToByteArray()) &&
-        contentByteLength == contentUtf8.encodeToByteArray().size.toULong() && citation.valid(contentDigest) &&
-        runCatching { Instant.parse(retrievedAtUtc).toString() == retrievedAtUtc }.getOrDefault(false) &&
-        freshness in setOf("fresh", "cached", "stale") &&
-        trustClass in setOf("curated", "first_party", "third_party", "untrusted") && rankBasisPoints <= 10_000u
-}
-
-private fun KnowledgeCitationAttribution.valid(expectedDigest: String): Boolean =
-    locatorKind in setOf("uri_fragment", "document_offset", "record_key", "opaque_locator") &&
-        locator.isNotEmpty() && (title == null || title.isNotEmpty()) &&
-        (canonicalUri == null || canonicalUri.isNotEmpty()) && contentDigest == expectedDigest
-
-private fun String.isDigest(): Boolean = matches(Regex("[0-9a-f]{64}"))
-
 /** Complete immutable input for one model-only kernel Execution. */
 public data class AgentTurnRequest(
     public val sessionId: SessionId,
@@ -147,8 +81,6 @@ public data class AgentTurnRequest(
     public val limits: ModelOnlyLimits,
     public val activatedSkills: List<ActivatedSkill> = emptyList(),
     public val capabilityContextCandidates: List<ContextCandidate> = emptyList(),
-    public val attributedMemory: List<AttributedMemory> = emptyList(),
-    public val attributedKnowledge: List<AttributedKnowledge> = emptyList(),
 ) {
     /** Validates cross-field invariants before any port is invoked. */
     public fun validate(): AgentRequestError? {
@@ -162,8 +94,6 @@ public data class AgentTurnRequest(
         if (modelTargets.isEmpty()) return AgentRequestError.MISSING_MODEL_TARGET
         if (modelTargets.any { it.value.isEmpty() }) return AgentRequestError.INVALID_MODEL_TARGET
         if (limits.maxTotalTokens == 0uL) return AgentRequestError.INVALID_TOKEN_LIMIT
-        if (attributedMemory.any { !it.valid() }) return AgentRequestError.INVALID_MEMORY_CONTEXT
-        if (attributedKnowledge.any { !it.valid() }) return AgentRequestError.INVALID_KNOWLEDGE_CONTEXT
         return null
     }
 }
@@ -175,12 +105,7 @@ public enum class AgentRequestError {
     MISSING_MODEL_TARGET,
     INVALID_MODEL_TARGET,
     INVALID_TOKEN_LIMIT,
-    INVALID_MEMORY_CONTEXT,
-    INVALID_KNOWLEDGE_CONTEXT,
 }
-
-private fun sha256(value: ByteArray): String =
-    MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
 
 /** Checked usage accumulated across all model attempts. */
 public data class UsageSummary(

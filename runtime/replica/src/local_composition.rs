@@ -235,8 +235,6 @@ pub fn reconstruct_local_start(
         },
         activated_skills: vec![],
         capability_context_candidates: vec![],
-        attributed_memory: vec![],
-        attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new(&policy.model_target_id)],
         required_capabilities: policy.required_capabilities.clone(),
         model_output: policy.model_output.clone(),

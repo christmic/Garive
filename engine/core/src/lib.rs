@@ -27,10 +27,9 @@ pub use memory_context::{
 pub use model_only::execute_model_only;
 pub use model_only_types::{
     AgentCursor, AgentEntry, AgentEvent, AgentEventKind, AgentExecutionPorts, AgentFailureReason,
-    AgentOutcome, AgentRequestError, AgentTurnRequest, AttributedKnowledge, AttributedMemory,
-    ClockPort, ContextPort, ContextPortError, EventSink, ExecutionReport,
-    KnowledgeCitationAttribution, MemoryEvidenceAttribution, MissingUsagePolicy, ModelOnlyLimits,
-    ModelRecoveryPolicy, OutputLimitAction, PortFailure, ResumeInput, StopReason, SuspensionReason,
+    AgentOutcome, AgentRequestError, AgentTurnRequest, ClockPort, ContextPort, ContextPortError,
+    EventSink, ExecutionReport, MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy,
+    OutputLimitAction, PortFailure, ResumeInput, StopReason, SuspensionReason,
     TerminalRecoveryAction, UsageSummary,
 };
 pub use turn::{

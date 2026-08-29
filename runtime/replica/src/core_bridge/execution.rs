@@ -5,9 +5,8 @@ use std::{
 
 use garive_core::{
     execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
-    AgentToolCapabilities, AgentTurnRequest, AttributedKnowledge, AttributedMemory, CandidateKind,
-    ClockPort, ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef,
-    MemoryEvidenceAttribution, PortFailure, Retention, Visibility,
+    AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort, ContextCandidate,
+    ContextPort, ContextPurpose, EventSink, FactRef, PortFailure, Retention, Visibility,
 };
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId, TurnId,
@@ -465,13 +464,12 @@ async fn prepare_capabilities(
     if let Some(memory) = capabilities.memory_retrieval {
         coordinator.commit(vec![memory.fact])?;
         let position = coordinator.position();
-        let attributed: Vec<AttributedMemory> = memory
+        let items = memory
             .retrieval
             .matches
             .into_iter()
-            .map(attributed_memory)
-            .collect::<Result<_, _>>()?;
-        let items = attributed.into_iter().map(memory_input).collect::<Vec<_>>();
+            .map(memory_input)
+            .collect::<Result<Vec<_>, _>>()?;
         if !items.is_empty() {
             effective
                 .capability_context_candidates
@@ -486,7 +484,7 @@ async fn prepare_capabilities(
         effective.context_request.through_position = position;
     }
     if let Some(knowledge) = capabilities.knowledge_retrieval {
-        let attributed = execute_knowledge_capability(
+        let items = execute_knowledge_capability(
             coordinator,
             &KnowledgeLifecycleContext {
                 turn_id: lifecycle.turn_id.clone(),
@@ -497,10 +495,6 @@ async fn prepare_capabilities(
         )
         .await?;
         let position = coordinator.position();
-        let items = attributed
-            .into_iter()
-            .map(knowledge_input)
-            .collect::<Vec<_>>();
         if !items.is_empty() {
             effective
                 .capability_context_candidates
@@ -536,74 +530,35 @@ fn capability_candidate(
     }
 }
 
-fn memory_input(value: AttributedMemory) -> ModelInputItem {
-    let evidence = value
-        .evidence
-        .into_iter()
-        .map(|item| {
-            json!({
-                "session_id": item.session_id, "position": item.position,
-                "fact_id": item.fact_id, "payload_digest": item.payload_digest,
-            })
-        })
-        .collect::<Vec<_>>();
-    ModelInputItem::Message {
-        role: ModelRole::User,
-        content: vec![ModelInputContent::Text(
-            json!({
-                "type": "garive.memory", "record_id": value.record_id,
-                "revision_id": value.revision_id, "content_digest": value.content_digest,
-                "evidence": evidence, "content": value.content_utf8,
-            })
-            .to_string(),
-        )],
-    }
-}
-
-fn knowledge_input(value: AttributedKnowledge) -> ModelInputItem {
-    ModelInputItem::Message {
-        role: ModelRole::User,
-        content: vec![ModelInputContent::Text(json!({
-            "type": "garive.knowledge", "source_id": value.source_id,
-            "source_revision": value.source_revision, "evidence_id": value.evidence_id,
-            "source_snapshot_digest": value.source_snapshot_digest,
-            "content_digest": value.content_digest, "content_byte_length": value.content_byte_length,
-            "citation": { "locator_kind": value.citation.locator_kind,
-                "locator": value.citation.locator, "title": value.citation.title,
-                "canonical_uri": value.citation.canonical_uri,
-                "content_digest": value.citation.content_digest },
-            "retrieved_at_utc": value.retrieved_at_utc, "freshness": value.freshness,
-            "trust_class": value.trust_class, "rank_basis_points": value.rank_basis_points,
-            "content": value.content_utf8,
-        }).to_string())],
-    }
-}
-
-fn attributed_memory(
+fn memory_input(
     value: garive_memory::MemoryMatch,
-) -> Result<AttributedMemory, DurableExecutionError> {
+) -> Result<ModelInputItem, DurableExecutionError> {
     let content_utf8 = value
         .content()
         .inline_utf8()
         .ok_or(DurableExecutionError::Command(
             RuntimeCommandError::InvalidCommand,
-        ))?
-        .to_owned();
-    Ok(AttributedMemory {
-        record_id: value.record_id().into(),
-        revision_id: value.revision_id().into(),
-        content_digest: value.content().digest().into(),
-        content_utf8,
-        evidence: value
-            .evidence()
-            .iter()
-            .map(|item| MemoryEvidenceAttribution {
-                session_id: item.session_id().into(),
-                position: item.position(),
-                fact_id: item.fact_id().into(),
-                payload_digest: item.payload_digest().into(),
+        ))?;
+    let evidence = value
+        .evidence()
+        .iter()
+        .map(|item| {
+            json!({
+                "session_id": item.session_id(), "position": item.position(),
+                "fact_id": item.fact_id(), "payload_digest": item.payload_digest(),
             })
-            .collect(),
+        })
+        .collect::<Vec<_>>();
+    Ok(ModelInputItem::Message {
+        role: ModelRole::User,
+        content: vec![ModelInputContent::Text(
+            json!({
+                "type": "garive.memory", "record_id": value.record_id(),
+                "revision_id": value.revision_id(), "content_digest": value.content().digest(),
+                "evidence": evidence, "content": content_utf8,
+            })
+            .to_string(),
+        )],
     })
 }
 

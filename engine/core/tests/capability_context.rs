@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use garive_core::{
-    derive_context, merge_context_candidates, CandidateKind, ContextCandidate,
-    ContextItem, ContextPurpose, ContextRequest, FactRef, Retention, Visibility,
+    derive_context, merge_context_candidates, CandidateKind, ContextCandidate, ContextItem,
+    ContextPurpose, ContextRequest, FactRef, Retention, Visibility,
 };
 use garive_llm::{ModelInputContent, ModelInputItem, ModelRole};
 use serde_json::Value;

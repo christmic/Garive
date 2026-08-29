@@ -1,10 +1,11 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use garive_core::{AttributedKnowledge, KnowledgeCitationAttribution};
 use garive_knowledge::{
     complete_knowledge, CitationScheme, KnowledgeErrorCode, KnowledgeEvidence, KnowledgeFreshness,
     KnowledgeRequest, KnowledgeSourceDescriptor, KnowledgeTrustClass,
 };
+use garive_llm::{ModelInputContent, ModelInputItem, ModelRole};
+use serde_json::json;
 
 use super::execution::CommitCoordinator;
 use super::{
@@ -125,7 +126,7 @@ pub(super) async fn execute_knowledge_capability(
     coordinator: &mut CommitCoordinator<'_>,
     context: &KnowledgeLifecycleContext,
     capability: PreparedKnowledgeCapability,
-) -> Result<Vec<AttributedKnowledge>, DurableExecutionError> {
+) -> Result<Vec<ModelInputItem>, DurableExecutionError> {
     let prepared = plan_knowledge_requested(context, &capability.request)
         .map_err(DurableExecutionError::Command)?;
     coordinator.commit(vec![prepared.fact.clone()])?;
@@ -189,7 +190,7 @@ pub(super) async fn execute_knowledge_capability(
                 .completed
                 .evidence
                 .iter()
-                .map(attributed_knowledge)
+                .map(knowledge_input)
                 .collect::<Result<Vec<_>, _>>()?;
             coordinator.commit(vec![planned.fact])?;
             Ok(attributed)
@@ -251,7 +252,7 @@ fn commit_failure(
     phase: KnowledgeFailurePhase,
     reason: KnowledgeFailureReason,
     retry_after_ms: Option<u64>,
-) -> Result<Vec<AttributedKnowledge>, DurableExecutionError> {
+) -> Result<Vec<ModelInputItem>, DurableExecutionError> {
     let fact = plan_knowledge_failed(context, prepared, phase, reason, retry_after_ms)
         .map_err(DurableExecutionError::Command)?;
     coordinator.commit(vec![fact])?;
@@ -279,34 +280,28 @@ fn failure_reason(code: KnowledgeErrorCode) -> KnowledgeFailureReason {
     }
 }
 
-fn attributed_knowledge(
-    value: &KnowledgeEvidence,
-) -> Result<AttributedKnowledge, DurableExecutionError> {
+fn knowledge_input(value: &KnowledgeEvidence) -> Result<ModelInputItem, DurableExecutionError> {
     let content_utf8 = value
         .content()
         .inline_utf8()
         .ok_or(DurableExecutionError::Command(
             RuntimeCommandError::InvalidCommand,
         ))?;
-    Ok(AttributedKnowledge {
-        source_id: value.source_id().into(),
-        source_revision: value.source_revision().into(),
-        evidence_id: value.evidence_id().into(),
-        source_snapshot_digest: value.source_snapshot_digest().map(Into::into),
-        content_digest: value.content().digest().into(),
-        content_utf8: content_utf8.into(),
-        content_byte_length: value.content_byte_length(),
-        citation: KnowledgeCitationAttribution {
-            locator_kind: citation_kind(value.citation().locator_kind()).into(),
-            locator: value.citation().locator().into(),
-            title: value.citation().title().map(Into::into),
-            canonical_uri: value.citation().canonical_uri().map(Into::into),
-            content_digest: value.citation().content_digest().into(),
-        },
-        retrieved_at_utc: value.retrieved_at_utc().into(),
-        freshness: freshness(value.freshness()).into(),
-        trust_class: trust(value.trust_class()).into(),
-        rank_basis_points: value.rank_basis_points(),
+    Ok(ModelInputItem::Message {
+        role: ModelRole::User,
+        content: vec![ModelInputContent::Text(json!({
+            "type": "garive.knowledge", "source_id": value.source_id(),
+            "source_revision": value.source_revision(), "evidence_id": value.evidence_id(),
+            "source_snapshot_digest": value.source_snapshot_digest(),
+            "content_digest": value.content().digest(), "content_byte_length": value.content_byte_length(),
+            "citation": { "locator_kind": citation_kind(value.citation().locator_kind()),
+                "locator": value.citation().locator(), "title": value.citation().title(),
+                "canonical_uri": value.citation().canonical_uri(),
+                "content_digest": value.citation().content_digest() },
+            "retrieved_at_utc": value.retrieved_at_utc(), "freshness": freshness(value.freshness()),
+            "trust_class": trust(value.trust_class()), "rank_basis_points": value.rank_basis_points(),
+            "content": content_utf8,
+        }).to_string())],
     })
 }
 

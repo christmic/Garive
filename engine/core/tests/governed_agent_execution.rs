@@ -186,8 +186,6 @@ fn request() -> AgentTurnRequest {
         },
         activated_skills: vec![],
         capability_context_candidates: vec![],
-        attributed_memory: vec![],
-        attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new("model")],
         required_capabilities: vec![ModelCapability::Tools],
         model_output: ModelOutputSettings {
