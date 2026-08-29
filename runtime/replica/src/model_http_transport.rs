@@ -67,6 +67,38 @@ enum TransportKind {
 }
 
 impl RuntimeModelHttpTransport {
+    /// Constructs a Responses-compatible transport from validated protocol configuration.
+    pub fn responses_compatible(
+        deployment: ResponsesDeployment,
+        adapter_config: responses::ResponsesAdapterConfig,
+        limits: RuntimeHttpLimits,
+    ) -> Result<Self, RuntimeHttpTransportError> {
+        Ok(Self {
+            inner: TransportKind::Responses {
+                deployment,
+                adapter: responses::ResponsesAdapter::new(adapter_config),
+                client: client(limits)?,
+                limits,
+            },
+        })
+    }
+
+    /// Constructs a Messages-compatible transport from validated protocol configuration.
+    pub fn messages_compatible(
+        deployment: MessagesDeployment,
+        adapter_config: messages::MessagesAdapterConfig,
+        limits: RuntimeHttpLimits,
+    ) -> Result<Self, RuntimeHttpTransportError> {
+        Ok(Self {
+            inner: TransportKind::Messages {
+                deployment,
+                adapter: messages::MessagesAdapter::new(adapter_config),
+                client: client(limits)?,
+                limits,
+            },
+        })
+    }
+
     /// Constructs an official Responses transport without consulting external state.
     pub fn openai(
         mut deployment: ResponsesDeployment,
@@ -74,14 +106,7 @@ impl RuntimeModelHttpTransport {
         limits: RuntimeHttpLimits,
     ) -> Result<Self, RuntimeHttpTransportError> {
         deployment.error_policy = profile.error_policy;
-        Ok(Self {
-            inner: TransportKind::Responses {
-                deployment,
-                adapter: responses::ResponsesAdapter::new(profile.adapter_config),
-                client: client(limits)?,
-                limits,
-            },
-        })
+        Self::responses_compatible(deployment, profile.adapter_config, limits)
     }
 
     /// Constructs an official Messages transport without consulting external state.
@@ -91,14 +116,7 @@ impl RuntimeModelHttpTransport {
         limits: RuntimeHttpLimits,
     ) -> Result<Self, RuntimeHttpTransportError> {
         deployment.error_policy = profile.error_policy;
-        Ok(Self {
-            inner: TransportKind::Messages {
-                deployment,
-                adapter: messages::MessagesAdapter::new(profile.adapter_config),
-                client: client(limits)?,
-                limits,
-            },
-        })
+        Self::messages_compatible(deployment, profile.adapter_config, limits)
     }
 
     fn preflight_responses(
