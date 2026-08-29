@@ -98,6 +98,52 @@ fn file_database_reopens_with_durable_order_and_policy() {
 }
 
 #[test]
+fn migrations_advance_v1_and_refuse_unknown_future_schema() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("migration.sqlite3");
+    {
+        let ledger = SqliteLedger::open(&path).unwrap();
+        ledger
+            .connection_for_test()
+            .execute_batch(
+                "DROP TABLE execution_leases; \
+                 DELETE FROM schema_migrations WHERE version = 2;",
+            )
+            .unwrap();
+    }
+    {
+        let migrated = SqliteLedger::open(&path).unwrap();
+        let version: u32 = migrated
+            .connection_for_test()
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 2);
+        let leases: u32 = migrated
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='execution_leases'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(leases, 1);
+        migrated
+            .connection_for_test()
+            .execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (3, ?1)",
+                ["2026-08-29T00:00:00Z"],
+            )
+            .unwrap();
+    }
+    assert!(matches!(
+        SqliteLedger::open(path),
+        Err(SqliteLedgerError::UnsupportedSchema(3))
+    ));
+}
+
+#[test]
 fn conflict_replay_and_invalid_batch_leave_no_partial_facts() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("atomic.sqlite3");

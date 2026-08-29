@@ -241,6 +241,10 @@ Required transaction policy:
 - timestamps use `timestamptz`; replay ordering still uses position;
 - statement/lock timeouts are explicit.
 
+PostgreSQL serialization abort `SQLSTATE 40001` is the storage-native form of
+an optimistic writer race and is normalized to `ConcurrentModification`; it is
+not exposed as a generic durability failure.
+
 Connection pooling and coroutine dispatch live in the adapter/host, not domain
 modules. Tests use a real disposable PostgreSQL database. H2, SQLite and mocked
 repositories are insufficient for PostgreSQL transaction claims.

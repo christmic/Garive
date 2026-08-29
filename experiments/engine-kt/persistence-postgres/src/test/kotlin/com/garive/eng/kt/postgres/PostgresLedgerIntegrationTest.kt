@@ -13,6 +13,8 @@ import com.garive.eng.kt.ledger.SessionId
 import com.garive.eng.kt.ledger.TurnId
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import java.nio.file.Path
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,6 +97,21 @@ class PostgresLedgerIntegrationTest {
 
             dataSource.connection.use { connection ->
                 connection.createStatement().use {
+                    it.executeUpdate("INSERT INTO ledger_schema_migrations(version) VALUES (2)")
+                }
+            }
+            val future = assertFailsWith<PostgresLedgerError.UnsupportedSchema> {
+                PostgresLedger.open(config)
+            }
+            assertEquals(2, future.version)
+            dataSource.connection.use { connection ->
+                connection.createStatement().use {
+                    it.executeUpdate("DELETE FROM ledger_schema_migrations WHERE version = 2")
+                }
+            }
+
+            dataSource.connection.use { connection ->
+                connection.createStatement().use {
                     it.executeUpdate(
                         "UPDATE ledger_facts SET payload_sha256 = " +
                             "'0000000000000000000000000000000000000000000000000000000000000000' " +
@@ -105,6 +122,41 @@ class PostgresLedgerIntegrationTest {
             assertFailsWith<PostgresLedgerError.Corrupt> {
                 PostgresLedger.open(config).sessionVersion(session)
             }
+        }
+    }
+
+    @Test
+    fun `real PostgreSQL serializes competing Session writers`() {
+        EmbeddedPostgres.start().use { postgres ->
+            val jdbcUrl = postgres.postgresDatabase.connection.use { it.metaData.url }
+            val config = PostgresConfig(jdbcUrl, "postgres", "postgres")
+            val session = SessionId.of("concurrent-session")
+            PostgresLedger.open(config).commit(
+                session,
+                0u,
+                listOf(draft("concurrent-open", "session.opened")),
+            )
+            val start = CountDownLatch(1)
+            val results = Collections.synchronizedList(mutableListOf<String>())
+            val workers = listOf("a", "b").map { suffix ->
+                Thread {
+                    start.await()
+                    try {
+                        PostgresLedger.open(config).commit(
+                            session,
+                            1u,
+                            listOf(draft("concurrent-$suffix", "privacy.redacted")),
+                        )
+                        results += "committed"
+                    } catch (error: PostgresLedgerError.Domain) {
+                        results += error.error.code
+                    }
+                }.also(Thread::start)
+            }
+            start.countDown()
+            workers.forEach(Thread::join)
+            assertEquals(listOf("committed", "concurrent-modification"), results.sorted())
+            assertEquals(2uL, PostgresLedger.open(config).sessionVersion(session))
         }
     }
 

@@ -183,6 +183,9 @@ public class PostgresLedger private constructor(private val config: PostgresConf
         } catch (error: PostgresLedgerError) {
             throw error
         } catch (error: SQLException) {
+            if (error.sqlState == "40001") {
+                throw PostgresLedgerError.Domain(LedgerError.ConcurrentModification)
+            }
             throw PostgresLedgerError.Storage(error)
         }
     }
