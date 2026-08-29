@@ -28,14 +28,14 @@ planned without reopening a narrower completed row.
 
 | ID | Slice | Design | Spec | API | Code | Tests | State | Next evidence |
 |---|---|---|---|---|---|---|---|---|
-| D0 | Agent Definition and effective snapshot | accepted | accepted | documented | missing | missing | active | Freeze shared resolution and canonical digest vectors, then implement Rust/Kotlin. |
+| D0 | Agent Definition and effective snapshot | accepted | accepted | documented | implemented | verified | done | Keep exact resolution, canonical digests, immutable bindings, and shared Rust/Kotlin fixtures green. |
 | C0 | Execution identity and bounded control | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs` and shared control fixtures green. |
 | C1 | Model facts and outcomes | accepted | accepted | documented | implemented | verified | done | Keep the normalized outcome API gate and shared fixtures green. |
 | C1b | Model request and stream contract | accepted | accepted | documented | implemented | verified | done | Keep request/stream docs, validation fixtures, and API gate green. |
 | C2 | Deterministic context derive | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs`, boundary tests, and property tests green. |
 | C3 | Bounded model-only execution | accepted | accepted | documented | implemented | verified | done | Keep the explicit no-tool boundary and model-only scenarios green. |
 | C4 | Tool resolution and prepared calls | accepted | accepted | documented | implemented | verified | done | Keep Portable Tool Schema, canonical digest, native tests, and shared fixtures green. |
-| C5 | Governed effects and observations | accepted | accepted | documented | skeleton | missing | planned | Depends on C4/D0 fixtures and implementations. |
+| C5 | Governed effects and observations | accepted | accepted | documented | skeleton | missing | active | Freeze shared reducer scenarios, then implement authorization, interaction, receipt, and uncertainty semantics. |
 | C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | partial | partial | planned | Depends on the coordinated L0 amendment plus C4/C5. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Record a C3/C6 baseline before accepting thresholds or algorithms. |
 | L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | partial | partial | active | Implement and verify the accepted C6 recovery facts and `execution.abandoned` transition. |

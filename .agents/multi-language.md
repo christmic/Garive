@@ -6,9 +6,9 @@
 ## Current position
 
 Kotlin is an experimental semantic implementation for admitted portable slices
-C0-C4. It evaluates portability through accepted specs and shared fixtures; it
-is not a supported product server, a Runtime, or a promise that every Rust
-module has a Kotlin counterpart.
+D0 and C0-C4. It evaluates portability through accepted specs and shared
+fixtures; it is not a supported product server, a Runtime, or a promise that
+every Rust module has a Kotlin counterpart.
 
 The sources of truth are boundary-specific:
 
@@ -57,9 +57,9 @@ language representation is not itself a contract.
 
 ## Kotlin implementation
 
-The Gradle tree contains experimental `:core` (C0-C3), `:llm` (C1/C1b), and
-`:tools` (C4) modules plus `:proto`. The exact conformance matrix lives in
-`spec/design/cross-language-agent-contract.md`.
+The Gradle tree contains experimental `:config` (D0), `:core` (C0-C3), `:llm`
+(C1/C1b), and `:tools` (C4) modules plus `:proto`. The exact conformance matrix
+lives in `spec/design/cross-language-agent-contract.md`.
 
 For every admitted joint slice:
 

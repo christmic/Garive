@@ -52,7 +52,7 @@ cd experiments/engine-kt
 ./gradlew test
 ```
 
-`just conformance` is the joint C0-C3 gate; full Gradle build verifies all
+`just conformance` is the joint D0/C0-C4 gate; full Gradle build verifies all
 currently admitted Kotlin modules.
 
 Rust library crates deny `missing_docs` at the crate root. Kotlin uses
