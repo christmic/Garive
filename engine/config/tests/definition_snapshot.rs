@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, fs, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::PathBuf,
+};
 
 use garive_config::{
     resolve_definition, AgentDefinition, CapabilityKind, CapabilityReference,
@@ -129,6 +133,24 @@ fn definition(fixture: &Value) -> AgentDefinition {
             .collect(),
     )
     .unwrap()
+}
+
+fn rebuild(
+    value: &AgentDefinition,
+    instructions: Vec<InstructionReference>,
+    contracts: BTreeMap<String, u64>,
+) -> Result<AgentDefinition, garive_config::ResolutionError> {
+    AgentDefinition::new(
+        value.definition_id(),
+        value.revision(),
+        instructions,
+        value.model_roles().to_vec(),
+        value.capabilities().to_vec(),
+        value.governance().clone(),
+        value.context_policy().clone(),
+        value.limits().clone(),
+        contracts,
+    )
 }
 
 fn tool(value: &Value) -> ToolDefinition {
@@ -277,6 +299,7 @@ fn shared_failure_operations_fail_closed() {
         let mut definition = definition(&fixture);
         let mut registry = registry(&fixture);
         let mut policy = product_policy(&fixture);
+        let mut construction_error = None;
         for operation in case["operations"].as_array().unwrap() {
             match operation["kind"].as_str().unwrap() {
                 "remove_instruction" => registry.instructions.retain(|item| {
@@ -312,47 +335,51 @@ fn shared_failure_operations_fail_closed() {
                         .unwrap(),
                     ),
                 "set_contract_version" => {
-                    definition.contract_versions.insert(
+                    let mut contracts = definition.contract_versions().clone();
+                    contracts.insert(
                         operation["contract_name"].as_str().unwrap().to_owned(),
                         operation["version"].as_u64().unwrap(),
                     );
+                    definition = rebuild(
+                        &definition,
+                        definition.instruction_sources().to_vec(),
+                        contracts,
+                    )
+                    .unwrap();
                 }
                 "remove_product_requirement_capability" => {
                     policy
                         .allowed_requirement_capabilities
                         .remove(operation["capability"].as_str().unwrap());
                 }
-                "duplicate_instruction_root" => definition.instruction_sources.push(
-                    InstructionReference::new(
-                        operation["source_id"].as_str().unwrap(),
-                        operation["exact_revision"].as_str().unwrap(),
-                        true,
+                "duplicate_instruction_root" => {
+                    let mut instructions = definition.instruction_sources().to_vec();
+                    instructions.push(
+                        InstructionReference::new(
+                            operation["source_id"].as_str().unwrap(),
+                            operation["exact_revision"].as_str().unwrap(),
+                            true,
+                        )
+                        .unwrap(),
+                    );
+                    construction_error = rebuild(
+                        &definition,
+                        instructions,
+                        definition.contract_versions().clone(),
                     )
-                    .unwrap(),
-                ),
+                    .err();
+                }
                 "set_product_max_iterations" => {
                     policy.limit_caps.max_iterations = operation["value"].as_u64().unwrap()
                 }
                 other => panic!("unknown fixture operation: {other}"),
             }
         }
-        let result = if case["name"] == "invalid-duplicate-root" {
-            AgentDefinition::new(
-                definition.definition_id,
-                definition.revision,
-                definition.instruction_sources,
-                definition.model_roles,
-                definition.capabilities,
-                definition.governance,
-                definition.context_policy,
-                definition.limits,
-                definition.contract_versions,
-            )
-            .map(|_| unreachable!())
+        let error = if let Some(error) = construction_error {
+            error
         } else {
-            resolve_definition(&definition, &registry, &policy).map(|_| unreachable!())
+            resolve_definition(&definition, &registry, &policy).unwrap_err()
         };
-        let error = result.unwrap_err();
         assert_eq!(
             error.code(),
             error_code(case["expected_code"].as_str().unwrap()),
@@ -388,11 +415,11 @@ fn continuation_and_limit_properties_hold() {
             case["name"]
         );
     }
-    for cap in 1..=definition.limits.max_iterations {
+    for cap in 1..=definition.limits().max_iterations {
         policy.limit_caps.max_iterations = cap;
         let first = resolve_definition(&definition, &registry, &policy).unwrap();
         let second = resolve_definition(&definition, &registry, &policy).unwrap();
         assert_eq!(first, second);
-        assert!(first.limits.max_iterations <= definition.limits.max_iterations);
+        assert!(first.limits().max_iterations <= definition.limits().max_iterations);
     }
 }

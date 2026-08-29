@@ -182,30 +182,85 @@ pub struct EffectiveLimits {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct EffectiveAgentSnapshot {
     /// Stable definition identity.
-    pub definition_id: String,
+    pub(crate) definition_id: String,
     /// Exact definition revision.
-    pub definition_revision: String,
+    pub(crate) definition_revision: String,
     /// Lowercase SHA-256 of the canonical definition envelope.
-    pub definition_digest: String,
+    pub(crate) definition_digest: String,
     /// Ordered resolved instruction content.
-    pub instructions: Vec<ResolvedInstruction>,
+    pub(crate) instructions: Vec<ResolvedInstruction>,
     /// Ordered resolved neutral model roles.
-    pub model_roles: Vec<ResolvedModelRole>,
+    pub(crate) model_roles: Vec<ResolvedModelRole>,
     /// Exact enabled capabilities.
-    pub capabilities: EffectiveCapabilitySnapshot,
+    pub(crate) capabilities: EffectiveCapabilitySnapshot,
     /// Effective fail-closed governance.
-    pub governance: EffectiveGovernancePolicy,
+    pub(crate) governance: EffectiveGovernancePolicy,
     /// Exact resolved context policy.
-    pub context_policy: ResolvedContextPolicy,
+    pub(crate) context_policy: ResolvedContextPolicy,
     /// Effective bounded limits.
-    pub limits: EffectiveLimits,
+    pub(crate) limits: EffectiveLimits,
     /// Required portable contract versions.
-    pub contract_versions: BTreeMap<String, u64>,
+    pub(crate) contract_versions: BTreeMap<String, u64>,
     /// Lowercase SHA-256 of the canonical snapshot preimage.
-    pub snapshot_digest: String,
+    pub(crate) snapshot_digest: String,
 }
 
 impl EffectiveAgentSnapshot {
+    /// Returns the stable definition identity.
+    pub fn definition_id(&self) -> &str {
+        &self.definition_id
+    }
+
+    /// Returns the exact definition revision.
+    pub fn definition_revision(&self) -> &str {
+        &self.definition_revision
+    }
+
+    /// Returns the canonical definition digest.
+    pub fn definition_digest(&self) -> &str {
+        &self.definition_digest
+    }
+
+    /// Returns ordered resolved instructions.
+    pub fn instructions(&self) -> &[ResolvedInstruction] {
+        &self.instructions
+    }
+
+    /// Returns ordered resolved model roles.
+    pub fn model_roles(&self) -> &[ResolvedModelRole] {
+        &self.model_roles
+    }
+
+    /// Returns the exact enabled capability snapshot.
+    pub const fn capabilities(&self) -> &EffectiveCapabilitySnapshot {
+        &self.capabilities
+    }
+
+    /// Returns effective governance.
+    pub const fn governance(&self) -> &EffectiveGovernancePolicy {
+        &self.governance
+    }
+
+    /// Returns the exact resolved context policy.
+    pub const fn context_policy(&self) -> &ResolvedContextPolicy {
+        &self.context_policy
+    }
+
+    /// Returns effective bounded limits.
+    pub const fn limits(&self) -> &EffectiveLimits {
+        &self.limits
+    }
+
+    /// Returns required portable contract versions.
+    pub const fn contract_versions(&self) -> &BTreeMap<String, u64> {
+        &self.contract_versions
+    }
+
+    /// Returns the canonical snapshot digest.
+    pub fn snapshot_digest(&self) -> &str {
+        &self.snapshot_digest
+    }
+
     /// Validates that continuation reuses the exact durable binding.
     pub fn validate_continuation(
         &self,

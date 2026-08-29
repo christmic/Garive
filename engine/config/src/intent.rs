@@ -13,23 +13,23 @@ use crate::definition::{
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AgentDefinition {
     /// Stable definition identity.
-    pub definition_id: String,
+    pub(crate) definition_id: String,
     /// Exact immutable definition revision.
-    pub revision: String,
+    pub(crate) revision: String,
     /// Ordered instruction roots from low to high precedence.
-    pub instruction_sources: Vec<InstructionReference>,
+    pub(crate) instruction_sources: Vec<InstructionReference>,
     /// Ordered neutral model roles.
-    pub model_roles: Vec<ModelRoleRequirement>,
+    pub(crate) model_roles: Vec<ModelRoleRequirement>,
     /// Exact capability references.
-    pub capabilities: Vec<CapabilityReference>,
+    pub(crate) capabilities: Vec<CapabilityReference>,
     /// Requested governance policy.
-    pub governance: GovernancePolicy,
+    pub(crate) governance: GovernancePolicy,
     /// Exact context policy reference.
-    pub context_policy: ContextPolicyReference,
+    pub(crate) context_policy: ContextPolicyReference,
     /// Default execution limits.
-    pub limits: DefaultLimits,
+    pub(crate) limits: DefaultLimits,
     /// Required named portable contract versions.
-    pub contract_versions: BTreeMap<String, u64>,
+    pub(crate) contract_versions: BTreeMap<String, u64>,
 }
 
 impl AgentDefinition {
@@ -100,5 +100,50 @@ impl AgentDefinition {
             limits,
             contract_versions,
         })
+    }
+
+    /// Returns the stable definition identity.
+    pub fn definition_id(&self) -> &str {
+        &self.definition_id
+    }
+
+    /// Returns the exact immutable revision.
+    pub fn revision(&self) -> &str {
+        &self.revision
+    }
+
+    /// Returns ordered instruction roots.
+    pub fn instruction_sources(&self) -> &[InstructionReference] {
+        &self.instruction_sources
+    }
+
+    /// Returns ordered neutral model roles.
+    pub fn model_roles(&self) -> &[ModelRoleRequirement] {
+        &self.model_roles
+    }
+
+    /// Returns exact capability references.
+    pub fn capabilities(&self) -> &[CapabilityReference] {
+        &self.capabilities
+    }
+
+    /// Returns requested governance.
+    pub const fn governance(&self) -> &GovernancePolicy {
+        &self.governance
+    }
+
+    /// Returns the exact context policy reference.
+    pub const fn context_policy(&self) -> &ContextPolicyReference {
+        &self.context_policy
+    }
+
+    /// Returns default execution limits.
+    pub const fn limits(&self) -> &DefaultLimits {
+        &self.limits
+    }
+
+    /// Returns required portable contract versions.
+    pub const fn contract_versions(&self) -> &BTreeMap<String, u64> {
+        &self.contract_versions
     }
 }
