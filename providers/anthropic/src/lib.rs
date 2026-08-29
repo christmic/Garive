@@ -4,11 +4,17 @@
 #![deny(missing_docs)]
 
 mod constants;
+mod token_count;
 
 use garive_anthropic_messages::{Header, MessagesAdapterConfig};
 use garive_llm::{RejectionKind, UnavailableKind};
 use garive_provider_compatible::{ErrorDisposition, ErrorSignature, ProtocolErrorPolicy};
 use garive_provider_profile::{ConnectionInput, VendorProfileError};
+
+pub use token_count::{
+    decode_token_count, project_token_count_request, AnthropicTokenCountError, CountTokensRequest,
+    TokenCount,
+};
 
 /// Adapter configuration and exact P2-C error policy produced together.
 #[derive(Clone, Debug, Eq, PartialEq)]

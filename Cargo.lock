@@ -1278,6 +1278,7 @@ dependencies = [
  "garive-llm",
  "garive-provider-compatible",
  "garive-provider-profile",
+ "serde",
  "serde_json",
 ]
 
