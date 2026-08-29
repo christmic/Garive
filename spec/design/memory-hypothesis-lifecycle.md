@@ -263,9 +263,12 @@ MemoryErasureReceipt {
 }
 ```
 
-An erasure request is valid only after the exact M0 tombstone fact is committed;
-Runtime verifies that reference binds the same namespace/record/revision. Target
-IDs are canonical and come from explicit Garive configuration. Every attempt
+An erasure request is valid only with the exact M0 tombstone fact; Runtime
+verifies that the fact binds the same record/revision and that the authorized
+M0 projection binds the namespace. A user-forget planner emits the tombstone
+and first erasure request as one indivisible batch; the standalone tombstone
+planner rejects `UserRequest`. Target IDs are canonical and come from explicit
+Garive configuration. Every attempt
 reports every requested target exactly once in target order. `Complete` is
 derived only when all targets are Erased or NotPresent. Backup retention and
 retryable failure remain `Partial`; a backup-pending result must state a later
