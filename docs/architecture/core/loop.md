@@ -2249,6 +2249,120 @@ remain useful as **inputs to the detection** (token
 consumption rate → efficiency-ratio signal) — they're no
 longer the cap, they're the data.
 
+## Interruption semantics — queue vs redirect
+
+> **Interruption ≠ pause.** Pause = "wait for a human"
+> (approval / governance suspension). Interruption = "user
+> changed their mind — redirect". The two paths have
+> different defaults, different costs, and different
+> mechanisms.
+
+The driver layer's default policy is **queue, not interrupt**.
+Interruption is an **explicit** action the user must take.
+
+### Default path — queue (new messages during a running turn)
+
+The turn is running (potentially for several minutes). The
+user sends a new message. The driver layer:
+
+1. **Immediately writes the message to the ledger**
+   (`kind = user.queued`). The truth lands **first**; the
+   user's message is durable even if everything else fails.
+2. Enqueues the message in the per-session **pending queue**.
+3. **Acknowledges to the UI** — "received; current task
+   continues; will process after".
+
+The current turn finishes naturally (Done or Suspended).
+The driver layer dequeues the first pending message and
+**opens a new `agent_turn(Fresh)`** with the queued message
+as the new user entry. The new turn's `derive` projects the
+queued message onto the surface naturally — the model sees
+it and decides what to do.
+
+> **Direction change is the model's job, not the mechanism's
+> job.** The runtime does not interpret the new message;
+> the model reads it and adapts. The queue is just delivery.
+
+Multiple messages pile up — all enter the ledger, all queue,
+the driver processes them in order. **The queue loses
+nothing** — it just delays.
+
+### Explicit path — interrupt (cancel and redirect)
+
+Trigger: **cancel word** (TUI Ctrl+C, explicit directive
+"cancel current task"). The driver layer sends a
+**collaborative cancel signal**. The signal lands at **four
+sites** — all already designed.
+
+| Site | Behaviour on cancel |
+|------|----------------------|
+| **① Skeleton** — top of each iteration | One-line check: `if cancel_requested: transition = interrupted_by_user; break`. |
+| **② `model.invoke`** — streaming consumer | Stop the streaming iterator. **Already-emitted tokens land in `assistant.partial`** — the user's cancel is preserved in the ledger. |
+| **③ ToolDispatcher** — in-flight tools | Cooperative cancel yielded to in-flight tools. Each tool returns `tool.result{status: cancelled, output_so_far}`. |
+| **④ Iteration boundary** — clean shutdown | The current iteration completes cleanly (no torn writes), turn ends with `transition = interrupted_by_user`. |
+
+After step ④, the driver layer dequeues the redirect
+message and opens a new `agent_turn(Fresh)`. The new turn's
+`state.phase` starts fresh; the cancellation is recorded
+in the ledger for audit.
+
+### Why default is queue, not interrupt
+
+> **Interruption's cost is real.** Tokens already spent don't
+> come back. Side effects already taken still apply. The
+> current iteration's half-finished work needs cleanup.
+> Queueing only **delays**; interruption **destroys** the
+> work in flight.
+>
+> That's why interruption is an **explicit** action — the
+> user has to mean it. The default interpretation of a new
+> message is **"the user is fine, they're just typing"**,
+> not **"the user changed their mind"**.
+
+The cost asymmetry:
+
+| | Queue | Interrupt |
+|---|-------|-----------|
+| Token spend | preserved (counts toward budget) | preserved (can't un-spend) |
+| Side effects | preserved (don't double-do) | preserved (might roll back) |
+| Iteration work | preserved (no re-do needed) | discarded (must redo) |
+| User's new message | delivered when current turn ends | delivered now (current turn torn down) |
+| Cost | zero | non-zero (waste + cleanup) |
+
+### Implementation — no new mechanism
+
+This is **zero new code**. Every site already has its design:
+
+- `model.queued` — new `kind` in the **user/model** category
+  (per `ledger.md` "Entry Kinds — ten categories").
+- Pending queue — `state.pending_messages: list<Entry>`
+  (per `loop.md` "The Turn State" — append to the state struct).
+- Skeleton cancel check — **+1 line** at the top of the
+  iteration loop (consistent with `loop.md` "convergence"
+  rule: "new capabilities land in the seam, not the skeleton").
+- `provider-adapter.md` "Cancellation semantics" — full
+  streaming cancel already designed.
+- `effect-layer.md` "Cancellation: collaborative" — cooperative
+  cancel for in-flight tools already designed.
+- `loop.md` "Compression scope split" — transition reason
+  `interrupted_by_user` is a new value in the existing enum.
+
+The driver layer **wires** these. No new mechanism.
+
+### Cross-references
+
+- `loop.md` "The Turn State" — `state.pending_messages` is the
+  field the queue lives in.
+- `ledger.md` "Entry Kinds" — `user.queued` is a new kind in
+  the user/model category.
+- `provider-adapter.md` "Cancellation semantics" — already
+  designed for `model.invoke` (site ②).
+- `effect-layer.md` "Cancellation: collaborative" — already
+  designed for tools (site ③).
+- `loop.md` "Convergence audit" — Interaction (queue / redirect)
+  was previously listed as a tail-end item; **resolved** by
+  this section.
+
 ## ProgressGuardian — useless-work detection (supersedes TurnBudget)
 
 > **护栏从"限额"换成"识功"。** ProgressGuardian doesn't
