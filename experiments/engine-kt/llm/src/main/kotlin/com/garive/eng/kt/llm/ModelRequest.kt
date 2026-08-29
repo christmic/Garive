@@ -1,56 +1,86 @@
 package com.garive.eng.kt.llm
 
-data class ModelRequestId(val value: String)
-data class ModelTargetId(val value: String)
+/** Opaque identity for one logical provider-neutral request. */
+public data class ModelRequestId(public val value: String)
 
-enum class ModelCapability { TEXT, VISION, REASONING, TOOLS, JSON_OUTPUT, STREAMING }
-enum class ModelRole { SYSTEM, DEVELOPER, USER, ASSISTANT }
+/** Opaque identity of a frozen model capability target. */
+public data class ModelTargetId(public val value: String)
 
-sealed interface ModelInputContent {
-    data class Text(val text: String) : ModelInputContent
-    data class MediaReference(
-        val mediaKind: MediaKind,
-        val reference: String,
-        val mediaType: String,
+/** Provider-neutral capability required from the selected target. */
+public enum class ModelCapability { TEXT, VISION, REASONING, TOOLS, JSON_OUTPUT, STREAMING }
+
+/** Semantic role of one ordered input message. */
+public enum class ModelRole { SYSTEM, DEVELOPER, USER, ASSISTANT }
+
+/** One content part inside a provider-neutral input message. */
+public sealed interface ModelInputContent {
+    /** UTF-8 message [text]. */
+    public data class Text(public val text: String) : ModelInputContent
+
+    /** External media [reference] with an asserted [mediaType]. */
+    public data class MediaReference(
+        public val mediaKind: MediaKind,
+        public val reference: String,
+        public val mediaType: String,
     ) : ModelInputContent
 }
 
-sealed interface ModelInputItem {
-    data class Message(val role: ModelRole, val content: List<ModelInputContent>) : ModelInputItem
-    data class ToolObservation(val modelCallId: String, val resultJson: String) : ModelInputItem
-    data class ReasoningReference(val reference: String) : ModelInputItem
+/** Ordered input item admitted to a model request. */
+public sealed interface ModelInputItem {
+    /** Role-bearing message with ordered [content]. */
+    public data class Message(
+        public val role: ModelRole,
+        public val content: List<ModelInputContent>,
+    ) : ModelInputItem
+
+    /** Neutral [resultJson] answering [modelCallId]. */
+    public data class ToolObservation(
+        public val modelCallId: String,
+        public val resultJson: String,
+    ) : ModelInputItem
+
+    /** Opaque reasoning state returned to a compatible provider. */
+    public data class ReasoningReference(public val reference: String) : ModelInputItem
 }
 
-data class ToolDescriptor(
-    val name: String,
-    val description: String,
-    val definitionRevision: String,
-    val inputSchemaJson: String,
-    val strict: Boolean,
+/** Exact tool definition exposed to the model for one request. */
+public data class ToolDescriptor(
+    public val name: String,
+    public val description: String,
+    public val definitionRevision: String,
+    public val inputSchemaJson: String,
+    public val strict: Boolean,
 )
 
-sealed interface TextMode {
-    data object Plain : TextMode
-    data object JsonObject : TextMode
-    data class JsonSchema(val schemaJson: String) : TextMode
+/** Requested plain or structured response mode. */
+public sealed interface TextMode {
+    /** Unconstrained plain text. */
+    public data object Plain : TextMode
+    /** A syntactically valid JSON object. */
+    public data object JsonObject : TextMode
+    /** JSON output constrained by exact [schemaJson]. */
+    public data class JsonSchema(public val schemaJson: String) : TextMode
 }
 
-data class ModelOutputSettings(
-    val maxOutputTokens: ULong?,
-    val textMode: TextMode,
-    val reasoningVisibility: Boolean,
+/** Provider-neutral output constraints for one request. */
+public data class ModelOutputSettings(
+    public val maxOutputTokens: ULong?,
+    public val textMode: TextMode,
+    public val reasoningVisibility: Boolean,
 )
 
-data class ModelRequest(
-    val requestId: ModelRequestId,
-    val targetId: ModelTargetId,
-    val requiredCapabilities: List<ModelCapability>,
-    val inputItems: List<ModelInputItem>,
-    val tools: List<ToolDescriptor>,
-    val output: ModelOutputSettings,
-    val traceMetadata: List<Pair<String, String>>,
+/** Immutable provider-neutral input to [ModelPort]. */
+public data class ModelRequest(
+    public val requestId: ModelRequestId,
+    public val targetId: ModelTargetId,
+    public val requiredCapabilities: List<ModelCapability>,
+    public val inputItems: List<ModelInputItem>,
+    public val tools: List<ToolDescriptor>,
+    public val output: ModelOutputSettings,
+    public val traceMetadata: List<Pair<String, String>>,
 ) {
-    fun validate(): RequestValidationError? {
+    /** Validates identities, duplicates, tool definitions, limits, and metadata. */
+    public fun validate(): RequestValidationError? {
         if (requestId.value.isEmpty() || targetId.value.isEmpty()) return RequestValidationError.EMPTY_IDENTITY
         if (requiredCapabilities.distinct().size != requiredCapabilities.size) {
             return RequestValidationError.DUPLICATE_CAPABILITY
@@ -74,7 +104,8 @@ data class ModelRequest(
     }
 }
 
-enum class RequestValidationError(val code: String) {
+/** Stable validation failure for [ModelRequest]. */
+public enum class RequestValidationError(public val code: String) {
     EMPTY_IDENTITY("empty-identity"),
     DUPLICATE_CAPABILITY("duplicate-capability"),
     INVALID_TOOL("invalid-tool"),
@@ -84,35 +115,45 @@ enum class RequestValidationError(val code: String) {
     DUPLICATE_METADATA("duplicate-metadata"),
 }
 
-sealed interface ModelOutputKind {
-    data object Text : ModelOutputKind
-    data object Refusal : ModelOutputKind
-    data object Reasoning : ModelOutputKind
-    data class ToolIntent(val modelCallId: String) : ModelOutputKind
-    data object ToolObservation : ModelOutputKind
-    data object MediaReference : ModelOutputKind
+/** Expected semantic class for one indexed streaming item. */
+public sealed interface ModelOutputKind {
+    public data object Text : ModelOutputKind
+    public data object Refusal : ModelOutputKind
+    public data object Reasoning : ModelOutputKind
+    public data class ToolIntent(public val modelCallId: String) : ModelOutputKind
+    public data object ToolObservation : ModelOutputKind
+    public data object MediaReference : ModelOutputKind
 }
 
-sealed interface ModelStreamEvent {
-    data class OutputItemStarted(val outputIndex: UInt, val kind: ModelOutputKind) : ModelStreamEvent
-    data class TextDelta(val outputIndex: UInt, val delta: String) : ModelStreamEvent
-    data class RefusalDelta(val outputIndex: UInt, val delta: String) : ModelStreamEvent
-    data class ReasoningDelta(val outputIndex: UInt, val delta: String) : ModelStreamEvent
-    data class ToolArgumentsDelta(
-        val outputIndex: UInt,
-        val modelCallId: String,
-        val delta: String,
+/** Ordered provider-neutral progress event for one invocation. */
+public sealed interface ModelStreamEvent {
+    public data class OutputItemStarted(
+        public val outputIndex: UInt,
+        public val kind: ModelOutputKind,
     ) : ModelStreamEvent
-    data class OutputItemCompleted(val outputIndex: UInt, val item: ModelItem) : ModelStreamEvent
-    data class UsageUpdated(val usage: ModelUsage) : ModelStreamEvent
+    public data class TextDelta(public val outputIndex: UInt, public val delta: String) : ModelStreamEvent
+    public data class RefusalDelta(public val outputIndex: UInt, public val delta: String) : ModelStreamEvent
+    public data class ReasoningDelta(public val outputIndex: UInt, public val delta: String) : ModelStreamEvent
+    public data class ToolArgumentsDelta(
+        public val outputIndex: UInt,
+        public val modelCallId: String,
+        public val delta: String,
+    ) : ModelStreamEvent
+    public data class OutputItemCompleted(
+        public val outputIndex: UInt,
+        public val item: ModelItem,
+    ) : ModelStreamEvent
+    public data class UsageUpdated(public val usage: ModelUsage) : ModelStreamEvent
 }
 
-class StreamValidator {
+/** Stateful validator for indexed stream ordering and item kinds. */
+public class StreamValidator {
     private val started = mutableMapOf<UInt, ModelOutputKind>()
     private val completed = mutableSetOf<UInt>()
     private var lastStarted: UInt? = null
 
-    fun accept(event: ModelStreamEvent): StreamInvariantError? = when (event) {
+    /** Applies one event without silently repairing an invalid sequence. */
+    public fun accept(event: ModelStreamEvent): StreamInvariantError? = when (event) {
         is ModelStreamEvent.OutputItemStarted -> {
             if (lastStarted?.let { event.outputIndex <= it } == true) {
                 StreamInvariantError.NON_MONOTONIC_START
@@ -156,31 +197,47 @@ class StreamValidator {
     }
 }
 
-enum class StreamInvariantError(val code: String) {
+/** Stable normalized stream contract violation. */
+public enum class StreamInvariantError(public val code: String) {
     NON_MONOTONIC_START("non-monotonic-start"),
     ITEM_NOT_STARTED("item-not-started"),
     ITEM_ALREADY_COMPLETED("item-already-completed"),
     ITEM_KIND_MISMATCH("item-kind-mismatch"),
 }
 
-enum class ObserverDecision { CONTINUE, CANCEL }
-fun interface ModelObserver { fun observe(event: ModelStreamEvent): ObserverDecision }
-fun interface ModelCancellation { fun isCancelled(): Boolean }
+/** Backpressure/cancellation decision returned by [ModelObserver]. */
+public enum class ObserverDecision { CONTINUE, CANCEL }
 
-enum class ModelPortFailure {
+/** Consumer of ordered normalized live events. */
+public fun interface ModelObserver {
+    /** Observes one event and decides whether dispatch should continue. */
+    public fun observe(event: ModelStreamEvent): ObserverDecision
+}
+
+/** Cooperative cancellation signal sampled by adapters. */
+public fun interface ModelCancellation {
+    /** Returns whether the enclosing execution requested cancellation. */
+    public fun isCancelled(): Boolean
+}
+
+/** Model port contract failure rather than a valid provider outcome. */
+public enum class ModelPortFailure {
     INVALID_REQUEST,
     UNSUPPORTED_CAPABILITY,
     ADAPTER_INVARIANT,
     REQUIRED_PORT_FAILURE,
 }
 
-sealed interface ModelPortResult {
-    data class Success(val outcome: InvokeOutcome) : ModelPortResult
-    data class Failure(val failure: ModelPortFailure) : ModelPortResult
+/** Success/failure envelope returned by [ModelPort]. */
+public sealed interface ModelPortResult {
+    public data class Success(public val outcome: InvokeOutcome) : ModelPortResult
+    public data class Failure(public val failure: ModelPortFailure) : ModelPortResult
 }
 
-interface ModelPort {
-    suspend fun invoke(
+/** Provider-neutral suspending model invocation boundary. */
+public interface ModelPort {
+    /** Maps one request, emits normalized events, and returns one terminal envelope. */
+    public suspend fun invoke(
         request: ModelRequest,
         observer: ModelObserver,
         cancellation: ModelCancellation,
