@@ -4,6 +4,7 @@ mod effect;
 mod knowledge;
 mod memory;
 mod model;
+mod scheduler;
 mod skill;
 mod turn;
 mod values;
@@ -31,6 +32,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let skill_family = kind.starts_with("skill.");
     let memory_family = kind.starts_with("memory.");
     let knowledge_family = kind.starts_with("knowledge.");
+    let scheduler_family = kind.starts_with("schedule.");
     let memory_tombstone = kind == "memory.tombstoned";
     let rejection = kind == "tool.preparation_rejected";
     if !kind.starts_with("turn.")
@@ -40,6 +42,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !skill_family
         && !memory_family
         && !knowledge_family
+        && !scheduler_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -47,7 +50,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     if fact.schema_version != 1 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
-    if fact.turn_id.is_some() != !memory_tombstone
+    if fact.turn_id.is_some() != !(memory_tombstone || scheduler_family)
         || fact.execution_id.is_some()
             != (execution_family
                 || model_family
@@ -63,7 +66,9 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if knowledge_family {
+    if scheduler_family {
+        scheduler::validate(kind, object(&payload)?)?;
+    } else if knowledge_family {
         knowledge::validate(kind, object(&payload)?)?;
     } else if memory_family {
         memory::validate(kind, object(&payload)?)?;
