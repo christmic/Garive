@@ -59,6 +59,20 @@ pub(crate) fn validate_value_definition(schema: &Value) -> Result<(), Preparatio
     validate_schema_node(schema)
 }
 
+/// Validates any root type in Garive's portable JSON Schema subset.
+pub fn validate_portable_value_schema(schema: &Value) -> Result<(), PreparationError> {
+    validate_value_definition(schema)
+}
+
+/// Validates one JSON value against an already portable value schema.
+pub fn validate_portable_value(
+    schema: &Value,
+    value: &Value,
+) -> Result<Vec<crate::SchemaFailure>, PreparationError> {
+    validate_value_definition(schema)?;
+    Ok(validate_arguments(schema, value))
+}
+
 fn validate_schema_node(schema: &Value) -> Result<(), PreparationError> {
     let object = schema.as_object().ok_or_else(invalid_definition)?;
     if object

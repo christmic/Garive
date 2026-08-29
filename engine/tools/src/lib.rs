@@ -27,3 +27,4 @@ pub use prepared::{
     ExecutionCapability, ExecutionRequirements, PreparationError, PreparationErrorCode,
     PreparedToolCall, ReplayClass, SchemaFailure, ToolCatalog, ToolDefinition, ToolIntent,
 };
+pub use schema::{validate_portable_value, validate_portable_value_schema};
