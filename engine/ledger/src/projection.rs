@@ -83,6 +83,30 @@ struct ScheduleRecord {
     state: ScheduleState,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DelegationState {
+    Requested,
+    Authorized,
+    Denied,
+    Started,
+    Terminal,
+    Observed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DelegationRecord {
+    parent_turn: TurnId,
+    parent_execution: ExecutionId,
+    intent_digest: String,
+    grant_id: Option<String>,
+    suspension_id: Option<String>,
+    child_turn: Option<TurnId>,
+    result_id: Option<String>,
+    result_digest: Option<String>,
+    input_admitted: bool,
+    state: DelegationState,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SessionProjection {
     opened: bool,
@@ -102,6 +126,11 @@ pub(crate) struct SessionProjection {
     interactions: BTreeMap<String, InteractionRecord>,
     knowledge: BTreeMap<String, KnowledgeRecord>,
     schedules: BTreeMap<String, ScheduleRecord>,
+    turn_agents: BTreeMap<TurnId, (String, String)>,
+    delegations: BTreeMap<String, DelegationRecord>,
+    turns_started_in_commit: BTreeSet<TurnId>,
+    turns_suspended_in_commit: BTreeSet<TurnId>,
+    turns_terminal_in_commit: BTreeSet<TurnId>,
 }
 
 impl SessionProjection {
@@ -173,6 +202,12 @@ impl SessionProjection {
             "schedule.cancelled" => self.cancel_schedule(fact),
             "schedule.failed" => self.fail_schedule(fact),
             "schedule.exhausted" => self.exhaust_schedule(fact),
+            "delegation.requested" => self.request_delegation(fact),
+            "delegation.authorized" => self.authorize_delegation(fact),
+            "delegation.denied" => self.deny_delegation(fact),
+            "delegation.child_started" => self.start_delegation_child(fact),
+            "delegation.child_terminal" => self.terminal_delegation_child(fact),
+            "delegation.observed" => self.observe_delegation(fact),
             "context.summary" | "privacy.redacted" => Ok(()),
             _ => Ok(()),
         }
@@ -210,6 +245,12 @@ impl SessionProjection {
                 .schedules
                 .values()
                 .any(|value| value.state == ScheduleState::Active)
+            || self.delegations.values().any(|value| {
+                !matches!(
+                    value.state,
+                    DelegationState::Denied | DelegationState::Observed
+                )
+            })
         {
             return Err(LedgerError::InvalidTransition);
         }
@@ -228,6 +269,7 @@ impl SessionProjection {
                 kind == "continue"
                     && self.suspensions.get(turn).map(String::as_str) == prior
                     && !self.has_pending_interaction_for_turn(turn)
+                    && self.delegation_continuation_ready(turn, prior)
             }
             _ => false,
         };
@@ -235,6 +277,16 @@ impl SessionProjection {
             return Err(LedgerError::InvalidTransition);
         }
         self.turns.insert(turn.clone(), TurnState::Open);
+        if kind == "start" {
+            self.turn_agents.insert(
+                turn.clone(),
+                (
+                    text(&payload, "agent_instance_id")?.to_owned(),
+                    text(&payload, "snapshot_digest")?.to_owned(),
+                ),
+            );
+            self.turns_started_in_commit.insert(turn.clone());
+        }
         self.suspensions.remove(turn);
         Ok(())
     }
@@ -250,6 +302,9 @@ impl SessionProjection {
         self.transition_turn(turn, TurnState::Suspended)?;
         self.suspensions
             .insert(turn.clone(), text(&payload, "suspension_id")?.to_owned());
+        if text(&payload, "reason")? == "delegation_pending" {
+            self.turns_suspended_in_commit.insert(turn.clone());
+        }
         Ok(())
     }
 
@@ -271,7 +326,9 @@ impl SessionProjection {
         if actual != Some(&(turn.clone(), expected)) && !suspended_close {
             return Err(LedgerError::InvalidTransition);
         }
-        self.transition_turn(turn, next)
+        self.transition_turn(turn, next)?;
+        self.turns_terminal_in_commit.insert(turn.clone());
+        Ok(())
     }
 
     fn require_open_turn(&self, turn_id: &TurnId) -> Result<(), LedgerError> {
@@ -282,9 +339,31 @@ impl SessionProjection {
         }
     }
 
-    fn admit_turn_input(&self, fact: &FactDraft) -> Result<(), LedgerError> {
+    fn admit_turn_input(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
         let turn = required(&fact.turn_id)?;
         let payload = payload(fact)?;
+        if text(&payload, "input_kind")? == "delegation_result" {
+            let suspension = text(&payload, "suspension_id")?;
+            let digest = text(
+                payload
+                    .get("content")
+                    .and_then(Value::as_object)
+                    .ok_or(LedgerError::InvalidFact)?,
+                "digest",
+            )?;
+            let record = self
+                .delegations
+                .values_mut()
+                .find(|value| {
+                    &value.parent_turn == turn
+                        && value.state == DelegationState::Observed
+                        && value.suspension_id.as_deref() == Some(suspension)
+                        && value.result_digest.as_deref() == Some(digest)
+                })
+                .ok_or(LedgerError::InvalidTransition)?;
+            record.input_admitted = true;
+            return Ok(());
+        }
         if !matches!(
             text(&payload, "input_kind")?,
             "trusted_user" | "trusted_system"
@@ -813,11 +892,190 @@ impl SessionProjection {
             .any(|value| &value.execution == execution && !value.terminal)
     }
 
+    pub(crate) fn begin_commit(&mut self) {
+        self.turns_started_in_commit.clear();
+        self.turns_suspended_in_commit.clear();
+        self.turns_terminal_in_commit.clear();
+    }
+
+    fn request_delegation(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let turn = required(&fact.turn_id)?.clone();
+        let execution = required(&fact.execution_id)?.clone();
+        let value = payload(fact)?;
+        let id = text(&value, "delegation_id")?.to_owned();
+        if self.delegations.contains_key(&id)
+            || self.delegations.values().any(|item| {
+                item.parent_turn == turn
+                    && !matches!(
+                        item.state,
+                        DelegationState::Denied | DelegationState::Observed
+                    )
+            })
+            || self.turn_agents.get(&turn).map(|item| item.0.as_str())
+                != Some(text(&value, "parent_agent_instance_id")?)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        self.delegations.insert(
+            id,
+            DelegationRecord {
+                parent_turn: turn,
+                parent_execution: execution,
+                intent_digest: text(&value, "intent_digest")?.to_owned(),
+                grant_id: None,
+                suspension_id: None,
+                child_turn: None,
+                result_id: None,
+                result_digest: None,
+                input_admitted: false,
+                state: DelegationState::Requested,
+            },
+        );
+        Ok(())
+    }
+
+    fn authorize_delegation(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let value = payload(fact)?;
+        let record = self
+            .delegations
+            .get_mut(text(&value, "delegation_id")?)
+            .ok_or(LedgerError::MissingReference)?;
+        if record.state != DelegationState::Requested
+            || &record.parent_turn != required(&fact.turn_id)?
+            || &record.parent_execution != required(&fact.execution_id)?
+            || record.intent_digest != text(&value, "intent_digest")?
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.grant_id = Some(text(&value, "grant_id")?.to_owned());
+        record.state = DelegationState::Authorized;
+        Ok(())
+    }
+
+    fn deny_delegation(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let value = payload(fact)?;
+        let record = self
+            .delegations
+            .get_mut(text(&value, "delegation_id")?)
+            .ok_or(LedgerError::MissingReference)?;
+        if record.state != DelegationState::Requested
+            || &record.parent_turn != required(&fact.turn_id)?
+            || &record.parent_execution != required(&fact.execution_id)?
+            || record.intent_digest != text(&value, "intent_digest")?
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.state = DelegationState::Denied;
+        Ok(())
+    }
+
+    fn start_delegation_child(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let child_turn = TurnId::try_from(text(&value, "child_turn_id")?)
+            .map_err(|_| LedgerError::InvalidFact)?;
+        let record = self
+            .delegations
+            .get_mut(text(&value, "delegation_id")?)
+            .ok_or(LedgerError::MissingReference)?;
+        let child = self.turn_agents.get(&child_turn);
+        if record.state != DelegationState::Authorized
+            || &record.parent_turn != required(&fact.turn_id)?
+            || &record.parent_execution != required(&fact.execution_id)?
+            || record.grant_id.as_deref() != Some(text(&value, "grant_id")?)
+            || !self.turns_suspended_in_commit.contains(&record.parent_turn)
+            || !self.turns_started_in_commit.contains(&child_turn)
+            || child.map(|item| item.0.as_str()) != Some(text(&value, "child_agent_instance_id")?)
+            || child.map(|item| item.1.as_str()) != Some(text(&value, "child_snapshot_digest")?)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let suspension = text(&value, "suspension_id")?;
+        if self
+            .suspensions
+            .get(&record.parent_turn)
+            .map(String::as_str)
+            != Some(suspension)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.suspension_id = Some(suspension.to_owned());
+        record.child_turn = Some(child_turn);
+        record.state = DelegationState::Started;
+        Ok(())
+    }
+
+    fn terminal_delegation_child(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let child_turn = TurnId::try_from(text(&value, "child_turn_id")?)
+            .map_err(|_| LedgerError::InvalidFact)?;
+        let record = self
+            .delegations
+            .get_mut(text(&value, "delegation_id")?)
+            .ok_or(LedgerError::MissingReference)?;
+        if record.state != DelegationState::Started
+            || &record.parent_turn != required(&fact.turn_id)?
+            || &record.parent_execution != required(&fact.execution_id)?
+            || record.grant_id.as_deref() != Some(text(&value, "grant_id")?)
+            || record.suspension_id.as_deref() != Some(text(&value, "suspension_id")?)
+            || record.child_turn.as_ref() != Some(&child_turn)
+            || !self.turns_terminal_in_commit.contains(&child_turn)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.result_id = Some(text(&value, "result_id")?.to_owned());
+        record.result_digest = Some(text(&value, "result_digest")?.to_owned());
+        record.state = DelegationState::Terminal;
+        Ok(())
+    }
+
+    fn observe_delegation(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let record = self
+            .delegations
+            .get_mut(text(&value, "delegation_id")?)
+            .ok_or(LedgerError::MissingReference)?;
+        if record.state != DelegationState::Terminal
+            || &record.parent_turn != required(&fact.turn_id)?
+            || &record.parent_execution != required(&fact.execution_id)?
+            || record.grant_id.as_deref() != Some(text(&value, "grant_id")?)
+            || record.suspension_id.as_deref() != Some(text(&value, "suspension_id")?)
+            || record.result_id.as_deref() != Some(text(&value, "result_id")?)
+            || record.result_digest.as_deref() != Some(text(&value, "result_digest")?)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.state = DelegationState::Observed;
+        Ok(())
+    }
+
+    fn delegation_continuation_ready(&self, turn: &TurnId, suspension: Option<&str>) -> bool {
+        let matching: Vec<_> = self
+            .delegations
+            .values()
+            .filter(|item| &item.parent_turn == turn && item.suspension_id.as_deref() == suspension)
+            .collect();
+        matching.is_empty()
+            || matching
+                .iter()
+                .all(|item| item.state == DelegationState::Observed && item.input_admitted)
+    }
+
     pub(crate) fn validate_commit_boundary(&self) -> Result<(), LedgerError> {
         if self
             .schedules
             .values()
             .any(|value| value.state == ScheduleState::Superseding)
+            || self.delegations.values().any(|value| {
+                (self.turns_suspended_in_commit.contains(&value.parent_turn)
+                    && value.state == DelegationState::Authorized)
+                    || value.child_turn.as_ref().is_some_and(|turn| {
+                        self.turns_terminal_in_commit.contains(turn)
+                            && value.state == DelegationState::Started
+                    })
+            })
         {
             Err(LedgerError::InvalidTransition)
         } else {

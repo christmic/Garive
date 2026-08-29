@@ -90,6 +90,7 @@ impl LedgerState {
         if next.version != expected_session_version {
             return Err(LedgerError::ConcurrentModification);
         }
+        next.projection.begin_commit();
         let mut position = next.facts.last().map_or(Ok(1), |fact| {
             fact.position
                 .checked_add(1)
