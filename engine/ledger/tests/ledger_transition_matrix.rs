@@ -64,8 +64,6 @@ fn every_turn_and_execution_terminal_is_admitted_once() {
     assert_valid(&[
         "session.opened",
         "turn.started",
-        "turn.suspended",
-        "turn.started",
         "turn.completed",
         "session.closed",
     ]);

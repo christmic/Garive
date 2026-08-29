@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use serde_json::{Map, Value};
+
 use crate::{ExecutionId, FactDraft, LedgerError, ModelRequestId, ToolInvocationId, TurnId};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +39,15 @@ enum InvocationState {
     Observed,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InteractionRecord {
+    execution: ExecutionId,
+    tool: ToolInvocationId,
+    suspension_id: String,
+    prepared_digest: String,
+    terminal: bool,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SessionProjection {
     opened: bool,
@@ -45,6 +56,9 @@ pub(crate) struct SessionProjection {
     executions: BTreeMap<ExecutionId, (TurnId, ExecutionState)>,
     models: BTreeMap<ModelRequestId, (ExecutionId, InvocationState)>,
     tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
+    tool_digests: BTreeMap<ToolInvocationId, String>,
+    suspensions: BTreeMap<TurnId, String>,
+    interactions: BTreeMap<String, InteractionRecord>,
 }
 
 impl SessionProjection {
@@ -63,10 +77,8 @@ impl SessionProjection {
         }
         match kind {
             "session.closed" => self.close_session(),
-            "turn.started" => self.start_turn(required(&fact.turn_id)?),
-            "turn.suspended" => {
-                self.transition_turn(required(&fact.turn_id)?, TurnState::Suspended)
-            }
+            "turn.started" => self.start_turn(fact),
+            "turn.suspended" => self.suspend_turn(fact),
             "turn.completed" => {
                 self.transition_turn(required(&fact.turn_id)?, TurnState::Completed)
             }
@@ -97,11 +109,9 @@ impl SessionProjection {
             "effect.uncertain" => self.transition_tool(fact, InvocationState::Uncertain),
             "effect.observation" => self.observe_tool(fact),
             "tool.preparation_rejected" => self.reject_tool_preparation(fact),
-            "interaction.requested"
-            | "interaction.resolved"
-            | "interaction.cancelled"
-            | "context.summary"
-            | "privacy.redacted" => Ok(()),
+            "interaction.requested" => self.request_interaction(fact),
+            "interaction.resolved" | "interaction.cancelled" => self.finish_interaction(fact),
+            "context.summary" | "privacy.redacted" => Ok(()),
             _ => Ok(()),
         }
     }
@@ -141,14 +151,40 @@ impl SessionProjection {
         Ok(())
     }
 
-    fn start_turn(&mut self, turn_id: &TurnId) -> Result<(), LedgerError> {
-        match self.turns.get(turn_id) {
-            None | Some(TurnState::Suspended) => {
-                self.turns.insert(turn_id.clone(), TurnState::Open);
-                Ok(())
+    fn start_turn(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let turn = required(&fact.turn_id)?;
+        let payload = payload(fact)?;
+        let kind = text(&payload, "kind")?;
+        let prior = payload.get("prior_suspension_id").and_then(Value::as_str);
+        let valid = match self.turns.get(turn) {
+            None => kind == "start" && prior.is_none(),
+            Some(TurnState::Suspended) => {
+                kind == "continue"
+                    && self.suspensions.get(turn).map(String::as_str) == prior
+                    && !self.has_pending_interaction_for_turn(turn)
             }
-            _ => Err(LedgerError::InvalidTransition),
+            _ => false,
+        };
+        if !valid {
+            return Err(LedgerError::InvalidTransition);
         }
+        self.turns.insert(turn.clone(), TurnState::Open);
+        self.suspensions.remove(turn);
+        Ok(())
+    }
+
+    fn suspend_turn(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let turn = required(&fact.turn_id)?;
+        let payload = payload(fact)?;
+        let execution = ExecutionId::try_from(text(&payload, "execution_id")?)
+            .map_err(|_| LedgerError::InvalidFact)?;
+        if self.executions.get(&execution) != Some(&(turn.clone(), ExecutionState::Suspended)) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        self.transition_turn(turn, TurnState::Suspended)?;
+        self.suspensions
+            .insert(turn.clone(), text(&payload, "suspension_id")?.to_owned());
+        Ok(())
     }
 
     fn require_open_turn(&self, turn_id: &TurnId) -> Result<(), LedgerError> {
@@ -189,6 +225,9 @@ impl SessionProjection {
         {
             return Err(LedgerError::InvalidTransition);
         }
+        if next != TurnState::Suspended && self.has_pending_interaction_for_turn(turn_id) {
+            return Err(LedgerError::InvalidTransition);
+        }
         self.turns.insert(turn_id.clone(), next);
         Ok(())
     }
@@ -219,7 +258,9 @@ impl SessionProjection {
         if owned_turn != turn || *state != ExecutionState::Active {
             return Err(LedgerError::InvalidTransition);
         }
-        if self.has_recovery_pending_invocation(Some(execution)) {
+        if self.has_recovery_pending_invocation(Some(execution))
+            || (next != ExecutionState::Suspended && self.has_pending_interaction(execution))
+        {
             return Err(LedgerError::InvalidTransition);
         }
         let (_, state) = self
@@ -283,6 +324,61 @@ impl SessionProjection {
         {
             return Err(LedgerError::InvalidTransition);
         }
+        self.tool_digests.insert(
+            tool.clone(),
+            text(&payload(fact)?, "prepared_digest")?.to_owned(),
+        );
+        Ok(())
+    }
+
+    fn request_interaction(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let execution = required(&fact.execution_id)?;
+        if !matches!(
+            self.tools.get(tool),
+            Some((owner, InvocationState::Prepared | InvocationState::Authorized)) if owner == execution
+        ) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let payload = payload(fact)?;
+        let interaction_id = text(&payload, "interaction_id")?.to_owned();
+        let prepared_digest = text(&payload, "prepared_digest")?.to_owned();
+        if self.tool_digests.get(tool) != Some(&prepared_digest)
+            || self.interactions.contains_key(&interaction_id)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        self.interactions.insert(
+            interaction_id,
+            InteractionRecord {
+                execution: execution.clone(),
+                tool: tool.clone(),
+                suspension_id: text(&payload, "suspension_id")?.to_owned(),
+                prepared_digest,
+                terminal: false,
+            },
+        );
+        Ok(())
+    }
+
+    fn finish_interaction(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let execution = required(&fact.execution_id)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let payload = payload(fact)?;
+        let interaction = self
+            .interactions
+            .get_mut(text(&payload, "interaction_id")?)
+            .ok_or(LedgerError::MissingReference)?;
+        if interaction.terminal
+            || &interaction.execution != execution
+            || &interaction.tool != tool
+            || interaction.suspension_id != text(&payload, "suspension_id")?
+            || interaction.prepared_digest != text(&payload, "prepared_digest")?
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        interaction.terminal = true;
         Ok(())
     }
 
@@ -382,8 +478,37 @@ impl SessionProjection {
                 .values()
                 .any(|(owner, state)| pending(owner, *state))
     }
+
+    fn has_pending_interaction(&self, execution: &ExecutionId) -> bool {
+        self.interactions
+            .values()
+            .any(|value| &value.execution == execution && !value.terminal)
+    }
+
+    fn has_pending_interaction_for_turn(&self, turn: &TurnId) -> bool {
+        self.interactions.values().any(|value| {
+            !value.terminal
+                && self
+                    .executions
+                    .get(&value.execution)
+                    .is_some_and(|(owner, _)| owner == turn)
+        })
+    }
 }
 
 fn required<T>(value: &Option<T>) -> Result<&T, LedgerError> {
     value.as_ref().ok_or(LedgerError::MissingReference)
+}
+
+fn payload(fact: &FactDraft) -> Result<Map<String, Value>, LedgerError> {
+    let value: Value =
+        serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
+    value.as_object().cloned().ok_or(LedgerError::InvalidFact)
+}
+
+fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, LedgerError> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or(LedgerError::InvalidFact)
 }
