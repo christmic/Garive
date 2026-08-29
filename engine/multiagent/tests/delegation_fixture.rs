@@ -122,6 +122,10 @@ fn shared_intent_digest_failures_and_budget_settlement_are_exact() {
     let settlement = completed.settlement();
     assert_eq!(settlement.charged.input_tokens, 10);
     assert_eq!(settlement.released.input_tokens, 90);
+    assert_eq!(
+        completed.result_binding().unwrap().digest(),
+        result["expected_result_digest"].as_str().unwrap()
+    );
     let released =
         release_delegation_budget(&authorization.remaining, settlement, &original).unwrap();
     assert_eq!(

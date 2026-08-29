@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 mod common;
 
 const EMPTY_DIGEST: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-const RESULT_DIGEST: &str = "83497274cc7affcc460bca7452c14d5e72eaa019a33055df2bc39cd9a5202774";
+const RESULT_DIGEST: &str = "67de0204b4a2e4f3302cc45d68feac2346d1b3697f36d0f90d4ba9f6fd65e815";
 
 fn fact(
     id: &str,

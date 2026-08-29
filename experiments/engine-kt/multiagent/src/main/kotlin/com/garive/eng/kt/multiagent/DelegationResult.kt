@@ -2,6 +2,10 @@ package com.garive.eng.kt.multiagent
 
 import com.garive.eng.kt.tools.validatePortableValue
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import org.erdtman.jcs.JsonCanonicalizer
 
 /** Stable child terminal reason admitted into a bounded parent observation. */
 public enum class ChildTerminalReason(public val wireName: String) {
@@ -35,7 +39,60 @@ public data class DelegationResult(
     public val context: DelegationResultContext,
     public val outcome: DelegationOutcome,
     public val settlement: DelegationBudgetSettlement,
+) {
+    /** Returns RFC 8785 canonical JSON binding every governed result field. */
+    public fun resultBinding(): DelegationContractResult<ContentBinding> = runCatching {
+        val bytes = JsonCanonicalizer(resultJson().toString()).encodedUTF8
+        ContentBinding.fromInline(bytes.decodeToString())
+    }.fold(::success) { failure(DelegationErrorCode.INVALID_DELEGATION) }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun resultJson(): JsonObject = JsonObject(
+        mapOf(
+            "contract" to JsonPrimitive("garive.delegation-result"), "version" to JsonPrimitive(1),
+            "result_id" to JsonPrimitive(context.resultId), "delegation_id" to JsonPrimitive(context.delegationId),
+            "grant_id" to JsonPrimitive(context.grantId), "child_agent_instance_id" to JsonPrimitive(context.childAgentInstanceId),
+            "child_turn_id" to JsonPrimitive(context.childTurnId), "child_snapshot_digest" to JsonPrimitive(context.childSnapshotDigest),
+            "outcome" to outcomeJson(outcome), "usage" to usageJson(context.usage),
+            "consumption" to JsonObject(
+                mapOf(
+                    "child_turns" to JsonPrimitive(context.consumption.childTurns),
+                    "child_executions" to JsonPrimitive(context.consumption.childExecutions),
+                    "completed_iterations" to JsonPrimitive(context.consumption.completedIterations),
+                    "elapsed_ms" to JsonPrimitive(context.consumption.elapsedMs),
+                ),
+            ),
+        ),
+    )
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+private fun outcomeJson(value: DelegationOutcome): JsonObject = when (value) {
+    is DelegationOutcome.Completed -> JsonObject(
+        mapOf(
+            "kind" to JsonPrimitive("completed"),
+            "content" to JsonObject(buildMap {
+                put("digest", JsonPrimitive(value.content.digest))
+                value.content.inlineUtf8?.let { put("inline_utf8", JsonPrimitive(it)) }
+                value.content.reference?.let { put("reference", JsonPrimitive(it)) }
+            }),
+            "evidence" to kotlinx.serialization.json.JsonArray(value.evidence.map {
+                JsonObject(mapOf("session_id" to JsonPrimitive(it.sessionId), "position" to JsonPrimitive(it.position), "fact_id" to JsonPrimitive(it.factId), "payload_digest" to JsonPrimitive(it.payloadDigest)))
+            }),
+        ),
+    )
+    is DelegationOutcome.Stopped -> JsonObject(mapOf("kind" to JsonPrimitive("stopped"), "reason" to JsonPrimitive(value.reason.wireName)))
+    is DelegationOutcome.Failed -> JsonObject(mapOf("kind" to JsonPrimitive("failed"), "reason" to JsonPrimitive(value.reason.wireName)))
+}
+
+private fun usageJson(value: DelegationUsage): JsonObject = JsonObject(
+    mapOf("input_tokens" to tokenJson(value.inputTokens), "output_tokens" to tokenJson(value.outputTokens)),
 )
+@OptIn(ExperimentalSerializationApi::class)
+private fun tokenJson(value: TokenUsageEvidence): JsonObject = when (value) {
+    is TokenUsageEvidence.Known -> JsonObject(mapOf("kind" to JsonPrimitive("known"), "value" to JsonPrimitive(value.value)))
+    TokenUsageEvidence.Unknown -> JsonObject(mapOf("kind" to JsonPrimitive("unknown")))
+}
 
 /** Validates bounded completed content against the frozen portable result schema. */
 public fun completeDelegationResult(

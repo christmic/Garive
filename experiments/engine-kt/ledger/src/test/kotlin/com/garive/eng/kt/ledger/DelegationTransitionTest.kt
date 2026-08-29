@@ -104,7 +104,7 @@ class DelegationTransitionTest {
         buildJsonObject {
             put("input_kind", "delegation_result")
             put("content", buildJsonObject {
-                put("digest", "83497274cc7affcc460bca7452c14d5e72eaa019a33055df2bc39cd9a5202774")
+                put("digest", "67de0204b4a2e4f3302cc45d68feac2346d1b3697f36d0f90d4ba9f6fd65e815")
                 put("reference", "fixture:delegation-result-1")
             })
             put("suspension_id", "delegation-suspension-1")

@@ -25,7 +25,8 @@
     "usage": {"input_tokens":{"kind":"known","value":10},"output_tokens":{"kind":"known","value":5}},
     "consumption": {"child_turns":1,"child_executions":2,"completed_iterations":4,"elapsed_ms":1200},
     "expected_charged": {"child_turns":1,"child_executions":2,"iterations":4,"input_tokens":10,"output_tokens":5,"elapsed_ms":1200},
-    "expected_released": {"child_turns":0,"child_executions":1,"iterations":4,"input_tokens":90,"output_tokens":45,"elapsed_ms":3800}
+    "expected_released": {"child_turns":0,"child_executions":1,"iterations":4,"input_tokens":90,"output_tokens":45,"elapsed_ms":3800},
+    "expected_result_digest": "67de0204b4a2e4f3302cc45d68feac2346d1b3697f36d0f90d4ba9f6fd65e815"
   },
   "failure_codes": [
     "invalid_delegation","child_not_found","child_revision_mismatch","authority_denied",

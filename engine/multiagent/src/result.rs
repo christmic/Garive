@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use garive_tools::validate_portable_value;
+use serde::Serialize;
 
 use crate::values::{sha256, valid_digest, valid_id};
 use crate::{
@@ -9,7 +10,8 @@ use crate::{
 };
 
 /// Stable child terminal reason admitted into a bounded parent observation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ChildTerminalReason {
     /// Child reached its iteration limit.
     IterationLimit,
@@ -67,7 +69,8 @@ pub enum TerminalOutcomeKind {
 }
 
 /// Portable child evidence exposed to the parent.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DelegationOutcome {
     /// Schema-valid bounded child completion.
     Completed {
@@ -89,7 +92,7 @@ pub enum DelegationOutcome {
 }
 
 /// Exact child/result identities and terminal accounting evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DelegationResultContext {
     /// Stable result identity.
     pub result_id: String,
@@ -129,6 +132,22 @@ impl DelegationResult {
     /// Returns conservative terminal charge and releasable reservation.
     pub const fn settlement(&self) -> DelegationBudgetSettlement {
         self.settlement
+    }
+    /// Returns RFC 8785 canonical JSON binding every governed result field.
+    pub fn result_binding(&self) -> Result<ContentBinding, DelegationError> {
+        let value = serde_json::json!({
+            "contract":"garive.delegation-result","version":1,
+            "result_id":self.context.result_id,"delegation_id":self.context.delegation_id,
+            "grant_id":self.context.grant_id,
+            "child_agent_instance_id":self.context.child_agent_instance_id,
+            "child_turn_id":self.context.child_turn_id,
+            "child_snapshot_digest":self.context.child_snapshot_digest,
+            "outcome":self.outcome,"usage":self.context.usage,
+            "consumption":self.context.consumption,
+        });
+        let bytes = serde_jcs::to_vec(&value).map_err(|_| invalid())?;
+        let text = String::from_utf8(bytes).map_err(|_| invalid())?;
+        Ok(ContentBinding::from_inline(text))
     }
 }
 

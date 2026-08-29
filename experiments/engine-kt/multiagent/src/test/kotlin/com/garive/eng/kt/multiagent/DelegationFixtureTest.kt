@@ -36,6 +36,10 @@ class DelegationFixtureTest {
         )
         assertEquals(10uL, completed.settlement.charged.inputTokens)
         assertEquals(90uL, completed.settlement.released.inputTokens)
+        assertEquals(
+            completedFixture.string("expected_result_digest"),
+            assertSuccess(completed.resultBinding()).digest,
+        )
         val released = assertSuccess(releaseDelegationBudget(authorization.remaining, completed.settlement, original))
         assertEquals(original.remainingInputTokens - 10uL, released.remainingInputTokens)
         assertEquals(
