@@ -103,6 +103,65 @@ impl LiveHostClient {
         Ok(response)
     }
 
+    /// Requests durable Turn cancellation through an observed position.
+    pub async fn cancel_turn(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        requested_through_position: u64,
+    ) -> Result<TurnCommandResponse, HostClientError> {
+        if session_id.is_empty() || turn_id.is_empty() || requested_through_position == 0 {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/turns/{}:cancel", encode_segment(turn_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &CancelCommand {
+                    session_id,
+                    requested_through_position,
+                },
+            )
+            .await?;
+        validate_owned_turn_response(value, session_id, turn_id)
+    }
+
+    /// Continues one exact durable suspension with caller-supplied input.
+    pub async fn continue_turn(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        expected_session_version: u64,
+        input: &str,
+    ) -> Result<TurnCommandResponse, HostClientError> {
+        if session_id.is_empty()
+            || turn_id.is_empty()
+            || suspension_id.is_empty()
+            || expected_session_version == 0
+            || input.is_empty()
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/turns/{}:continue", encode_segment(turn_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &ContinueCommand {
+                    session_id,
+                    suspension_id,
+                    expected_session_version,
+                    input,
+                },
+            )
+            .await?;
+        validate_owned_turn_response(value, session_id, turn_id)
+    }
+
     /// Follows committed events until an explicit durable terminal event.
     pub async fn follow_until_terminal(
         &self,
@@ -288,6 +347,20 @@ struct TurnCommand<'a> {
     text: &'a str,
 }
 
+#[derive(Serialize)]
+struct CancelCommand<'a> {
+    session_id: &'a str,
+    requested_through_position: u64,
+}
+
+#[derive(Serialize)]
+struct ContinueCommand<'a> {
+    session_id: &'a str,
+    suspension_id: &'a str,
+    expected_session_version: u64,
+    input: &'a str,
+}
+
 fn validate_base_url(value: &str) -> Result<Url, HostClientError> {
     let url = Url::parse(value)
         .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidConfiguration))?;
@@ -343,6 +416,18 @@ fn validate_turn_response(value: Value) -> Result<TurnCommandResponse, HostClien
         || response.execution_id.is_empty()
         || response.committed_position == 0
     {
+        return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
+    }
+    Ok(response)
+}
+
+fn validate_owned_turn_response(
+    value: Value,
+    session_id: &str,
+    turn_id: &str,
+) -> Result<TurnCommandResponse, HostClientError> {
+    let response = validate_turn_response(value)?;
+    if response.session_id != session_id || response.turn_id != turn_id {
         return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
     }
     Ok(response)

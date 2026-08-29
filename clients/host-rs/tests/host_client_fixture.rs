@@ -225,6 +225,41 @@ async fn host_fixture_errors_are_typed_without_body_disclosure() {
     }
 }
 
+#[tokio::test]
+async fn mutation_methods_use_exact_h1_paths_and_bodies() {
+    let fixture = fixture();
+    let response = r#"{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":12}"#;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![http_json(200, response), http_json(200, response)],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+    client
+        .cancel_turn("cancel-stable", "session-client", "turn-client", 9)
+        .await
+        .expect("cancel");
+    client
+        .continue_turn(
+            "continue-stable",
+            "session-client",
+            "turn-client",
+            "suspension-client",
+            4,
+            "approved input",
+        )
+        .await
+        .expect("continue");
+    server.await.expect("server task");
+    let requests = requests.lock().await;
+    assert!(requests[0].starts_with("POST /v1/turns/turn-client:cancel HTTP/1.1\r\n"));
+    assert!(requests[0].contains("\"requested_through_position\":9"));
+    assert!(requests[1].starts_with("POST /v1/turns/turn-client:continue HTTP/1.1\r\n"));
+    assert!(requests[1].contains("\"expected_session_version\":4"));
+    assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
+}
+
 fn http_json(status: u16, body: &str) -> Vec<u8> {
     format!(
         "HTTP/1.1 {status} Result\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
