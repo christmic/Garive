@@ -16,6 +16,9 @@ only.
   official-shape fixtures and strict terminal/retry contracts.
 - Rust/Kotlin compatible Providers map neutral requests, outcomes and streams
   without endpoint, credential, environment or transport ownership.
+- Rust/Kotlin official vendor profiles turn explicit Runtime-supplied endpoint
+  and credential values into validated, redacted adapter configuration and
+  exact error policies without loading configuration or executing HTTP.
 - Host API v1 has generated Rust, Kotlin and KMP bindings plus semantic
   round-trips.
 - CLI, TUI, Web, Tauri Desktop, Android and iOS provide executable fake-host
@@ -35,8 +38,9 @@ only.
 - `cli/`, `tui/`, `web/`, `desktop/`, `mobile/`: thin product surfaces over the
   Host boundary.
 
-C7 measured compression, live network hosts, vendor profiles, production
-credentials/deployment and the Go gateway remain explicitly gated.
+C7 measured compression, live network hosts, hosted vendor capabilities,
+production credential resolution/deployment and the Go gateway remain
+explicitly gated.
 See `spec/design/core-agent-plan.md` and
 `spec/design/agent-platform-delivery.md` for the work graph and evidence rules.
 

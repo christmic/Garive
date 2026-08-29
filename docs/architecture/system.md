@@ -114,13 +114,13 @@ implementations.
 | `engine/config/`, `engine/observability/` | Validated policy values and neutral Agent events, not environment loaders/exporters. |
 | `engine/proto/` | Rust bindings for wire contracts admitted through `spec/proto/`. |
 | `adapters/` | Provider-independent protocol types, codecs, and incremental stream decoders. |
-| `providers/` | Portable deployment composition from `engine/llm` to protocol adapters; vendor profiles remain separate. |
+| `providers/` | Portable deployment composition plus explicit official vendor connection/error profiles; no configuration loading or Runtime transport. |
 | `runtime/replica/` | Product Runtime, Session lifecycle, storage, execution, recovery, and composition. |
 | `runtime/gateway/` | Planned Go service edge for auth, admission, routing, and load balancing. |
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |
-| `experiments/engine-kt/` | Experimental Kotlin conformance implementation plus PostgreSQL, protocol and Provider verification modules. |
+| `experiments/engine-kt/` | Experimental Kotlin conformance implementation plus PostgreSQL, protocol, compatible Provider and vendor-profile verification modules. |
 
 Internal source modules should be named for owned responsibilities, not generic
 buckets such as `common`, `manager`, `utils`, or `engine`.

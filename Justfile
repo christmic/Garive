@@ -37,12 +37,12 @@ protocol-adapters: adapter-boundaries
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :adapter-openai-responses:test :adapter-anthropic-messages:test
 
 provider-boundaries:
-    @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' providers/compatible experiments/engine-kt/provider-compatible --glob '!**/build/**'; then echo 'Providers must receive deployment configuration explicitly' >&2; exit 1; fi
-    @if rg -n 'garive-runtime|runtime/replica|project\(":runtime' providers/compatible experiments/engine-kt/provider-compatible --glob '!**/build/**'; then echo 'Portable Providers must not own Runtime transport' >&2; exit 1; fi
+    @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' providers experiments/engine-kt/provider-* --glob '!**/build/**'; then echo 'Providers must receive deployment configuration explicitly' >&2; exit 1; fi
+    @if rg -n 'garive-runtime|runtime/replica|project\(":runtime' providers experiments/engine-kt/provider-* --glob '!**/build/**'; then echo 'Portable Providers must not own Runtime transport' >&2; exit 1; fi
 
 providers: protocol-adapters provider-boundaries
-    cargo test -p garive-provider-compatible
-    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :provider-compatible:test
+    cargo test -p garive-provider-compatible -p garive-provider-profile -p garive-provider-openai -p garive-provider-anthropic
+    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :provider-compatible:test :provider-profile:test :provider-openai:test :provider-anthropic:test
 
 kotlin-experiment:
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
