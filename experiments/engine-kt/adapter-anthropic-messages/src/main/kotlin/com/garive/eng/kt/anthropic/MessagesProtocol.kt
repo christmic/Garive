@@ -60,78 +60,12 @@ public class ProtocolHttpRequest internal constructor(
     public val method: String = "POST"
 }
 
-/** Official string or block-array message content union. */
-public sealed interface MessageContent {
-    /** String shorthand content. */
-    public data class Text(public val value: String) : MessageContent
-    /** Ordered official content-block objects. */
-    public data class Blocks(public val value: List<JsonObject>) : MessageContent
-}
-
-/** One user or assistant turn. */
-public data class Message(public val role: String, public val content: MessageContent) {
-    init { require(role in setOf("user", "assistant")) }
-
-    internal fun json(): JsonObject = buildJsonObject {
-        put("role", role)
-        put("content", when (val content = content) {
-            is MessageContent.Text -> JsonPrimitive(content.value)
-            is MessageContent.Blocks -> JsonArray(content.value)
-        })
-    }
-}
-
-/** Typed portable create request; hosted fields remain [extensions]. */
-public data class CreateMessageRequest(
-    public val model: String,
-    public val maxTokens: ULong,
-    public val messages: List<Message>,
-    public val stream: Boolean,
-    public val system: JsonElement? = null,
-    public val stopSequences: List<String> = emptyList(),
-    public val temperature: Double? = null,
-    public val topP: Double? = null,
-    public val topK: ULong? = null,
-    public val tools: List<JsonObject> = emptyList(),
-    public val toolChoice: JsonObject? = null,
-    public val outputConfig: JsonObject? = null,
-    public val thinking: JsonObject? = null,
-    public val metadata: JsonObject? = null,
-    public val extensions: JsonObject = JsonObject(emptyMap()),
-) {
-    /** Validates the official portable profile before encoding. */
-    public fun validate(): Unit {
-        require(model.isNotEmpty() && messages.isNotEmpty())
-        require(messages.all { message -> when (val content = message.content) {
-            is MessageContent.Text -> content.value.isNotEmpty()
-            is MessageContent.Blocks -> content.value.isNotEmpty()
-        } })
-        require(stopSequences.none(String::isEmpty))
-        require(temperature == null || temperature.isFinite() && temperature in 0.0..1.0)
-        require(topP == null || topP.isFinite() && topP in 0.0..1.0)
-        require(extensions.keys.none { it in TYPED_FIELDS })
-    }
-}
-
 /** Protocol-only Messages adapter; it owns no retry or model mapping. */
 public class MessagesAdapter(public val config: MessagesAdapterConfig) {
     /** Encodes a validated official create request. */
     public fun prepare(request: CreateMessageRequest): ProtocolHttpRequest {
         request.validate()
-        val body = buildJsonObject {
-            put("model", request.model)
-            require(request.maxTokens <= Long.MAX_VALUE.toULong()); put("max_tokens", request.maxTokens.toLong())
-            put("messages", JsonArray(request.messages.map(Message::json)))
-            put("stream", request.stream)
-            request.system?.let { put("system", it) }
-            if (request.stopSequences.isNotEmpty()) put("stop_sequences", JsonArray(request.stopSequences.map(::JsonPrimitive)))
-            request.temperature?.let { put("temperature", it) }; request.topP?.let { put("top_p", it) }
-            request.topK?.let { require(it <= Long.MAX_VALUE.toULong()); put("top_k", it.toLong()) }
-            if (request.tools.isNotEmpty()) put("tools", JsonArray(request.tools))
-            request.toolChoice?.let { put("tool_choice", it) }; request.outputConfig?.let { put("output_config", it) }
-            request.thinking?.let { put("thinking", it) }; request.metadata?.let { put("metadata", it) }
-            request.extensions.forEach(::put)
-        }
+        val body = request.toJson()
         val headers = config.headers + listOf(
             ProtocolHeader.create(config.versionHeaderName, config.protocolVersion, false),
             ProtocolHeader.create("content-type", "application/json", false),
@@ -210,7 +144,6 @@ public sealed interface DecodedResponse {
 }
 
 private val JSON: Json = Json { ignoreUnknownKeys = false }
-private val TYPED_FIELDS: Set<String> = setOf("model", "max_tokens", "messages", "stream", "system", "stop_sequences", "temperature", "top_p", "top_k", "tools", "tool_choice", "output_config", "thinking", "metadata")
 private fun JsonObject.text(name: String): String = getValue(name).jsonPrimitive.content
 private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonArray
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
