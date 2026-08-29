@@ -6,8 +6,8 @@ use std::{
 use garive_ledger::{SessionId, TurnId, TurnSnapshot};
 use garive_runtime::{
     derive_runtime_recovery, plan_recovery_action_facts, reconstruct_schedule_state,
-    select_runtime_recovery, ExecutionLeaseError, ExecutionLeaseRequest, RuntimeRecoveryAction,
-    SqliteLedger,
+    recover_local_dispatches, select_runtime_recovery, ExecutionLeaseError, ExecutionLeaseRequest,
+    RuntimeRecoveryAction, SqliteLedger,
 };
 use tempfile::{tempdir, TempDir};
 
@@ -347,6 +347,56 @@ fn recovery_actions_append_their_classification_to_killed_process_state() {
     ledger
         .commit(session, snapshot.session_version, facts)
         .unwrap();
+}
+
+#[test]
+fn local_startup_coordinator_consumes_killed_process_positions() {
+    let (_directory, mut ledger, _session, snapshot) = killed_snapshot("after_start");
+    let dispatches =
+        recover_local_dispatches(&mut ledger, 3, "2026-08-29T00:00:10Z").expect("restart recovery");
+    assert_eq!(dispatches.len(), 1);
+    let recovered = ledger.load_turn(&dispatches[0].turn_id).unwrap();
+    assert_eq!(
+        recovered.facts[recovered.facts.len() - 2].kind.as_str(),
+        "execution.abandoned"
+    );
+    assert_eq!(
+        recovered.facts.last().unwrap().kind.as_str(),
+        "execution.started"
+    );
+    assert_ne!(
+        dispatches[0].execution_id,
+        snapshot.facts[2].execution_id.clone().unwrap()
+    );
+
+    let (_directory, mut ledger, _session, snapshot) = killed_snapshot("model_started");
+    assert!(
+        recover_local_dispatches(&mut ledger, 3, "2026-08-29T00:00:10Z")
+            .expect("uncertain recovery")
+            .is_empty()
+    );
+    let recovered = ledger
+        .load_turn(&snapshot.facts[0].turn_id.clone().unwrap())
+        .unwrap();
+    assert_eq!(
+        recovered.facts.last().unwrap().kind.as_str(),
+        "turn.suspended"
+    );
+
+    let (_directory, mut ledger, _session, snapshot) = killed_snapshot("after_terminal");
+    assert!(
+        recover_local_dispatches(&mut ledger, 3, "2026-08-29T00:00:10Z")
+            .expect("terminal recovery")
+            .is_empty()
+    );
+    assert_eq!(
+        ledger
+            .load_turn(&snapshot.facts[0].turn_id.clone().unwrap())
+            .unwrap()
+            .facts
+            .len(),
+        snapshot.facts.len()
+    );
 }
 
 fn killed_snapshot(checkpoint: &str) -> (TempDir, SqliteLedger, SessionId, TurnSnapshot) {
