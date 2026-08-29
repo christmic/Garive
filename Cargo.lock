@@ -1078,10 +1078,12 @@ dependencies = [
 name = "garive-runtime"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "garive-ledger",
  "garive-tools",
  "rusqlite",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 
