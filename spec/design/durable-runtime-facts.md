@@ -1,0 +1,394 @@
+# C6F — Durable Runtime fact payloads v1
+
+> Reference for Runtime, ledger-adapter, and recovery implementers defining the
+> exact schema-v1 payload values C6 commits and consumes across a process or
+> storage restart boundary.
+
+## Audience
+
+Engineers writing Runtime fact mapping, Rust/Kotlin ledger validation,
+SQLite/PostgreSQL adapters, fault fixtures, or recovery projections.
+
+## Why
+
+L0 requires a versioned payload contract for every new fact kind. A lifecycle
+name alone cannot reconstruct content, distinguish uncertainty, or verify that
+an observation matches the exact request/effect applied before a crash.
+
+## Status
+
+Accepted C6 companion contract, coordinated with the L0 vocabulary amendment.
+
+## Boundary and encoding
+
+Runtime produces these payloads; ledger adapters validate and persist them;
+Runtime recovery consumes them. Every payload is a JSON object encoded by L0
+canonical payload v1 with `schema_version = 1` in the outer `DurableFact`.
+
+For v1:
+
+- fields listed as required must occur exactly once;
+- `field?` means omitted or present with the declared value, never implicit;
+- unknown fields are rejected when applying recovery semantics;
+- an unknown fact schema remains readable as opaque audit data;
+- IDs are non-empty opaque strings and are also bound by the typed outer fact
+  envelope where that envelope has a dedicated identity field;
+- `Digest` is exactly 64 lowercase SHA-256 hexadecimal characters;
+- counts/durations/positions are non-negative JSON integers in L0 range;
+- enums use the lowercase snake-case spelling shown here;
+- timestamps are diagnostic outer-envelope metadata, never payload ordering.
+
+## Shared values
+
+```text
+ContentBinding {
+  digest: Digest
+  inline_utf8?: string
+  reference?: non-empty opaque string
+}
+
+TokenCount = { "kind": "known", "value": u64 }
+           | { "kind": "unknown" }
+
+UsageEvidence {
+  input_tokens: TokenCount
+  output_tokens: TokenCount
+  cache_read_tokens?: TokenCount
+  cache_write_tokens?: TokenCount
+  source: "provider_reported" | "estimated"
+}
+
+EffectiveLimits {
+  max_iterations: non-zero u64
+  max_input_tokens?: non-zero u64
+  max_output_tokens?: non-zero u64
+  deadline_budget_ms?: non-zero u64
+}
+```
+
+Exactly one of `inline_utf8` and `reference` is present. The digest is over the
+exact UTF-8 bytes or referenced bytes. A reference is admitted only when
+Runtime can verify the content-address/digest association before commit. JSON
+content is stored as canonical or contract-declared UTF-8 text inside this
+binding, so floats or future content grammars do not silently change L0's
+integer-only outer canonical payload.
+
+## Turn payloads
+
+```text
+turn.started.v1 {
+  command_id: CommandId
+  kind: "start" | "continue"
+  agent_instance_id: AgentInstanceId
+  definition_id: AgentDefinitionId
+  definition_revision: AgentDefinitionRevision
+  snapshot_digest: Digest
+  trusted_input_digest: Digest
+  prior_suspension_id?: SuspensionId
+}
+
+turn.input.v1 {
+  input_kind: "trusted_user" | "trusted_system" | "continuation"
+  content: ContentBinding
+  suspension_id?: SuspensionId
+}
+
+turn.cancel_requested.v1 {
+  command_id: CommandId
+  reason: "user" | "deadline" | "shutdown" | "operator" | "policy"
+  requested_through_position: u64
+}
+
+turn.suspended.v1 {
+  suspension_id: SuspensionId
+  execution_id: ExecutionId
+  reason: "approval_required" | "external_input_required" |
+          "operator_reconciliation" | "resource_unavailable" |
+          "partial_output"
+  continuation: ContentBinding
+  cumulative_usage: UsageEvidence
+}
+
+turn.completed.v1 {
+  execution_id: ExecutionId
+  response: ContentBinding
+  cumulative_usage: UsageEvidence
+}
+
+turn.stopped.v1 {
+  execution_id: ExecutionId
+  reason: "iteration_limit" | "token_limit" | "deadline" | "cancelled"
+  cumulative_usage: UsageEvidence
+  evidence?: ContentBinding
+}
+
+turn.failed.v1 {
+  execution_id: ExecutionId
+  reason: "invalid_input" | "invalid_model_output" |
+          "required_capability_unavailable" | "port_failure" |
+          "invariant_violation" | "durability_failure" |
+          "corrupt_recovery_state"
+  cumulative_usage: UsageEvidence
+  evidence?: ContentBinding
+}
+```
+
+The Turn terminal payload and corresponding Execution terminal payload commit
+atomically and name the same outcome/reason.
+
+`turn.started.kind=start` forbids `prior_suspension_id` and creates an absent
+Turn. `kind=continue` requires it, must match the current durable suspension,
+and reopens that Turn in the same transaction that starts a fresh Execution.
+
+## Execution payloads
+
+```text
+execution.started.v1 {
+  snapshot_digest: Digest
+  through_position: u64
+  completed_iterations: u64
+  limits: EffectiveLimits
+  recovery_ordinal: u64
+}
+
+execution.abandoned.v1 {
+  reason: "runtime_lost"
+  last_safe_position: u64
+  recovery_ordinal: non-zero u64
+}
+
+execution.completed.v1 {
+  response: ContentBinding
+  usage: UsageEvidence
+}
+
+execution.suspended.v1 {
+  suspension_id: SuspensionId
+  reason: same enum as turn.suspended.v1
+  continuation: ContentBinding
+  usage: UsageEvidence
+}
+
+execution.stopped.v1 {
+  reason: same enum as turn.stopped.v1
+  usage: UsageEvidence
+  evidence?: ContentBinding
+}
+
+execution.failed.v1 {
+  reason: same enum as turn.failed.v1
+  usage: UsageEvidence
+  evidence?: ContentBinding
+}
+```
+
+`execution.abandoned` is Runtime recovery truth, not an `AgentOutcome`. It is
+valid only for an active Execution and only when every child invocation is
+terminal, pre-dispatch, or durably classified safe/uncertain.
+
+## Model payloads
+
+```text
+model.prepared.v1 {
+  request_digest: Digest
+  capability_target: non-empty string
+  deployment_id: non-empty string
+  recovery_policy_revision: non-empty string
+  max_attempts: non-zero u64
+}
+
+model.started.v1 {
+  request_digest: Digest
+  dispatch_attempt_id: non-empty string
+}
+
+model.completed.v1 {
+  request_digest: Digest
+  stop_reason: "end_turn" | "tool_use" | "stop_sequence" |
+               "pause_turn" | "refusal" | "other"
+  items: ContentBinding
+  usage: UsageEvidence
+}
+
+model.rejected.v1 {
+  request_digest: Digest
+  kind: "context_overflow" | "authentication" | "content_policy"
+  evidence?: ContentBinding
+}
+
+model.interrupted.v1 {
+  request_digest: Digest
+  kind: "cancelled" | "output_limit" | "transport"
+  partial_items: ContentBinding
+  usage: UsageEvidence
+}
+
+model.unavailable.v1 {
+  request_digest: Digest
+  kind: "rate_limited" | "model_unavailable" | "circuit_open"
+  retry_after_ms?: u64
+}
+
+model.uncertain.v1 {
+  request_digest: Digest
+  reason: "runtime_lost" | "transport_lost" | "provider_state_unknown"
+  evidence?: ContentBinding
+}
+```
+
+`other` stop reasons retain a sanitized value inside the `items` content, not
+as an unbounded enum string used by recovery. Usage is atomic with completed or
+interrupted facts.
+
+## Interaction payloads
+
+```text
+interaction.requested.v1 {
+  interaction_id: InteractionId
+  suspension_id: SuspensionId
+  prepared_digest: Digest
+  kind: "approval" | "external_input"
+  prompt: ContentBinding
+  response_schema_digest: Digest
+  expiry_code: "none" | "turn_deadline" | "policy_deadline"
+}
+
+interaction.resolved.v1 {
+  interaction_id: InteractionId
+  suspension_id: SuspensionId
+  prepared_digest: Digest
+  response: ContentBinding
+}
+
+interaction.cancelled.v1 {
+  interaction_id: InteractionId
+  suspension_id: SuspensionId
+  prepared_digest: Digest
+  reason: "user" | "expired" | "turn_cancelled" | "operator"
+}
+```
+
+The outer fact binds `tool_invocation_id` for all three. Resolution/cancellation
+is terminal exactly once and must match the requested digest/schema.
+
+## Effect payloads
+
+```text
+tool.preparation_rejected.v1 {
+  source_model_request_id: ModelRequestId
+  model_call_id: non-empty string
+  proposed_tool_name: string
+  code: "invalid_tool_name" | "tool_not_admitted" |
+        "invalid_arguments_json" | "arguments_schema_mismatch" |
+        "non_canonical_value"
+  failure_paths: ContentBinding
+}
+
+effect.prepared.v1 {
+  prepared_digest: Digest
+  tool_name: non-empty string
+  tool_revision: non-empty string
+  replay_class: "read_only" | "idempotent" |
+                "receipt_recoverable" | "never_replay"
+  model_call_id: non-empty string
+}
+
+effect.authorized.v1 {
+  prepared_digest: Digest
+  grant_id: GrantId
+  authority_revision: non-empty string
+  granted_requirements: ContentBinding
+}
+
+effect.denied.v1 {
+  prepared_digest: Digest
+  code: "authorization_denied" | "replacement_required"
+  safe_details?: ContentBinding
+}
+
+effect.started.v1 {
+  prepared_digest: Digest
+  grant_id: GrantId
+  executor_id: non-empty string
+  executor_revision: non-empty string
+  dispatch_attempt_id: non-empty string
+}
+
+effect.receipt.v1 {
+  receipt_id: ReceiptId
+  prepared_digest: Digest
+  grant_id: GrantId
+  executor_id: non-empty string
+  executor_revision: non-empty string
+  classification: "completed" | "failed"
+  result_or_evidence: ContentBinding
+}
+
+effect.completed.v1 {
+  prepared_digest: Digest
+  receipt_id: ReceiptId
+  result: ContentBinding
+}
+
+effect.failed.v1 {
+  prepared_digest: Digest
+  receipt_id?: ReceiptId
+  code: "timeout" | "cancelled" | "tool_failure" |
+        "requirement_unsupported" | "executor_unavailable"
+  evidence?: ContentBinding
+}
+
+effect.uncertain.v1 {
+  prepared_digest: Digest
+  reason: "started_without_receipt" | "receipt_invalid" |
+          "executor_state_unknown"
+  evidence?: ContentBinding
+}
+
+effect.observation.v1 {
+  prepared_digest: Digest
+  model_call_id: non-empty string
+  observation: ContentBinding
+}
+```
+
+The outer fact binds one `ToolInvocationId` throughout. `effect.observation`
+follows a denial or effect terminal and is committed before any later model
+request that contains the corresponding LLM `ToolObservation`.
+`tool.preparation_rejected` has no Tool Invocation ID because invalid input
+never receives one; it binds the outer Model Request/Execution IDs and is also
+committed before the correcting observation enters a later model request.
+
+## Atomicity and idempotency
+
+- facts in one declared boundary transaction receive contiguous positions;
+- same `FactId` plus equal canonical payload is idempotent;
+- same `FactId` or lifecycle identity plus different binding is a conflict;
+- receipt and result bindings cannot change after commit;
+- terminal publication occurs only after the corresponding terminal payload
+  and projection change commit;
+- content-reference failure aborts the entire transaction.
+
+## Required acceptance evidence after approval
+
+- JSON fixtures for every payload, optional-field case and enum terminal;
+- rejection fixtures for extra/missing fields, wrong types, malformed digests,
+  identity mismatch and forbidden transitions;
+- Rust/Kotlin L0 validators consume every semantic case;
+- SQLite/PostgreSQL adapters prove atomic binding and opaque preservation of an
+  unknown newer schema.
+
+## See also
+
+- [`durable-ledger.md`](durable-ledger.md) — outer envelope, canonicalization,
+  positions and idempotent append.
+- [`governed-effects.md`](governed-effects.md) — semantic meaning of effect and
+  observation values.
+- [`agent-definition-snapshot.md`](agent-definition-snapshot.md) — snapshot
+  digest bound by Turn and Execution facts.
+
+## Meta
+
+- Owner: `@christmic`
+- Last reviewed: 2026-08-29
+- Status: accepted
