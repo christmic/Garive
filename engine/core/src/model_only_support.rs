@@ -1,6 +1,6 @@
 use garive_llm::{
-    ModelCancellation, ModelObserver, ModelRequest, ModelRequestId, ModelStreamEvent,
-    ObserverDecision, TokenCount, ToolDescriptor,
+    ModelCancellation, ModelInputContent, ModelInputItem, ModelObserver, ModelRequest,
+    ModelRequestId, ModelRole, ModelStreamEvent, ObserverDecision, TokenCount, ToolDescriptor,
 };
 
 use crate::{
@@ -23,18 +23,41 @@ pub(super) fn build_model_request(
         request.execution_id.as_str()
     );
     let target = request.model_targets[target_index].clone();
+    let mut input_items: Vec<_> = surface
+        .items
+        .into_iter()
+        .filter_map(|value| match value {
+            ContextItem::Input { item, .. } => Some(item),
+            ContextItem::RedactedItem { .. } => None,
+        })
+        .collect();
+    let instruction_boundary = input_items
+        .iter()
+        .take_while(|item| {
+            matches!(
+                item,
+                ModelInputItem::Message {
+                    role: ModelRole::System | ModelRole::Developer,
+                    ..
+                }
+            )
+        })
+        .count();
+    input_items.splice(
+        instruction_boundary..instruction_boundary,
+        request
+            .activated_skills
+            .iter()
+            .map(|skill| ModelInputItem::Message {
+                role: ModelRole::Developer,
+                content: vec![ModelInputContent::Text(skill.instructions().to_owned())],
+            }),
+    );
     let value = ModelRequest {
         request_id: ModelRequestId::new(request_id.clone()),
         target_id: target,
         required_capabilities: request.required_capabilities.clone(),
-        input_items: surface
-            .items
-            .into_iter()
-            .filter_map(|value| match value {
-                ContextItem::Input { item, .. } => Some(item),
-                ContextItem::RedactedItem { .. } => None,
-            })
-            .collect(),
+        input_items,
         tools,
         output: request.model_output.clone(),
         trace_metadata: vec![

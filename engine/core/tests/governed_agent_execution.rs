@@ -169,6 +169,7 @@ fn request() -> AgentTurnRequest {
             max_items: 8,
             max_utf8_bytes: 1024,
         },
+        activated_skills: vec![],
         model_targets: vec![ModelTargetId::new("model")],
         required_capabilities: vec![ModelCapability::Tools],
         model_output: ModelOutputSettings {

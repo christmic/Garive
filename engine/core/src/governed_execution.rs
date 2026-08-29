@@ -80,5 +80,27 @@ pub async fn execute_agent(
     ports: &mut AgentExecutionPorts<'_>,
     effects: &mut dyn GovernedEffectPort,
 ) -> ExecutionReport {
-    crate::model_only::execute_with_tools(request, ports, &capabilities.definitions, effects).await
+    let narrowed;
+    let definitions = if request.activated_skills.is_empty() {
+        &capabilities.definitions
+    } else {
+        let allowed = request
+            .activated_skills
+            .iter()
+            .flat_map(|skill| skill.allowed_tool_references())
+            .collect::<std::collections::BTreeSet<_>>();
+        narrowed = capabilities
+            .definitions
+            .iter()
+            .filter(|definition| {
+                allowed.iter().any(|reference| {
+                    reference.name() == definition.name()
+                        && reference.exact_revision() == definition.revision()
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        &narrowed
+    };
+    crate::model_only::execute_with_tools(request, ports, definitions, effects).await
 }

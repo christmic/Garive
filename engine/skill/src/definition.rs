@@ -181,6 +181,16 @@ impl ExactToolReference {
         }
         Ok(value)
     }
+
+    /// Returns the exact provider-neutral tool name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the exact frozen tool revision.
+    pub fn exact_revision(&self) -> &str {
+        &self.exact_revision
+    }
 }
 
 /// Deterministic S0 v1 activation policy.

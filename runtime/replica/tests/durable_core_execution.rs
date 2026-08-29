@@ -777,6 +777,7 @@ fn core_request(
             max_items: 10,
             max_utf8_bytes: 100,
         },
+        activated_skills: vec![],
         model_targets: vec![ModelTargetId::new("target")],
         required_capabilities: vec![ModelCapability::Text],
         model_output: ModelOutputSettings {

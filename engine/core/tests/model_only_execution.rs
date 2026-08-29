@@ -264,6 +264,7 @@ fn request(case: &Value) -> AgentTurnRequest {
             max_items: 10,
             max_utf8_bytes: 100,
         },
+        activated_skills: vec![],
         model_targets: if case["unavailable"] == "alternate" {
             vec![
                 ModelTargetId::new("primary"),

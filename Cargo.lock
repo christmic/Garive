@@ -1105,6 +1105,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "garive-llm",
+ "garive-skill",
  "garive-tools",
  "serde_json",
 ]

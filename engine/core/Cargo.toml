@@ -11,6 +11,7 @@ path = "src/lib.rs"
 
 [dependencies]
 garive-llm = { path = "../llm" }
+garive-skill = { path = "../skill" }
 garive-tools = { path = "../tools" }
 serde_json.workspace = true
 

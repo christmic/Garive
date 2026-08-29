@@ -2,6 +2,7 @@ use garive_llm::{
     ModelCancellation, ModelCapability, ModelItem, ModelOutputSettings, ModelPort,
     ModelStreamEvent, ModelTargetId, TokenCount,
 };
+use garive_skill::ActivatedSkill;
 
 use crate::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, ContextRequest, ContextSurface,
@@ -135,6 +136,8 @@ pub struct AgentTurnRequest {
     pub cursor: AgentCursor,
     /// Frozen context window and budgets.
     pub context_request: ContextRequest,
+    /// Exact Skills durably activated before any model request.
+    pub activated_skills: Vec<ActivatedSkill>,
     /// Ordered frozen model targets available to recovery policy.
     pub model_targets: Vec<ModelTargetId>,
     /// Provider-neutral capabilities every selected target must satisfy.
