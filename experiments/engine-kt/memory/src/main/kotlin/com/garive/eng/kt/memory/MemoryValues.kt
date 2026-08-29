@@ -21,6 +21,7 @@ public enum class MemoryErrorCode(public val wireName: String) {
     INVALID_TRANSITION("invalid_transition"),
     DUPLICATE_OBSERVATION("duplicate_observation"),
     PROMOTION_RECEIPT_REQUIRED("promotion_receipt_required"),
+    PROMOTION_NOT_ELIGIBLE("promotion_not_eligible"),
     SELECTION_UNREPLAYABLE("selection_unreplayable"),
     ATTRIBUTION_UNSUPPORTED("attribution_unsupported"),
     PROJECTION_STALE("projection_stale"),
