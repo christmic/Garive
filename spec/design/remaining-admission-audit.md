@@ -15,7 +15,7 @@ evidence. Proposed numeric thresholds are not copied into accepted contracts.
 
 | Slice | Decision | Missing evidence before a focused Spec |
 |---|---|---|
-| C7 measured compression | gated | Versioned representative C3/C6 ledger corpus; uncompressed context-pressure and quality/cost baseline; admitted provider token counter; measured trigger/retention trade-off. B0 SWE outcomes do not measure context pressure. |
+| C7 measured compression | gated | C7-A now supplies the versioned C3/C6 reference corpus, runner and non-publishable pipeline evidence. Remaining: an admitted provider token counter, publication-grade uncompressed baseline and measured trigger/retention trade-off. B0 SWE outcomes do not measure context pressure. |
 | Creativity | gated | Neutral task taxonomy and bounded alternative-generation hypothesis; reproducible baseline runs using E0/B0 infrastructure; deterministic outcome rubric separating diversity from correctness; authority and budget ownership. Harness unit tests are not a baseline. |
 | P2-VX hosted capability | planned per capability | One concrete capability request; provider-neutral semantics and extension values; exact unsupported/failure behavior; protocol fixtures; proof that ordinary Tool/Knowledge semantics cannot represent it. No generic extension allowlist is admitted. |
 | G0 Go Gateway | gated | A live H1 edge workflow requiring independent scaling; load/failure measurements; authentication/routing ownership not already held by Host; deployment and recovery boundary. Language preference alone is insufficient. |

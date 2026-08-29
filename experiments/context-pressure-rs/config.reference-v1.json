@@ -1,0 +1,19 @@
+{
+  "corpus_path": "spec/fixtures/agent/context-pressure-corpus-v1.json",
+  "evidence_path": "experiments/context-pressure-rs/evidence/reference-v1.json",
+  "garive_revision": "f62d64cb0491367e60cca045d2b1d3bf82ac1758",
+  "runner_revision": "garive.context-pressure-runner.v1",
+  "dirty": false,
+  "counter": {
+    "counter_id": "garive-fixture-utf8-ceil4",
+    "counter_revision": "v1",
+    "publishable": false,
+    "executable": "target/debug/garive-fixture-token-counter",
+    "argv": [],
+    "cwd": ".",
+    "environment": {},
+    "timeout_ms": 5000,
+    "max_stdout_bytes": 1024,
+    "max_stderr_bytes": 1024
+  }
+}

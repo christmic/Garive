@@ -1,0 +1,82 @@
+{
+  "cases": [
+    {
+      "case_id": "conversation-multiturn",
+      "input_tokens": 55,
+      "item_count": 4,
+      "model_input_limit_tokens": 128,
+      "pressure_basis_points": 4297,
+      "utf8_bytes": 217,
+      "workload_class": "conversation"
+    },
+    {
+      "case_id": "tool-heavy-recovery",
+      "input_tokens": 77,
+      "item_count": 5,
+      "model_input_limit_tokens": 128,
+      "pressure_basis_points": 6016,
+      "utf8_bytes": 305,
+      "workload_class": "tool_heavy"
+    },
+    {
+      "case_id": "capability-heavy-attribution",
+      "input_tokens": 94,
+      "item_count": 5,
+      "model_input_limit_tokens": 128,
+      "pressure_basis_points": 7344,
+      "utf8_bytes": 376,
+      "workload_class": "capability_heavy"
+    },
+    {
+      "case_id": "long-running-prefix",
+      "input_tokens": 116,
+      "item_count": 8,
+      "model_input_limit_tokens": 192,
+      "pressure_basis_points": 6042,
+      "utf8_bytes": 461,
+      "workload_class": "long_running"
+    }
+  ],
+  "classes": [
+    {
+      "case_count": 1,
+      "max_pressure_basis_points": 4297,
+      "mean_pressure_denominator": 1,
+      "mean_pressure_numerator": 4297,
+      "workload_class": "conversation"
+    },
+    {
+      "case_count": 1,
+      "max_pressure_basis_points": 6016,
+      "mean_pressure_denominator": 1,
+      "mean_pressure_numerator": 6016,
+      "workload_class": "tool_heavy"
+    },
+    {
+      "case_count": 1,
+      "max_pressure_basis_points": 7344,
+      "mean_pressure_denominator": 1,
+      "mean_pressure_numerator": 7344,
+      "workload_class": "capability_heavy"
+    },
+    {
+      "case_count": 1,
+      "max_pressure_basis_points": 6042,
+      "mean_pressure_denominator": 1,
+      "mean_pressure_numerator": 6042,
+      "workload_class": "long_running"
+    }
+  ],
+  "contract": "garive.context-pressure-evidence",
+  "corpus_digest": "420eee56a884cd85a27886f994d9344e518690f145f3e401c7efe03d05a23fd8",
+  "corpus_id": "garive-c3-c6-reference",
+  "corpus_revision": "2026-08-30.v1",
+  "counter_config_digest": "2c5a7a87c957ed2165837dd618493f6a3093f100b096a8aafc1f843f60ff0d1a",
+  "counter_id": "garive-fixture-utf8-ceil4",
+  "counter_revision": "v1",
+  "dirty": false,
+  "garive_revision": "f62d64cb0491367e60cca045d2b1d3bf82ac1758",
+  "publishable": false,
+  "runner_revision": "garive.context-pressure-runner.v1",
+  "version": 1
+}

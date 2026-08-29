@@ -116,6 +116,13 @@ values, raw context content and subprocess stderr never enter evidence.
 - a publication-grade committed run using an admitted provider counter is the
   separate evidence that may unlock the C7 behavior Spec.
 
+## Delivered reference evidence
+
+`experiments/context-pressure-rs/evidence/reference-v1.json` proves the complete
+non-overwriting pipeline over all four workload classes. It uses the reserved
+non-publishable `garive-fixture-utf8-ceil4` counter and therefore does not unlock
+C7 or validate any numeric compression threshold.
+
 ## Meta
 
 - Owner: `@christmic`
