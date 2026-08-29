@@ -1,0 +1,197 @@
+package com.garive.mobile.host
+
+import com.garive.host.v1.HostEventV1
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.sse.SSE
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.*
+
+public class LiveHostClientTest {
+    private val fixture: JsonObject by lazy {
+        val root = Path.of(System.getProperty("garive.repo.root"))
+        Json.parseToJsonElement(root.resolve("spec/fixtures/host/live-host-client-v1.json").readText()).jsonObject
+    }
+
+    @Test
+    public fun sharedFixtureCoversGapsReconnectUnknownAndFailures(): Unit {
+        val session = fixture.text("session_id")
+        val valid = fixture.getValue("valid_stream").jsonArray.map { it.jsonObject.toEvent() }
+        val view = reduceHostEvents(session, valid)
+        val expected = fixture.getValue("expected").jsonObject
+        assertEquals(expected.long("cursor"), view.cursor)
+        assertEquals(HostTerminalKind.COMPLETED, view.terminal)
+        assertEquals(expected.text("text"), view.text)
+        assertEquals(expected.getValue("unknown_events").jsonArray.map { it.jsonPrimitive.content }, view.unknownEvents)
+
+        val prefix = reduceHostEvents(session, valid.take(2))
+        val reconnect = fixture.getValue("reconnect").jsonObject
+        val resumed = reduceHostEvents(
+            session, reconnect.getValue("events").jsonArray.map { it.jsonObject.toEvent() }, prefix,
+        )
+        assertEquals(listOf(5L, 9L), resumed.fingerprints.keys.filter { it > prefix.cursor })
+        val disconnected = reduceHostEvents(
+            session, fixture.getValue("disconnect_before_terminal").jsonArray.map { it.jsonObject.toEvent() },
+        )
+        assertNull(disconnected.terminal)
+        assertEquals(
+            fixture.getValue("failure_codes").jsonArray.map { it.jsonPrimitive.content },
+            HostClientError.entries.map { it.wireName },
+        )
+    }
+
+    @Test
+    public fun sharedInvalidMutationsFailExactly(): Unit {
+        val session = fixture.text("session_id")
+        val valid = fixture.getValue("valid_stream").jsonArray.map { it.jsonObject.toEvent() }
+        fixture.getValue("invalid_streams").jsonArray.forEach { raw ->
+            val test = raw.jsonObject
+            val events = mutation(test.text("mutation"), valid)
+            val error = assertFailsWith<HostClientException> { reduceHostEvents(session, events) }
+            assertEquals(test.text("expected"), error.code.wireName, test.text("name"))
+        }
+    }
+
+    @Test
+    public fun generatedHostEventRoundTripsWire(): Unit {
+        val event = fixture.getValue("valid_stream").jsonArray.last().jsonObject.toEvent()
+        assertEquals(event, HostEventV1.ADAPTER.decode(event.encode()))
+    }
+
+    @Test
+    public fun realLoopbackTransportUsesH1AndStopsOnlyAtDurableTerminal(): Unit = runBlocking {
+        val seen = mutableListOf<String>()
+        val events = fixture.getValue("valid_stream").jsonArray.map { it.jsonObject.toEvent() }
+        val call = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            seen += "${exchange.requestMethod} ${exchange.requestURI.path} ${exchange.requestHeaders.getFirst("Idempotency-Key").orEmpty()}"
+            val (contentType, body) = when (call.getAndIncrement()) {
+                0 -> "application/json" to """{"session_id":"session-client","agent_instance_id":"agent-1","committed_position":1}"""
+                1 -> "application/json" to """{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}"""
+                else -> "text/event-stream" to events.joinToString("") {
+                    "id: ${it.position}\nevent: host\ndata: ${it.toJson()}\n\n"
+                }
+            }
+            val bytes = body.encodeToByteArray()
+            exchange.responseHeaders.add("Content-Type", contentType)
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val client = LiveHostClient("http://127.0.0.1:${server.address.port}/", limits())
+            val session = client.createSession("create-stable", "definition-main")
+            val turn = client.startTurn("turn-stable", session.session_id, "hello")
+            val view =
+            client.followUntilTerminal(session.session_id, turn.committed_position)
+            assertEquals(HostTerminalKind.COMPLETED, view.terminal)
+            assertEquals("durable answer", view.text)
+            assertEquals(listOf(
+                "POST /v1/sessions create-stable",
+                "POST /v1/sessions/session-client/turns turn-stable",
+                "GET /v1/sessions/session-client/events ",
+            ), seen)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    public fun rejectsNonLoopbackAndRedactsKnownHostFailure(): Unit = runBlocking {
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> { LiveHostClient("https://example.com/", limits()) }.code,
+        )
+        val engine = MockEngine {
+            respondJson("""{"code":"not_found","secret":"must-not-leak"}""", HttpStatusCode.NotFound)
+        }
+        val client = LiveHostClient("http://localhost:4317/", limits(), HttpClient(engine))
+        val error = assertFailsWith<HostClientException> {
+            client.createSession("create-stable", "definition-main")
+        }
+        assertEquals(HostClientError.HOST_FAILURE, error.code)
+        assertEquals(404, error.status)
+        assertTrue("must-not-leak" !in error.toString())
+    }
+
+    @Test
+    public fun everySharedHostFailureIsTyped(): Unit = runBlocking {
+        fixture.getValue("host_errors").jsonArray.forEach { raw ->
+            val hostError = raw.jsonObject
+            val engine = MockEngine {
+                respondJson(
+                    buildJsonObject { put("code", hostError.text("code")); put("secret", "must-not-leak") }.toString(),
+                    HttpStatusCode.fromValue(hostError.long("status").toInt()),
+                )
+            }
+            val client = LiveHostClient("http://localhost:4317/", limits(), HttpClient(engine))
+            val error = assertFailsWith<HostClientException> {
+                client.createSession("create-stable", "definition-main")
+            }
+            assertEquals(HostClientError.HOST_FAILURE, error.code)
+            assertEquals(hostError.long("status").toInt(), error.status)
+            assertTrue("must-not-leak" !in error.toString())
+        }
+    }
+
+    @Test
+    public fun turnMutationsUseExactH1Paths(): Unit = runBlocking {
+        val paths = mutableListOf<String>()
+        val response = """{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":12}"""
+        val engine = MockEngine { request -> paths += request.url.encodedPath; respondJson(response) }
+        val client = LiveHostClient("http://127.0.0.1:4317/", limits(), HttpClient(engine))
+        client.cancelTurn("cancel-stable", "session-client", "turn-client", 9)
+        client.continueTurn(
+            "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input",
+        )
+        assertEquals(listOf("/v1/turns/turn-client:cancel", "/v1/turns/turn-client:continue"), paths)
+    }
+
+    private fun mutation(name: String, source: List<HostEventV1>): List<HostEventV1> = when (name) {
+        "api_version_v2" -> listOf(source.first().copy(api_version = "v2"))
+        "session_other" -> listOf(source.first().copy(session_id = "other"))
+        "position_zero" -> listOf(source.first().copy(position = 0))
+        "position_backward" -> listOf(source.first().copy(position = 2), source.first().copy(position = 1))
+        "duplicate_conflict" -> listOf(source.first().copy(position = 2), source.first().copy(position = 2, event = "turn.started"))
+        "event_count_17" -> List(17) { source.first().copy(position = (it + 1).toLong()) }
+        else -> error("unknown mutation $name")
+    }
+
+    private fun limits(): HostClientLimits = HostClientLimits(4_096, 8_192, 16, 2_000)
+
+    private fun io.ktor.client.engine.mock.MockRequestHandleScope.respondJson(
+        body: String,
+        status: HttpStatusCode = HttpStatusCode.OK,
+    ) = respond(body, status, headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+
+    private fun JsonObject.toEvent(): HostEventV1 = HostEventV1(
+        api_version = text("api_version"), session_id = text("session_id"), position = long("position"),
+        event = text("event"), turn_id = optional("turn_id"), execution_id = optional("execution_id"),
+        text = optional("text"),
+    )
+
+    private fun HostEventV1.toJson(): String = buildJsonObject {
+        put("api_version", api_version); put("session_id", session_id); put("position", position)
+        put("event", event); put("turn_id", turn_id); put("execution_id", execution_id); put("text", text)
+    }.toString()
+
+    private fun JsonObject.text(key: String): String = getValue(key).jsonPrimitive.content
+    private fun JsonObject.long(key: String): Long = getValue(key).jsonPrimitive.long
+    private fun JsonObject.optional(key: String): String = get(key)?.jsonPrimitive?.content.orEmpty()
+}

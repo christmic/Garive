@@ -13,9 +13,8 @@ this module depends on neither.
 ```
 shared/
 ├── src/
-│   ├── commonMain/kotlin/   platform-agnostic business code
-│   ├── commonMain/kotlin/   generated-wire Host client and reducer
-│   └── jvmTest/kotlin/      shared fixture and protobuf round-trip tests
+│   ├── commonMain/kotlin/   generated-wire H1 client and reducer
+│   └── jvmTest/kotlin/      shared fixture, real-loopback and wire tests
 ├── build.gradle.kts         KMP + Square Wire generation
 └── README.md
 ```
@@ -49,9 +48,10 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
 
 ## Verify
 
-`jvmTest` reads `spec/fixtures/host/fake-session.json`, constructs only
-Wire-generated Host values, round-trips protobuf bytes, and verifies terminal,
-identity and durable-position reduction.
+`jvmTest` reads `spec/fixtures/host/live-host-client-v1.json`, constructs only
+Wire-generated Host values, round-trips protobuf bytes, verifies all reducer
+failures and exercises HTTP/SSE against a real loopback server. The XCFramework
+gate separately compiles the same client for iOS and macOS.
 
 ## Meta
 
