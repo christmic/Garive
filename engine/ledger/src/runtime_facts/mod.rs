@@ -37,7 +37,17 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let delegation_family = kind.starts_with("delegation.");
     let memory_session_scoped = matches!(
         kind,
-        "memory.tombstoned" | "memory.observation_recorded" | "memory.lifecycle_transitioned"
+        "memory.tombstoned"
+            | "memory.observation_recorded"
+            | "memory.lifecycle_transitioned"
+            | "memory.candidate_recorded"
+            | "memory.maintenance_decided"
+            | "memory.distillation_checkpointed"
+            | "memory.audit_recorded"
+            | "memory.promotion_requested"
+            | "memory.promotion_recorded"
+            | "memory.erasure_requested"
+            | "memory.erasure_recorded"
     );
     let rejection = kind == "tool.preparation_rejected";
     if !kind.starts_with("turn.")

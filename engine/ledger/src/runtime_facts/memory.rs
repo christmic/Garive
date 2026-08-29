@@ -1,10 +1,13 @@
 use chrono::{DateTime, SecondsFormat, Utc};
+use std::collections::BTreeSet;
+
 use serde_json::{Map, Value};
 
 use crate::LedgerError;
 
 use super::values::{
-    content, digest, enumeration, fields, non_empty, object, optional_non_empty, unsigned, EMPTY,
+    content, digest, enumeration, fields, non_empty, object, optional_non_empty, string, unsigned,
+    EMPTY,
 };
 
 const KINDS: &[&str] = &[
@@ -31,8 +34,309 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "memory.obligation_opened" => obligation(value),
         "memory.observation_recorded" => observation(value),
         "memory.lifecycle_transitioned" => lifecycle(value),
+        "memory.candidate_recorded" => candidate(value),
+        "memory.maintenance_decided" => maintenance_decision(value),
+        "memory.distillation_checkpointed" => distillation_checkpoint(value),
+        "memory.audit_recorded" => audit(value),
+        "memory.promotion_requested" => promotion_request(value),
+        "memory.promotion_recorded" => promotion_receipt(value),
+        "memory.erasure_requested" => erasure_request(value),
+        "memory.erasure_recorded" => erasure_receipt(value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn candidate(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "candidate_id",
+            "namespace_id",
+            "extractor_revision",
+            "source",
+            "intent_kind",
+            "intent_digest",
+        ],
+        EMPTY,
+    )?;
+    for key in ["candidate_id", "namespace_id", "extractor_revision"] {
+        non_empty(value, key)?;
+    }
+    enumeration(
+        value,
+        "source",
+        &[
+            "explicit_user_command",
+            "session_end",
+            "exit_summary",
+            "scheduled_distillation",
+        ],
+    )?;
+    enumeration(value, "intent_kind", &["learn", "forget"])?;
+    digest(value, "intent_digest")
+}
+
+fn maintenance_decision(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "decision_id",
+            "candidate_id",
+            "namespace_id",
+            "decision_kind",
+            "decision_digest",
+        ],
+        EMPTY,
+    )?;
+    for key in ["decision_id", "candidate_id", "namespace_id"] {
+        non_empty(value, key)?;
+    }
+    enumeration(value, "decision_kind", &["add", "update", "delete", "noop"])?;
+    digest(value, "decision_digest")
+}
+
+fn distillation_checkpoint(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "checkpoint_id",
+            "namespace_id",
+            "extractor_revision",
+            "session_id",
+            "through_position",
+            "batch_digest",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "checkpoint_id",
+        "namespace_id",
+        "extractor_revision",
+        "session_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "through_position", true)?;
+    digest(value, "batch_digest")
+}
+
+fn audit(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "audit_id",
+            "namespace_id",
+            "through_position",
+            "policy_digest",
+            "inventory_digest",
+            "report_digest",
+            "action_count",
+            "truncated",
+        ],
+        EMPTY,
+    )?;
+    for key in ["audit_id", "namespace_id"] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "through_position", true)?;
+    for key in ["policy_digest", "inventory_digest", "report_digest"] {
+        digest(value, key)?;
+    }
+    unsigned(value, "action_count", false)?;
+    boolean(value, "truncated")?;
+    Ok(())
+}
+
+fn promotion_request(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "request_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "memory_type",
+            "policy_revision",
+            "knowledge_proposal_id",
+            "evidence_digest",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "request_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "policy_revision",
+        "knowledge_proposal_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    enumeration(value, "memory_type", MEMORY_TYPES)?;
+    digest(value, "evidence_digest")
+}
+
+fn promotion_receipt(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "request_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "knowledge_proposal_id",
+            "knowledge_record_id",
+            "knowledge_revision_id",
+            "receipt_digest",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "request_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "knowledge_proposal_id",
+        "knowledge_record_id",
+        "knowledge_revision_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    digest(value, "receipt_digest")
+}
+
+fn erasure_request(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "request_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "tombstone_fact",
+            "policy_revision",
+            "targets",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "request_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "policy_revision",
+    ] {
+        non_empty(value, key)?;
+    }
+    fact_reference(object(
+        value
+            .get("tombstone_fact")
+            .ok_or(LedgerError::InvalidFact)?,
+    )?)?;
+    let targets = value
+        .get("targets")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty() && items.len() <= 64)
+        .ok_or(LedgerError::InvalidFact)?;
+    let mut prior: Option<(usize, &str)> = None;
+    for target in targets {
+        let target = object(target)?;
+        fields(target, &["target_id", "kind"], EMPTY)?;
+        non_empty(target, "target_id")?;
+        let kind = enumeration(
+            target,
+            "kind",
+            &["primary_store", "projection", "cache", "backup"],
+        )?;
+        let order = match kind {
+            "primary_store" => 0,
+            "projection" => 1,
+            "cache" => 2,
+            _ => 3,
+        };
+        let id = string(target, "target_id")?;
+        if prior.is_some_and(|(prior_order, prior_id)| {
+            order < prior_order || order == prior_order && id <= prior_id
+        }) {
+            return Err(LedgerError::InvalidFact);
+        }
+        prior = Some((order, id));
+    }
+    Ok(())
+}
+
+fn erasure_receipt(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "request_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "attempt_id",
+            "attempted_at_position",
+            "results",
+            "disposition",
+        ],
+        EMPTY,
+    )?;
+    for key in [
+        "request_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "attempt_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "attempted_at_position", true)?;
+    let attempted = value["attempted_at_position"].as_u64().unwrap();
+    let results = value
+        .get("results")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty() && items.len() <= 64)
+        .ok_or(LedgerError::InvalidFact)?;
+    let mut targets = BTreeSet::new();
+    let mut complete = true;
+    for result in results {
+        let result = object(result)?;
+        fields(
+            result,
+            &["target_id", "status", "receipt_digest"],
+            &["not_before_position"],
+        )?;
+        non_empty(result, "target_id")?;
+        if !targets.insert(string(result, "target_id")?) {
+            return Err(LedgerError::InvalidFact);
+        }
+        let status = enumeration(
+            result,
+            "status",
+            &[
+                "erased",
+                "not_present",
+                "pending_backup_retention",
+                "pending_retry",
+            ],
+        )?;
+        digest(result, "receipt_digest")?;
+        let pending_backup = status == "pending_backup_retention";
+        if pending_backup != result.contains_key("not_before_position") {
+            return Err(LedgerError::InvalidFact);
+        }
+        if pending_backup {
+            unsigned(result, "not_before_position", true)?;
+            if result["not_before_position"].as_u64().unwrap() <= attempted {
+                return Err(LedgerError::InvalidFact);
+            }
+        }
+        complete &= matches!(status, "erased" | "not_present");
+    }
+    let disposition = enumeration(value, "disposition", &["complete", "partial"])?;
+    if (disposition == "complete") != complete {
+        return Err(LedgerError::InvalidFact);
+    }
+    Ok(())
 }
 
 fn recall(value: &Map<String, Value>) -> Result<(), LedgerError> {
