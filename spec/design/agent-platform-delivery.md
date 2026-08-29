@@ -31,7 +31,7 @@ The phase is complete only when all rows have executable evidence:
 | OpenAI | Responses API request, response, SSE stream and error normalization. | Official-shape fixtures consumed by Rust/Kotlin adapters. |
 | Anthropic | Messages API request, response, SSE stream and error normalization. | Official-shape fixtures consumed by Rust/Kotlin adapters. |
 | Host API | Versioned Session/Turn/event/status contract for all clients. | Generated consumers and semantic round trips. |
-| Product surfaces | CLI, TUI, Web, Desktop, Android and iOS boot against one host abstraction. | Native build plus one fake-host interaction per surface. |
+| Product surfaces | CLI, TUI, Web, Desktop, Android and iOS boot against one Host abstraction. | Native build plus live H1 evidence for migrated surfaces; fixture clients are test support only. |
 
 Passing compilation without the named boundary test is not completion.
 
@@ -108,7 +108,7 @@ L0 ledger vocabulary/ports ───────────────> L1 dur
 P0 official protocol evidence ─> P1 adapters ────────+
                                                      |
 H0 Host API ─────────────────────────────────────────+
-          └─> CLI/TUI/Web/Desktop/Mobile skeletons
+          └─> CLI/TUI/Web/Desktop/Mobile clients
 ```
 
 The graph allows protocol adapters and product skeletons to progress in
@@ -201,13 +201,13 @@ only after a valid `message_stop` following the required lifecycle.
 
 ## Product surfaces
 
-The initial skeleton is intentionally small but executable:
+Each surface starts with a deliberately bounded executable slice:
 
 | Surface | First behavior |
 |---|---|
 | CLI | Submit one Turn, render final/typed terminal, return documented exit code. |
-| TUI | Display ordered fake-host events and one terminal state. |
-| Web | Boot a strict TypeScript app and render Session/Turn state from a fake Host client. |
+| TUI | Display ordered durable H1 events, cursor and one terminal state. |
+| Web | Use a strict injectable H1 HTTP/SSE client and render committed Session/Turn state. |
 | Desktop | Tauri backend fake-host command and React frontend share a typed IPC boundary. |
 | Android | Compose app calls KMP fake Host client and renders terminal state. |
 | iOS | SwiftUI app calls the generated/shared bridge and renders terminal state. |

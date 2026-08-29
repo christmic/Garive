@@ -55,9 +55,9 @@ planned without reopening a narrower completed row.
 | H1-T | Runtime-owned model HTTP transport | accepted | accepted | documented | implemented | verified | done | Keep explicit no-proxy/no-retry limits, exact failure classification, fragmented SSE, cancellation, and real-loopback matrices green. |
 | H1 | Live durable Host | accepted | accepted | documented | implemented | verified | done | Keep durable command replay/conflict, commit-before-dispatch, restart projection, loopback-only HTTP/SSE, and shared failure fixtures green. |
 | R1 | Local Runtime composition | accepted | accepted | documented | implemented | verified | done | Keep explicit configuration, fixed-prefix reconstruction, post-commit queue, real protocol flow, bounded shutdown and process-kill recovery gates green. |
-| A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Implement A1 against loopback H1/R1, then remove Fake Host from the entry point. |
-| A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Implement A1 ordered event/cursor state against loopback H1/R1. |
-| A-WEB | Web shell | accepted | accepted | partial | partial | verified | active | Implement strict injectable A1 HTTP/SSE client and reducer. |
+| A-CLI | CLI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit create/reuse, real-loopback H1, terminal output, stable command identity and exit-code tests green. |
+| A-TUI | TUI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit loopback H1 and ordered durable event/cursor rendering tests green; resident multi-turn UX is a later slice. |
+| A-WEB | Web shell | accepted | accepted | documented | implemented | verified | done | Keep strict injectable HTTP/SSE, all H1 mutations, shared reducer fixture and production TypeScript build green. |
 | A-DESKTOP | Tauri/React shell | accepted | accepted | partial | partial | verified | active | Replace fake IPC with embedded R1 and typed A1 commands/events. |
 | A-MOBILE | KMP/Android/iOS shells | accepted | accepted | partial | partial | partial | active | Implement KMP A1 client/reducer, then add Android APK gate when an SDK is available. |
 | G0 | Go Gateway | accepted | missing | missing | skeleton | missing | gated | Admit only after a live Host requires a separately scaled edge. |
