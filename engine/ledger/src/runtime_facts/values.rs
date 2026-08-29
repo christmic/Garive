@@ -70,6 +70,14 @@ pub(super) fn unsigned(
     }
 }
 
+pub(super) fn optional_unsigned(value: &Map<String, Value>, key: &str) -> Result<(), LedgerError> {
+    if value.contains_key(key) {
+        unsigned(value, key, false)
+    } else {
+        Ok(())
+    }
+}
+
 pub(super) fn digest(value: &Map<String, Value>, key: &str) -> Result<(), LedgerError> {
     let found = string(value, key)?;
     if found.len() == DIGEST_LENGTH
