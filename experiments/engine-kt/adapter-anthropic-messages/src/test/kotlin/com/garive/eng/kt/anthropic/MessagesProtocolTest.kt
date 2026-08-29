@@ -5,6 +5,7 @@ import kotlin.io.path.readBytes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -174,7 +175,8 @@ class MessagesProtocolTest {
         error.push(bytes("spec/fixtures/protocols/anthropic-messages/stream-error.sse")); error.finish()
         val truncated = MessagesStreamDecoder()
         truncated.push(bytes("spec/fixtures/protocols/anthropic-messages/truncated.sse"))
-        assertFails { truncated.finish() }
+        val failure = assertFailsWith<MessagesProtocolException> { truncated.finish() }
+        assertEquals(MessagesProtocolError.TRUNCATED_STREAM, failure.error)
     }
 
     private fun bytes(path: String): ByteArray = root.resolve(path).readBytes()

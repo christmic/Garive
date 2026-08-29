@@ -13,7 +13,7 @@ public class SseDecoder {
     private var buffer: ByteArray = byteArrayOf()
 
     /** Appends arbitrary transport bytes and emits complete frames immediately. */
-    public fun push(bytes: ByteArray): List<SseFrame> {
+    public fun push(bytes: ByteArray): List<SseFrame> = messageFailure(MessagesProtocolError.INVALID_SSE) {
         buffer += bytes
         val frames = mutableListOf<SseFrame>()
         while (true) {
@@ -26,7 +26,7 @@ public class SseDecoder {
     }
 
     /** Requires EOF to follow a complete frame or comments only. */
-    public fun finish(): Unit {
+    public fun finish(): Unit = messageFailure(MessagesProtocolError.TRUNCATED_STREAM) {
         val trailing = runCatching {
             buffer.decodeToString(throwOnInvalidSequence = true)
         }.getOrNull()

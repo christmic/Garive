@@ -56,7 +56,7 @@ public class ProtocolHttpRequest internal constructor(
 /** Protocol-only Messages adapter; it owns no retry or model mapping. */
 public class MessagesAdapter(public val config: MessagesAdapterConfig) {
     /** Encodes a validated official create request. */
-    public fun prepare(request: CreateMessageRequest): ProtocolHttpRequest {
+    public fun prepare(request: CreateMessageRequest): ProtocolHttpRequest = messageFailure(MessagesProtocolError.INVALID_REQUEST) {
         request.validate()
         val body = request.toJson()
         val headers = config.headers + listOf(
@@ -68,7 +68,7 @@ public class MessagesAdapter(public val config: MessagesAdapterConfig) {
     }
 
     /** Decodes ordinary JSON while retaining status and headers as facts. */
-    public fun decodeResponse(status: Int, headers: List<ProtocolHeader>, body: ByteArray): DecodedResponse {
+    public fun decodeResponse(status: Int, headers: List<ProtocolHeader>, body: ByteArray): DecodedResponse = messageFailure(MessagesProtocolError.INVALID_JSON) {
         requireJsonMedia(headers)
         val value = JSON.parseToJsonElement(body.decodeToString()).jsonObject
         return if (status in 200..299) DecodedResponse.Message(status, headers, MessageResponse.parse(value))
@@ -78,5 +78,7 @@ public class MessagesAdapter(public val config: MessagesAdapterConfig) {
 
 private val JSON: Json = Json { ignoreUnknownKeys = false }
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
-    require((headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json").substringBefore(';') == "application/json")
+    if ((headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json").substringBefore(';') != "application/json") {
+        throw MessagesProtocolException(MessagesProtocolError.INVALID_MEDIA_TYPE)
+    }
 }

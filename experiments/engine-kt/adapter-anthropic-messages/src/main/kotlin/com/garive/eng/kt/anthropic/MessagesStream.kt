@@ -14,16 +14,18 @@ public class MessagesStreamDecoder {
     private val blocks: MutableMap<UInt, OpenBlock> = mutableMapOf()
 
     /** Appends arbitrary transport bytes and emits complete validated events immediately. */
-    public fun push(bytes: ByteArray): List<StreamEvent> = sse.push(bytes).map { frame ->
-        val raw = MESSAGES_JSON.parseToJsonElement(frame.data).jsonObject
-        val event = StreamEvent.parse(raw)
-        require(frame.event == null || frame.event == event.discriminator)
-        accept(event)
-        event
+    public fun push(bytes: ByteArray): List<StreamEvent> = messageFailure(MessagesProtocolError.INVALID_LIFECYCLE) {
+        sse.push(bytes).map { frame ->
+            val raw = MESSAGES_JSON.parseToJsonElement(frame.data).jsonObject
+            val event = StreamEvent.parse(raw)
+            require(frame.event == null || frame.event == event.discriminator)
+            accept(event)
+            event
+        }
     }
 
     /** Requires one terminal, no open blocks, and complete SSE framing at EOF. */
-    public fun finish(): Unit {
+    public fun finish(): Unit = messageFailure(MessagesProtocolError.TRUNCATED_STREAM) {
         sse.finish()
         require(terminal && blocks.isEmpty())
     }
