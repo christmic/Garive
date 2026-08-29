@@ -30,6 +30,9 @@ members = [
     "engine/skill",
     "engine/tools",
     "providers/compatible",
+    "providers/profile",
+    "providers/openai",
+    "providers/anthropic",
     "runtime/replica",
     "tui",
 ]

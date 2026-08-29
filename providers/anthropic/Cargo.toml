@@ -1,0 +1,19 @@
+[package]
+name = "garive-provider-anthropic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+garive-anthropic-messages = { package = "garive-adapter-anthropic-messages", path = "../../adapters/anthropic-messages" }
+garive-llm = { path = "../../engine/llm" }
+garive-provider-compatible = { path = "../compatible" }
+garive-provider-profile = { path = "../profile" }
+
+[dev-dependencies]
+serde_json.workspace = true
