@@ -1,7 +1,8 @@
 use garive_eval::{
-    summarize, EvaluationBaseline, EvaluationBaselineProvenance, EvaluationCaseId,
-    EvaluationCaseOutcome, EvaluationCaseResult, EvaluationErrorCode, EvaluationLimits,
-    EvaluationRunId, EvaluationSuiteId,
+    summarize, summarize_context_pressure, ContextPressureCaseEvidence, ContextWorkloadClass,
+    EvaluationBaseline, EvaluationBaselineProvenance, EvaluationCaseId, EvaluationCaseOutcome,
+    EvaluationCaseResult, EvaluationErrorCode, EvaluationLimits, EvaluationRunId,
+    EvaluationSuiteId,
 };
 use serde_json::Value;
 
@@ -131,6 +132,77 @@ fn baseline_requires_clean_complete_digest_bound_provenance() {
         .code(),
         EvaluationErrorCode::InvalidBaseline
     );
+}
+
+#[test]
+fn context_pressure_is_exact_complete_and_source_ordered() {
+    let cases = vec![
+        pressure("conversation", ContextWorkloadClass::Conversation, 1, 3),
+        pressure("tool", ContextWorkloadClass::ToolHeavy, 4, 3),
+        pressure("capability", ContextWorkloadClass::CapabilityHeavy, 2, 3),
+        pressure("long", ContextWorkloadClass::LongRunning, 3, 3),
+    ];
+    let summary = summarize_context_pressure(&cases, 4).unwrap();
+    assert_eq!(summary.ordered_cases, cases);
+    assert_eq!(summary.classes[0].mean_pressure_numerator, 3_334);
+    assert_eq!(summary.classes[1].max_pressure_basis_points, 13_334);
+    assert_eq!(summary.classes[3].mean_pressure_denominator, 1);
+}
+
+#[test]
+fn context_pressure_rejects_incomplete_duplicate_and_overflow_evidence() {
+    let incomplete = [pressure(
+        "conversation",
+        ContextWorkloadClass::Conversation,
+        1,
+        1,
+    )];
+    assert_eq!(
+        summarize_context_pressure(&incomplete, 4)
+            .unwrap_err()
+            .code(),
+        EvaluationErrorCode::MissingWorkloadClass
+    );
+    let duplicate = ContextWorkloadClass::ALL
+        .into_iter()
+        .map(|class| pressure("same", class, 1, 1))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        summarize_context_pressure(&duplicate, 4)
+            .unwrap_err()
+            .code(),
+        EvaluationErrorCode::DuplicateCase
+    );
+    assert_eq!(
+        ContextPressureCaseEvidence::new(
+            EvaluationCaseId::new("overflow").unwrap(),
+            ContextWorkloadClass::Conversation,
+            1,
+            1,
+            u64::MAX,
+            1,
+        )
+        .unwrap_err()
+        .code(),
+        EvaluationErrorCode::PressureArithmeticOverflow
+    );
+}
+
+fn pressure(
+    id: &str,
+    class: ContextWorkloadClass,
+    input_tokens: u64,
+    limit: u64,
+) -> ContextPressureCaseEvidence {
+    ContextPressureCaseEvidence::new(
+        EvaluationCaseId::new(id).unwrap(),
+        class,
+        1,
+        1,
+        input_tokens,
+        limit,
+    )
+    .unwrap()
 }
 
 fn result(value: &Value) -> EvaluationCaseResult {

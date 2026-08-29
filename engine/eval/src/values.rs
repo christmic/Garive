@@ -102,6 +102,12 @@ pub enum EvaluationErrorCode {
     InvalidScore,
     /// Baseline provenance or digest was invalid.
     InvalidBaseline,
+    /// A C7-A measurement or bound was zero or incomplete.
+    InvalidPressureEvidence,
+    /// A required reference workload class had no case.
+    MissingWorkloadClass,
+    /// Checked context-pressure arithmetic overflowed.
+    PressureArithmeticOverflow,
 }
 
 impl EvaluationErrorCode {
@@ -118,6 +124,9 @@ impl EvaluationErrorCode {
             Self::CountOverflow => "count_overflow",
             Self::InvalidScore => "invalid_score",
             Self::InvalidBaseline => "invalid_baseline",
+            Self::InvalidPressureEvidence => "invalid_pressure_evidence",
+            Self::MissingWorkloadClass => "missing_workload_class",
+            Self::PressureArithmeticOverflow => "pressure_arithmetic_overflow",
         }
     }
 }
