@@ -57,6 +57,31 @@ struct KnowledgeRecord {
     terminal: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScheduleState {
+    Active,
+    Superseding,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScheduleClaim {
+    occurrence_id: String,
+    ordinal: u64,
+    due_at_utc: String,
+    lease_epoch: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScheduleRecord {
+    revision_id: String,
+    intent_digest: String,
+    last_handled_ordinal: u64,
+    pending_claim: Option<ScheduleClaim>,
+    state: ScheduleState,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SessionProjection {
     opened: bool,
@@ -75,6 +100,7 @@ pub(crate) struct SessionProjection {
     suspensions: BTreeMap<TurnId, String>,
     interactions: BTreeMap<String, InteractionRecord>,
     knowledge: BTreeMap<String, KnowledgeRecord>,
+    schedules: BTreeMap<String, ScheduleRecord>,
 }
 
 impl SessionProjection {
@@ -139,6 +165,12 @@ impl SessionProjection {
             "knowledge.requested" => self.request_knowledge(fact),
             "knowledge.dispatched" => self.dispatch_knowledge(fact),
             "knowledge.completed" | "knowledge.failed" => self.terminal_knowledge(fact),
+            "schedule.created" => self.create_schedule(fact),
+            "schedule.claimed" => self.claim_schedule(fact),
+            "schedule.fired" => self.fire_schedule(fact),
+            "schedule.skipped" => self.skip_schedule(fact),
+            "schedule.cancelled" => self.cancel_schedule(fact),
+            "schedule.failed" => self.fail_schedule(fact),
             "context.summary" | "privacy.redacted" => Ok(()),
             _ => Ok(()),
         }
@@ -172,6 +204,10 @@ impl SessionProjection {
                 .values()
                 .any(|(_, state)| *state == ExecutionState::Active)
             || self.has_recovery_pending_invocation(None)
+            || self
+                .schedules
+                .values()
+                .any(|value| value.state == ScheduleState::Active)
         {
             return Err(LedgerError::InvalidTransition);
         }
@@ -773,6 +809,168 @@ impl SessionProjection {
         self.knowledge
             .values()
             .any(|value| &value.execution == execution && !value.terminal)
+    }
+
+    pub(crate) fn validate_commit_boundary(&self) -> Result<(), LedgerError> {
+        if self
+            .schedules
+            .values()
+            .any(|value| value.state == ScheduleState::Superseding)
+        {
+            Err(LedgerError::InvalidTransition)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn create_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let schedule_id = text(&value, "schedule_id")?.to_owned();
+        let revision_id = text(&value, "revision_id")?.to_owned();
+        let intent_digest = text(&value, "intent_digest")?.to_owned();
+        if let Some(existing) = self.schedules.get_mut(&schedule_id) {
+            if existing.state != ScheduleState::Superseding || existing.revision_id == revision_id {
+                return Err(LedgerError::InvalidTransition);
+            }
+            *existing = ScheduleRecord {
+                revision_id,
+                intent_digest,
+                last_handled_ordinal: 0,
+                pending_claim: None,
+                state: ScheduleState::Active,
+            };
+        } else {
+            self.schedules.insert(
+                schedule_id,
+                ScheduleRecord {
+                    revision_id,
+                    intent_digest,
+                    last_handled_ordinal: 0,
+                    pending_claim: None,
+                    state: ScheduleState::Active,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    fn claim_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let record = self.schedule_mut(&value)?;
+        let ordinal = unsigned(&value, "ordinal")?;
+        let occurrence_id = text(&value, "occurrence_id")?.to_owned();
+        let due_at_utc = text(&value, "due_at_utc")?.to_owned();
+        let lease_epoch = unsigned(&value, "lease_epoch")?;
+        let next = record
+            .last_handled_ordinal
+            .checked_add(1)
+            .ok_or(LedgerError::InvalidTransition)?;
+        let valid = match &record.pending_claim {
+            None => ordinal == next,
+            Some(pending) => {
+                pending.ordinal == ordinal
+                    && pending.occurrence_id == occurrence_id
+                    && pending.due_at_utc == due_at_utc
+                    && lease_epoch > pending.lease_epoch
+            }
+        };
+        if !valid {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.pending_claim = Some(ScheduleClaim {
+            occurrence_id,
+            ordinal,
+            due_at_utc,
+            lease_epoch,
+        });
+        Ok(())
+    }
+
+    fn fire_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let record = self.schedule_mut(&value)?;
+        let ordinal = unsigned(&value, "ordinal")?;
+        let occurrence = text(&value, "occurrence_id")?;
+        if !record.pending_claim.as_ref().is_some_and(|pending| {
+            pending.ordinal == ordinal && pending.occurrence_id == occurrence
+        }) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.last_handled_ordinal = ordinal;
+        record.pending_claim = None;
+        Ok(())
+    }
+
+    fn skip_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let record = self.schedule_mut(&value)?;
+        let first = unsigned(&value, "first_ordinal")?;
+        let last = unsigned(&value, "last_ordinal")?;
+        if record.pending_claim.is_some()
+            || record.last_handled_ordinal.checked_add(1) != Some(first)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.last_handled_ordinal = last;
+        Ok(())
+    }
+
+    fn cancel_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let schedule_id = text(&value, "schedule_id")?;
+        let record = self
+            .schedules
+            .get_mut(schedule_id)
+            .ok_or(LedgerError::InvalidTransition)?;
+        if record.state != ScheduleState::Active
+            || record.pending_claim.is_some()
+            || record.revision_id != text(&value, "expected_revision_id")?
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.state = if text(&value, "reason")? == "superseded" {
+            ScheduleState::Superseding
+        } else {
+            ScheduleState::Cancelled
+        };
+        Ok(())
+    }
+
+    fn fail_schedule(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let value = payload(fact)?;
+        let record = self.schedule_mut(&value)?;
+        let occurrence = value.get("occurrence_id").and_then(Value::as_str);
+        let ordinal = value.get("ordinal").and_then(Value::as_u64);
+        let matches_claim = match (&record.pending_claim, occurrence, ordinal) {
+            (None, None, None) => true,
+            (Some(pending), Some(id), Some(number)) => {
+                pending.occurrence_id == id && pending.ordinal == number
+            }
+            _ => false,
+        };
+        if !matches_claim {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.pending_claim = None;
+        record.state = ScheduleState::Failed;
+        Ok(())
+    }
+
+    fn schedule_mut(
+        &mut self,
+        value: &Map<String, Value>,
+    ) -> Result<&mut ScheduleRecord, LedgerError> {
+        let record = self
+            .schedules
+            .get_mut(text(value, "schedule_id")?)
+            .ok_or(LedgerError::InvalidTransition)?;
+        if record.state != ScheduleState::Active
+            || record.revision_id != text(value, "revision_id")?
+        {
+            Err(LedgerError::InvalidTransition)
+        } else {
+            Ok(record)
+        }
     }
 
     fn has_pending_interaction(&self, execution: &ExecutionId) -> bool {

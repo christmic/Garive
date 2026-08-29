@@ -110,6 +110,7 @@ impl LedgerState {
                     .ok_or(LedgerError::PositionOverflow)?;
             }
         }
+        next.projection.validate_commit_boundary()?;
         next.version = next
             .version
             .checked_add(1)

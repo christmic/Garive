@@ -325,6 +325,75 @@ fn every_knowledge_terminal_requires_requested_and_exact_dispatch_state() {
 }
 
 #[test]
+fn scheduler_claims_ranges_terminals_and_updates_are_exact() {
+    assert_valid(&[
+        "session.opened",
+        "schedule.created",
+        "schedule.claimed",
+        "schedule.fired",
+        "schedule.skipped",
+        "schedule.cancelled",
+    ]);
+    assert_transition_error(&["session.opened", "schedule.claimed"]);
+    assert_transition_error(&["session.opened", "schedule.created", "schedule.fired"]);
+    assert_transition_error(&[
+        "session.opened",
+        "schedule.created",
+        "schedule.claimed",
+        "schedule.cancelled",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "schedule.created",
+        "schedule.claimed",
+        "schedule.fired",
+        "schedule.fired",
+    ]);
+
+    let mut superseded = fact("supersede", "schedule.cancelled");
+    superseded.payload = CanonicalPayload::from_value(&serde_json::json!({
+        "command_id":"supersede","schedule_id":"schedule-1",
+        "expected_revision_id":"revision-1","reason":"superseded"
+    }))
+    .unwrap();
+    let mut next = fact("create-next", "schedule.created");
+    let mut payload = common::runtime_payload("schedule.created");
+    payload["revision_id"] = serde_json::json!("revision-2");
+    next.payload = CanonicalPayload::from_value(&payload).unwrap();
+    let session = SessionId::try_from("session").unwrap();
+    let mut ledger = LedgerState::default();
+    assert_eq!(
+        ledger
+            .commit(
+                session.clone(),
+                0,
+                vec![
+                    fact("open", "session.opened"),
+                    fact("create", "schedule.created"),
+                    superseded.clone(),
+                    next
+                ],
+            )
+            .unwrap()
+            .disposition,
+        CommitDisposition::Committed,
+    );
+    let mut invalid = LedgerState::default();
+    assert_eq!(
+        invalid.commit(
+            session,
+            0,
+            vec![
+                fact("open", "session.opened"),
+                fact("create", "schedule.created"),
+                superseded
+            ],
+        ),
+        Err(LedgerError::InvalidTransition),
+    );
+}
+
+#[test]
 fn parents_cannot_close_before_active_or_recovery_pending_children() {
     assert_transition_error(&[
         "session.opened",
