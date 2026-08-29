@@ -8,6 +8,7 @@ mod delegation_runtime;
 mod fake_host;
 mod live_host;
 mod local_composition;
+mod local_worker;
 mod model_http_transport;
 mod observability_runtime;
 mod runtime_turn;
@@ -53,6 +54,10 @@ pub use live_host::{
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
     ReconstructedLocalExecution,
+};
+pub use local_worker::{
+    local_dispatch_queue, LocalDispatchQueue, LocalExecutionWorker, LocalTurnDispatcher,
+    LocalWorkerDisposition, LocalWorkerError,
 };
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,

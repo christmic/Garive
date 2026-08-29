@@ -1,0 +1,199 @@
+//! Bounded post-commit queue and one model-only local execution worker.
+
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
+        Arc,
+    },
+};
+
+use garive_core::{AgentEvent, ClockPort, EventSink, PortFailure};
+use garive_llm::{ModelCancellation, ModelPort};
+
+use crate::{
+    execute_durable_model_only, reconstruct_local_start, CommittedTurn, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalReconstructionError, SqliteLedger, TerminalPublicationError,
+    TerminalPublisher, TurnDispatchError, TurnDispatcher,
+};
+
+/// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
+pub struct LocalTurnDispatcher {
+    sender: SyncSender<CommittedTurn>,
+}
+impl TurnDispatcher for LocalTurnDispatcher {
+    fn dispatch(&self, turn: &CommittedTurn) -> Result<(), TurnDispatchError> {
+        self.sender
+            .try_send(turn.clone())
+            .map_err(|_| TurnDispatchError)
+    }
+}
+
+/// Sole consumer of committed local Turn dispatches.
+pub struct LocalDispatchQueue {
+    receiver: Receiver<CommittedTurn>,
+}
+impl LocalDispatchQueue {
+    /// Executes the next queued Turn without blocking when the queue is empty.
+    pub async fn try_run_next(
+        &mut self,
+        worker: &LocalExecutionWorker,
+        attempt: &LocalExecutionAttempt,
+    ) -> Result<LocalWorkerDisposition, LocalWorkerError> {
+        match self.receiver.try_recv() {
+            Ok(committed) => worker.execute(&committed, attempt).await,
+            Err(TryRecvError::Empty) => Err(LocalWorkerError::QueueEmpty),
+            Err(TryRecvError::Disconnected) => Err(LocalWorkerError::WorkerStopped),
+        }
+    }
+}
+
+/// Creates one explicit non-zero bounded post-commit dispatch queue.
+pub fn local_dispatch_queue(
+    capacity: usize,
+) -> Result<(Arc<LocalTurnDispatcher>, LocalDispatchQueue), LocalWorkerError> {
+    if capacity == 0 {
+        return Err(LocalWorkerError::InvalidComposition);
+    }
+    let (sender, receiver) = sync_channel(capacity);
+    Ok((
+        Arc::new(LocalTurnDispatcher { sender }),
+        LocalDispatchQueue { receiver },
+    ))
+}
+
+/// Model-only worker configured entirely from constructed Garive values.
+pub struct LocalExecutionWorker {
+    database_path: PathBuf,
+    policy: LocalExecutionPolicy,
+    model: Arc<dyn ModelPort>,
+}
+impl LocalExecutionWorker {
+    /// Constructs a worker without reading environment or configuration files.
+    pub fn new(
+        database_path: impl AsRef<Path>,
+        policy: LocalExecutionPolicy,
+        model: Arc<dyn ModelPort>,
+    ) -> Result<Self, LocalWorkerError> {
+        if database_path.as_ref().as_os_str().is_empty() {
+            return Err(LocalWorkerError::InvalidComposition);
+        }
+        Ok(Self {
+            database_path: database_path.as_ref().to_owned(),
+            policy,
+            model,
+        })
+    }
+
+    /// Reconstructs and executes one already committed start transaction.
+    pub async fn execute(
+        &self,
+        committed: &CommittedTurn,
+        attempt: &LocalExecutionAttempt,
+    ) -> Result<LocalWorkerDisposition, LocalWorkerError> {
+        let mut ledger = SqliteLedger::open(&self.database_path)
+            .map_err(|_| LocalWorkerError::DurabilityUnavailable)?;
+        let mut reconstructed =
+            match reconstruct_local_start(&ledger, committed, &self.policy, attempt) {
+                Ok(value) => value,
+                Err(LocalReconstructionError::AlreadyTerminal) => {
+                    return Ok(LocalWorkerDisposition::AlreadyTerminal)
+                }
+                Err(error) => return Err(LocalWorkerError::Reconstruction(error)),
+            };
+        let cancellation = NeverCancelled;
+        let clock = FixedClock(attempt.now_ms);
+        let mut events = DiscardEvents;
+        let mut publisher = DurableOnlyPublisher;
+        let result = execute_durable_model_only(
+            &mut ledger,
+            &reconstructed.durable,
+            &reconstructed.request,
+            &mut reconstructed.context,
+            self.model.as_ref(),
+            &mut events,
+            &cancellation,
+            &clock,
+            &mut publisher,
+        )
+        .await
+        .map_err(|_| LocalWorkerError::ExecutionFailed)?;
+        Ok(LocalWorkerDisposition::TerminalCommitted {
+            positions: result.terminal_commit.positions,
+        })
+    }
+}
+
+/// Durable result of one consumed queue item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LocalWorkerDisposition {
+    /// One terminal transaction committed at these Session positions.
+    TerminalCommitted {
+        /// Exact terminal transaction positions.
+        positions: Vec<u64>,
+    },
+    /// Duplicate delivery found an already terminal Execution and did no work.
+    AlreadyTerminal,
+}
+
+/// Stable secret-free local queue or worker failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LocalWorkerError {
+    /// Constructor or explicit queue values are invalid.
+    InvalidComposition,
+    /// No committed item is currently queued.
+    QueueEmpty,
+    /// The sole queue receiver or all dispatch senders are gone.
+    WorkerStopped,
+    /// SQLite could not open or verify required state.
+    DurabilityUnavailable,
+    /// Fixed-prefix reconstruction rejected the queued coordinates.
+    Reconstruction(LocalReconstructionError),
+    /// Durable Core execution did not reach a committed terminal.
+    ExecutionFailed,
+}
+impl LocalWorkerError {
+    /// Returns the stable operational code.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::InvalidComposition => "invalid_composition",
+            Self::QueueEmpty => "dispatch_queue_empty",
+            Self::WorkerStopped => "worker_stopped",
+            Self::DurabilityUnavailable => "durability_unavailable",
+            Self::Reconstruction(_) => "reconstruction_failed",
+            Self::ExecutionFailed => "execution_failed",
+        }
+    }
+}
+
+struct NeverCancelled;
+impl ModelCancellation for NeverCancelled {
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
+struct FixedClock(u64);
+impl ClockPort for FixedClock {
+    fn now_tick(&self) -> Result<u64, PortFailure> {
+        Ok(self.0)
+    }
+}
+
+struct DiscardEvents;
+impl EventSink for DiscardEvents {
+    fn emit(&mut self, _: AgentEvent) -> Result<(), PortFailure> {
+        Ok(())
+    }
+}
+
+struct DurableOnlyPublisher;
+impl TerminalPublisher for DurableOnlyPublisher {
+    fn publish_terminal(
+        &mut self,
+        _: &garive_core::ExecutionReport,
+        _: &[u64],
+    ) -> Result<(), TerminalPublicationError> {
+        Ok(())
+    }
+}
