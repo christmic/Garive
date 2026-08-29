@@ -9,11 +9,11 @@ mod runtime_turn;
 mod sqlite_ledger;
 
 pub use core_bridge::{
-    canonical_model_request_digest, execute_durable_model_only, plan_core_terminal,
-    plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,
-    AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, CoreTerminalContext,
-    DurableExecutionConfig, DurableExecutionError, DurableExecutionResult, ExecutorDispatch,
-    ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
+    canonical_model_request_digest, execute_durable_agent, execute_durable_model_only,
+    plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
+    plan_model_uncertain, AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest,
+    CoreTerminalContext, DurableExecutionConfig, DurableExecutionError, DurableExecutionResult,
+    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
     GovernedRuntimePortError, ModelLifecycleContext, PreparedExecution, PreparedModelRequest,
     RuntimeModelUncertainReason, SqliteGovernedEffectPort, TerminalPublicationError,
     TerminalPublisher,

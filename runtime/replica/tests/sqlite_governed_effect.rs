@@ -252,7 +252,7 @@ fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
     let prepared = setup.prepared.clone();
     let mut port = port(&mut setup, &mut authority, &mut executor);
     let result = block_on(port.invoke(&request_id, &prepared)).unwrap();
-    let version = port.session_version();
+    let version = port.session_version().unwrap();
     drop(port);
     assert_eq!((executor.prepares, executor.dispatches), (0, 0));
     let binding = result.suspension_binding.clone().unwrap();

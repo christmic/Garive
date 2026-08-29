@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use garive_core::{
     CommittedGovernedResult, GovernedEffectFuture, GovernedEffectPort, GovernedSuspensionBinding,
     PortFailure,
@@ -17,6 +19,7 @@ use serde_json::{json, Map, Value};
 use crate::SqliteLedger;
 
 use super::encoding::digest;
+use super::execution::CommitCoordinator;
 use super::governed_effect_types::{
     receipt, AuthorityDecision, AuthorityPort, AuthorityRequest, ExecutorDispatch,
     ExecutorDispatchError, ExecutorPort, GovernedEffectConfig, GovernedRuntimePortError,
@@ -24,12 +27,11 @@ use super::governed_effect_types::{
 
 /// SQLite-backed C6 effect composer with frozen authority and executor ports.
 pub struct SqliteGovernedEffectPort<'a> {
-    ledger: &'a mut SqliteLedger,
+    writer: Box<dyn EffectLedgerWriter + 'a>,
     authority: &'a mut dyn AuthorityPort,
     executor: &'a mut dyn ExecutorPort,
     config: GovernedEffectConfig,
     next_ordinal: u64,
-    through_position: u64,
 }
 
 impl<'a> SqliteGovernedEffectPort<'a> {
@@ -42,20 +44,65 @@ impl<'a> SqliteGovernedEffectPort<'a> {
     ) -> Result<Self, GovernedRuntimePortError> {
         chrono::DateTime::parse_from_rfc3339(&config.recorded_at)
             .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
-        let through_position = config.initial_through_position;
-        Ok(Self {
+        let snapshot = ledger.load_turn(&config.turn_id)?;
+        if snapshot.session_version != config.expected_session_version
+            || snapshot.through_position != config.initial_through_position
+            || snapshot
+                .facts
+                .iter()
+                .any(|fact| fact.session_id != config.session_id)
+            || !execution_is_active(&snapshot.facts, &config.execution_id)
+        {
+            return Err(GovernedRuntimePortError::InvalidBinding);
+        }
+        let writer = DirectEffectLedger {
             ledger,
+            session_id: config.session_id.clone(),
+            version: config.expected_session_version,
+            position: config.initial_through_position,
+        };
+        Ok(Self {
+            writer: Box::new(writer),
             authority,
             executor,
             config,
             next_ordinal: 0,
-            through_position,
+        })
+    }
+
+    pub(super) fn coordinated<'ledger>(
+        coordinator: &'a Mutex<CommitCoordinator<'ledger>>,
+        authority: &'a mut dyn AuthorityPort,
+        executor: &'a mut dyn ExecutorPort,
+        config: GovernedEffectConfig,
+    ) -> Result<Self, GovernedRuntimePortError>
+    where
+        'ledger: 'a,
+    {
+        chrono::DateTime::parse_from_rfc3339(&config.recorded_at)
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        {
+            let current = coordinator
+                .lock()
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+            if current.version() != config.expected_session_version
+                || current.position() != config.initial_through_position
+            {
+                return Err(GovernedRuntimePortError::InvalidBinding);
+            }
+        }
+        Ok(Self {
+            writer: Box::new(CoordinatedEffectLedger { coordinator }),
+            authority,
+            executor,
+            config,
+            next_ordinal: 0,
         })
     }
 
     /// Returns the latest committed Session version owned by this port.
-    pub const fn session_version(&self) -> u64 {
-        self.config.expected_session_version
+    pub fn session_version(&self) -> Result<u64, GovernedRuntimePortError> {
+        self.writer.version()
     }
 
     async fn reject_inner(
@@ -563,23 +610,85 @@ impl<'a> SqliteGovernedEffectPort<'a> {
     }
 
     fn commit(&mut self, facts: Vec<FactDraft>) -> Result<u64, GovernedRuntimePortError> {
-        let result = self.ledger.commit(
-            self.config.session_id.clone(),
-            self.config.expected_session_version,
-            facts,
-        )?;
-        self.config.expected_session_version = result.session_version;
-        let position = result
+        self.writer.append(facts)
+    }
+
+    fn current_position(&self) -> Result<u64, GovernedRuntimePortError> {
+        self.writer.position()
+    }
+}
+
+trait EffectLedgerWriter: Send {
+    fn append(&mut self, facts: Vec<FactDraft>) -> Result<u64, GovernedRuntimePortError>;
+    fn version(&self) -> Result<u64, GovernedRuntimePortError>;
+    fn position(&self) -> Result<u64, GovernedRuntimePortError>;
+}
+
+struct DirectEffectLedger<'a> {
+    ledger: &'a mut SqliteLedger,
+    session_id: garive_ledger::SessionId,
+    version: u64,
+    position: u64,
+}
+
+impl EffectLedgerWriter for DirectEffectLedger<'_> {
+    fn append(&mut self, facts: Vec<FactDraft>) -> Result<u64, GovernedRuntimePortError> {
+        let result = self
+            .ledger
+            .commit(self.session_id.clone(), self.version, facts)?;
+        self.version = result.session_version;
+        self.position = result
             .positions
             .last()
             .copied()
             .ok_or(GovernedRuntimePortError::InvalidBinding)?;
-        self.through_position = position;
-        Ok(position)
+        Ok(self.position)
     }
 
-    fn current_position(&self) -> Result<u64, GovernedRuntimePortError> {
-        Ok(self.through_position)
+    fn version(&self) -> Result<u64, GovernedRuntimePortError> {
+        Ok(self.version)
+    }
+
+    fn position(&self) -> Result<u64, GovernedRuntimePortError> {
+        Ok(self.position)
+    }
+}
+
+struct CoordinatedEffectLedger<'a, 'ledger> {
+    coordinator: &'a Mutex<CommitCoordinator<'ledger>>,
+}
+
+impl EffectLedgerWriter for CoordinatedEffectLedger<'_, '_> {
+    fn append(&mut self, facts: Vec<FactDraft>) -> Result<u64, GovernedRuntimePortError> {
+        let mut coordinator = self
+            .coordinator
+            .lock()
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        match coordinator.commit(facts) {
+            Ok(result) => result
+                .positions
+                .last()
+                .copied()
+                .ok_or(GovernedRuntimePortError::InvalidBinding),
+            Err(error) => {
+                coordinator.record_failure(error);
+                Err(GovernedRuntimePortError::InvalidBinding)
+            }
+        }
+    }
+
+    fn version(&self) -> Result<u64, GovernedRuntimePortError> {
+        self.coordinator
+            .lock()
+            .map(|coordinator| coordinator.version())
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)
+    }
+
+    fn position(&self) -> Result<u64, GovernedRuntimePortError> {
+        self.coordinator
+            .lock()
+            .map(|coordinator| coordinator.position())
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)
     }
 }
 
@@ -704,6 +813,28 @@ fn validate_execution(
     } else {
         Ok(())
     }
+}
+
+fn execution_is_active(
+    facts: &[garive_ledger::DurableFact],
+    execution_id: &garive_ledger::ExecutionId,
+) -> bool {
+    let mut started = false;
+    for fact in facts
+        .iter()
+        .filter(|fact| fact.execution_id.as_ref() == Some(execution_id))
+    {
+        match fact.kind.as_str() {
+            "execution.started" => started = true,
+            "execution.abandoned"
+            | "execution.completed"
+            | "execution.suspended"
+            | "execution.stopped"
+            | "execution.failed" => return false,
+            _ => {}
+        }
+    }
+    started
 }
 
 fn validate_terminal_binding(

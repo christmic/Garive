@@ -1,13 +1,17 @@
-use std::{num::NonZeroU32, path::PathBuf};
+use std::{
+    num::NonZeroU32,
+    path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use futures::executor::block_on;
 use garive_core::{
     AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
-    AgentInstanceId, AgentTurnRequest, ClockPort, ContextItem, ContextPort, ContextPortError,
-    ContextPurpose, ContextRequest, ContextSurface, EventSink, ExecutionId as CoreExecutionId,
-    ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy,
-    OutputLimitAction, PortFailure, SessionId as CoreSessionId, TerminalRecoveryAction,
-    TurnId as CoreTurnId,
+    AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest, ClockPort, ContextItem,
+    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface, EventSink,
+    ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits,
+    ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId as CoreSessionId,
+    TerminalRecoveryAction, TurnId as CoreTurnId,
 };
 use garive_ledger::{
     AgentDefinitionId as LedgerDefinitionId, AgentDefinitionRevision as LedgerRevision,
@@ -19,19 +23,28 @@ use garive_llm::{
     ModelStopReason, ModelTargetId, ModelUsage, TextMode, TokenCount, UsageSource,
 };
 use garive_runtime::{
-    execute_durable_model_only, plan_start_turn, DurableExecutionConfig, EffectiveRuntimeLimits,
-    ModelLifecycleContext, RuntimeCommandId, SqliteLedger, StartTurnCommand,
-    TerminalPublicationError, TerminalPublisher,
+    execute_durable_agent, execute_durable_model_only, plan_start_turn, AuthorityDecision,
+    AuthorityFuture, AuthorityPort, AuthorityRequest, DurableExecutionConfig,
+    DurableExecutionError, EffectiveRuntimeLimits, ExecutorDispatch, ExecutorFuture, ExecutorPort,
+    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand, TerminalPublicationError, TerminalPublisher,
+};
+use garive_tools::{
+    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
+    ReplayClass, TerminalClassification, ToolDefinition,
 };
 use tempfile::tempdir;
 
-struct Context;
+struct Context {
+    positions: Vec<u64>,
+}
 impl ContextPort for Context {
     fn derive(
         &mut self,
         request: &ContextRequest,
         _: u32,
     ) -> Result<ContextSurface, ContextPortError> {
+        self.positions.push(request.through_position);
         let fact = FactRef {
             session_id: request.session_id.clone(),
             position: 3,
@@ -59,6 +72,8 @@ impl ContextPort for Context {
 struct Model {
     path: PathBuf,
     session: SessionId,
+    tool_first: bool,
+    calls: AtomicUsize,
 }
 impl ModelPort for Model {
     fn invoke<'a>(
@@ -68,13 +83,22 @@ impl ModelPort for Model {
         _: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         Box::pin(async move {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
             let ledger = SqliteLedger::open(&self.path).unwrap();
             let active = ledger.list_uncertain_model_requests(&self.session).unwrap();
             assert_eq!(active[0].as_str(), request.request_id.as_str());
             Ok(InvokeOutcome::Completed {
-                items: vec![ModelItem::Text {
-                    text: "done".into(),
-                }],
+                items: if self.tool_first && call == 0 {
+                    vec![ModelItem::ToolIntent {
+                        model_call_id: "call".into(),
+                        tool_name: "read_file".into(),
+                        arguments_json: r#"{"path":"a"}"#.into(),
+                    }]
+                } else {
+                    vec![ModelItem::Text {
+                        text: "done".into(),
+                    }]
+                },
                 usage: ModelUsage {
                     input_tokens: TokenCount::Known(1),
                     output_tokens: TokenCount::Known(1),
@@ -82,7 +106,75 @@ impl ModelPort for Model {
                     cache_write_tokens: None,
                     source: UsageSource::ProviderReported,
                 },
-                stop_reason: ModelStopReason::EndTurn,
+                stop_reason: if self.tool_first && call == 0 {
+                    ModelStopReason::ToolUse
+                } else {
+                    ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
+struct Authority;
+impl AuthorityPort for Authority {
+    fn authorize<'a>(&'a mut self, request: AuthorityRequest<'a>) -> AuthorityFuture<'a> {
+        Box::pin(async move {
+            Ok(AuthorityDecision::Approve {
+                granted_requirements: request.prepared.requirements().clone(),
+                constraints_digest: "a".repeat(64),
+                authority_revision: "policy-1".into(),
+            })
+        })
+    }
+}
+
+struct Executor {
+    path: PathBuf,
+    session: SessionId,
+}
+impl ExecutorPort for Executor {
+    fn prepare(
+        &mut self,
+        _: &garive_tools::ToolInvocationId,
+        _: &garive_tools::PreparedToolCall,
+        _: &garive_tools::InvocationGrant,
+    ) -> Result<PreparedExecution, String> {
+        Ok(PreparedExecution {
+            executor_id: "local.read".into(),
+            executor_revision: "1".into(),
+            dispatch_attempt_id: "tool-dispatch".into(),
+        })
+    }
+
+    fn dispatch<'a>(&'a mut self, command: ExecutorDispatch<'a>) -> ExecutorFuture<'a> {
+        Box::pin(async move {
+            let ledger = SqliteLedger::open(&self.path).unwrap();
+            assert_eq!(
+                ledger
+                    .list_uncertain_tool_invocations(&self.session)
+                    .unwrap()
+                    .len(),
+                1
+            );
+            let content = serde_json::json!({"text":"ok"});
+            let result_digest = CanonicalPayload::from_value(&content)
+                .unwrap()
+                .sha256()
+                .to_owned();
+            Ok(ExecutionFact::Completed {
+                receipt: Some(EffectReceipt {
+                    receipt_id: ReceiptId::new(command.receipt_id).unwrap(),
+                    invocation_id: command.invocation_id.clone(),
+                    prepared_digest: command.prepared.input_digest().into(),
+                    grant_id: command.grant.grant_id.clone(),
+                    executor_id: command.execution.executor_id.clone(),
+                    executor_revision: command.execution.executor_revision.clone(),
+                    terminal_classification: TerminalClassification::Completed,
+                    result_digest,
+                }),
+                content,
+                truncated: false,
             })
         })
     }
@@ -203,8 +295,10 @@ fn sqlite_dispatch_and_publication_cross_only_after_their_commits() {
         let model = Model {
             path: path.clone(),
             session,
+            tool_first: false,
+            calls: AtomicUsize::new(0),
         };
-        let mut context = Context;
+        let mut context = Context { positions: vec![] };
         let signals = Signals;
         let mut events = Signals;
         let mut publisher = Publisher {
@@ -213,6 +307,24 @@ fn sqlite_dispatch_and_publication_cross_only_after_their_commits() {
             fail: fail_publication,
             calls: 0,
         };
+        let mut stale = request.clone();
+        stale.context_request.through_position -= 1;
+        assert!(matches!(
+            block_on(execute_durable_model_only(
+                &mut ledger,
+                &config,
+                &stale,
+                &mut context,
+                &model,
+                &mut events,
+                &signals,
+                &signals,
+                &mut publisher,
+            )),
+            Err(DurableExecutionError::Command(
+                RuntimeCommandError::ConcurrentModification
+            ))
+        ));
         let result = block_on(execute_durable_model_only(
             &mut ledger,
             &config,
@@ -229,6 +341,134 @@ fn sqlite_dispatch_and_publication_cross_only_after_their_commits() {
         assert_eq!(publisher.calls, 1);
         assert_eq!(ledger.load_turn(&plan.turn_id).unwrap().facts.len(), 8);
     }
+}
+
+#[test]
+fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("agent.sqlite3");
+    let session = SessionId::try_from("agent-session").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = StartTurnCommand {
+        command_id: RuntimeCommandId::new("agent-start").unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: LedgerAgentId::try_from("agent").unwrap(),
+        definition_id: LedgerDefinitionId::try_from("definition").unwrap(),
+        definition_revision: LedgerRevision::try_from("revision").unwrap(),
+        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        trusted_input: "hello".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 3,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            deadline_budget_ms: None,
+        },
+        recorded_at: "2026-08-29T00:00:00Z".into(),
+    };
+    let plan = plan_start_turn(&start, 1).unwrap();
+    let execution = plan.execution_id.clone().unwrap();
+    ledger.commit(session.clone(), 1, plan.facts).unwrap();
+    let mut request = core_request(&session, &plan.turn_id, &execution);
+    request.required_capabilities = vec![ModelCapability::Tools];
+    request.limits.execution = ExecutionLimits::new(NonZeroU32::new(3).unwrap());
+    let config = DurableExecutionConfig {
+        session_id: session.clone(),
+        expected_session_version: 2,
+        model: ModelLifecycleContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution,
+            deployment_id: "deployment".into(),
+            recovery_policy_revision: "policy".into(),
+            max_attempts: 1,
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+    };
+    let model = Model {
+        path: path.clone(),
+        session: session.clone(),
+        tool_first: true,
+        calls: AtomicUsize::new(0),
+    };
+    let mut authority = Authority;
+    let mut executor = Executor {
+        path: path.clone(),
+        session: session.clone(),
+    };
+    let requirements =
+        ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 1_024).unwrap();
+    let capabilities = AgentToolCapabilities {
+        definitions: vec![ToolDefinition::new(
+            "read_file",
+            "1",
+            "Read one file.",
+            serde_json::json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+            requirements,
+            ReplayClass::ReadOnly,
+        )
+        .unwrap()],
+    };
+    let mut context = Context { positions: vec![] };
+    let signals = Signals;
+    let mut events = Signals;
+    let mut publisher = Publisher {
+        path: path.clone(),
+        turn: plan.turn_id.clone(),
+        fail: false,
+        calls: 0,
+    };
+    let result = block_on(execute_durable_agent(
+        &mut ledger,
+        &config,
+        &request,
+        &capabilities,
+        &mut context,
+        &model,
+        &mut authority,
+        &mut executor,
+        &mut events,
+        &signals,
+        &signals,
+        &mut publisher,
+    ))
+    .unwrap();
+    assert!(matches!(
+        result.report.outcome,
+        AgentOutcome::Completed { .. }
+    ));
+    assert_eq!(context.positions, [4, 13]);
+    assert_eq!(publisher.calls, 1);
+    let kinds = ledger
+        .load_turn(&plan.turn_id)
+        .unwrap()
+        .facts
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        [
+            "turn.started",
+            "turn.input",
+            "execution.started",
+            "model.prepared",
+            "model.started",
+            "model.completed",
+            "effect.prepared",
+            "effect.authorized",
+            "effect.started",
+            "effect.receipt",
+            "effect.completed",
+            "effect.observation",
+            "model.prepared",
+            "model.started",
+            "model.completed",
+            "execution.completed",
+            "turn.completed",
+        ]
+    );
 }
 
 fn core_request(

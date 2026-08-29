@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, sync::Mutex};
 
 use garive_core::{
-    execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts, AgentTurnRequest,
-    ClockPort, ContextPort, EventSink, PortFailure,
+    execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
+    AgentToolCapabilities, AgentTurnRequest, ClockPort, ContextPort, EventSink, PortFailure,
 };
 use garive_ledger::{CommitResult, FactDraft, SessionId};
 use garive_llm::{
@@ -13,7 +13,8 @@ use crate::{RuntimeCommandError, SqliteLedger};
 
 use super::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
-    plan_model_uncertain, CoreTerminalContext, ModelLifecycleContext, RuntimeModelUncertainReason,
+    plan_model_uncertain, AuthorityPort, CoreTerminalContext, ExecutorPort, GovernedEffectConfig,
+    ModelLifecycleContext, RuntimeModelUncertainReason, SqliteGovernedEffectPort,
 };
 
 use super::execution_types::{
@@ -34,10 +35,12 @@ pub async fn execute_durable_model_only(
     publisher: &mut dyn TerminalPublisher,
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
+    validate_ledger_watermark(ledger, config, request)?;
     let coordinator = Mutex::new(CommitCoordinator {
         ledger,
         session_id: config.session_id.clone(),
         version: config.expected_session_version,
+        position: request.context_request.through_position,
         failure: None,
     });
     let prepared_events = Mutex::new(BTreeMap::new());
@@ -61,6 +64,15 @@ pub async fn execute_durable_model_only(
         };
         execute_model_only(request, &mut ports).await
     };
+    finish_durable_execution(coordinator, config, report, publisher)
+}
+
+fn finish_durable_execution(
+    coordinator: Mutex<CommitCoordinator<'_>>,
+    config: &DurableExecutionConfig,
+    report: garive_core::ExecutionReport,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
     let mut coordinator = coordinator
         .into_inner()
         .map_err(|_| DurableExecutionError::Coordination)?;
@@ -85,21 +97,107 @@ pub async fn execute_durable_model_only(
     })
 }
 
-struct CommitCoordinator<'a> {
+/// Runs the complete tool-capable Core loop with one coordinated durable writer.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_durable_agent(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    capabilities: &AgentToolCapabilities,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    authority: &mut dyn AuthorityPort,
+    executor: &mut dyn ExecutorPort,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
+    validate_identity(config, request)?;
+    validate_ledger_watermark(ledger, config, request)?;
+    let coordinator = Mutex::new(CommitCoordinator {
+        ledger,
+        session_id: config.session_id.clone(),
+        version: config.expected_session_version,
+        position: request.context_request.through_position,
+        failure: None,
+    });
+    let prepared_events = Mutex::new(BTreeMap::new());
+    let durable_model = DurableModelPort {
+        inner: model,
+        coordinator: &coordinator,
+        lifecycle: &config.model,
+        prepared_events: &prepared_events,
+    };
+    let mut gated_events = PreparedEventGate {
+        downstream: events,
+        prepared_events: &prepared_events,
+    };
+    let report = {
+        let mut effects = SqliteGovernedEffectPort::coordinated(
+            &coordinator,
+            authority,
+            executor,
+            GovernedEffectConfig {
+                session_id: config.session_id.clone(),
+                expected_session_version: config.expected_session_version,
+                initial_through_position: request.context_request.through_position,
+                turn_id: config.model.turn_id.clone(),
+                execution_id: config.model.execution_id.clone(),
+                recorded_at: config.model.recorded_at.clone(),
+            },
+        )
+        .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
+        let mut ports = AgentExecutionPorts {
+            context,
+            model: &durable_model,
+            events: &mut gated_events,
+            cancellation,
+            clock,
+        };
+        execute_agent(request, capabilities, &mut ports, &mut effects).await
+    };
+    finish_durable_execution(coordinator, config, report, publisher)
+}
+
+pub(super) struct CommitCoordinator<'a> {
     ledger: &'a mut SqliteLedger,
     session_id: SessionId,
     version: u64,
+    position: u64,
     failure: Option<DurableExecutionError>,
 }
 
 impl CommitCoordinator<'_> {
-    fn commit(&mut self, facts: Vec<FactDraft>) -> Result<CommitResult, DurableExecutionError> {
+    pub(super) fn commit(
+        &mut self,
+        facts: Vec<FactDraft>,
+    ) -> Result<CommitResult, DurableExecutionError> {
         let result = self
             .ledger
             .commit(self.session_id.clone(), self.version, facts)
             .map_err(DurableExecutionError::Ledger)?;
         self.version = result.session_version;
+        self.position = result
+            .positions
+            .last()
+            .copied()
+            .ok_or(DurableExecutionError::Command(
+                RuntimeCommandError::InvariantViolation,
+            ))?;
         Ok(result)
+    }
+
+    pub(super) const fn version(&self) -> u64 {
+        self.version
+    }
+
+    pub(super) const fn position(&self) -> u64 {
+        self.position
+    }
+
+    pub(super) fn record_failure(&mut self, failure: DurableExecutionError) {
+        self.failure = Some(failure);
     }
 
     fn append_for_model(&mut self, fact: FactDraft) -> Result<(), ModelPortFailure> {
@@ -200,6 +298,44 @@ fn validate_identity(
     {
         Err(DurableExecutionError::Command(
             RuntimeCommandError::InvalidCommand,
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_ledger_watermark(
+    ledger: &SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+) -> Result<(), DurableExecutionError> {
+    let turn = ledger
+        .load_turn(&config.model.turn_id)
+        .map_err(DurableExecutionError::Ledger)?;
+    if turn.session_version != config.expected_session_version
+        || turn.through_position != request.context_request.through_position
+        || turn
+            .facts
+            .iter()
+            .any(|fact| fact.session_id != config.session_id)
+        || !turn.facts.iter().any(|fact| {
+            fact.execution_id.as_ref() == Some(&config.model.execution_id)
+                && fact.kind.as_str() == "execution.started"
+        })
+        || turn.facts.iter().any(|fact| {
+            fact.execution_id.as_ref() == Some(&config.model.execution_id)
+                && matches!(
+                    fact.kind.as_str(),
+                    "execution.abandoned"
+                        | "execution.completed"
+                        | "execution.suspended"
+                        | "execution.stopped"
+                        | "execution.failed"
+                )
+        })
+    {
+        Err(DurableExecutionError::Command(
+            RuntimeCommandError::ConcurrentModification,
         ))
     } else {
         Ok(())
