@@ -204,90 +204,12 @@ public sealed interface DecodedResponse {
     public data class Error(public val status: Int, public val headers: List<ProtocolHeader>, public val error: ErrorEnvelope) : DecodedResponse
 }
 
-/** Incremental UTF-8 SSE frame. */
-public data class SseFrame(public val event: String?, public val data: String, public val id: String?, public val retry: ULong?)
-
-/** Byte-chunk incremental SSE decoder. */
-public class SseDecoder {
-    private var buffer: ByteArray = byteArrayOf()
-
-    /** Appends arbitrary transport bytes and emits complete frames. */
-    public fun push(bytes: ByteArray): List<SseFrame> {
-        buffer += bytes
-        val frames = mutableListOf<SseFrame>()
-        while (true) {
-            val boundary = findBoundary(buffer) ?: break
-            val frame = parseFrame(buffer.copyOfRange(0, boundary.first))
-            buffer = buffer.copyOfRange(boundary.first + boundary.second, buffer.size)
-            if (frame != null) frames += frame
-        }
-        return frames
-    }
-
-    /** Requires EOF to follow a complete frame or comments only. */
-    public fun finish(): Unit {
-        val trailing = runCatching { buffer.decodeToString(throwOnInvalidSequence = true) }.getOrNull()
-        require(trailing != null && trailing.lineSequence().all { it.isBlank() || it.startsWith(':') })
-        buffer = byteArrayOf()
-    }
-}
-
-/** Typed Responses event retaining its complete original object. */
-public data class ResponseStreamEvent(public val type: String, public val sequenceNumber: ULong, public val raw: JsonObject)
-
-/** Incremental Responses lifecycle decoder. */
-public class ResponsesStreamDecoder {
-    private val sse: SseDecoder = SseDecoder()
-    private var previous: ULong? = null
-    private var created: Boolean = false
-    private var terminal: Boolean = false
-
-    /** Appends bytes and emits complete validated protocol events. */
-    public fun push(bytes: ByteArray): List<ResponseStreamEvent> = sse.push(bytes).map { frame ->
-        val value = JSON.parseToJsonElement(frame.data).jsonObject
-        val type = value.text("type")
-        require(frame.event == null || frame.event == type)
-        val sequence = value.getValue("sequence_number").jsonPrimitive.content.toULong()
-        require(previous == null || sequence > previous!!); previous = sequence
-        require(!terminal)
-        if (type == "response.created") { require(!created); created = true } else require(created)
-        if (type in TERMINALS) terminal = true
-        ResponseStreamEvent(type, sequence, value)
-    }
-
-    /** Requires exactly one protocol terminal at EOF. */
-    public fun finish(): Unit { sse.finish(); require(terminal) }
-}
-
 private val JSON: Json = Json { ignoreUnknownKeys = false }
 private val TYPED_REQUEST_FIELDS: Set<String> = setOf("model", "input", "stream", "max_output_tokens", "temperature", "top_p", "tools", "tool_choice", "text", "reasoning", "metadata")
-private val TERMINALS: Set<String> = setOf("response.completed", "response.failed", "response.incomplete")
 
 private fun JsonObject.text(name: String): String = getValue(name).jsonPrimitive.content
 private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonArray
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
     val media = headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json"
     require(media.substringBefore(';') == "application/json")
-}
-
-private fun findBoundary(bytes: ByteArray): Pair<Int, Int>? {
-    for (index in bytes.indices) {
-        if (index + 1 < bytes.size && bytes[index] == 10.toByte() && bytes[index + 1] == 10.toByte()) return index to 2
-        if (index + 3 < bytes.size && bytes[index] == 13.toByte() && bytes[index + 1] == 10.toByte() && bytes[index + 2] == 13.toByte() && bytes[index + 3] == 10.toByte()) return index to 4
-    }
-    return null
-}
-
-private fun parseFrame(bytes: ByteArray): SseFrame? {
-    val lines = bytes.decodeToString(throwOnInvalidSequence = true).lineSequence()
-    var event: String? = null; var id: String? = null; var retry: ULong? = null
-    val data = mutableListOf<String>()
-    lines.forEach { raw ->
-        val line = raw.removeSuffix("\r")
-        if (line.isNotEmpty() && !line.startsWith(':')) {
-            val field = line.substringBefore(':'); val value = line.substringAfter(':', "").removePrefix(" ")
-            when (field) { "event" -> event = value; "data" -> data += value; "id" -> if ('\u0000' !in value) id = value; "retry" -> retry = value.toULong() }
-        }
-    }
-    return if (data.isEmpty()) null else SseFrame(event, data.joinToString("\n"), id, retry)
 }
