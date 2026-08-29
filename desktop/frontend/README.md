@@ -2,8 +2,8 @@
 
 Strict TypeScript, React and Vite presentation shell for the Tauri desktop app.
 OS/runtime access is isolated under `src/ipc/`; React components do not call
-Tauri directly. The admitted command currently returns one string, so there is
-no handwritten mirror DTO to drift.
+Tauri directly. The typed command returns durable Session, Turn, Execution,
+cursor, terminal and committed text values from the embedded backend Runtime.
 
 ```text
 pnpm install --frozen-lockfile

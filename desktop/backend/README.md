@@ -1,16 +1,19 @@
 # Desktop backend
 
-Tauri 2 Rust composition shell. `run_fake_host` invokes the shared Runtime fake
-Host and returns assembled output through a fallible IPC command. UI code stays
-in `../frontend`; OS and Runtime capabilities stay behind Tauri commands.
+Tauri 2 Rust composition shell. `DesktopHost` embeds Live Host, SQLite, the
+bounded local worker and a constructed model port. `run_agent_turn` returns a
+typed durable terminal through IPC. UI code stays in `../frontend`; Provider
+configuration and Runtime capabilities remain backend-only.
 
 ```text
 cargo test -p garive-desktop
 cargo check -p garive-desktop
 ```
 
-The command has a native fake-host test. Durable live Runtime composition,
-window signing and distribution remain later slices.
+Native tests run the complete embedded model-only loop against temporary
+SQLite. The shipping state reports `not_configured` until the Garive backend
+configuration subsystem installs the explicit composition; it never reads
+credentials from frontend input or process environment.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29

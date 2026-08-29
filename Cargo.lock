@@ -1121,9 +1121,14 @@ version = "0.1.0"
 name = "garive-desktop"
 version = "0.1.0"
 dependencies = [
+ "garive-core",
+ "garive-llm",
  "garive-runtime",
+ "serde",
  "tauri",
  "tauri-build",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
