@@ -23,7 +23,8 @@ example here drifts from them.
 > change as the slice lands. The *stable* part is the loop
 > **shape**:
 >
-> - `agent_loop` / `agent_turn` / `iteration` nesting
+> - Runtime driver / durable Turn / disposable Kernel Execution / iteration
+>   ownership
 > - Runtime durable facts as the single source of resumable state
 > - Governance as a queried port
 > - `derive` as incremental + stateful

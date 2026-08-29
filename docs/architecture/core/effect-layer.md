@@ -1,5 +1,10 @@
 # Effect Layer — tool execution
 
+> **Mechanism research, not the normative effect contract.** Accepted C4/C5/C6
+> Specs own Prepared Calls, sequential v1 governance, receipts and recovery.
+> Batch/concurrency, dispatcher names and pseudo-code below remain proposals
+> unless a focused accepted Spec restates them.
+
 > After `model.invoke` returns, the Agent prepares model intents and asks
 > Runtime to **authorize**, **dispatch**, and **execute** them. This doc covers
 > the boundary below

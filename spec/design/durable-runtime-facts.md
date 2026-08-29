@@ -85,6 +85,7 @@ turn.started.v1 {
   snapshot_digest: Digest
   trusted_input_digest: Digest
   prior_suspension_id?: SuspensionId
+  expected_session_version?: non-zero u64
 }
 
 turn.input.v1 {
@@ -138,9 +139,13 @@ turn.failed.v1 {
 The Turn terminal payload and corresponding Execution terminal payload commit
 atomically and name the same outcome/reason.
 
-`turn.started.kind=start` forbids `prior_suspension_id` and creates an absent
-Turn. `kind=continue` requires it, must match the current durable suspension,
-and reopens that Turn in the same transaction that starts a fresh Execution.
+`turn.started.kind=start` forbids both `prior_suspension_id` and
+`expected_session_version` and creates an absent Turn. `kind=continue`
+requires both, must match the current durable suspension and optimistic
+Session version, and reopens that Turn in the same transaction that starts a
+fresh Execution. Binding the expected version makes a continuation command's
+restart replay semantics complete rather than relying on current projection
+state.
 
 ## Execution payloads
 

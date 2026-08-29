@@ -1,4 +1,11 @@
-# Ledger — Session-as-Directory Append-only Log
+# Ledger research — Session-as-Directory Append-only Log
+
+> **Research record, not a normative storage contract.** The accepted L0/C6F
+> specs and the implemented Runtime SQLite adapter are authoritative. The
+> per-Session directory, `entry` table, `seq`, blob layout, masking families and
+> memory-watermark mechanisms below are alternatives/proposals unless a focused
+> accepted Spec restates them. They must not be inferred as current schema or
+> migration requirements.
 
 > **One session = one directory.** Inside the directory:
 > a SQLite database (the "container"), and a blob store

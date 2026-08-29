@@ -48,6 +48,16 @@ delivery plan, not an implementation support claim:
 Rows change to `supported`/`experimental` only when both native implementations
 and declared evidence exist.
 
+## Draft capability admission proposal
+
+The unaccepted [`agent-capability-spec-set.md`](agent-capability-spec-set.md)
+proposes shared semantic fixtures for S0 Skill, M0 Memory, K0 Knowledge, Q0
+Scheduler values/reducer, MA0 Multi-Agent delegation and O0 Observability.
+These rows are not admitted by this matrix until the owner accepts that set and
+this table is amended in the same contract change. Kotlin would cover portable
+values/reducers only, never Rust Runtime stores, connectors, child lifecycle,
+workers or exporters.
+
 ## Shared source of behavior
 
 Precedence is:

@@ -66,14 +66,14 @@ planned without reopening a narrower completed row.
 
 | Slice | Design | Spec | API | Code | Tests | State | Admission dependency |
 |---|---|---|---|---|---|---|---|
-| Memory | accepted | missing | missing | skeleton | missing | planned | C5 ports and C6 durable facts. |
-| Knowledge | accepted | missing | missing | skeleton | missing | planned | C5 ports and evidence attribution Spec. |
-| Skill | accepted | missing | missing | skeleton | missing | planned | C4/C5 prepared and governed invocation. |
-| Scheduler | accepted | missing | missing | skeleton | missing | planned | C6 durable continuation and Runtime clocks. |
-| Multi-Agent | accepted | missing | missing | skeleton | missing | gated | C6 recovery plus delegation identity and budget Spec. |
+| Memory | accepted | draft | documented | skeleton | missing | planned | Owner review of M0 namespace authority, append-only revisions, fixed-prefix retrieval and coordinated C6F facts. |
+| Knowledge | accepted | draft | documented | skeleton | missing | planned | Owner review of K0 exact sources, citations, freshness, connector recovery and coordinated C6F facts. |
+| Skill | accepted | draft | documented | skeleton | missing | planned | Owner review of S0 instruction-only activation, snapshot narrowing and commit-before-model rules. |
+| Scheduler | accepted | draft | documented | skeleton | missing | planned | Owner review of Q0 UTC/fixed-delay intent, occurrence identity, lease fencing and C6 dispatch. |
+| Multi-Agent | accepted | draft | documented | skeleton | missing | gated | Owner review of MA0 child identity, budget escrow, suspension/continuation and coordinated C3/C6F additions. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
 | Evaluation | draft | missing | missing | skeleton | missing | gated | Runnable Agent and pinned benchmark evidence. |
-| Observability | accepted | missing | missing | skeleton | missing | planned | Stable C5/C6 event vocabulary. |
+| Observability | accepted | draft | documented | skeleton | missing | planned | Owner review of O0 signal catalogue, redaction, low-cardinality metrics and bounded sink behavior. |
 
 ## Update checklist
 
@@ -87,6 +87,7 @@ planned without reopening a narrower completed row.
 
 - [`design/core-agent-plan.md`](design/core-agent-plan.md) — dependency DAG and work packages.
 - [`design/agent-platform-delivery.md`](design/agent-platform-delivery.md) — platform acceptance contract.
+- [`design/agent-capability-spec-set.md`](design/agent-capability-spec-set.md) — draft post-H1 capability review set.
 - [`../.agents/testing.md`](../.agents/testing.md) — evidence levels and repository gates.
 - [`AGENTS.md`](AGENTS.md) — Spec admission and schema rules.
 

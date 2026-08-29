@@ -10,6 +10,10 @@ The accepted D0/C4/C5/C6 implementation set is indexed by
 [`agent-core-spec-set.md`](agent-core-spec-set.md). Shared fixtures still land
 before each behavior slice.
 
+The post-H1 Memory/Knowledge/Skill/Scheduler/Observability proposal is indexed
+by [`agent-capability-spec-set.md`](agent-capability-spec-set.md). It remains a
+draft review set and admits no behavior until owner acceptance.
+
 ## Milestones
 
 ```text
@@ -132,10 +136,19 @@ dependency direction from the milestone DAG.
 | 8 | C6-Rust | SQLite Runtime composition and process restart matrix. | Real-file process-kill tests at every C6 checkpoint. |
 | 9 | C6-Kotlin | PostgreSQL experimental recovery host. | Real PostgreSQL transaction/restart subset, reported separately. |
 
-P2-C Provider mapping is complete. P2-V0 vendor connection profiles, concrete
-executor enforcement and H1 Host transport are separate follow-on slices.
-Fakes can prove C4-C6 orchestration but cannot be used to claim those external
-boundaries.
+P2-C Provider mapping, P2-V0 vendor connection profiles, H1-T Runtime HTTP and
+H1 durable Host are complete external slices. Concrete executor enforcement
+remains independently scoped. Fakes can prove orchestration but cannot be used
+to claim a concrete external boundary.
+
+## Draft post-H1 capability order
+
+After owner acceptance, deliver S0 exact Skill activation, M0 governed Memory,
+K0 attributed Knowledge, Q0 durable scheduling, MA0 governed delegation and O0
+observability using the fixtures/evidence declared by the capability Spec set.
+Portable reducers target Rust/Kotlin shared semantics; concrete stores,
+connectors, child lifecycle, workers and exporters stay Runtime-owned and
+require independent Rust evidence.
 
 ## Explicitly deferred
 
@@ -146,11 +159,11 @@ boundaries.
 - production credentials, signing, distribution and deployment for product
   clients.
 
-Provider adapters, the experimental Kotlin PostgreSQL verification host, and
-executable client skeletons are active work in
-`agent-platform-delivery.md`. Product clients may
-use the versioned fake Host boundary before C6 is complete, but cannot claim a
-live end-to-end Agent workflow until the durable Host slice passes.
+Provider adapters, the experimental Kotlin PostgreSQL verification host and
+executable client skeletons are governed by `agent-platform-delivery.md`.
+Product clients still use the versioned fake Host until a separate Runtime
+composition/credential-provisioning slice replaces it; H1 completion alone
+does not authorize clients to construct secrets or execution ports.
 
 ## First milestone acceptance
 
