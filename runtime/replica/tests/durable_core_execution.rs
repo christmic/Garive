@@ -12,10 +12,10 @@ use futures::executor::block_on;
 use garive_core::{
     AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
     AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest, CandidateKind,
-    ClockPort, ContextItem, ContextPort, ContextPortError, ContextPurpose, ContextRequest,
-    ContextSurface, EventSink, ExecutionId as CoreExecutionId, ExecutionLimits, FactRef,
-    MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure,
-    SessionId as CoreSessionId, TerminalRecoveryAction, TurnId as CoreTurnId,
+    ClockPort, ContextCandidate, ContextPort, ContextPortError, ContextPurpose, ContextRequest,
+    EventSink, ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy,
+    ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure, Retention,
+    SessionId as CoreSessionId, TerminalRecoveryAction, TurnId as CoreTurnId, Visibility,
 };
 use garive_knowledge::{
     Citation, CitationScheme, ContentBinding as KnowledgeContent, FreshnessRequirement,
@@ -62,34 +62,26 @@ struct Context {
     positions: Vec<u64>,
 }
 impl ContextPort for Context {
-    fn derive(
+    fn read_candidates(
         &mut self,
         request: &ContextRequest,
         _: u32,
-    ) -> Result<ContextSurface, ContextPortError> {
+    ) -> Result<Vec<ContextCandidate>, ContextPortError> {
         self.positions.push(request.through_position);
         let fact = FactRef {
             session_id: request.session_id.clone(),
             position: 3,
         };
-        Ok(ContextSurface {
-            purpose: ContextPurpose::Inference,
-            from_position: 1,
-            through_position: request.through_position,
-            items: vec![ContextItem::Input {
-                fact_ref: fact.clone(),
-                kind: CandidateKind::UserInput,
-                item: ModelInputItem::Message {
-                    role: garive_llm::ModelRole::User,
-                    content: vec![ModelInputContent::Text("hello".into())],
-                },
+        Ok(vec![ContextCandidate {
+            fact_ref: fact,
+            kind: CandidateKind::UserInput,
+            retention: Retention::Required,
+            visibility: Visibility::Visible,
+            items: vec![ModelInputItem::Message {
+                role: garive_llm::ModelRole::User,
+                content: vec![ModelInputContent::Text("hello".into())],
             }],
-            retained_refs: vec![fact],
-            dropped_refs: vec![],
-            filtered_refs: vec![],
-            item_count: 1,
-            utf8_bytes: 5,
-        })
+        }])
     }
 }
 
@@ -915,7 +907,8 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
     let plan = plan_start_turn(&start, 1).unwrap();
     let execution = plan.execution_id.clone().unwrap();
     ledger.commit(session.clone(), 1, plan.facts).unwrap();
-    let request = core_request(&session, &plan.turn_id, &execution);
+    let mut request = core_request(&session, &plan.turn_id, &execution);
+    request.context_request.max_utf8_bytes = 4_096;
     let activation_request = SkillActivationRequest::new(
         "activation-1",
         "turn",
@@ -1188,6 +1181,7 @@ fn core_request(
             max_utf8_bytes: 100,
         },
         activated_skills: vec![],
+        capability_context_candidates: vec![],
         attributed_memory: vec![],
         attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new("target")],

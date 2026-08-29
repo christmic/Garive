@@ -1,15 +1,20 @@
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Mutex,
+};
 
 use garive_core::{
     execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
-    AgentToolCapabilities, AgentTurnRequest, AttributedMemory, ClockPort, ContextPort, EventSink,
-    MemoryEvidenceAttribution, PortFailure,
+    AgentToolCapabilities, AgentTurnRequest, AttributedKnowledge, AttributedMemory, CandidateKind,
+    ClockPort, ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef,
+    MemoryEvidenceAttribution, PortFailure, Retention, Visibility,
 };
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId, TurnId,
 };
 use garive_llm::{
-    ModelCancellation, ModelFuture, ModelObserver, ModelPort, ModelPortFailure, ModelRequest,
+    ModelCancellation, ModelFuture, ModelInputContent, ModelInputItem, ModelObserver, ModelPort,
+    ModelPortFailure, ModelRequest, ModelRole,
 };
 use serde_json::json;
 
@@ -436,21 +441,52 @@ async fn prepare_capabilities(
     let mut effective = request.clone();
     if let Some(activation) = capabilities.skill_activation {
         coordinator.commit(vec![activation.fact])?;
-        effective.context_request.through_position = coordinator.position();
+        let position = coordinator.position();
+        let items = activation
+            .activated_skills
+            .iter()
+            .map(|skill| ModelInputItem::Message {
+                role: ModelRole::Developer,
+                content: vec![ModelInputContent::Text(skill.instructions().into())],
+            })
+            .collect();
         effective.activated_skills = activation.activated_skills;
+        effective
+            .capability_context_candidates
+            .push(capability_candidate(
+                request,
+                position,
+                CandidateKind::Skill,
+                Retention::Required,
+                items,
+            ));
+        effective.context_request.through_position = position;
     }
     if let Some(memory) = capabilities.memory_retrieval {
         coordinator.commit(vec![memory.fact])?;
-        effective.context_request.through_position = coordinator.position();
-        effective.attributed_memory = memory
+        let position = coordinator.position();
+        let attributed: Vec<AttributedMemory> = memory
             .retrieval
             .matches
             .into_iter()
             .map(attributed_memory)
             .collect::<Result<_, _>>()?;
+        let items = attributed.into_iter().map(memory_input).collect::<Vec<_>>();
+        if !items.is_empty() {
+            effective
+                .capability_context_candidates
+                .push(capability_candidate(
+                    request,
+                    position,
+                    CandidateKind::Memory,
+                    Retention::Optional,
+                    items,
+                ));
+        }
+        effective.context_request.through_position = position;
     }
     if let Some(knowledge) = capabilities.knowledge_retrieval {
-        effective.attributed_knowledge = execute_knowledge_capability(
+        let attributed = execute_knowledge_capability(
             coordinator,
             &KnowledgeLifecycleContext {
                 turn_id: lifecycle.turn_id.clone(),
@@ -460,9 +496,87 @@ async fn prepare_capabilities(
             knowledge,
         )
         .await?;
-        effective.context_request.through_position = coordinator.position();
+        let position = coordinator.position();
+        let items = attributed
+            .into_iter()
+            .map(knowledge_input)
+            .collect::<Vec<_>>();
+        if !items.is_empty() {
+            effective
+                .capability_context_candidates
+                .push(capability_candidate(
+                    request,
+                    position,
+                    CandidateKind::Knowledge,
+                    Retention::Optional,
+                    items,
+                ));
+        }
+        effective.context_request.through_position = position;
     }
     Ok(effective)
+}
+
+fn capability_candidate(
+    request: &AgentTurnRequest,
+    position: u64,
+    kind: CandidateKind,
+    retention: Retention,
+    items: Vec<ModelInputItem>,
+) -> ContextCandidate {
+    ContextCandidate {
+        fact_ref: FactRef {
+            session_id: request.session_id.as_str().into(),
+            position,
+        },
+        kind,
+        retention,
+        visibility: Visibility::Purposes(BTreeSet::from([ContextPurpose::Inference])),
+        items,
+    }
+}
+
+fn memory_input(value: AttributedMemory) -> ModelInputItem {
+    let evidence = value
+        .evidence
+        .into_iter()
+        .map(|item| {
+            json!({
+                "session_id": item.session_id, "position": item.position,
+                "fact_id": item.fact_id, "payload_digest": item.payload_digest,
+            })
+        })
+        .collect::<Vec<_>>();
+    ModelInputItem::Message {
+        role: ModelRole::User,
+        content: vec![ModelInputContent::Text(
+            json!({
+                "type": "garive.memory", "record_id": value.record_id,
+                "revision_id": value.revision_id, "content_digest": value.content_digest,
+                "evidence": evidence, "content": value.content_utf8,
+            })
+            .to_string(),
+        )],
+    }
+}
+
+fn knowledge_input(value: AttributedKnowledge) -> ModelInputItem {
+    ModelInputItem::Message {
+        role: ModelRole::User,
+        content: vec![ModelInputContent::Text(json!({
+            "type": "garive.knowledge", "source_id": value.source_id,
+            "source_revision": value.source_revision, "evidence_id": value.evidence_id,
+            "source_snapshot_digest": value.source_snapshot_digest,
+            "content_digest": value.content_digest, "content_byte_length": value.content_byte_length,
+            "citation": { "locator_kind": value.citation.locator_kind,
+                "locator": value.citation.locator, "title": value.citation.title,
+                "canonical_uri": value.citation.canonical_uri,
+                "content_digest": value.citation.content_digest },
+            "retrieved_at_utc": value.retrieved_at_utc, "freshness": value.freshness,
+            "trust_class": value.trust_class, "rank_basis_points": value.rank_basis_points,
+            "content": value.content_utf8,
+        }).to_string())],
+    }
 }
 
 fn attributed_memory(

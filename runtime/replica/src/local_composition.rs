@@ -5,10 +5,10 @@ use std::{collections::BTreeSet, num::NonZeroU32};
 use garive_core::{
     AgentCursor, AgentDefinitionId as CoreDefinitionId,
     AgentDefinitionRevision as CoreDefinitionRevision, AgentEntry,
-    AgentInstanceId as CoreAgentInstanceId, AgentTurnRequest, CandidateKind, ContextItem,
-    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
-    ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, ModelOnlyLimits, ModelRecoveryPolicy,
-    ResumeInput, SessionId as CoreSessionId, TurnId as CoreTurnId,
+    AgentInstanceId as CoreAgentInstanceId, AgentTurnRequest, CandidateKind, ContextCandidate,
+    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ExecutionId as CoreExecutionId,
+    ExecutionLimits, FactRef, ModelOnlyLimits, ModelRecoveryPolicy, ResumeInput, Retention,
+    SessionId as CoreSessionId, TurnId as CoreTurnId, Visibility,
 };
 use garive_ledger::DurableFact;
 use garive_llm::{
@@ -234,6 +234,7 @@ pub fn reconstruct_local_start(
             max_utf8_bytes: policy.max_context_utf8_bytes,
         },
         activated_skills: vec![],
+        capability_context_candidates: vec![],
         attributed_memory: vec![],
         attributed_knowledge: vec![],
         model_targets: vec![ModelTargetId::new(&policy.model_target_id)],
@@ -282,11 +283,11 @@ pub struct LocalInputContext {
     text: String,
 }
 impl ContextPort for LocalInputContext {
-    fn derive(
+    fn read_candidates(
         &mut self,
         request: &ContextRequest,
         _: u32,
-    ) -> Result<ContextSurface, ContextPortError> {
+    ) -> Result<Vec<ContextCandidate>, ContextPortError> {
         if request.session_id != self.session_id
             || self.position == 0
             || self.position > request.through_position
@@ -301,24 +302,13 @@ impl ContextPort for LocalInputContext {
             session_id: self.session_id.clone(),
             position: self.position,
         };
-        if request.max_items < 1 || request.max_utf8_bytes < self.text.len() {
-            return Err(ContextPortError::RequiredFactsExceedBudget);
-        }
-        Ok(ContextSurface {
-            purpose: request.purpose,
-            from_position: 1,
-            through_position: request.through_position,
-            items: vec![ContextItem::Input {
-                fact_ref: reference.clone(),
-                kind: CandidateKind::UserInput,
-                item,
-            }],
-            retained_refs: vec![reference],
-            dropped_refs: vec![],
-            filtered_refs: vec![],
-            item_count: 1,
-            utf8_bytes: self.text.len(),
-        })
+        Ok(vec![ContextCandidate {
+            fact_ref: reference,
+            kind: CandidateKind::UserInput,
+            retention: Retention::Required,
+            visibility: Visibility::Visible,
+            items: vec![item],
+        }])
     }
 }
 

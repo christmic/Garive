@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use garive_core::{
-    ContextPort, MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
+    derive_context, ContextPort, MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction,
+    TerminalRecoveryAction,
 };
 use garive_llm::{ModelCapability, ModelOutputSettings, TextMode};
 use garive_runtime::{
@@ -110,10 +111,12 @@ fn reconstructs_only_committed_durable_start_values() {
     assert_eq!(reconstructed.request.limits.deadline_tick, Some(2_000));
     assert_eq!(reconstructed.durable.expected_session_version, 2);
     assert_eq!(reconstructed.durable.lease.now_ms, 1_000);
-    let surface = reconstructed
+    let candidates = reconstructed
         .context
-        .derive(&reconstructed.request.context_request, 0)
+        .read_candidates(&reconstructed.request.context_request, 0)
         .expect("context");
+    let surface =
+        derive_context(&reconstructed.request.context_request, &candidates).expect("surface");
     assert_eq!(surface.item_count, 1);
     assert_eq!(surface.utf8_bytes, "hello durable".len());
     assert_eq!(surface.retained_refs[0].position, 3);
