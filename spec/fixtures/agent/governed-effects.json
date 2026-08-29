@@ -227,5 +227,17 @@
     {"name": "receipt-without-result", "position": "receipt_no_result", "replay_class": "never_replay", "executor_proves_replay": false, "expected": "reconstruct_from_receipt"},
     {"name": "terminal", "position": "terminal", "replay_class": "never_replay", "executor_proves_replay": false, "expected": "return_terminal"}
   ],
+  "preparation_cases": [
+    {
+      "name": "valid-correlation-becomes-feedback",
+      "intent": {"model_call_id": "call-invalid", "tool_name": "read_file", "arguments_json": "{}"},
+      "expected": {"result": "observation", "code": "arguments_schema_mismatch", "failure_paths": [""]}
+    },
+    {
+      "name": "empty-correlation-fails",
+      "intent": {"model_call_id": "", "tool_name": "read_file", "arguments_json": "{}"},
+      "expected": {"result": "fail", "code": "invalid_model_output"}
+    }
+  ],
   "durable_order": ["effect.prepared", "effect.authorized", "effect.started", "effect.receipt", "effect.completed", "effect.observation"]
 }
