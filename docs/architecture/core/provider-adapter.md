@@ -6,7 +6,7 @@
 
 ## Audience
 
-Engineers changing `engine/llm/`, `adapters/`, future `providers/`, or Runtime
+Engineers changing `engine/llm/`, `adapters/`, `providers/`, or Runtime
 model composition in any supported language.
 
 ## Why
@@ -163,14 +163,15 @@ A Provider depends on `engine/llm` and one protocol adapter. It owns:
 
 - mapping `ModelRequest` to the portable protocol profile;
 - mapping protocol events and terminals to neutral facts;
-- selected endpoint, model identifier, headers, and credentials supplied by
-  Garive configuration;
+- selected deployment/model identity and admitted capabilities;
 - capability admission for protocol extensions;
 - provider-specific error evidence and sanitization.
 
-Official-vendor profiles may supply their documented address, authentication
-scheme, headers, and special capabilities, but those values do not move into
-the reusable protocol adapter. Compatible providers supply their own profile.
+Official-vendor profiles may define documented endpoint defaults,
+authentication/header schemes, and special capabilities, but Runtime supplies
+and freezes the concrete endpoint and credential values. Those policies do not
+move into the reusable protocol adapter. Compatible deployments have no vendor
+defaults.
 
 ## Runtime composition
 

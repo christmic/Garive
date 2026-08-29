@@ -48,7 +48,7 @@ planned without reopening a narrower completed row.
 |---|---|---|---|---|---|---|---|---|
 | P1-O | Responses-compatible protocol adapters | accepted | accepted | documented | implemented | verified | done | Keep shared request/response/error/SSE fixtures, exact event catalogues, strict native builds, and adapter boundary gates green. |
 | P1-A | Messages-compatible protocol adapters | accepted | accepted | documented | implemented | verified | done | Keep shared request/response/error/SSE fixtures, block/delta lifecycle matrices, strict native builds, and adapter boundary gates green. |
-| P2-C | Compatible deployment Provider mapping | accepted | accepted | documented | missing | missing | active | Implement both portable protocol mappers and shared Rust/Kotlin request/outcome/error/stream fixtures. |
+| P2-C | Compatible deployment Provider mapping | accepted | accepted | documented | implemented | verified | done | Keep explicit deployment boundaries, every shared failure case, and buffered/streamed Rust/Kotlin normalization green. |
 | P2-V | Vendor-specific Provider profiles | accepted | missing | missing | missing | missing | planned | Admit hosted APIs, default endpoints, credentials, and vendor capabilities only after P2-C. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
 | H1 | Live durable Host | accepted | draft | missing | missing | missing | planned | Depends on C6, P2-C, and one Runtime-owned transport. |

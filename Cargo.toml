@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-# Active Rust members include the portable Engine, protocol adapters, SQLite
-# Runtime, CLI/TUI shells, Tauri backend and benchmark scaffold.
+# Active Rust members include the portable Engine, protocol adapters/providers,
+# SQLite Runtime, CLI/TUI shells, Tauri backend and benchmark scaffold.
 #
 # NOT in this workspace (different language / different repo role):
 #   runtime/gateway           — Go (independent go.mod)

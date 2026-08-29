@@ -55,6 +55,10 @@ cd experiments/engine-kt
 `just conformance` is the joint D0/C0-C5 gate; full Gradle build verifies all
 currently admitted Kotlin modules.
 
+`just providers` verifies both protocol adapters, explicit Provider
+configuration boundaries, shared request/outcome/error fixtures, and semantic
+stream normalization in Rust and Kotlin.
+
 Rust library crates deny `missing_docs` at the crate root. Kotlin uses
 workspace-wide `explicitApi()` and KDoc on the admitted public contract; keep
 implementation helpers `internal` or `private`. Generated API documentation
