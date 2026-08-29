@@ -16,7 +16,7 @@ use garive_runtime::{
     local_dispatch_queue, recover_local_dispatches, CommittedTurn, EffectiveRuntimeLimits,
     HostClock, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, LocalWorkerError,
-    SqliteLedger,
+    SqliteLedger, TurnDispatcher,
 };
 use tempfile::tempdir;
 
@@ -245,4 +245,25 @@ fn zero_capacity_is_rejected() {
         local_dispatch_queue(0).err().expect("zero capacity"),
         LocalWorkerError::InvalidComposition
     );
+}
+
+#[tokio::test]
+async fn shutdown_stops_admission_and_bounds_in_memory_drain() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("garive.db");
+    let (dispatcher, mut queue) = local_dispatch_queue(1).expect("queue");
+    let committed = CommittedTurn {
+        session_id: SessionId::try_from("session").expect("session"),
+        turn_id: TurnId::try_from("turn").expect("turn"),
+        execution_id: ExecutionId::try_from("execution").expect("execution"),
+        session_version: 1,
+        committed_position: 1,
+    };
+    dispatcher.dispatch(&committed).expect("first admission");
+    let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
+    let worker = LocalExecutionWorker::new(&database, policy(), model).expect("worker");
+    let report = queue.shutdown_drain(&worker, &[]).await;
+    assert_eq!(report.attempted, 0);
+    assert_eq!(report.abandoned, 1);
+    assert!(dispatcher.dispatch(&committed).is_err());
 }

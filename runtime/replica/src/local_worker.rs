@@ -3,6 +3,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
+        atomic::{AtomicBool, Ordering},
         mpsc::{sync_channel, Receiver, SyncSender, TryRecvError},
         Arc,
     },
@@ -20,9 +21,19 @@ use crate::{
 /// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
 pub struct LocalTurnDispatcher {
     sender: SyncSender<CommittedTurn>,
+    accepting: Arc<AtomicBool>,
+}
+impl LocalTurnDispatcher {
+    /// Stops new queue admission without changing already committed Turns.
+    pub fn stop_admission(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
 }
 impl TurnDispatcher for LocalTurnDispatcher {
     fn dispatch(&self, turn: &CommittedTurn) -> Result<(), TurnDispatchError> {
+        if !self.accepting.load(Ordering::Acquire) {
+            return Err(TurnDispatchError);
+        }
         self.sender
             .try_send(turn.clone())
             .map_err(|_| TurnDispatchError)
@@ -32,6 +43,7 @@ impl TurnDispatcher for LocalTurnDispatcher {
 /// Sole consumer of committed local Turn dispatches.
 pub struct LocalDispatchQueue {
     receiver: Receiver<CommittedTurn>,
+    accepting: Arc<AtomicBool>,
 }
 impl LocalDispatchQueue {
     /// Executes the next queued Turn without blocking when the queue is empty.
@@ -46,6 +58,37 @@ impl LocalDispatchQueue {
             Err(TryRecvError::Disconnected) => Err(LocalWorkerError::WorkerStopped),
         }
     }
+
+    /// Stops admission and consumes at most one queued Turn per supplied attempt.
+    pub async fn shutdown_drain(
+        &mut self,
+        worker: &LocalExecutionWorker,
+        attempts: &[LocalExecutionAttempt],
+    ) -> LocalWorkerShutdownReport {
+        self.accepting.store(false, Ordering::Release);
+        let mut completed = 0;
+        let mut failed = 0;
+        for attempt in attempts {
+            let committed = match self.receiver.try_recv() {
+                Ok(value) => value,
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            };
+            match worker.execute(&committed, attempt).await {
+                Ok(_) => completed += 1,
+                Err(_) => failed += 1,
+            }
+        }
+        let mut abandoned = 0;
+        while self.receiver.try_recv().is_ok() {
+            abandoned += 1;
+        }
+        LocalWorkerShutdownReport {
+            attempted: completed + failed,
+            completed,
+            failed,
+            abandoned,
+        }
+    }
 }
 
 /// Creates one explicit non-zero bounded post-commit dispatch queue.
@@ -56,9 +99,16 @@ pub fn local_dispatch_queue(
         return Err(LocalWorkerError::InvalidComposition);
     }
     let (sender, receiver) = sync_channel(capacity);
+    let accepting = Arc::new(AtomicBool::new(true));
     Ok((
-        Arc::new(LocalTurnDispatcher { sender }),
-        LocalDispatchQueue { receiver },
+        Arc::new(LocalTurnDispatcher {
+            sender,
+            accepting: accepting.clone(),
+        }),
+        LocalDispatchQueue {
+            receiver,
+            accepting,
+        },
     ))
 }
 
@@ -134,6 +184,19 @@ pub enum LocalWorkerDisposition {
     },
     /// Duplicate delivery found an already terminal Execution and did no work.
     AlreadyTerminal,
+}
+
+/// Bounded local shutdown result; abandoned Turns remain durable for restart.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LocalWorkerShutdownReport {
+    /// Queue items for which execution was attempted.
+    pub attempted: usize,
+    /// Items that completed or were already terminal.
+    pub completed: usize,
+    /// Items whose bounded worker attempt failed.
+    pub failed: usize,
+    /// Items removed from memory after the explicit drain bound.
+    pub abandoned: usize,
 }
 
 /// Stable secret-free local queue or worker failure.
