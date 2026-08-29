@@ -57,7 +57,10 @@ pub use runtime_turn::{
     RuntimeTurnStatus, RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };
 pub use scheduler_runtime::{
-    reconstruct_schedule_state, PendingScheduleClaim, ScheduleRuntimeState,
+    reconstruct_schedule_state, run_schedule_once, PendingScheduleClaim,
+    ScheduleAuthorityOperation, ScheduleAuthorityPort, ScheduleClock, ScheduleClockReading,
+    ScheduleCommandDispatcher, ScheduleCommandReceipt, ScheduleRuntimeState, ScheduleTickConfig,
+    ScheduleTickOutcome,
 };
 pub use sqlite_ledger::{
     ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, ScheduleLease, ScheduleLeaseError,
