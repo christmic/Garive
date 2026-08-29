@@ -5,6 +5,7 @@ mod execution;
 mod execution_types;
 mod governed_effect;
 mod governed_effect_types;
+mod memory_retrieval;
 mod memory_write;
 mod model_lifecycle;
 mod skill_activation;
@@ -25,6 +26,7 @@ pub use governed_effect_types::{
     ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
     GovernedRuntimePortError, PreparedExecution,
 };
+pub use memory_retrieval::{plan_memory_retrieval, MemoryRetrievalContext, PlannedMemoryRetrieval};
 pub use memory_write::{
     plan_memory_tombstone, plan_memory_write, MemoryTombstoneContext, MemoryTombstoneReason,
     MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, PlannedMemoryTombstone,
