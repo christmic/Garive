@@ -1,6 +1,8 @@
 use garive_adapter_openai_responses::{
-    CreateResponseRequest, FunctionTool, Header, ImageDetail, InputContent, InputItem, MessageRole,
-    ResponseInput, ResponseTool, ResponsesAdapter, ResponsesAdapterConfig, ResponsesAdapterError,
+    CreateResponseRequest, FunctionCallOutput, FunctionOutput, FunctionTool, Header, ImageDetail,
+    InputContent, InputItem, ItemStatus, MessageRole, ReasoningConfig, ReasoningEffort,
+    ReasoningSummary, ResponseInput, ResponseTextConfig, ResponseTool, ResponsesAdapter,
+    ResponsesAdapterConfig, ResponsesAdapterError, TextFormat, ToolChoice, ToolChoiceMode,
 };
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -31,12 +33,13 @@ fn official_request() -> CreateResponseRequest {
     request.tools = vec![ResponseTool::Function(FunctionTool {
         name: "weather".into(),
         description: Some("Lookup weather".into()),
-        parameters: json!({
+        parameters: serde_json::from_value(json!({
             "type":"object",
             "properties":{"city":{"type":"string"}},
             "required":["city"],
             "additionalProperties":false
-        }),
+        }))
+        .unwrap(),
         strict: true,
     })];
     request
@@ -129,4 +132,46 @@ fn request_validation_rejects_non_finite_or_out_of_range_sampling() {
             "invalid Responses top_p"
         ))
     );
+}
+
+#[test]
+fn portable_request_unions_encode_as_official_shapes() {
+    let mut request = CreateResponseRequest::new(
+        "model",
+        ResponseInput::Items(vec![InputItem::FunctionCallOutput(FunctionCallOutput {
+            call_id: "call_1".into(),
+            output: FunctionOutput::Content(vec![InputContent::InputImage {
+                image_url: None,
+                file_id: Some("file_1".into()),
+                detail: Some(ImageDetail::Low),
+            }]),
+            status: Some(ItemStatus::Completed),
+        })]),
+        false,
+    );
+    request.tool_choice = Some(ToolChoice::Mode(ToolChoiceMode::Required));
+    request.text = Some(ResponseTextConfig {
+        format: TextFormat::JsonSchema {
+            name: "answer".into(),
+            description: None,
+            schema: serde_json::from_value(json!({"type":"object"})).unwrap(),
+            strict: true,
+        },
+    });
+    request.reasoning = Some(ReasoningConfig {
+        effort: Some(ReasoningEffort::Xhigh),
+        summary: Some(ReasoningSummary::Detailed),
+    });
+    let value: Value = serde_json::from_slice(adapter().prepare(&request).unwrap().body()).unwrap();
+    assert_eq!(value["input"][0]["output"][0]["file_id"], "file_1");
+    assert_eq!(value["tool_choice"], "required");
+    assert_eq!(value["text"]["format"]["type"], "json_schema");
+    assert_eq!(value["reasoning"]["effort"], "xhigh");
+
+    request.input = ResponseInput::Items(vec![InputItem::FunctionCallOutput(FunctionCallOutput {
+        call_id: "call_1".into(),
+        output: FunctionOutput::Content(vec![]),
+        status: None,
+    })]);
+    assert!(request.validate().is_err());
 }

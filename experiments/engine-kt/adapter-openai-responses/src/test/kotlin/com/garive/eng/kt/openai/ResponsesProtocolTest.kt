@@ -109,6 +109,35 @@ class ResponsesProtocolTest {
     }
 
     @Test
+    fun `portable request unions encode as official shapes`() {
+        val request = CreateResponseRequest(
+            model = "model",
+            input = ResponseInput.Items(listOf(InputItem.FunctionCallOutput(
+                "call_1",
+                FunctionOutput.Content(listOf(InputContent.Image(fileId = "file_1", detail = ImageDetail.LOW))),
+                ItemStatus.COMPLETED,
+            ))),
+            stream = false,
+            toolChoice = ToolChoice.Mode(ToolChoiceMode.REQUIRED),
+            text = ResponseTextConfig(TextFormat.JsonSchema(
+                "answer", schema = kotlinx.serialization.json.buildJsonObject { put("type", "object") }, strict = true,
+            )),
+            reasoning = ReasoningConfig(ReasoningEffort.XHIGH, ReasoningSummary.DETAILED),
+        )
+        val value = Json.parseToJsonElement(adapter.prepare(request).body.decodeToString()).jsonObject
+        assertEquals("file_1", value.getValue("input").let { it as JsonArray }[0].jsonObject
+            .getValue("output").let { it as JsonArray }[0].jsonObject.getValue("file_id").jsonPrimitive.content)
+        assertEquals("required", value.getValue("tool_choice").jsonPrimitive.content)
+        assertEquals("json_schema", value.getValue("text").jsonObject.getValue("format").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals("xhigh", value.getValue("reasoning").jsonObject.getValue("effort").jsonPrimitive.content)
+        assertFailsWith<ResponsesProtocolException> {
+            adapter.prepare(request.copy(input = ResponseInput.Items(listOf(
+                InputItem.FunctionCallOutput("call_1", FunctionOutput.Content(emptyList())),
+            ))))
+        }
+    }
+
+    @Test
     fun `incremental stream is invariant under every byte split`() {
         val bytes = bytes("spec/fixtures/protocols/openai-responses/complete.sse")
         fun decode(first: ByteArray, second: ByteArray): List<String> {
