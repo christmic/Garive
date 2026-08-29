@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
+
+use garive_core::{derive_context_with_memory, ContextPurpose, ContextRequest};
 
 use garive_ledger::{
     CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
@@ -10,9 +12,9 @@ use garive_memory::{
     RecallScore, RecallSelectionRequest,
 };
 use garive_runtime::{
-    plan_memory_obligation, plan_memory_observation, plan_memory_recall,
-    reconstruct_memory_hypothesis_projection, MemoryObligationContext, MemoryObservationContext,
-    MemoryPrefix, MemoryRecallContext, SqliteLedger,
+    decode_committed_memory_recall, plan_memory_obligation, plan_memory_observation,
+    plan_memory_recall, reconstruct_memory_hypothesis_projection, MemoryObligationContext,
+    MemoryObservationContext, MemoryPrefix, MemoryRecallContext, SqliteLedger,
 };
 use serde_json::Value;
 use tempfile::tempdir;
@@ -74,6 +76,28 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
     ledger
         .commit(session.clone(), 1, vec![recall.fact])
         .unwrap();
+    let recall_fact = ledger.read_facts(&session, 3, 4, None).unwrap().remove(0);
+    let batch = decode_committed_memory_recall(&recall_fact, &BTreeMap::new()).unwrap();
+    let surface = derive_context_with_memory(
+        &ContextRequest {
+            session_id: session.as_str().into(),
+            turn_id: turn.as_str().into(),
+            purpose: ContextPurpose::Inference,
+            after_position: None,
+            through_position: 4,
+            max_items: 2,
+            max_utf8_bytes: 2_048,
+        },
+        &[],
+        &[batch],
+    )
+    .unwrap();
+    assert_eq!(surface.retained_refs[0].position, 4);
+    assert!(decode_committed_memory_recall(
+        &recall_fact,
+        &BTreeMap::from([(("record".into(), "revision".into()), "hidden".into())]),
+    )
+    .is_err());
 
     let application = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
     let obligation = MemoryObligation::new(

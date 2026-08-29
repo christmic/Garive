@@ -1,5 +1,12 @@
+use std::collections::BTreeMap;
+
 use chrono::{DateTime, SecondsFormat, Utc};
-use garive_ledger::{CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, TurnId};
+use garive_core::{
+    FactRef, MemoryContextItem, MemoryContextState, MemoryRecallContextBatch, MemoryRecallProduct,
+};
+use garive_ledger::{
+    CanonicalPayload, DurableFact, ExecutionId, FactDraft, FactId, FactKind, TurnId,
+};
 use garive_memory::{
     reduce_observation, select_recall, HypothesisState, MemoryAuthority, MemoryLifecycle,
     MemoryObligation, MemoryObservation, MemoryRecallCandidate, MemoryType,
@@ -89,6 +96,115 @@ pub fn plan_memory_recall(
         &context.recorded_at,
     )?;
     Ok(PlannedMemoryRecall { selection, fact })
+}
+
+/// Decodes an actual committed recall fact into the provider-neutral C2 adapter value.
+pub fn decode_committed_memory_recall(
+    fact: &DurableFact,
+    resolved_detail: &BTreeMap<(String, String), String>,
+) -> Result<MemoryRecallContextBatch, RuntimeCommandError> {
+    if fact.kind.as_str() != "memory.recall_recorded" {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let value: Value = serde_json::from_str(fact.payload.as_json())
+        .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+    let object = value
+        .as_object()
+        .ok_or(RuntimeCommandError::InvalidCommand)?;
+    let product = match text(object, "product")?.as_str() {
+        "menu" if resolved_detail.is_empty() => MemoryRecallProduct::Menu,
+        "detail" => MemoryRecallProduct::Detail,
+        _ => return Err(RuntimeCommandError::InvalidCommand),
+    };
+    let values = object
+        .get("items")
+        .and_then(Value::as_array)
+        .ok_or(RuntimeCommandError::InvalidCommand)?;
+    if product == MemoryRecallProduct::Detail && values.len() != resolved_detail.len() {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let items = values
+        .iter()
+        .map(|value| decode_context_item(value, product, resolved_detail))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(MemoryRecallContextBatch {
+        fact_ref: FactRef {
+            session_id: fact.session_id.as_str().into(),
+            position: fact.position,
+        },
+        fact_id: fact.fact_id.as_str().into(),
+        payload_digest: fact.payload.sha256().into(),
+        selection_id: text(object, "selection_id")?,
+        request_digest: text(object, "request_digest")?,
+        namespace_id: text(object, "namespace_id")?,
+        product,
+        selection_policy_revision: text(object, "selection_policy_revision")?,
+        through_position: number(object, "through_position")?,
+        truncated: object
+            .get("truncated")
+            .and_then(Value::as_bool)
+            .ok_or(RuntimeCommandError::InvalidCommand)?,
+        items,
+    })
+}
+
+fn decode_context_item(
+    value: &Value,
+    product: MemoryRecallProduct,
+    resolved: &BTreeMap<(String, String), String>,
+) -> Result<MemoryContextItem, RuntimeCommandError> {
+    let object = value
+        .as_object()
+        .ok_or(RuntimeCommandError::InvalidCommand)?;
+    let record_id = text(object, "record_id")?;
+    let revision_id = text(object, "revision_id")?;
+    let content_utf8 = match product {
+        MemoryRecallProduct::Menu => None,
+        MemoryRecallProduct::Detail => Some(
+            resolved
+                .get(&(record_id.clone(), revision_id.clone()))
+                .ok_or(RuntimeCommandError::InvalidCommand)?
+                .clone(),
+        ),
+    };
+    Ok(MemoryContextItem {
+        record_id,
+        revision_id,
+        memory_type: text(object, "memory_type")?,
+        role: text(object, "role")?,
+        authority: text(object, "authority")?,
+        state: match text(object, "state")?.as_str() {
+            "candidate" => MemoryContextState::Candidate,
+            "active" => MemoryContextState::Active,
+            "cold" => MemoryContextState::Cold,
+            "archived" => MemoryContextState::Archived,
+            _ => return Err(RuntimeCommandError::InvalidCommand),
+        },
+        safe_label: text(object, "safe_label")?,
+        content_digest: text(object, "content_digest")?,
+        content_byte_length: number(object, "content_byte_length")?,
+        content_utf8,
+    })
+}
+
+fn text(
+    value: &serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<String, RuntimeCommandError> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+        .ok_or(RuntimeCommandError::InvalidCommand)
+}
+
+fn number(value: &serde_json::Map<String, Value>, field: &str) -> Result<u64, RuntimeCommandError> {
+    value
+        .get(field)
+        .and_then(Value::as_u64)
+        .filter(|number| *number != 0)
+        .ok_or(RuntimeCommandError::InvalidCommand)
 }
 
 /// Turn/Execution and namespace ownership for opening an obligation.
