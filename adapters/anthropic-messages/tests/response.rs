@@ -17,7 +17,7 @@ fn adapter() -> MessagesAdapter {
 
 #[test]
 fn official_message_shape_decodes_without_usage_normalization() {
-    let body = include_bytes!("../../../spec/fixtures/providers/anthropic/messages/ordinary.json");
+    let body = include_bytes!("../../../spec/fixtures/protocols/anthropic-messages/ordinary.json");
     let decoded = adapter().decode_response(200, &[], body).unwrap();
     let DecodedResponse::Message {
         status, message, ..
@@ -36,7 +36,7 @@ fn official_message_shape_decodes_without_usage_normalization() {
 #[test]
 fn hosted_output_block_is_a_lossless_extension() {
     let mut value: Value = serde_json::from_slice(include_bytes!(
-        "../../../spec/fixtures/providers/anthropic/messages/ordinary.json"
+        "../../../spec/fixtures/protocols/anthropic-messages/ordinary.json"
     ))
     .unwrap();
     let hosted = json!({"type":"web_search_tool_result","tool_use_id":"srv_1","content":[{"url":"https://example.test"}]});
@@ -76,7 +76,7 @@ fn incompatible_media_and_malformed_known_blocks_fail() {
     assert!(adapter().decode_response(200, &headers, b"{}").is_err());
 
     let mut value: Value = serde_json::from_slice(include_bytes!(
-        "../../../spec/fixtures/providers/anthropic/messages/ordinary.json"
+        "../../../spec/fixtures/protocols/anthropic-messages/ordinary.json"
     ))
     .unwrap();
     value["content"] = json!([{"type":"text","text":""}]);

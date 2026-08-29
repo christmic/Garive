@@ -202,7 +202,7 @@ pub enum InputContent {
         /// Optional URL or data URL.
         #[serde(skip_serializing_if = "Option::is_none")]
         image_url: Option<String>,
-        /// Optional provider-resolved file identifier.
+        /// Optional deployment-resolved file identifier.
         #[serde(skip_serializing_if = "Option::is_none")]
         file_id: Option<String>,
         /// Optional detail hint.

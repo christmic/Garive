@@ -56,7 +56,7 @@ fn official_shape_fixture_is_encoded_without_vendor_defaults() {
     let actual: Value =
         serde_json::from_slice(adapter().prepare(&request).unwrap().body()).unwrap();
     let expected: Value = serde_json::from_str(include_str!(
-        "../../../spec/fixtures/providers/anthropic/messages/request.json"
+        "../../../spec/fixtures/protocols/anthropic-messages/request.json"
     ))
     .unwrap();
     assert_eq!(actual, expected);

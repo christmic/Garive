@@ -50,7 +50,7 @@ fn prepare_matches_pinned_official_create_shape() {
     let expected: Value = serde_json::from_slice(
         &fs::read(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../spec/fixtures/providers/openai/responses/request.json"),
+                .join("../../spec/fixtures/protocols/openai-responses/request.json"),
         )
         .unwrap(),
     )

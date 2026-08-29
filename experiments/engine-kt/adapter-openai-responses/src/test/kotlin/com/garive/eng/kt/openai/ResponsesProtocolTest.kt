@@ -37,7 +37,7 @@ class ResponsesProtocolTest {
 
     @Test
     fun `official request fixture is encoded`() {
-        val fixture = json("spec/fixtures/providers/openai/responses/request.json")
+        val fixture = json("spec/fixtures/protocols/openai-responses/request.json")
         val request = CreateResponseRequest(
             model = fixture.getValue("model").toString().trim('"'),
             input = ResponseInput.Items(fixture.getValue("input").let { it as kotlinx.serialization.json.JsonArray }.map { it as JsonObject }),
@@ -55,7 +55,7 @@ class ResponsesProtocolTest {
 
     @Test
     fun `ordinary and hosted outputs keep protocol identity`() {
-        val fixture = bytes("spec/fixtures/providers/openai/responses/ordinary.json")
+        val fixture = bytes("spec/fixtures/protocols/openai-responses/ordinary.json")
         val decoded = assertIs<DecodedResponse.Response>(adapter.decodeResponse(200, emptyList(), fixture))
         assertTrue(decoded.response.output.isNotEmpty())
         val value = Json.parseToJsonElement(fixture.decodeToString()) as JsonObject
@@ -68,7 +68,7 @@ class ResponsesProtocolTest {
 
     @Test
     fun `incremental stream is invariant under every byte split`() {
-        val bytes = bytes("spec/fixtures/providers/openai/responses/complete.sse")
+        val bytes = bytes("spec/fixtures/protocols/openai-responses/complete.sse")
         fun decode(first: ByteArray, second: ByteArray): List<String> {
             val decoder = ResponsesStreamDecoder()
             val events = decoder.push(first).toMutableList()
@@ -85,7 +85,7 @@ class ResponsesProtocolTest {
     @Test
     fun `truncated stream fails closed`() {
         val decoder = ResponsesStreamDecoder()
-        decoder.push(bytes("spec/fixtures/providers/openai/responses/truncated.sse"))
+        decoder.push(bytes("spec/fixtures/protocols/openai-responses/truncated.sse"))
         assertFails { decoder.finish() }
     }
 

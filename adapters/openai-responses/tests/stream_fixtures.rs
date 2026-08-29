@@ -6,7 +6,7 @@ use std::{fs, path::PathBuf};
 fn fixture(name: &str) -> Vec<u8> {
     fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../spec/fixtures/providers/openai/responses")
+            .join("../../spec/fixtures/protocols/openai-responses")
             .join(name),
     )
     .unwrap()

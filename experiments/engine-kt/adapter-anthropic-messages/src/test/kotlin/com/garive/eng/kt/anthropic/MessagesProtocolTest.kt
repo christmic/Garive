@@ -35,7 +35,7 @@ class MessagesProtocolTest {
 
     @Test
     fun `official request fixture is encoded exactly`() {
-        val fixture = json("spec/fixtures/providers/anthropic/messages/request.json")
+        val fixture = json("spec/fixtures/protocols/anthropic-messages/request.json")
         val messages = (fixture.getValue("messages") as JsonArray).map { element ->
             val turn = element.jsonObject
             Message(
@@ -61,7 +61,7 @@ class MessagesProtocolTest {
     @Test
     fun `ordinary response preserves client and hosted block identity`() {
         val decoded = assertIs<DecodedResponse.Message>(adapter.decodeResponse(
-            200, emptyList(), bytes("spec/fixtures/providers/anthropic/messages/ordinary.json"),
+            200, emptyList(), bytes("spec/fixtures/protocols/anthropic-messages/ordinary.json"),
         ))
         assertIs<OutputBlock.Text>(decoded.message.content[0])
         assertIs<OutputBlock.ToolUse>(decoded.message.content[1])
@@ -82,7 +82,7 @@ class MessagesProtocolTest {
 
     @Test
     fun `stream is invariant under every byte split`() {
-        val bytes = bytes("spec/fixtures/providers/anthropic/messages/complete.sse")
+        val bytes = bytes("spec/fixtures/protocols/anthropic-messages/complete.sse")
         fun decode(first: ByteArray, second: ByteArray): List<StreamEventKind> {
             val decoder = MessagesStreamDecoder(); val events = decoder.push(first).toMutableList()
             events += decoder.push(second); decoder.finish(); return events.map(StreamEvent::kind)
@@ -94,9 +94,9 @@ class MessagesProtocolTest {
     @Test
     fun `error terminal succeeds and truncation fails`() {
         val error = MessagesStreamDecoder()
-        error.push(bytes("spec/fixtures/providers/anthropic/messages/stream-error.sse")); error.finish()
+        error.push(bytes("spec/fixtures/protocols/anthropic-messages/stream-error.sse")); error.finish()
         val truncated = MessagesStreamDecoder()
-        truncated.push(bytes("spec/fixtures/providers/anthropic/messages/truncated.sse"))
+        truncated.push(bytes("spec/fixtures/protocols/anthropic-messages/truncated.sse"))
         assertFails { truncated.finish() }
     }
 

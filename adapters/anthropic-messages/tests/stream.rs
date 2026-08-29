@@ -14,7 +14,7 @@ fn decode(bytes: &[u8]) -> Result<Vec<StreamEventKind>, MessagesAdapterError> {
 
 #[test]
 fn official_complete_fixture_has_typed_lifecycle() {
-    let bytes = include_bytes!("../../../spec/fixtures/providers/anthropic/messages/complete.sse");
+    let bytes = include_bytes!("../../../spec/fixtures/protocols/anthropic-messages/complete.sse");
     let events = decode(bytes).unwrap();
     assert_eq!(events.first(), Some(&StreamEventKind::MessageStart));
     assert!(events.contains(&StreamEventKind::ContentBlockDelta(DeltaKind::Text)));
@@ -24,7 +24,7 @@ fn official_complete_fixture_has_typed_lifecycle() {
 
 #[test]
 fn every_fixture_byte_split_is_incremental_and_equivalent() {
-    let bytes = include_bytes!("../../../spec/fixtures/providers/anthropic/messages/complete.sse");
+    let bytes = include_bytes!("../../../spec/fixtures/protocols/anthropic-messages/complete.sse");
     let expected = decode(bytes).unwrap();
     for split in 0..=bytes.len() {
         let mut decoder = MessagesStreamDecoder::new();
@@ -45,7 +45,7 @@ fn every_fixture_byte_split_is_incremental_and_equivalent() {
 #[test]
 fn thinking_signature_and_redaction_remain_distinct() {
     let events = decode(include_bytes!(
-        "../../../spec/fixtures/providers/anthropic/messages/thinking.sse"
+        "../../../spec/fixtures/protocols/anthropic-messages/thinking.sse"
     ))
     .unwrap();
     assert!(events.contains(&StreamEventKind::ContentBlockDelta(DeltaKind::Thinking)));
@@ -55,7 +55,7 @@ fn thinking_signature_and_redaction_remain_distinct() {
 #[test]
 fn protocol_error_is_terminal_without_retry_classification() {
     let events = decode(include_bytes!(
-        "../../../spec/fixtures/providers/anthropic/messages/stream-error.sse"
+        "../../../spec/fixtures/protocols/anthropic-messages/stream-error.sse"
     ))
     .unwrap();
     assert_eq!(events.last(), Some(&StreamEventKind::Error));
@@ -90,7 +90,7 @@ event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n
 
 #[test]
 fn missing_terminal_is_truncated() {
-    let bytes = include_bytes!("../../../spec/fixtures/providers/anthropic/messages/truncated.sse");
+    let bytes = include_bytes!("../../../spec/fixtures/protocols/anthropic-messages/truncated.sse");
     let mut decoder = MessagesStreamDecoder::new();
     let _ = decoder.push(bytes);
     assert_eq!(decoder.finish(), Err(MessagesAdapterError::TruncatedStream));

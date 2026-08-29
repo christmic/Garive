@@ -149,7 +149,7 @@ response.in_progress
 response.completed
 response.failed
 response.incomplete
-response.error | error
+error
 response.output_item.added | response.output_item.done
 response.content_part.added | response.content_part.done
 response.output_text.delta | response.output_text.done
@@ -207,7 +207,7 @@ terminal; it cannot replace `response.completed`, `failed`, or `incomplete`.
   — ownership and composition boundary.
 - [`model-request-stream.md`](model-request-stream.md) — neutral Garive model
   contract consumed later by Providers.
-- [`../fixtures/providers/openai/responses/`](../fixtures/providers/openai/responses/)
+- [`../fixtures/protocols/openai-responses/`](../fixtures/protocols/openai-responses/)
   — pinned wire evidence.
 
 ## Meta

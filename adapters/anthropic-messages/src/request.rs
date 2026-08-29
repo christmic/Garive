@@ -333,7 +333,7 @@ pub enum ImageSource {
     },
     /// URL-referenced image.
     Url {
-        /// Absolute or provider-admitted URL.
+        /// Absolute or caller-admitted URL.
         url: String,
     },
 }

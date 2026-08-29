@@ -63,7 +63,7 @@ impl fmt::Debug for Header {
     }
 }
 
-/// Immutable deployment configuration supplied by provider composition.
+/// Immutable deployment configuration supplied by Garive composition.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessagesAdapterConfig {
     endpoint: String,

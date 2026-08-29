@@ -199,7 +199,7 @@ semantics.
   — ownership and composition boundary.
 - [`model-request-stream.md`](model-request-stream.md) — neutral Garive model
   contract consumed later by Providers.
-- [`../fixtures/providers/anthropic/messages/`](../fixtures/providers/anthropic/messages/)
+- [`../fixtures/protocols/anthropic-messages/`](../fixtures/protocols/anthropic-messages/)
   — pinned wire evidence.
 
 ## Meta
