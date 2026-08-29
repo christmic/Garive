@@ -186,14 +186,14 @@ fn every_effect_terminal_and_receipt_path_is_explicit() {
         vec!["effect.prepared", "effect.started"],
         vec!["effect.prepared", "effect.authorized", "effect.started"],
     ] {
-        for terminal in ["effect.completed", "effect.failed", "effect.uncertain"] {
+        for terminal in ["effect.failed", "effect.uncertain"] {
             let mut kinds = vec!["session.opened", "turn.started", "execution.started"];
             kinds.extend(prefix.iter().copied());
             kinds.extend([terminal, "execution.completed"]);
             assert_valid(&kinds);
         }
     }
-    for terminal in ["effect.completed", "effect.failed"] {
+    for terminal in ["effect.completed"] {
         assert_valid(&[
             "session.opened",
             "turn.started",

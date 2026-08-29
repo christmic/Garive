@@ -55,8 +55,12 @@ pub(crate) struct SessionProjection {
     turns: BTreeMap<TurnId, TurnState>,
     executions: BTreeMap<ExecutionId, (TurnId, ExecutionState)>,
     models: BTreeMap<ModelRequestId, (ExecutionId, InvocationState)>,
+    model_digests: BTreeMap<ModelRequestId, String>,
     tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
     tool_digests: BTreeMap<ToolInvocationId, String>,
+    tool_grants: BTreeMap<ToolInvocationId, String>,
+    tool_receipts: BTreeMap<ToolInvocationId, String>,
+    tool_executors: BTreeMap<ToolInvocationId, (String, String)>,
     suspensions: BTreeMap<TurnId, String>,
     interactions: BTreeMap<String, InteractionRecord>,
 }
@@ -285,6 +289,10 @@ impl SessionProjection {
         {
             return Err(LedgerError::InvalidTransition);
         }
+        self.model_digests.insert(
+            request.clone(),
+            text(&payload(fact)?, "request_digest")?.to_owned(),
+        );
         Ok(())
     }
 
@@ -301,6 +309,11 @@ impl SessionProjection {
             .get_mut(request)
             .ok_or(LedgerError::MissingReference)?;
         if owner != execution {
+            return Err(LedgerError::InvalidTransition);
+        }
+        if self.model_digests.get(request).map(String::as_str)
+            != Some(text(&payload(fact)?, "request_digest")?)
+        {
             return Err(LedgerError::InvalidTransition);
         }
         let valid = (*state == InvocationState::Prepared && next == InvocationState::Started)
@@ -390,22 +403,25 @@ impl SessionProjection {
         self.require_active_execution(fact)?;
         let tool = required(&fact.tool_invocation_id)?;
         let execution = required(&fact.execution_id)?;
-        let (owner, state) = self
-            .tools
-            .get_mut(tool)
-            .ok_or(LedgerError::MissingReference)?;
+        let payload = payload(fact)?;
+        if self.tool_digests.get(tool).map(String::as_str)
+            != Some(text(&payload, "prepared_digest")?)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let (owner, state) = self.tools.get(tool).ok_or(LedgerError::MissingReference)?;
         if owner != execution {
             return Err(LedgerError::InvalidTransition);
         }
+        let current = *state;
         let valid = matches!(
-            (*state, next),
+            (current, next),
             (InvocationState::Prepared, InvocationState::Authorized)
                 | (InvocationState::Prepared, InvocationState::Started)
                 | (InvocationState::Prepared, InvocationState::Denied)
                 | (InvocationState::Authorized, InvocationState::Started)
                 | (InvocationState::Authorized, InvocationState::Denied)
                 | (InvocationState::Started, InvocationState::Receipt)
-                | (InvocationState::Started, InvocationState::Completed)
                 | (InvocationState::Started, InvocationState::Failed)
                 | (InvocationState::Started, InvocationState::Uncertain)
                 | (InvocationState::Receipt, InvocationState::Completed)
@@ -414,7 +430,74 @@ impl SessionProjection {
         if !valid {
             return Err(LedgerError::InvalidTransition);
         }
-        *state = next;
+        self.validate_effect_binding(tool, current, next, &payload)?;
+        self.tools
+            .get_mut(tool)
+            .expect("validated tool remains present")
+            .1 = next;
+        Ok(())
+    }
+
+    fn validate_effect_binding(
+        &mut self,
+        tool: &ToolInvocationId,
+        current: InvocationState,
+        next: InvocationState,
+        payload: &Map<String, Value>,
+    ) -> Result<(), LedgerError> {
+        match next {
+            InvocationState::Authorized => {
+                self.tool_grants
+                    .insert(tool.clone(), text(payload, "grant_id")?.to_owned());
+            }
+            InvocationState::Started => {
+                let grant = text(payload, "grant_id")?;
+                if self
+                    .tool_grants
+                    .get(tool)
+                    .is_some_and(|value| value != grant)
+                {
+                    return Err(LedgerError::InvalidTransition);
+                }
+                self.tool_grants.insert(tool.clone(), grant.to_owned());
+                self.tool_executors.insert(
+                    tool.clone(),
+                    (
+                        text(payload, "executor_id")?.to_owned(),
+                        text(payload, "executor_revision")?.to_owned(),
+                    ),
+                );
+            }
+            InvocationState::Receipt => {
+                if self.tool_grants.get(tool).map(String::as_str)
+                    != Some(text(payload, "grant_id")?)
+                    || self.tool_executors.get(tool)
+                        != Some(&(
+                            text(payload, "executor_id")?.to_owned(),
+                            text(payload, "executor_revision")?.to_owned(),
+                        ))
+                {
+                    return Err(LedgerError::InvalidTransition);
+                }
+                self.tool_receipts
+                    .insert(tool.clone(), text(payload, "receipt_id")?.to_owned());
+            }
+            InvocationState::Completed => {
+                if self.tool_receipts.get(tool).map(String::as_str)
+                    != Some(text(payload, "receipt_id")?)
+                {
+                    return Err(LedgerError::InvalidTransition);
+                }
+            }
+            InvocationState::Failed
+                if current == InvocationState::Receipt
+                    && self.tool_receipts.get(tool).map(String::as_str)
+                        != payload.get("receipt_id").and_then(Value::as_str) =>
+            {
+                return Err(LedgerError::InvalidTransition);
+            }
+            _ => {}
+        }
         Ok(())
     }
 
@@ -437,6 +520,11 @@ impl SessionProjection {
         {
             return Err(LedgerError::InvalidTransition);
         }
+        if self.tool_digests.get(tool).map(String::as_str)
+            != Some(text(&payload(fact)?, "prepared_digest")?)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
         *state = InvocationState::Observed;
         Ok(())
     }
@@ -448,6 +536,9 @@ impl SessionProjection {
         }
         let request = required(&fact.model_request_id)?;
         let execution = required(&fact.execution_id)?;
+        if text(&payload(fact)?, "source_model_request_id")? != request.as_str() {
+            return Err(LedgerError::InvalidTransition);
+        }
         match self.models.get(request) {
             Some((owner, InvocationState::Completed)) if owner == execution => Ok(()),
             Some(_) => Err(LedgerError::InvalidTransition),

@@ -124,7 +124,7 @@
           {"id": "f4", "kind": "model.prepared", "turn": "t1", "execution": "e1", "request": "r1"},
           {"id": "f5", "kind": "model.started", "turn": "t1", "execution": "e1", "request": "r1"},
           {"id": "f6", "kind": "model.completed", "turn": "t1", "execution": "e1", "request": "r1"},
-          {"id": "f7", "kind": "tool.preparation_rejected", "turn": "t1", "execution": "e1", "request": "r1"},
+          {"id": "f7", "kind": "tool.preparation_rejected", "turn": "t1", "execution": "e1", "request": "r1", "payload_overrides": {"source_model_request_id": "r1"}},
           {"id": "f8", "kind": "turn.cancel_requested", "turn": "t1"}
         ]}}
       ],
