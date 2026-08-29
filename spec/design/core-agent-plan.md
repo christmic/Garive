@@ -130,8 +130,8 @@ dependency direction from the milestone DAG.
 | 2 | C4-R/K | Tool catalog validation, Portable Tool Schema v1, normalization and digest. | Shared vectors plus independent Rust/Kotlin tests. |
 | 3 | D0-R/K | Definition validation, exact resolution and effective snapshot digest. | Shared semantic/canonical fixtures and dependency gates. |
 | 4 | C5a-R/K | Authorization verdict/grant/observation reducer with fake ports. | Shared approve/deny/replacement/unsupported scenarios. |
-| 5 | C5b-R/K | Interaction suspension and typed continuation reduction. | Shared request/resolve/cancel/conflict scenarios. |
-| 6 | C5c-R/K | Receipt and uncertainty recovery decisions. | Shared crash-position matrix; no concrete executor claim. |
+| 5 | C5-interaction-R/K | Interaction suspension and typed continuation reduction. | Shared request/resolve/cancel/conflict scenarios. |
+| 6 | C5-recovery-R/K | Receipt and uncertainty recovery decisions. | Shared crash-position matrix; no concrete executor claim. |
 | 7 | C6-domain | Runtime command/idempotency/fact mapping and disposable-execution recovery. | Rust domain tests plus admitted Kotlin semantic subset. |
 | 8 | C6-Rust | SQLite Runtime composition and process restart matrix. | Real-file process-kill tests at every C6 checkpoint. |
 | 9 | C6-Kotlin | PostgreSQL experimental recovery host. | Real PostgreSQL transaction/restart subset, reported separately. |
@@ -166,6 +166,39 @@ execution ports. The replacement boundary is specified by
 [`local-runtime-composition.md`](local-runtime-composition.md) and
 [`live-host-clients.md`](live-host-clients.md); implementation must preserve
 their explicit configuration, reconstruction and retry rules.
+
+## Next accepted increments
+
+```text
+dependency/toolchain audit ───────────────────────────────┐
+                                                         v
+M2-A projection/parser -> M2-B planner -> M2-C SQLite -> M2-D Desktop flow
+                              |                              ^
+                              v                              |
+                         shared Rust/Kotlin                  |
+                                                             |
+H2 proto -> H2 Runtime projection -> Host clients -> UX-A -> UX-B Desktop
+                                               `-----------> UX-C Web/mobile
+
+C5b declarations -> shared planner -> Runtime read batches -> executor evidence
+```
+
+| Order | Package | Boundary | Exit evidence |
+|---:|---|---|---|
+| 1 | V1 | Review official stable toolchain/SDK/dependency sources; update owners and lockfiles under the dependency rule. | Native builds prove the selected compatible stable set; every hold is documented. |
+| 2 | M2-A/B | Canonical Memory snapshot parser/projection and authority-safe import planner. | Shared Rust/Kotlin fixture and plan digests. |
+| 3 | C5b-A | Tool access policy, pure exact resolver contract, Prepared Call digest amendment, conflict planner. | Shared Rust/Kotlin graph/plan fixture plus sequential differential properties. |
+| 4 | H2-W | Additive Host v1 read-model messages and shared client mappings. | Proto/docs/generated consumer round trips. |
+| 5 | M2-C | Runtime filesystem capability and atomic SQLite Memory import receipts. | Real-file bounds/symlink tests and crash/replay matrix. |
+| 6 | C5b-R | Bounded parallel read-only dispatcher with timeout/cancel/recovery ordering. | Completion-permutation properties and real confined executor tests. |
+| 7 | H2-R | Installed-Agent, Session page, summary and timeline projections. | File-backed SQLite restart/concurrency/corruption matrices. |
+| 8 | UX-A/B | Shared application controller and Desktop reference UI. | Controller scenarios and configured embedded-Runtime restart E2E plus accessibility gates. |
+| 9 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Real Host/native builds and platform UI scenarios. |
+| 10 | M2-D | Desktop Memory export, edit handoff, dry-run diff, confirmation, import/erasure receipt. | Product E2E over M2-C and the A-UX1 controller boundary. |
+
+M2, C5b, and H2 may progress independently after their own fixtures are
+accepted. A-UX1 requires H2; M2-D requires both M2-C and the Desktop controller.
+No package may use a later UI mock as evidence for an earlier Runtime boundary.
 
 ## First milestone acceptance
 

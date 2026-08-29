@@ -23,12 +23,12 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 | 1 | [`../system.md`](../system.md) | Product ownership and dependency direction. | accepted |
 | 2 | [`loop.md`](loop.md) | One bounded Agent execution; derive, assemble, invoke, prepare, and return. | mixed: C0–C6 accepted; later mechanisms research |
 | 3 | [`provider-adapter.md`](provider-adapter.md) | Protocol adapter, Provider, and Runtime ownership boundary. | accepted |
-| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | mixed: C4–C6 accepted; later mechanisms research |
+| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | mixed: C4–C6 delivered; C5b accepted; later mechanisms research |
 | 5 | [`ledger.md`](ledger.md) | Runtime-owned durable facts, projections, audit, and recovery. | mixed: L0/L1 accepted; later variants research |
 | 6 | [`compression.md`](compression.md) | Context-pressure estimation and compression policy. | research |
 | 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | mixed: admitted gates implemented; numeric research remains |
 | 8 | [`assemble-testing.md`](assemble-testing.md) | Provider assembly contract tests. | mixed: admitted gates implemented; broader research remains |
-| 9 | [`memory.md`](memory.md) | Memory classification, lifecycle, distillation and retention research. | mixed: M0/M1 accepted; other angles research |
+| 9 | [`memory.md`](memory.md) | Memory classification, lifecycle, distillation and retention research. | mixed: M0/M1 delivered; M2 accepted; quality/graph research |
 
 ## Settled boundaries
 
@@ -55,7 +55,9 @@ exists:
 
 - compression thresholds, EWMA coefficients, and token formulas;
 - production Creativity policy and numeric trade-off thresholds;
-- Memory mechanisms outside accepted M0/M1 contracts;
+- Memory mechanisms outside accepted M0/M1/M2 contracts;
+- effect streaming, speculative dispatch, mutating concurrency, cache, and
+  workspace snapshots outside accepted C5b;
 - performance and retention numeric gates;
 - each hosted provider extension beyond independently accepted capabilities;
 - byte-equality requirements outside canonical wire fixtures.
@@ -98,6 +100,8 @@ A mechanism is ready for `spec/` when it has:
   — accepted C4 validation, normalization and digest contract.
 - [`../../../spec/design/governed-effects.md`](../../../spec/design/governed-effects.md)
   — accepted C5 authorization, interaction, receipt and observation contract.
+- [`../../../spec/design/deterministic-effect-batches.md`](../../../spec/design/deterministic-effect-batches.md)
+  — accepted C5b access and bounded parallel read-only batch contract.
 - [`../../../spec/design/durable-runtime-turn.md`](../../../spec/design/durable-runtime-turn.md)
   — accepted C6 transaction, continuation and restart contract.
 - [`../../../spec/design/durable-runtime-facts.md`](../../../spec/design/durable-runtime-facts.md)
@@ -114,6 +118,12 @@ A mechanism is ready for `spec/` when it has:
   — C0 typed turn state and transition contract.
 - [`../../../spec/design/model-invoke-outcome.md`](../../../spec/design/model-invoke-outcome.md)
   — C1a provider-neutral invocation facts.
+- [`../../../spec/design/memory-control-plane.md`](../../../spec/design/memory-control-plane.md)
+  — accepted M2 auditable snapshot and import contract.
+- [`../../../spec/design/host-read-model-v1.md`](../../../spec/design/host-read-model-v1.md)
+  — accepted client-safe navigation and timeline read model.
+- [`../../../spec/design/client-product-experience.md`](../../../spec/design/client-product-experience.md)
+  — accepted product client state, interaction, UI, and accessibility contract.
 
 ## Meta
 

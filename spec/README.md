@@ -44,3 +44,10 @@ See [`AGENTS.md`](AGENTS.md) for schema and verification rules.
 See [`STATUS.md`](STATUS.md) for current delivery evidence and next slices.
 See [`design/agent-core-spec-set.md`](design/agent-core-spec-set.md) for the
 accepted D0/C4/C5/C6 implementation contract set.
+The active next increments are
+[`design/memory-control-plane.md`](design/memory-control-plane.md),
+[`design/deterministic-effect-batches.md`](design/deterministic-effect-batches.md),
+[`design/host-read-model-v1.md`](design/host-read-model-v1.md), and
+[`design/client-product-experience.md`](design/client-product-experience.md);
+their dependency order is in
+[`design/core-agent-plan.md`](design/core-agent-plan.md#next-accepted-increments).
