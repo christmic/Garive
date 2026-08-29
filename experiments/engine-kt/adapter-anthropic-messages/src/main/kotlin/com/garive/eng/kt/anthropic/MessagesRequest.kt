@@ -218,6 +218,9 @@ internal fun CreateMessageRequest.toJson(): JsonObject {
     }
 }
 
+/** Validates and encodes one portable create request as protocol JSON. */
+public fun encodeCreateMessageRequest(request: CreateMessageRequest): JsonObject = request.toJson()
+
 private fun Message.toJson(): JsonObject = buildJsonObject {
     put("role", role.wire()); put("content", content.toJson())
 }
