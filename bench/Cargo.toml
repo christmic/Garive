@@ -6,6 +6,7 @@ license.workspace      = true
 rust-version.workspace = true
 description = "SWE-bench verification runtime for Garive — orchestrator only"
 
-# Implementation lands as the slice is scoped. Until then,
-# `cargo metadata` validates the workspace without requiring
-# any source files.
+[dependencies]
+garive-eval = { path = "../engine/eval" }
+serde.workspace = true
+serde_json.workspace = true
