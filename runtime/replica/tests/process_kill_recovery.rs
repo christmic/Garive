@@ -3,9 +3,9 @@ use std::{
     process::{Command, Stdio},
 };
 
-use garive_ledger::{SessionId, TurnId};
-use garive_runtime::SqliteLedger;
-use tempfile::tempdir;
+use garive_ledger::{SessionId, TurnId, TurnSnapshot};
+use garive_runtime::{plan_recovery_action_facts, RuntimeRecoveryAction, SqliteLedger};
+use tempfile::{tempdir, TempDir};
 
 const CHECKPOINTS: &[&str] = &[
     "before_start",
@@ -144,4 +144,71 @@ fn killed_process_recovers_every_durable_checkpoint_without_guessing() {
             _ => unreachable!(),
         }
     }
+}
+
+#[test]
+fn recovery_actions_append_their_classification_to_killed_process_state() {
+    for (checkpoint, action, terminal) in [
+        (
+            "model_started",
+            RuntimeRecoveryAction::ClassifyModelUncertain,
+            "model.uncertain",
+        ),
+        (
+            "effect_started",
+            RuntimeRecoveryAction::ClassifyEffectUncertain,
+            "effect.uncertain",
+        ),
+        (
+            "effect_receipt",
+            RuntimeRecoveryAction::RecoverReceiptTerminal,
+            "effect.completed",
+        ),
+    ] {
+        let (_directory, mut ledger, session, snapshot) = killed_snapshot(checkpoint);
+        let facts = plan_recovery_action_facts(&snapshot, action, "2026-08-29T00:00:10Z").unwrap();
+        assert_eq!(facts.last().unwrap().kind.as_str(), terminal);
+        ledger
+            .commit(session, snapshot.session_version, facts)
+            .unwrap();
+        let recovered = ledger
+            .load_turn(&snapshot.facts[0].turn_id.clone().unwrap())
+            .unwrap();
+        assert_eq!(recovered.facts.last().unwrap().kind.as_str(), terminal);
+    }
+}
+
+fn killed_snapshot(checkpoint: &str) -> (TempDir, SqliteLedger, SessionId, TurnSnapshot) {
+    let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("recovery.sqlite3");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_garive-runtime-crash-fixture"))
+        .args([
+            database.to_str().unwrap(),
+            repository.to_str().unwrap(),
+            checkpoint,
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut ready = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut ready)
+        .unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from("session").unwrap();
+    let turn_text: String = ledger
+        .connection_for_test()
+        .query_row(
+            "SELECT turn_id FROM ledger_facts WHERE kind = 'turn.started'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let snapshot = ledger
+        .load_turn(&TurnId::try_from(turn_text.as_str()).unwrap())
+        .unwrap();
+    (directory, ledger, session, snapshot)
 }

@@ -4,6 +4,7 @@ mod commit;
 mod planning;
 mod reconstruction;
 mod recovery;
+mod recovery_facts;
 mod types;
 
 pub use commit::commit_planned_turn;
@@ -13,6 +14,7 @@ pub use recovery::{
     select_runtime_recovery, EffectRecoveryPosition, ExecutionRecoveryPosition,
     ModelRecoveryPosition, RuntimeRecoveryAction, RuntimeRecoverySnapshot,
 };
+pub use recovery_facts::plan_recovery_action_facts;
 pub use types::{
     CancelReason, CancelTurnCommand, ContinueTurnCommand, EffectiveRuntimeLimits,
     InteractionContinuation, PlannedTurn, RecoveryRestartCommand, RuntimeCommandError,
