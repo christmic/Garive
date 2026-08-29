@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod request;
+mod result;
 mod source;
 mod values;
 
@@ -11,6 +12,7 @@ pub use request::{
     FreshnessRequirement, KnowledgeFilter, KnowledgeFilterOperator, KnowledgeFilterValue,
     KnowledgeRequest,
 };
+pub use result::{complete_knowledge, KnowledgeCompleted};
 pub use source::{Citation, KnowledgeEvidence, KnowledgeFreshness, KnowledgeSourceDescriptor};
 
 pub use values::{
