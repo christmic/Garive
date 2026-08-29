@@ -1,9 +1,9 @@
 # Memory Layer — Design
 
-> **Memory is the physical existence of `self`.** Runtime
-> is disposable (process / surface / cache are derivatives);
-> memory is not. This is the principle already decided at
-> the top of the design (per the earlier conversation).
+> **Memory is durable cross-session continuity.** Runtime process state,
+> presentation surfaces, and caches are disposable; admitted Memory revisions
+> and their evidence are not. This is a mixed-maturity design record: M0/M1 and
+> the M2 control-plane boundary are normative only through their focused Specs.
 >
 > The memory layer is the **next continent** after
 > `turn_loop` closes. This document lays out the design
@@ -25,9 +25,10 @@
 | ⑦ | **Maintenance policies** | ADD/UPDATE/DELETE/NOOP decisions |
 | ⑧ | **Retrieval quality** | Recency × relevance × importance ranking |
 
-The 8 angles are **ordered**: each builds on the previous.
-This document deep-dives ① through ③; ④–⑧ are placeholders
-for follow-up commits.
+The 8 angles are **ordered**: each builds on the previous. All eight are
+explored here. Exact types, authority, lifecycle, retrieval, maintenance,
+quality evidence, and the audit/edit workflow live in M0, M1, and M2 Specs;
+unpromoted numeric policies and mechanisms in this document remain research.
 
 ## ① Location + classification — what memory IS
 
@@ -77,14 +78,13 @@ Memory is **separate** from the ledger:
 |---|---|---|
 | **Scope** | Session-scoped | **Agent-scoped** (cross-session) |
 | **What it carries** | Everything that happened in this session | What **this agent** has learned across sessions |
-| **Loss tolerance** | None — append-only | Lower — semantic/lessons/procedural live forever; episodic is distilled away |
+| **Mutation** | Append-only facts | Append-only revisions; lifecycle may archive, promote, supersede, or erase through receipts |
 | **Discovery** | Sequential — replay the round | Search — query by similarity / time / scope |
-| **Schema** | Strict (12 categories) | Looser — entries have `kind` + `confidence` + `last_verified` |
+| **Schema** | Strict versioned fact catalog | Strict record/lifecycle contracts with extensible versioned type policy |
 
-Memory borrows the **ledger's global addressing**: each
-memory entry carries `source_session` + `source_seq` so the
-agent can trace a memory back to the canonical origin in
-the ledger. No new addressing scheme.
+Memory borrows the Ledger's durable addressing. Each evidence item binds exact
+Session, position, fact identity, and payload digest, so Runtime can verify the
+origin against a fixed prefix. Memory does not invent a parallel truth address.
 
 ## ② Authority dual-source + ownership boundaries
 
@@ -141,8 +141,7 @@ hybrid is also the answer to the "pure tool call" failure
 mode — if the agent never calls the recall tool, the memory
 is still noticed via the menu.
 
-### Platform type — namespace isolation + three-tier scope
-safety bug:
+### Authority is not a confidence score
 
 | | User preference / statement | Agent memory (learned) |
 |---|---|---|
@@ -162,7 +161,7 @@ tags**:
 ```yaml
 authority = user_declared    # user law (preferences, rules, corrections)
 authority = agent_learned    # agent hypothesis (lessons, inferred facts, playbooks)
-authority = org_shared       # org-shared (team knowledge, platform)
+authority = organisation_published # externally published, receipt required
 ```
 
 `user_declared` always wins over `agent_learned` at recall
@@ -174,20 +173,21 @@ This is the **provenance philosophy** of `ledger.md`
 (per-kind producer field) applied to memory — every
 memory entry declares its authority source.
 
-### Platform type — namespace isolation + three-tier scope
+### Namespace isolation + scope classes
 
-Personal type has one self; **platform type** must slice by
-tenant:
+Product composition supplies opaque authorized namespaces. Portable Memory
+uses the admitted scope classes without exposing tenant or user identifiers:
 
 ```
-MemoryEntry.scope = {tenant, user, project}
+MemoryScopeClass = Session | AgentInstance | User | Project | Platform
 ```
 
 **Visibility rules at recall time:**
 
 | Layer | Belongs to | Example |
 |-------|-----------|----------|
-| `user` layer | The individual user | Personal preferences, personal lessons, personal playbooks |
+| `agent` layer | One Agent instance | Instance-specific lessons and playbooks |
+| `user` layer | The individual user | Personal preferences and reusable lessons |
 | `project` layer | The project (agent only references) | Project knowledge, project conventions |
 | `platform` layer | The platform (requires authorised aggregation) | Anonymised cross-user patterns |
 
@@ -254,7 +254,7 @@ Per-type registration (one row in the table):
 
 | Field | What it declares | Example (`memory.lesson`) |
 |-------|------------------|-----------------------------|
-| `kind` | The schema / payload shape | `{situation, action, consequence, source_session, source_seq}` |
+| `kind` | The schema / payload shape | `{situation, action, consequence, evidence[]}` |
 | `lifetime` | Retention + decay + retirement | "never auto-expires; falsified only by explicit override" |
 | `distillation` | Who can distil into what | "episodic → lesson on 3+ failures" |
 | `recall_profile` | Trigger / budget / rank | "trigger on task-type match; budget = 5 % of surface" |
@@ -314,34 +314,20 @@ is a raw material none of the four frameworks have access to
 failures to memory; without this pipeline, an agent's memory
 is **shallow** by definition.
 
-## ⑤ Data model + storage — placeholder
+## ⑤ Data model + storage
 
-(Follow-up commit.)
+M0 owns stable record/revision/query/proposal identities, exact content and
+evidence bindings, authority, scope, sensitivity, and revision status. M1 adds
+the orthogonal hypothesis lifecycle and integer evidence tallies; portable
+state does not use floating confidence as truth or authority.
 
-### Shape (preview)
+The production adapter currently persists Memory projections transactionally
+with the Runtime SQLite store so Memory facts and visibility obey
+commit-before-context and restart recovery. A future physically separate
+`memory.db` is an adapter choice, not an accepted domain boundary; it must first
+prove atomic coordination and recovery without a cross-database transaction.
 
-```python
-class MemoryEntry:
-    id:              uuid        # global identity (uuid v4 / ULID)
-    mtype:           MType       # one of the registered kinds
-    content:         Value       # mtype-specific payload (JSON / text)
-    provenance:      Provenance   # source_session + source_seq + authority
-    confidence:      float       # 0..1, decays with last_verified
-    last_verified:   int64       # unix ms; when the entry was last checked
-    scope:           Scope       # {tenant, user, project}
-```
-
-### Storage choice (preview)
-
-**`memory.db` as a separate SQLite**, not a cross-db view over
-the ledger. Rationale: memory crosses sessions; the ledger
-is per-session. The two are different in lifecycle, query
-pattern, and retention policy — forcing them into one db
-would conflate concerns.
-
-## ⑥ Read paths — placeholder
-
-(Follow-up commit.)
+## ⑥ Read paths
 
 Recall is **one of `derive`'s injection paths** — the same
 slots `harness.feature` and the reminder channel use:
@@ -351,9 +337,9 @@ slots `harness.feature` and the reminder channel use:
   refresh)
 - **Budget** — `memory` share of the surface is bounded by
   `MemoryTypeRegistry.recall_profile.budget`
-- **Two-leg retrieval** — vector (semantic) + FTS (lexical),
-  fused by re-rank; borrowed from the earlier decide
-- **Ranking** — relevance × recency × importance (per ⑦)
+- **Two-stage retrieval** — bounded menu push followed by explicit detail pull
+- **Ranking** — exact deterministic score/tie-break policy plus a replayable
+  exploration choice; no implicit vector/FTS dependency is part of M1
 
 ## ⑦ Maintenance policies — promotion + anti-bloat
 
@@ -365,7 +351,7 @@ from proven memories** — a memory entry graduates to
 knowledge when it's been verified enough times.
 
 ```
-memory entry (with source_session + source_seq)
+memory entry (with verified durable fact evidence)
     ↓  "verified N times, on stable topic"
     ↓  promoted by dream or by user audit
     ↓
@@ -375,8 +361,8 @@ original memory entry downgrades to "promoted_to: <knowledge-id>"
 ```
 
 **Concrete example:**
-- `memory.lesson` — "SDK X has a caching bug" (with
-  `source_session = S42, source_seq = 317`)
+- `memory.lesson` — "SDK X has a caching bug" (with an exact verified fact
+  reference for Session S42 position 317)
 - After N independent sessions reproduce the same lesson →
   dream (or user audit) writes a `wiki:project/sdk-cache`
   entry in the **project knowledge base** (per ② — agent
@@ -403,7 +389,7 @@ Six defenses:
 | # | Defense | What it does | Where it lives |
 |---|---------|--------------|----------------|
 | 1 | **Distillation (debulk)** | Episodes distilled to conclusions; raw entries down-weighted. The tower structure IS the debulk. | `dream` watermark |
-| 2 | **Quota (hard ceiling)** | Per-type caps: `lessons ≤ 200`, `facts ≤ 300`, `playbooks ≤ 50`, `episodes` rolling window. Overflow → score-based eviction (`relevance × recency × use_count`). Quota is **design parameter**, not safety net — forces ongoing priority judgement. | `MemoryTypeRegistry.lifetime.budget` |
+| 2 | **Quota (hard ceiling)** | Explicit per-type count/byte caps force ongoing priority judgement. Numeric values are Runtime policy and require measured admission; they are not defaults in this design. | `MemoryTypeRegistry` retention policy |
 | 3 | **Admission filter (write gate)** | Three questions before entry: **can it generalise?** (no → reject, one-off detail); **is it stable?** (uncertain → defer + observe); **already present?** (dedup). Borrowed from Mem0's NOOP decision. | `dream` candidate → ADD/UPDATE/DELETE/NOOP pipeline |
 | 4 | **Use feedback (natural selection)** | Recalled and helped → boost score. Never recalled → slow decay. Recalled but linked to failure → downrank. Use it or lose it; entries earn their place. | Recalled entry's `confidence` adjusts based on outcome |
 | 5 | **Memory lint (periodic audit)** | Scheduled task: find duplicates, find contradictions (two memory entries conflict — pick one), find expired (`last_verified` over threshold → flag), find low-score. Output an **audit report** — the user is the ultimate curator. | Scheduled cron job + user-visible report |
@@ -419,20 +405,16 @@ of the memory lifecycle:
 用户兜底     (audit right + forgetting right)
 ```
 
-Bloat is intercepted at **every** of the four gates — not
-just by one of them.
+Bloat is intercepted at **every** of the four gates, with exact decisions and
+bounds owned by M1 rather than prose defaults here.
 
-
-in ③ and lands in angle ⑤'s pipeline. Contradiction resolution,
-falsification of lessons, versioning of procedures — all
-follow-up commits.
-
-## ⑧ Retrieval quality — placeholder
+## ⑧ Retrieval quality
 
 "Stored but unrecalled = dead". "Recalled at the right time =
-useful". The metrics for "right time" are the difference
-between a memory layer and a graveyard. Measurement layer
-lands as follow-up.
+useful". M1 pins a deterministic synthetic regression for menu/detail recall,
+exposure, evidence and scope behavior. Representative empirical quality,
+production thresholds, and a knowledge-graph comparison remain external
+evidence gates; synthetic conformance is not a product-quality claim.
 
 ## Landscape — three swimlanes + one extraction channel
 
@@ -540,8 +522,8 @@ Garive is *where the updates come from*.
 | Gap | Who's stronger | Garive's stance |
 |-----|----------------|-----------------|
 | **Knowledge-graph structure** (multi-hop relational inference) | Zep | **Acknowledged** — entries + vectors; relational inference is weak. v2 candidate, not in personal-agent scope yet. |
-| **Memory editability / transparency** (`CLAUDE.md`-style) | codex / CC | **Real gap** — `memory.db` is opaque vs the user's git-versionable markdown. Mitigation: **markdown mirror export** — `memory.db` projects to a human-readable file the user can audit, edit, and re-import. |
-| **Maturity** (a shipped product) | all four (Mem0, Letta, Zep, CC) | **A blueprint, not a product.** Mitigation: **⑧ evaluation-first** — measure before we pretend to be on par. |
+| **Memory editability / transparency** (`CLAUDE.md`-style) | codex / CC | M2 is accepted and active: bounded Markdown snapshot, explicit dry-run plan, authority-safe atomic import, and erasure receipts. Product UI evidence remains open. |
+| **Representative product evidence** | mature memory products | Core semantics and synthetic quality gates exist; representative longitudinal recall quality and the M2 user workflow remain open evidence. |
 
 ## Positioning conclusion
 
@@ -568,23 +550,6 @@ Garive's memory is **none of these**:
 
 ## Cross-references
 
-- `loop.md` "Two protocols" + "OutcomeObserver (observation
-  lane)" — the feedback signal lives in the observation
-  lane.
-- `loop.md` "ProgressGuardian" — supplies the failures that
-  feed the lessons pipeline.
-- `loop.md` "Convergence audit" — memory is the next
-  continent after `turn_loop` closes.
-- `compression.md` — `dream` watermark is shared between
-  memory extraction and compression; both consume the
-  same `memory_watermark` row.
-- `ledger.md` "Entry Kinds" + "Two reference paths" — memory
-  entries borrow the ledger's global addressing
-  (`source_session` + `source_seq`) so every memory item is
-  traceable to its origin.
-
-## Cross-references
-
 - `loop.md` "Two protocols" — recall is one of the
   injection paths into the surface; storage is the
   ledger-side counterpart.
@@ -592,23 +557,18 @@ Garive's memory is **none of these**:
   pipeline; without it, the memory is shallow by definition.
 - `loop.md` "Convergence audit" — memory is the **next
   continent** after `turn_loop` closes.
-- `ledger.md` "Entry Kinds — ten categories" — memory
-  borrows the `uid` + `ref.session` global addressing
-  scheme (`source_session` + `source_seq`).
+- `ledger.md` — Memory evidence binds exact durable fact references and digests.
 - `compression.md` "Layer 3 — Overflow" — `dream`
   watermark is the same mechanism that drives memory
   extraction; both consume the `memory_watermark` row.
+- `../../../spec/design/memory-capability.md` — accepted M0 records and authority.
+- `../../../spec/design/memory-hypothesis-lifecycle.md` — accepted M1 lifecycle.
+- `../../../spec/design/memory-control-plane.md` — accepted M2 audit/edit workflow.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: **draft (possible mechanism)** — angles ①, ②, ③,
-  ④ settled; angles ⑤–⑧ are placeholders for follow-up
-  commits. The four-type classification, distillation
-  pyramid, authority dual-source (law vs hypothesis),
-  platform-scope isolation, four-decision write pipeline,
-  hot/cold split, lessons pipeline, three-swimlane
-  landscape with T0–T6 walkthrough, four moats, three honest
-  gaps, and the positioning conclusion are the load-bearing
-  parts landed this round.
+- Status: **mixed maturity** — M0/M1 are implemented and verified; M2 is
+  accepted and active. Knowledge-graph structure, representative longitudinal
+  quality, and unpromoted numeric/mechanism proposals remain research.

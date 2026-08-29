@@ -1,9 +1,10 @@
 # Effect Layer — tool execution
 
-> **Mechanism research, not the normative effect contract.** Accepted C4/C5/C6
-> Specs own Prepared Calls, sequential v1 governance, receipts and recovery.
-> Batch/concurrency, dispatcher names and pseudo-code below remain proposals
-> unless a focused accepted Spec restates them.
+> **Mixed-maturity mechanism research, not the normative effect contract.**
+> Accepted C4/C5/C6 Specs own Prepared Calls, sequential governance, receipts,
+> and recovery. C5b admits exact access declarations and bounded parallel
+> read-only batches. Streaming, speculative dispatch, mutating concurrency,
+> adaptive limits, workspace snapshots, and caching remain proposals.
 
 > After `model.invoke` returns, the Agent prepares model intents and asks
 > Runtime to **authorize**, **dispatch**, and **execute** them. This doc covers
@@ -24,7 +25,7 @@ Stage 1 — validate + prepare immutable calls
        ↓
 Stage 2 — Runtime authorization  →  invocation grant
        ↓
-Stage 3 — ToolDispatcher  (batch / concurrency / streaming / timeout)
+Stage 3 — Runtime dispatcher  (accepted subset depends on C5/C5b)
        ↓
 Stage 4 — Runtime execution adapter  →  bounded environment
        ↓
@@ -131,12 +132,12 @@ The dispatcher owns the **policy** of how tools run:
 
 ### Batch policy
 
-A single model reply can carry N intents. The dispatcher
-decides whether to run them sequentially or in parallel:
+A single model reply can carry N intents. C5 executes them sequentially. C5b
+may group exact, non-conflicting, proven read-only calls under explicit bounds:
 
 | Default | All intents in a single turn run **sequentially** (deterministic) |
-| **Parallel** | Model requests parallelism; preparation retains it as an untrusted scheduling hint. |
-| **Mixed** | Read-only tools run in parallel; write tools run sequentially |
+| **Parallel read group** | C5b planner proves exact non-conflicting access; Runtime may still serialize. |
+| **Writes/process/network mutation** | Sequential in C5b regardless of disjoint keys. |
 
 The model's claim of "parallel" is **advisory** —
 Runtime may schedule sequentially regardless of the hint; authorization and
@@ -144,7 +145,8 @@ dependency analysis take precedence.
 
 ### Concurrency policy
 
-Per-tool **concurrency limit** (e.g. `bash: 2`,
+The following AIMD policy remains research rather than an accepted default.
+Possible per-tool **concurrency limits** (e.g. `bash: 2`,
 `read_file: 16`, `web_fetch: 4`). AIMD per-tool:
 
 ```
@@ -163,14 +165,15 @@ must also respect target and global limits. Failure meanings differ:
 
 ### Streaming policy
 
-For long-running tools (`bash`, `web_fetch`, custom tools):
+This section is not admitted by C5b. A future streaming-effect Spec must define
+redaction, backpressure, cancellation, truncation, ephemeral events, and the
+bounded terminal result before long-running tools may expose deltas:
 
 - **Stream stdout/stderr to the event stream** (live UI shows
   the output as it lands). The bytes are lossy-OK — dropped
   frames are fine.
-- **Buffer to a `tool.result` entry** at completion. The bytes
-  in the entry are **lossless** — the full output is there
-  for audit / replay.
+- **Buffer a bounded terminal result** at completion. Oversized bytes require
+  an admitted content/reference contract; “lossless” cannot mean unbounded.
 
 The two-protocol split (see `loop.md` "Two protocols") is
 exactly this: live bytes go to the event stream; durable
@@ -178,7 +181,8 @@ bytes go to the ledger via `tool.result`.
 
 ### Timeout policy
 
-Per-tool `timeout_ms` (default 30 s):
+Numeric values below are design examples, not defaults. C5b instead requires
+explicit non-zero queue, invocation, cancellation-grace, and output bounds:
 
 | Tool | Default timeout |
 |------|-----------------|
@@ -367,6 +371,12 @@ item — lands after the deterministic core ships.**
 
 ### Resource conflict detection
 
+C5b supersedes the early sketch below. A frozen definition owns a maximum
+`ToolAccessPolicy`; a trusted pure resolver derives an exact
+`InvocationAccessSet` from validated arguments. Claims are part of the Prepared
+Call digest and never grant authority. V1 parallelizes only proven read-only
+calls; conflicting or broader effects remain sequential.
+
 The dispatcher detects **resource conflicts** between
 in-flight tools:
 
@@ -379,7 +389,7 @@ class ToolConflict:
     resolution:  str           # "serialise" | "reject-second" | "abort-both"
 ```
 
-Tools declare their **resource claims** in the schema:
+The original sketch put claims in the model-visible schema:
 
 ```python
 class Tool:
@@ -388,17 +398,13 @@ class Tool:
     conflicts_with: Callable[[ResourceClaim, ResourceClaim], bool]
 ```
 
-The dispatcher runs `conflicts_with(claim_a, claim_b)` before
-starting a tool. **Read-write / write-write on the same path
-serialises**; **same-process via `bash`** schedules onto
-different process slots; **network on the same host
-rate-limits**.
+That shape is rejected: the model cannot declare trusted access or executable
+conflict code. Runtime evaluates the fixed C5b relation over canonical exact
+keys before any durable start or dispatch.
 
 Two `read_file`s on the same path → **parallel** (no conflict).
-Two `write_file`s on the same path → **second is rejected**
-with `governance.verdict{decision: deny, reason: "concurrent
-write on path"}`. The model sees the rejection and picks
-another approach.
+Two `write_file`s remain sequential in C5b. Scheduling conflict is not an
+authorization denial and must not be represented as a governance verdict.
 
 ### Tool discipline — few, well-designed, composable
 
@@ -636,94 +642,23 @@ A failure is a **P0**: an orphan start means the dispatcher
 lost track of a tool. The recovery is to find which
 scheduler path missed the terminal and add a coverage test.
 
-## Beyond basic conflict detection — tool double-declaration + conflict-graph scheduling
+## Beyond basic conflict detection
 
-The "Resource conflict detection" section above catches
-write-write and read-write on the same path. That's the
-**basic** layer. The full design extends it with three more
-mechanisms — together they let the dispatcher schedule
-optimally while staying correct.
+### 1. Accepted C5b declarations and graph
 
-### 1. Tool double-declaration — `effect_class` + `accesses`
+C5b retains two independent facts without duplicating recovery meaning:
 
-Every tool declares **two** things:
+- existing `ReplayClass` states retry/recovery semantics;
+- `ToolAccessPolicy` bounds possible access and the trusted resolver produces
+  exact invocation resource keys and modes.
 
-```python
-class Tool:
-    name:           str
-    effect_class:   'ReadOnly' | 'Idempotent' | 'Mutating'
-    accesses:       Accesses        # ← NEW: what resources the tool touches
-    schema:         dict
-    requires:       Capabilities    # filesystem | process | network
-    timeout_ms:     int
-    ...
+The deterministic graph uses original model indexes as node identities. Equal
+canonical resource keys conflict when either mode writes; an exclusive lane
+conflicts with every access in that lane. The first planner uses contiguous
+non-conflicting read-only groups, not a maximal-independent-set heuristic.
+Broader “maximum concurrency” needs measurements and executor isolation.
 
-class Accesses:
-    filesystem:  list[PathPattern]   # e.g. ["/workspace/**", "*.rs"]
-    process:    list[str]            # command names (e.g. ["git", "cargo"])
-    network:    list[HostPattern]    # e.g. ["api.github.com"]
-    env:        list[str]            # env vars read
-```
-
-The `effect_class` says **what happens on a re-run**; the
-`accesses` say **what the tool touches**. Together they give
-the dispatcher the data needed to build a precise conflict
-graph. The contract test (`E1–E5` plus the declarations
-asserted in `dispatcher_contract_tests!`) enforces that
-**every tool declares both** — a missing `accesses`
-declaration fails build.
-
-The **kimi-style `ToolAccesses`** (read / write / all) is a
-weaker ancestor of this design. We require the full
-declaration because the conflict graph needs it.
-
-### 2. Conflict-graph scheduling — beyond naive concurrency
-
-The dispatcher builds a **conflict graph** for each batch of
-intents:
-
-```
-nodes = intents
-edges = (i_a, i_b)  s.t.
-          accesses_overlap(i_a, i_b)
-          AND (i_a.effect is write OR i_b.effect is write)
-```
-
-The graph is then partitioned into **maximal conflict-free
-subgraphs** (independent sets). Each independent set runs in
-**parallel**. Between conflicting sets, the dispatcher runs
-them **serially** in some topological order (cycle-breaking
-on the SCCs).
-
-```
-def schedule(intents):
-    graph = build_conflict_graph(intents)
-    groups = maximal_independent_sets(graph)
-    # run groups in parallel, serialise within group
-    for group in groups:
-        schedule_group(group, parallel=True)
-```
-
-**Why this beats naive concurrency** (e.g. run everything in
-parallel):
-
-- **Two `write_file`s on the same path** → conflict edge →
-  serialised (no torn writes).
-- **Two `read_file`s on the same path** → no edge (both
-  ReadOnly) → parallel.
-- **`grep` + `read_file` on the same path** → no edge (both
-  ReadOnly) → parallel.
-- **`bash` + `read_file` on the same path** → conflict edge
-  (bash is Mutating) → serialised.
-- **Two independent `bash`es** → conflict edge (process
-  resource) → serialised (or split process slots).
-
-The result is **maximum concurrency under correctness**:
-every parallel group is independent; every conflict is
-serialised. The deterministic-simulation test (E2 variant)
-asserts the schedule's order property across random delays.
-
-### 3. Branch × snapshot workspace — physical isolation
+### 2. Branch × snapshot workspace — physical isolation
 
 `branch.open` was a ledger-level instruction (the branch
 points at a `from_seq` in the ledger). For **physical
@@ -765,10 +700,12 @@ The **priority** of this is medium: the ledger-level branch
 design is in scope now; the workspace snapshot lands with
 the slice that uses git repos.
 
-### 4. Read-cache — same-args, same-result, within session
+### 3. Read-cache — same-args, same-result, within session
 
-Two `read_file("/workspace/foo.txt")` calls in the same
-session / same round should be **free** for the second call:
+This remains research. Same arguments do not prove the same result when an
+external resource changes. A future cache needs source revision tokens rather
+than wall-clock/mtime heuristics. The sketch records the idea, not an accepted
+implementation contract:
 
 ```
 read_cache: dict[Key, ToolResult]
@@ -838,14 +775,13 @@ The cache is **observable**:
 - `.agents/testing.md` "Tool / Integration" — integration
   tests exercise the dispatcher's batch / concurrency
   policies end-to-end.
+- `../../../spec/design/deterministic-effect-batches.md` — accepted C5b
+  access, planning, read-only concurrency, timeout, and ordering contract.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
-- Status: **draft (possible mechanism)** — the 4-stage
-  shape, the failure-semantics discipline, the L2 dispatcher
-  family, the tool registry with `effect_class`, and the E1–E5
-  contract tests are settled. Specific tool implementations,
-  per-tool timeouts, and workspace capability flags land with
-  the slice. No final code.
+- Last reviewed: 2026-08-30
+- Status: **mixed maturity** — C4/C5/C6 are implemented and verified; C5b is
+  accepted and active. Streaming, speculative dispatch, adaptive concurrency,
+  mutating parallelism, workspace snapshots, and caching remain research.
