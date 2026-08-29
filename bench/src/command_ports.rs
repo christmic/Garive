@@ -231,6 +231,7 @@ async fn invoke_json<T: Serialize, R: DeserializeOwned>(
             .await
             .map_err(|_| infrastructure())?;
         stdin.shutdown().await.map_err(|_| infrastructure())?;
+        drop(stdin);
         let stdout = child.stdout.take().ok_or_else(infrastructure)?;
         let mut output = Vec::new();
         stdout
