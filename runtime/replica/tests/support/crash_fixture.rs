@@ -5,7 +5,9 @@ use garive_ledger::{
     FactDraft, FactId, FactKind, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{
-    plan_start_turn, EffectiveRuntimeLimits, RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    plan_continue_turn, plan_start_turn, reconstruct_suspended_turn, ContinueTurnCommand,
+    EffectiveRuntimeLimits, InteractionContinuation, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand,
 };
 use serde_json::{json, Value};
 
@@ -40,7 +42,8 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
         return;
     }
     let model_path = checkpoint.starts_with("model_");
-    let effect_path = checkpoint.starts_with("effect_") || checkpoint == "after_terminal";
+    let effect_path = checkpoint.starts_with("effect_")
+        || matches!(checkpoint, "before_terminal" | "after_terminal");
     let mut version = 2;
     if model_path {
         commit_one(
@@ -90,6 +93,71 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
         );
         return;
     }
+    if checkpoint.starts_with("interaction_") {
+        commit_one(
+            &mut ledger,
+            &session,
+            &mut version,
+            fact(
+                repo,
+                "effect.prepared",
+                &turn,
+                &execution,
+                None,
+                Some("tool"),
+            ),
+        );
+        commit_one(
+            &mut ledger,
+            &session,
+            &mut version,
+            fact(
+                repo,
+                "interaction.requested",
+                &turn,
+                &execution,
+                None,
+                Some("tool"),
+            ),
+        );
+        commit_one(
+            &mut ledger,
+            &session,
+            &mut version,
+            suspension(repo, "execution.suspended", &turn, &execution),
+        );
+        commit_one(
+            &mut ledger,
+            &session,
+            &mut version,
+            suspension(repo, "turn.suspended", &turn, &execution),
+        );
+        if checkpoint == "interaction_requested" {
+            return;
+        }
+        let state = reconstruct_suspended_turn(&ledger.load_turn(&turn).unwrap()).unwrap();
+        let continuation = plan_continue_turn(
+            &ContinueTurnCommand {
+                command_id: RuntimeCommandId::new("continue-command").unwrap(),
+                session_id: session.clone(),
+                turn_id: turn.clone(),
+                expected_suspension_id: "suspension".into(),
+                expected_session_version: version,
+                continuation_input: "approved".into(),
+                interaction: Some(InteractionContinuation {
+                    execution_id: execution.clone(),
+                    tool_invocation_id: ToolInvocationId::try_from("tool").unwrap(),
+                    interaction_id: "interaction".into(),
+                    prepared_digest: empty_digest().into(),
+                }),
+                recorded_at: "2026-08-29T00:00:02Z".into(),
+            },
+            &state,
+        )
+        .unwrap();
+        ledger.commit(session, version, continuation.facts).unwrap();
+        return;
+    }
     if effect_path {
         for kind in [
             "effect.prepared",
@@ -118,6 +186,20 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
             .commit(session, version, vec![execution_terminal, turn_terminal])
             .unwrap();
     }
+}
+
+fn suspension(repo: &Path, kind: &str, turn: &TurnId, execution: &ExecutionId) -> FactDraft {
+    let mut output = fact(repo, kind, turn, execution, None, None);
+    if kind == "turn.suspended" {
+        output.execution_id = None;
+        let mut payload = payload(repo, kind);
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert("execution_id".into(), json!(execution.as_str()));
+        output.payload = CanonicalPayload::from_value(&payload).unwrap();
+    }
+    output
 }
 
 fn commit_one(ledger: &mut SqliteLedger, session: &SessionId, version: &mut u64, fact: FactDraft) {

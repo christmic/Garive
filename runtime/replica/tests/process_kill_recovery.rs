@@ -12,12 +12,16 @@ const CHECKPOINTS: &[&str] = &[
     "after_start",
     "model_prepared",
     "model_started",
+    "model_completed",
     "effect_prepared",
     "effect_authorized",
     "effect_started",
     "effect_receipt",
     "effect_completed",
     "effect_observation",
+    "interaction_requested",
+    "interaction_resolved",
+    "before_terminal",
     "after_terminal",
 ];
 
@@ -85,6 +89,7 @@ fn killed_process_recovers_every_durable_checkpoint_without_guessing() {
                     ["request"]
                 );
             }
+            "model_completed" => assert_eq!(kinds.last(), Some(&"model.completed")),
             "effect_prepared" => assert_eq!(kinds.last(), Some(&"effect.prepared")),
             "effect_authorized" => assert_eq!(kinds.last(), Some(&"effect.authorized")),
             "effect_started" => {
@@ -117,6 +122,21 @@ fn killed_process_recovers_every_durable_checkpoint_without_guessing() {
                     1
                 );
             }
+            "interaction_requested" => {
+                assert_eq!(kinds.last(), Some(&"turn.suspended"));
+                assert!(kinds.contains(&"interaction.requested"));
+            }
+            "interaction_resolved" => {
+                assert_eq!(kinds.last(), Some(&"execution.started"));
+                assert_eq!(
+                    kinds
+                        .iter()
+                        .filter(|kind| **kind == "interaction.resolved")
+                        .count(),
+                    1
+                );
+            }
+            "before_terminal" => assert_eq!(kinds.last(), Some(&"effect.observation")),
             "after_terminal" => assert_eq!(
                 &kinds[kinds.len() - 2..],
                 ["execution.completed", "turn.completed"]
