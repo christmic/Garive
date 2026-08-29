@@ -29,6 +29,12 @@ pub trait ScheduleClock {
 /// Mutation whose current authority must be revalidated.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScheduleAuthorityOperation {
+    /// Create a new owned schedule.
+    Create,
+    /// Replace an active revision with another exact revision.
+    Update,
+    /// Cancel one exact active revision.
+    Cancel,
     /// Submit or reconcile one deterministic C6 command.
     Dispatch,
     /// Persist one bounded skipped range.
