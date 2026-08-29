@@ -138,10 +138,16 @@ position through the existing C6 fixed-prefix rules.
 ## Context and output integration
 
 At most one request per source and a frozen total request count may occur per
-Kernel iteration. Returned evidence becomes optional attributed C2 candidates.
-Each candidate carries source/evidence/citation identities so later response
+Kernel iteration. Returned evidence becomes one optional attributed C2 candidate.
+The candidate carries source/evidence/citation identities so later response
 assembly can preserve citations. The model may omit or misstate citations;
 Runtime/UI must distinguish cited evidence from verified product truth.
+
+All ordered evidence from one `knowledge.completed` fact forms one atomic
+`Knowledge` candidate at that fact's durable position. Runtime resolves and
+verifies content/citations before constructing it. Core merges it with the
+context-port stream and performs the only C2 derive; no post-derive evidence
+splice is permitted.
 
 K0 does not define an autonomous browsing loop. Model-proposed arbitrary URLs
 or queries must pass an admitted tool/governance path or a separately frozen

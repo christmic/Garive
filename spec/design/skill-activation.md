@@ -100,6 +100,13 @@ higher-precedence instruction, relax governance or rewrite the effective
 snapshot. Later iterations may activate a different allowed set only through a
 new activation identity and durable fact.
 
+The exact ordered instructions bound by one `skill.activated` fact form one
+atomic required `Skill` candidate at that fact's durable position. Runtime
+attaches it to the frozen execution request; Core merges it with the
+context-port stream and performs the only C2 derive. `activated_skills` remains
+available for C4 tool narrowing, but assembly MUST NOT insert its instruction
+text a second time.
+
 Restart with the exact activation request reuses the committed result. A
 registry change cannot replace a frozen revision inside the same Turn.
 

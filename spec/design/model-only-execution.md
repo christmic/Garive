@@ -21,7 +21,7 @@ AgentTurnRequest {
   agent_instance_id, definition_id, definition_revision,
   entry: Start(trusted_input) | Continue(resume_input),
   cursor: completed_iterations + last_durable_position,
-  context_policy,
+  context_policy, capability_context_candidates,
   model_target + recovery_policy,
   limits,
 }
@@ -40,13 +40,15 @@ zero Start cursor.
 
 ## Frozen ports
 
-- `ContextPort.derive(request) -> ContextSurface`;
+- `ContextPort.read_candidates(request, rebuild_attempt) -> ordered candidates`;
 - `ModelPort.invoke(request, observer, cancellation) -> InvokeOutcome`;
 - `EventSink.emit(AgentEvent)` for ordered semantic progress.
 
 Port implementations are selected before execution and cannot be replaced by
-Core. A port error becomes `Failed(PortFailure)` unless a more specific required
-capability failure applies.
+Core. The context port performs only the frozen Runtime read; Core merges its
+result with `capability_context_candidates` and invokes C2. A port error becomes
+`Failed(PortFailure)` unless a more specific required capability failure
+applies.
 
 Rust `EventSink` is `Send` because the forwarding observer is retained across
 the `ModelPort`'s `Send` future. Kotlin preserves the equivalent single-owner
@@ -76,7 +78,9 @@ repeat:
   check cancellation
   begin iteration or return Stopped(IterationLimit)
   emit IterationStarted
-  derive context from frozen through-position
+  read ordered candidates from frozen through-position
+  merge frozen committed capability candidates by FactRef
+  derive context in Core
   if required context exceeds budget: return Stopped(TokenLimit)
   create immutable ModelRequest with new request identity
   emit ModelRequestPrepared
@@ -134,6 +138,9 @@ outcome and construct a new `ExecutionId` for continuation.
 - one-iteration text completion;
 - same Turn continuation with a new Execution ID;
 - context overflow followed by one bounded rebuild;
+- Skill, Memory and Knowledge are charged by the same C2 item/byte budgets and
+  appear in retained/dropped audit references before model assembly;
+- duplicate or out-of-order base/capability candidates fail before model use;
 - output-limit partial suspension;
 - rate-limited/resource-unavailable suspension;
 - cancellation before invoke and during stream;

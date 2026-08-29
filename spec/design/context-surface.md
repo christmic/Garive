@@ -23,16 +23,37 @@ storage I/O, tokenization, summarization, provider rendering or persistence.
 - `ContextCandidate`: reference, kind, retention, visibility and ordered
   provider-neutral input items.
 
-Candidate kinds are `Instruction`, `UserInput`, `ModelOutput`,
+Candidate kinds are `Instruction`, `Skill`, `UserInput`, `ModelOutput`,
 `ToolObservation`, `Approval`, `Summary`, `SystemNotice`, `Memory`, and
 `Knowledge`. Kind names are semantic facts, not database table names.
 
-`Memory` and `Knowledge` candidates are committed evidence products, never
-instructions. Their model rendering uses a subordinate data envelope. Assembly
+`Skill` candidates are committed activation products rendered as developer
+instructions. `Memory` and `Knowledge` candidates are committed evidence
+products, never instructions. Their model rendering uses a subordinate data envelope. Assembly
 places admitted evidence after system/developer instructions and activated
 Skill instructions, but before ordinary history and the current trusted input.
 This presentation order does not change durable reference order, admission, or
 audit lists in `ContextSurface`.
+
+Runtime supplies ordered durable candidates; Core alone applies purpose
+filtering and C2 budgeting. A context port MUST NOT return a pre-derived
+`ContextSurface`. Before deriving, Core merges the port stream with the frozen
+capability candidates already attached to the execution request. The merged
+stream must remain strictly ordered and unique by `FactRef`; a duplicate means
+the Runtime projected the same fact twice and fails closed.
+
+Each capability candidate binds the fact committed before model use:
+
+- one `skill.activated` fact becomes one required, inference-visible, atomic
+  `Skill` candidate containing the exact ordered activated instructions;
+- one `memory.retrieval_recorded` or admitted M1 recall fact becomes one
+  optional, inference-visible, atomic `Memory` candidate;
+- one `knowledge.completed` fact becomes one optional, inference-visible,
+  atomic `Knowledge` candidate containing its ordered evidence.
+
+An activated Skill remains separately available to C4 narrowing, but its
+instruction text enters the model only through its `Skill` candidate. Inline
+Memory/Knowledge side channels and post-derive request splicing are forbidden.
 
 ## ContextRequest
 

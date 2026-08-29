@@ -153,9 +153,15 @@ explicit configuration and cannot be discovered inside Engine.
 At most one bounded Memory query is issued per Kernel iteration in v1. Runtime
 commits `memory.retrieval_recorded` with query digest, returned revision IDs,
 content digests, fixed through-position and truncation before any returned
-content enters a model request. C2 then treats each result as an optional
-attributed context candidate. Current trusted input, required system facts and
+content enters a model request. C2 then treats the complete result as one
+optional attributed context candidate. Current trusted input, required system facts and
 explicit policy constraints outrank Memory.
+
+The complete committed retrieval result is one atomic `Memory` candidate at
+the `memory.retrieval_recorded` fact position. Runtime resolves and verifies
+inline content before constructing it. Core merges it with the context-port
+stream and performs the only C2 derive; no `AttributedMemory` post-derive splice
+is permitted.
 
 A restart reuses the committed retrieval result when the exact query digest
 matches. It does not silently rerun a changed index and claim the same model
