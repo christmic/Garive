@@ -10,18 +10,25 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     val kind = fact.kind.value
     val executionFamily = kind.startsWith("execution.")
     val modelFamily = kind.startsWith("model.")
-    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily) {
+    val effectFamily = kind.startsWith("effect.") || kind.startsWith("interaction.")
+    val rejection = kind == "tool.preparation_rejected"
+    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !rejection) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     if (fact.schemaVersion != 1u) return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
-    if (fact.turnId == null || (fact.executionId != null) != (executionFamily || modelFamily) ||
-        (fact.modelRequestId != null) != modelFamily || fact.toolInvocationId != null
+    if (fact.turnId == null || (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || rejection) ||
+        (fact.modelRequestId != null) != (modelFamily || rejection) ||
+        (fact.toolInvocationId != null) != effectFamily
     ) {
         return LedgerResult.Failure(LedgerError.InvalidFact)
     }
     return try {
         val payload = Json.parseToJsonElement(fact.payload.json).asObject()
-        if (modelFamily) validateModelFact(kind, payload) else validateTurnFact(kind, payload)
+        when {
+            effectFamily || rejection -> validateEffectFact(kind, payload)
+            modelFamily -> validateModelFact(kind, payload)
+            else -> validateTurnFact(kind, payload)
+        }
         LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1)
     } catch (_: IllegalArgumentException) {
         LedgerResult.Failure(LedgerError.InvalidFact)

@@ -21,6 +21,10 @@ internal fun JsonObject.nonEmpty(key: String) {
     require(text(key).isNotEmpty())
 }
 
+internal fun JsonObject.optionalNonEmpty(key: String) {
+    if (key in this) nonEmpty(key)
+}
+
 internal fun JsonObject.enum(key: String, allowed: Set<String>): String =
     text(key).also { require(it in allowed) }
 
