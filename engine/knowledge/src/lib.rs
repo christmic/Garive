@@ -2,3 +2,10 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+
+mod values;
+
+pub use values::{
+    CitationScheme, ContentBinding, KnowledgeError, KnowledgeErrorCode, KnowledgeQueryMode,
+    KnowledgeSourceKind, KnowledgeTrustClass,
+};
