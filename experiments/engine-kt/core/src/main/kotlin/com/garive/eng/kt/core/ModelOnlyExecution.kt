@@ -120,7 +120,12 @@ internal suspend fun executeKernel(
         }
         requestOrdinal += 1u
         val requestId = "${request.executionId.value}:$iteration:$requestOrdinal"
-        val inputItems = surface.items.mapNotNull { (it as? ContextItem.Input)?.item }.toMutableList()
+        val memoryItems = surface.items.mapNotNull {
+            (it as? ContextItem.Input)?.takeIf { input -> input.kind == CandidateKind.MEMORY }?.item
+        }
+        val inputItems = surface.items.mapNotNull {
+            (it as? ContextItem.Input)?.takeIf { input -> input.kind != CandidateKind.MEMORY }?.item
+        }.toMutableList()
         val instructionBoundary = inputItems.indexOfFirst { item ->
             item !is ModelInputItem.Message || item.role !in setOf(ModelRole.SYSTEM, ModelRole.DEVELOPER)
         }.let { if (it < 0) inputItems.size else it }
@@ -132,10 +137,10 @@ internal suspend fun executeKernel(
         )
         inputItems.addAll(
             instructionBoundary + request.activatedSkills.size,
-            request.attributedMemory.map(::memoryInput),
+            memoryItems + request.attributedMemory.map(::memoryInput),
         )
         inputItems.addAll(
-            instructionBoundary + request.activatedSkills.size + request.attributedMemory.size,
+            instructionBoundary + request.activatedSkills.size + memoryItems.size + request.attributedMemory.size,
             request.attributedKnowledge.map(::knowledgeInput),
         )
         val modelRequest = ModelRequest(

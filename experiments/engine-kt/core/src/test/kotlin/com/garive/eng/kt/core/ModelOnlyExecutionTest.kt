@@ -209,6 +209,7 @@ class ModelOnlyExecutionTest {
                     listOf(
                         ContextItem.Input(
                             ref,
+                            CandidateKind.USER_INPUT,
                             ModelInputItem.Message(ModelRole.USER, listOf(ModelInputContent.Text("hi"))),
                         ),
                     ),

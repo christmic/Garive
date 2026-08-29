@@ -16,6 +16,8 @@ public enum class CandidateKind {
     APPROVAL,
     SUMMARY,
     SYSTEM_NOTICE,
+    MEMORY,
+    KNOWLEDGE,
 }
 
 /** Whether a candidate may be dropped under budget pressure. */
@@ -53,7 +55,11 @@ public data class ContextRequest(
 
 /** Auditable visible input or redaction emitted in a surface. */
 public sealed interface ContextItem {
-    public data class Input(public val factRef: FactRef, public val item: ModelInputItem) : ContextItem
+    public data class Input(
+        public val factRef: FactRef,
+        public val kind: CandidateKind,
+        public val item: ModelInputItem,
+    ) : ContextItem
     public data class RedactedItem(public val factRef: FactRef) : ContextItem
 }
 
@@ -187,7 +193,9 @@ public fun deriveContext(
         if (value.redacted) {
             items += ContextItem.RedactedItem(value.candidate.factRef)
         } else {
-            items += value.candidate.items.map { ContextItem.Input(value.candidate.factRef, it) }
+            items += value.candidate.items.map {
+                ContextItem.Input(value.candidate.factRef, value.candidate.kind, it)
+            }
         }
     }
     return ContextDerivationResult.Success(
