@@ -176,6 +176,24 @@ fn recovery_actions_append_their_classification_to_killed_process_state() {
             .unwrap();
         assert_eq!(recovered.facts.last().unwrap().kind.as_str(), terminal);
     }
+
+    let (_directory, mut ledger, session, snapshot) = killed_snapshot("after_start");
+    let facts = plan_recovery_action_facts(
+        &snapshot,
+        RuntimeRecoveryAction::FailRecoveryBound,
+        "2026-08-29T00:00:10Z",
+    )
+    .unwrap();
+    assert_eq!(
+        facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["execution.failed", "turn.failed"]
+    );
+    ledger
+        .commit(session, snapshot.session_version, facts)
+        .unwrap();
 }
 
 fn killed_snapshot(checkpoint: &str) -> (TempDir, SqliteLedger, SessionId, TurnSnapshot) {
