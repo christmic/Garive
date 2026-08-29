@@ -57,6 +57,13 @@ pub struct ProviderCounterRunConfig {
     http: HttpConfig,
 }
 
+impl ProviderCounterRunConfig {
+    /// Reports whether this exact run requests publication eligibility.
+    pub const fn publication_requested(&self) -> bool {
+        self.publishable
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NonSecretHeaderConfig {

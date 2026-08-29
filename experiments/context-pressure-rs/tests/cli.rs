@@ -16,6 +16,7 @@ fn explicit_cli_writes_non_publishable_evidence_without_overwrite() {
         "corpus_path":corpus,"evidence_path":evidence,
         "garive_revision":"test-revision","runner_revision":"context-pressure-v1","dirty":true,
         "counter":{
+            "kind":"command",
             "counter_id":"fixture-counter","counter_revision":"v1","publishable":false,
             "executable":"/bin/sh","argv":["-c","cat >/dev/null; printf '{\"schema_version\":1,\"input_tokens\":64}'"],
             "cwd":directory.path(),"environment":{},"timeout_ms":1000,
@@ -52,10 +53,24 @@ fn dirty_publication_and_unknown_configuration_fail_before_output() {
         &config_path,
         json!({"corpus_path":"missing","evidence_path":directory.path().join("out"),
             "garive_revision":"revision","runner_revision":"runner","dirty":true,
-            "counter":{"counter_id":"counter","counter_revision":"v1","publishable":true,
-                "executable":"/bin/false","argv":[],"cwd":directory.path(),"environment":{},
-                "timeout_ms":1,"max_stdout_bytes":1,"max_stderr_bytes":1}})
+            "counter":{"kind":"anthropic_messages_exact",
+                "counter_revision":"v1","publishable":true,"credential_ref":"never-read",
+                "target_id":"target","model_id":"model","capabilities":["text","tools"],
+                "projection_max_output_tokens":1,"extra_headers":[],
+                "http":{"connect_timeout_ms":1,"request_timeout_ms":1,"max_response_bytes":1}}})
         .to_string(),
+    )
+    .unwrap();
+    let output = run(&config_path);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid_provenance"));
+
+    let mut clean_without_attestation: Value =
+        serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    clean_without_attestation["dirty"] = json!(false);
+    fs::write(
+        &config_path,
+        serde_json::to_vec(&clean_without_attestation).unwrap(),
     )
     .unwrap();
     let output = run(&config_path);

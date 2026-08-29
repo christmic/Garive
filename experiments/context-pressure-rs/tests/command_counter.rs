@@ -39,6 +39,23 @@ fn exit_timeout_output_bounds_and_strict_json_fail_closed() {
     }
 }
 
+#[test]
+fn command_counter_is_permanently_non_publishable() {
+    let config = CommandTokenCounterConfig {
+        counter_id: "external-counter".into(),
+        counter_revision: "v1".into(),
+        publishable: true,
+        executable: PathBuf::from("/bin/false"),
+        argv: vec![],
+        cwd: std::env::current_dir().unwrap(),
+        environment: BTreeMap::new(),
+        timeout_ms: 1,
+        max_stdout_bytes: 1,
+        max_stderr_bytes: 1,
+    };
+    assert!(CommandTokenCounter::new(config).is_err());
+}
+
 fn counter(
     script: &str,
     timeout_ms: u64,

@@ -39,8 +39,8 @@ P2-C and P2-VX-ATC protocol semantics.
 ## Strict run configuration
 
 The existing schema-v1 run document gains a tagged counter union. `command`
-preserves the explicit development counter. `anthropic_messages_exact` contains
-only non-secret values:
+preserves the explicit development counter and is permanently non-publishable.
+`anthropic_messages_exact` contains only non-secret values:
 
 ```text
 counter_revision
@@ -69,6 +69,28 @@ service identity. Tests inject a resolver and never modify a user's credential
 store. There is no environment-variable, argv-secret, stdin-secret or config
 fallback.
 
+## Clean-revision attestation
+
+`dirty` and `garive_revision` are evidence outputs, not trusted caller claims.
+A publication request must also provide explicit bounded Git attestation values:
+
+```text
+git {
+  executable
+  repository_path
+  timeout_ms
+  max_stdout_bytes
+  max_stderr_bytes
+}
+```
+
+The runner launches no shell, clears the child environment, verifies the exact
+full `HEAD` equals `garive_revision`, and requires `git status --porcelain=v1
+--untracked-files=all` to be empty. Timeout, non-zero exit, excess output,
+missing attestation or any worktree entry fails before corpus loading,
+credential resolution, HTTP or evidence creation. Non-publication development
+runs may omit Git attestation.
+
 ## HTTP exchange
 
 `ReqwestTokenCountExchangePort` is constructed from the exact endpoint and
@@ -87,6 +109,7 @@ Publication eligibility additionally requires:
 - a non-loopback, non-localhost host;
 - the shipping bounded transport implementation;
 - `dirty=false` and `publishable=true` in the strict run document.
+- successful clean-revision attestation for the exact evidence revision.
 
 HTTP loopback remains valid for integration tests but is permanently
 non-publishable. Status text, response bodies, request content and secrets never
@@ -115,6 +138,8 @@ including external content. A partial or failed run writes no evidence file.
   configuration is eligible before external execution;
 - command and provider counter configurations are strict and their evidence
   descriptors bind the correct non-secret configuration;
+- arbitrary command counters cannot publish, and a forged clean/revision claim
+  fails against bounded Git attestation before secret or network access;
 - source scans prove no environment lookup, plaintext credential field, proxy
   discovery or Provider-owned transport;
 - focused and full Rust gates pass; existing Kotlin P2-C/P2-VX-ATC gates remain

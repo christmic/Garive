@@ -5,6 +5,7 @@
   "runner_revision": "garive.context-pressure-runner.v1",
   "dirty": false,
   "counter": {
+    "kind": "command",
     "counter_id": "garive-fixture-utf8-ceil4",
     "counter_revision": "v1",
     "publishable": false,

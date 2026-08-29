@@ -1141,6 +1141,7 @@ dependencies = [
  "garive-provider-anthropic",
  "garive-provider-compatible",
  "garive-provider-profile",
+ "keyring",
  "reqwest 0.12.28",
  "serde",
  "serde_jcs",

@@ -7,7 +7,9 @@ use std::{
 };
 
 use garive_context_pressure::{
-    load_corpus, measure_context_pressure, CommandTokenCounter, CommandTokenCounterConfig,
+    attest_clean_revision, build_publication_provider_counter, load_corpus,
+    measure_context_pressure, CommandTokenCounter, CommandTokenCounterConfig, GitAttestationConfig,
+    ProviderCounterRunConfig, SystemCredentialReferenceResolver, TokenCounter,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -23,12 +25,14 @@ struct RunConfig {
     garive_revision: String,
     runner_revision: String,
     dirty: bool,
-    counter: CounterConfig,
+    #[serde(default)]
+    git: Option<GitAttestationConfig>,
+    counter: CounterDocument,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct CounterConfig {
+struct CommandCounterDocument {
     counter_id: String,
     counter_revision: String,
     publishable: bool,
@@ -39,6 +43,23 @@ struct CounterConfig {
     timeout_ms: u64,
     max_stdout_bytes: usize,
     max_stderr_bytes: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum CounterDocument {
+    Command(CommandCounterDocument),
+    AnthropicMessagesExact(ProviderCounterRunConfig),
+}
+
+impl CounterDocument {
+    fn publication_requested(&self) -> Result<bool, &'static str> {
+        match self {
+            Self::Command(value) if value.publishable => Err("invalid_counter"),
+            Self::Command(_) => Ok(false),
+            Self::AnthropicMessagesExact(value) => Ok(value.publication_requested()),
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -59,28 +80,45 @@ fn execute() -> Result<(), &'static str> {
     let config_bytes = bounded_read(&PathBuf::from(&arguments[2]), MAX_CONFIG_BYTES)?;
     let config: RunConfig =
         serde_json::from_slice(&config_bytes).map_err(|_| "invalid_configuration")?;
-    if !identity(&config.garive_revision)
-        || !identity(&config.runner_revision)
-        || (config.counter.publishable && config.dirty)
-    {
+    if !identity(&config.garive_revision) || !identity(&config.runner_revision) {
         return Err("invalid_provenance");
+    }
+    let publication_requested = config.counter.publication_requested()?;
+    if publication_requested {
+        if config.dirty {
+            return Err("invalid_provenance");
+        }
+        attest_clean_revision(
+            config.git.as_ref().ok_or("invalid_provenance")?,
+            &config.garive_revision,
+        )
+        .map_err(|_| "invalid_provenance")?;
     }
     let corpus_bytes = bounded_read(&config.corpus_path, MAX_CORPUS_BYTES)?;
     let corpus = load_corpus(&corpus_bytes).map_err(|_| "invalid_corpus")?;
-    let counter = CommandTokenCounter::new(CommandTokenCounterConfig {
-        counter_id: config.counter.counter_id,
-        counter_revision: config.counter.counter_revision,
-        publishable: config.counter.publishable,
-        executable: config.counter.executable,
-        argv: config.counter.argv,
-        cwd: config.counter.cwd,
-        environment: config.counter.environment,
-        timeout_ms: config.counter.timeout_ms,
-        max_stdout_bytes: config.counter.max_stdout_bytes,
-        max_stderr_bytes: config.counter.max_stderr_bytes,
-    })
-    .map_err(|_| "invalid_counter")?;
-    let run = measure_context_pressure(&corpus, &counter).map_err(|_| "measurement_failed")?;
+    let counter: Box<dyn TokenCounter> = match config.counter {
+        CounterDocument::Command(value) => Box::new(
+            CommandTokenCounter::new(CommandTokenCounterConfig {
+                counter_id: value.counter_id,
+                counter_revision: value.counter_revision,
+                publishable: value.publishable,
+                executable: value.executable,
+                argv: value.argv,
+                cwd: value.cwd,
+                environment: value.environment,
+                timeout_ms: value.timeout_ms,
+                max_stdout_bytes: value.max_stdout_bytes,
+                max_stderr_bytes: value.max_stderr_bytes,
+            })
+            .map_err(|_| "invalid_counter")?,
+        ),
+        CounterDocument::AnthropicMessagesExact(value) => Box::new(
+            build_publication_provider_counter(value, &SystemCredentialReferenceResolver)
+                .map_err(|error| error.code())?,
+        ),
+    };
+    let run =
+        measure_context_pressure(&corpus, counter.as_ref()).map_err(|_| "measurement_failed")?;
     let cases = run
         .summary
         .ordered_cases
