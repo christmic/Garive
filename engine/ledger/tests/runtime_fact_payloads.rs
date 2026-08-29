@@ -43,7 +43,7 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 fn every_c6_payload_fixture_is_applied_as_v1() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 36);
+    assert_eq!(cases.len(), 42);
     for case in cases {
         assert_eq!(
             validate_runtime_fact(&fact(case, 1)),
@@ -93,8 +93,9 @@ fn exact_fields_types_and_envelopes_fail_closed_for_every_kind() {
         if missing_identity.tool_invocation_id.take().is_none()
             && missing_identity.model_request_id.take().is_none()
             && missing_identity.execution_id.take().is_none()
+            && missing_identity.turn_id.take().is_none()
         {
-            missing_identity.turn_id = None;
+            missing_identity.turn_id = Some(TurnId::try_from("forbidden").unwrap());
         }
         assert_eq!(
             validate_runtime_fact(&missing_identity),
@@ -120,7 +121,7 @@ fn malformed_digests_and_inline_content_mismatches_are_rejected() {
             );
         }
     }
-    assert_eq!(digest_cases, 29);
+    assert_eq!(digest_cases, 32);
 }
 
 #[test]
