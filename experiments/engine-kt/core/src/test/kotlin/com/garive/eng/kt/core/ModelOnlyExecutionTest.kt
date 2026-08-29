@@ -24,6 +24,18 @@ import com.garive.eng.kt.llm.TextMode
 import com.garive.eng.kt.llm.TokenCount
 import com.garive.eng.kt.llm.UnavailableKind
 import com.garive.eng.kt.llm.UsageSource
+import com.garive.eng.kt.tools.ExecutionCapability
+import com.garive.eng.kt.tools.ExecutionRequirements
+import com.garive.eng.kt.tools.GovernedToolResult
+import com.garive.eng.kt.tools.PreparationError
+import com.garive.eng.kt.tools.PreparationErrorCode
+import com.garive.eng.kt.tools.PreparationRejectedFeedback
+import com.garive.eng.kt.tools.PreparedToolCall
+import com.garive.eng.kt.tools.ReplayClass
+import com.garive.eng.kt.tools.ToolContractResult
+import com.garive.eng.kt.tools.ToolDefinition
+import com.garive.eng.kt.tools.ToolFeedback
+import com.garive.eng.kt.tools.ToolIntent
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
@@ -47,6 +59,22 @@ class ModelOnlyExecutionTest {
         val cases = document.getValue("cases").jsonArray
         assertEquals(25, cases.size)
         cases.forEach { element -> runCase(element.jsonObject) }
+    }
+
+    @Test
+    fun `Kotlin governed loop commits tool feedback before next model request`() = runTest {
+        val valid = runGoverned("completed-tool-read")
+        assertEquals("completed", render(valid.report.outcome))
+        assertEquals(listOf(0uL, 5uL), valid.positions)
+        assertEquals(listOf(1, 1), valid.toolCounts)
+        assertEquals(1, valid.effects.invocations)
+        assertEquals(0, valid.effects.rejections)
+
+        val rejected = runGoverned("completed-tool-missing")
+        assertEquals("completed", render(rejected.report.outcome))
+        assertEquals(listOf(0uL, 5uL), rejected.positions)
+        assertEquals(0, rejected.effects.invocations)
+        assertEquals(1, rejected.effects.rejections)
     }
 
     private suspend fun runCase(case: JsonObject) {
@@ -84,8 +112,10 @@ class ModelOnlyExecutionTest {
 
     private class FakeContext(private val scripts: ArrayDeque<String>) : ContextPort {
         var calls = 0
+        val positions = mutableListOf<ULong>()
         override fun derive(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult {
             calls += 1
+            positions += request.throughPosition
             when (scripts.removeFirst()) {
                 "failure" -> return ContextPortResult.Failure(PortFailure.CONTEXT)
                 "required-budget" -> return ContextPortResult.RequiredFactsExceedBudget
@@ -116,6 +146,7 @@ class ModelOnlyExecutionTest {
         var calls = 0
         val targets = mutableListOf<String>()
         val requestIds = mutableListOf<String>()
+        val toolCounts = mutableListOf<Int>()
         override suspend fun invoke(
             request: ModelRequest,
             observer: ModelObserver,
@@ -124,6 +155,7 @@ class ModelOnlyExecutionTest {
             calls += 1
             targets += request.targetId.value
             requestIds += request.requestId.value
+            toolCounts += request.tools.size
             return when (val script = scripts.removeFirst()) {
                 "completed-text-known" -> success(
                     InvokeOutcome.Completed(listOf(ModelItem.Text("done")), knownUsage(), ModelStopReason.EndTurn),
@@ -134,6 +166,20 @@ class ModelOnlyExecutionTest {
                 "completed-tool-known" -> success(
                     InvokeOutcome.Completed(
                         listOf(ModelItem.ToolIntent("call", "tool", "{}")),
+                        knownUsage(),
+                        ModelStopReason.ToolUse,
+                    ),
+                )
+                "completed-tool-read" -> success(
+                    InvokeOutcome.Completed(
+                        listOf(ModelItem.ToolIntent("call", "read_file", "{\"path\":\"a\"}")),
+                        knownUsage(),
+                        ModelStopReason.ToolUse,
+                    ),
+                )
+                "completed-tool-missing" -> success(
+                    InvokeOutcome.Completed(
+                        listOf(ModelItem.ToolIntent("call", "missing", "{}")),
                         knownUsage(),
                         ModelStopReason.ToolUse,
                     ),
@@ -180,6 +226,102 @@ class ModelOnlyExecutionTest {
     private class FakeEvents(private val failure: String?) : EventSink {
         override fun emit(event: AgentEvent): PortFailure? =
             if (event.kind.code == failure) PortFailure.EVENT else null
+    }
+
+    private class FakeEffects : GovernedEffectPort {
+        var invocations = 0
+        var rejections = 0
+
+        override suspend fun reject(
+            intent: ToolIntent,
+            error: PreparationError,
+        ): Result<CommittedGovernedResult> {
+            rejections += 1
+            return Result.success(committed(intent, error))
+        }
+
+        override suspend fun invoke(prepared: PreparedToolCall): Result<CommittedGovernedResult> {
+            invocations += 1
+            return Result.success(
+                committed(
+                    ToolIntent(prepared.modelCallId, prepared.toolName, prepared.normalizedArguments),
+                    PreparationError(PreparationErrorCode.TOOL_NOT_ADMITTED),
+                ),
+            )
+        }
+
+        private fun committed(intent: ToolIntent, error: PreparationError) = CommittedGovernedResult(
+            GovernedToolResult.Observation(
+                ToolFeedback.PreparationRejected(
+                    PreparationRejectedFeedback(
+                        intent.modelCallId,
+                        intent.toolName,
+                        error.code,
+                        emptyList(),
+                    ),
+                ),
+            ),
+            5uL,
+        )
+    }
+
+    private data class GovernedRun(
+        val report: ExecutionReport,
+        val positions: List<ULong>,
+        val toolCounts: List<Int>,
+        val effects: FakeEffects,
+    )
+
+    private suspend fun runGoverned(first: String): GovernedRun {
+        val context = FakeContext(ArrayDeque(listOf("success", "success")))
+        val model = FakeModel(ArrayDeque(listOf(first, "completed-text-known")))
+        val effects = FakeEffects()
+        val ports = AgentExecutionPorts(context, model, FakeEvents(null), FakeCancellation(null)) {
+            Result.success(0uL)
+        }
+        val report = executeAgent(toolRequest(), AgentToolCapabilities(listOf(toolDefinition())), ports, effects)
+        return GovernedRun(report, context.positions, model.toolCounts, effects)
+    }
+
+    private fun toolRequest(): AgentTurnRequest = AgentTurnRequest(
+        SessionId.of("session"),
+        TurnId.of("turn"),
+        ExecutionId.of("execution"),
+        AgentInstanceId.of("agent"),
+        AgentDefinitionId.of("definition"),
+        AgentDefinitionRevision.of("1"),
+        AgentEntry.Start("hi"),
+        AgentCursor(0u, 0uL),
+        ContextRequest("session", "turn", ContextPurpose.INFERENCE, null, 1uL, 10, 100),
+        listOf(ModelTargetId("primary")),
+        listOf(ModelCapability.TOOLS),
+        ModelOutputSettings(10uL, TextMode.Plain, false),
+        ModelRecoveryPolicy(
+            0u,
+            OutputLimitAction.Fail,
+            TerminalRecoveryAction.FAIL,
+            TerminalRecoveryAction.FAIL,
+            MissingUsagePolicy.Stop,
+        ),
+        ModelOnlyLimits(ExecutionLimits(3u), 100uL, null),
+    )
+
+    private fun toolDefinition(): ToolDefinition {
+        val requirements = ExecutionRequirements.create(
+            listOf(ExecutionCapability.FILESYSTEM_READ),
+            1_000,
+            1_024,
+        ) as ToolContractResult.Success
+        return (ToolDefinition.create(
+            "read_file",
+            "1",
+            "Read one file.",
+            Json.parseToJsonElement(
+                """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}""",
+            ),
+            requirements.value,
+            ReplayClass.READ_ONLY,
+        ) as ToolContractResult.Success).value
     }
 
     private fun request(case: JsonObject): AgentTurnRequest {

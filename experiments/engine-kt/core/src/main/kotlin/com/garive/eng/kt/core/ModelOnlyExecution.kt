@@ -11,6 +11,15 @@ import com.garive.eng.kt.llm.ModelRequestId
 import com.garive.eng.kt.llm.ObserverDecision
 import com.garive.eng.kt.llm.RejectionKind
 import com.garive.eng.kt.llm.TokenCount
+import com.garive.eng.kt.llm.ToolDescriptor
+import com.garive.eng.kt.tools.GovernedFailureCode
+import com.garive.eng.kt.tools.GovernedToolResult
+import com.garive.eng.kt.tools.InteractionKind
+import com.garive.eng.kt.tools.SuspensionRequirement
+import com.garive.eng.kt.tools.ToolCatalog
+import com.garive.eng.kt.tools.ToolContractResult
+import com.garive.eng.kt.tools.ToolDefinition
+import com.garive.eng.kt.tools.ToolIntent
 
 /**
  * Runs one bounded model-only kernel Execution against frozen ports.
@@ -22,6 +31,13 @@ import com.garive.eng.kt.llm.TokenCount
 public suspend fun executeModelOnly(
     request: AgentTurnRequest,
     ports: AgentExecutionPorts,
+): ExecutionReport = executeKernel(request, ports, emptyList(), null)
+
+internal suspend fun executeKernel(
+    request: AgentTurnRequest,
+    ports: AgentExecutionPorts,
+    definitions: List<ToolDefinition>,
+    effects: GovernedEffectPort?,
 ): ExecutionReport {
     if (request.validate() != null) return invalidReport(request)
     val control = try {
@@ -39,6 +55,20 @@ public suspend fun executeModelOnly(
     var outputRetries = 0u
     var targetIndex = 0
     var requestOrdinal = 0u
+    var throughPosition = request.cursor.lastDurablePosition
+    val catalog = when (val value = ToolCatalog.create(definitions)) {
+        is ToolContractResult.Success -> value.value
+        is ToolContractResult.Failure -> return invalidReport(request)
+    }
+    val descriptors = definitions.map { definition ->
+        ToolDescriptor(
+            definition.name,
+            definition.description,
+            definition.revision,
+            definition.inputSchema.toString(),
+            true,
+        )
+    }
 
     if (!emit(request, ports, AgentEventKind.ExecutionStarted)) {
         return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
@@ -61,7 +91,8 @@ public suspend fun executeModelOnly(
         if (!emit(request, ports, AgentEventKind.IterationStarted(iteration))) {
             return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
-        val surface = when (val context = ports.context.derive(request.contextRequest, rebuildAttempt)) {
+        val contextRequest = request.contextRequest.copy(throughPosition = throughPosition)
+        val surface = when (val context = ports.context.derive(contextRequest, rebuildAttempt)) {
             is ContextPortResult.Success -> context.surface
             ContextPortResult.RequiredFactsExceedBudget -> {
                 return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT))
@@ -87,7 +118,7 @@ public suspend fun executeModelOnly(
             target,
             request.requiredCapabilities,
             surface.items.mapNotNull { (it as? ContextItem.Input)?.item },
-            emptyList(),
+            descriptors,
             request.modelOutput,
             listOf("turn_id" to request.turnId.value, "execution_id" to request.executionId.value),
         )
@@ -130,17 +161,26 @@ public suspend fun executeModelOnly(
                 accountOrLimit(usage, outcome.usage, request)?.let {
                     return finish(request, ports, control, usage, it)
                 }
-                if (outcome.items.any { it is ModelItem.ToolIntent }) {
-                    return finish(
-                        request,
-                        ports,
-                        control,
-                        usage,
-                        AgentOutcome.Failed(AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE),
-                    )
-                }
                 if (outcome.items.any { it is ModelItem.ToolObservation }) {
                     return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVALID_MODEL_OUTPUT))
+                }
+                if (outcome.items.any { it is ModelItem.ToolIntent }) {
+                    if (effects == null) {
+                        return finish(
+                            request,
+                            ports,
+                            control,
+                            usage,
+                            AgentOutcome.Failed(AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE),
+                        )
+                    }
+                    when (val step = governToolIntents(outcome.items, catalog, effects, ports, throughPosition)) {
+                        is ToolStep.Continue -> {
+                            throughPosition = step.position
+                            continue
+                        }
+                        is ToolStep.Terminal -> return finish(request, ports, control, usage, step.outcome)
+                    }
                 }
                 return finish(request, ports, control, usage, AgentOutcome.Completed(outcome.items, usage.summary()))
             }
@@ -230,6 +270,58 @@ public suspend fun executeModelOnly(
             }
         }
     }
+}
+
+private sealed interface ToolStep {
+    data class Continue(val position: ULong) : ToolStep
+    data class Terminal(val outcome: AgentOutcome) : ToolStep
+}
+
+private suspend fun governToolIntents(
+    items: List<ModelItem>,
+    catalog: ToolCatalog,
+    effects: GovernedEffectPort,
+    ports: AgentExecutionPorts,
+    initialPosition: ULong,
+): ToolStep {
+    var position = initialPosition
+    for (item in items) {
+        if (item !is ModelItem.ToolIntent) continue
+        if (ports.cancellation.isCancelled()) return ToolStep.Terminal(AgentOutcome.Stopped(StopReason.CANCELLED))
+        val intent = ToolIntent(item.modelCallId, item.toolName, item.argumentsJson)
+        val committed = when (val prepared = catalog.prepare(intent)) {
+            is ToolContractResult.Success -> effects.invoke(prepared.value)
+            is ToolContractResult.Failure -> effects.reject(intent, prepared.error)
+        }.getOrElse {
+            return ToolStep.Terminal(AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+        }
+        if (committed.throughPosition < position) {
+            return ToolStep.Terminal(AgentOutcome.Failed(AgentFailureReason.INVARIANT_VIOLATION))
+        }
+        position = committed.throughPosition
+        when (val result = committed.result) {
+            is GovernedToolResult.Observation -> Unit
+            is GovernedToolResult.Suspend -> {
+                val reason = when (val requirement = result.requirement) {
+                    is SuspensionRequirement.Interaction -> when (requirement.request.kind) {
+                        InteractionKind.APPROVAL -> SuspensionReason.APPROVAL_REQUIRED
+                        InteractionKind.EXTERNAL_INPUT -> SuspensionReason.EXTERNAL_INPUT_REQUIRED
+                    }
+                    is SuspensionRequirement.OperatorReconciliation -> SuspensionReason.OPERATOR_RECONCILIATION
+                }
+                return ToolStep.Terminal(AgentOutcome.Suspended(reason, items, position))
+            }
+            is GovernedToolResult.Fail -> {
+                val reason = if (result.code == GovernedFailureCode.INVALID_MODEL_OUTPUT) {
+                    AgentFailureReason.INVALID_MODEL_OUTPUT
+                } else {
+                    AgentFailureReason.INVARIANT_VIOLATION
+                }
+                return ToolStep.Terminal(AgentOutcome.Failed(reason))
+            }
+        }
+    }
+    return ToolStep.Continue(position)
 }
 
 private class UsageAccumulator {

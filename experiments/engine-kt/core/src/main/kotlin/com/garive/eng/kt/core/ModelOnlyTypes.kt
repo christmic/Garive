@@ -172,7 +172,7 @@ public data class AgentEvent(
 )
 
 /** Sanitized class of a frozen execution-port failure. */
-public enum class PortFailure { CONTEXT, EVENT, CLOCK }
+public enum class PortFailure { CONTEXT, EVENT, CLOCK, TOOL }
 /** Context port result preserving budget exhaustion separately from failure. */
 public sealed interface ContextPortResult {
     public data class Success(public val surface: ContextSurface) : ContextPortResult
