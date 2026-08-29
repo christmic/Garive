@@ -1,5 +1,6 @@
 //! Strict C6 durable Runtime payload-v1 validation.
 
+mod effect;
 mod model;
 mod turn;
 mod values;
@@ -23,22 +24,32 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let kind = fact.kind.as_str();
     let execution_family = kind.starts_with("execution.");
     let model_family = kind.starts_with("model.");
-    if !kind.starts_with("turn.") && !execution_family && !model_family {
+    let effect_family = kind.starts_with("effect.") || kind.starts_with("interaction.");
+    let rejection = kind == "tool.preparation_rejected";
+    if !kind.starts_with("turn.")
+        && !execution_family
+        && !model_family
+        && !effect_family
+        && !rejection
+    {
         return Ok(RuntimeFactDisposition::Opaque);
     }
     if fact.schema_version != 1 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
     if fact.turn_id.is_none()
-        || fact.execution_id.is_some() != (execution_family || model_family)
-        || fact.model_request_id.is_some() != model_family
-        || fact.tool_invocation_id.is_some()
+        || fact.execution_id.is_some()
+            != (execution_family || model_family || effect_family || rejection)
+        || fact.model_request_id.is_some() != (model_family || rejection)
+        || fact.tool_invocation_id.is_some() != effect_family
     {
         return Err(LedgerError::InvalidFact);
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if model_family {
+    if effect_family || rejection {
+        effect::validate(kind, object(&payload)?)?;
+    } else if model_family {
         model::validate(kind, object(&payload)?)?;
     } else {
         turn::validate(kind, object(&payload)?)?;

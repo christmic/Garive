@@ -41,6 +41,14 @@ pub(super) fn non_empty(value: &Map<String, Value>, key: &str) -> Result<(), Led
     }
 }
 
+pub(super) fn optional_non_empty(value: &Map<String, Value>, key: &str) -> Result<(), LedgerError> {
+    if value.contains_key(key) {
+        non_empty(value, key)
+    } else {
+        Ok(())
+    }
+}
+
 pub(super) fn enumeration<'a>(
     value: &'a Map<String, Value>,
     key: &str,
