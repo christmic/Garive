@@ -361,6 +361,12 @@ Stable classes include `command_conflict`, `concurrent_modification`,
 - protocol/provider fakes may prove orchestration but cannot prove official
   wire mapping; mocked storage cannot prove crash recovery.
 
+The admitted Kotlin subset composes a repeatable-read PostgreSQL Turn snapshot
+with the shared recovery decision table. It may atomically abandon and replace
+only an active Execution whose child positions select `abandon_and_restart`;
+Started model/effect work is rejected for its separate uncertainty action.
+This is native storage/recovery evidence, not a source-parity claim.
+
 ## See also
 
 - [`durable-runtime-facts.md`](durable-runtime-facts.md) — exact v1 payloads.

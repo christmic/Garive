@@ -9,6 +9,8 @@ import com.garive.eng.kt.ledger.LedgerError
 import com.garive.eng.kt.ledger.LedgerResult
 import com.garive.eng.kt.ledger.ModelRequestId
 import com.garive.eng.kt.ledger.SessionId
+import com.garive.eng.kt.ledger.TurnId
+import com.garive.eng.kt.ledger.TurnSnapshot
 import java.math.BigDecimal
 import java.sql.Connection
 import java.sql.SQLException
@@ -100,6 +102,14 @@ public class PostgresLedger private constructor(private val config: PostgresConf
 
     /** Returns the current durable optimistic-concurrency Session version. */
     public fun sessionVersion(sessionId: SessionId): ULong? = readState { it.sessionVersion(sessionId) }
+
+    /** Loads one verified Turn and its containing Session watermark repeatably. */
+    public fun loadTurn(turnId: TurnId): TurnSnapshot = readState { state ->
+        when (val result = state.loadTurn(turnId)) {
+            is LedgerResult.Failure -> throw PostgresLedgerError.Domain(result.error)
+            is LedgerResult.Success -> result.value
+        }
+    }
 
     private fun insertFacts(
         connection: Connection,
