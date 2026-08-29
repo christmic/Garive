@@ -31,6 +31,8 @@ internal object PortableSchema {
         return validateSchemaNode(root)
     }
 
+    fun validateValueDefinition(schema: JsonElement): PreparationError? = validateSchemaNode(schema)
+
     private fun validateSchemaNode(schema: JsonElement): PreparationError? {
         val value = schema as? JsonObject ?: return invalidDefinition()
         if (value.keys.any { it !in keywords }) return PreparationError(PreparationErrorCode.UNSUPPORTED_SCHEMA_KEYWORD)
