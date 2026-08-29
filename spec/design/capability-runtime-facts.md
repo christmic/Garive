@@ -211,9 +211,13 @@ knowledge.failed.v1 {
   request_id: KnowledgeRequestId
   request_digest: Digest
   phase: "pre_dispatch" | "dispatched" | "response_validation"
-  reason: "source_denied" | "unsupported" | "unavailable" |
-          "rejected" | "uncertain" | "citation_invalid" |
-          "content_digest_mismatch" | "limit_exceeded"
+  reason: "invalid_query" | "source_not_found" |
+          "source_revision_mismatch" | "source_denied" |
+          "filter_unsupported" | "freshness_unavailable" |
+          "connector_unavailable" | "connector_rejected" |
+          "retrieval_uncertain" | "citation_invalid" |
+          "content_digest_mismatch" | "limit_exceeded" |
+          "durability_failure" | "corrupt_knowledge_state"
   ambiguous: bool
   retry_after_ms?: non-zero u64
 }
@@ -224,8 +228,8 @@ forbid it. Requested commits while redispatch remains safe. Dispatched commits
 with a unique attempt identity immediately before the connector boundary and
 marks that the request may have crossed it. Exactly one completed or failed
 terminal is admitted. Completed evidence may be empty and is ordered
-semantically. `ambiguous=true` is required for a dispatched attempt without a
-trustworthy terminal response.
+semantically. `ambiguous=true` is required exactly for a dispatched attempt
+whose reason is `retrieval_uncertain`; all other failure shapes forbid it.
 
 Knowledge facts are scoped to the requesting Turn/Execution.
 `KnowledgeRequestId` remains in the payload because L0 has no dedicated
