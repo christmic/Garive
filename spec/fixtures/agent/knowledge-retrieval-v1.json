@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "contract": "knowledge-retrieval-v1",
+  "source": {
+    "source_id": "docs",
+    "source_revision": "1",
+    "kind": "documentation",
+    "content_domain": "product-docs",
+    "trust_class": "curated",
+    "supported_query_modes": ["keyword", "semantic"],
+    "freshness_policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "citation_scheme": "uri_fragment",
+    "capability_metadata_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "request": {
+    "request_id": "request-1",
+    "source_id": "docs",
+    "source_revision": "1",
+    "mode": "keyword",
+    "query": {"digest":"8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8","inline_utf8":"alpha"},
+    "filters": [
+      {"field":"year","operator":"greater_than_or_equal","value":2024},
+      {"field":"status","operator":"equal","value":"published"}
+    ],
+    "through_position": 7,
+    "max_chunks": 2,
+    "max_total_bytes": 12,
+    "deadline_budget_ms": 1000,
+    "freshness_requirement": {"kind":"cached_allowed"},
+    "expected_request_digest": "c2e4534f11ee81f67189c50522000767387389f827b14d537775b4fa11b4b0f5",
+    "expected_filters_digest": "8e43288b6b0c6d85b31b9fafa30422cfc239be212992a3f1db3b1d70ec02b4c7"
+  },
+  "evidence": [
+    {"evidence_id":"third","content":{"digest":"b1e99324505bd32da0e1f85dcf5e19a09db0481e8a15f62c41eb320304a8e927","inline_utf8":"third"},"content_byte_length":5,"locator":"z","rank_basis_points":7000},
+    {"evidence_id":"second","content":{"digest":"16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4","inline_utf8":"second"},"content_byte_length":6,"locator":"b","rank_basis_points":9000},
+    {"evidence_id":"first","content":{"digest":"a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e","inline_utf8":"first"},"content_byte_length":5,"locator":"a","rank_basis_points":9000}
+  ],
+  "ordering_cases": [
+    {"name":"normalized-prefix","connector_order_stable":false,"expected_ids":["first","second"],"truncated":true},
+    {"name":"stable-prefix","connector_order_stable":true,"expected_ids":["third","second"],"truncated":true}
+  ],
+  "invalid_cases": ["duplicate_filter_field","source_revision_mismatch","citation_digest_mismatch","stale_revalidate","wrong_snapshot"]
+}
