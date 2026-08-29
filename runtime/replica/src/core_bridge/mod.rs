@@ -7,6 +7,7 @@ mod governed_effect;
 mod governed_effect_types;
 mod knowledge_connector;
 mod knowledge_lifecycle;
+mod knowledge_recovery;
 mod memory_authority;
 mod memory_recovery;
 mod memory_retrieval;
@@ -40,6 +41,9 @@ pub use knowledge_lifecycle::{
     plan_knowledge_completed, plan_knowledge_dispatched, plan_knowledge_failed,
     plan_knowledge_requested, KnowledgeFailurePhase, KnowledgeFailureReason,
     KnowledgeLifecycleContext, PlannedKnowledgeCompletion, PreparedKnowledgeRequest,
+};
+pub use knowledge_recovery::{
+    derive_knowledge_recovery, KnowledgeRecoveryAction, KnowledgeRecoveryContext,
 };
 pub use memory_authority::{authorize_memory_query, authorize_memory_write, MemoryAccessGrant};
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};

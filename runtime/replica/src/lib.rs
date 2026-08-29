@@ -12,7 +12,7 @@ mod sqlite_ledger;
 
 pub use core_bridge::{
     authorize_memory_query, authorize_memory_write, canonical_model_request_digest,
-    execute_durable_agent, execute_durable_agent_with_capabilities,
+    derive_knowledge_recovery, execute_durable_agent, execute_durable_agent_with_capabilities,
     execute_durable_agent_with_skill_activation, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,
     plan_core_terminal, plan_knowledge_completed, plan_knowledge_dispatched, plan_knowledge_failed,
@@ -23,14 +23,14 @@ pub use core_bridge::{
     DurableExecutionError, DurableExecutionResult, ExecutorDispatch, ExecutorDispatchError,
     ExecutorFuture, ExecutorPort, GovernedEffectConfig, GovernedRuntimePortError,
     KnowledgeAccessGrant, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
-    KnowledgeFailurePhase, KnowledgeFailureReason, KnowledgeLifecycleContext, MemoryAccessGrant,
-    MemoryPrefix, MemoryRetrievalContext, MemoryTombstoneContext, MemoryTombstoneReason,
-    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, ModelLifecycleContext,
-    PlannedKnowledgeCompletion, PlannedMemoryRetrieval, PlannedMemoryTombstone, PlannedMemoryWrite,
-    PlannedSkillActivation, PreparedAgentCapabilities, PreparedExecution,
-    PreparedKnowledgeCapability, PreparedKnowledgeRequest, PreparedModelRequest,
-    RuntimeModelUncertainReason, SkillActivationContext, SqliteGovernedEffectPort,
-    TerminalPublicationError, TerminalPublisher,
+    KnowledgeFailurePhase, KnowledgeFailureReason, KnowledgeLifecycleContext,
+    KnowledgeRecoveryAction, KnowledgeRecoveryContext, MemoryAccessGrant, MemoryPrefix,
+    MemoryRetrievalContext, MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext,
+    MemoryWriteDecision, MemoryWriteRejection, ModelLifecycleContext, PlannedKnowledgeCompletion,
+    PlannedMemoryRetrieval, PlannedMemoryTombstone, PlannedMemoryWrite, PlannedSkillActivation,
+    PreparedAgentCapabilities, PreparedExecution, PreparedKnowledgeCapability,
+    PreparedKnowledgeRequest, PreparedModelRequest, RuntimeModelUncertainReason,
+    SkillActivationContext, SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use live_host::{
