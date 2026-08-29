@@ -14,9 +14,8 @@ published benchmarks.
 
 ## Lifecycle
 
-1. **Bootstrap**: clone [princeton-nlp/SWE-bench](https://github.com/princeton-nlp/SWE-bench)
-   into a private venv under `bench/eval/.venv/`. Pin a tag —
-   the eval API is stable but the script path can change.
+1. **Bootstrap externally**: supply an explicit Python executable containing
+   pinned SWE-bench revision `7a21e05772954cc81471ae19d56f436cecf43c54`.
 2. **Per-case run**: in an **independent env** (a fresh
    container / temp dir; never the agent's workspace) apply
    the patch, then `python -m swebench.harness.run_evaluation ...`
@@ -33,7 +32,7 @@ the #1 source of fake benchmark wins.
 
 ## Config
 
-`bench/config/eval.toml` (placeholder) controls:
+The explicit B0 JSON run config controls:
 
 - swe-bench repo tag to pin to.
 - Python version / venv bootstrap script.
@@ -44,4 +43,4 @@ the #1 source of fake benchmark wins.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: official invocation/report boundary implemented; real Docker run gated.

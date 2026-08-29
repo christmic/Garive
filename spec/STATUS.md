@@ -62,7 +62,7 @@ planned without reopening a narrower completed row.
 | A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | implemented | verified | done | Keep strict document parsing, injected secret/profile registries, OS credential resolution and configured startup gates green. |
 | A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | partial | active | Keep the KMP JVM/real-H1, XCFramework and Swift gates green; run the Android APK gate when SDK 36 is installed. |
 | G0 | Go Gateway | accepted | missing | missing | missing | missing | gated | Admit only after a live Host requires a separately scaled edge. |
-| B0 | SWE benchmark harness | accepted | accepted | documented | skeleton | missing | active | Implement the four-port driver, official loader/prediction/evaluator descriptors and deterministic tracking gates. |
+| B0 | SWE benchmark harness | accepted | accepted | documented | implemented | verified | done | Keep strict official loading, the sole bounded concurrent route, release-once failure matrix, explicit command ports, unified-diff/prediction adapters, pinned official report coverage, JSONL tracking and CLI E2E green. Real Docker publication evidence remains external and gated. |
 
 ## Capability backlog
 

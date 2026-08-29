@@ -1,0 +1,51 @@
+{
+  "cases_path": "/srv/garive/cases/swe-bench-lite.jsonl",
+  "tracking_path": "/srv/garive/tracking/run-2026-08-30.jsonl",
+  "dataset": "swe-bench-lite",
+  "mode": "official-published",
+  "jobs": 8,
+  "warm_capacity": 8,
+  "case_limits": {
+    "max_cases": 300,
+    "max_document_bytes": 67108864,
+    "max_line_bytes": 1048576,
+    "max_problem_bytes": 262144,
+    "max_tests_per_group": 4096
+  },
+  "max_case_duration_ms": 3600000,
+  "max_patch_bytes": 4194304,
+  "environment_port": {
+    "executable": "/srv/garive/bin/workspace-broker",
+    "arguments": ["--config", "/srv/garive/config/workspaces.json"],
+    "working_directory": "/srv/garive",
+    "environment": [["DOCKER_HOST", "unix:///var/run/docker.sock"]],
+    "timeout_ms": 3600000,
+    "max_output_bytes": 65536
+  },
+  "agent_port": {
+    "executable": "/srv/garive/bin/agent-driver",
+    "arguments": ["--config", "/srv/garive/config/agent.json"],
+    "working_directory": "/srv/garive",
+    "environment": [],
+    "timeout_ms": 3600000,
+    "max_output_bytes": 8388608
+  },
+  "official": {
+    "python_executable": "/srv/swebench/.venv/bin/python",
+    "predictions_directory": "/srv/garive/runs/run-2026-08-30/predictions",
+    "run_directory": "/srv/garive/runs/run-2026-08-30",
+    "run_id": "run-2026-08-30",
+    "model_name": "garive-0.1.0",
+    "timeout_seconds": 3600,
+    "environment": [["DOCKER_HOST", "unix:///var/run/docker.sock"]]
+  },
+  "tracking": {
+    "suite_id": "swe-bench-lite",
+    "dataset_revision": "SWE-bench/SWE-bench_Lite:test@pinned-export",
+    "harness_revision": "7a21e05772954cc81471ae19d56f436cecf43c54",
+    "agent_revision": "replace-with-clean-garive-git-revision",
+    "dirty": false,
+    "intake_adapter": "exact-swe-v1",
+    "patch_adapter": "unified-diff-v1"
+  }
+}

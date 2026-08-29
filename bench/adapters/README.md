@@ -67,4 +67,4 @@ config (`--intake garive --patch garive-bridge` etc.).
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: V1 exact intake and strict unified-diff adapter implemented.

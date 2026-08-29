@@ -16,29 +16,31 @@ published scores were measured against.
 
 ## Lifecycle
 
-1. **Setup**: `docker pull swe-bench/<instance_id>:<tag>`,
-   start the container, capture container id.
-2. **Work**: agent issues commands via `docker exec <id> <cmd>`.
+1. **Warm pool**: an external explicit environment broker pre-pulls and owns at
+   least `jobs` isolated workspaces/containers.
+2. **Acquire**: bind one warm workspace to the exact instance/base commit.
+3. **Work**: agent issues commands through its injected driver.
    Reads / writes use `docker cp` or `docker exec cat/echo`.
-3. **Patch apply**: at eval time, `git apply` the agent's
+4. **Patch apply**: the independent official harness applies the canonical
    diff inside the container.
-4. **Teardown**: `docker rm -f <id>`.
+5. **Release**: the broker cleans and returns the workspace exactly once.
 
 ## Limitations
 
-- Per-case `docker pull` is slow — first run of a new case
-  can take 5–10 minutes for image fetch.
+- Pool bootstrap remains external and can be expensive; per-case acquisition
+  must not perform an implicit image pull in published mode.
 - Requires Docker daemon; no nested Docker-in-Docker.
 - The published SWE-bench Docker harness only supports Linux
   x86_64 — macOS runners use `colima` or `Docker Desktop`.
 
 ## Config
 
-`bench/config/official.toml` (placeholder) controls image
-registry, runtime args, network policy, and resource limits.
+The explicit B0 JSON run config supplies the broker command, post-clear
+environment, timeouts, output bounds and warm capacity. The broker owns Docker
+configuration; B0 does not discover it.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: command-port contract implemented; real warm Docker broker is deployment-owned.

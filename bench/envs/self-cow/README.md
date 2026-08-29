@@ -36,7 +36,7 @@ dev-loop iterations against the agent.
 
 ## Config
 
-`bench/config/self-cow.toml` (placeholder) controls workspace
+The explicit B0 JSON run config and external broker control workspace
 root, per-case resource limits, and toolchain assumptions
 (pinned Python / Node / Go versions etc.).
 
@@ -54,4 +54,4 @@ that someone else might compare against.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: admitted through the generic broker port; concrete COW pool is deployment-owned.

@@ -17,4 +17,4 @@ it.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: optional helpers are not part of admitted B0; the executable CLI is `bench run`.

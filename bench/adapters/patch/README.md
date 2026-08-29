@@ -55,4 +55,4 @@ them separate means:
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: bounded repository-relative unified-diff V1 implemented.

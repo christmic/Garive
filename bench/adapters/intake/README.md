@@ -48,4 +48,4 @@ once the env signals readiness.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: exact gold-free SWE V1 intake implemented.

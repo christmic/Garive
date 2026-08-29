@@ -8,44 +8,28 @@
 
 ### Run-level (`runs/<run_id>.jsonl`)
 
-```
-{"kind":"run-start","run_id":"...","date":"...","env":"official|self-cow","agent":"...","adapter":"...","set":"verified|lite"}
-{"kind":"case-start","instance_id":"...","case_index":N,"case_total":M}
-{"kind":"case-result","instance_id":"...","passed":true|false,"runtime_ms":...,"tokens_in":...,"tokens_out":...,"fail_to_pass_passed":N,"pass_to_pass_passed":N}
-{"kind":"run-end","run_id":"...","score":F,"cases_passed":N,"cases_total":M,"duration_ms":...}
-```
+Every record has `schema_version: 1`. `run-start` freezes run/suite/dataset,
+harness and Agent revisions, dirty flag, canonical config digest, both adapter
+revisions, environment kind, jobs, exact case count and publishability.
+`case-result` records source index, case ID, E0 outcome, duration and nullable
+token evidence. `run-end` records E0 counts and an exact nullable score
+numerator/denominator; floating-point scores are not stored.
 
-### Version-level (`versions/<vX.Y.Z>.json`)
-
-```
-{
-  "version": "v0.4.1",
-  "date": "2026-08-27",
-  "env": "official",
-  "set": "verified",
-  "agent": "garive",
-  "adapter": "garive-bridge",
-  "score": 0.094,
-  "cases_passed": 47,
-  "cases_total": 500,
-  "duration_ms": 12345678
-}
-```
+Publication evidence is the validated E0 `EvaluationBaseline`; only a clean
+official run with jobs greater than one can construct it. Development JSONL
+cannot become publishable by copying or renaming it.
 
 ## Querying
 
 ```bash
-# Latest published score on official Verified
-jq 'select(.env == "official" and .set == "verified") | max_by(.date) | {version, score}' versions/*.json
-
-# Score delta vs previous version
-diff <(jq -S . versions/v0.4.0.json) <(jq -S . versions/v0.4.1.json)
+# Read the exact terminal score from one completed run
+jq -c 'select(.kind == "run-end") | {score_numerator,score_denominator}' runs/run-1.jsonl
 ```
 
 ## What Lives Here
 
-- `runs/` — raw JSONL event stream per run.
-- `versions/` — one summary JSON per released version.
+- caller-selected tracking path — one immutable JSONL event stream per run.
+- E0 `EvaluationBaseline` — typed publication evidence returned after finish.
 - `workspaces/` — ephemeral per-case workspaces for `self-cow`
   mode (gitignored; safe to delete after the run).
 
@@ -67,4 +51,4 @@ SQLite reader can ingest the same files.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: ordered append-only JSONL and E0 baseline construction implemented.

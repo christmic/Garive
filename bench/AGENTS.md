@@ -82,6 +82,9 @@ cases.
 | Terminal-Bench | [laude-institute/terminal-bench](https://github.com/laude-institute/terminal-bench) | terminal / shell tasks; complements swe-bench's repo-edit style. |
 | (future) | — | Add a new public benchmark by appending a row and updating ` ` `bench/cases/README.md`. |
 
+Current admitted B0 V1 is intentionally narrower than this future source
+catalogue: only SWE-bench Lite and Verified `test` JSONL are executable.
+
 A run **must** declare its source (`--source swe-bench-verified
 | --source swe-bench-lite | --source terminal-bench | ...`).
 Results from different sources are not directly comparable —
@@ -283,7 +286,7 @@ bench/
 
 ```
 just bench                  # cargo test -p bench (scaffold verification)
-just conformance            # currently reports "not yet wired"
+just conformance            # full repository conformance
 ```
 
 ## Testing

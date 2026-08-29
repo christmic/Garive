@@ -85,10 +85,15 @@ dev-loop only. See `bench/AGENTS.md` Rule 3.
 ## Usage
 
 ```
-just bench                          # full default run
-just bench -- --source swe-bench-verified --mode official
-just bench -- --source terminal-bench --mode self-cow --jobs 16
+cargo run -p bench -- run /absolute/path/to/run-config.json
 ```
+
+The config supplies case/tracking paths, limits, dataset and mode, explicit
+environment-broker and Agent commands, official Python harness values, cleared
+subprocess environments and publication provenance. See
+`config.example.json`. B0 V1 admits only SWE-bench Lite and Verified test-split
+exports. A real published score additionally requires the pinned official
+Docker harness and a clean checkout; unit/CLI smoke evidence is never promoted.
 
 See `bench/AGENTS.md` for the full rules.
 
@@ -96,4 +101,4 @@ See `bench/AGENTS.md` for the full rules.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: accepted.
+- Status: implemented and verified; real official Docker score gated.

@@ -107,6 +107,14 @@ The official prediction writer emits exact JSONL:
 
 No additional member is sent to the evaluator.
 
+The admitted generic environment and Agent implementations are explicit
+command ports. Each operation receives one strict JSON value on stdin and emits
+one strict JSON value on stdout. Executable, argv, working directory, timeout,
+output bound and complete post-clear environment are constructor/config values;
+no port reads environment configuration. The environment broker owns
+`acquire`/`release`; the Agent command owns only `run` inside the returned opaque
+workspace handle.
+
 ## Official evaluator descriptor
 
 B0 constructs, but does not reinterpret, this pinned invocation:
@@ -129,6 +137,13 @@ explicit cleared environment plus explicitly admitted Docker/Python values
 from the runner. Non-zero exit, missing report, schema mismatch and incomplete
 instance coverage are infrastructure failures.
 
+Concurrent per-case invocations derive collision-free prediction paths and
+harness run IDs from the validated official instance ID. The process boundary
+materializes the exact prediction, clears inherited environment, invokes the
+pinned module and reads the exact schema-v2 final report. Exit failure, unknown
+members, count/ID disagreement, incomplete/error/empty-patch evidence or
+coverage other than the requested case is infrastructure failure.
+
 ## Tracking
 
 Run events and version summaries use schema version 1 and E0 outcomes. Files
@@ -137,6 +152,13 @@ records Garive git revision, dirty flag (must be false), dataset identity and
 revision, upstream harness revision, configuration digest, adapter identities,
 environment kind, jobs and exact case count. A smoke result cannot be promoted
 by renaming a file.
+
+The CLI accepts only `bench run <explicit-config.json>`. Configuration rejects
+duplicate/unknown fields, has a recorded RFC 8785 SHA-256 digest, and supplies
+all paths, commands, bounds and environment values explicitly. A new tracking
+file is created without overwrite. Agent failures produce a low score and exit
+zero; any infrastructure result or orchestration/configuration failure exits
+non-zero.
 
 ## Verification
 

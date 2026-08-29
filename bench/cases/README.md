@@ -32,24 +32,23 @@ dataset.
 
 ## Schema
 
-Each case (JSON) carries:
+The admitted JSONL intake carries exactly:
 
 ```
 instance_id          "django__django-11099"
 repo                 "django/django"
 base_commit          "abc1234"
-patch                gold unified diff (for reference, not the eval target)
-test_patch           test-file changes needed to evaluate
 problem_statement    the issue text the agent reads
-fail_to_pass         tests that must pass after the patch
-pass_to_pass         tests that must still pass after the patch
+version              official repository version
+FAIL_TO_PASS          tests that must pass after the patch
+PASS_TO_PASS          tests that must still pass after the patch
 ```
 
-This mirrors the official swe-bench JSON schema; `bench/`
-loads it verbatim.
+Gold `patch`, `test_patch`, hints and all unknown members are forbidden from
+Agent intake. B0 V1 supports only Lite and Verified `test` exports.
 
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-27
-- Status: stub — slice not yet landed; content is scaffolding.
+- Status: strict V1 loader implemented with one official Lite smoke record.
