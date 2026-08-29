@@ -71,6 +71,13 @@ InvocationGrant {
 }
 ```
 
+For portable C5 reduction, `constraints` is represented by a non-empty
+`constraints_digest`. Runtime owns the referenced constraint document,
+freshness checks and executor-policy interpretation; Core only verifies that
+the digest is present and that every grant binding and granted requirement is
+equal to or stricter than the Prepared Call. This avoids copying actor policy,
+clocks or product configuration into the cross-language reducer.
+
 Core calls the frozen authorization port with the Prepared Call. The Runtime
 port implementation constructs the full request above from authenticated
 product state; Core never manufactures or interprets actor authority.
@@ -109,6 +116,13 @@ terminal. A response commits `interaction.resolved` or
 and snapshot, and a typed response bound to the exact interaction/invocation/
 digest. Duplicate equal responses are idempotent; conflicting, expired or
 cross-Turn responses fail closed.
+
+An `interaction.resolved` fact does not create authority. Portable reduction
+returns the invocation to the Prepared state and requests authorization again;
+only a later `Approve(InvocationGrant)` can authorize dispatch. Cancellation
+produces a rejected observation bound to the original model call. This rule
+applies to both approval and external-input interactions; a response that
+proposes changed arguments must become a new ToolIntent and pass C4 again.
 
 ## Effect lifecycle
 
