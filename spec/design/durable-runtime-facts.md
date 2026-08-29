@@ -189,6 +189,40 @@ terminal, pre-dispatch, or durably classified safe/uncertain.
 
 ## Model payloads
 
+### Canonical neutral model values
+
+`request_digest` is SHA-256 over L0 canonical JSON for the frozen neutral
+request, excluding `request_id` because the outer `ModelRequestId` owns logical
+identity. The object contains `target_id`, ordered `required_capabilities`,
+ordered `input_items`, ordered `tools`, `output`, and ordered `trace_metadata`.
+It uses these exact v1 tags:
+
+| Value | Canonical JSON fields |
+|---|---|
+| capability | string: `text`, `vision`, `reasoning`, `tools`, `json_output`, or `streaming` |
+| message input | `kind=message`, `role`, ordered `content` |
+| text content | `kind=text`, `text` |
+| media content | `kind=media_reference`, `media_kind`, `reference`, `media_type` |
+| tool observation input | `kind=tool_observation`, `model_call_id`, `result_json` |
+| reasoning input | `kind=reasoning_reference`, `reference` |
+| tool definition | `name`, `description`, `definition_revision`, `input_schema_json`, `strict` |
+| plain output | `text_mode={kind:plain}` |
+| JSON object output | `text_mode={kind:json_object}` |
+| schema output | `text_mode={kind:json_schema,schema_json}` |
+| output envelope | `max_output_tokens` (integer or null), `text_mode`, `reasoning_visibility` |
+| trace entry | two-element `[key,value]` array |
+
+Roles are `system`, `developer`, `user`, and `assistant`. Media kinds are
+`image`, `audio`, `video`, `file`, or `{other:string}`. Ordering is semantic;
+Runtime neither sorts nor deduplicates values after Core freezes the request.
+
+Model item content bindings use L0 canonical JSON arrays with these exact
+tagged objects: `text`; `refusal`; `reasoning` with `visibility=model_visible |
+opaque_reference` and `value`; `tool_intent` with call/name/arguments;
+`tool_observation` with call/result; and `media_reference` with media kind and
+reference. `inline_utf8` is that canonical JSON and its digest is over the exact
+UTF-8 bytes. This representation contains provider-neutral values only.
+
 ```text
 model.prepared.v1 {
   request_digest: Digest
