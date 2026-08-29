@@ -247,7 +247,7 @@ pub fn activate_skills(
                 return Err(SkillError::new(SkillErrorCode::InstructionLimitExceeded));
             }
             truncated = true;
-            continue;
+            break;
         }
         total_bytes = next_bytes;
         activated.push(ActivatedSkill {
