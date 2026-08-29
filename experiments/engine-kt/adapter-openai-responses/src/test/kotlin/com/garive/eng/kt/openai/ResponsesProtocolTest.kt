@@ -40,10 +40,19 @@ class ResponsesProtocolTest {
         val fixture = json("spec/fixtures/protocols/openai-responses/request.json")
         val request = CreateResponseRequest(
             model = fixture.getValue("model").toString().trim('"'),
-            input = ResponseInput.Items(fixture.getValue("input").let { it as kotlinx.serialization.json.JsonArray }.map { it as JsonObject }),
+            input = ResponseInput.Items(listOf(InputItem.Message(
+                MessageRole.USER,
+                listOf(InputContent.Text("hello")),
+            ))),
             stream = true,
             maxOutputTokens = fixture["max_output_tokens"]?.toString()?.toULong(),
-            tools = (fixture["tools"] as? kotlinx.serialization.json.JsonArray)?.map { it as JsonObject } ?: emptyList(),
+            tools = listOf(FunctionTool(
+                name = "weather",
+                description = "Lookup weather",
+                parameters = ((fixture["tools"] as kotlinx.serialization.json.JsonArray)[0] as JsonObject)
+                    .getValue("parameters") as JsonObject,
+                strict = true,
+            )),
             metadata = (fixture["metadata"] as? JsonObject)?.mapValues { it.value.toString().trim('"') } ?: emptyMap(),
             extensions = JsonObject(fixture.filterKeys { it == "store" }),
         )
