@@ -5,10 +5,12 @@
 
 mod canonical;
 mod projection;
+mod runtime_facts;
 mod state;
 mod types;
 
 pub use canonical::{CanonicalPayload, CanonicalPayloadError};
+pub use runtime_facts::{validate_runtime_fact, RuntimeFactDisposition};
 pub use state::{LedgerState, TurnSnapshot};
 pub use types::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CommitDisposition, CommitResult,
