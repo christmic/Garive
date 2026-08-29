@@ -70,7 +70,7 @@ planned without reopening a narrower completed row.
 | Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure fixtures, exact L0 lifecycle transitions, explicit source authority, connector commit ordering, Core attribution, and SQLite crash-position recovery green. |
 | Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds fixtures, Rust/Kotlin Core narrowing, L0 validation, and SQLite commit-before-model/restart evidence green. |
 | Scheduler | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin recurrence/failure properties, exact L0 facts, SQLite lease races, authority/update conflicts, real C6 dispatch, restart and process-kill matrices green. |
-| Multi-Agent | accepted | accepted | documented | skeleton | missing | planned | Coordinate DelegationPending/result continuation fixtures, then implement budgeted parent/child recovery. |
+| Multi-Agent | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin canonical intent/budget/result properties, exact L0 lifecycle projection, durable grant-before-child ordering, cancellation/isolation, SQLite restart and six-boundary process-kill matrices green. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
 | Evaluation | draft | missing | missing | skeleton | missing | gated | Runnable Agent and pinned benchmark evidence. |
 | Observability | accepted | accepted | documented | skeleton | missing | planned | Freeze O0 fixtures, then implement portable validation and bounded Runtime sinks. |
