@@ -84,3 +84,53 @@ fn incompatible_media_and_malformed_known_blocks_fail() {
         .decode_response(200, &[], &serde_json::to_vec(&value).unwrap())
         .is_err());
 }
+
+#[test]
+fn full_usage_breakdowns_are_typed() {
+    let mut value: Value = serde_json::from_slice(include_bytes!(
+        "../../../spec/fixtures/protocols/anthropic-messages/ordinary.json"
+    ))
+    .unwrap();
+    value["usage"] = json!({
+        "input_tokens": 8,
+        "output_tokens": 5,
+        "cache_creation": {"ephemeral_1h_input_tokens": 2, "ephemeral_5m_input_tokens": 1},
+        "inference_geo": "us",
+        "output_tokens_details": {"thinking_tokens": 3},
+        "server_tool_use": {"web_fetch_requests": 1, "web_search_requests": 2},
+        "service_tier": "priority"
+    });
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let DecodedResponse::Message { message, .. } =
+        adapter().decode_response(200, &[], &bytes).unwrap()
+    else {
+        panic!("expected message")
+    };
+    assert_eq!(
+        message
+            .usage
+            .cache_creation
+            .as_ref()
+            .unwrap()
+            .ephemeral_1h_input_tokens,
+        2
+    );
+    assert_eq!(
+        message
+            .usage
+            .output_tokens_details
+            .as_ref()
+            .unwrap()
+            .thinking_tokens,
+        3
+    );
+    assert_eq!(
+        message
+            .usage
+            .server_tool_use
+            .as_ref()
+            .unwrap()
+            .web_search_requests,
+        2
+    );
+}

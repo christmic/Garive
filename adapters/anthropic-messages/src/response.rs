@@ -205,9 +205,61 @@ pub struct Usage {
     /// Cache-read input tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_read_input_tokens: Option<u64>,
-    /// Cache, server-tool, tier, geography, and future usage data.
+    /// Breakdown of cache writes by TTL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation: Option<CacheCreation>,
+    /// Geographic region that performed inference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference_geo: Option<String>,
+    /// Output-token observability breakdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens_details: Option<OutputTokensDetails>,
+    /// Hosted server-tool request counters retained as wire data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_tool_use: Option<ServerToolUsage>,
+    /// Service tier reported by the endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<ServiceTier>,
+    /// Non-colliding future usage data.
     #[serde(default, flatten)]
     pub extensions: Map<String, Value>,
+}
+
+/// Official cache-creation breakdown by TTL.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CacheCreation {
+    /// Input tokens written to a one-hour cache entry.
+    pub ephemeral_1h_input_tokens: u64,
+    /// Input tokens written to a five-minute cache entry.
+    pub ephemeral_5m_input_tokens: u64,
+}
+
+/// Official output-token detail fields.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OutputTokensDetails {
+    /// Tokens spent on internal reasoning.
+    pub thinking_tokens: u64,
+}
+
+/// Official server-tool usage counters.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ServerToolUsage {
+    /// Web-fetch requests.
+    pub web_fetch_requests: u64,
+    /// Web-search requests.
+    pub web_search_requests: u64,
+}
+
+/// Service tier reported in response usage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceTier {
+    /// Standard service.
+    Standard,
+    /// Priority service.
+    Priority,
+    /// Batch service.
+    Batch,
 }
 
 /// Protocol error object with an open type string.
