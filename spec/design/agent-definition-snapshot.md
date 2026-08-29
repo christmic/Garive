@@ -55,6 +55,11 @@ InstructionReference {
   source_id, exact_revision, required: bool
 }
 
+InstructionResource {
+  source_id, exact_revision, content_utf8
+  dependencies: ordered InstructionReference[]
+}
+
 ModelRoleRequirement {
   role_id
   required_capabilities: unique sorted string set
@@ -117,6 +122,15 @@ Runtime resolves every reference exactly once for a new Turn:
 7. validate cross-field invariants and produce one snapshot;
 8. commit the definition binding and snapshot digest before Core starts.
 
+An instruction registry resolves an exact reference to zero, one, or multiple
+`InstructionResource` candidates. Runtime expands each root depth-first:
+dependencies in declaration order precede their owner, root order is retained,
+and an already emitted exact `(source_id, revision)` is not emitted twice. A
+back-edge in the active expansion stack is `reference_cycle`. Required zero or
+multiple candidates fail; an optional zero-candidate root is omitted. Resource
+identity must match the requested exact identity. These rules make instruction
+composition portable without putting registry or file loading into Core.
+
 Missing, ambiguous, revoked, cyclic, unsupported-version, or policy-incompatible
 references fail resolution. Runtime does not silently choose “latest”, omit a
 required capability, or weaken a limit.
@@ -168,6 +182,22 @@ Turn. A registry/configuration change affects only a new Turn unless an
 explicit product migration creates a new Turn.
 
 ## Canonical digest
+
+`definition_digest` is lowercase SHA-256 over RFC 8785 canonical bytes of the
+complete `AgentDefinition` fields under this envelope:
+
+```json
+{
+  "contract": "garive.agent-definition",
+  "version": 1,
+  "definition": {}
+}
+```
+
+The definition is serialized with the field and enum names shown by this
+contract. Ordered lists remain arrays; unique string maps remain JSON objects;
+set values use their required canonical order. The digest binds immutable
+intent independently from any Runtime registry result.
 
 `snapshot_digest` is lowercase SHA-256 over UTF-8 RFC 8785 JSON Canonicalization
 Scheme bytes of this versioned preimage:
