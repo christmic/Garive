@@ -418,6 +418,10 @@ struct DurableModelPort<'a, 'ledger> {
 }
 
 impl ModelPort for DurableModelPort<'_, '_> {
+    fn preflight(&self, request: &ModelRequest) -> Result<(), ModelPortFailure> {
+        self.inner.preflight(request)
+    }
+
     fn invoke<'a>(
         &'a self,
         request: &'a ModelRequest,

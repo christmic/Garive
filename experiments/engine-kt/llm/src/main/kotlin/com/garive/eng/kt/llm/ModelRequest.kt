@@ -236,6 +236,10 @@ public sealed interface ModelPortResult {
 
 /** Provider-neutral suspending model invocation boundary. */
 public interface ModelPort {
+    /** Performs deterministic admission and protocol mapping without I/O. */
+    public fun preflight(request: ModelRequest): ModelPortFailure? =
+        request.validate()?.let { ModelPortFailure.INVALID_REQUEST }
+
     /** Maps one request, emits normalized events, and returns one terminal envelope. */
     public suspend fun invoke(
         request: ModelRequest,

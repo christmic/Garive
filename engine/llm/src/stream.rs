@@ -226,6 +226,16 @@ pub type ModelFuture<'a> =
 
 /// Provider-neutral asynchronous model invocation boundary.
 pub trait ModelPort: Send + Sync {
+    /// Performs deterministic request/deployment/protocol admission without I/O.
+    ///
+    /// Runtime calls this before committing a dispatch lifecycle. Implementors
+    /// that require additional mapping checks override the default validation.
+    fn preflight(&self, request: &ModelRequest) -> Result<(), ModelPortFailure> {
+        request
+            .validate()
+            .map_err(|_| ModelPortFailure::InvalidRequest)
+    }
+
     /// Validates/maps `request`, emits normalized events, and returns one outcome.
     ///
     /// Provider credentials and wire protocol details remain inside the adapter.

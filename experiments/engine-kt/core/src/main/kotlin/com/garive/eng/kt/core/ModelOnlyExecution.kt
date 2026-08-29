@@ -125,6 +125,9 @@ internal suspend fun executeKernel(
         if (modelRequest.validate() != null) {
             return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.INVALID_INPUT))
         }
+        ports.model.preflight(modelRequest)?.let { failure ->
+            return finish(request, ports, control, usage, AgentOutcome.Failed(modelFailure(failure)))
+        }
         if (!emit(request, ports, AgentEventKind.ModelRequestPrepared(requestId, target.value))) {
             return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
@@ -146,13 +149,7 @@ internal suspend fun executeKernel(
         val outcome = when (result) {
             is ModelPortResult.Success -> result.outcome
             is ModelPortResult.Failure -> {
-                val reason = when (result.failure) {
-                    ModelPortFailure.INVALID_REQUEST -> AgentFailureReason.INVALID_INPUT
-                    ModelPortFailure.UNSUPPORTED_CAPABILITY -> AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE
-                    ModelPortFailure.ADAPTER_INVARIANT -> AgentFailureReason.INVALID_MODEL_OUTPUT
-                    ModelPortFailure.REQUIRED_PORT_FAILURE -> AgentFailureReason.PORT_FAILURE
-                }
-                return finish(request, ports, control, usage, AgentOutcome.Failed(reason))
+                return finish(request, ports, control, usage, AgentOutcome.Failed(modelFailure(result.failure)))
             }
         }
 
@@ -278,6 +275,13 @@ internal suspend fun executeKernel(
             }
         }
     }
+}
+
+private fun modelFailure(failure: ModelPortFailure): AgentFailureReason = when (failure) {
+    ModelPortFailure.INVALID_REQUEST -> AgentFailureReason.INVALID_INPUT
+    ModelPortFailure.UNSUPPORTED_CAPABILITY -> AgentFailureReason.REQUIRED_CAPABILITY_UNAVAILABLE
+    ModelPortFailure.ADAPTER_INVARIANT -> AgentFailureReason.INVALID_MODEL_OUTPUT
+    ModelPortFailure.REQUIRED_PORT_FAILURE -> AgentFailureReason.PORT_FAILURE
 }
 
 private sealed interface ToolStep {

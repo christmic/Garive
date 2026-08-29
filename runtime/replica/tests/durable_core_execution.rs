@@ -20,7 +20,8 @@ use garive_ledger::{
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
     ModelInputContent, ModelInputItem, ModelItem, ModelObserver, ModelOutputSettings, ModelPort,
-    ModelRequest, ModelStopReason, ModelTargetId, ModelUsage, TextMode, TokenCount, UsageSource,
+    ModelPortFailure, ModelRequest, ModelStopReason, ModelTargetId, ModelUsage, TextMode,
+    TokenCount, UsageSource,
 };
 use garive_runtime::{
     commit_planned_turn, execute_durable_agent, execute_durable_model_only, plan_cancel_turn,
@@ -121,6 +122,23 @@ struct CancelDuringModel {
     path: PathBuf,
     session: SessionId,
     turn: garive_ledger::TurnId,
+}
+
+struct RejectPreflight;
+
+impl ModelPort for RejectPreflight {
+    fn preflight(&self, _: &ModelRequest) -> Result<(), ModelPortFailure> {
+        Err(ModelPortFailure::UnsupportedCapability)
+    }
+
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        panic!("invoke must not run after rejected preflight")
+    }
 }
 
 impl ModelPort for CancelDuringModel {
@@ -535,6 +553,99 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
             "execution.completed",
             "turn.completed",
         ]
+    );
+}
+
+#[test]
+fn model_preflight_failure_precedes_every_model_lifecycle_fact() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("preflight.sqlite3");
+    let session = SessionId::try_from("preflight-session").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = StartTurnCommand {
+        command_id: RuntimeCommandId::new("preflight-start").unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: LedgerAgentId::try_from("agent").unwrap(),
+        definition_id: LedgerDefinitionId::try_from("definition").unwrap(),
+        definition_revision: LedgerRevision::try_from("revision").unwrap(),
+        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        trusted_input: "hello".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 2,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            deadline_budget_ms: None,
+        },
+        recorded_at: "2026-08-29T00:00:00Z".into(),
+    };
+    let plan = plan_start_turn(&start, 1).unwrap();
+    let execution = plan.execution_id.clone().unwrap();
+    ledger
+        .commit(session.clone(), 1, plan.facts.clone())
+        .unwrap();
+    let request = core_request(&session, &plan.turn_id, &execution);
+    let config = DurableExecutionConfig {
+        session_id: session.clone(),
+        expected_session_version: 2,
+        model: ModelLifecycleContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            deployment_id: "deployment".into(),
+            recovery_policy_revision: "policy".into(),
+            max_attempts: 1,
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        lease: ExecutionLeaseRequest {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution,
+            owner_id: "preflight-worker".into(),
+            lease_token: "preflight-lease".into(),
+            now_ms: 1,
+            duration_ms: 10_000,
+        },
+    };
+    let mut context = Context { positions: vec![] };
+    let signals = Signals;
+    let mut events = Signals;
+    let mut publisher = Publisher {
+        path,
+        turn: plan.turn_id.clone(),
+        fail: false,
+        calls: 0,
+        expected_terminal: ["execution.failed", "turn.failed"],
+    };
+    let result = block_on(execute_durable_model_only(
+        &mut ledger,
+        &config,
+        &request,
+        &mut context,
+        &RejectPreflight,
+        &mut events,
+        &signals,
+        &signals,
+        &mut publisher,
+    ))
+    .unwrap();
+    assert!(matches!(
+        result.report.outcome,
+        AgentOutcome::Failed {
+            reason: garive_core::AgentFailureReason::RequiredCapabilityUnavailable
+        }
+    ));
+    let kinds = ledger
+        .load_turn(&plan.turn_id)
+        .unwrap()
+        .facts
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(!kinds.iter().any(|kind| kind.starts_with("model.")));
+    assert_eq!(
+        &kinds[kinds.len() - 2..],
+        ["execution.failed", "turn.failed"]
     );
 }
 

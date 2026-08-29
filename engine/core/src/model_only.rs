@@ -249,6 +249,17 @@ async fn execute_kernel(
                 );
             }
         };
+        if let Err(failure) = ports.model.preflight(&model_request) {
+            return finish(
+                request,
+                ports,
+                &mut control,
+                &usage,
+                AgentOutcome::Failed {
+                    reason: model_failure(failure),
+                },
+            );
+        }
         if emit(
             ports,
             request,
@@ -292,20 +303,14 @@ async fn execute_kernel(
         let outcome = match result {
             Ok(outcome) => outcome,
             Err(failure) => {
-                let reason = match failure {
-                    ModelPortFailure::InvalidRequest => AgentFailureReason::InvalidInput,
-                    ModelPortFailure::UnsupportedCapability => {
-                        AgentFailureReason::RequiredCapabilityUnavailable
-                    }
-                    ModelPortFailure::AdapterInvariant => AgentFailureReason::InvalidModelOutput,
-                    ModelPortFailure::RequiredPortFailure => AgentFailureReason::PortFailure,
-                };
                 return finish(
                     request,
                     ports,
                     &mut control,
                     &usage,
-                    AgentOutcome::Failed { reason },
+                    AgentOutcome::Failed {
+                        reason: model_failure(failure),
+                    },
                 );
             }
         };
@@ -524,6 +529,17 @@ async fn execute_kernel(
                 );
             }
         }
+    }
+}
+
+const fn model_failure(failure: ModelPortFailure) -> AgentFailureReason {
+    match failure {
+        ModelPortFailure::InvalidRequest => AgentFailureReason::InvalidInput,
+        ModelPortFailure::UnsupportedCapability => {
+            AgentFailureReason::RequiredCapabilityUnavailable
+        }
+        ModelPortFailure::AdapterInvariant => AgentFailureReason::InvalidModelOutput,
+        ModelPortFailure::RequiredPortFailure => AgentFailureReason::PortFailure,
     }
 }
 
