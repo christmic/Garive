@@ -83,9 +83,9 @@ class MessagesProtocolTest {
     @Test
     fun `stream is invariant under every byte split`() {
         val bytes = bytes("spec/fixtures/protocols/anthropic-messages/complete.sse")
-        fun decode(first: ByteArray, second: ByteArray): List<StreamEventKind> {
+        fun decode(first: ByteArray, second: ByteArray): List<String> {
             val decoder = MessagesStreamDecoder(); val events = decoder.push(first).toMutableList()
-            events += decoder.push(second); decoder.finish(); return events.map(StreamEvent::kind)
+            events += decoder.push(second); decoder.finish(); return events.map(StreamEvent::discriminator)
         }
         val expected = decode(bytes, byteArrayOf())
         for (split in 0..bytes.size) assertEquals(expected, decode(bytes.copyOfRange(0, split), bytes.copyOfRange(split, bytes.size)), "split $split")
