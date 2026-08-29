@@ -5,10 +5,10 @@ use garive_llm::{
     ModelRequestId, ModelRole, ModelTargetId, TextMode, ToolDescriptor,
 };
 use garive_provider_compatible::{
-    map_messages_request, map_responses_request, CompatibleProviderError, MessagesDeployment,
-    ProtocolErrorPolicy, ResponsesDeployment,
+    map_messages_request, map_responses_request, normalize_responses, CompatibleProviderError,
+    MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!(
@@ -203,4 +203,68 @@ fn messages_rejects_late_instruction_and_metadata() {
         map_messages_request(&deployment, &request),
         Err(CompatibleProviderError::UnsupportedMetadata)
     );
+}
+
+#[test]
+fn every_shared_failure_case_returns_its_stable_code() {
+    let fixture = fixture();
+    let responses = response_deployment(&fixture["deployments"]["responses"]);
+    let messages = messages_deployment(&fixture["deployments"]["messages"]);
+    for case in fixture["failure_cases"].as_array().expect("failure cases") {
+        let name = case["name"].as_str().expect("failure name");
+        let failure = match name {
+            "target-mismatch" => {
+                let mut request = neutral_request(&fixture["request_cases"][0]["request"]);
+                request.target_id = ModelTargetId::new("wrong");
+                map_responses_request(&responses, &request).expect_err("target mismatch")
+            }
+            "unsupported-capability" => {
+                let mut request = neutral_request(&fixture["request_cases"][0]["request"]);
+                request.required_capabilities.push(ModelCapability::Vision);
+                map_responses_request(&responses, &request).expect_err("capability")
+            }
+            "invalid-tool-schema" => {
+                let mut request = neutral_request(&fixture["request_cases"][0]["request"]);
+                request.tools[0].input_schema_json = "[]".into();
+                map_responses_request(&responses, &request).expect_err("schema")
+            }
+            "messages-late-instruction" => {
+                let mut request = neutral_request(&fixture["request_cases"][1]["request"]);
+                request.input_items.push(ModelInputItem::Message {
+                    role: ModelRole::Developer,
+                    content: vec![ModelInputContent::Text("late".into())],
+                });
+                map_messages_request(&messages, &request).expect_err("late instruction")
+            }
+            "messages-metadata" => {
+                let mut request = neutral_request(&fixture["request_cases"][1]["request"]);
+                request.trace_metadata.push(("trace".into(), "x".into()));
+                map_messages_request(&messages, &request).expect_err("metadata")
+            }
+            "reasoning-without-profile" => {
+                let mut request = neutral_request(&fixture["request_cases"][0]["request"]);
+                request.output.reasoning_visibility = true;
+                map_responses_request(&responses, &request).expect_err("reasoning profile")
+            }
+            "unadmitted-extension" => {
+                let response: garive_openai_responses::Response = serde_json::from_value(json!({
+                    "id":"response","created_at":1.0,"error":null,"incomplete_details":null,
+                    "instructions":null,"metadata":null,"model":"model","object":"response",
+                    "output":[{"type":"hosted_tool_call","id":"hosted"}],
+                    "parallel_tool_calls":false,"temperature":null,"tool_choice":"auto",
+                    "tools":[],"top_p":null,"status":"completed","usage":null
+                }))
+                .expect("extension response");
+                normalize_responses(&response, false).expect_err("extension")
+            }
+            "messages-missing-output-limit" => {
+                let mut deployment = messages.clone();
+                deployment.default_max_output_tokens = None;
+                let request = neutral_request(&fixture["request_cases"][1]["request"]);
+                map_messages_request(&deployment, &request).expect_err("output limit")
+            }
+            other => panic!("unhandled shared failure {other}"),
+        };
+        assert_eq!(failure.code(), case["code"].as_str().expect("failure code"));
+    }
 }

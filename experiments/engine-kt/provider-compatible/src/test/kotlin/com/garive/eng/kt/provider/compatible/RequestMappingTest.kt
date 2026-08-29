@@ -13,6 +13,7 @@ import com.garive.eng.kt.llm.ModelTargetId
 import com.garive.eng.kt.llm.TextMode
 import com.garive.eng.kt.llm.ToolDescriptor
 import com.garive.eng.kt.openai.ResponseInput
+import com.garive.eng.kt.openai.ResponseEnvelope
 import com.garive.eng.kt.openai.TextFormat
 import java.nio.file.Path
 import kotlin.test.Test
@@ -20,10 +21,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 public class RequestMappingTest {
     private val fixture: JsonObject = Json.parseToJsonElement(
@@ -77,6 +82,53 @@ public class RequestMappingTest {
         )
     }
 
+    @Test
+    public fun `every shared failure case returns its stable code`(): Unit {
+        fixture["failure_cases"]!!.jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val name = case["name"]!!.jsonPrimitive.content
+            val exception = assertFailsWith<CompatibleProviderException> {
+                when (name) {
+                    "target-mismatch" -> mapResponsesRequest(responsesDeployment(), request("wrong", schema = true))
+                    "unsupported-capability" -> mapResponsesRequest(
+                        responsesDeployment(),
+                        request("responses-target", schema = true).copy(
+                            requiredCapabilities = request("responses-target").requiredCapabilities + ModelCapability.VISION,
+                        ),
+                    )
+                    "invalid-tool-schema" -> mapResponsesRequest(
+                        responsesDeployment(),
+                        request("responses-target", schema = true).copy(
+                            tools = listOf(ToolDescriptor("lookup", "Lookup.", "1", "[]", true)),
+                        ),
+                    )
+                    "messages-late-instruction" -> mapMessagesRequest(
+                        messagesDeployment(),
+                        request("messages-target").copy(inputItems = request("messages-target").inputItems +
+                            ModelInputItem.Message(ModelRole.DEVELOPER, listOf(ModelInputContent.Text("late")))),
+                    )
+                    "messages-metadata" -> mapMessagesRequest(
+                        messagesDeployment(),
+                        request("messages-target", listOf("trace" to "x")),
+                    )
+                    "reasoning-without-profile" -> mapResponsesRequest(
+                        responsesDeployment(),
+                        request("responses-target", schema = true).copy(
+                            output = request("responses-target", schema = true).output.copy(reasoningVisibility = true),
+                        ),
+                    )
+                    "unadmitted-extension" -> normalizeResponses(extensionResponse(), false)
+                    "messages-missing-output-limit" -> mapMessagesRequest(
+                        messagesDeployment().copy(defaultMaxOutputTokens = null),
+                        request("messages-target"),
+                    )
+                    else -> error("unhandled shared failure $name")
+                }
+            }
+            assertEquals(case["code"]!!.jsonPrimitive.content, exception.error.code)
+        }
+    }
+
     private fun request(
         target: String,
         metadata: List<Pair<String, String>> = emptyList(),
@@ -117,4 +169,12 @@ public class RequestMappingTest {
         capabilities = setOf(ModelCapability.TEXT, ModelCapability.TOOLS, ModelCapability.JSON_OUTPUT, ModelCapability.STREAMING),
         defaultMaxOutputTokens = 512u,
     )
+
+    private fun extensionResponse(): ResponseEnvelope = ResponseEnvelope.parse(buildJsonObject {
+        put("id", "response"); put("created_at", 1.0); put("error", JsonNull); put("incomplete_details", JsonNull)
+        put("instructions", JsonNull); put("metadata", JsonNull); put("model", "model"); put("object", "response")
+        put("output", JsonArray(listOf(buildJsonObject { put("type", "hosted_tool_call"); put("id", "hosted") })))
+        put("parallel_tool_calls", false); put("temperature", JsonNull); put("tool_choice", "auto")
+        put("tools", JsonArray(emptyList())); put("top_p", JsonNull); put("status", "completed"); put("usage", JsonNull)
+    })
 }
