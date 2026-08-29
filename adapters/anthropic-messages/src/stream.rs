@@ -1,6 +1,6 @@
 //! Typed incremental Messages events and lifecycle validation.
 
-use crate::{MessagesAdapterError, SseDecoder, SseFrame};
+use crate::{ErrorEnvelope, MessageResponse, MessagesAdapterError, SseDecoder, SseFrame};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -142,9 +142,14 @@ impl MessagesStreamDecoder {
         match kind {
             StreamEventKind::Ping => return Ok(()),
             StreamEventKind::MessageStart if !self.started => {
-                if value.get("message").and_then(Value::as_object).is_none() {
-                    return Err(MessagesAdapterError::InvalidJson);
-                }
+                let message: MessageResponse = serde_json::from_value(
+                    value
+                        .get("message")
+                        .cloned()
+                        .ok_or(MessagesAdapterError::InvalidJson)?,
+                )
+                .map_err(|_| MessagesAdapterError::InvalidJson)?;
+                message.validate()?;
                 self.started = true;
             }
             StreamEventKind::MessageStart => {
@@ -152,7 +157,17 @@ impl MessagesStreamDecoder {
                     "Messages stream has duplicate message_start",
                 ))
             }
-            StreamEventKind::Error => self.terminal = true,
+            StreamEventKind::Error => {
+                let error: ErrorEnvelope = serde_json::from_value(Value::Object(value.clone()))
+                    .map_err(|_| MessagesAdapterError::InvalidJson)?;
+                if error.r#type != "error"
+                    || error.error.r#type.is_empty()
+                    || error.error.message.is_empty()
+                {
+                    return Err(MessagesAdapterError::InvalidJson);
+                }
+                self.terminal = true;
+            }
             _ if !self.started => {
                 return Err(MessagesAdapterError::InvalidLifecycle(
                     "Messages event precedes message_start",
@@ -162,6 +177,16 @@ impl MessagesStreamDecoder {
             StreamEventKind::ContentBlockDelta(delta) => self.delta_block(value, delta)?,
             StreamEventKind::ContentBlockStop => self.stop_block(value)?,
             StreamEventKind::MessageDelta if !self.message_delta && self.blocks.is_empty() => {
+                if value.get("delta").and_then(Value::as_object).is_none()
+                    || value
+                        .get("usage")
+                        .and_then(Value::as_object)
+                        .and_then(|usage| usage.get("output_tokens"))
+                        .and_then(Value::as_u64)
+                        .is_none()
+                {
+                    return Err(MessagesAdapterError::InvalidJson);
+                }
                 self.message_delta = true
             }
             StreamEventKind::MessageDelta => {
@@ -191,6 +216,11 @@ impl MessagesStreamDecoder {
             .and_then(Value::as_str)
             .ok_or(MessagesAdapterError::InvalidJson)?
             .to_owned();
+        let block = value
+            .get("content_block")
+            .and_then(Value::as_object)
+            .ok_or(MessagesAdapterError::InvalidJson)?;
+        validate_start_block(&kind, block)?;
         if self
             .blocks
             .insert(
@@ -277,20 +307,64 @@ fn event_kind(
 }
 
 fn delta_kind(value: &Map<String, Value>) -> Result<DeltaKind, MessagesAdapterError> {
-    let kind = value
+    let delta = value
         .get("delta")
         .and_then(Value::as_object)
-        .and_then(|delta| delta.get("type"))
+        .ok_or(MessagesAdapterError::InvalidJson)?;
+    let kind = delta
+        .get("type")
         .and_then(Value::as_str)
         .ok_or(MessagesAdapterError::InvalidJson)?;
     Ok(match kind {
-        "text_delta" => DeltaKind::Text,
-        "input_json_delta" => DeltaKind::InputJson,
-        "thinking_delta" => DeltaKind::Thinking,
-        "signature_delta" => DeltaKind::Signature,
-        "citations_delta" => DeltaKind::Citation,
+        "text_delta" if delta.get("text").and_then(Value::as_str).is_some() => DeltaKind::Text,
+        "input_json_delta" if delta.get("partial_json").and_then(Value::as_str).is_some() => {
+            DeltaKind::InputJson
+        }
+        "thinking_delta" if delta.get("thinking").and_then(Value::as_str).is_some() => {
+            DeltaKind::Thinking
+        }
+        "signature_delta" if delta.get("signature").and_then(Value::as_str).is_some() => {
+            DeltaKind::Signature
+        }
+        "citations_delta" if delta.contains_key("citation") => DeltaKind::Citation,
+        "text_delta" | "input_json_delta" | "thinking_delta" | "signature_delta"
+        | "citations_delta" => return Err(MessagesAdapterError::InvalidJson),
         other => DeltaKind::Extension(other.to_owned()),
     })
+}
+
+fn validate_start_block(
+    kind: &str,
+    block: &Map<String, Value>,
+) -> Result<(), MessagesAdapterError> {
+    let valid = match kind {
+        "text" => block.get("text").and_then(Value::as_str).is_some(),
+        "thinking" => {
+            block.get("thinking").and_then(Value::as_str).is_some()
+                && block.get("signature").and_then(Value::as_str).is_some()
+        }
+        "redacted_thinking" => block
+            .get("data")
+            .and_then(Value::as_str)
+            .is_some_and(|data| !data.is_empty()),
+        "tool_use" => {
+            block
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.is_empty())
+                && block
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| !name.is_empty())
+                && block.get("input").and_then(Value::as_object).is_some()
+        }
+        _ => true,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(MessagesAdapterError::InvalidJson)
+    }
 }
 
 fn required_index(value: &Map<String, Value>) -> Result<u64, MessagesAdapterError> {

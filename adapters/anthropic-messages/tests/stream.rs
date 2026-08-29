@@ -95,3 +95,21 @@ fn missing_terminal_is_truncated() {
     let _ = decoder.push(bytes);
     assert_eq!(decoder.finish(), Err(MessagesAdapterError::TruncatedStream));
 }
+
+#[test]
+fn known_event_payloads_fail_when_required_fields_are_missing() {
+    let fixture = String::from_utf8(
+        include_bytes!("../../../spec/fixtures/protocols/anthropic-messages/complete.sse").to_vec(),
+    )
+    .unwrap();
+    let missing_delta_text = fixture.replacen(
+        r#"{"type":"text_delta","text":"hello back"}"#,
+        r#"{"type":"text_delta"}"#,
+        1,
+    );
+    let mut decoder = MessagesStreamDecoder::new();
+    assert_eq!(
+        decoder.push(missing_delta_text.as_bytes()),
+        Err(MessagesAdapterError::InvalidJson)
+    );
+}
