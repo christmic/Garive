@@ -45,6 +45,9 @@ target/debug/garive-context-pressure run \
 Provider publication uses only the in-process exact descriptor. The legacy
 `command` counter remains useful for deterministic development evidence but is
 permanently non-publishable regardless of its executable identity.
+Publication evidence is schema v2 and binds SHA-256 digests of the actual Git
+executable and its non-secret attestation configuration; development evidence
+remains schema v1.
 
 All executable, argv, cwd, environment and resource limits are explicit in the
 configuration. The counter child inherits no environment. Evidence contains

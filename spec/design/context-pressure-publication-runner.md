@@ -79,17 +79,24 @@ git {
   executable
   repository_path
   timeout_ms
+  max_executable_bytes
   max_stdout_bytes
   max_stderr_bytes
 }
 ```
 
-The runner launches no shell, clears the child environment, verifies the exact
-full `HEAD` equals `garive_revision`, and requires `git status --porcelain=v1
+The runner canonically resolves and bounded-hashes the regular Git executable,
+launches no shell, clears the child environment, verifies the exact full `HEAD`
+equals `garive_revision`, and requires `git status --porcelain=v1
 --untracked-files=all` to be empty. Timeout, non-zero exit, excess output,
 missing attestation or any worktree entry fails before corpus loading,
 credential resolution, HTTP or evidence creation. Non-publication development
 runs may omit Git attestation.
+
+Publication writes evidence schema v2 with only the Git executable SHA-256 and
+canonical non-secret attestation-configuration SHA-256. Executable and
+repository paths never enter evidence. Existing development evidence remains
+schema v1.
 
 ## HTTP exchange
 

@@ -111,7 +111,9 @@ values, raw context content and subprocess stderr never enter evidence.
 
 Command-backed counters are development-only and permanently non-publishable.
 Publication uses the C7-B/C7-C in-process exact provider descriptor plus bounded
-clean-revision attestation.
+clean-revision attestation. Publication evidence schema v2 binds the actual Git
+executable and non-secret attestation configuration by SHA-256; the delivered
+non-publication reference remains schema v1.
 
 ## Acceptance
 

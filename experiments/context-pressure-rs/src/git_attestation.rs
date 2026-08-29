@@ -1,4 +1,5 @@
 use std::{
+    fs,
     io::Read,
     path::PathBuf,
     process::{Command, Stdio},
@@ -6,7 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Explicit bounded Git process values for publication provenance.
 #[derive(Deserialize)]
@@ -15,6 +17,7 @@ pub struct GitAttestationConfig {
     executable: PathBuf,
     repository_path: PathBuf,
     timeout_ms: u64,
+    max_executable_bytes: usize,
     max_stdout_bytes: usize,
     max_stderr_bytes: usize,
 }
@@ -23,14 +26,24 @@ pub struct GitAttestationConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GitAttestationFailure;
 
+/// Non-secret immutable binding for the exact Git attestation implementation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GitAttestationDescriptor {
+    /// SHA-256 of the canonical executable file bytes.
+    pub executable_digest: String,
+    /// SHA-256 of canonical executable/repository paths, bounds and executable digest.
+    pub configuration_digest: String,
+}
+
 /// Verifies exact `HEAD` and an empty porcelain status with bounded processes.
 pub fn attest_clean_revision(
     config: &GitAttestationConfig,
     expected_revision: &str,
-) -> Result<(), GitAttestationFailure> {
+) -> Result<GitAttestationDescriptor, GitAttestationFailure> {
     if config.executable.as_os_str().is_empty()
         || config.repository_path.as_os_str().is_empty()
         || config.timeout_ms == 0
+        || config.max_executable_bytes == 0
         || config.max_stdout_bytes == 0
         || config.max_stderr_bytes == 0
         || expected_revision.is_empty()
@@ -38,6 +51,32 @@ pub fn attest_clean_revision(
     {
         return Err(GitAttestationFailure);
     }
+    let executable = fs::canonicalize(&config.executable).map_err(|_| GitAttestationFailure)?;
+    let repository =
+        fs::canonicalize(&config.repository_path).map_err(|_| GitAttestationFailure)?;
+    let metadata = fs::metadata(&executable).map_err(|_| GitAttestationFailure)?;
+    if !metadata.is_file()
+        || metadata.len() == 0
+        || metadata.len() > config.max_executable_bytes as u64
+    {
+        return Err(GitAttestationFailure);
+    }
+    let executable_bytes = fs::read(&executable).map_err(|_| GitAttestationFailure)?;
+    let executable_digest = format!("{:x}", Sha256::digest(executable_bytes));
+    let canonical = serde_jcs::to_vec(&CanonicalAttestation {
+        executable: &executable.to_string_lossy(),
+        repository: &repository.to_string_lossy(),
+        executable_digest: &executable_digest,
+        timeout_ms: config.timeout_ms,
+        max_executable_bytes: config.max_executable_bytes,
+        max_stdout_bytes: config.max_stdout_bytes,
+        max_stderr_bytes: config.max_stderr_bytes,
+    })
+    .map_err(|_| GitAttestationFailure)?;
+    let descriptor = GitAttestationDescriptor {
+        executable_digest,
+        configuration_digest: format!("{:x}", Sha256::digest(canonical)),
+    };
     let head = run(
         config,
         &["rev-parse", "--verify", "HEAD"],
@@ -60,7 +99,18 @@ pub fn attest_clean_revision(
     if !status.is_empty() {
         return Err(GitAttestationFailure);
     }
-    Ok(())
+    Ok(descriptor)
+}
+
+#[derive(Serialize)]
+struct CanonicalAttestation<'a> {
+    executable: &'a str,
+    repository: &'a str,
+    executable_digest: &'a str,
+    timeout_ms: u64,
+    max_executable_bytes: usize,
+    max_stdout_bytes: usize,
+    max_stderr_bytes: usize,
 }
 
 fn run(

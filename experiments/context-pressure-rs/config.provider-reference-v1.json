@@ -8,6 +8,7 @@
     "executable": "/usr/bin/git",
     "repository_path": ".",
     "timeout_ms": 5000,
+    "max_executable_bytes": 67108864,
     "max_stdout_bytes": 1024,
     "max_stderr_bytes": 4096
   },

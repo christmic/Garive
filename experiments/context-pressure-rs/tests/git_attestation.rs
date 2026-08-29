@@ -19,6 +19,7 @@ fn config(directory: &Path, max_stdout_bytes: usize) -> GitAttestationConfig {
         "executable":"/usr/bin/git",
         "repository_path":directory,
         "timeout_ms":1000,
+        "max_executable_bytes":67108864,
         "max_stdout_bytes":max_stdout_bytes,
         "max_stderr_bytes":1024
     }))
@@ -52,7 +53,9 @@ fn exact_clean_head_is_the_only_accepted_provenance() {
         .unwrap()
         .trim()
         .to_owned();
-    assert!(attest_clean_revision(&config(directory.path(), 128), &head).is_ok());
+    let descriptor = attest_clean_revision(&config(directory.path(), 128), &head).unwrap();
+    assert_eq!(descriptor.executable_digest.len(), 64);
+    assert_eq!(descriptor.configuration_digest.len(), 64);
     assert!(attest_clean_revision(&config(directory.path(), 128), &"a".repeat(40)).is_err());
 
     fs::write(directory.path().join("untracked.txt"), "dirty").unwrap();

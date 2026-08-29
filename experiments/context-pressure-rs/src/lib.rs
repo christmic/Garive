@@ -18,7 +18,9 @@ pub use command_counter::{CommandTokenCounter, CommandTokenCounterConfig};
 pub use corpus::{load_corpus, ContextPressureCase, ContextPressureCorpus};
 pub use counter::{TokenCounter, TokenCounterDescriptor, TokenCounterFailure};
 pub use error::{ContextPressureError, ContextPressureErrorCode};
-pub use git_attestation::{attest_clean_revision, GitAttestationConfig, GitAttestationFailure};
+pub use git_attestation::{
+    attest_clean_revision, GitAttestationConfig, GitAttestationDescriptor, GitAttestationFailure,
+};
 pub use http_exchange::{ReqwestTokenCountExchangePort, TokenCountHttpLimits};
 pub use provider_counter::{
     AnthropicProviderCounter, AnthropicProviderCounterConfig, TokenCountExchangePort,

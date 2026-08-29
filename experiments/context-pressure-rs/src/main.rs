@@ -84,16 +84,20 @@ fn execute() -> Result<(), &'static str> {
         return Err("invalid_provenance");
     }
     let publication_requested = config.counter.publication_requested()?;
-    if publication_requested {
+    let git_attestation = if publication_requested {
         if config.dirty {
             return Err("invalid_provenance");
         }
-        attest_clean_revision(
-            config.git.as_ref().ok_or("invalid_provenance")?,
-            &config.garive_revision,
+        Some(
+            attest_clean_revision(
+                config.git.as_ref().ok_or("invalid_provenance")?,
+                &config.garive_revision,
+            )
+            .map_err(|_| "invalid_provenance")?,
         )
-        .map_err(|_| "invalid_provenance")?;
-    }
+    } else {
+        None
+    };
     let corpus_bytes = bounded_read(&config.corpus_path, MAX_CORPUS_BYTES)?;
     let corpus = load_corpus(&corpus_bytes).map_err(|_| "invalid_corpus")?;
     let counter: Box<dyn TokenCounter> = match config.counter {
@@ -148,7 +152,7 @@ fn execute() -> Result<(), &'static str> {
             })
         })
         .collect::<Vec<_>>();
-    let evidence = json!({
+    let mut evidence = json!({
         "contract":"garive.context-pressure-evidence","version":1,
         "garive_revision":config.garive_revision,"runner_revision":config.runner_revision,
         "dirty":config.dirty,"publishable":run.counter.publishable && !config.dirty,
@@ -158,6 +162,16 @@ fn execute() -> Result<(), &'static str> {
         "counter_config_digest":run.counter.config_digest,
         "cases":cases,"classes":classes,
     });
+    if let Some(attestation) = git_attestation {
+        evidence["version"] = json!(2);
+        evidence.as_object_mut().expect("fixed object").insert(
+            "git_attestation".into(),
+            json!({
+                "executable_digest":attestation.executable_digest,
+                "configuration_digest":attestation.configuration_digest,
+            }),
+        );
+    }
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
