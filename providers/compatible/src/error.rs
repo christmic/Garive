@@ -21,6 +21,12 @@ pub enum CompatibleProviderError {
     MissingOutputLimit,
     /// Adapter validation rejected the mapped protocol request.
     InvalidProtocolRequest,
+    /// An unadmitted protocol extension was observed.
+    UnsupportedExtension,
+    /// No exact deployment rule classified a protocol error.
+    UnclassifiedProtocolError,
+    /// A protocol terminal contradicted the portable lifecycle contract.
+    ProtocolInvariant,
 }
 
 impl CompatibleProviderError {
@@ -36,6 +42,9 @@ impl CompatibleProviderError {
             Self::MissingMediaBinding => "missing_media_binding",
             Self::MissingOutputLimit => "missing_output_limit",
             Self::InvalidProtocolRequest => "invalid_protocol_request",
+            Self::UnsupportedExtension => "unsupported_extension",
+            Self::UnclassifiedProtocolError => "unclassified_protocol_error",
+            Self::ProtocolInvariant => "protocol_invariant",
         }
     }
 }

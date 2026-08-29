@@ -99,15 +99,28 @@ pub struct ProtocolErrorPolicy {
 }
 
 impl ProtocolErrorPolicy {
-    /// Constructs a policy from exact signatures; duplicate signatures are overwritten last.
-    pub fn new(mappings: impl IntoIterator<Item = (ErrorSignature, ErrorDisposition)>) -> Self {
-        Self {
-            mappings: mappings.into_iter().collect(),
+    /// Constructs a policy and rejects ambiguous duplicate signatures.
+    pub fn new(
+        mappings: impl IntoIterator<Item = (ErrorSignature, ErrorDisposition)>,
+    ) -> Result<Self, PolicyBuildError> {
+        let mut policy = Self::default();
+        for (signature, disposition) in mappings {
+            if policy.mappings.insert(signature, disposition).is_some() {
+                return Err(PolicyBuildError::DuplicateSignature);
+            }
         }
+        Ok(policy)
     }
 
     /// Looks up an exact signature without inspecting human-readable messages.
     pub fn classify(&self, signature: &ErrorSignature) -> Option<ErrorDisposition> {
         self.mappings.get(signature).copied()
     }
+}
+
+/// Invalid immutable error-policy construction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PolicyBuildError {
+    /// Two rules used the same exact signature.
+    DuplicateSignature,
 }
