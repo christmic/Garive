@@ -167,6 +167,10 @@ ResolvedCapabilityDescriptor {
 }
 ```
 
+`content_digest` is lowercase SHA-256 over the exact `content_utf8` bytes. A
+registry must reject content that is not valid UTF-8; newline normalization or
+other text rewriting is outside D0 and would produce a different digest.
+
 The capability snapshot contains full exact C4 `ToolDefinition` values for
 enabled tools and descriptors for other capabilities. A required role or
 capability must resolve; an unavailable optional capability is omitted and its

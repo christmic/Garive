@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "contract": "agent-definition-snapshot",
+  "definition": {
+    "definition_id": "assistant",
+    "revision": "7",
+    "instruction_sources": [
+      {"source_id": "task", "exact_revision": "2", "required": true},
+      {"source_id": "optional-style", "exact_revision": "1", "required": false}
+    ],
+    "model_roles": [
+      {"role_id": "primary", "required_capabilities": ["text", "tools"], "required": true},
+      {"role_id": "critic", "required_capabilities": ["text"], "required": false}
+    ],
+    "capabilities": [
+      {"kind": "tool", "name": "read_file", "exact_revision": "1", "contract_version": 1, "required": true},
+      {"kind": "memory", "name": "long_term", "exact_revision": "2", "contract_version": 1, "required": false}
+    ],
+    "governance": {
+      "policy_id": "standard",
+      "exact_revision": "3",
+      "allowed_requirement_capabilities": ["filesystem_read", "network"],
+      "interaction_modes": ["approval", "external_input"],
+      "default_unmatched": "deny"
+    },
+    "context_policy": {"policy_id": "focused", "exact_revision": "2"},
+    "limits": {
+      "max_iterations": 8,
+      "max_input_tokens": 10000,
+      "max_output_tokens": 2048,
+      "deadline_budget_ms": 30000
+    },
+    "contract_versions": {"effective_snapshot": 1, "prepared_tool_call": 1}
+  },
+  "registry": {
+    "instructions": [
+      {
+        "source_id": "base",
+        "exact_revision": "1",
+        "content_utf8": "Base instruction.",
+        "dependencies": []
+      },
+      {
+        "source_id": "task",
+        "exact_revision": "2",
+        "content_utf8": "Task instruction.",
+        "dependencies": [
+          {"source_id": "base", "exact_revision": "1", "required": true}
+        ]
+      }
+    ],
+    "model_roles": [
+      {
+        "role_id": "primary",
+        "capability_target_id": "model.fast",
+        "admitted_capabilities": ["text", "tools"]
+      }
+    ],
+    "tools": [
+      {
+        "name": "read_file",
+        "revision": "1",
+        "description": "Read one admitted file.",
+        "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {"path": {"type": "string", "minLength": 1}},
+          "required": ["path"],
+          "additionalProperties": false
+        },
+        "requirements": {
+          "capabilities": ["filesystem_read"],
+          "max_duration_ms": 5000,
+          "max_output_bytes": 4096
+        },
+        "replay_class": "read_only"
+      }
+    ],
+    "capability_descriptors": [],
+    "governance_policies": [
+      {
+        "policy_id": "standard",
+        "exact_revision": "3",
+        "allowed_requirement_capabilities": ["filesystem_read", "network"],
+        "interaction_modes": ["approval", "external_input"]
+      }
+    ],
+    "context_policies": [
+      {
+        "policy_id": "focused",
+        "exact_revision": "2",
+        "descriptor_digest": "context-focused-v2"
+      }
+    ]
+  },
+  "product_policy": {
+    "allowed_requirement_capabilities": ["filesystem_read"],
+    "interaction_modes": ["approval"],
+    "limit_caps": {
+      "max_iterations": 5,
+      "max_input_tokens": 9000,
+      "max_output_tokens": 2048,
+      "deadline_budget_ms": 25000
+    },
+    "admitted_contract_versions": {"effective_snapshot": [1], "prepared_tool_call": [1]}
+  },
+  "expected_snapshot": {
+    "definition_id": "assistant",
+    "definition_revision": "7",
+    "definition_digest": "3a7c211f457d8c112a99db060dcf53643651eef76e46dc4bcffebe9674f8a20f",
+    "instructions": [
+      {
+        "source_id": "base",
+        "exact_revision": "1",
+        "content_utf8": "Base instruction.",
+        "content_digest": "57df8e1bee9a0e150989d201fb1c5b56c877109e4ee13b502fadc065b618c1c5"
+      },
+      {
+        "source_id": "task",
+        "exact_revision": "2",
+        "content_utf8": "Task instruction.",
+        "content_digest": "b4fa1d42fecfb9cec5035e4805c2e3c87e001e3c4798351c6f3473afca4b5ba7"
+      }
+    ],
+    "model_roles": [
+      {
+        "role_id": "primary",
+        "capability_target_id": "model.fast",
+        "admitted_capabilities": ["text", "tools"]
+      }
+    ],
+    "capabilities": {
+      "tools": [
+        {
+          "name": "read_file",
+          "revision": "1",
+          "description": "Read one admitted file.",
+          "input_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"path": {"type": "string", "minLength": 1}},
+            "required": ["path"],
+            "additionalProperties": false
+          },
+          "requirements": {
+            "capabilities": ["filesystem_read"],
+            "max_duration_ms": 5000,
+            "max_output_bytes": 4096
+          },
+          "replay_class": "read_only"
+        }
+      ],
+      "descriptors": []
+    },
+    "governance": {
+      "policy_id": "standard",
+      "exact_revision": "3",
+      "allowed_requirement_capabilities": ["filesystem_read"],
+      "interaction_modes": ["approval"],
+      "default_unmatched": "deny"
+    },
+    "context_policy": {
+      "policy_id": "focused",
+      "exact_revision": "2",
+      "descriptor_digest": "context-focused-v2"
+    },
+    "limits": {
+      "max_iterations": 5,
+      "max_input_tokens": 9000,
+      "max_output_tokens": 2048,
+      "deadline_budget_ms": 25000
+    },
+    "contract_versions": {"effective_snapshot": 1, "prepared_tool_call": 1},
+    "snapshot_digest": "f51020c65eb7e939430d5af968f89df39d82bbc257b302c4f05b91a098e80fe9"
+  },
+  "failure_cases": [
+    {
+      "name": "required-reference-missing",
+      "operations": [{"kind": "remove_instruction", "source_id": "base", "exact_revision": "1"}],
+      "expected_code": "reference_not_found",
+      "expected_path": "/instruction_sources/0/dependencies/0"
+    },
+    {
+      "name": "reference-ambiguous",
+      "operations": [{"kind": "duplicate_instruction", "source_id": "task", "exact_revision": "2"}],
+      "expected_code": "reference_ambiguous",
+      "expected_path": "/instruction_sources/0"
+    },
+    {
+      "name": "instruction-cycle",
+      "operations": [{"kind": "add_dependency", "source_id": "base", "exact_revision": "1", "dependency_source_id": "task", "dependency_revision": "2"}],
+      "expected_code": "reference_cycle",
+      "expected_path": "/instruction_sources/0"
+    },
+    {
+      "name": "unsupported-contract-version",
+      "operations": [{"kind": "set_contract_version", "contract_name": "prepared_tool_call", "version": 2}],
+      "expected_code": "unsupported_contract_version",
+      "expected_path": "/contract_versions/prepared_tool_call"
+    },
+    {
+      "name": "policy-incompatible",
+      "operations": [{"kind": "remove_product_requirement_capability", "capability": "filesystem_read"}],
+      "expected_code": "policy_incompatible",
+      "expected_path": "/capabilities/tool/read_file"
+    },
+    {
+      "name": "invalid-duplicate-root",
+      "operations": [{"kind": "duplicate_instruction_root", "source_id": "task", "exact_revision": "2"}],
+      "expected_code": "invalid_definition",
+      "expected_path": "/instruction_sources"
+    },
+    {
+      "name": "limit-widening-rejected",
+      "operations": [{"kind": "set_product_max_iterations", "value": 9}],
+      "expected_code": "policy_incompatible",
+      "expected_path": "/limits/max_iterations"
+    }
+  ],
+  "digest_relations": [
+    {
+      "name": "definition-map-order-independent",
+      "left_json": "{\"contract\":\"garive.agent-definition\",\"version\":1,\"definition\":{\"definition_id\":\"x\",\"revision\":\"1\",\"contract_versions\":{\"b\":1,\"a\":1}}}",
+      "right_json": "{\"definition\":{\"contract_versions\":{\"a\":1,\"b\":1},\"revision\":\"1\",\"definition_id\":\"x\"},\"version\":1,\"contract\":\"garive.agent-definition\"}",
+      "relation": "equal"
+    },
+    {
+      "name": "definition-meaning-change-sensitive",
+      "left_json": "{\"contract\":\"garive.agent-definition\",\"version\":1,\"definition\":{\"definition_id\":\"x\",\"revision\":\"1\"}}",
+      "right_json": "{\"contract\":\"garive.agent-definition\",\"version\":1,\"definition\":{\"definition_id\":\"x\",\"revision\":\"2\"}}",
+      "relation": "different"
+    }
+  ],
+  "continuation_cases": [
+    {"name": "same-binding", "definition_revision": "7", "snapshot_digest": "f51020c65eb7e939430d5af968f89df39d82bbc257b302c4f05b91a098e80fe9", "expected": "accepted"},
+    {"name": "changed-revision", "definition_revision": "8", "snapshot_digest": "f51020c65eb7e939430d5af968f89df39d82bbc257b302c4f05b91a098e80fe9", "expected": "rejected"},
+    {"name": "changed-snapshot", "definition_revision": "7", "snapshot_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "expected": "rejected"}
+  ]
+}
