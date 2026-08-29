@@ -5,13 +5,14 @@ use garive_ledger::{
     SessionId, TurnId,
 };
 use garive_memory::{
-    ContentBinding, DurableFactReference, MemoryCommit, MemoryKind, MemoryProposal, MemoryScope,
-    MemorySensitivity, MemoryState, MemoryTombstone,
+    ContentBinding, DurableFactReference, MemoryCommit, MemoryErrorCode, MemoryKind,
+    MemoryProposal, MemoryScope, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone,
 };
 use garive_runtime::{
-    plan_memory_tombstone, plan_memory_write, MemoryTombstoneContext, MemoryTombstoneReason,
-    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError,
-    SqliteLedger, SqliteLedgerError,
+    plan_memory_tombstone, plan_memory_write, reconstruct_memory_state, verify_memory_evidence,
+    MemoryPrefix, MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext,
+    MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError, SqliteLedger,
+    SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -107,11 +108,11 @@ fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
         .payload
         .sha256()
         .to_owned();
-    let proposal = proposal(None, "dark mode", &evidence_digest);
+    let first_proposal = proposal(None, "dark mode", &evidence_digest);
     let first = plan_memory_write(
         &context(3),
         &MemoryState::default(),
-        &proposal,
+        &first_proposal,
         MemoryWriteDecision::Commit(commit("record", "revision-1", 5, None)),
     )
     .unwrap();
@@ -136,7 +137,7 @@ fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
     let changed = plan_memory_write(
         &context(3),
         &MemoryState::default(),
-        &proposal,
+        &first_proposal,
         MemoryWriteDecision::Reject(MemoryWriteRejection::NamespaceDenied),
     )
     .unwrap();
@@ -151,6 +152,65 @@ fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
             .unwrap()
             .max_position,
         5
+    );
+
+    let prefixes = vec![MemoryPrefix {
+        session_id: session.clone(),
+        through_position: 5,
+    }];
+    let recovered = reconstruct_memory_state(&ledger, &prefixes).unwrap();
+    assert_eq!(recovered.revisions().len(), 1);
+    assert_eq!(recovered.revisions()[0].status(), MemoryStatus::Active);
+    verify_memory_evidence(&ledger, &prefixes, &first_proposal).unwrap();
+    let mismatch = proposal(None, "dark mode", &"b".repeat(64));
+    assert_eq!(
+        verify_memory_evidence(&ledger, &prefixes, &mismatch),
+        Err(MemoryErrorCode::EvidenceMismatch)
+    );
+    let foreign = MemoryProposal::new(
+        "foreign",
+        "namespace",
+        MemoryScope::Namespace,
+        MemoryKind::LearnedFact,
+        ContentBinding::from_inline("foreign"),
+        vec![DurableFactReference::new("foreign-session", 1, "fact", "a".repeat(64)).unwrap()],
+        MemorySensitivity::Ordinary,
+        5_000,
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        verify_memory_evidence(&ledger, &prefixes, &foreign),
+        Err(MemoryErrorCode::NamespaceDenied)
+    );
+
+    let tombstone = plan_memory_tombstone(
+        &MemoryTombstoneContext {
+            command_id: "forget-restart".into(),
+            recorded_at: "2026-08-29T00:00:02Z".into(),
+        },
+        &recovered,
+        &MemoryTombstone {
+            record_id: "record".into(),
+            revision_id: "revision-1".into(),
+        },
+        MemoryTombstoneReason::UserRequest,
+    )
+    .unwrap();
+    ledger
+        .commit(session.clone(), 2, vec![tombstone.fact])
+        .unwrap();
+    let after_tombstone = reconstruct_memory_state(
+        &ledger,
+        &[MemoryPrefix {
+            session_id: session,
+            through_position: 6,
+        }],
+    )
+    .unwrap();
+    assert_eq!(
+        after_tombstone.revisions()[0].status(),
+        MemoryStatus::Tombstoned
     );
 }
 
