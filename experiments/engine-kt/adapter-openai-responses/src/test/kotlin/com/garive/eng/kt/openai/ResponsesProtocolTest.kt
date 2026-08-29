@@ -74,7 +74,7 @@ class ResponsesProtocolTest {
             val events = decoder.push(first).toMutableList()
             events += decoder.push(second)
             decoder.finish()
-            return events.map { it.type }
+            return events.map { it.discriminator }
         }
         val expected = decode(bytes, byteArrayOf())
         for (split in 0..bytes.size) {
