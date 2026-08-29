@@ -17,6 +17,15 @@ pub struct SqliteLedger {
     connection: Connection,
 }
 
+/// Current durable coordinates of one Session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SessionWatermark {
+    /// Optimistic-concurrency version advanced once per committed batch.
+    pub session_version: u64,
+    /// Highest contiguous fact position in the Session.
+    pub max_position: u64,
+}
+
 #[derive(Debug)]
 /// Domain, integrity, migration, or storage failure from [`SqliteLedger`].
 pub enum SqliteLedgerError {
@@ -180,6 +189,23 @@ impl SqliteLedger {
         session_id: &SessionId,
     ) -> Result<Option<u64>, SqliteLedgerError> {
         Ok(storage::load_state(&self.connection)?.session_version(session_id))
+    }
+
+    /// Returns both current Session version and highest durable fact position.
+    pub fn session_watermark(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Option<SessionWatermark>, SqliteLedgerError> {
+        let state = storage::load_state(&self.connection)?;
+        let Some(session_version) = state.session_version(session_id) else {
+            return Ok(None);
+        };
+        let max_position = u64::try_from(state.fact_count(session_id))
+            .map_err(|_| SqliteLedgerError::InvalidStoredValue("session position"))?;
+        Ok(Some(SessionWatermark {
+            session_version,
+            max_position,
+        }))
     }
 
     #[doc(hidden)]

@@ -35,7 +35,7 @@
     {"fact_position": 2, "fact": "turn.started", "payload_kind": "start", "event": "turn.started"},
     {"fact_position": 3, "fact": "turn.input", "event": null},
     {"fact_position": 4, "fact": "execution.started", "event": null},
-    {"fact_position": 8, "fact": "turn.completed", "event": "turn.completed", "text": "done"}
+    {"fact_position": 6, "fact": "turn.completed", "event": "turn.completed", "text": "done"}
   ],
   "failure_cases": [
     {"name": "missing-idempotency-key", "status": 400, "code": "invalid_request"},

@@ -5,6 +5,7 @@
 
 mod core_bridge;
 mod fake_host;
+mod live_host;
 mod model_http_transport;
 mod runtime_turn;
 mod sqlite_ledger;
@@ -20,6 +21,11 @@ pub use core_bridge::{
     TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
+pub use live_host::{
+    CommittedTurn, CreateSessionResponse, HostClock, HostEventPage, InstalledAgent, LiveHost,
+    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,
+    TurnCommandResponse, TurnDispatchError, TurnDispatcher,
+};
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
 };
@@ -35,5 +41,6 @@ pub use runtime_turn::{
     RuntimeTurnStatus, RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };
 pub use sqlite_ledger::{
-    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, SqliteLedger, SqliteLedgerError,
+    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, SessionWatermark, SqliteLedger,
+    SqliteLedgerError,
 };

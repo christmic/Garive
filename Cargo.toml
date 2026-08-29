@@ -44,6 +44,7 @@ license = "MIT"
 rust-version = "1.77.2"
 
 [workspace.dependencies]
+axum = "0.7.9"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 futures = "0.3"
 http = "1.3"

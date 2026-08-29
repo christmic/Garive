@@ -52,8 +52,8 @@ planned without reopening a narrower completed row.
 | P2-V0 | Official vendor connection profiles | accepted | accepted | documented | implemented | verified | done | Keep explicit Runtime-supplied values, redacted diagnostics, exact error policies, every shared Rust/Kotlin fixture case, and Provider boundary gates green. |
 | P2-VX | Hosted vendor capabilities | accepted | missing | missing | missing | missing | planned | Admit each hosted tool/special API only with its own neutral semantics, extension types and fixtures; never allowlist arbitrary extensions. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
-| H1-T | Runtime-owned model HTTP transport | accepted | accepted | missing | missing | missing | active | Implement explicit no-retry Responses/Messages HTTP attempts and real-loopback buffered/streaming matrices in Rust Runtime. |
-| H1 | Live durable Host | accepted | accepted | missing | missing | missing | active | Implement durable Session/Turn commands, commit-only event projection and loopback HTTP/SSE after H1-T. |
+| H1-T | Runtime-owned model HTTP transport | accepted | accepted | documented | implemented | verified | done | Keep explicit no-proxy/no-retry limits, exact failure classification, fragmented SSE, cancellation, and real-loopback matrices green. |
+| H1 | Live durable Host | accepted | accepted | documented | implemented | verified | done | Keep durable command replay/conflict, commit-before-dispatch, restart projection, loopback-only HTTP/SSE, and shared failure fixtures green. |
 | A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
 | A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
 | A-WEB | Web shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
