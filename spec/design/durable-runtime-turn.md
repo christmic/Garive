@@ -90,8 +90,9 @@ maps them:
 - payloads are redacted and schema-versioned before persistence/publication;
 - a port error never implies that an external action did not occur.
 
-Runtime accepts exactly one `AgentOutcome` per Execution and converts it into
-one atomic terminal transaction. Duplicate equal terminal proposals are
+Runtime accepts exactly one `ExecutionReport` containing one `AgentOutcome`,
+the cumulative usage evidence, and the completed-iteration cursor per
+Execution, then converts it into one atomic terminal transaction. Duplicate equal terminal proposals are
 idempotent; a different second terminal is corruption/invariant failure.
 
 A host crash can destroy an active Kernel invocation before it returns any

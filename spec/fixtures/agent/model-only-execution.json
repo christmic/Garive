@@ -1,6 +1,11 @@
 {
   "schema_version": 1,
   "contract": "model-only-execution",
+  "usage_summary_cases": [
+    {"name":"known-provider-usage","models":["completed-text-known"],"missing_usage":"stop","expected":{"input":"1","output":"1","estimated":false}},
+    {"name":"unknown-provider-usage","models":["completed-text-unknown"],"missing_usage":"stop","expected":{"input":"unknown","output":"unknown","estimated":false}},
+    {"name":"estimated-provider-usage","models":["completed-text-unknown"],"missing_usage":"estimate","expected":{"input":"3","output":"2","estimated":true}}
+  ],
   "cases": [
     {"name": "one-iteration-text-completion", "entry": "start", "completed": 0, "last_position": 0, "maximum": 3, "max_tokens": 20, "missing_usage": "stop", "cancel_after_checks": null, "contexts": ["ok"], "models": ["completed-text-known"], "event_failure": null, "expected": {"outcome": "completed", "iterations": 1, "context_calls": 1, "model_calls": 1}},
     {"name": "continuation-is-new-execution", "entry": "continue", "completed": 1, "last_position": 4, "maximum": 3, "max_tokens": 20, "missing_usage": "stop", "cancel_after_checks": null, "contexts": ["ok"], "models": ["completed-text-known"], "event_failure": null, "expected": {"outcome": "completed", "iterations": 2, "context_calls": 1, "model_calls": 1}},

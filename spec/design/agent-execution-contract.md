@@ -137,6 +137,13 @@ Failed {
 and `Failed` close it unless a later product action explicitly creates a new
 Turn; they are not disguised suspensions.
 
+`ExecutionReport` carries the outcome, completed-iteration cursor, and one
+cumulative `UsageSummary` for every exit path. Each input/output count is
+`Known(u64)` or `Unknown`; `estimated=true` means at least one known component
+came from the frozen missing-usage estimate. Unknown provider evidence is not
+rewritten to zero. For `Completed`, the report summary and the outcome summary
+are identical. Runtime uses the report summary for every durable terminal.
+
 ## Model request
 
 `ModelRequest` contains a distinct request ID, model capability target, ordered
