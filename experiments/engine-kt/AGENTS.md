@@ -9,7 +9,7 @@
 ## Current scope
 
 The Gradle project contains `:config` (D0), `:core` (C0-C3), `:llm` (C1/C1b),
-`:tools` (C4), `:ledger` (L0), `:persistence-postgres` (L1),
+`:tools` (C4-C5), `:ledger` (L0), `:persistence-postgres` (L1),
 `:adapter-openai-responses`, `:adapter-anthropic-messages`, `:proto`, and an
 experimental `:server-host` composition
 fixture. Passing these modules proves only the declared conformance dimension.
@@ -23,7 +23,7 @@ experiments/engine-kt/
 ├── config/               experimental D0 definition/snapshot contract
 ├── core/                 experimental C0-C3 domain + shared fixtures
 ├── llm/                  experimental C1/C1b model contract
-├── tools/                experimental C4 prepared-call contract
+├── tools/                experimental C4-C5 prepared/governed effects
 ├── ledger/               experimental L0 durable fact semantics
 ├── persistence-postgres/ PostgreSQL portability experiment
 ├── adapter-openai-responses/    provider-independent Responses protocol
@@ -81,7 +81,7 @@ An empty diff proves only the dimension being compared.
 ## What not to do
 
 - Do not add placeholder modules for the Rust directory list.
-- Do not claim conformance for a D0/C0-C4 change until both declared fixture suites
+- Do not claim conformance for a D0/C0-C5 change until both declared fixture suites
   pass; Rust remains free to evolve production-only slices outside that matrix.
 - Do not use generated proto values as the entire internal domain model.
 - Do not claim production parity, Runtime ownership, or product support from

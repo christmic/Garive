@@ -35,8 +35,8 @@ planned without reopening a narrower completed row.
 | C2 | Deterministic context derive | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs`, boundary tests, and property tests green. |
 | C3 | Bounded model-only execution | accepted | accepted | documented | implemented | verified | done | Keep the explicit no-tool boundary and model-only scenarios green. |
 | C4 | Tool resolution and prepared calls | accepted | accepted | documented | implemented | verified | done | Keep Portable Tool Schema, canonical digest, native tests, and shared fixtures green. |
-| C5 | Governed effects and observations | accepted | accepted | documented | skeleton | missing | active | Freeze shared reducer scenarios, then implement authorization, interaction, receipt, and uncertainty semantics. |
-| C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | partial | partial | planned | Depends on the coordinated L0 amendment plus C4/C5. |
+| C5 | Governed effects and observations | accepted | accepted | documented | implemented | verified | done | Keep preparation, authority, interaction, receipt, observation, recovery, and fake-Runtime ordering evidence green. |
+| C6 | Durable Runtime Turn orchestration | accepted | accepted | documented | partial | partial | active | Implement coordinated L0 facts, Runtime command mapping, disposable-execution recovery, and native restart matrices. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Record a C3/C6 baseline before accepting thresholds or algorithms. |
 | L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | partial | partial | active | Implement and verify the accepted C6 recovery facts and `execution.abandoned` transition. |
 | L1-R | SQLite Ledger adapter | accepted | accepted | partial | implemented | partial | active | Add migration/backup policy and the remaining process-boundary fault matrix. |

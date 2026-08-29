@@ -3,7 +3,7 @@
 ## Status
 
 Kotlin is admitted as an experimental conformance implementation for portable
-D0 and C0-C4. It is not a supported product server. Other Engine capabilities
+D0 and C0-C5. It is not a supported product server. Other Engine capabilities
 remain outside the experiment until admitted by an amended matrix.
 
 Rust remains the production-first implementation. Neither language defines
@@ -26,7 +26,7 @@ domain models.
 | C3 model-only turn | supported | experimental | capability scenarios |
 | D0 definition snapshot | supported | experimental | semantic resolution + canonical digest fixtures |
 | C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
-| C5 governed effect reduction | planned | experimental planned | semantic state scenarios; no Kotlin executor claim |
+| C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
 | C6 Runtime | production planned | PostgreSQL experiment planned | shared public decisions + independent native crash evidence |
 | C7 compression | planned | not admitted | measured admission decision required |
 
@@ -171,7 +171,7 @@ The following do not prove parity:
 
 ## Acceptance
 
-D0 and C0-C4 carry an experimental Rust/Kotlin conformance claim only when native
+D0 and C0-C5 carry an experimental Rust/Kotlin conformance claim only when native
 tests pass, both consume the same complete fixture set, `just conformance`
 invokes both, and the matrix matches executable reality. This evidence does not
 promote Kotlin into a production Engine or Runtime.
