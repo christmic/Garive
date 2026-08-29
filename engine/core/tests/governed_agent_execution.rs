@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, num::NonZeroU32, sync::Mutex};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    num::NonZeroU32,
+    sync::Mutex,
+};
 
 use futures::executor::block_on;
 use garive_core::{
@@ -14,6 +18,10 @@ use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
     ModelOutputSettings, ModelPort, ModelRequest, ModelRole, ModelStopReason, ModelTargetId,
     ModelUsage, TextMode, TokenCount, UsageSource,
+};
+use garive_skill::{
+    activate_skills, ActivationMode, ActivationPolicy, ContentBinding, ExactToolReference,
+    SkillActivationRequest, SkillActivationResult, SkillDefinition,
 };
 use garive_tools::{
     ExecutionCapability, ExecutionRequirements, GovernedEffectFailure, GovernedFailureCode,
@@ -142,6 +150,15 @@ fn tool() -> ToolDefinition {
         json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
         ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1000, 1024).unwrap(),
         ReplayClass::ReadOnly,
+    ).unwrap()
+}
+
+fn write_tool() -> ToolDefinition {
+    ToolDefinition::new(
+        "write_file", "1", "Write one file.",
+        json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        ExecutionRequirements::new([ExecutionCapability::FilesystemWrite], 1000, 1024).unwrap(),
+        ReplayClass::NeverReplay,
     ).unwrap()
 }
 
@@ -312,4 +329,76 @@ fn governed_suspension_and_governed_failure_fail_closed() {
     });
     let (report, _, _) = run(tool_outcome("read_file"), failure, 0);
     assert!(matches!(report.outcome, AgentOutcome::Failed { .. }));
+}
+
+#[test]
+fn activated_skill_narrows_model_tools_and_c4_catalog() {
+    let allowed = ExactToolReference::new("read_file", "1").unwrap();
+    let definition = SkillDefinition::new(
+        "read-only",
+        "1",
+        "Read only",
+        "Permit only exact reads.",
+        ContentBinding::from_inline("Use only read_file."),
+        ActivationPolicy::ExplicitOnly,
+        vec![],
+        vec![allowed.clone()],
+        64,
+        "1",
+    )
+    .unwrap();
+    let activation_request = SkillActivationRequest::new(
+        "activation",
+        "turn",
+        "execution",
+        1,
+        ActivationMode::Explicit,
+        Some("read-only".into()),
+        vec![],
+        1,
+        1,
+        64,
+    )
+    .unwrap();
+    let activated = match activate_skills(
+        &[definition],
+        &BTreeSet::new(),
+        &BTreeSet::from([allowed]),
+        &activation_request,
+    )
+    .unwrap()
+    {
+        SkillActivationResult::Activated { ordered_skills, .. } => ordered_skills,
+        SkillActivationResult::None => panic!("explicit activation must select"),
+    };
+    let mut skilled_request = request();
+    skilled_request.activated_skills = activated;
+    let mut context = Context { positions: vec![] };
+    let model = Model {
+        outcomes: Mutex::new(VecDeque::from([tool_outcome("write_file"), text_outcome()])),
+        tool_counts: Mutex::new(vec![]),
+    };
+    let mut effects = Effects {
+        result: observation(),
+        position: 5,
+    };
+    let mut events = Events;
+    let mut ports = AgentExecutionPorts {
+        context: &mut context,
+        model: &model,
+        events: &mut events,
+        cancellation: &Cancellation,
+        clock: &Clock,
+    };
+    let report = block_on(execute_agent(
+        &skilled_request,
+        &AgentToolCapabilities {
+            definitions: vec![tool(), write_tool()],
+        },
+        &mut ports,
+        &mut effects,
+    ));
+    assert!(matches!(report.outcome, AgentOutcome::Completed { .. }));
+    assert_eq!(model.tool_counts.into_inner().unwrap(), [1, 1]);
+    assert_eq!(context.positions, [1, 5]);
 }

@@ -305,16 +305,17 @@ async fn execute_durable_agent_inner(
         turn_id: &config.model.turn_id,
     };
     let report = {
+        let effect_version = coordinator
+            .lock()
+            .map_err(|_| DurableExecutionError::Coordination)?
+            .version();
         let mut effects = SqliteGovernedEffectPort::coordinated(
             &coordinator,
             authority,
             executor,
             GovernedEffectConfig {
                 session_id: config.session_id.clone(),
-                expected_session_version: coordinator
-                    .lock()
-                    .map_err(|_| DurableExecutionError::Coordination)?
-                    .version(),
+                expected_session_version: effect_version,
                 initial_through_position: effective_request.context_request.through_position,
                 turn_id: config.model.turn_id.clone(),
                 execution_id: config.model.execution_id.clone(),

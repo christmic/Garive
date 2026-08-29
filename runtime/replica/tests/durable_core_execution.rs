@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     num::NonZeroU32,
     path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
@@ -15,7 +16,8 @@ use garive_core::{
 };
 use garive_ledger::{
     AgentDefinitionId as LedgerDefinitionId, AgentDefinitionRevision as LedgerRevision,
-    AgentInstanceId as LedgerAgentId, CanonicalPayload, FactDraft, FactId, FactKind, SessionId,
+    AgentInstanceId as LedgerAgentId, CanonicalPayload, CommitDisposition, FactDraft, FactId,
+    FactKind, LedgerError, SessionId,
 };
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
@@ -24,12 +26,17 @@ use garive_llm::{
     TokenCount, UsageSource,
 };
 use garive_runtime::{
-    commit_planned_turn, execute_durable_agent, execute_durable_model_only, plan_cancel_turn,
+    commit_planned_turn, execute_durable_agent, execute_durable_model_only,
+    execute_durable_model_only_with_skill_activation, plan_cancel_turn, plan_skill_activation,
     plan_start_turn, AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest,
     CancelReason, CancelTurnCommand, DurableExecutionConfig, DurableExecutionError,
     EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch, ExecutorFuture, ExecutorPort,
-    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand, TerminalPublicationError, TerminalPublisher,
+    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
+    SkillActivationContext, SqliteLedger, StartTurnCommand, TerminalPublicationError,
+    TerminalPublisher,
+};
+use garive_skill::{
+    ActivationMode, ActivationPolicy, ContentBinding, SkillActivationRequest, SkillDefinition,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
@@ -125,6 +132,67 @@ struct CancelDuringModel {
 }
 
 struct RejectPreflight;
+
+struct SkillCheckingModel {
+    path: PathBuf,
+    turn: garive_ledger::TurnId,
+}
+
+impl ModelPort for SkillCheckingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let ledger = SqliteLedger::open(&self.path).unwrap();
+            let kinds: Vec<_> = ledger
+                .load_turn(&self.turn)
+                .unwrap()
+                .facts
+                .iter()
+                .map(|fact| fact.kind.as_str().to_owned())
+                .collect();
+            let skill = kinds
+                .iter()
+                .position(|kind| kind == "skill.activated")
+                .unwrap();
+            let started = kinds
+                .iter()
+                .position(|kind| kind == "model.started")
+                .unwrap();
+            assert!(skill < started);
+            assert!(matches!(
+                &request.input_items[0],
+                ModelInputItem::Message {
+                    role: garive_llm::ModelRole::Developer,
+                    content,
+                } if content == &vec![ModelInputContent::Text("Check facts.".into())]
+            ));
+            assert!(matches!(
+                &request.input_items[1],
+                ModelInputItem::Message {
+                    role: garive_llm::ModelRole::User,
+                    ..
+                }
+            ));
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text {
+                    text: "done".into(),
+                }],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(1),
+                    output_tokens: TokenCount::Known(1),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::ProviderReported,
+                },
+                stop_reason: ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
 
 impl ModelPort for RejectPreflight {
     fn preflight(&self, _: &ModelRequest) -> Result<(), ModelPortFailure> {
@@ -747,6 +815,152 @@ fn durable_cancel_request_reaches_the_frozen_core_signal() {
         &kinds[kinds.len() - 2..],
         ["execution.stopped", "turn.stopped"]
     );
+}
+
+#[test]
+fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("skill.sqlite3");
+    let session = SessionId::try_from("skill-session").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = StartTurnCommand {
+        command_id: RuntimeCommandId::new("skill-start").unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: LedgerAgentId::try_from("agent").unwrap(),
+        definition_id: LedgerDefinitionId::try_from("definition").unwrap(),
+        definition_revision: LedgerRevision::try_from("revision").unwrap(),
+        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        trusted_input: "hello".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 2,
+            max_input_tokens: None,
+            max_output_tokens: None,
+            deadline_budget_ms: None,
+        },
+        recorded_at: "2026-08-29T00:00:00Z".into(),
+    };
+    let plan = plan_start_turn(&start, 1).unwrap();
+    let execution = plan.execution_id.clone().unwrap();
+    ledger.commit(session.clone(), 1, plan.facts).unwrap();
+    let request = core_request(&session, &plan.turn_id, &execution);
+    let activation_request = SkillActivationRequest::new(
+        "activation-1",
+        "turn",
+        "execution",
+        1,
+        ActivationMode::Explicit,
+        Some("review".into()),
+        vec![],
+        request.context_request.through_position,
+        1,
+        64,
+    )
+    .unwrap();
+    let definition = skill_definition("Check facts.");
+    let activation = plan_skill_activation(
+        &SkillActivationContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        std::slice::from_ref(&definition),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &activation_request,
+    )
+    .unwrap();
+    let replay_fact = activation.fact.clone();
+    let config = DurableExecutionConfig {
+        session_id: session.clone(),
+        expected_session_version: 2,
+        model: ModelLifecycleContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            deployment_id: "deployment".into(),
+            recovery_policy_revision: "policy".into(),
+            max_attempts: 1,
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        lease: ExecutionLeaseRequest {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            owner_id: "skill-worker".into(),
+            lease_token: "skill-lease".into(),
+            now_ms: 1,
+            duration_ms: 10_000,
+        },
+    };
+    let mut context = Context { positions: vec![] };
+    let signals = Signals;
+    let mut events = Signals;
+    let mut publisher = Publisher {
+        path: path.clone(),
+        turn: plan.turn_id.clone(),
+        fail: false,
+        calls: 0,
+        expected_terminal: ["execution.completed", "turn.completed"],
+    };
+    block_on(execute_durable_model_only_with_skill_activation(
+        &mut ledger,
+        &config,
+        &request,
+        activation,
+        &mut context,
+        &SkillCheckingModel {
+            path: path.clone(),
+            turn: plan.turn_id.clone(),
+        },
+        &mut events,
+        &signals,
+        &signals,
+        &mut publisher,
+    ))
+    .unwrap();
+    assert_eq!(context.positions, [5]);
+
+    drop(ledger);
+    let mut restarted = SqliteLedger::open(&path).unwrap();
+    let replay = restarted
+        .commit(session.clone(), 0, vec![replay_fact])
+        .unwrap();
+    assert_eq!(replay.disposition, CommitDisposition::Replayed);
+    let changed = plan_skill_activation(
+        &SkillActivationContext {
+            turn_id: plan.turn_id,
+            execution_id: execution,
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        &[skill_definition("Changed instructions.")],
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &activation_request,
+    )
+    .unwrap();
+    assert!(matches!(
+        restarted.commit(session, replay.session_version, vec![changed.fact]),
+        Err(garive_runtime::SqliteLedgerError::Domain(
+            LedgerError::IdempotencyCollision
+        ))
+    ));
+}
+
+fn skill_definition(instructions: &str) -> SkillDefinition {
+    SkillDefinition::new(
+        "review",
+        "1",
+        "Review",
+        "Review exact facts.",
+        ContentBinding::from_inline(instructions),
+        ActivationPolicy::ExplicitOnly,
+        vec![],
+        vec![],
+        64,
+        "1",
+    )
+    .unwrap()
 }
 
 fn core_request(
