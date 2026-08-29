@@ -54,7 +54,7 @@ async fn execute_kernel(
     let mut output_retries = 0;
     let mut target_index = 0;
     let mut request_ordinal = 0u32;
-    let mut through_position = request.cursor.last_durable_position;
+    let mut through_position = request.context_request.through_position;
     let catalog = match ToolCatalog::new(definitions.iter().cloned()) {
         Ok(value) => value,
         Err(_) => return invalid_tool_setup(request, ports, &mut control, &usage),
@@ -465,7 +465,7 @@ async fn execute_kernel(
                                 AgentOutcome::Suspended {
                                     reason: SuspensionReason::PartialOutput,
                                     partial_items,
-                                    last_durable_position: request.cursor.last_durable_position,
+                                    last_durable_position: through_position,
                                 },
                             );
                         }
@@ -499,6 +499,7 @@ async fn execute_kernel(
                             &mut control,
                             &usage,
                             request.recovery_policy.transport,
+                            through_position,
                         );
                     }
                 }
@@ -517,6 +518,7 @@ async fn execute_kernel(
                     &mut control,
                     &usage,
                     request.recovery_policy.unavailable,
+                    through_position,
                 );
             }
         }

@@ -55,7 +55,7 @@ internal suspend fun executeKernel(
     var outputRetries = 0u
     var targetIndex = 0
     var requestOrdinal = 0u
-    var throughPosition = request.cursor.lastDurablePosition
+    var throughPosition = request.contextRequest.throughPosition
     val catalog = when (val value = ToolCatalog.create(definitions)) {
         is ToolContractResult.Success -> value.value
         is ToolContractResult.Failure -> return invalidReport(request)
@@ -202,7 +202,9 @@ internal suspend fun executeKernel(
                         return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.CANCELLED))
                     }
                     InterruptionKind.TRANSPORT -> {
-                        return finishRecovery(request, ports, control, usage, request.recoveryPolicy.transport)
+                        return finishRecovery(
+                            request, ports, control, usage, request.recoveryPolicy.transport, throughPosition,
+                        )
                     }
                     InterruptionKind.OUTPUT_LIMIT -> when (val action = request.recoveryPolicy.outputLimit) {
                         OutputLimitAction.CompletePartial -> {
@@ -235,7 +237,7 @@ internal suspend fun executeKernel(
                                 AgentOutcome.Suspended(
                                     SuspensionReason.PARTIAL_OUTPUT,
                                     outcome.partialItems,
-                                    request.cursor.lastDurablePosition,
+                                    throughPosition,
                                 ),
                             )
                         }
@@ -247,7 +249,7 @@ internal suspend fun executeKernel(
                             AgentOutcome.Suspended(
                                 SuspensionReason.PARTIAL_OUTPUT,
                                 outcome.partialItems,
-                                request.cursor.lastDurablePosition,
+                                throughPosition,
                             ),
                         )
                         OutputLimitAction.Stop -> return finish(
@@ -266,7 +268,9 @@ internal suspend fun executeKernel(
                     targetIndex += 1
                     continue
                 }
-                return finishRecovery(request, ports, control, usage, request.recoveryPolicy.unavailable)
+                return finishRecovery(
+                    request, ports, control, usage, request.recoveryPolicy.unavailable, throughPosition,
+                )
             }
         }
     }
@@ -410,6 +414,7 @@ private fun finishRecovery(
     control: ExecutionControl,
     usage: UsageAccumulator,
     action: TerminalRecoveryAction,
+    throughPosition: ULong,
 ): ExecutionReport = finish(
     request,
     ports,
@@ -417,7 +422,7 @@ private fun finishRecovery(
     usage,
     when (action) {
         TerminalRecoveryAction.SUSPEND, TerminalRecoveryAction.ALTERNATE_THEN_SUSPEND -> AgentOutcome.Suspended(
-            SuspensionReason.RESOURCE_UNAVAILABLE, emptyList(), request.cursor.lastDurablePosition,
+            SuspensionReason.RESOURCE_UNAVAILABLE, emptyList(), throughPosition,
         )
         TerminalRecoveryAction.STOP -> AgentOutcome.Stopped(StopReason.RESOURCE_UNAVAILABLE)
         TerminalRecoveryAction.FAIL -> AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE)

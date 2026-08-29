@@ -65,14 +65,14 @@ class ModelOnlyExecutionTest {
     fun `Kotlin governed loop commits tool feedback before next model request`() = runTest {
         val valid = runGoverned("completed-tool-read")
         assertEquals("completed", render(valid.report.outcome))
-        assertEquals(listOf(0uL, 5uL), valid.positions)
+        assertEquals(listOf(1uL, 5uL), valid.positions)
         assertEquals(listOf(1, 1), valid.toolCounts)
         assertEquals(1, valid.effects.invocations)
         assertEquals(0, valid.effects.rejections)
 
         val rejected = runGoverned("completed-tool-missing")
         assertEquals("completed", render(rejected.report.outcome))
-        assertEquals(listOf(0uL, 5uL), rejected.positions)
+        assertEquals(listOf(1uL, 5uL), rejected.positions)
         assertEquals(0, rejected.effects.invocations)
         assertEquals(1, rejected.effects.rejections)
     }

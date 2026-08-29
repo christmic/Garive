@@ -222,7 +222,9 @@ C5 `execute_agent` entry receives the full exact C4 definitions plus a
 failure merely because the earlier C3 slice had no effect port.
 
 Every governed port result includes the latest committed Session position.
-Core advances an Execution-local durable watermark monotonically and derives
+Core initializes its Execution-local durable watermark from the frozen Context
+request rather than the recovered work cursor. It then advances that watermark
+monotonically and derives
 the next context surface through that position, so a committed tool
 observation can enter the next model request during the same disposable
 Execution. A regressing watermark is an invariant failure. This watermark is

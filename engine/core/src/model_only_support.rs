@@ -190,13 +190,14 @@ pub(super) fn finish_recovery(
     control: &mut ExecutionControl,
     usage: &UsageAccumulator,
     action: TerminalRecoveryAction,
+    through_position: u64,
 ) -> ExecutionReport {
     let outcome = match action {
         TerminalRecoveryAction::Suspend | TerminalRecoveryAction::AlternateThenSuspend => {
             AgentOutcome::Suspended {
                 reason: SuspensionReason::ResourceUnavailable,
                 partial_items: vec![],
-                last_durable_position: request.cursor.last_durable_position,
+                last_durable_position: through_position,
             }
         }
         TerminalRecoveryAction::Stop => AgentOutcome::Stopped {

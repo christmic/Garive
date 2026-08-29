@@ -32,6 +32,12 @@ cursor. `Continue` requires a non-zero durable position and a typed Runtime
 resume input. The request contains no credentials, database handles or provider
 wire values.
 
+The cursor describes recovered work before this disposable Execution. The
+separate frozen `context_request.through_position` is the initial ledger
+watermark visible to this Execution and therefore includes its already
+committed start transaction. Core must not replace that watermark with the
+zero Start cursor.
+
 ## Frozen ports
 
 - `ContextPort.derive(request) -> ContextSurface`;

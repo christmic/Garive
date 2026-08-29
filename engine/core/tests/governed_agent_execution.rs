@@ -261,7 +261,7 @@ fn run(
 fn governed_observation_advances_context_and_completes() {
     let (report, positions, tool_counts) = run(tool_outcome("read_file"), observation(), 5);
     assert!(matches!(report.outcome, AgentOutcome::Completed { .. }));
-    assert_eq!(positions, [0, 5]);
+    assert_eq!(positions, [1, 5]);
     assert_eq!(tool_counts, [1, 1]);
 }
 
@@ -269,7 +269,7 @@ fn governed_observation_advances_context_and_completes() {
 fn invalid_intent_is_committed_as_feedback_before_retry() {
     let (report, positions, _) = run(tool_outcome("missing"), observation(), 6);
     assert!(matches!(report.outcome, AgentOutcome::Completed { .. }));
-    assert_eq!(positions, [0, 6]);
+    assert_eq!(positions, [1, 6]);
 }
 
 #[test]
