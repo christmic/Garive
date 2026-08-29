@@ -1,8 +1,7 @@
 # Agent Core implementation Spec set
 
-> Review map for the project owner and Core/Runtime implementers. It fixes the
-> complete D0/C4/C5/C6 contract boundary that must be accepted before the next
-> Agent implementation slice begins.
+> Traceability map for the complete delivered D0/C4/C5/C6 Core/Runtime
+> contract boundary.
 
 ## Audience
 
@@ -11,15 +10,17 @@ or verify Rust Core, Kotlin conformance, Runtime, and durable recovery.
 
 ## Why
 
-C0-C3 and L0 are executable, but the remaining design was spread across draft
-mechanism documents. Without one review set, authority, invocation identity,
-durability and restart decisions could be selected piecemeal in code.
+At admission time, C0-C3 and L0 were executable while the remaining design was
+spread across draft mechanism documents. This review set prevented authority,
+invocation identity, durability and restart decisions from being selected
+piecemeal in code.
 
 ## Status
 
-Accepted review index. The project owner accepted the complete set on
-2026-08-29; coordinated contract amendments and fixtures still precede
-behavior implementation.
+Implemented and verified review index. The project owner accepted the complete
+set on 2026-08-29; D0/C4/C5/C6 contracts, coordinated fixtures, Rust behavior
+and the declared Kotlin conformance/recovery subsets are delivered. Future
+amendments still require Spec and fixture changes before behavior.
 
 ## Scope
 

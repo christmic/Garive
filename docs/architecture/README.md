@@ -21,15 +21,15 @@ The accepted architecture starts with responsibility ownership. The planned
 module/App skeleton may land early, but active behavior and release claims only
 land with executable slices.
 
-## Accepted documents
+## Indexed documents
 
-| Document | Decision |
+| Document | Maturity |
 |---|---|
 | [`system.md`](system.md) | Product layers, dependency direction, ownership, and source layout. |
-| [`core/loop.md`](core/loop.md) | Bounded Agent execution and context projection. |
-| [`core/ledger.md`](core/ledger.md) | Runtime-owned durable facts and projections. |
+| [`core/loop.md`](core/loop.md) | Accepted C0–C6 ownership plus unadmitted mechanism research. |
+| [`core/ledger.md`](core/ledger.md) | Accepted L0/L1 ownership plus unadmitted storage/research variants. |
 | [`core/provider-adapter.md`](core/provider-adapter.md) | Provider-neutral model boundary and provider recovery. |
-| [`core/effect-layer.md`](core/effect-layer.md) | Prepared calls, authorization, execution, and effect recovery. |
+| [`core/effect-layer.md`](core/effect-layer.md) | Accepted C4–C6 ownership plus unadmitted mechanism research. |
 | [`core/compression.md`](core/compression.md) | Context-pressure and compression policy research. |
 | [`core/derive-testing.md`](core/derive-testing.md) | Derive correctness and quality test design. |
 | [`core/assemble-testing.md`](core/assemble-testing.md) | Provider assembly contract test design. |
@@ -40,6 +40,8 @@ land with executable slices.
 |---|---|
 | `draft` | An option under review; implementation must not depend on it. |
 | `accepted` | The current architecture direction; implementation should make it true. |
+| `mixed` | Settled ownership/subsets coexist with clearly marked unadmitted research; linked Specs are normative. |
+| `research` | A hypothesis or evidence plan that cannot authorize behavior. |
 | `superseded` | Historical context only; a newer document owns the decision. |
 | `deprecated` | Still present during removal; no new dependency may be added. |
 
@@ -47,8 +49,9 @@ Accepted architecture is still not a wire or storage contract. A slice becomes
 normative only after its invariants and acceptance examples land in `spec/`.
 
 The `core/` documents are active discussion documents. Their settled ownership
-rules come from `system.md`; their mechanism details remain editable until a
-slice is promoted to `spec/`.
+rules come from `system.md`; promoted mechanism subsets are owned by linked
+accepted Specs. Remaining research text cannot override those Specs or create
+an implementation claim.
 
 ## Adding a source directory
 
@@ -73,5 +76,5 @@ trees, generated drift, and placeholders described as shipping are not.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
+- Last reviewed: 2026-08-30
 - Status: accepted

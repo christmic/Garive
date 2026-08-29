@@ -5,9 +5,10 @@
 
 ## Status
 
-Accepted implementation index. The project owner directed every Spec in this
-set to proceed through verified development on 2026-08-29. Coordinated
-C3/C6F/L0 and fixture changes still precede each behavior slice.
+Implemented and verified index. The project owner directed every Spec in this
+set through development on 2026-08-29; the listed Skill, Memory, Knowledge,
+Scheduler, Multi-Agent and Observability slices and their coordinated
+C3/C6F/L0/shared-fixture changes are delivered.
 
 ## Purpose
 

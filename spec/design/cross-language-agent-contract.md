@@ -34,31 +34,27 @@ domain models.
 `unsupported` is a valid explicit capability result. It must not silently fall
 back to behavior with different safety semantics.
 
-## Accepted admission target
+## Core delivery evidence
 
-The accepted Agent Core Spec set defines the following target. This table is a
-delivery plan, not an implementation support claim:
+The accepted Agent Core Spec set has delivered the following current support:
 
-| Slice | Rust target | Kotlin target | Planned evidence |
+| Slice | Rust status | Kotlin status | Evidence |
 |---|---|---|---|
 | D0 definition snapshot | supported | experimental | semantic resolution + canonical digest fixtures |
 | C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
 | C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
 | C6 Runtime | production Rust/SQLite | PostgreSQL experiment subset | shared public decisions plus independent native crash evidence |
 
-Rows change to `supported`/`experimental` only when both native implementations
-and declared evidence exist.
-
-## Accepted capability admission target
+## Capability delivery evidence
 
 The accepted [`agent-capability-spec-set.md`](agent-capability-spec-set.md)
 admits shared semantic fixtures for S0 Skill, M0 Memory, K0 Knowledge, Q0
 Scheduler values/reducer, MA0 Multi-Agent delegation and O0 Observability.
-Rows below are implementation targets, not current support claims. Kotlin
-covers portable values/reducers only, never Rust Runtime stores, connectors,
-child lifecycle, workers or exporters.
+Rows below are current support claims backed by both native implementations and
+the declared evidence. Kotlin covers portable values/reducers only, never Rust
+Runtime stores, connectors, child lifecycle, workers or exporters.
 
-| Slice | Rust target | Kotlin target | Required conformance |
+| Slice | Rust status | Kotlin status | Required conformance |
 |---|---|---|---|
 | S0 Skill | supported | experimental | activation/digest fixtures + native tests |
 | M0 Memory | supported | experimental | record/query/order fixtures + native tests |

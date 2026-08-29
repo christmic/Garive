@@ -21,14 +21,14 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 | Order | Document | Scope | Status |
 |---:|---|---|---|
 | 1 | [`../system.md`](../system.md) | Product ownership and dependency direction. | accepted |
-| 2 | [`loop.md`](loop.md) | One bounded Agent execution; derive, assemble, invoke, prepare, and return. | draft |
+| 2 | [`loop.md`](loop.md) | One bounded Agent execution; derive, assemble, invoke, prepare, and return. | mixed: C0–C6 accepted; later mechanisms research |
 | 3 | [`provider-adapter.md`](provider-adapter.md) | Protocol adapter, Provider, and Runtime ownership boundary. | accepted |
-| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | draft |
-| 5 | [`ledger.md`](ledger.md) | Runtime-owned durable facts, projections, audit, and recovery. | draft |
+| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | mixed: C4–C6 accepted; later mechanisms research |
+| 5 | [`ledger.md`](ledger.md) | Runtime-owned durable facts, projections, audit, and recovery. | mixed: L0/L1 accepted; later variants research |
 | 6 | [`compression.md`](compression.md) | Context-pressure estimation and compression policy. | research |
-| 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | research |
-| 8 | [`assemble-testing.md`](assemble-testing.md) | Provider assembly contract tests. | research |
-| 9 | [`memory.md`](memory.md) | Memory layer (next continent after `loop`): 4-type classification (semantic / episodic / lessons / procedural) + distillation pyramid + lifetime rules. Angles ②–⑧ are placeholders. | research |
+| 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | mixed: admitted gates implemented; numeric research remains |
+| 8 | [`assemble-testing.md`](assemble-testing.md) | Provider assembly contract tests. | mixed: admitted gates implemented; broader research remains |
+| 9 | [`memory.md`](memory.md) | Memory classification, lifecycle, distillation and retention research. | mixed: M0/M1 accepted; other angles research |
 
 ## Settled boundaries
 
@@ -43,16 +43,22 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 - Proto describes admitted wire/persistence boundaries, not every internal
   domain value.
 
-## Provisional mechanisms
+## Delivered subsets and remaining research
 
-The following remain hypotheses until an executable slice produces evidence:
+The accepted Specs and `spec/STATUS.md` now prove C0–C6, L0/L1, portable
+protocol/Provider mapping and the admitted capability slices. In particular,
+exact durable fact catalogs, SQLite schemas, shared Rust/Kotlin semantics and
+typed provider error mappings are no longer provisional for those slices.
 
-- exact entry-kind catalogs and SQLite schema;
+The following still remain hypotheses until their named admission evidence
+exists:
+
 - compression thresholds, EWMA coefficients, and token formulas;
-- byte-equality requirements outside canonical wire fixtures;
-- cross-language implementation parity;
+- production Creativity policy and numeric trade-off thresholds;
+- Memory mechanisms outside accepted M0/M1 contracts;
 - performance and retention numeric gates;
-- provider-specific error mappings and extension capability admission.
+- each hosted provider extension beyond independently accepted capabilities;
+- byte-equality requirements outside canonical wire fixtures.
 
 Keep these details in the current documents, mark unresolved choices, and
 promote only the selected subset to `spec/` before implementation.
@@ -112,5 +118,5 @@ A mechanism is ready for `spec/` when it has:
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
+- Last reviewed: 2026-08-30
 - Status: accepted
