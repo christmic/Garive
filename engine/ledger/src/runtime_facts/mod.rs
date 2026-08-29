@@ -1,5 +1,6 @@
 //! Strict C6 durable Runtime payload-v1 validation.
 
+mod delegation;
 mod effect;
 mod knowledge;
 mod memory;
@@ -33,6 +34,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let memory_family = kind.starts_with("memory.");
     let knowledge_family = kind.starts_with("knowledge.");
     let scheduler_family = kind.starts_with("schedule.");
+    let delegation_family = kind.starts_with("delegation.");
     let memory_tombstone = kind == "memory.tombstoned";
     let rejection = kind == "tool.preparation_rejected";
     if !kind.starts_with("turn.")
@@ -43,6 +45,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !memory_family
         && !knowledge_family
         && !scheduler_family
+        && !delegation_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -58,7 +61,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
                 || skill_family
                 || rejection
                 || memory_family && !memory_tombstone
-                || knowledge_family)
+                || knowledge_family
+                || delegation_family)
         || fact.model_request_id.is_some() != (model_family || rejection)
         || fact.tool_invocation_id.is_some() != effect_family
     {
@@ -66,7 +70,9 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if scheduler_family {
+    if delegation_family {
+        delegation::validate(kind, object(&payload)?)?;
+    } else if scheduler_family {
         scheduler::validate(kind, object(&payload)?)?;
     } else if knowledge_family {
         knowledge::validate(kind, object(&payload)?)?;
