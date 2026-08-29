@@ -2189,7 +2189,67 @@ while the entire loop is not implicitly in lockstep.
   drive → adapt → eval`) is the same shape, lifted one
   level up.
 
-## ProgressGuardian — useless-work detection (replaces TurnBudget)
+## TurnBudget — earlier approach (superseded)
+
+> **Earlier approach — preserved for evolution history.**
+> This section documents the first iteration of the guardrail
+> concept. The current approach (ProgressGuardian, below)
+> supersedes it: the four axes stay as detection inputs,
+> but the **hard caps** are removed in favour of useless-work
+> detection. Read this as **"how the design got here"**, not
+> the current contract.
+
+### Original TurnBudget design
+
+A four-axis budget per turn, with hard caps that emit a
+summary entry when breached:
+
+```
+max_tool_calls_per_round:    32    # default
+max_tool_calls_per_session: 1024   # default
+max_tool_time_ms:           60_000 # per-tool, per-round cumulative
+```
+
+When a cap is hit, the runtime emits a graceful-exit summary
+entry rather than an error — the round continues with the
+partial result and the model sees "you've used your budget
+for this round; here's where we are".
+
+### What TurnBudget did well
+
+- **Explicit numeric guardrails** — the four axes are
+  observable, the caps are deterministic, the runtime can
+  assert "you're within budget" with no analysis.
+- **Graceful exit** — a summary entry on breach gives the
+  model context for what to do next, rather than a hard stop.
+- **Cost-visibility** — token and wall-clock axes are real
+  cost dimensions; capping them is a real cost control.
+
+### What TurnBudget missed
+
+- **Doesn't catch useless-work** — the caps trigger **on
+  count, time, cost**, not on **whether the work made
+  progress**. An agent can:
+  - Call `pytest` 100× with the same `ImportError: X` (count
+    cap trips at 32, but the work was already useless
+    earlier).
+  - Oscillate file edits A → B → A (count caps don't catch
+    regression).
+  - Open new directions without finishing any (count caps
+    don't catch divergence).
+- **Hard caps feel arbitrary** — when the cap trips, the
+  agent is left wondering "but I was making progress?". The
+  cap doesn't distinguish progress from grind.
+- **No escalation path** — the breach summary is the only
+  signal; there's no path to AskUser or Suspend.
+
+ProgressGuardian (below) replaces TurnBudget's cap-trip
+recovery with **detection + intervention**. The four axes
+remain useful as **inputs to the detection** (token
+consumption rate → efficiency-ratio signal) — they're no
+longer the cap, they're the data.
+
+## ProgressGuardian — useless-work detection (supersedes TurnBudget)
 
 > **护栏从"限额"换成"识功"。** ProgressGuardian doesn't
 > limit how many calls you can make; it ensures you don't
@@ -2268,28 +2328,15 @@ preserved is the **human judgment** at tiers 3 / 4.
   pattern** lets it actually switch strategy. **Evidence-based
   reminders are the most valuable part of this design**.
 
-### Migration from TurnBudget
-
-The previous tail-end entry **"TurnBudget — four-axis + graceful
-exit"** is **superseded** by ProgressGuardian:
-
-- TurnBudget's `iters / tokens / cost / wall-clock` axes
-  remain useful as **inputs to the detection** (token
-  consumption rate → efficiency-ratio signal).
-- The **hard caps** TurnBudget imposed are **removed** —
-  useless-work detection handles the runaway case more
-  precisely than a fixed cap.
-- The graceful-exit summary at the budget threshold
-  becomes the tier-3 / tier-4 escalation's summary entry.
-
 ### Cross-references
 
 - `loop.md` "Two protocols" — reminder injection channel
   (lossy event + durable ledger rows).
 - `ledger.md` "3. Instruction family" — `progress.alert` is a
   new kind in the **notification** family.
-- `loop.md` "Convergence audit" — ProgressGuardian replaces
-  TurnBudget in the tail-end list.
+- `loop.md` "TurnBudget — earlier approach" — the design
+  that ProgressGuardian supersedes (above); four axes remain
+  as detection inputs.
 
 ## Convergence audit — `turn.loop` design closed
 
@@ -2351,7 +2398,7 @@ architecture — a single round of discussion lands them:
 | Item | Depth | Where |
 |------|-------|-------|
 | **StopPolicy** — termination set semantics + transition-reason enum + `max_iterations` | 浅 | `loop.md` |
-| **TurnBudget** — four-axis (iters / tokens / cost / wall-clock) + graceful exit (summary, not hard-stop) | 浅-中 | `loop.md` |
+| ~~**TurnBudget**~~ — four-axis + graceful exit (summary, not hard-stop) | done — **superseded** by ProgressGuardian (preserved above as "earlier approach") | `loop.md` |
 | **Interaction** — user sends a new message mid-turn: queue vs cancel-and-redirect (one rule) | 浅 | `loop.md` |
 | **EventCatalog** — `AgentEvent` full enum + subscribe / back-pressure + `EventOrderingChecker` | 浅-中 | `loop.md` |
 
