@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod governed_outcome;
+mod governed_reducer;
 mod governed_types;
 mod prepared;
 mod schema;
@@ -15,6 +16,7 @@ pub use governed_outcome::{
     GovernedObservation, ObservationOutcome, RecoveryDecision, RecoveryPosition,
     SuspensionRequirement,
 };
+pub use governed_reducer::{recover_effect, AuthorizationVerdict, GovernedEffect};
 pub use governed_types::{
     DispatchAttemptId, EffectReceipt, GrantId, InteractionId, InteractionKind, InteractionRequest,
     InteractionResolution, InvocationGrant, ReceiptId, TerminalClassification, ToolInvocationId,

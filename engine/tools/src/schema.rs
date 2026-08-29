@@ -55,6 +55,10 @@ pub(crate) fn validate_definition(schema: &Value) -> Result<(), PreparationError
     validate_schema_node(schema)
 }
 
+pub(crate) fn validate_value_definition(schema: &Value) -> Result<(), PreparationError> {
+    validate_schema_node(schema)
+}
+
 fn validate_schema_node(schema: &Value) -> Result<(), PreparationError> {
     let object = schema.as_object().ok_or_else(invalid_definition)?;
     if object
