@@ -120,6 +120,18 @@ class ModelOnlyExecutionTest {
                         listOf(MemoryEvidenceAttribution("session", 1uL, "fact", "a".repeat(64))),
                     ),
                 ),
+                attributedKnowledge = listOf(
+                    AttributedKnowledge(
+                        "docs", "1", "evidence", null,
+                        "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b",
+                        "knowledge", 9uL,
+                        KnowledgeCitationAttribution(
+                            "uri_fragment", "intro", null, "https://example.test/docs#intro",
+                            "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b",
+                        ),
+                        "2026-08-29T00:00:00Z", "fresh", "curated", 9000u,
+                    ),
+                ),
             ),
             AgentToolCapabilities(listOf(toolDefinition(), writeDefinition())),
             ports,
@@ -138,7 +150,11 @@ class ModelOnlyExecutionTest {
             ((model.inputs.first()[1] as ModelInputItem.Message).content.first() as ModelInputContent.Text)
                 .text.contains("garive.memory"),
         )
-        assertEquals(ModelRole.USER, (model.inputs.first()[2] as ModelInputItem.Message).role)
+        assertTrue(
+            ((model.inputs.first()[2] as ModelInputItem.Message).content.first() as ModelInputContent.Text)
+                .text.contains("garive.knowledge"),
+        )
+        assertEquals(ModelRole.USER, (model.inputs.first()[3] as ModelInputItem.Message).role)
     }
 
     private suspend fun runCase(case: JsonObject) {

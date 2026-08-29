@@ -134,6 +134,10 @@ internal suspend fun executeKernel(
             instructionBoundary + request.activatedSkills.size,
             request.attributedMemory.map(::memoryInput),
         )
+        inputItems.addAll(
+            instructionBoundary + request.activatedSkills.size + request.attributedMemory.size,
+            request.attributedKnowledge.map(::knowledgeInput),
+        )
         val modelRequest = ModelRequest(
             ModelRequestId(requestId),
             target,
@@ -321,6 +325,36 @@ private fun memoryInput(value: AttributedMemory): ModelInputItem.Message {
         ),
     )
     return ModelInputItem.Message(ModelRole.USER, listOf(ModelInputContent.Text(payload.toString())))
+}
+
+@OptIn(ExperimentalSerializationApi::class)
+private fun knowledgeInput(value: AttributedKnowledge): ModelInputItem.Message {
+    val citation = buildMap {
+        put("locator_kind", JsonPrimitive(value.citation.locatorKind))
+        put("locator", JsonPrimitive(value.citation.locator))
+        value.citation.title?.let { put("title", JsonPrimitive(it)) }
+        value.citation.canonicalUri?.let { put("canonical_uri", JsonPrimitive(it)) }
+        put("content_digest", JsonPrimitive(value.citation.contentDigest))
+    }
+    val payload = buildMap {
+        put("type", JsonPrimitive("garive.knowledge"))
+        put("source_id", JsonPrimitive(value.sourceId))
+        put("source_revision", JsonPrimitive(value.sourceRevision))
+        put("evidence_id", JsonPrimitive(value.evidenceId))
+        value.sourceSnapshotDigest?.let { put("source_snapshot_digest", JsonPrimitive(it)) }
+        put("content_digest", JsonPrimitive(value.contentDigest))
+        put("content_byte_length", JsonPrimitive(value.contentByteLength))
+        put("citation", JsonObject(citation))
+        put("retrieved_at_utc", JsonPrimitive(value.retrievedAtUtc))
+        put("freshness", JsonPrimitive(value.freshness))
+        put("trust_class", JsonPrimitive(value.trustClass))
+        put("rank_basis_points", JsonPrimitive(value.rankBasisPoints))
+        put("content", JsonPrimitive(value.contentUtf8))
+    }
+    return ModelInputItem.Message(
+        ModelRole.USER,
+        listOf(ModelInputContent.Text(JsonObject(payload).toString())),
+    )
 }
 
 private fun modelFailure(failure: ModelPortFailure): AgentFailureReason = when (failure) {
