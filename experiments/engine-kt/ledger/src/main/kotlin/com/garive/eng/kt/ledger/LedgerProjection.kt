@@ -28,6 +28,23 @@ internal data class KnowledgeRecord(
     var terminal: Boolean,
 )
 
+internal enum class ScheduleState { ACTIVE, SUPERSEDING, CANCELLED, FAILED }
+
+internal data class ScheduleClaim(
+    val occurrenceId: String,
+    val ordinal: ULong,
+    val dueAtUtc: String,
+    val leaseEpoch: ULong,
+)
+
+internal data class ScheduleRecord(
+    val revisionId: String,
+    val intentDigest: String,
+    var lastHandledOrdinal: ULong,
+    var pendingClaim: ScheduleClaim?,
+    var state: ScheduleState,
+)
+
 internal class LedgerProjection(
     private var opened: Boolean = false,
     private var closed: Boolean = false,
@@ -45,6 +62,7 @@ internal class LedgerProjection(
     private val suspensions: MutableMap<TurnId, String> = mutableMapOf(),
     private val interactions: MutableMap<String, InteractionRecord> = mutableMapOf(),
     private val knowledge: MutableMap<String, KnowledgeRecord> = mutableMapOf(),
+    private val schedules: MutableMap<String, ScheduleRecord> = mutableMapOf(),
 ) {
     fun copy() = LedgerProjection(
         opened,
@@ -63,6 +81,7 @@ internal class LedgerProjection(
         suspensions.toMutableMap(),
         interactions.mapValues { (_, value) -> value.copy() }.toMutableMap(),
         knowledge.mapValues { (_, value) -> value.copy(dispatchAttempts = value.dispatchAttempts.toMutableSet()) }.toMutableMap(),
+        schedules.mapValues { (_, value) -> value.copy() }.toMutableMap(),
     )
 
     fun apply(fact: FactDraft): LedgerError? {
@@ -113,9 +132,22 @@ internal class LedgerProjection(
             "knowledge.requested" -> requestKnowledge(fact)
             "knowledge.dispatched" -> dispatchKnowledge(fact)
             "knowledge.completed", "knowledge.failed" -> terminalKnowledge(fact)
+            "schedule.created" -> createSchedule(fact)
+            "schedule.claimed" -> claimSchedule(fact)
+            "schedule.fired" -> fireSchedule(fact)
+            "schedule.skipped" -> skipSchedule(fact)
+            "schedule.cancelled" -> cancelSchedule(fact)
+            "schedule.failed" -> failSchedule(fact)
             else -> null
         }
     }
+
+    fun validateCommitBoundary(): LedgerError? =
+        if (schedules.values.any { it.state == ScheduleState.SUPERSEDING }) {
+            LedgerError.InvalidTransition
+        } else {
+            null
+        }
 
     fun uncertainModelRequests() = models.entries
         .filter { it.value.second == InvocationState.STARTED }
@@ -131,6 +163,7 @@ internal class LedgerProjection(
         if (turns.values.any { it == TurnState.OPEN || it == TurnState.SUSPENDED } ||
             executions.values.any { it.second == ExecutionState.ACTIVE } ||
             hasRecoveryPendingInvocation()
+            || schedules.values.any { it.state == ScheduleState.ACTIVE }
         ) {
             return LedgerError.InvalidTransition
         }
@@ -528,6 +561,102 @@ internal class LedgerProjection(
     private fun hasPendingKnowledge(executionId: ExecutionId): Boolean =
         knowledge.values.any { it.execution == executionId && !it.terminal }
 
+    private fun createSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val scheduleId = payload.text("schedule_id")
+        val revisionId = payload.text("revision_id")
+        val current = schedules[scheduleId]
+        if (current != null &&
+            (current.state != ScheduleState.SUPERSEDING || current.revisionId == revisionId)
+        ) return LedgerError.InvalidTransition
+        schedules[scheduleId] = ScheduleRecord(
+            revisionId,
+            payload.text("intent_digest"),
+            0u,
+            null,
+            ScheduleState.ACTIVE,
+        )
+        return null
+    }
+
+    private fun claimSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = schedule(payload) ?: return LedgerError.InvalidTransition
+        val ordinal = payload.ulong("ordinal")
+        val occurrenceId = payload.text("occurrence_id")
+        val dueAtUtc = payload.text("due_at_utc")
+        val leaseEpoch = payload.ulong("lease_epoch")
+        val next = record.lastHandledOrdinal.nextOrdinalOrNull() ?: return LedgerError.InvalidTransition
+        val valid = record.pendingClaim?.let {
+            it.ordinal == ordinal && it.occurrenceId == occurrenceId &&
+                it.dueAtUtc == dueAtUtc && leaseEpoch > it.leaseEpoch
+        } ?: (ordinal == next)
+        if (!valid) return LedgerError.InvalidTransition
+        record.pendingClaim = ScheduleClaim(occurrenceId, ordinal, dueAtUtc, leaseEpoch)
+        return null
+    }
+
+    private fun fireSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = schedule(payload) ?: return LedgerError.InvalidTransition
+        val ordinal = payload.ulong("ordinal")
+        val occurrenceId = payload.text("occurrence_id")
+        val pending = record.pendingClaim
+        if (pending?.ordinal != ordinal || pending.occurrenceId != occurrenceId) {
+            return LedgerError.InvalidTransition
+        }
+        record.lastHandledOrdinal = ordinal
+        record.pendingClaim = null
+        return null
+    }
+
+    private fun skipSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = schedule(payload) ?: return LedgerError.InvalidTransition
+        val first = payload.ulong("first_ordinal")
+        if (record.pendingClaim != null || record.lastHandledOrdinal.nextOrdinalOrNull() != first) {
+            return LedgerError.InvalidTransition
+        }
+        record.lastHandledOrdinal = payload.ulong("last_ordinal")
+        return null
+    }
+
+    private fun cancelSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = schedules[payload.text("schedule_id")] ?: return LedgerError.InvalidTransition
+        if (record.state != ScheduleState.ACTIVE || record.pendingClaim != null ||
+            record.revisionId != payload.text("expected_revision_id")
+        ) return LedgerError.InvalidTransition
+        record.state = if (payload.text("reason") == "superseded") {
+            ScheduleState.SUPERSEDING
+        } else {
+            ScheduleState.CANCELLED
+        }
+        return null
+    }
+
+    private fun failSchedule(fact: FactDraft): LedgerError? {
+        val payload = fact.payloadObject()
+        val record = schedule(payload) ?: return LedgerError.InvalidTransition
+        val occurrenceId = payload["occurrence_id"]?.jsonPrimitive?.contentOrNull
+        val ordinal = payload["ordinal"]?.jsonPrimitive?.contentOrNull?.toULongOrNull()
+        val pending = record.pendingClaim
+        val matchesClaim = if (pending == null) {
+            occurrenceId == null && ordinal == null
+        } else {
+            pending.occurrenceId == occurrenceId && pending.ordinal == ordinal
+        }
+        if (!matchesClaim) return LedgerError.InvalidTransition
+        record.pendingClaim = null
+        record.state = ScheduleState.FAILED
+        return null
+    }
+
+    private fun schedule(payload: JsonObject): ScheduleRecord? =
+        schedules[payload.text("schedule_id")]?.takeIf {
+            it.state == ScheduleState.ACTIVE && it.revisionId == payload.text("revision_id")
+        }
+
     private fun hasPendingInteraction(executionId: ExecutionId): Boolean =
         interactions.values.any { it.execution == executionId && !it.terminal }
 
@@ -540,3 +669,5 @@ private fun FactDraft.payloadObject(): JsonObject = Json.parseToJsonElement(payl
 
 private fun JsonObject.ulong(key: String): ULong =
     getValue(key).jsonPrimitive.content.toULongOrNull() ?: throw IllegalArgumentException(key)
+
+private fun ULong.nextOrdinalOrNull(): ULong? = if (this == ULong.MAX_VALUE) null else this + 1u

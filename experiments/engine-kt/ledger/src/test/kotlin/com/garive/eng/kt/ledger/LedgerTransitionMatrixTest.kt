@@ -6,6 +6,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 class LedgerTransitionMatrixTest {
     private fun fact(id: String, kind: String): FactDraft {
@@ -252,6 +253,67 @@ class LedgerTransitionMatrixTest {
             "session.opened", "turn.started", "execution.started", "knowledge.requested",
             "execution.completed",
         )
+    }
+
+    @Test
+    fun `scheduler claims ranges terminals and updates are exact`() {
+        assertValid(
+            "session.opened", "schedule.created", "schedule.claimed",
+            "schedule.fired", "schedule.skipped", "schedule.cancelled",
+        )
+        assertTransitionError("session.opened", "schedule.claimed")
+        assertTransitionError("session.opened", "schedule.created", "schedule.fired")
+        assertTransitionError(
+            "session.opened", "schedule.created", "schedule.claimed", "schedule.cancelled",
+        )
+        assertTransitionError(
+            "session.opened", "schedule.created", "schedule.claimed",
+            "schedule.fired", "schedule.fired",
+        )
+
+        val supersededPayload = Json.parseToJsonElement(
+            """{"command_id":"supersede","expected_revision_id":"revision-1","reason":"superseded","schedule_id":"schedule-1"}""",
+        )
+        val superseded = fact("supersede", "schedule.cancelled").copy(
+            payload = assertIs<CanonicalPayloadResult.Success>(
+                CanonicalPayload.fromValue(supersededPayload),
+            ).payload,
+        )
+        val nextPayload = runtimePayload("schedule.created").jsonObject.toMutableMap().also {
+            it["revision_id"] = kotlinx.serialization.json.JsonPrimitive("revision-2")
+        }
+        val next = fact("create-next", "schedule.created").copy(
+            payload = assertIs<CanonicalPayloadResult.Success>(
+                CanonicalPayload.fromValue(JsonObject(nextPayload)),
+            ).payload,
+        )
+        val session = SessionId.of("session")
+        val ledger = LedgerState()
+        assertEquals(
+            CommitDisposition.COMMITTED,
+            assertIs<LedgerResult.Success<CommitResult>>(
+                ledger.commit(
+                    session,
+                    0u,
+                    listOf(
+                        fact("open", "session.opened"),
+                        fact("create", "schedule.created"),
+                        superseded,
+                        next,
+                    ),
+                ),
+            ).value.disposition,
+        )
+        val invalid = LedgerState().commit(
+            session,
+            0u,
+            listOf(
+                fact("open", "session.opened"),
+                fact("create", "schedule.created"),
+                superseded,
+            ),
+        )
+        assertEquals(LedgerError.InvalidTransition, assertIs<LedgerResult.Failure>(invalid).error)
     }
 
     @Test

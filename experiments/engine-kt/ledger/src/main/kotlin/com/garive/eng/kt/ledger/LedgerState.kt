@@ -88,6 +88,7 @@ public class LedgerState {
                     ?: return LedgerResult.Failure(LedgerError.PositionOverflow)
             }
         }
+        next.projection.validateCommitBoundary()?.let { return LedgerResult.Failure(it) }
         next.version = next.version.incrementOrNull()
             ?: return LedgerResult.Failure(LedgerError.PositionOverflow)
 
