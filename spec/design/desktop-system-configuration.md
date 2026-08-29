@@ -44,8 +44,10 @@ DesktopSystemConfigV1 {
     profile_id, credential_ref, endpoint?, model_target_id, model_id,
     deployment_id, recovery_policy_revision,
     max_output_tokens?, max_context_items, max_context_utf8_bytes,
-    max_model_attempts, output_limit_action, transport_action,
-    unavailable_action, missing_usage_policy
+    max_model_attempts, max_context_rebuilds,
+    output_limit_action, output_limit_max_retries?,
+    transport_action, unavailable_action, missing_usage_policy,
+    missing_usage_estimate_input_tokens?, missing_usage_estimate_output_tokens?
   }
   http { connect_timeout_ms, request_timeout_ms, max_response_bytes }
   dispatch_capacity
@@ -63,6 +65,13 @@ V1 is model-only and admits exactly `ModelCapability::Text`. Tool, media,
 reasoning, Memory, Knowledge, Scheduler and delegation configuration require
 their own Runtime composition increments; their implementation presence does
 not advertise them to this model.
+
+Policy strings map exactly to the accepted Core enums. Output limit accepts
+`complete_partial`, `retry`, `suspend`, `stop` or `fail`; only `retry` requires
+one non-zero `output_limit_max_retries`. Transport/unavailable accept
+`suspend`, `stop`, `fail` or `alternate_then_suspend`. Missing usage accepts
+`stop` or `estimate`; only `estimate` requires non-zero input and output token
+charges. Contradictory optional values fail closed.
 
 ## Secret boundary
 

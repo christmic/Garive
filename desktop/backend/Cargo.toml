@@ -10,12 +10,19 @@ publish = false
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+chrono.workspace = true
+garive-core = { path = "../../engine/core" }
 garive-llm = { path = "../../engine/llm" }
+garive-provider-anthropic = { path = "../../providers/anthropic" }
+garive-provider-compatible = { path = "../../providers/compatible" }
+garive-provider-openai = { path = "../../providers/openai" }
+garive-provider-profile = { path = "../../providers/profile" }
 garive-runtime = { path = "../../runtime/replica" }
 serde.workspace = true
+serde_json.workspace = true
 tauri = { version = "2.11.5", features = [] }
 tokio.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
-garive-core = { path = "../../engine/core" }
 tempfile = "3.27.0"

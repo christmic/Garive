@@ -13,6 +13,18 @@ use garive_runtime::{
 use serde::Serialize;
 use tokio::sync::Mutex;
 
+mod system_configuration;
+mod system_provider;
+
+pub use system_configuration::{
+    DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,
+};
+pub use system_provider::{
+    BuiltinDesktopProfileRegistry, DesktopConfigurationProvider, DesktopProfileConfiguration,
+    DesktopProfileRegistry, DesktopSecretResolver, FileDesktopConfigurationProvider,
+    ANTHROPIC_MESSAGES_PROFILE_ID, OPENAI_RESPONSES_PROFILE_ID,
+};
+
 /// Explicit operational identities and clock values owned by Desktop backend composition.
 pub trait DesktopOperations: Send + Sync {
     /// Creates one stable printable idempotency identity for a named command.
@@ -195,6 +207,21 @@ pub struct DesktopState {
 }
 
 impl DesktopState {
+    /// Loads and installs one backend-only system composition when present.
+    pub fn install_from(
+        &self,
+        provider: &dyn DesktopConfigurationProvider,
+    ) -> Result<bool, DesktopConfigurationError> {
+        let Some(config) = provider.load()? else {
+            return Ok(false);
+        };
+        let host =
+            DesktopHost::new(config).map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        self.install(host)
+            .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        Ok(true)
+    }
+
     /// Installs an explicitly constructed embedded Runtime once.
     pub fn install(&self, host: DesktopHost) -> Result<(), DesktopHostError> {
         let mut slot = self

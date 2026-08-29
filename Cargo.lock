@@ -1121,14 +1121,21 @@ version = "0.1.0"
 name = "garive-desktop"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "garive-core",
  "garive-llm",
+ "garive-provider-anthropic",
+ "garive-provider-compatible",
+ "garive-provider-openai",
+ "garive-provider-profile",
  "garive-runtime",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tempfile",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
