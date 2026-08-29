@@ -60,10 +60,10 @@
     {
       "name": "terminal-turn-is-immutable",
       "operations": [
-        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "turn.completed", "turn": "t1"}]}},
-        {"commit": {"expected": 1, "facts": [{"id": "f4", "kind": "turn.started", "turn": "t1"}]}}
+        {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "execution"}, {"id": "f4", "kind": "execution.completed", "turn": "t1", "execution": "execution"}, {"id": "f5", "kind": "turn.completed", "turn": "t1"}]}},
+        {"commit": {"expected": 1, "facts": [{"id": "f6", "kind": "turn.started", "turn": "t1"}]}}
       ],
-      "expected": {"results": ["committed:1:1-3", "error:invalid-transition"], "version": 1, "fact_count": 3, "uncertain": []}
+      "expected": {"results": ["committed:1:1-5", "error:invalid-transition"], "version": 1, "fact_count": 5, "uncertain": []}
     },
     {
       "name": "model-lifecycle-reaches-terminal",

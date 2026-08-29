@@ -83,11 +83,9 @@ impl SessionProjection {
             "session.closed" => self.close_session(),
             "turn.started" => self.start_turn(fact),
             "turn.suspended" => self.suspend_turn(fact),
-            "turn.completed" => {
-                self.transition_turn(required(&fact.turn_id)?, TurnState::Completed)
-            }
-            "turn.stopped" => self.transition_turn(required(&fact.turn_id)?, TurnState::Stopped),
-            "turn.failed" => self.transition_turn(required(&fact.turn_id)?, TurnState::Failed),
+            "turn.completed" => self.terminal_turn(fact, TurnState::Completed),
+            "turn.stopped" => self.terminal_turn(fact, TurnState::Stopped),
+            "turn.failed" => self.terminal_turn(fact, TurnState::Failed),
             "turn.input" => self.require_open_turn(required(&fact.turn_id)?),
             "turn.cancel_requested" => self.require_non_terminal_turn(required(&fact.turn_id)?),
             "execution.started" => self.start_execution(fact),
@@ -189,6 +187,27 @@ impl SessionProjection {
         self.suspensions
             .insert(turn.clone(), text(&payload, "suspension_id")?.to_owned());
         Ok(())
+    }
+
+    fn terminal_turn(&mut self, fact: &FactDraft, next: TurnState) -> Result<(), LedgerError> {
+        let turn = required(&fact.turn_id)?;
+        let payload = payload(fact)?;
+        let execution = ExecutionId::try_from(text(&payload, "execution_id")?)
+            .map_err(|_| LedgerError::InvalidFact)?;
+        let expected = match next {
+            TurnState::Completed => ExecutionState::Completed,
+            TurnState::Stopped => ExecutionState::Stopped,
+            TurnState::Failed => ExecutionState::Failed,
+            _ => return Err(LedgerError::InvalidTransition),
+        };
+        let actual = self.executions.get(&execution);
+        let suspended_close = matches!(next, TurnState::Stopped | TurnState::Failed)
+            && self.turns.get(turn) == Some(&TurnState::Suspended)
+            && actual == Some(&(turn.clone(), ExecutionState::Suspended));
+        if actual != Some(&(turn.clone(), expected)) && !suspended_close {
+            return Err(LedgerError::InvalidTransition);
+        }
+        self.transition_turn(turn, next)
     }
 
     fn require_open_turn(&self, turn_id: &TurnId) -> Result<(), LedgerError> {

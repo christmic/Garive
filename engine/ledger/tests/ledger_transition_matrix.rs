@@ -58,12 +58,28 @@ fn assert_transition_error(kinds: &[&str]) {
 #[test]
 fn every_turn_and_execution_terminal_is_admitted_once() {
     for terminal in ["turn.completed", "turn.stopped", "turn.failed"] {
-        assert_valid(&["session.opened", "turn.started", terminal]);
-        assert_transition_error(&["session.opened", "turn.started", terminal, terminal]);
+        let execution_terminal = terminal.replacen("turn.", "execution.", 1);
+        assert_valid(&[
+            "session.opened",
+            "turn.started",
+            "execution.started",
+            &execution_terminal,
+            terminal,
+        ]);
+        assert_transition_error(&[
+            "session.opened",
+            "turn.started",
+            "execution.started",
+            &execution_terminal,
+            terminal,
+            terminal,
+        ]);
     }
     assert_valid(&[
         "session.opened",
         "turn.started",
+        "execution.started",
+        "execution.completed",
         "turn.completed",
         "session.closed",
     ]);
@@ -193,18 +209,16 @@ fn every_effect_terminal_and_receipt_path_is_explicit() {
             assert_valid(&kinds);
         }
     }
-    for terminal in ["effect.completed"] {
-        assert_valid(&[
-            "session.opened",
-            "turn.started",
-            "execution.started",
-            "effect.prepared",
-            "effect.started",
-            "effect.receipt",
-            terminal,
-            "execution.completed",
-        ]);
-    }
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "effect.prepared",
+        "effect.started",
+        "effect.receipt",
+        "effect.completed",
+        "execution.completed",
+    ]);
     for prefix in [
         &["effect.prepared", "effect.denied"][..],
         &["effect.prepared", "effect.authorized", "effect.denied"][..],
