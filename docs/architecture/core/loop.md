@@ -2189,6 +2189,105 @@ while the entire loop is not implicitly in lockstep.
   drive → adapt → eval`) is the same shape, lifted one
   level up.
 
+## Convergence audit — `turn.loop` design closed
+
+The `turn_loop` skeleton has reached **architectural
+convergence**. Multiple rounds of deep-dive (model.invoke
+refinement, effect-layer safety, budget anchoring,
+contract correctness, projection determinism) added
+mechanism without changing control flow — exactly the
+design criterion we set up front.
+
+### Status of `turn.loop`'s 9 modules
+
+| Module | Status | Where it lives |
+|--------|--------|------------------|
+| 0 — Recovery entry (suspend / resume) | settled | `loop.md` + `ledger.md` |
+| 1 — Derive (6-step pipeline) | settled | `loop.md` + `derive-testing.md` |
+| 2 — Assemble (5 responsibilities) | settled | `loop.md` + `assemble-testing.md` |
+| 3 — Effect layer (contracts / dispatch / security) | settled | `effect-layer.md` |
+| Surface / ledger schema | settled | `ledger.md` |
+| Instruction family (10 categories) | settled | `ledger.md` |
+| Navigation ops (undo / redo / branch / compaction / redact) | settled | `loop.md` + `ledger.md` |
+| Driver loop (long-lived / Fresh / Resume) | settled | `loop.md` |
+| Suspend / Resume (unpaired detection + position derivation) | settled | `loop.md` |
+
+### What landed this turn
+
+| Mechanism | Module |
+|-----------|--------|
+| Two protocols (event + ledger) | `loop.md` |
+| 8 outcome kinds for `model.invoke` | `provider-adapter.md` |
+| Cancellation semantics (partial ledger-挂账) | `provider-adapter.md` |
+| AIMD + circuit breaker per-pool | `provider-adapter.md` |
+| Multi-model dispatch + `request_id` | `provider-adapter.md` |
+| Adaptive compression (5-step + 4-layer) | `compression.md` |
+| Budget projection anchored to `model.usage` | `loop.md` |
+| Layer reversibility principle (4 tiers + 2-side) | `loop.md` |
+| 5-effect-layer contract (intake / governor / dispatcher / workspace / security) | `effect-layer.md` |
+| Failure semantics (data, not exception) | `effect-layer.md` |
+| Tool discipline (few / well-designed / composable) | `effect-layer.md` |
+| Effect class + recovery profile (ReadOnly / Idempotent / Mutating) | `effect-layer.md` |
+| Conflict-graph scheduling (max parallelism under correctness) | `effect-layer.md` |
+| Branch × snapshot workspace (ledger branch → physical isolation) | `effect-layer.md` |
+| Read-cache (same-args free, with staleness handling) | `effect-layer.md` |
+| Tool-call event contract (start/terminal pairing) | `effect-layer.md` |
+| L2 dispatchers (Gated/Passthrough/Sequential) | `effect-layer.md` |
+| Tool registry + DynamicToolSource (kimi-style late binding) | `effect-layer.md` |
+| Background tasks (`start_background_task`) | `effect-layer.md` |
+| BDI architecture framing (Belief/Desire/Intention/Filter/Action) | `effect-layer.md` |
+| Deterministic simulation tests (E1–E5 + pairing invariant) | `effect-layer.md` |
+| Tool double-declaration (`effect_class` + `accesses`) | `effect-layer.md` |
+| Tool result security (provenance + taint) | `effect-layer.md` |
+| Tool health + budget + schema versioning + leases | `effect-layer.md` |
+
+### Tail-end — 4 contracts to fill
+
+The remaining items are **contracts to fill**, not new
+architecture — a single round of discussion lands them:
+
+| Item | Depth | Where |
+|------|-------|-------|
+| **StopPolicy** — termination set semantics + transition-reason enum + `max_iterations` | 浅 | `loop.md` |
+| **TurnBudget** — four-axis (iters / tokens / cost / wall-clock) + graceful exit (summary, not hard-stop) | 浅-中 | `loop.md` |
+| **Interaction** — user sends a new message mid-turn: queue vs cancel-and-redirect (one rule) | 浅 | `loop.md` |
+| **EventCatalog** — `AgentEvent` full enum + subscribe / back-pressure + `EventOrderingChecker` | 浅-中 | `loop.md` |
+
+### Documentation debt — 2 recap docs to land
+
+Two design records **only live in conversation**, not yet
+filed in the repo:
+
+| Doc | Contents |
+|-----|---------|
+| `docs/architecture/core/loop-invoke-and-effect.md` | `model.invoke` full design + effect-layer upgrade (contracts + conflict dispatch + security two-side) |
+| `docs/architecture/core/loop-context-pipeline.md` | derive / assemble upgrades + anchor accounting + bench scheme |
+
+These are **recap commits**, not new design — the substance is
+already in `loop.md` / `provider-adapter.md` / `effect-layer.md` /
+`compression.md`. Filing them moves the **conversation memory**
+into the **repo's documentation ledger** (where future
+contributors can find it).
+
+### The next continent
+
+`turn_loop` closed. By dependency order, the remaining
+**continents** are:
+
+1. **Memory layer** — `dream` (long-term memory extract),
+   recall, cross-session `goal` ownership. Personal agents
+   live here.
+2. **Composition root + configuration** — pattern assembly,
+   kind registry's concrete form, `RecoveryPolicy` table's
+   runtime shape.
+3. **Channel layer** — TUI / DingTalk / ACP event subscription
+   + rendering.
+4. **First implementation slice** — `Step 1`: ToolDispatcher
+   extraction (per the user's plan).
+
+`turn_loop` is no longer the bottleneck — implementation can
+start.
+
 ## Meta
 
 - Owner: `@christmic`
