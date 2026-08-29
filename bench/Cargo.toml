@@ -8,5 +8,6 @@ description = "SWE-bench verification runtime for Garive — orchestrator only"
 
 [dependencies]
 garive-eval = { path = "../engine/eval" }
+futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

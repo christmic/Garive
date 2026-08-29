@@ -5,7 +5,13 @@
 
 mod case;
 mod error;
+mod runner;
 mod unique_json;
 
 pub use case::{parse_cases, CaseLoadLimits, SweCase, SweDataset};
 pub use error::{BenchError, BenchErrorCode};
+pub use runner::{
+    run_benchmark, AgentDriver, AgentInput, AgentOutput, BenchmarkMode, BenchmarkRunConfig,
+    EnvironmentPool, EvaluationVerdict, IntakeAdapter, OfficialEvaluator, PatchAdapter, ResultSink,
+    RunnerPorts, WorkspaceLease,
+};
