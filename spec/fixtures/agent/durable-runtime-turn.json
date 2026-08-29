@@ -34,10 +34,17 @@
     {"name":"terminal-turn","execution":"terminal","model":"terminal","effect":"terminal","expected":"return_committed_terminal"},
     {"name":"recovery-bound-exhausted","execution":"active","model":"none","effect":"none","recovery_ordinal":3,"max_recoveries":3,"expected":"fail_recovery_bound"}
   ],
+  "core_outcome_cases": [
+    {"outcome":"completed","facts":["execution.completed","turn.completed"],"turn_state":"terminal"},
+    {"outcome":"suspended","facts":["execution.suspended","turn.suspended"],"turn_state":"resumable"},
+    {"outcome":"stopped","facts":["execution.stopped","turn.stopped"],"turn_state":"terminal"},
+    {"outcome":"failed","facts":["execution.failed","turn.failed"],"turn_state":"terminal"}
+  ],
   "durable_order": {
     "start": ["turn.started", "turn.input", "execution.started", "core.invoke"],
     "model": ["model.prepared", "model.started", "provider.dispatch", "model.terminal"],
     "effect": ["effect.prepared", "effect.authorized", "effect.started", "executor.dispatch", "effect.receipt", "effect.terminal", "effect.observation"],
-    "terminal": ["execution.terminal", "turn.terminal", "host.publish"]
+    "terminal": ["execution.terminal", "turn.terminal", "host.publish"],
+    "publication_failure": ["execution.terminal", "turn.terminal", "host.publish_failed", "reconnect.read_terminal"]
   }
 }
