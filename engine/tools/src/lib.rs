@@ -2,3 +2,13 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+
+mod prepared;
+mod schema;
+mod schema_validate;
+mod unique_json;
+
+pub use prepared::{
+    ExecutionCapability, ExecutionRequirements, PreparationError, PreparationErrorCode,
+    PreparedToolCall, ReplayClass, SchemaFailure, ToolCatalog, ToolDefinition, ToolIntent,
+};
