@@ -56,7 +56,8 @@ rejects a cursor inconsistent with the entry or frozen capability snapshot.
 
 Ports are frozen for one execution:
 
-- `ContextPort`: derive a purpose-specific surface from exact durable facts;
+- `ContextPort`: read ordered candidates from exact durable facts; Core merges
+  committed capability candidates and performs the only C2 derive;
 - `ModelPort`: invoke a provider-neutral request and emit normalized stream facts;
 - `ToolCatalogPort`: resolve exact tool definitions/revisions;
 - `AuthorizationPort`: return a grant, denial, constrained replacement request,

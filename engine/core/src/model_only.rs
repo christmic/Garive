@@ -163,17 +163,6 @@ async fn execute_kernel(
             .read_candidates(&context_request, rebuild_attempt)
         {
             Ok(candidates) => candidates,
-            Err(crate::ContextPortError::RequiredFactsExceedBudget) => {
-                return finish(
-                    request,
-                    ports,
-                    &mut control,
-                    &usage,
-                    AgentOutcome::Stopped {
-                        reason: StopReason::TokenLimit,
-                    },
-                );
-            }
             Err(crate::ContextPortError::PortFailure) => {
                 return finish(
                     request,

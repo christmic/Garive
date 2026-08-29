@@ -216,6 +216,11 @@ detail admission, non-inference filtering, exact budget dropping, duplicate
 product rejection and archived-menu rejection in Rust and Kotlin. Runtime tests
 decode the actual committed durable fact before invoking the same Core adapter.
 
+`spec/fixtures/agent/capability-context-admission-v1.json` covers strict
+base/capability stream merging, duplicate and ordering failures, required Skill
+charging, newest-first Memory/Knowledge selection and exact retained/dropped
+references in both languages.
+
 ## Properties
 
 For every valid request/candidate set:

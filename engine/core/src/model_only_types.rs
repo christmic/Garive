@@ -366,8 +366,6 @@ pub enum PortFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Failure returned specifically by [`ContextPort`].
 pub enum ContextPortError {
-    /// Required durable facts cannot fit in the frozen context budget.
-    RequiredFactsExceedBudget,
     /// Context storage, projection, or adapter failed.
     PortFailure,
 }

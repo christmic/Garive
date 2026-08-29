@@ -32,7 +32,7 @@ planned without reopening a narrower completed row.
 | C0 | Execution identity and bounded control | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs` and shared control fixtures green. |
 | C1 | Model facts and outcomes | accepted | accepted | documented | implemented | verified | done | Keep the normalized outcome API gate and shared fixtures green. |
 | C1b | Model request and stream contract | accepted | accepted | documented | implemented | verified | done | Keep request/stream docs, validation fixtures, and API gate green. |
-| C2 | Deterministic context derive | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs`, boundary tests, and property tests green. |
+| C2 | Deterministic context derive | accepted | accepted | documented | implemented | verified | done | Keep `missing_docs`, boundary/property tests and shared capability-admission fixture green; Core remains the sole derive owner. |
 | C3 | Bounded model-only execution | accepted | accepted | documented | implemented | verified | done | Keep the explicit no-tool boundary and model-only scenarios green. |
 | C4 | Tool resolution and prepared calls | accepted | accepted | documented | implemented | verified | done | Keep Portable Tool Schema, canonical digest, native tests, and shared fixtures green. |
 | C5 | Governed effects and observations | accepted | accepted | documented | implemented | verified | done | Keep preparation, authority, interaction, receipt, observation, recovery, and fake-Runtime ordering evidence green. |
@@ -68,10 +68,10 @@ planned without reopening a narrower completed row.
 
 | Slice | Design | Spec | API | Code | Tests | State | Admission dependency |
 |---|---|---|---|---|---|---|---|
-| Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds and revision fixtures, exact L0 payloads, Runtime namespace/restricted authority, atomic writes, and SQLite commit-before-context/restart evidence green. |
+| Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds/revision/capability-admission fixtures, exact L0 payloads, Runtime authority, atomic writes, and SQLite commit-before-C2/restart evidence green. |
 | Memory M1 | accepted | accepted | documented | implemented | verified | done | Keep M1-A through M1-G green: shared Rust/Kotlin lifecycle/maintenance/recall semantics, exact L0 facts, SQLite recovery, committed-recall C2 admission and the pinned synthetic quality regression. Representative empirical quality remains a separate evidence gate. |
-| Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure fixtures, exact L0 lifecycle transitions, explicit source authority, connector commit ordering, Core attribution, and SQLite crash-position recovery green. |
-| Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds fixtures, Rust/Kotlin Core narrowing, L0 validation, and SQLite commit-before-model/restart evidence green. |
+| Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure/capability-admission fixtures, exact L0 transitions, source authority, connector commit ordering, C2 attribution, and SQLite recovery green. |
+| Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds and capability-admission fixtures, Rust/Kotlin narrowing, L0 validation, and SQLite commit-before-C2/restart evidence green. |
 | Scheduler | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin recurrence/failure properties, exact L0 facts, SQLite lease races, authority/update conflicts, real C6 dispatch, restart and process-kill matrices green. |
 | Multi-Agent | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin canonical intent/budget/result properties, exact L0 lifecycle projection, durable grant-before-child ordering, cancellation/isolation, SQLite restart and six-boundary process-kill matrices green. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
