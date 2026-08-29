@@ -1,0 +1,19 @@
+[package]
+name = "garive-context-pressure"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+garive-core = { path = "../../engine/core" }
+garive-eval = { path = "../../engine/eval" }
+garive-llm = { path = "../../engine/llm" }
+serde.workspace = true
+serde_json.workspace = true
+serde_jcs.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -30,6 +30,7 @@ members = [
     "engine/scheduler",
     "engine/skill",
     "engine/tools",
+    "experiments/context-pressure-rs",
     "providers/compatible",
     "providers/profile",
     "providers/openai",

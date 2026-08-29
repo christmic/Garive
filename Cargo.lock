@@ -1131,6 +1131,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-context-pressure"
+version = "0.1.0"
+dependencies = [
+ "garive-core",
+ "garive-eval",
+ "garive-llm",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "garive-core"
 version = "0.1.0"
 dependencies = [
