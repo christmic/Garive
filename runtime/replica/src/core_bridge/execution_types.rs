@@ -3,7 +3,7 @@ use std::{error::Error, fmt};
 use garive_core::ExecutionReport;
 use garive_ledger::{CommitResult, SessionId};
 
-use crate::{RuntimeCommandError, SqliteLedgerError};
+use crate::{ExecutionLeaseError, ExecutionLeaseRequest, RuntimeCommandError, SqliteLedgerError};
 
 use super::ModelLifecycleContext;
 
@@ -15,6 +15,8 @@ pub struct DurableExecutionConfig {
     pub expected_session_version: u64,
     /// Exact model lifecycle configuration frozen for this Execution.
     pub model: ModelLifecycleContext,
+    /// Explicit operational lease acquired before Core may execute.
+    pub lease: ExecutionLeaseRequest,
 }
 
 /// Failure before a durable terminal transaction can be committed.
@@ -24,6 +26,8 @@ pub enum DurableExecutionError {
     Command(RuntimeCommandError),
     /// SQLite or Ledger rejected a required durability boundary.
     Ledger(SqliteLedgerError),
+    /// The Execution lease could not be acquired, retained, or released safely.
+    Lease(ExecutionLeaseError),
     /// An internal synchronization boundary was poisoned.
     Coordination,
 }
@@ -57,6 +61,7 @@ impl fmt::Display for DurableExecutionError {
         match self {
             Self::Command(error) => write!(formatter, "durable execution command failed: {error}"),
             Self::Ledger(error) => write!(formatter, "durable execution ledger failed: {error}"),
+            Self::Lease(error) => write!(formatter, "durable execution lease failed: {error}"),
             Self::Coordination => formatter.write_str("durable execution coordination failed"),
         }
     }
@@ -67,6 +72,7 @@ impl Error for DurableExecutionError {
         match self {
             Self::Command(error) => Some(error),
             Self::Ledger(error) => Some(error),
+            Self::Lease(error) => Some(error),
             Self::Coordination => None,
         }
     }

@@ -30,4 +30,6 @@ pub use runtime_turn::{
     RuntimeRecoveryAction, RuntimeRecoverySnapshot, RuntimeSuspensionKind, RuntimeSuspensionView,
     RuntimeTurnStatus, RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };
-pub use sqlite_ledger::{SqliteLedger, SqliteLedgerError};
+pub use sqlite_ledger::{
+    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, SqliteLedger, SqliteLedgerError,
+};

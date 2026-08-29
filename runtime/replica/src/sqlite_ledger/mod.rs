@@ -4,10 +4,13 @@ use garive_ledger::{
     CommitDisposition, CommitResult, DurableFact, FactDraft, FactKind, LedgerError, ModelRequestId,
     SessionId, ToolInvocationId, TurnId, TurnSnapshot,
 };
-use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
+use rusqlite::{params, Connection, OpenFlags, Transaction, TransactionBehavior};
 
+mod lease;
 mod migrations;
 mod storage;
+
+pub use lease::{ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest};
 
 /// SQLite-backed durable Ledger adapter with restart-safe append semantics.
 pub struct SqliteLedger {
@@ -27,6 +30,8 @@ pub enum SqliteLedgerError {
     UnsupportedSchema(u32),
     /// A persisted value cannot represent its declared domain field.
     InvalidStoredValue(&'static str),
+    /// An execution-side commit no longer owns its operational lease.
+    Lease(ExecutionLeaseError),
 }
 
 impl SqliteLedger {
@@ -61,66 +66,59 @@ impl SqliteLedger {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut state = storage::load_state(&transaction)?;
-        let result = state.commit(session_id.clone(), expected_session_version, drafts.clone())?;
-        if result.disposition == CommitDisposition::Replayed {
-            transaction.commit()?;
-            return Ok(result);
-        }
-
-        transaction.execute(
-            "INSERT OR IGNORE INTO ledger_sessions(session_id, version, max_position) \
-             VALUES (?1, ?2, ?2)",
-            params![session_id.as_str(), storage::encode_u64(0)],
-        )?;
-        let max_position = *result
-            .positions
-            .last()
-            .ok_or(SqliteLedgerError::InvalidStoredValue("commit positions"))?;
-        let updated = transaction.execute(
-            "UPDATE ledger_sessions SET version = ?1, max_position = ?2 \
-             WHERE session_id = ?3 AND version = ?4",
-            params![
-                storage::encode_u64(result.session_version),
-                storage::encode_u64(max_position),
-                session_id.as_str(),
-                storage::encode_u64(expected_session_version),
-            ],
-        )?;
-        if updated != 1 {
-            return Err(SqliteLedgerError::Domain(
-                LedgerError::ConcurrentModification,
-            ));
-        }
-        for (draft, position) in drafts.iter().zip(&result.positions) {
-            transaction.execute(
-                "INSERT INTO ledger_facts(\
-                 fact_id, session_id, position, commit_version, turn_id, execution_id, \
-                 model_request_id, tool_invocation_id, kind, schema_version, payload_json, \
-                 payload_sha256, recorded_at\
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-                params![
-                    draft.fact_id.as_str(),
-                    session_id.as_str(),
-                    storage::encode_u64(*position),
-                    storage::encode_u64(result.session_version),
-                    draft.turn_id.as_ref().map(|value| value.as_str()),
-                    draft.execution_id.as_ref().map(|value| value.as_str()),
-                    draft.model_request_id.as_ref().map(|value| value.as_str()),
-                    draft
-                        .tool_invocation_id
-                        .as_ref()
-                        .map(|value| value.as_str()),
-                    draft.kind.as_str(),
-                    i64::from(draft.schema_version),
-                    draft.payload.as_json(),
-                    draft.payload.sha256(),
-                    draft.recorded_at,
-                ],
-            )?;
-        }
+        let result =
+            commit_transaction(&transaction, session_id, expected_session_version, drafts)?;
         transaction.commit()?;
         Ok(result)
+    }
+
+    /// Acquires or renews one latest-active Execution lease transactionally.
+    pub fn acquire_execution_lease(
+        &mut self,
+        request: &ExecutionLeaseRequest,
+    ) -> Result<ExecutionLease, ExecutionLeaseError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ExecutionLeaseError::Storage)?;
+        let lease = lease::acquire(&transaction, request)?;
+        transaction
+            .commit()
+            .map_err(|_| ExecutionLeaseError::Storage)?;
+        Ok(lease)
+    }
+
+    /// Appends facts only while the exact Execution lease still owns the Turn.
+    pub fn commit_leased(
+        &mut self,
+        lease: &ExecutionLease,
+        session_id: SessionId,
+        expected_session_version: u64,
+        drafts: Vec<FactDraft>,
+    ) -> Result<CommitResult, SqliteLedgerError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        lease::require_owned(&transaction, lease).map_err(SqliteLedgerError::Lease)?;
+        let result =
+            commit_transaction(&transaction, session_id, expected_session_version, drafts)?;
+        transaction.commit()?;
+        Ok(result)
+    }
+
+    /// Releases a terminal Execution's lease using its exact ownership token.
+    pub fn release_execution_lease(
+        &mut self,
+        lease: &ExecutionLease,
+    ) -> Result<(), ExecutionLeaseError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ExecutionLeaseError::Storage)?;
+        lease::release(&transaction, lease)?;
+        transaction
+            .commit()
+            .map_err(|_| ExecutionLeaseError::Storage)
     }
 
     /// Reads a verified fixed-prefix fact range in ascending durable position.
@@ -190,6 +188,71 @@ impl SqliteLedger {
     }
 }
 
+fn commit_transaction(
+    transaction: &Transaction<'_>,
+    session_id: SessionId,
+    expected_session_version: u64,
+    drafts: Vec<FactDraft>,
+) -> Result<CommitResult, SqliteLedgerError> {
+    let mut state = storage::load_state(transaction)?;
+    let result = state.commit(session_id.clone(), expected_session_version, drafts.clone())?;
+    if result.disposition == CommitDisposition::Replayed {
+        return Ok(result);
+    }
+    transaction.execute(
+        "INSERT OR IGNORE INTO ledger_sessions(session_id, version, max_position) \
+         VALUES (?1, ?2, ?2)",
+        params![session_id.as_str(), storage::encode_u64(0)],
+    )?;
+    let max_position = *result
+        .positions
+        .last()
+        .ok_or(SqliteLedgerError::InvalidStoredValue("commit positions"))?;
+    let updated = transaction.execute(
+        "UPDATE ledger_sessions SET version = ?1, max_position = ?2 \
+         WHERE session_id = ?3 AND version = ?4",
+        params![
+            storage::encode_u64(result.session_version),
+            storage::encode_u64(max_position),
+            session_id.as_str(),
+            storage::encode_u64(expected_session_version),
+        ],
+    )?;
+    if updated != 1 {
+        return Err(SqliteLedgerError::Domain(
+            LedgerError::ConcurrentModification,
+        ));
+    }
+    for (draft, position) in drafts.iter().zip(&result.positions) {
+        transaction.execute(
+            "INSERT INTO ledger_facts(\
+             fact_id, session_id, position, commit_version, turn_id, execution_id, \
+             model_request_id, tool_invocation_id, kind, schema_version, payload_json, \
+             payload_sha256, recorded_at\
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                draft.fact_id.as_str(),
+                session_id.as_str(),
+                storage::encode_u64(*position),
+                storage::encode_u64(result.session_version),
+                draft.turn_id.as_ref().map(|value| value.as_str()),
+                draft.execution_id.as_ref().map(|value| value.as_str()),
+                draft.model_request_id.as_ref().map(|value| value.as_str()),
+                draft
+                    .tool_invocation_id
+                    .as_ref()
+                    .map(|value| value.as_str()),
+                draft.kind.as_str(),
+                i64::from(draft.schema_version),
+                draft.payload.as_json(),
+                draft.payload.sha256(),
+                draft.recorded_at,
+            ],
+        )?;
+    }
+    Ok(result)
+}
+
 impl fmt::Display for SqliteLedgerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -205,6 +268,7 @@ impl fmt::Display for SqliteLedgerError {
                 )
             }
             Self::InvalidStoredValue(field) => write!(formatter, "invalid stored {field}"),
+            Self::Lease(error) => write!(formatter, "execution lease error: {error}"),
         }
     }
 }
@@ -213,6 +277,7 @@ impl Error for SqliteLedgerError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Storage(error) => Some(error),
+            Self::Lease(error) => Some(error),
             _ => None,
         }
     }

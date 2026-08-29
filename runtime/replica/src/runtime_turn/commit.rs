@@ -28,6 +28,8 @@ fn map_error(error: SqliteLedgerError) -> RuntimeCommandError {
         SqliteLedgerError::CorruptLedger(_)
         | SqliteLedgerError::UnsupportedSchema(_)
         | SqliteLedgerError::InvalidStoredValue(_) => RuntimeCommandError::CorruptLedger,
-        SqliteLedgerError::Domain(_) => RuntimeCommandError::InvariantViolation,
+        SqliteLedgerError::Domain(_) | SqliteLedgerError::Lease(_) => {
+            RuntimeCommandError::InvariantViolation
+        }
     }
 }

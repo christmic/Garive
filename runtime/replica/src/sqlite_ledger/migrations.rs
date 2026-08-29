@@ -42,18 +42,29 @@ CREATE INDEX facts_by_tool_invocation
     WHERE tool_invocation_id IS NOT NULL;
 "#;
 
+const MIGRATION_2: &str = r#"
+CREATE TABLE execution_leases (
+    turn_id TEXT PRIMARY KEY NOT NULL,
+    execution_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL CHECK(length(owner_id) > 0),
+    lease_token TEXT NOT NULL UNIQUE CHECK(length(lease_token) > 0),
+    generation BLOB NOT NULL CHECK(length(generation) = 8),
+    expires_at_ms BLOB NOT NULL CHECK(length(expires_at_ms) = 8)
+) STRICT;
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
          version INTEGER PRIMARY KEY NOT NULL, applied_at TEXT NOT NULL\
          ) STRICT;",
     )?;
-    let version: u32 = connection.query_row(
+    let mut version: u32 = connection.query_row(
         "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
         [],
         |row| row.get(0),
     )?;
-    if version > 1 {
+    if version > 2 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -62,6 +73,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 1;
+    }
+    if version == 1 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_2)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (2, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;

@@ -10,7 +10,7 @@ use garive_llm::{
 };
 use serde_json::json;
 
-use crate::{RuntimeCommandError, SqliteLedger};
+use crate::{ExecutionLease, RuntimeCommandError, SqliteLedger};
 
 use super::encoding::digest;
 use super::{
@@ -38,8 +38,12 @@ pub async fn execute_durable_model_only(
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
     validate_ledger_watermark(ledger, config, request)?;
+    let lease = ledger
+        .acquire_execution_lease(&config.lease)
+        .map_err(DurableExecutionError::Lease)?;
     let coordinator = Mutex::new(CommitCoordinator {
         ledger,
+        lease,
         session_id: config.session_id.clone(),
         version: config.expected_session_version,
         position: request.context_request.through_position,
@@ -93,6 +97,10 @@ fn finish_durable_execution(
     )
     .map_err(DurableExecutionError::Command)?;
     let terminal_commit = coordinator.commit(terminal)?;
+    coordinator
+        .ledger
+        .release_execution_lease(&coordinator.lease)
+        .map_err(DurableExecutionError::Lease)?;
     let publication = publisher.publish_terminal(&report, &terminal_commit.positions);
     Ok(DurableExecutionResult {
         report,
@@ -119,8 +127,12 @@ pub async fn execute_durable_agent(
 ) -> Result<DurableExecutionResult, DurableExecutionError> {
     validate_identity(config, request)?;
     validate_ledger_watermark(ledger, config, request)?;
+    let lease = ledger
+        .acquire_execution_lease(&config.lease)
+        .map_err(DurableExecutionError::Lease)?;
     let coordinator = Mutex::new(CommitCoordinator {
         ledger,
+        lease,
         session_id: config.session_id.clone(),
         version: config.expected_session_version,
         position: request.context_request.through_position,
@@ -168,6 +180,7 @@ pub async fn execute_durable_agent(
 
 pub(super) struct CommitCoordinator<'a> {
     ledger: &'a mut SqliteLedger,
+    lease: ExecutionLease,
     session_id: SessionId,
     version: u64,
     position: u64,
@@ -181,7 +194,7 @@ impl CommitCoordinator<'_> {
     ) -> Result<CommitResult, DurableExecutionError> {
         let result = self
             .ledger
-            .commit(self.session_id.clone(), self.version, facts)
+            .commit_leased(&self.lease, self.session_id.clone(), self.version, facts)
             .map_err(DurableExecutionError::Ledger)?;
         self.version = result.session_version;
         self.position = result
@@ -343,6 +356,8 @@ fn validate_identity(
     if config.session_id.as_str() != request.session_id.as_str()
         || config.model.turn_id.as_str() != request.turn_id.as_str()
         || config.model.execution_id.as_str() != request.execution_id.as_str()
+        || config.lease.turn_id != config.model.turn_id
+        || config.lease.execution_id != config.model.execution_id
     {
         Err(DurableExecutionError::Command(
             RuntimeCommandError::InvalidCommand,

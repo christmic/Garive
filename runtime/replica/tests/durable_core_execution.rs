@@ -25,9 +25,9 @@ use garive_llm::{
 use garive_runtime::{
     execute_durable_agent, execute_durable_model_only, plan_start_turn, AuthorityDecision,
     AuthorityFuture, AuthorityPort, AuthorityRequest, DurableExecutionConfig,
-    DurableExecutionError, EffectiveRuntimeLimits, ExecutorDispatch, ExecutorFuture, ExecutorPort,
-    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand, TerminalPublicationError, TerminalPublisher,
+    DurableExecutionError, EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch,
+    ExecutorFuture, ExecutorPort, ModelLifecycleContext, PreparedExecution, RuntimeCommandError,
+    RuntimeCommandId, SqliteLedger, StartTurnCommand, TerminalPublicationError, TerminalPublisher,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
@@ -285,11 +285,19 @@ fn sqlite_dispatch_and_publication_cross_only_after_their_commits() {
             expected_session_version: 2,
             model: ModelLifecycleContext {
                 turn_id: plan.turn_id.clone(),
-                execution_id: execution,
+                execution_id: execution.clone(),
                 deployment_id: "deployment".into(),
                 recovery_policy_revision: "policy".into(),
                 max_attempts: 1,
                 recorded_at: "2026-08-29T00:00:01Z".into(),
+            },
+            lease: ExecutionLeaseRequest {
+                turn_id: plan.turn_id.clone(),
+                execution_id: execution,
+                owner_id: "test-worker".into(),
+                lease_token: format!("lease-{fail_publication}"),
+                now_ms: 1,
+                duration_ms: 10_000,
             },
         };
         let model = Model {
@@ -379,11 +387,19 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
         expected_session_version: 2,
         model: ModelLifecycleContext {
             turn_id: plan.turn_id.clone(),
-            execution_id: execution,
+            execution_id: execution.clone(),
             deployment_id: "deployment".into(),
             recovery_policy_revision: "policy".into(),
             max_attempts: 1,
             recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        lease: ExecutionLeaseRequest {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution,
+            owner_id: "agent-worker".into(),
+            lease_token: "agent-lease".into(),
+            now_ms: 1,
+            duration_ms: 10_000,
         },
     };
     let model = Model {

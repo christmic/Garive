@@ -322,6 +322,13 @@ At most one active execution lease drives a Turn. Lease expiry does not itself
 grant replay authority; the new owner performs restart reconstruction. Session
 version and unique identities reject split-brain commits.
 
+The SQLite host stores the operational lease separately from semantic facts.
+Every execution-side append checks the exact Turn, Execution, owner and token
+inside the same transaction. An expired lease cannot be renewed or replaced
+until its old Execution has a durable terminal/`execution.abandoned` fact and a
+new latest active Execution exists. Terminal commit succeeds before release;
+an execution-side failure leaves the lease for expiry and recovery.
+
 Cancellation is durably requested, delivered through the frozen cancellation
 port and checked at existing Core boundaries. If an external invocation is
 Started, cancellation still follows its receipt/uncertainty contract. Runtime
