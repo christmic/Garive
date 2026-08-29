@@ -104,6 +104,20 @@ pub fn derive_context_with_memory(
     candidates: &[ContextCandidate],
     recalls: &[MemoryRecallContextBatch],
 ) -> Result<ContextSurface, MemoryContextError> {
+    if candidates
+        .windows(2)
+        .any(|pair| pair[0].fact_ref.position >= pair[1].fact_ref.position)
+    {
+        let code = if candidates
+            .windows(2)
+            .any(|pair| pair[0].fact_ref.position == pair[1].fact_ref.position)
+        {
+            "duplicate-reference"
+        } else {
+            "non-increasing-position"
+        };
+        return Err(MemoryContextError::Context(ContextErrorCode(code)));
+    }
     if recalls.len() > 2 {
         return Err(MemoryContextError::DuplicateRecall);
     }

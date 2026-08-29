@@ -64,6 +64,15 @@ public fun deriveContextWithMemory(
     candidates: List<ContextCandidate>,
     recalls: List<MemoryRecallContextBatch>,
 ): MemoryContextResult {
+    candidates.zipWithNext().firstOrNull { (left, right) -> left.factRef.position >= right.factRef.position }
+        ?.let { (left, right) ->
+            val code = if (left.factRef.position == right.factRef.position) {
+                "duplicate-reference"
+            } else {
+                "non-increasing-position"
+            }
+            return MemoryContextResult.Failure(MemoryContextError.Context(code))
+        }
     if (recalls.size > 2 || recalls.map { it.product }.toSet().size != recalls.size) {
         return MemoryContextResult.Failure(MemoryContextError.DuplicateRecall)
     }
