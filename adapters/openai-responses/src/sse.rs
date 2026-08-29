@@ -61,7 +61,13 @@ impl SseDecoder {
 
     /// Validates that EOF does not leave an incomplete frame.
     pub fn finish(&mut self) -> Result<(), ResponsesAdapterError> {
-        if self.buffer.iter().all(u8::is_ascii_whitespace) {
+        let trailing_comments = std::str::from_utf8(&self.buffer)
+            .map(|text| {
+                text.lines()
+                    .all(|line| line.trim().is_empty() || line.starts_with(':'))
+            })
+            .unwrap_or(false);
+        if trailing_comments {
             self.buffer.clear();
             Ok(())
         } else {
