@@ -3,7 +3,7 @@ use garive_ledger::{
     ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{SqliteLedger, SqliteLedgerError};
-use serde_json::json;
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 fn draft(
@@ -21,9 +21,22 @@ fn draft(
         tool_invocation_id: None,
         kind: FactKind::new(kind).unwrap(),
         schema_version: 1,
-        payload: CanonicalPayload::from_value(&json!({})).unwrap(),
+        payload: CanonicalPayload::from_value(&runtime_payload(kind)).unwrap(),
         recorded_at: "2026-08-29T00:00:00Z".into(),
     }
+}
+
+fn runtime_payload(kind: &str) -> Value {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../spec/fixtures/ledger/runtime-facts-v1.json");
+    let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    fixture["valid_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| value["kind"].as_str() == Some(kind))
+        .map(|value| value["payload"].clone())
+        .unwrap_or_else(|| json!({}))
 }
 
 fn initial_facts() -> Vec<FactDraft> {

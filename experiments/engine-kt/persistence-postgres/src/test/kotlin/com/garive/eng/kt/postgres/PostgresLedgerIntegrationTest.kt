@@ -12,6 +12,8 @@ import com.garive.eng.kt.ledger.ModelRequestId
 import com.garive.eng.kt.ledger.SessionId
 import com.garive.eng.kt.ledger.TurnId
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres
+import java.nio.file.Path
+import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -19,6 +21,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class PostgresLedgerIntegrationTest {
     @Test
@@ -101,7 +106,7 @@ class PostgresLedgerIntegrationTest {
         turn: String? = null,
         execution: String? = null,
         request: String? = null,
-        payload: CanonicalPayload = payload("{}"),
+        payload: CanonicalPayload = runtimePayload(kind),
     ) = FactDraft(
         FactId.of(id),
         turn?.let(TurnId::of),
@@ -117,6 +122,17 @@ class PostgresLedgerIntegrationTest {
     private fun payload(json: String): CanonicalPayload {
         val value = Json.parseToJsonElement(json)
         assertIs<JsonObject>(value)
+        return assertIs<CanonicalPayloadResult.Success>(CanonicalPayload.fromValue(value)).payload
+    }
+
+    private fun runtimePayload(kind: String): CanonicalPayload {
+        val root = Path.of(System.getProperty("garive.repo.root"))
+        val cases = Json.parseToJsonElement(
+            root.resolve("spec/fixtures/ledger/runtime-facts-v1.json").readText(),
+        ).jsonObject.getValue("valid_cases").jsonArray
+        val value = cases.firstOrNull {
+            it.jsonObject.getValue("kind").jsonPrimitive.content == kind
+        }?.jsonObject?.getValue("payload") ?: JsonObject(emptyMap())
         return assertIs<CanonicalPayloadResult.Success>(CanonicalPayload.fromValue(value)).payload
     }
 
