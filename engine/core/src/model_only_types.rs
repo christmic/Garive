@@ -118,7 +118,7 @@ pub struct ModelOnlyLimits {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-/// Exact durable evidence attribution attached to model-visible Memory data.
+/// Legacy M0 retrieval evidence; M1 recall must enter through C2 candidates.
 pub struct MemoryEvidenceAttribution {
     /// Session containing the supporting fact.
     pub session_id: String,
@@ -131,7 +131,7 @@ pub struct MemoryEvidenceAttribution {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-/// Runtime-verified inline Memory content supplied as subordinate attributed data.
+/// Legacy M0 inline retrieval value retained until its adapter migrates to C2.
 pub struct AttributedMemory {
     /// Stable logical record identity.
     pub record_id: String,
@@ -139,7 +139,7 @@ pub struct AttributedMemory {
     pub revision_id: String,
     /// SHA-256 digest binding `content_utf8`.
     pub content_digest: String,
-    /// Resolved inline UTF-8 content; references are resolved by Runtime first.
+    /// Runtime-resolved inline UTF-8 content.
     pub content_utf8: String,
     /// Ordered non-empty durable provenance.
     pub evidence: Vec<MemoryEvidenceAttribution>,
@@ -270,7 +270,7 @@ pub struct AgentTurnRequest {
     pub context_request: ContextRequest,
     /// Exact Skills durably activated before any model request.
     pub activated_skills: Vec<ActivatedSkill>,
-    /// Ordered Runtime-verified optional Memory data committed before model use.
+    /// Legacy M0 attributed retrieval pending migration to the C2 adapter.
     pub attributed_memory: Vec<AttributedMemory>,
     /// Ordered Runtime-verified Knowledge evidence committed before model use.
     pub attributed_knowledge: Vec<AttributedKnowledge>,
@@ -299,7 +299,7 @@ pub enum AgentRequestError {
     InvalidModelTarget,
     /// An optional total-token limit was explicitly set to zero.
     InvalidTokenLimit,
-    /// A model-visible Memory value lacks an exact content/evidence binding.
+    /// A legacy M0 Memory value lacks an exact content/evidence binding.
     InvalidMemoryContext,
     /// A model-visible Knowledge value lacks an exact content/citation binding.
     InvalidKnowledgeContext,

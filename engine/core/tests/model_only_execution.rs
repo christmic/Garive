@@ -12,11 +12,11 @@ use std::{
 use futures::executor::block_on;
 use garive_core::{
     execute_model_only, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry,
-    AgentEvent, AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentTurnRequest, ClockPort,
-    ContextItem, ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
-    EventSink, ExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits,
-    ModelRecoveryPolicy, OutputLimitAction, PortFailure, ResumeInput, SessionId, StopReason,
-    SuspensionReason, TerminalRecoveryAction, TurnId,
+    AgentEvent, AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentTurnRequest,
+    CandidateKind, ClockPort, ContextItem, ContextPort, ContextPortError, ContextPurpose,
+    ContextRequest, ContextSurface, EventSink, ExecutionId, ExecutionLimits, FactRef,
+    MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure,
+    ResumeInput, SessionId, StopReason, SuspensionReason, TerminalRecoveryAction, TurnId,
 };
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
@@ -79,6 +79,7 @@ impl ContextPort for FakeContext {
             through_position: request.through_position,
             items: vec![ContextItem::Input {
                 fact_ref: fact_ref.clone(),
+                kind: CandidateKind::UserInput,
                 item: ModelInputItem::Message {
                     role: ModelRole::User,
                     content: vec![ModelInputContent::Text("hi".into())],

@@ -8,9 +8,9 @@ use futures::executor::block_on;
 use garive_core::{
     execute_agent, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
     AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest,
-    AttributedKnowledge, AttributedMemory, ClockPort, CommittedGovernedResult, ContextItem,
-    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface, EventSink,
-    ExecutionId, ExecutionLimits, FactRef, GovernedEffectFuture, GovernedEffectPort,
+    AttributedKnowledge, AttributedMemory, CandidateKind, ClockPort, CommittedGovernedResult,
+    ContextItem, ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
+    EventSink, ExecutionId, ExecutionLimits, FactRef, GovernedEffectFuture, GovernedEffectPort,
     KnowledgeCitationAttribution, MemoryEvidenceAttribution, MissingUsagePolicy, ModelOnlyLimits,
     ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId, SuspensionReason,
     TerminalRecoveryAction, TurnId,
@@ -52,6 +52,7 @@ impl ContextPort for Context {
                     session_id: request.session_id.clone(),
                     position: 1,
                 },
+                kind: CandidateKind::UserInput,
                 item: garive_llm::ModelInputItem::Message {
                     role: ModelRole::User,
                     content: vec![garive_llm::ModelInputContent::Text("hi".into())],

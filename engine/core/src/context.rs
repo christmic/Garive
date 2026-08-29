@@ -32,6 +32,10 @@ pub enum CandidateKind {
     Summary,
     /// System-generated operational notice.
     SystemNotice,
+    /// Committed governed Memory recall evidence.
+    Memory,
+    /// Committed attributed Knowledge evidence.
+    Knowledge,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -104,6 +108,8 @@ pub enum ContextItem {
     Input {
         /// Source ledger fact.
         fact_ref: FactRef,
+        /// Semantic class retained for provider-neutral assembly ordering.
+        kind: CandidateKind,
         /// Model input content copied from the candidate.
         item: ModelInputItem,
     },
@@ -302,6 +308,7 @@ pub fn derive_context(
                 items.extend(value.candidate.items.iter().cloned().map(|item| {
                     ContextItem::Input {
                         fact_ref: value.candidate.fact_ref.clone(),
+                        kind: value.candidate.kind,
                         item,
                     }
                 }));

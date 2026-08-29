@@ -23,14 +23,17 @@ pub(super) fn build_model_request(
         request.execution_id.as_str()
     );
     let target = request.model_targets[target_index].clone();
-    let mut input_items: Vec<_> = surface
-        .items
-        .into_iter()
-        .filter_map(|value| match value {
-            ContextItem::Input { item, .. } => Some(item),
-            ContextItem::RedactedItem { .. } => None,
-        })
-        .collect();
+    let mut memory_items = Vec::new();
+    let mut input_items = Vec::new();
+    for value in surface.items {
+        if let ContextItem::Input { kind, item, .. } = value {
+            if kind == crate::CandidateKind::Memory {
+                memory_items.push(item);
+            } else {
+                input_items.push(item);
+            }
+        }
+    }
     let instruction_boundary = input_items
         .iter()
         .take_while(|item| {
@@ -54,11 +57,14 @@ pub(super) fn build_model_request(
             }),
     );
     let memory_boundary = instruction_boundary + request.activated_skills.len();
+    let memory_count = memory_items.len();
     input_items.splice(
         memory_boundary..memory_boundary,
-        request.attributed_memory.iter().map(memory_input),
+        memory_items
+            .into_iter()
+            .chain(request.attributed_memory.iter().map(memory_input)),
     );
-    let knowledge_boundary = memory_boundary + request.attributed_memory.len();
+    let knowledge_boundary = memory_boundary + memory_count + request.attributed_memory.len();
     input_items.splice(
         knowledge_boundary..knowledge_boundary,
         request.attributed_knowledge.iter().map(knowledge_input),
@@ -85,10 +91,8 @@ fn memory_input(value: &crate::AttributedMemory) -> ModelInputItem {
         .iter()
         .map(|item| {
             serde_json::json!({
-                "session_id": item.session_id,
-                "position": item.position,
-                "fact_id": item.fact_id,
-                "payload_digest": item.payload_digest,
+                "session_id": item.session_id, "position": item.position,
+                "fact_id": item.fact_id, "payload_digest": item.payload_digest,
             })
         })
         .collect::<Vec<_>>();
@@ -96,12 +100,9 @@ fn memory_input(value: &crate::AttributedMemory) -> ModelInputItem {
         role: ModelRole::User,
         content: vec![ModelInputContent::Text(
             serde_json::json!({
-                "type": "garive.memory",
-                "record_id": value.record_id,
-                "revision_id": value.revision_id,
-                "content_digest": value.content_digest,
-                "evidence": evidence,
-                "content": value.content_utf8,
+                "type": "garive.memory", "record_id": value.record_id,
+                "revision_id": value.revision_id, "content_digest": value.content_digest,
+                "evidence": evidence, "content": value.content_utf8,
             })
             .to_string(),
         )],

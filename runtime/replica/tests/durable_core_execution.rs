@@ -11,11 +11,11 @@ use std::{
 use futures::executor::block_on;
 use garive_core::{
     AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
-    AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest, ClockPort, ContextItem,
-    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface, EventSink,
-    ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy, ModelOnlyLimits,
-    ModelRecoveryPolicy, OutputLimitAction, PortFailure, SessionId as CoreSessionId,
-    TerminalRecoveryAction, TurnId as CoreTurnId,
+    AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest, CandidateKind,
+    ClockPort, ContextItem, ContextPort, ContextPortError, ContextPurpose, ContextRequest,
+    ContextSurface, EventSink, ExecutionId as CoreExecutionId, ExecutionLimits, FactRef,
+    MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure,
+    SessionId as CoreSessionId, TerminalRecoveryAction, TurnId as CoreTurnId,
 };
 use garive_knowledge::{
     Citation, CitationScheme, ContentBinding as KnowledgeContent, FreshnessRequirement,
@@ -78,6 +78,7 @@ impl ContextPort for Context {
             through_position: request.through_position,
             items: vec![ContextItem::Input {
                 fact_ref: fact.clone(),
+                kind: CandidateKind::UserInput,
                 item: ModelInputItem::Message {
                     role: garive_llm::ModelRole::User,
                     content: vec![ModelInputContent::Text("hello".into())],

@@ -5,8 +5,8 @@ use std::{collections::BTreeSet, num::NonZeroU32};
 use garive_core::{
     AgentCursor, AgentDefinitionId as CoreDefinitionId,
     AgentDefinitionRevision as CoreDefinitionRevision, AgentEntry,
-    AgentInstanceId as CoreAgentInstanceId, AgentTurnRequest, ContextItem, ContextPort,
-    ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
+    AgentInstanceId as CoreAgentInstanceId, AgentTurnRequest, CandidateKind, ContextItem,
+    ContextPort, ContextPortError, ContextPurpose, ContextRequest, ContextSurface,
     ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, ModelOnlyLimits, ModelRecoveryPolicy,
     ResumeInput, SessionId as CoreSessionId, TurnId as CoreTurnId,
 };
@@ -310,6 +310,7 @@ impl ContextPort for LocalInputContext {
             through_position: request.through_position,
             items: vec![ContextItem::Input {
                 fact_ref: reference.clone(),
+                kind: CandidateKind::UserInput,
                 item,
             }],
             retained_refs: vec![reference],

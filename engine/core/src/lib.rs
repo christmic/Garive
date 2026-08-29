@@ -5,6 +5,7 @@
 
 mod context;
 mod governed_execution;
+mod memory_context;
 mod model_only;
 mod model_only_support;
 mod model_only_types;
@@ -17,6 +18,10 @@ pub use context::{
 pub use governed_execution::{
     execute_agent, AgentToolCapabilities, CommittedGovernedResult, GovernedEffectFuture,
     GovernedEffectPort, GovernedSuspensionBinding,
+};
+pub use memory_context::{
+    derive_context_with_memory, MemoryContextError, MemoryContextItem, MemoryContextState,
+    MemoryRecallContextBatch, MemoryRecallProduct,
 };
 pub use model_only::execute_model_only;
 pub use model_only_types::{
