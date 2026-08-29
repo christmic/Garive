@@ -33,9 +33,29 @@
       "operations": [
         {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},
         {"commit": {"expected": 1, "facts": [{"id": "f4", "kind": "execution.suspended", "turn": "t1", "execution": "e1"}, {"id": "f5", "kind": "turn.suspended", "turn": "t1"}]}},
-        {"commit": {"expected": 2, "facts": [{"id": "f6", "kind": "turn.started", "turn": "t1"}, {"id": "f7", "kind": "execution.started", "turn": "t1", "execution": "e2"}]}}
+        {"commit": {"expected": 2, "facts": [{"id": "f6", "kind": "turn.started", "turn": "t1", "payload_overrides": {"kind": "continue", "prior_suspension_id": "suspension"}}, {"id": "f7", "kind": "execution.started", "turn": "t1", "execution": "e2"}]}}
       ],
       "expected": {"results": ["committed:1:1-3", "committed:2:4-5", "committed:3:6-7"], "version": 3, "fact_count": 7, "uncertain": []}
+    },
+    {
+      "name": "interaction-resolution-consumes-suspension",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [
+          {"id": "f1", "kind": "session.opened"},
+          {"id": "f2", "kind": "turn.started", "turn": "t1"},
+          {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"},
+          {"id": "f4", "kind": "effect.prepared", "turn": "t1", "execution": "e1", "tool": "tool1"},
+          {"id": "f5", "kind": "interaction.requested", "turn": "t1", "execution": "e1", "tool": "tool1"},
+          {"id": "f6", "kind": "execution.suspended", "turn": "t1", "execution": "e1"},
+          {"id": "f7", "kind": "turn.suspended", "turn": "t1"}
+        ]}},
+        {"commit": {"expected": 1, "facts": [
+          {"id": "f8", "kind": "interaction.resolved", "turn": "t1", "execution": "e1", "tool": "tool1"},
+          {"id": "f9", "kind": "turn.started", "turn": "t1", "payload_overrides": {"kind": "continue", "prior_suspension_id": "suspension"}},
+          {"id": "f10", "kind": "execution.started", "turn": "t1", "execution": "e2"}
+        ]}}
+      ],
+      "expected": {"results": ["committed:1:1-7", "committed:2:8-10"], "version": 2, "fact_count": 10, "uncertain": []}
     },
     {
       "name": "terminal-turn-is-immutable",

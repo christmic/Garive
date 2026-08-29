@@ -22,7 +22,7 @@ class LedgerScenariosTest {
     @Test
     fun `Kotlin consumes every ledger scenario`() {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(14, cases.size, "fixture coverage changed; review both runners")
+        assertEquals(15, cases.size, "fixture coverage changed; review both runners")
         cases.forEach { runCase(it.jsonObject) }
     }
 
@@ -100,7 +100,9 @@ class LedgerScenariosTest {
     }
 
     private fun draft(value: JsonObject): FactDraft {
-        val payloadValue: JsonElement = value["payload"] ?: runtimePayload(value.text("kind"))
+        val basePayload = (value["payload"] ?: runtimePayload(value.text("kind"))).jsonObject
+        val overrides = value["payload_overrides"]?.jsonObject ?: JsonObject(emptyMap())
+        val payloadValue: JsonElement = JsonObject(basePayload + overrides)
         val payload = assertIs<CanonicalPayloadResult.Success>(CanonicalPayload.fromValue(payloadValue)).payload
         return FactDraft(
             FactId.of(value.text("id")),

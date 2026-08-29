@@ -15,10 +15,16 @@ fn fixture() -> Value {
 }
 
 fn draft(value: &Value) -> FactDraft {
-    let payload_value = value
+    let mut payload_value = value
         .get("payload")
         .cloned()
         .unwrap_or_else(|| common::runtime_payload(value["kind"].as_str().unwrap()));
+    if let Some(overrides) = value.get("payload_overrides").and_then(Value::as_object) {
+        payload_value
+            .as_object_mut()
+            .unwrap()
+            .extend(overrides.clone());
+    }
     FactDraft {
         fact_id: FactId::try_from(value["id"].as_str().unwrap()).unwrap(),
         turn_id: value["turn"]
@@ -76,7 +82,7 @@ fn render_read(result: Result<Vec<DurableFact>, LedgerError>) -> String {
 fn rust_consumes_every_ledger_scenario() {
     let document = fixture();
     let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 14);
+    assert_eq!(cases.len(), 15);
     for case in cases {
         let session_id = SessionId::try_from("session").unwrap();
         let mut ledger = LedgerState::default();
