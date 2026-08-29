@@ -142,6 +142,10 @@ impl MemoryRecallCandidate {
     pub const fn evidence_count(&self) -> u32 {
         self.evidence_count
     }
+    /// Returns exact retriever scores.
+    pub const fn score(&self) -> RecallScore {
+        self.score
+    }
 }
 
 /// Explicit deterministic exploration inputs.
@@ -168,6 +172,18 @@ impl RecallExploration {
             return Err(MemoryError::new(MemoryErrorCode::SelectionUnreplayable));
         }
         Ok(value)
+    }
+    /// Returns the exact admitted algorithm revision.
+    pub fn algorithm_revision(&self) -> &str {
+        &self.algorithm_revision
+    }
+    /// Returns the explicit replay seed.
+    pub const fn seed(&self) -> u64 {
+        self.seed
+    }
+    /// Returns reserved exploration slots.
+    pub const fn slots(&self) -> u32 {
+        self.slots
     }
 }
 
@@ -232,6 +248,26 @@ impl RecallSelectionRequest {
             return Err(MemoryError::new(MemoryErrorCode::SelectionUnreplayable));
         }
         Ok(value)
+    }
+    /// Returns the context product.
+    pub const fn product(&self) -> RecallProduct {
+        self.product
+    }
+    /// Returns the selection policy revision.
+    pub fn selection_policy_revision(&self) -> &str {
+        &self.selection_policy_revision
+    }
+    /// Returns the item limit.
+    pub const fn max_items(&self) -> u32 {
+        self.max_items
+    }
+    /// Returns the exact byte limit.
+    pub const fn max_total_bytes(&self) -> u64 {
+        self.max_total_bytes
+    }
+    /// Returns deterministic exploration inputs when enabled.
+    pub const fn exploration(&self) -> Option<&RecallExploration> {
+        self.exploration.as_ref()
     }
 }
 

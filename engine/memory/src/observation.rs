@@ -107,6 +107,22 @@ impl MemoryObligation {
     pub const fn application_fact(&self) -> &DurableFactReference {
         &self.application_fact
     }
+    /// Returns the expected outcome descriptor digest.
+    pub fn expected_outcome_digest(&self) -> &str {
+        &self.expected_outcome_digest
+    }
+    /// Returns the application scope digest.
+    pub fn application_scope_digest(&self) -> &str {
+        &self.application_scope_digest
+    }
+    /// Returns the frozen attribution policy revision.
+    pub fn attribution_policy_revision(&self) -> &str {
+        &self.attribution_policy_revision
+    }
+    /// Returns the inclusive observation expiry position.
+    pub const fn expires_at_position(&self) -> u64 {
+        self.expires_at_position
+    }
 }
 
 /// Reality verdict bound to an observation.
@@ -188,6 +204,30 @@ impl MemoryObservation {
             ObservationVerdict::Verified | ObservationVerdict::Neutral { .. } => {}
         }
         Ok(value)
+    }
+    /// Returns the observation identity.
+    pub fn observation_id(&self) -> &str {
+        &self.observation_id
+    }
+    /// Returns the obligation identity.
+    pub fn obligation_id(&self) -> &str {
+        &self.obligation_id
+    }
+    /// Returns the durable observation position.
+    pub const fn position(&self) -> u64 {
+        self.position
+    }
+    /// Returns the verifier revision.
+    pub fn verifier_revision(&self) -> &str {
+        &self.verifier_revision
+    }
+    /// Returns ordered typed reality evidence.
+    pub fn evidence(&self) -> &[ObservationEvidence] {
+        &self.evidence
+    }
+    /// Returns the reconciled verdict.
+    pub const fn verdict(&self) -> &ObservationVerdict {
+        &self.verdict
     }
 }
 

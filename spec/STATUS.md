@@ -69,7 +69,7 @@ planned without reopening a narrower completed row.
 | Slice | Design | Spec | API | Code | Tests | State | Admission dependency |
 |---|---|---|---|---|---|---|---|
 | Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds and revision fixtures, exact L0 payloads, Runtime namespace/restricted authority, atomic writes, and SQLite commit-before-context/restart evidence green. |
-| Memory M1 | accepted | accepted | documented | partial | partial | active | M1-A through M1-D classification, lifecycle, recall and reality-backed attribution are shared and verified; implement M1-E durable Runtime facts/projection next. |
+| Memory M1 | accepted | accepted | documented | partial | partial | active | M1-A through M1-E portable semantics, durable facts and namespace-isolated SQLite restart projection are verified; implement M1-F distillation/audit/promotion/erasure next. |
 | Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure fixtures, exact L0 lifecycle transitions, explicit source authority, connector commit ordering, Core attribution, and SQLite crash-position recovery green. |
 | Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds fixtures, Rust/Kotlin Core narrowing, L0 validation, and SQLite commit-before-model/restart evidence green. |
 | Scheduler | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin recurrence/failure properties, exact L0 facts, SQLite lease races, authority/update conflicts, real C6 dispatch, restart and process-kill matrices green. |

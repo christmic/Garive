@@ -9,6 +9,8 @@ mod knowledge_connector;
 mod knowledge_lifecycle;
 mod knowledge_recovery;
 mod memory_authority;
+mod memory_hypothesis;
+mod memory_hypothesis_recovery;
 mod memory_recovery;
 mod memory_retrieval;
 mod memory_write;
@@ -47,6 +49,13 @@ pub use knowledge_recovery::{
     derive_knowledge_recovery, KnowledgeRecoveryAction, KnowledgeRecoveryContext,
 };
 pub use memory_authority::{authorize_memory_query, authorize_memory_write, MemoryAccessGrant};
+pub use memory_hypothesis::{
+    plan_memory_obligation, plan_memory_observation, plan_memory_recall, MemoryObligationContext,
+    MemoryObservationContext, MemoryRecallContext, PlannedMemoryObservation, PlannedMemoryRecall,
+};
+pub use memory_hypothesis_recovery::{
+    reconstruct_memory_hypothesis_projection, MemoryHypothesisProjection, RecordedMemoryRecall,
+};
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};
 pub use memory_retrieval::{plan_memory_retrieval, MemoryRetrievalContext, PlannedMemoryRetrieval};
 pub use memory_write::{

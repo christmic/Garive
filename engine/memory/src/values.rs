@@ -46,6 +46,8 @@ pub enum MemoryErrorCode {
     SelectionUnreplayable,
     /// Observation does not bind an admitted obligation or scope attribution.
     AttributionUnsupported,
+    /// A rebuildable Runtime projection does not cover the required prefix.
+    ProjectionStale,
 }
 
 impl MemoryErrorCode {
@@ -71,6 +73,7 @@ impl MemoryErrorCode {
             Self::PromotionReceiptRequired => "promotion_receipt_required",
             Self::SelectionUnreplayable => "selection_unreplayable",
             Self::AttributionUnsupported => "attribution_unsupported",
+            Self::ProjectionStale => "projection_stale",
         }
     }
 }
