@@ -24,7 +24,7 @@ class RuntimeFactPayloadsTest {
     @Test
     fun `every C6 payload fixture is applied as v1`() {
         val cases = document.getValue("valid_cases").jsonArray
-        assertEquals(36, cases.size)
+        assertEquals(42, cases.size)
         cases.forEach { case ->
             assertEquals(
                 LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1),
@@ -54,7 +54,8 @@ class RuntimeFactPayloadsTest {
                 original.toolInvocationId != null -> original.copy(toolInvocationId = null)
                 original.modelRequestId != null -> original.copy(modelRequestId = null)
                 original.executionId != null -> original.copy(executionId = null)
-                else -> original.copy(turnId = null)
+                original.turnId != null -> original.copy(turnId = null)
+                else -> original.copy(turnId = TurnId.of("forbidden"))
             }
             assertInvalid(missingIdentity, "identity ${case.text("kind")}")
         }
@@ -71,7 +72,7 @@ class RuntimeFactPayloadsTest {
                 assertInvalid(fact(case).withPayload(payload), case.text("kind"))
             }
         }
-        assertEquals(29, count)
+        assertEquals(32, count)
     }
 
     @Test
