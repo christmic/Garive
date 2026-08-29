@@ -5,6 +5,13 @@
 
 mod corpus;
 mod error;
+mod port;
+mod runner;
 
 pub use corpus::{load_creativity_corpus, CreativityCorpus, CreativityTask};
 pub use error::{CreativityBaselineError, CreativityBaselineErrorCode};
+pub use port::{
+    CandidateVerdict, CreativityEvaluatorPort, CreativityGeneratorPort, EvaluatorRequest,
+    ExperimentPortDescriptor, GeneratedArm, GeneratedCandidate, GeneratorRequest,
+};
+pub use runner::{run_creativity_baseline, CreativityBaselineRun};

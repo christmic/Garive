@@ -7,6 +7,14 @@ pub enum CreativityBaselineErrorCode {
     InvalidDocument,
     /// Corpus identity, coverage or task bounds were invalid.
     InvalidCorpus,
+    /// A generator dependency failed or returned invalid bounded output.
+    GeneratorFailure,
+    /// An evaluator dependency failed or returned invalid blind coverage.
+    EvaluatorFailure,
+    /// Pure paired evidence reduction failed.
+    ReductionFailure,
+    /// A generator/evaluator descriptor was malformed.
+    InvalidPort,
 }
 
 impl CreativityBaselineErrorCode {
@@ -15,6 +23,10 @@ impl CreativityBaselineErrorCode {
         match self {
             Self::InvalidDocument => "invalid_document",
             Self::InvalidCorpus => "invalid_corpus",
+            Self::GeneratorFailure => "generator_failure",
+            Self::EvaluatorFailure => "evaluator_failure",
+            Self::ReductionFailure => "reduction_failure",
+            Self::InvalidPort => "invalid_port",
         }
     }
 }
