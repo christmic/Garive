@@ -54,11 +54,12 @@ planned without reopening a narrower completed row.
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
 | H1-T | Runtime-owned model HTTP transport | accepted | accepted | documented | implemented | verified | done | Keep explicit no-proxy/no-retry limits, exact failure classification, fragmented SSE, cancellation, and real-loopback matrices green. |
 | H1 | Live durable Host | accepted | accepted | documented | implemented | verified | done | Keep durable command replay/conflict, commit-before-dispatch, restart projection, loopback-only HTTP/SSE, and shared failure fixtures green. |
-| A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
-| A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
-| A-WEB | Web shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
-| A-DESKTOP | Tauri/React shell | accepted | accepted | partial | partial | verified | active | Replace Fake Host only after H1 exists. |
-| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | partial | partial | partial | active | Add the Android APK gate when an SDK is available; replace Fake Host after H1. |
+| R1 | Local Runtime composition | accepted | accepted | documented | missing | missing | planned | Implement fixed-prefix request reconstruction, bounded post-commit dispatch and restart recovery. |
+| A-CLI | CLI shell | accepted | accepted | partial | partial | verified | active | Implement A1 against loopback H1/R1, then remove Fake Host from the entry point. |
+| A-TUI | TUI shell | accepted | accepted | partial | partial | verified | active | Implement A1 ordered event/cursor state against loopback H1/R1. |
+| A-WEB | Web shell | accepted | accepted | partial | partial | verified | active | Implement strict injectable A1 HTTP/SSE client and reducer. |
+| A-DESKTOP | Tauri/React shell | accepted | accepted | partial | partial | verified | active | Replace fake IPC with embedded R1 and typed A1 commands/events. |
+| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | partial | partial | partial | active | Implement KMP A1 client/reducer, then add Android APK gate when an SDK is available. |
 | G0 | Go Gateway | accepted | missing | missing | skeleton | missing | gated | Admit only after a live Host requires a separately scaled edge. |
 | B0 | SWE benchmark harness | accepted | missing | missing | skeleton | missing | gated | Admit after one real end-to-end Agent workflow exists. |
 
