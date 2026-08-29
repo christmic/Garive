@@ -37,6 +37,73 @@ const SCHEDULE_CHECKPOINTS: &[&str] = &[
     "scheduler_after_dispatch",
 ];
 
+const DELEGATION_CHECKPOINTS: &[&str] = &[
+    "delegation_after_request",
+    "delegation_after_grant",
+    "delegation_after_child_start",
+    "delegation_after_child_terminal",
+    "delegation_after_observation",
+    "delegation_after_continuation",
+];
+
+#[test]
+fn killed_delegation_recovers_every_durable_boundary() {
+    let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (index, checkpoint) in DELEGATION_CHECKPOINTS.iter().enumerate() {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("delegation-kill.sqlite3");
+        let mut child = Command::new(env!("CARGO_BIN_EXE_garive-runtime-crash-fixture"))
+            .args([
+                database.to_str().unwrap(),
+                repository.to_str().unwrap(),
+                checkpoint,
+            ])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut ready = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready.trim(), "READY");
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success());
+        let ledger = SqliteLedger::open(&database).unwrap();
+        for (kind, expected) in [
+            ("delegation.requested", 1),
+            ("delegation.authorized", i64::from(index >= 1)),
+            ("delegation.child_started", i64::from(index >= 2)),
+            ("delegation.child_terminal", i64::from(index >= 3)),
+            ("delegation.observed", i64::from(index >= 4)),
+        ] {
+            let count: i64 = ledger
+                .connection_for_test()
+                .query_row(
+                    "SELECT COUNT(*) FROM ledger_facts WHERE kind=?1",
+                    [kind],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, expected, "{checkpoint}:{kind}");
+        }
+        let result_inputs:i64=ledger.connection_for_test().query_row("SELECT COUNT(*) FROM ledger_facts WHERE kind='turn.input' AND payload_json LIKE '%delegation_result%'",[],|row|row.get(0)).unwrap();
+        assert_eq!(result_inputs, i64::from(index >= 5), "{checkpoint}");
+        if (2..5).contains(&index) {
+            let state = garive_runtime::reconstruct_suspended_turn(
+                &ledger
+                    .load_turn(&TurnId::try_from("parent-turn").unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                state.delegation.unwrap().observed,
+                index >= 4,
+                "{checkpoint}"
+            );
+        }
+    }
+}
+
 #[test]
 fn killed_scheduler_preserves_each_dispatch_boundary() {
     let repository = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

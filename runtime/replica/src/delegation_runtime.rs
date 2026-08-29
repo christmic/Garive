@@ -4,18 +4,18 @@ use std::{error::Error, fmt};
 
 use garive_core::UsageSummary;
 use garive_ledger::{
-    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, ExecutionId,
-    FactDraft, FactId, FactKind, TurnId,
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, DurableFact,
+    ExecutionId, FactDraft, FactId, FactKind, TurnId,
 };
 use garive_llm::TokenCount;
 use garive_multiagent::{
-    authorize_delegation, ChildRequirement, DelegationAllowance, DelegationAuthorization,
-    DelegationErrorCode, DelegationIntent, DelegationResult,
+    authorize_delegation, CancellationPolicy, ChildRequirement, DelegationAllowance,
+    DelegationAuthorization, DelegationErrorCode, DelegationIntent, DelegationResult,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::{EffectiveRuntimeLimits, RuntimeCommandError};
+use crate::{CancelReason, DelegationContinuation, EffectiveRuntimeLimits, RuntimeCommandError};
 
 /// Runtime failure preserving portable MA0 classifications.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -275,6 +275,47 @@ pub fn plan_delegation_observation(
         json!({"delegation_id":context.delegation_id,"grant_id":context.grant_id,"result_id":context.result_id,"suspension_id":suspension_id(&context.delegation_id,&context.grant_id),"result_digest":result_digest}),
         recorded_at,
     )
+}
+
+/// Plans child cancellation only after an exact durable parent cancellation fact exists.
+pub fn plan_delegation_child_cancellation(
+    intent: &DelegationIntent,
+    binding: &DelegationContinuation,
+    parent_cancel: &DurableFact,
+    reason: CancelReason,
+    recorded_at: &str,
+) -> Result<Option<FactDraft>, DelegationRuntimeError> {
+    validate_time(recorded_at)?;
+    if parent_cancel.kind.as_str() != "turn.cancel_requested"
+        || parent_cancel.turn_id.as_ref().map(TurnId::as_str) != Some(intent.parent_turn_id())
+        || binding.delegation_id != intent.delegation_id()
+    {
+        return Err(DelegationRuntimeError::Contract(
+            DelegationErrorCode::DelegationConflict,
+        ));
+    }
+    if intent.cancellation_policy() == CancellationPolicy::Independent {
+        return Ok(None);
+    }
+    let command_id = format!(
+        "delegation-cancel-{}",
+        digest(
+            format!(
+                "{}:{}",
+                intent.delegation_id(),
+                parent_cancel.fact_id.as_str()
+            )
+            .as_bytes()
+        )
+    );
+    Ok(Some(fact(
+        intent.delegation_id(),
+        "turn.cancel_requested",
+        Some(&binding.child_turn_id),
+        None,
+        json!({"command_id":command_id,"reason":reason.as_str(),"requested_through_position":parent_cancel.position}),
+        recorded_at,
+    )?))
 }
 
 fn child_matches(requirement: &ChildRequirement, command: &DelegationChildStartCommand) -> bool {

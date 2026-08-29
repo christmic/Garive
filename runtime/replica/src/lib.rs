@@ -38,9 +38,9 @@ pub use core_bridge::{
     SkillActivationContext, SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
 };
 pub use delegation_runtime::{
-    plan_delegation_authorization, plan_delegation_child_start, plan_delegation_child_terminal,
-    plan_delegation_denial, plan_delegation_observation, plan_delegation_request,
-    DelegationChildStartCommand, DelegationRuntimeError,
+    plan_delegation_authorization, plan_delegation_child_cancellation, plan_delegation_child_start,
+    plan_delegation_child_terminal, plan_delegation_denial, plan_delegation_observation,
+    plan_delegation_request, DelegationChildStartCommand, DelegationRuntimeError,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use live_host::{

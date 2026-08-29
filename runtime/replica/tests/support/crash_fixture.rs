@@ -17,6 +17,8 @@ use garive_scheduler::{
 };
 use serde_json::{json, Value};
 
+mod delegation_fixture_support;
+
 fn main() {
     let arguments: Vec<_> = env::args().collect();
     let database = arguments.get(1).expect("database path");
@@ -31,6 +33,10 @@ fn main() {
 }
 
 fn run(database: &Path, repo: &Path, checkpoint: &str) {
+    if checkpoint.starts_with("delegation_") {
+        delegation_fixture_support::run(database, checkpoint);
+        return;
+    }
     if checkpoint.starts_with("scheduler_") {
         run_scheduler(database, checkpoint);
         return;
