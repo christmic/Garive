@@ -434,6 +434,155 @@ useful". The metrics for "right time" are the difference
 between a memory layer and a graveyard. Measurement layer
 lands as follow-up.
 
+## Landscape — three swimlanes + one extraction channel
+
+The memory layer touches **three swimlanes** that flow in
+parallel. Only **three coupling points** exist between them;
+the rest is fully decoupled.
+
+```
+┌─────────────────────┐    ┌──────────────────────┐    ┌──────────────────────┐
+│  Conversation       │    │  Effect layer        │    │  Observation lane    │
+│  (turn loop)        │    │  (governance +       │    │  (OutcomeObserver)   │
+│                     │    │   dispatcher)        │    │                      │
+│  user.msg           │    │                      │    │                      │
+│       ↓             │    │                      │    │                      │
+│  derive             │    │                      │    │                      │
+│   query = msg + goal │    │                      │    │                      │
+│       ↓             │    │                      │    │                      │
+│  Memory recall      │    │                      │    │                      │
+│   top-K (4-way + RRF │    │                      │    │                      │
+│   + gate + Thompson │    │                      │    │                      │
+│   sampling)         │    │                      │    │                      │
+│       ↓             │    │                      │    │                      │
+│  surface            │    │                      │    │                      │
+│       ↓             │    │                      │    │                      │
+│  model.invoke       │    │                      │    │                      │
+│       ↓             │    │                      │    │                      │
+│  response           │────► governance.judge    │    │  app-signal ①        │
+│  (references        │     ↓                  │    │  (model cited         │
+│   [mem:xxx])        │     dispatcher         │    │   [mem:abc])          │
+│       ↓             │     ↓                  │    │       ↓               │
+│  ledger append      │     tool execution    │    │  obligation ticket    │
+│  (reply / verdict / │     → result          │    │  (check against       │
+│   tool.result)      │                        │    │   real events)        │
+└─────────────────────┘    └──────────────────────┘    └──────────┬───────────┘
+                                                                ↓
+                                                          verify / falsify /
+                                                          neutral
+                                                                ↓
+                                                        Beta (α, β) → conf
+                                                        recompute → state
+                                                        machine transition
+                                                          ↓
+                                                        usage record
+                                                        (weekly regression
+                                                         calibration)
+
+┌─────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
+│  Memory bank       │  │  Extraction channel   │  │  (same lanes above)   │
+│                    │  │                       │  │                        │
+│  active (hot —     │  │  4 triggers:          │  │                        │
+│   injects)         │  │  ① session-end        │  │                        │
+│  candidate (verif.  │  │    → extractor       │  │                        │
+│   bounty)          │  │  ② exit_summary       │  │                        │
+│  cold (searchable)  │  │    → hot capture     │  │                        │
+│  archived (query    │  │  ③ user "记住 X"     │  │                        │
+│   only)             │  │    → direct write     │  │                        │
+│  (lessons exempt    │  │  ④ dream (hourly)    │  │                        │
+│   from decay)       │  │    → episode distill  │  │                        │
+└─────────────────────┘  └──────────────────────┘  └──────────────────────┘
+```
+
+### Three coupling points — only three
+
+| # | From | To | What flows |
+|---|------|----|-------------|
+| **①** | Conversation (turn loop) | Memory recall | `top-K` entries injected into `surface` (memory pushes its index every turn; agent pulls details on demand) |
+| **②** | Conversation + Effect layer | Observation lane | Application signal — `model cited [mem:abc]` and `tool.result`/`verdict` |
+| **③** | Effect layer | Observation lane | Real-world results — `tool.result`/`error`/`test pass/fail` |
+
+**Everything else is decoupled**. The observation lane and
+the extraction channel are **async side-branches**; the
+conversation's hot path has **only one sync action** — the
+look-up at recall time, in milliseconds. **Updates,
+distillation, decisions all run side-channel**. The
+conversation never waits for memory.
+
+### Walkthrough — a lesson's full life (T0–T6)
+
+| When | Lane | What happens |
+|------|------|--------------|
+| **T0** | Conversation + Extraction | Method X fails during a session. `exit_summary` fires → extraction-channel **hot-captures** the lesson → enters `memory.lesson` as **candidate** (evidence + scope). Cheap verification runs in-line (e.g. error-signature reproducibility check). Unverifiable → stay candidate. |
+| **T1** | Conversation + Memory | Next session, similar task starts. `derive` recall fires → **Thompson sampling** lets the new lesson surface even with a low prior → injected into surface as `[mem:abc] pending-verification lesson: X fails under C due to Y`. Model switches to method Z, **cites `[mem:abc]`** to declare the avoidance. |
+| **T2** | Effect + Observation | Method Z **succeeds** → obligation ticket opens: "if X avoided Y, did Z succeed?" Event arrives → **level-1 deterministic verdict** (avoidance succeeded + substitute succeeded) → `α+1` → `conf ↑` → `candidate` → **`active`**. First full use closes the loop. |
+| **T3** | Conversation + Memory | A later **high-risk** action → `governance.judge` triggers an **informed-approval** flow → recall **the same lesson** into the approval context. User sees "you've avoided this before; confirm again". |
+| **T4** | Effect + Observation + Memory | The lesson applied in a new context, **fails** → attribution-loop check: was the failure in-scope? If **out of scope**, **don't falsify** — narrow scope to "applies to C1, not C2". The lesson becomes **more precise** (CBR theory). |
+| **T5** | Extraction + Memory | `dream` batch runs at hour boundary. Episodes distilled → lessons cited as distillation evidence → episodes down-weighted. Lessons stay evergreen. |
+| **T6** | Memory | Weekly **calibration loop**: "of memories with `conf = 0.8`, what was the actual success rate?" → regression re-calibrates the confidence mapping. |
+
+## Our four moats — what makes this hard to copy
+
+The memory layer is **not** a better kind-registry or recall
+algorithm. Those parts are similar to existing systems. The
+moat is the **feedback signal source** — what's unique to
+Garive is *where the updates come from*.
+
+| # | Moat | Why it's hard to copy |
+|---|-------|------------------------|
+| **1** | **Real-world reconciliation loop** — the **OutcomeObserver** captures *what actually happened in the world* (tool results, test pass/fail, error signatures) and feeds `β` to `dream` / promotion. Everyone else's memory updates from **dialogue** ("user said X"). Ours updates from **reality**. The confidence machine only works because reality is the input. |
+| **2** | **Lessons pipeline** — `exit_summary` + **hot-capture** + **risk-action recall** + **informed-approval**. ProgressGuardian + memory = closed loop. Other systems' memories have no place for "this failed". |
+| **3** | **Scope attribution (CBR-style narrowing)** — failure in scope → falsify, failure out of scope → narrow scope. The lesson gets **more precise** with use, not stale. Few product implementations. |
+| **4** | **Explore-exploit math for recall** — Thompson sampling + extract-time verification + candidate-bounty. Recall is not just similarity top-K; it's a **bandit problem** with cold-start + exposure-bias corrections. |
+
+## Honest gaps — where others are stronger
+
+| Gap | Who's stronger | Garive's stance |
+|-----|----------------|-----------------|
+| **Knowledge-graph structure** (multi-hop relational inference) | Zep | **Acknowledged** — entries + vectors; relational inference is weak. v2 candidate, not in personal-agent scope yet. |
+| **Memory editability / transparency** (`CLAUDE.md`-style) | codex / CC | **Real gap** — `memory.db` is opaque vs the user's git-versionable markdown. Mitigation: **markdown mirror export** — `memory.db` projects to a human-readable file the user can audit, edit, and re-import. |
+| **Maturity** (a shipped product) | all four (Mem0, Letta, Zep, CC) | **A blueprint, not a product.** Mitigation: **⑧ evaluation-first** — measure before we pretend to be on par. |
+
+## Positioning conclusion
+
+The industry splits memory into three camps:
+
+| Camp | Tool | What memory is |
+|------|------|------------------|
+| **File-based** | codex / CC | A user-maintained document. Transparent but no intelligence. |
+| **Search-based** | grok | A history of past sessions. Has retrieval, no distillation. |
+| **Product-based** | Mem0 / Letta | A library of dialog-extracted entries. Has distillation, no verification. |
+
+Garive's memory is **none of these**:
+
+> **Memory is a hypothesis library tested by reality.**
+>
+> Distillation + verification + attribution + explore-exploit.
+> The differentiation is **not** storage or recall — those
+> parts are roughly the same as everyone else's. It's the
+> **feedback-signal source**: everyone else updates from
+> dialogue; we update from **reality**. That's the part
+> hardest to copy, because it requires the ledger +
+> effect-layer + governance combination — none of which
+> any memory system today has.
+
+## Cross-references
+
+- `loop.md` "Two protocols" + "OutcomeObserver (observation
+  lane)" — the feedback signal lives in the observation
+  lane.
+- `loop.md` "ProgressGuardian" — supplies the failures that
+  feed the lessons pipeline.
+- `loop.md` "Convergence audit" — memory is the next
+  continent after `turn_loop` closes.
+- `compression.md` — `dream` watermark is shared between
+  memory extraction and compression; both consume the
+  same `memory_watermark` row.
+- `ledger.md` "Entry Kinds" + "Two reference paths" — memory
+  entries borrow the ledger's global addressing
+  (`source_session` + `source_seq`) so every memory item is
+  traceable to its origin.
+
 ## Cross-references
 
 - `loop.md` "Two protocols" — recall is one of the
@@ -459,5 +608,7 @@ lands as follow-up.
   commits. The four-type classification, distillation
   pyramid, authority dual-source (law vs hypothesis),
   platform-scope isolation, four-decision write pipeline,
-  hot/cold split, and lessons pipeline are the load-bearing
+  hot/cold split, lessons pipeline, three-swimlane
+  landscape with T0–T6 walkthrough, four moats, three honest
+  gaps, and the positioning conclusion are the load-bearing
   parts landed this round.
