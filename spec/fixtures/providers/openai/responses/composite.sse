@@ -1,5 +1,5 @@
 event: response.created
-data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_composite","status":"in_progress","output":[]}}
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_composite","created_at":1.0,"error":null,"incomplete_details":null,"instructions":null,"metadata":null,"model":"model-fixture","object":"response","output":[],"parallel_tool_calls":true,"temperature":null,"tool_choice":"auto","tools":[],"top_p":null,"status":"in_progress","usage":null}}
 
 event: response.output_item.added
 data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"rs_1","type":"reasoning","summary":[],"content":null,"encrypted_content":null,"status":"in_progress"}}
@@ -44,4 +44,6 @@ event: response.output_item.done
 data: {"type":"response.output_item.done","sequence_number":14,"output_index":2,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"weather","arguments":"{\"city\":\"Paris\"}","status":"completed"}}
 
 event: response.completed
-data: {"type":"response.completed","sequence_number":15,"response":{"id":"resp_composite","status":"completed","output":[{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"plan"}],"content":null,"encrypted_content":"opaque-reasoning","status":"completed"},{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[]}]},{"id":"fc_1","type":"function_call","call_id":"call_1","name":"weather","arguments":"{\"city\":\"Paris\"}","status":"completed"}],"usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":1},"output_tokens":4,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":9}}}
+data: {"type":"response.completed","sequence_number":15,"response":{"id":"resp_composite","created_at":1.0,"error":null,"incomplete_details":null,"instructions":null,"metadata":null,"model":"model-fixture","object":"response","output":[{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"plan"}],"content":null,"encrypted_content":"opaque-reasoning","status":"completed"},{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[]}]},{"id":"fc_1","type":"function_call","call_id":"call_1","name":"weather","arguments":"{\"city\":\"Paris\"}","status":"completed"}],"parallel_tool_calls":true,"temperature":null,"tool_choice":"auto","tools":[],"top_p":null,"status":"completed","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":1,"cache_write_tokens":0},"output_tokens":4,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":9}}}
+
+: eof
