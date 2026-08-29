@@ -51,9 +51,6 @@ public sealed interface OutputContent {
 /** Reasoning summary or visible reasoning part. */
 public data class ReasoningPart(public val type: String, public val text: String, public val raw: JsonObject)
 
-/** Official output item lifecycle values. */
-public enum class ResponseItemStatus { IN_PROGRESS, COMPLETED, INCOMPLETE }
-
 /** Official response lifecycle values. */
 public enum class ResponseStatus { QUEUED, IN_PROGRESS, COMPLETED, FAILED, CANCELLED, INCOMPLETE }
 
@@ -81,8 +78,10 @@ public data class ResponseEnvelope(
     public val id: String, public val createdAt: Double, public val model: String,
     public val status: ResponseStatus?, public val error: ResponseError?,
     public val incompleteDetails: IncompleteDetails?, public val output: List<ResponseOutputItem>,
+    public val instructions: JsonElement?, public val metadata: Map<String, String>?,
     public val parallelToolCalls: Boolean, public val toolChoice: JsonElement,
-    public val tools: List<JsonElement>, public val usage: ResponseUsage?, public val raw: JsonObject,
+    public val tools: List<JsonElement>, public val temperature: Double?, public val topP: Double?,
+    public val text: JsonElement?, public val usage: ResponseUsage?, public val raw: JsonObject,
 ) {
     public companion object {
         /** Parses and validates the official portable response envelope. */
@@ -97,8 +96,10 @@ public data class ResponseEnvelope(
             return ResponseEnvelope(
                 id, created, model, status, error, incomplete,
                 value.array("output").map(::parseOutputItem),
+                value["instructions"]?.takeUnless { it is JsonNull }, value.objectOrNull("metadata")?.mapValues { it.value.jsonPrimitive.content },
                 value.getValue("parallel_tool_calls").jsonPrimitive.content.toBooleanStrict(),
-                value.getValue("tool_choice"), value.array("tools"), value.objectOrNull("usage")?.let(::parseUsage), value,
+                value.getValue("tool_choice"), value.array("tools"), value.doubleOrNull("temperature"), value.doubleOrNull("top_p"),
+                value["text"]?.takeUnless { it is JsonNull }, value.objectOrNull("usage")?.let(::parseUsage), value,
             )
         }
     }
@@ -163,5 +164,6 @@ private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonAr
 private fun JsonObject.objectOrNull(name: String): JsonObject? = get(name)?.takeUnless { it is JsonNull } as? JsonObject
 private fun JsonObject.stringOrNull(name: String): String? = get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.contentOrNull
 private fun JsonObject.ulong(name: String): ULong = getValue(name).jsonPrimitive.long.also { require(it >= 0) }.toULong()
+private fun JsonObject.doubleOrNull(name: String): Double? = get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.double?.also { require(it.isFinite()) }
 private fun String.requireNotEmpty(): Unit = require(isNotEmpty())
 private inline fun <reified T : Enum<T>> String.enumWire(): T = enumValues<T>().first { it.name.lowercase() == this }

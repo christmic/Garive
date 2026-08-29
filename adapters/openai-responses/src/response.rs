@@ -30,6 +30,9 @@ pub struct Response {
     pub parallel_tool_calls: bool,
     /// Sampling temperature returned by the endpoint.
     pub temperature: Option<f64>,
+    /// Text output configuration returned by the endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<Value>,
     /// Lossless tool-choice value.
     pub tool_choice: Value,
     /// Lossless tool definitions returned by the endpoint.
@@ -57,6 +60,11 @@ impl Response {
         }
         if let Some(usage) = &self.usage {
             usage.validate()?;
+        }
+        if self.temperature.is_some_and(|value| !value.is_finite())
+            || self.top_p.is_some_and(|value| !value.is_finite())
+        {
+            return Err(ResponsesAdapterError::InvalidJson);
         }
         if matches!(self.status, Some(ResponseStatus::Completed)) && self.error.is_some() {
             return Err(ResponsesAdapterError::InvalidJson);
