@@ -78,6 +78,12 @@ runtime-host: runtime-boundaries
 local-runtime: runtime-boundaries local-runtime-boundaries
     cargo test -p garive-runtime --test local_composition --test local_worker --test local_live_flow --test process_kill_recovery
 
+host-client-boundaries:
+    @if rg -n 'std::env|OPENAI|ANTHROPIC|api[_-]?key|credential|SecretValue|garive-(runtime|core|ledger|llm)' clients/host-rs; then echo 'A1 Host clients must receive bounds and loopback address explicitly and cannot depend on semantic layers' >&2; exit 1; fi
+
+host-client: host-client-boundaries
+    cargo test -p garive-host-client
+
 knowledge-runtime: knowledge-boundaries
     cargo test -p garive-runtime --test durable_core_execution --test knowledge_authority --test knowledge_recovery
 
@@ -106,7 +112,7 @@ mobile:
     cd mobile/iosApp && swift test
     cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain tasks --all
 
-apps: web desktop mobile
+apps: host-client web desktop mobile
     cargo test -p garive-cli -p garive-tui
 
 rust:
@@ -119,7 +125,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance protocol-adapters runtime-host local-runtime knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters runtime-host local-runtime host-client knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime kotlin-experiment apps rust
 
 bench:
     cargo test -p bench

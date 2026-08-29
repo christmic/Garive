@@ -1130,6 +1130,17 @@ name = "garive-eval"
 version = "0.1.0"
 
 [[package]]
+name = "garive-host-client"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "garive-knowledge"
 version = "0.1.0"
 dependencies = [

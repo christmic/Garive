@@ -117,6 +117,7 @@ implementations.
 | `providers/` | Portable deployment composition plus explicit official vendor connection/error profiles; no configuration loading or Runtime transport. |
 | `runtime/replica/` | Product Runtime, Session lifecycle, storage, execution, recovery, and composition. |
 | `runtime/gateway/` | Planned Go service edge for auth, admission, routing, and load balancing. |
+| `clients/host-rs/` | Shared Rust H1 HTTP/SSE client and ephemeral event reducer for CLI/TUI; no Runtime or Engine dependency. |
 | `cli/` | One-shot client over the Runtime host boundary. |
 | `tui/` | Interactive terminal client over the same boundary. |
 | `desktop/`, `mobile/` | Product clients; no Agent or Session ownership. |

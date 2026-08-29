@@ -50,6 +50,9 @@ adapters/                       concrete external protocols
 runtime/
   replica/                      Rust composition root + SQLite adapter
 
+clients/
+  host-rs/                      shared Rust H1 HTTP/SSE client for CLI/TUI
+
 experiments/
   engine-kt/                    experimental Kotlin Engine Gradle build
     core/                       admitted portable semantics
