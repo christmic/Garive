@@ -43,7 +43,7 @@ pub struct OfficialEvaluatorConfig {
 pub struct OfficialInvocation {
     /// Executable path/name.
     pub executable: String,
-    /// Exact ordered argv excluding argv[0].
+    /// Exact ordered arguments excluding the executable itself.
     pub arguments: Vec<String>,
     /// Explicit working directory.
     pub working_directory: String,
@@ -269,7 +269,7 @@ fn validate_config(config: &OfficialEvaluatorConfig) -> Result<(), BenchError> {
     if text
         .iter()
         .any(|value| value.is_empty() || value.len() > 1_024)
-        || !(2..=64).contains(&config.jobs)
+        || !(1..=64).contains(&config.jobs)
         || config.timeout_seconds == 0
         || !config
             .model_name

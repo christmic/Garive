@@ -27,6 +27,8 @@ pub enum BenchErrorCode {
     InvalidEvaluation,
     /// Tracking output could not be constructed without loss.
     InvalidTracking,
+    /// Explicit CLI/run configuration was malformed or ambiguous.
+    InvalidConfiguration,
 }
 
 impl BenchErrorCode {
@@ -45,6 +47,7 @@ impl BenchErrorCode {
             Self::InvalidPatch => "invalid_patch",
             Self::InvalidEvaluation => "invalid_evaluation",
             Self::InvalidTracking => "invalid_tracking",
+            Self::InvalidConfiguration => "invalid_configuration",
         }
     }
 }

@@ -167,7 +167,9 @@ dependencies = [
  "futures",
  "garive-eval",
  "serde",
+ "serde_jcs",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 

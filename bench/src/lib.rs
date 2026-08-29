@@ -6,6 +6,7 @@
 mod adapters;
 mod case;
 mod command_ports;
+mod config;
 mod error;
 mod official;
 mod runner;
@@ -15,6 +16,7 @@ mod unique_json;
 pub use adapters::{ExactSweIntake, UnifiedDiffPatchAdapter};
 pub use case::{parse_cases, CaseLoadLimits, SweCase, SweDataset};
 pub use command_ports::{CommandAgentDriver, CommandEnvironmentPool, CommandPortConfig};
+pub use config::parse_explicit_config;
 pub use error::{BenchError, BenchErrorCode};
 pub use official::{
     OfficialEvaluatorConfig, OfficialInvocation, OfficialProcess, OfficialProcessOutput,
