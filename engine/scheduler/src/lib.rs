@@ -3,8 +3,10 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod recurrence;
 mod values;
 
+pub use recurrence::{next_occurrence, DueOccurrence, ScheduleDecision, SkippedOccurrences};
 pub use values::{
     MisfirePolicy, ScheduleError, ScheduleErrorCode, ScheduleIntent, ScheduleIntentBinding,
     ScheduleSubject, ScheduleTiming,
