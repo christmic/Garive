@@ -298,6 +298,178 @@ All three paths become Runtime-owned durable facts. Model request/response
 receipts record what the model saw and what it cost; the shared invocation
 identity makes effect audit end-to-end.
 
+## Execution semantics — determinism + speculative dispatch
+
+The dispatcher gives a **deterministic order** to events
+that cross the event / ledger boundary, even when the
+underlying tools run in parallel.
+
+### Event ordering rule
+
+For a given turn, the dispatcher emits events in this
+order:
+
+1. **Per intent**: `toolStart → (toolDelta × N) → terminal`
+   (one of `toolEnd`, `toolTimeout`, `toolCalled`,
+   `toolRejected`).
+2. **Across intents in a parallel group**: by `intent.call_id`
+   ascending, **not** by completion time. If intent `c2`
+   finishes before `c1`, the dispatcher waits for `c1` before
+   publishing `c2.toolEnd`. The user sees ordered results.
+3. **Across parallel groups**: ordered by the model's emit
+   order in the original reply.
+
+The **determinism** invariant: replaying a turn produces
+the same event sequence, byte-for-byte, regardless of which
+intent finishes first. (See `provider-adapter.md` "Outcome
+kinds" for the 8 kinds `model.invoke` returns — the
+determinism applies to the events downstream of those.)
+
+### Speculative dispatch during streaming
+
+The dispatcher can **start a tool before the model finishes
+streaming its reply**. The protocol:
+
+1. `model.invoke` streams tokens.
+2. As soon as the dispatcher sees a **complete tool call
+   block** in the partial stream — a structured `<tool_call>`
+   with `name`, `args`, `call_id` fully emitted — it can
+   submit the call to the work pool.
+3. The model's reply keeps streaming in parallel; new
+   `tool_call` blocks are dispatched the same way.
+4. At `toolEnd`, the `tool.result` is appended to the
+   ledger. The `model.usage` row records the `prefetch_lag`
+   metric — how early the dispatcher started the call relative
+   to the model's stream-end.
+
+**Benefits**:
+- The user sees **tool execution begin before the model has
+  finished its prose** — better latency for long, expensive
+  tools.
+- The dispatcher hides network / disk latency behind the
+  model's stream completion.
+
+**Risks**:
+- The model might **abort** the tool call mid-stream (e.g.
+  the model changes its mind). Speculative dispatch handles
+  this by **cancelling** the in-flight tool via cooperative
+  cancel (`Provider-Adapter` "Cancellation semantics"). The
+  partial result goes to `provider.partial` on the ledger
+  for audit.
+- The dispatcher's `prefetch_lag` budget is bounded: a tool
+  may not be dispatched more than **N ms ahead** of the
+  model's stream completion. `N` is configurable per tool.
+
+**Status of priority**: speculative dispatch is a
+**layered enhancement**. The base dispatcher works
+correctly without it; speculative is on top. **Lower-priority
+item — lands after the deterministic core ships.**
+
+### Resource conflict detection
+
+The dispatcher detects **resource conflicts** between
+in-flight tools:
+
+```python
+class ToolConflict:
+    tool_a:      str           # name
+    tool_b:      str
+    resource:    str           # e.g. "/workspace/foo.txt"
+    conflict:    str           # "read-write" | "write-write" | "same-process"
+    resolution:  str           # "serialise" | "reject-second" | "abort-both"
+```
+
+Tools declare their **resource claims** in the schema:
+
+```python
+class Tool:
+    ...
+    claims: list[ResourceClaim]    # what resources the tool touches
+    conflicts_with: Callable[[ResourceClaim, ResourceClaim], bool]
+```
+
+The dispatcher runs `conflicts_with(claim_a, claim_b)` before
+starting a tool. **Read-write / write-write on the same path
+serialises**; **same-process via `bash`** schedules onto
+different process slots; **network on the same host
+rate-limits**.
+
+Two `read_file`s on the same path → **parallel** (no conflict).
+Two `write_file`s on the same path → **second is rejected**
+with `governance.verdict{decision: deny, reason: "concurrent
+write on path"}`. The model sees the rejection and picks
+another approach.
+
+### Tool discipline — few, well-designed, composable
+
+> **编排组合的工具 should beat many, scattered tools.**
+
+A small, well-modelled tool set is better than a sprawling
+catalog. Adding a new tool is **expensive**:
+
+- It needs an `effect_class` declaration (mandatory).
+- It needs a `Workspace` capability declaration (mandatory).
+- It needs a `claims` declaration for resource conflict
+  detection.
+- The contract test must cover it (E1–E5).
+- The **kimi-style `ToolAccesses`** (read / write / all) is a
+  weaker ancestor; we require the full declaration.
+
+Composing tools (e.g. `find . -name '*.rs' | xargs grep`)
+is **preferable** to having `grep_rust_files` as a separate
+tool. The dispatcher already supports composition; the
+`bash` tool's effect_class is `Mutating`, and the conflict
+detector handles `bash`-vs-`bash` correctly.
+
+The default **tool set** is small:
+
+| Tool | Effect class | Capabilities | Default |
+|------|--------------|-------------|---------|
+| `read_file` | `ReadOnly` | filesystem | yes |
+| `write_file` | `Idempotent` | filesystem | yes |
+| `edit_file` | `Idempotent` (overwrite semantics) | filesystem | yes |
+| `bash` | `Mutating` | filesystem + process | yes |
+| `grep` | `ReadOnly` | filesystem | yes |
+| `glob` | `ReadOnly` | filesystem | yes |
+| `web_fetch` | `ReadOnly` | network | optional |
+| `mcp_*` | declared by MCP | declared by MCP | optional |
+
+Adding a new tool is a config + a contract test; no
+core-runtime change.
+
+### Workspace — git-worktree isolation (deferred)
+
+For **git-repository workspaces**, the runtime uses
+**git-worktree** to isolate tool execution:
+
+```
+session workspace
+└── <repo>/
+    ├── main worktree (default)
+    └── .worktrees/
+        └── <session-id>/
+            └── (tool runs here, isolated from main)
+```
+
+A **default-isolated** tool runs in a per-session worktree
+under `.worktrees/<session-id>/`. The worktree is created
+on the first git-tool call and torn down at session end
+(if the policy is "scratch worktree"). Persistent sessions
+keep the worktree across turns.
+
+This is **deferred priority**:
+
+- The basic workspace (filesystem rooted at
+  `/workspace/<session>/`) is in scope now.
+- The git-worktree-aware variant is a **later layer** — the
+  architecture is ready (the dispatcher hands a
+  `Workspace` object to each tool), but the implementation
+  lands with the slice that uses git repos.
+- **Overlay filesystems** (e.g. Copilot / Jujutsu-style)
+  are an even later optimisation — they trade disk for
+  speed. We don't depend on them; if they land later, they
+  sit behind the same `Workspace` interface.
+
 ## Cross-references
 
 - `loop.md` "Stage ④ — invoke / judge / run" — the loop's
