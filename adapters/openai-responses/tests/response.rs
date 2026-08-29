@@ -1,6 +1,6 @@
 use garive_adapter_openai_responses::{
-    DecodedResponse, Header, ResponseStatus, ResponsesAdapter, ResponsesAdapterConfig,
-    ResponsesAdapterError,
+    DecodedResponse, Header, OutputContent, ResponseOutputItem, ResponseStatus, ResponsesAdapter,
+    ResponsesAdapterConfig, ResponsesAdapterError,
 };
 use std::{fs, path::PathBuf};
 
@@ -30,6 +30,32 @@ fn complete_official_response_retains_items_and_usage() {
     assert_eq!(response.status, Some(ResponseStatus::Completed));
     assert_eq!(response.output.len(), 2);
     assert_eq!(response.usage.unwrap().total_tokens, 17);
+}
+
+#[test]
+fn refusal_and_incomplete_fixtures_remain_distinct_protocol_values() {
+    let DecodedResponse::Response { response, .. } = adapter()
+        .decode_response(200, &[], &fixture("refusal.json"))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let ResponseOutputItem::Message(message) = &response.output[0] else {
+        panic!()
+    };
+    assert!(matches!(message.content[0], OutputContent::Refusal(_)));
+
+    let DecodedResponse::Response { response, .. } = adapter()
+        .decode_response(200, &[], &fixture("content-filter.json"))
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(response.status, Some(ResponseStatus::Incomplete));
+    assert_eq!(
+        response.incomplete_details.as_ref().unwrap().reason,
+        "content_filter"
+    );
 }
 
 #[test]
