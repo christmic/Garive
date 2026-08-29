@@ -68,7 +68,7 @@ planned without reopening a narrower completed row.
 |---|---|---|---|---|---|---|---|
 | Memory | accepted | accepted | documented | skeleton | missing | planned | Freeze M0/CF0 fixtures after S0, then implement portable reducer and Runtime authority/restart path. |
 | Knowledge | accepted | accepted | documented | skeleton | missing | planned | Freeze K0/CF0 fixtures after M0, then implement connector lifecycle and committed evidence. |
-| Skill | accepted | accepted | documented | skeleton | missing | active | Freeze S0/CF0 fixtures, then implement Rust/Kotlin activation and Runtime commit-before-model. |
+| Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds fixtures, Rust/Kotlin Core narrowing, L0 validation, and SQLite commit-before-model/restart evidence green. |
 | Scheduler | accepted | accepted | documented | skeleton | missing | planned | Freeze Q0/CF0 fixtures, then implement recurrence and SQLite occurrence leasing. |
 | Multi-Agent | accepted | accepted | documented | skeleton | missing | planned | Coordinate DelegationPending/result continuation fixtures, then implement budgeted parent/child recovery. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |

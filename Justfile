@@ -20,10 +20,13 @@ architecture:
 config-boundaries:
     @if rg -n 'std::env|std::fs|System\.getenv|java\.io|runtime/replica' engine/config/src experiments/engine-kt/config/src/main; then echo 'D0 values and resolution must not load Runtime configuration' >&2; exit 1; fi
 
+skill-boundaries:
+    @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio' engine/skill/src experiments/engine-kt/skill/src/main; then echo 'S0 must remain a pure instruction and activation contract' >&2; exit 1; fi
+
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries
+conformance: architecture config-boundaries skill-boundaries
     cargo test -p garive-config -p garive-core -p garive-llm -p garive-skill -p garive-tools
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :llm:test :skill:test :tools:test
 

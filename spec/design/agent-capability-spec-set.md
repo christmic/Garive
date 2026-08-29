@@ -81,8 +81,10 @@ amendment. The focused Specs define their exact payloads and transitions:
   `delegation.observed`.
 
 O0 adds no durable fact family. It derives signals from existing committed
-facts and live events. These names do not become valid L0 facts until the set
-is accepted and the C6F schema/validators/fixtures change together.
+facts and live events. Each name becomes a valid L0 fact only when its focused
+behavior slice lands with the matching C6F schema, validators and shared
+fixture. S0 has admitted `skill.activated`; the remaining families stay opaque
+until their slices land.
 
 ## Cross-language delivery target
 
