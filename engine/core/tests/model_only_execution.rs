@@ -341,6 +341,13 @@ fn render(outcome: &AgentOutcome) -> &'static str {
     }
 }
 
+fn render_count(count: TokenCount) -> String {
+    match count {
+        TokenCount::Known(value) => value.to_string(),
+        TokenCount::Unknown => "unknown".into(),
+    }
+}
+
 #[test]
 fn rust_consumes_every_model_only_scenario() {
     let document = fixture();
@@ -412,6 +419,23 @@ fn rust_consumes_every_model_only_scenario() {
             "{}",
             case["name"]
         );
+        if let Some(usage_case) = document["usage_summary_cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|usage_case| usage_case["execution_case"] == case["name"])
+        {
+            let expected_usage = &usage_case["expected"];
+            assert_eq!(
+                render_count(report.usage.input_tokens),
+                expected_usage["input"]
+            );
+            assert_eq!(
+                render_count(report.usage.output_tokens),
+                expected_usage["output"]
+            );
+            assert_eq!(report.usage.estimated, expected_usage["estimated"]);
+        }
         if let Some(targets) = expected.get("targets") {
             let expected_targets: Vec<_> = targets
                 .as_array()

@@ -57,19 +57,30 @@ pub(super) fn prepare_control(
 }
 
 fn invalid_report(request: &AgentTurnRequest) -> ExecutionReport {
+    let usage = UsageAccumulator::default().summary();
     ExecutionReport {
         outcome: AgentOutcome::Failed {
             reason: AgentFailureReason::InvalidInput,
         },
         completed_iterations: request.cursor.completed_iterations,
+        usage,
     }
 }
 
-#[derive(Default)]
 pub(super) struct UsageAccumulator {
-    input: u64,
-    output: u64,
+    input: TokenCount,
+    output: TokenCount,
     estimated: bool,
+}
+
+impl Default for UsageAccumulator {
+    fn default() -> Self {
+        Self {
+            input: TokenCount::Known(0),
+            output: TokenCount::Known(0),
+            estimated: false,
+        }
+    }
 }
 
 impl UsageAccumulator {
@@ -78,20 +89,25 @@ impl UsageAccumulator {
         model_usage: garive_llm::ModelUsage,
         policy: MissingUsagePolicy,
     ) -> Result<(), UsageError> {
-        let (input, input_estimated) = known_or_estimate(model_usage.input_tokens, policy, true)?;
-        let (output, output_estimated) =
-            known_or_estimate(model_usage.output_tokens, policy, false)?;
-        self.input = self.input.checked_add(input).ok_or(UsageError::Overflow)?;
-        self.output = self
-            .output
-            .checked_add(output)
-            .ok_or(UsageError::Overflow)?;
+        let (input, input_estimated, input_missing) =
+            accumulate(self.input, model_usage.input_tokens, policy, true)?;
+        let (output, output_estimated, output_missing) =
+            accumulate(self.output, model_usage.output_tokens, policy, false)?;
+        self.input = input;
+        self.output = output;
         self.estimated |= input_estimated || output_estimated;
-        Ok(())
+        if input_missing || output_missing {
+            Err(UsageError::Missing)
+        } else {
+            Ok(())
+        }
     }
 
     fn total(&self) -> Option<u64> {
-        self.input.checked_add(self.output)
+        match (self.input, self.output) {
+            (TokenCount::Known(input), TokenCount::Known(output)) => input.checked_add(output),
+            _ => None,
+        }
     }
 
     pub(super) const fn summary(&self) -> UsageSummary {
@@ -108,21 +124,35 @@ enum UsageError {
     Overflow,
 }
 
-fn known_or_estimate(
-    count: TokenCount,
+fn accumulate(
+    current: TokenCount,
+    next: TokenCount,
     policy: MissingUsagePolicy,
     input: bool,
-) -> Result<(u64, bool), UsageError> {
-    match (count, policy) {
-        (TokenCount::Known(value), _) => Ok((value, false)),
-        (TokenCount::Unknown, MissingUsagePolicy::Stop) => Err(UsageError::Missing),
+) -> Result<(TokenCount, bool, bool), UsageError> {
+    match (current, next, policy) {
+        (TokenCount::Known(current), TokenCount::Known(value), _) => current
+            .checked_add(value)
+            .map(|value| (TokenCount::Known(value), false, false))
+            .ok_or(UsageError::Overflow),
+        (TokenCount::Unknown, TokenCount::Known(_), _) => Ok((TokenCount::Unknown, false, false)),
+        (_, TokenCount::Unknown, MissingUsagePolicy::Stop) => {
+            Ok((TokenCount::Unknown, false, true))
+        }
         (
+            TokenCount::Known(current),
             TokenCount::Unknown,
             MissingUsagePolicy::Estimate {
                 input_tokens,
                 output_tokens,
             },
-        ) => Ok((if input { input_tokens } else { output_tokens }, true)),
+        ) => current
+            .checked_add(if input { input_tokens } else { output_tokens })
+            .map(|value| (TokenCount::Known(value), true, false))
+            .ok_or(UsageError::Overflow),
+        (TokenCount::Unknown, TokenCount::Unknown, MissingUsagePolicy::Estimate { .. }) => {
+            Ok((TokenCount::Unknown, true, false))
+        }
     }
 }
 
@@ -153,6 +183,7 @@ pub(super) fn finish_recovery(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
     control: &mut ExecutionControl,
+    usage: &UsageAccumulator,
     action: TerminalRecoveryAction,
 ) -> ExecutionReport {
     let outcome = match action {
@@ -170,7 +201,7 @@ pub(super) fn finish_recovery(
             reason: AgentFailureReason::PortFailure,
         },
     };
-    finish(request, ports, control, outcome)
+    finish(request, ports, control, usage, outcome)
 }
 
 pub(super) fn deadline_reached(
@@ -206,6 +237,7 @@ pub(super) fn finish(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
     control: &mut ExecutionControl,
+    usage: &UsageAccumulator,
     mut outcome: AgentOutcome,
 ) -> ExecutionReport {
     if emit(ports, request, AgentEventKind::OutcomeProposed).is_err() {
@@ -229,6 +261,7 @@ pub(super) fn finish(
     ExecutionReport {
         outcome,
         completed_iterations: control.completed_iterations(),
+        usage: usage.summary(),
     }
 }
 

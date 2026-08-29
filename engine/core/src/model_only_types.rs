@@ -1,6 +1,6 @@
 use garive_llm::{
     ModelCancellation, ModelCapability, ModelItem, ModelOutputSettings, ModelPort,
-    ModelStreamEvent, ModelTargetId,
+    ModelStreamEvent, ModelTargetId, TokenCount,
 };
 
 use crate::{
@@ -200,10 +200,10 @@ impl AgentTurnRequest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Checked token usage accumulated across all attempts in one execution.
 pub struct UsageSummary {
-    /// Total accounted input tokens.
-    pub input_tokens: u64,
-    /// Total accounted output tokens.
-    pub output_tokens: u64,
+    /// Total accounted input tokens, or unknown provider evidence.
+    pub input_tokens: TokenCount,
+    /// Total accounted output tokens, or unknown provider evidence.
+    pub output_tokens: TokenCount,
     /// Whether any component came from the configured conservative estimate.
     pub estimated: bool,
 }
@@ -398,4 +398,6 @@ pub struct ExecutionReport {
     pub outcome: AgentOutcome,
     /// Durable iteration cursor Runtime should commit with the outcome.
     pub completed_iterations: u32,
+    /// Cumulative token evidence for every terminal path.
+    pub usage: UsageSummary,
 }

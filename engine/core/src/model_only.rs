@@ -34,6 +34,7 @@ pub async fn execute_model_only(
             request,
             ports,
             &mut control,
+            &usage,
             AgentOutcome::Failed {
                 reason: AgentFailureReason::PortFailure,
             },
@@ -46,6 +47,7 @@ pub async fn execute_model_only(
                 request,
                 ports,
                 &mut control,
+                &usage,
                 AgentOutcome::Stopped {
                     reason: StopReason::Cancelled,
                 },
@@ -57,6 +59,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Stopped {
                         reason: StopReason::Deadline,
                     },
@@ -67,6 +70,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Failed {
                         reason: AgentFailureReason::PortFailure,
                     },
@@ -81,6 +85,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Stopped {
                         reason: StopReason::IterationLimit,
                     },
@@ -91,6 +96,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Failed {
                         reason: AgentFailureReason::InvariantViolation,
                     },
@@ -108,6 +114,7 @@ pub async fn execute_model_only(
                 request,
                 ports,
                 &mut control,
+                &usage,
                 AgentOutcome::Failed {
                     reason: AgentFailureReason::PortFailure,
                 },
@@ -123,6 +130,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Stopped {
                         reason: StopReason::TokenLimit,
                     },
@@ -133,6 +141,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Failed {
                         reason: AgentFailureReason::PortFailure,
                     },
@@ -153,6 +162,7 @@ pub async fn execute_model_only(
                 request,
                 ports,
                 &mut control,
+                &usage,
                 AgentOutcome::Failed {
                     reason: AgentFailureReason::PortFailure,
                 },
@@ -163,6 +173,7 @@ pub async fn execute_model_only(
                 request,
                 ports,
                 &mut control,
+                &usage,
                 AgentOutcome::Stopped {
                     reason: StopReason::Cancelled,
                 },
@@ -176,6 +187,7 @@ pub async fn execute_model_only(
                         request,
                         ports,
                         &mut control,
+                        &usage,
                         AgentOutcome::Failed {
                             reason: AgentFailureReason::InvalidInput,
                         },
@@ -196,6 +208,7 @@ pub async fn execute_model_only(
                 request,
                 ports,
                 &mut control,
+                &usage,
                 AgentOutcome::Failed {
                     reason: AgentFailureReason::PortFailure,
                 },
@@ -215,6 +228,7 @@ pub async fn execute_model_only(
                 request,
                 ports,
                 &mut control,
+                &usage,
                 AgentOutcome::Failed {
                     reason: AgentFailureReason::PortFailure,
                 },
@@ -235,6 +249,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Failed { reason },
                 );
             }
@@ -252,7 +267,7 @@ pub async fn execute_model_only(
                     request.recovery_policy,
                     request.limits.max_total_tokens,
                 ) {
-                    return finish(request, ports, &mut control, terminal);
+                    return finish(request, ports, &mut control, &usage, terminal);
                 }
                 if items
                     .iter()
@@ -262,6 +277,7 @@ pub async fn execute_model_only(
                         request,
                         ports,
                         &mut control,
+                        &usage,
                         AgentOutcome::Failed {
                             reason: AgentFailureReason::RequiredCapabilityUnavailable,
                         },
@@ -275,6 +291,7 @@ pub async fn execute_model_only(
                         request,
                         ports,
                         &mut control,
+                        &usage,
                         AgentOutcome::Failed {
                             reason: AgentFailureReason::InvalidModelOutput,
                         },
@@ -284,6 +301,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Completed {
                         response_items: items,
                         usage: usage.summary(),
@@ -301,6 +319,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     AgentOutcome::Failed {
                         reason: AgentFailureReason::InvalidModelOutput,
                     },
@@ -317,7 +336,7 @@ pub async fn execute_model_only(
                     request.recovery_policy,
                     request.limits.max_total_tokens,
                 ) {
-                    return finish(request, ports, &mut control, terminal);
+                    return finish(request, ports, &mut control, &usage, terminal);
                 }
                 match kind {
                     InterruptionKind::Cancelled => {
@@ -325,6 +344,7 @@ pub async fn execute_model_only(
                             request,
                             ports,
                             &mut control,
+                            &usage,
                             AgentOutcome::Stopped {
                                 reason: StopReason::Cancelled,
                             },
@@ -340,6 +360,7 @@ pub async fn execute_model_only(
                                     request,
                                     ports,
                                     &mut control,
+                                    &usage,
                                     AgentOutcome::Failed {
                                         reason: AgentFailureReason::RequiredCapabilityUnavailable,
                                     },
@@ -349,6 +370,7 @@ pub async fn execute_model_only(
                                 request,
                                 ports,
                                 &mut control,
+                                &usage,
                                 AgentOutcome::Completed {
                                     response_items: partial_items,
                                     usage: usage.summary(),
@@ -365,6 +387,7 @@ pub async fn execute_model_only(
                                 request,
                                 ports,
                                 &mut control,
+                                &usage,
                                 AgentOutcome::Suspended {
                                     reason: SuspensionReason::PartialOutput,
                                     partial_items,
@@ -377,6 +400,7 @@ pub async fn execute_model_only(
                                 request,
                                 ports,
                                 &mut control,
+                                &usage,
                                 AgentOutcome::Stopped {
                                     reason: StopReason::TokenLimit,
                                 },
@@ -387,6 +411,7 @@ pub async fn execute_model_only(
                                 request,
                                 ports,
                                 &mut control,
+                                &usage,
                                 AgentOutcome::Failed {
                                     reason: AgentFailureReason::InvalidModelOutput,
                                 },
@@ -398,6 +423,7 @@ pub async fn execute_model_only(
                             request,
                             ports,
                             &mut control,
+                            &usage,
                             request.recovery_policy.transport,
                         );
                     }
@@ -415,6 +441,7 @@ pub async fn execute_model_only(
                     request,
                     ports,
                     &mut control,
+                    &usage,
                     request.recovery_policy.unavailable,
                 );
             }
