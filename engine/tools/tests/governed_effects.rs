@@ -1,11 +1,12 @@
 use std::{fs, path::PathBuf};
 
 use garive_tools::{
-    AuthorizationVerdict, DispatchAttemptId, EffectReceipt, EffectState, ExecutionCapability,
-    ExecutionFact, ExecutionRequirements, GovernedAction, GovernedEffect, GovernedFailureCode,
-    GrantId, InteractionId, InteractionKind, InteractionRequest, InteractionResolution,
-    InvocationGrant, ReceiptId, ReplayClass, SuspensionRequirement, TerminalClassification,
-    ToolCatalog, ToolDefinition, ToolIntent, ToolInvocationId,
+    reduce_preparation_failure, AuthorizationVerdict, DispatchAttemptId, EffectReceipt,
+    EffectState, ExecutionCapability, ExecutionFact, ExecutionRequirements, GovernedAction,
+    GovernedEffect, GovernedFailureCode, GovernedToolResult, GrantId, InteractionId,
+    InteractionKind, InteractionRequest, InteractionResolution, InvocationGrant, ReceiptId,
+    ReplayClass, SuspensionRequirement, TerminalClassification, ToolCatalog, ToolDefinition,
+    ToolFeedback, ToolIntent, ToolInvocationId,
 };
 use serde_json::Value;
 
@@ -38,7 +39,7 @@ fn requirements(value: &Value) -> ExecutionRequirements {
     .unwrap()
 }
 
-fn prepared(fixture: &Value) -> garive_tools::PreparedToolCall {
+fn catalog(fixture: &Value) -> ToolCatalog {
     let expected = &fixture["prepared_call"];
     let definition = ToolDefinition::new(
         expected["tool_name"].as_str().unwrap(),
@@ -55,8 +56,12 @@ fn prepared(fixture: &Value) -> garive_tools::PreparedToolCall {
         ReplayClass::ReadOnly,
     )
     .unwrap();
-    let call = ToolCatalog::new([definition])
-        .unwrap()
+    ToolCatalog::new([definition]).unwrap()
+}
+
+fn prepared(fixture: &Value) -> garive_tools::PreparedToolCall {
+    let expected = &fixture["prepared_call"];
+    let call = catalog(fixture)
         .prepare(&ToolIntent::new(
             expected["model_call_id"].as_str().unwrap(),
             expected["tool_name"].as_str().unwrap(),
@@ -274,4 +279,40 @@ fn governance_identities_reject_empty_values() {
     assert!(InteractionId::new("").is_err());
     assert!(ReceiptId::new("").is_err());
     assert!(DispatchAttemptId::new("").is_err());
+}
+
+#[test]
+fn shared_preparation_failures_reduce_safely() {
+    let fixture = fixture();
+    for case in fixture["preparation_cases"].as_array().unwrap() {
+        let input = &case["intent"];
+        let intent = ToolIntent::new(
+            input["model_call_id"].as_str().unwrap(),
+            input["tool_name"].as_str().unwrap(),
+            input["arguments_json"].as_str().unwrap(),
+        );
+        let error = catalog(&fixture).prepare(&intent).unwrap_err();
+        let result = reduce_preparation_failure(&intent, &error);
+        match (&result, case["expected"]["result"].as_str().unwrap()) {
+            (
+                GovernedToolResult::Observation(ToolFeedback::PreparationRejected(feedback)),
+                "observation",
+            ) => {
+                assert_eq!(feedback.code, error.code());
+                assert_eq!(
+                    feedback.failure_paths,
+                    case["expected"]["failure_paths"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|item| item.as_str().unwrap().to_owned())
+                        .collect::<Vec<_>>()
+                );
+            }
+            (GovernedToolResult::Fail(failure), "fail") => {
+                assert_eq!(failure.code, GovernedFailureCode::InvalidModelOutput);
+            }
+            _ => panic!("{} produced the wrong result", case["name"]),
+        }
+    }
 }

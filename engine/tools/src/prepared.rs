@@ -262,6 +262,16 @@ impl ToolIntent {
             arguments_json: arguments_json.into(),
         }
     }
+
+    /// Returns untrusted model correlation.
+    pub fn model_call_id(&self) -> &str {
+        &self.model_call_id
+    }
+
+    /// Returns the proposed tool name.
+    pub fn tool_name(&self) -> &str {
+        &self.tool_name
+    }
 }
 
 /// Frozen exact-name catalog for one Kernel Execution.

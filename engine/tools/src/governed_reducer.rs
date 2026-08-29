@@ -3,10 +3,35 @@
 use crate::schema::{validate_arguments, validate_value_definition};
 use crate::{
     EffectReceipt, EffectState, ExecutionFact, GovernedAction, GovernedEffectFailure,
-    GovernedFailureCode, GovernedObservation, InteractionRequest, InteractionResolution,
-    InvocationGrant, ObservationOutcome, PreparedToolCall, RecoveryDecision, RecoveryPosition,
-    ReplayClass, SuspensionRequirement, TerminalClassification, ToolInvocationId,
+    GovernedFailureCode, GovernedObservation, GovernedToolResult, InteractionRequest,
+    InteractionResolution, InvocationGrant, ObservationOutcome, PreparationError,
+    PreparationRejectedFeedback, PreparedToolCall, RecoveryDecision, RecoveryPosition, ReplayClass,
+    SuspensionRequirement, TerminalClassification, ToolFeedback, ToolIntent, ToolInvocationId,
 };
+
+/// Maps a C4 rejection to safe feedback only when model correlation is valid.
+pub fn reduce_preparation_failure(
+    intent: &ToolIntent,
+    error: &PreparationError,
+) -> GovernedToolResult {
+    if intent.model_call_id().is_empty() {
+        return GovernedToolResult::Fail(GovernedEffectFailure {
+            code: GovernedFailureCode::InvalidModelOutput,
+        });
+    }
+    GovernedToolResult::Observation(ToolFeedback::PreparationRejected(
+        PreparationRejectedFeedback {
+            model_call_id: intent.model_call_id().to_owned(),
+            proposed_tool_name: intent.tool_name().to_owned(),
+            code: error.code(),
+            failure_paths: error
+                .failures()
+                .iter()
+                .map(|failure| failure.instance_path().to_owned())
+                .collect(),
+        },
+    ))
+}
 
 /// Durable authorization verdict for the exact invocation and Prepared Call.
 #[derive(Clone, Debug, Eq, PartialEq)]

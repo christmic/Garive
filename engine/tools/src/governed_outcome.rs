@@ -3,8 +3,31 @@
 use serde_json::{json, Value};
 
 use crate::{
-    DispatchAttemptId, EffectReceipt, InteractionRequest, InvocationGrant, ToolInvocationId,
+    DispatchAttemptId, EffectReceipt, InteractionRequest, InvocationGrant, PreparationErrorCode,
+    ToolInvocationId,
 };
+
+/// Safe model feedback for preparation rejection before invocation allocation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparationRejectedFeedback {
+    /// Valid model correlation identity.
+    pub model_call_id: String,
+    /// Untrusted proposed tool name.
+    pub proposed_tool_name: String,
+    /// Stable C4 rejection code.
+    pub code: PreparationErrorCode,
+    /// Ordered secret-free instance paths.
+    pub failure_paths: Vec<String>,
+}
+
+/// Model-visible feedback after preparation or governance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ToolFeedback {
+    /// C4 rejected untrusted model output.
+    PreparationRejected(PreparationRejectedFeedback),
+    /// A Runtime invocation reached a governed observation.
+    Governed(GovernedObservation),
+}
 
 /// Fact delivered to the reducer after Runtime durability boundaries complete.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -175,6 +198,17 @@ pub enum GovernedAction {
     Fail(GovernedEffectFailure),
     /// Idempotent duplicate produced no new action.
     None,
+}
+
+/// Final portable C5 reduction result returned toward the Agent loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GovernedToolResult {
+    /// Safe feedback can enter the next model context after durability.
+    Observation(ToolFeedback),
+    /// Current Execution terminates suspended.
+    Suspend(SuspensionRequirement),
+    /// Current Execution fails closed.
+    Fail(GovernedEffectFailure),
 }
 
 /// Portable lifecycle state after reduction.
