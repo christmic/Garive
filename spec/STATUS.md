@@ -73,7 +73,7 @@ planned without reopening a narrower completed row.
 | Multi-Agent | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin canonical intent/budget/result properties, exact L0 lifecycle projection, durable grant-before-child ordering, cancellation/isolation, SQLite restart and six-boundary process-kill matrices green. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
 | Evaluation | draft | missing | missing | skeleton | missing | gated | Runnable Agent and pinned benchmark evidence. |
-| Observability | accepted | accepted | documented | skeleton | missing | planned | Freeze O0 fixtures, then implement portable validation and bounded Runtime sinks. |
+| Observability | accepted | accepted | documented | implemented | verified | done | Keep the shared Rust/Kotlin catalogue, canonical digest, forbidden-label properties, explicit Runtime limits, commit-position, sampling, priority, backpressure, redaction-canary and bounded-shutdown gates green. |
 
 ## Update checklist
 
