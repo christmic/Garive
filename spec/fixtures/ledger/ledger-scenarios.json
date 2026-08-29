@@ -80,6 +80,54 @@
       "expected": {"results": ["committed:1:1-5"], "version": 1, "fact_count": 5, "uncertain": [], "uncertain_tools": ["tool1"]}
     },
     {
+      "name": "abandoned-execution-recovery-starts-fresh-execution",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [
+          {"id": "f1", "kind": "session.opened"},
+          {"id": "f2", "kind": "turn.started", "turn": "t1"},
+          {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}
+        ]}},
+        {"commit": {"expected": 1, "facts": [
+          {"id": "f4", "kind": "execution.abandoned", "turn": "t1", "execution": "e1"},
+          {"id": "f5", "kind": "execution.started", "turn": "t1", "execution": "e2"}
+        ]}}
+      ],
+      "expected": {"results": ["committed:1:1-3", "committed:2:4-5"], "version": 2, "fact_count": 5, "uncertain": []}
+    },
+    {
+      "name": "durable-control-and-preparation-rejection",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [
+          {"id": "f1", "kind": "session.opened"},
+          {"id": "f2", "kind": "turn.started", "turn": "t1"},
+          {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"},
+          {"id": "f4", "kind": "model.prepared", "turn": "t1", "execution": "e1", "request": "r1"},
+          {"id": "f5", "kind": "model.started", "turn": "t1", "execution": "e1", "request": "r1"},
+          {"id": "f6", "kind": "model.completed", "turn": "t1", "execution": "e1", "request": "r1"},
+          {"id": "f7", "kind": "tool.preparation_rejected", "turn": "t1", "execution": "e1", "request": "r1"},
+          {"id": "f8", "kind": "turn.cancel_requested", "turn": "t1"}
+        ]}}
+      ],
+      "expected": {"results": ["committed:1:1-8"], "version": 1, "fact_count": 8, "uncertain": []}
+    },
+    {
+      "name": "effect-observation-follows-terminal-once",
+      "operations": [
+        {"commit": {"expected": 0, "facts": [
+          {"id": "f1", "kind": "session.opened"},
+          {"id": "f2", "kind": "turn.started", "turn": "t1"},
+          {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"},
+          {"id": "f4", "kind": "effect.prepared", "turn": "t1", "execution": "e1", "tool": "tool1"},
+          {"id": "f5", "kind": "effect.denied", "turn": "t1", "execution": "e1", "tool": "tool1"},
+          {"id": "f6", "kind": "effect.observation", "turn": "t1", "execution": "e1", "tool": "tool1"}
+        ]}},
+        {"commit": {"expected": 1, "facts": [
+          {"id": "f7", "kind": "effect.observation", "turn": "t1", "execution": "e1", "tool": "tool1"}
+        ]}}
+      ],
+      "expected": {"results": ["committed:1:1-6", "error:invalid-transition"], "version": 1, "fact_count": 6, "uncertain": []}
+    },
+    {
       "name": "multi-fact-transition-rolls-back",
       "operations": [
         {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},

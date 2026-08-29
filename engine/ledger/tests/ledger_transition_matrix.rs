@@ -7,19 +7,20 @@ use garive_ledger::{
 };
 
 fn fact(id: &str, kind: &str) -> FactDraft {
-    let lifecycle = kind.starts_with("turn.")
+    let lifecycle = kind == "tool.preparation_rejected"
+        || kind.starts_with("turn.")
         || kind.starts_with("execution.")
         || kind.starts_with("model.")
         || kind.starts_with("effect.");
     FactDraft {
         fact_id: FactId::try_from(id).unwrap(),
         turn_id: lifecycle.then(|| TurnId::try_from("turn").unwrap()),
-        execution_id: (kind.starts_with("execution.")
+        execution_id: (kind == "tool.preparation_rejected"
+            || kind.starts_with("execution.")
             || kind.starts_with("model.")
             || kind.starts_with("effect."))
         .then(|| ExecutionId::try_from("execution").unwrap()),
-        model_request_id: kind
-            .starts_with("model.")
+        model_request_id: (kind == "tool.preparation_rejected" || kind.starts_with("model."))
             .then(|| ModelRequestId::try_from("request").unwrap()),
         tool_invocation_id: kind
             .starts_with("effect.")
@@ -67,6 +68,7 @@ fn every_turn_and_execution_terminal_is_admitted_once() {
         "session.closed",
     ]);
     for terminal in [
+        "execution.abandoned",
         "execution.completed",
         "execution.suspended",
         "execution.stopped",
@@ -86,6 +88,46 @@ fn every_turn_and_execution_terminal_is_admitted_once() {
             terminal,
         ]);
     }
+}
+
+#[test]
+fn c6_control_facts_require_exact_lifecycle_owners() {
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "execution.abandoned",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "model.prepared",
+        "model.started",
+        "tool.preparation_rejected",
+    ]);
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "effect.prepared",
+        "effect.denied",
+        "effect.observation",
+        "execution.completed",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "effect.prepared",
+        "effect.observation",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "turn.completed",
+        "turn.cancel_requested",
+    ]);
 }
 
 #[test]

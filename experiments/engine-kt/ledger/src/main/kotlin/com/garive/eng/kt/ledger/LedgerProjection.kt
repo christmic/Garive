@@ -1,10 +1,10 @@
 package com.garive.eng.kt.ledger
 
 internal enum class TurnState { OPEN, SUSPENDED, COMPLETED, STOPPED, FAILED }
-internal enum class ExecutionState { ACTIVE, COMPLETED, SUSPENDED, STOPPED, FAILED }
+internal enum class ExecutionState { ACTIVE, ABANDONED, COMPLETED, SUSPENDED, STOPPED, FAILED }
 internal enum class InvocationState {
     PREPARED, AUTHORIZED, STARTED, RECEIPT, COMPLETED, REJECTED, INTERRUPTED, UNAVAILABLE,
-    FAILED, DENIED, UNCERTAIN,
+    FAILED, DENIED, UNCERTAIN, OBSERVED,
 }
 
 internal class LedgerProjection(
@@ -41,7 +41,9 @@ internal class LedgerProjection(
             "turn.stopped" -> transitionTurn(fact.turnId, TurnState.STOPPED)
             "turn.failed" -> transitionTurn(fact.turnId, TurnState.FAILED)
             "turn.input" -> requireOpenTurn(fact.turnId)
+            "turn.cancel_requested" -> requireNonTerminalTurn(fact.turnId)
             "execution.started" -> startExecution(fact)
+            "execution.abandoned" -> transitionExecution(fact, ExecutionState.ABANDONED)
             "execution.completed" -> transitionExecution(fact, ExecutionState.COMPLETED)
             "execution.suspended" -> transitionExecution(fact, ExecutionState.SUSPENDED)
             "execution.stopped" -> transitionExecution(fact, ExecutionState.STOPPED)
@@ -61,6 +63,8 @@ internal class LedgerProjection(
             "effect.failed" -> transitionTool(fact, InvocationState.FAILED)
             "effect.denied" -> transitionTool(fact, InvocationState.DENIED)
             "effect.uncertain" -> transitionTool(fact, InvocationState.UNCERTAIN)
+            "effect.observation" -> observeTool(fact)
+            "tool.preparation_rejected" -> rejectToolPreparation(fact)
             else -> null
         }
     }
@@ -98,6 +102,13 @@ internal class LedgerProjection(
         turnId == null -> LedgerError.MissingReference
         turns[turnId] != TurnState.OPEN -> LedgerError.InvalidTransition
         else -> null
+    }
+
+    private fun requireNonTerminalTurn(turnId: TurnId?): LedgerError? = when {
+        turnId == null -> LedgerError.MissingReference
+        turns[turnId] == TurnState.OPEN || turns[turnId] == TurnState.SUSPENDED -> null
+        turnId in turns -> LedgerError.InvalidTransition
+        else -> LedgerError.MissingReference
     }
 
     private fun transitionTurn(turnId: TurnId?, next: TurnState): LedgerError? {
@@ -192,6 +203,37 @@ internal class LedgerProjection(
         if (!valid) return LedgerError.InvalidTransition
         tools[tool] = execution to next
         return null
+    }
+
+    private fun observeTool(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val tool = fact.toolInvocationId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val current = tools[tool] ?: return LedgerError.MissingReference
+        if (current.first != execution || current.second !in setOf(
+                InvocationState.COMPLETED,
+                InvocationState.FAILED,
+                InvocationState.DENIED,
+                InvocationState.UNCERTAIN,
+            )
+        ) {
+            return LedgerError.InvalidTransition
+        }
+        tools[tool] = execution to InvocationState.OBSERVED
+        return null
+    }
+
+    private fun rejectToolPreparation(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        if (fact.toolInvocationId != null) return LedgerError.InvalidTransition
+        val request = fact.modelRequestId ?: return LedgerError.MissingReference
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val current = models[request] ?: return LedgerError.MissingReference
+        return if (current.first == execution && current.second == InvocationState.COMPLETED) {
+            null
+        } else {
+            LedgerError.InvalidTransition
+        }
     }
 
     private fun requireActiveExecution(fact: FactDraft): LedgerError? {

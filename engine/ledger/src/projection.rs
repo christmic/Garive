@@ -14,6 +14,7 @@ enum TurnState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ExecutionState {
     Active,
+    Abandoned,
     Completed,
     Suspended,
     Stopped,
@@ -33,6 +34,7 @@ enum InvocationState {
     Failed,
     Denied,
     Uncertain,
+    Observed,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -71,7 +73,9 @@ impl SessionProjection {
             "turn.stopped" => self.transition_turn(required(&fact.turn_id)?, TurnState::Stopped),
             "turn.failed" => self.transition_turn(required(&fact.turn_id)?, TurnState::Failed),
             "turn.input" => self.require_open_turn(required(&fact.turn_id)?),
+            "turn.cancel_requested" => self.require_non_terminal_turn(required(&fact.turn_id)?),
             "execution.started" => self.start_execution(fact),
+            "execution.abandoned" => self.transition_execution(fact, ExecutionState::Abandoned),
             "execution.completed" => self.transition_execution(fact, ExecutionState::Completed),
             "execution.suspended" => self.transition_execution(fact, ExecutionState::Suspended),
             "execution.stopped" => self.transition_execution(fact, ExecutionState::Stopped),
@@ -91,6 +95,8 @@ impl SessionProjection {
             "effect.failed" => self.transition_tool(fact, InvocationState::Failed),
             "effect.denied" => self.transition_tool(fact, InvocationState::Denied),
             "effect.uncertain" => self.transition_tool(fact, InvocationState::Uncertain),
+            "effect.observation" => self.observe_tool(fact),
+            "tool.preparation_rejected" => self.reject_tool_preparation(fact),
             "interaction.requested"
             | "interaction.resolved"
             | "interaction.cancelled"
@@ -150,6 +156,14 @@ impl SessionProjection {
             Ok(())
         } else {
             Err(LedgerError::InvalidTransition)
+        }
+    }
+
+    fn require_non_terminal_turn(&self, turn_id: &TurnId) -> Result<(), LedgerError> {
+        match self.turns.get(turn_id) {
+            Some(TurnState::Open | TurnState::Suspended) => Ok(()),
+            Some(_) => Err(LedgerError::InvalidTransition),
+            None => Err(LedgerError::MissingReference),
         }
     }
 
@@ -306,6 +320,43 @@ impl SessionProjection {
         }
         *state = next;
         Ok(())
+    }
+
+    fn observe_tool(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let execution = required(&fact.execution_id)?;
+        let (owner, state) = self
+            .tools
+            .get_mut(tool)
+            .ok_or(LedgerError::MissingReference)?;
+        if owner != execution
+            || !matches!(
+                *state,
+                InvocationState::Completed
+                    | InvocationState::Failed
+                    | InvocationState::Denied
+                    | InvocationState::Uncertain
+            )
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        *state = InvocationState::Observed;
+        Ok(())
+    }
+
+    fn reject_tool_preparation(&self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        if fact.tool_invocation_id.is_some() {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let request = required(&fact.model_request_id)?;
+        let execution = required(&fact.execution_id)?;
+        match self.models.get(request) {
+            Some((owner, InvocationState::Completed)) if owner == execution => Ok(()),
+            Some(_) => Err(LedgerError::InvalidTransition),
+            None => Err(LedgerError::MissingReference),
+        }
     }
 
     fn require_active_execution(&self, fact: &FactDraft) -> Result<(), LedgerError> {

@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonObject
 
 class LedgerTransitionMatrixTest {
     private fun fact(id: String, kind: String): FactDraft {
-        val lifecycle = kind.startsWith("turn.") || kind.startsWith("execution.") ||
+        val lifecycle = kind == "tool.preparation_rejected" || kind.startsWith("turn.") || kind.startsWith("execution.") ||
             kind.startsWith("model.") || kind.startsWith("effect.")
         val payload = assertIs<CanonicalPayloadResult.Success>(
             CanonicalPayload.fromValue(JsonObject(emptyMap())),
@@ -17,12 +17,12 @@ class LedgerTransitionMatrixTest {
         return FactDraft(
             FactId.of(id),
             if (lifecycle) TurnId.of("turn") else null,
-            if (kind.startsWith("execution.") || kind.startsWith("model.") || kind.startsWith("effect.")) {
+            if (kind == "tool.preparation_rejected" || kind.startsWith("execution.") || kind.startsWith("model.") || kind.startsWith("effect.")) {
                 ExecutionId.of("execution")
             } else {
                 null
             },
-            if (kind.startsWith("model.")) ModelRequestId.of("request") else null,
+            if (kind == "tool.preparation_rejected" || kind.startsWith("model.")) ModelRequestId.of("request") else null,
             if (kind.startsWith("effect.")) ToolInvocationId.of("tool") else null,
             FactKind.of(kind),
             1u,
@@ -62,6 +62,7 @@ class LedgerTransitionMatrixTest {
             "session.closed",
         )
         listOf(
+            "execution.abandoned",
             "execution.completed",
             "execution.suspended",
             "execution.stopped",
@@ -76,6 +77,29 @@ class LedgerTransitionMatrixTest {
                 terminal,
             )
         }
+    }
+
+    @Test
+    fun `C6 control facts require exact lifecycle owners`() {
+        assertValid(
+            "session.opened", "turn.started", "execution.started",
+            "execution.abandoned",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started",
+            "model.prepared", "model.started", "tool.preparation_rejected",
+        )
+        assertValid(
+            "session.opened", "turn.started", "execution.started",
+            "effect.prepared", "effect.denied", "effect.observation", "execution.completed",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started",
+            "effect.prepared", "effect.observation",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "turn.completed", "turn.cancel_requested",
+        )
     }
 
     @Test

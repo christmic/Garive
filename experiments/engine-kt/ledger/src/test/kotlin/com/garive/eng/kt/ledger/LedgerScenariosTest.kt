@@ -22,7 +22,7 @@ class LedgerScenariosTest {
     @Test
     fun `Kotlin consumes every ledger scenario`() {
         val cases = document.getValue("cases").jsonArray
-        assertEquals(11, cases.size, "fixture coverage changed; review both runners")
+        assertEquals(14, cases.size, "fixture coverage changed; review both runners")
         cases.forEach { runCase(it.jsonObject) }
     }
 
