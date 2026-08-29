@@ -3,11 +3,15 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod command_ports;
+mod command_process;
 mod corpus;
 mod error;
 mod port;
 mod runner;
 
+pub use command_ports::{CommandCreativityEvaluator, CommandCreativityGenerator};
+pub use command_process::CommandPortConfig;
 pub use corpus::{load_creativity_corpus, CreativityCorpus, CreativityTask};
 pub use error::{CreativityBaselineError, CreativityBaselineErrorCode};
 pub use port::{
