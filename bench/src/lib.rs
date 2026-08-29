@@ -8,6 +8,7 @@ mod case;
 mod error;
 mod official;
 mod runner;
+mod tracking;
 mod unique_json;
 
 pub use adapters::{ExactSweIntake, UnifiedDiffPatchAdapter};
@@ -22,3 +23,4 @@ pub use runner::{
     BenchmarkRunConfig, EnvironmentPool, EvaluationVerdict, IntakeAdapter, OfficialEvaluator,
     PatchAdapter, ResultSink, RunnerPorts, WorkspaceLease,
 };
+pub use tracking::{JsonlResultSink, TrackingCompletion, TrackingDescriptor};
