@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft implementation contract in the Agent capability review set. Behavior
-remains gated until owner acceptance coordinates the required C3/C6F changes.
+Accepted implementation contract in the Agent capability set. Coordinated
+C3/C6F changes and fixtures precede behavior.
 
 ## Scope and identity boundary
 
@@ -96,7 +96,7 @@ or verifies the child instance and atomically commits `delegation.child_started`
 with the child `turn.started` transaction. The parent Kernel Execution closes
 as `Suspended(DelegationPending)` using the same Runtime-owned suspension ID.
 
-This requires coordinated acceptance changes:
+Acceptance coordinates these existing-contract changes:
 
 - add `DelegationPending` to `SuspensionReason` and C6F snake-case enum;
 - add `delegation_result` to continuation input kinds;
@@ -185,4 +185,4 @@ and fixed-prefix rules.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: draft
+- Status: accepted

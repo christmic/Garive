@@ -5,9 +5,9 @@
 
 ## Status
 
-Draft review index. No capability behavior may be implemented from this set
-until the project owner accepts the complete boundary and its coordinated fact
-additions.
+Accepted implementation index. The project owner directed every Spec in this
+set to proceed through verified development on 2026-08-29. Coordinated
+C3/C6F/L0 and fixture changes still precede each behavior slice.
 
 ## Purpose
 
@@ -132,4 +132,4 @@ The owner may accept this set only when:
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: draft
+- Status: accepted

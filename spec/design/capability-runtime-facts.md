@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft companion contract for S0/M0/K0/Q0. These kinds are not admitted into
-L0 until the complete Agent capability Spec set is accepted.
+Accepted companion contract for S0/M0/K0/Q0/MA0. These kinds enter L0 through
+the coordinated validators/fixtures delivered with their behavior slices.
 
 ## Boundary and common encoding
 
@@ -398,4 +398,4 @@ both Rust and Kotlin validators.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: draft
+- Status: accepted

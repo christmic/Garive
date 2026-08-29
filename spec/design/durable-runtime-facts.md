@@ -90,7 +90,7 @@ turn.started.v1 {
 
 turn.input.v1 {
   input_kind: "trusted_user" | "trusted_system" | "external_input" |
-              "reconciliation" | "resource_ready"
+              "reconciliation" | "resource_ready" | "delegation_result"
   content: ContentBinding
   suspension_id?: SuspensionId
 }
@@ -106,7 +106,7 @@ turn.suspended.v1 {
   execution_id: ExecutionId
   reason: "approval_required" | "external_input_required" |
           "operator_reconciliation" | "resource_unavailable" |
-          "partial_output"
+          "partial_output" | "delegation_pending"
   continuation: ContentBinding
   cumulative_usage: UsageEvidence
 }

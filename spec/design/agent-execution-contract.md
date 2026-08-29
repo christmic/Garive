@@ -121,7 +121,8 @@ Completed {
 }
 Suspended {
   reason: ApprovalRequired | ExternalInputRequired |
-          OperatorReconciliation | ResourceUnavailable | PartialOutput,
+          OperatorReconciliation | ResourceUnavailable | PartialOutput |
+          DelegationPending,
   continuation_requirement,
   governed_binding?: suspension_id + interaction_id? +
                        invocation_id + prepared_digest
@@ -145,6 +146,10 @@ commits. Core verifies the binding against the portable C5 requirement and
 carries it unchanged to the terminal proposal. Runtime rejects a governed
 suspension without that binding; it must never derive a second unrelated
 Suspension identity during terminal mapping.
+
+`DelegationPending` requires the exact MA0 delegation/grant/child-Turn binding
+and Runtime-owned suspension identity. Parent continuation consumes one
+committed `delegation_result` and always creates a fresh parent Execution.
 
 `ExecutionReport` carries the outcome, completed-iteration cursor, and one
 cumulative `UsageSummary` for every exit path. Each input/output count is

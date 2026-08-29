@@ -66,14 +66,14 @@ planned without reopening a narrower completed row.
 
 | Slice | Design | Spec | API | Code | Tests | State | Admission dependency |
 |---|---|---|---|---|---|---|---|
-| Memory | accepted | draft | documented | skeleton | missing | planned | Owner review of M0 namespace authority, append-only revisions, fixed-prefix retrieval and coordinated C6F facts. |
-| Knowledge | accepted | draft | documented | skeleton | missing | planned | Owner review of K0 exact sources, citations, freshness, connector recovery and coordinated C6F facts. |
-| Skill | accepted | draft | documented | skeleton | missing | planned | Owner review of S0 instruction-only activation, snapshot narrowing and commit-before-model rules. |
-| Scheduler | accepted | draft | documented | skeleton | missing | planned | Owner review of Q0 UTC/fixed-delay intent, occurrence identity, lease fencing and C6 dispatch. |
-| Multi-Agent | accepted | draft | documented | skeleton | missing | gated | Owner review of MA0 child identity, budget escrow, suspension/continuation and coordinated C3/C6F additions. |
+| Memory | accepted | accepted | documented | skeleton | missing | planned | Freeze M0/CF0 fixtures after S0, then implement portable reducer and Runtime authority/restart path. |
+| Knowledge | accepted | accepted | documented | skeleton | missing | planned | Freeze K0/CF0 fixtures after M0, then implement connector lifecycle and committed evidence. |
+| Skill | accepted | accepted | documented | skeleton | missing | active | Freeze S0/CF0 fixtures, then implement Rust/Kotlin activation and Runtime commit-before-model. |
+| Scheduler | accepted | accepted | documented | skeleton | missing | planned | Freeze Q0/CF0 fixtures, then implement recurrence and SQLite occurrence leasing. |
+| Multi-Agent | accepted | accepted | documented | skeleton | missing | planned | Coordinate DelegationPending/result continuation fixtures, then implement budgeted parent/child recovery. |
 | Creativity | draft | missing | missing | skeleton | missing | gated | Reproducible evaluation baseline. |
 | Evaluation | draft | missing | missing | skeleton | missing | gated | Runnable Agent and pinned benchmark evidence. |
-| Observability | accepted | draft | documented | skeleton | missing | planned | Owner review of O0 signal catalogue, redaction, low-cardinality metrics and bounded sink behavior. |
+| Observability | accepted | accepted | documented | skeleton | missing | planned | Freeze O0 fixtures, then implement portable validation and bounded Runtime sinks. |
 
 ## Update checklist
 

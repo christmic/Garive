@@ -10,9 +10,9 @@ The accepted D0/C4/C5/C6 implementation set is indexed by
 [`agent-core-spec-set.md`](agent-core-spec-set.md). Shared fixtures still land
 before each behavior slice.
 
-The post-H1 Memory/Knowledge/Skill/Scheduler/Observability proposal is indexed
-by [`agent-capability-spec-set.md`](agent-capability-spec-set.md). It remains a
-draft review set and admits no behavior until owner acceptance.
+The accepted post-H1 capability set is indexed by
+[`agent-capability-spec-set.md`](agent-capability-spec-set.md). Each behavior
+slice still begins with complete shared fixtures and coordinated fact changes.
 
 ## Milestones
 

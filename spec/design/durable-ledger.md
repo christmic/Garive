@@ -88,11 +88,17 @@ The first admitted vocabulary is:
 | Model | `model.prepared`, `model.started`, `model.completed`, `model.rejected`, `model.interrupted`, `model.unavailable`, `model.uncertain` |
 | Interaction | `interaction.requested`, `interaction.resolved`, `interaction.cancelled` |
 | Tool/effect | `tool.preparation_rejected`, `effect.prepared`, `effect.authorized`, `effect.denied`, `effect.started`, `effect.receipt`, `effect.completed`, `effect.failed`, `effect.uncertain`, `effect.observation` |
+| Skill | `skill.activated` |
+| Memory | `memory.proposed`, `memory.committed`, `memory.rejected`, `memory.superseded`, `memory.tombstoned`, `memory.retrieval_recorded` |
+| Knowledge | `knowledge.requested`, `knowledge.completed`, `knowledge.failed` |
+| Scheduler | `schedule.created`, `schedule.claimed`, `schedule.fired`, `schedule.cancelled`, `schedule.failed` |
+| Delegation | `delegation.requested`, `delegation.authorized`, `delegation.denied`, `delegation.child_started`, `delegation.child_terminal`, `delegation.observed` |
 | Projection | `context.summary`, `privacy.redacted` |
 
 Adding a kind requires a schema-versioned payload spec and recovery decision.
 The accepted C6 shapes are defined by
-[`durable-runtime-facts.md`](durable-runtime-facts.md).
+[`durable-runtime-facts.md`](durable-runtime-facts.md); accepted capability
+shapes are defined by [`capability-runtime-facts.md`](capability-runtime-facts.md).
 
 ## Aggregate state
 

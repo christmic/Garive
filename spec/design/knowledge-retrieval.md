@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft implementation contract in the Agent capability review set.
+Accepted implementation contract in the Agent capability set.
 
 ## Scope and distinction from Memory
 
@@ -175,4 +175,4 @@ filter, freshness or bounds.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: draft
+- Status: accepted

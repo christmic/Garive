@@ -48,15 +48,23 @@ delivery plan, not an implementation support claim:
 Rows change to `supported`/`experimental` only when both native implementations
 and declared evidence exist.
 
-## Draft capability admission proposal
+## Accepted capability admission target
 
-The unaccepted [`agent-capability-spec-set.md`](agent-capability-spec-set.md)
-proposes shared semantic fixtures for S0 Skill, M0 Memory, K0 Knowledge, Q0
+The accepted [`agent-capability-spec-set.md`](agent-capability-spec-set.md)
+admits shared semantic fixtures for S0 Skill, M0 Memory, K0 Knowledge, Q0
 Scheduler values/reducer, MA0 Multi-Agent delegation and O0 Observability.
-These rows are not admitted by this matrix until the owner accepts that set and
-this table is amended in the same contract change. Kotlin would cover portable
-values/reducers only, never Rust Runtime stores, connectors, child lifecycle,
-workers or exporters.
+Rows below are implementation targets, not current support claims. Kotlin
+covers portable values/reducers only, never Rust Runtime stores, connectors,
+child lifecycle, workers or exporters.
+
+| Slice | Rust target | Kotlin target | Required conformance |
+|---|---|---|---|
+| S0 Skill | supported | experimental | activation/digest fixtures + native tests |
+| M0 Memory | supported | experimental | record/query/order fixtures + native tests |
+| K0 Knowledge | supported | experimental | source/evidence/citation fixtures + native tests |
+| Q0 Scheduler | supported | experimental | recurrence/misfire fixtures + native tests |
+| MA0 Multi-Agent | supported | experimental | intent/budget/result fixtures + native tests |
+| O0 Observability | supported | experimental | catalogue/redaction/unit fixtures + native tests |
 
 ## Shared source of behavior
 

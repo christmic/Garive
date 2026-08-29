@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft implementation contract in the Agent capability review set.
+Accepted implementation contract in the Agent capability set.
 
 ## Scope and truth boundary
 
@@ -137,4 +137,4 @@ failures are Runtime operational outcomes and never become `AgentOutcome`.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: draft
+- Status: accepted
