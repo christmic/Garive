@@ -12,7 +12,17 @@ import com.garive.eng.kt.llm.ObserverDecision
 import com.garive.eng.kt.llm.RejectionKind
 import com.garive.eng.kt.llm.TokenCount
 
-suspend fun executeModelOnly(request: AgentTurnRequest, ports: AgentExecutionPorts): ExecutionReport {
+/**
+ * Runs one bounded model-only kernel Execution against frozen ports.
+ *
+ * The driver validates immutable input, checks cancellation and limits at
+ * defined boundaries, and returns exactly one terminal proposal. It neither
+ * persists state nor executes tool intents.
+ */
+public suspend fun executeModelOnly(
+    request: AgentTurnRequest,
+    ports: AgentExecutionPorts,
+): ExecutionReport {
     if (request.validate() != null) return invalidReport(request)
     val control = try {
         ExecutionControl.create(
