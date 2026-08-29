@@ -90,8 +90,8 @@ pub(super) fn acquire(
     let existing = transaction
         .query_row(
             "SELECT revision_id,occurrence_id,ordinal,owner_id,lease_id,epoch,expires_at_ms \
-             FROM schedule_leases WHERE schedule_id=?1",
-            [&request.schedule_id],
+             FROM schedule_leases WHERE session_id=?1 AND schedule_id=?2",
+            params![request.session_id.as_str(), request.schedule_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -132,8 +132,8 @@ pub(super) fn acquire(
     transaction
         .execute(
             "INSERT INTO schedule_leases(session_id,schedule_id,revision_id,occurrence_id,ordinal,owner_id,lease_id,epoch,expires_at_ms) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(schedule_id) DO UPDATE SET \
-             session_id=excluded.session_id,revision_id=excluded.revision_id,occurrence_id=excluded.occurrence_id, \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(session_id,schedule_id) DO UPDATE SET \
+             revision_id=excluded.revision_id,occurrence_id=excluded.occurrence_id, \
              ordinal=excluded.ordinal,owner_id=excluded.owner_id,lease_id=excluded.lease_id, \
              epoch=excluded.epoch,expires_at_ms=excluded.expires_at_ms",
             params![
@@ -166,12 +166,12 @@ pub(super) fn require_owned(
     }
     let owned: bool = transaction
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM schedule_leases WHERE schedule_id=?1 AND session_id=?2 \
+            "SELECT EXISTS(SELECT 1 FROM schedule_leases WHERE session_id=?1 AND schedule_id=?2 \
              AND revision_id=?3 AND occurrence_id=?4 AND ordinal=?5 AND owner_id=?6 \
              AND lease_id=?7 AND epoch=?8 AND expires_at_ms=?9)",
             params![
-                lease.schedule_id,
                 lease.session_id.as_str(),
+                lease.schedule_id,
                 lease.revision_id,
                 lease.occurrence_id,
                 storage::encode_u64(lease.ordinal),
@@ -223,8 +223,9 @@ pub(super) fn release(
     }
     let deleted = transaction
         .execute(
-            "DELETE FROM schedule_leases WHERE schedule_id=?1 AND lease_id=?2 AND epoch=?3",
+            "DELETE FROM schedule_leases WHERE session_id=?1 AND schedule_id=?2 AND lease_id=?3 AND epoch=?4",
             params![
+                lease.session_id.as_str(),
                 lease.schedule_id,
                 lease.lease_id,
                 storage::encode_u64(lease.epoch)

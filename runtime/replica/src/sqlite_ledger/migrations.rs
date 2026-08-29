@@ -56,14 +56,16 @@ CREATE TABLE execution_leases (
 const MIGRATION_3: &str = r#"
 CREATE TABLE schedule_leases (
     session_id TEXT NOT NULL REFERENCES ledger_sessions(session_id),
-    schedule_id TEXT PRIMARY KEY NOT NULL,
+    schedule_id TEXT NOT NULL,
     revision_id TEXT NOT NULL,
     occurrence_id TEXT NOT NULL,
     ordinal BLOB NOT NULL CHECK(length(ordinal) = 8),
     owner_id TEXT NOT NULL CHECK(length(owner_id) > 0),
-    lease_id TEXT NOT NULL UNIQUE CHECK(length(lease_id) > 0),
+    lease_id TEXT NOT NULL CHECK(length(lease_id) > 0),
     epoch BLOB NOT NULL CHECK(length(epoch) = 8),
-    expires_at_ms BLOB NOT NULL CHECK(length(expires_at_ms) = 8)
+    expires_at_ms BLOB NOT NULL CHECK(length(expires_at_ms) = 8),
+    PRIMARY KEY(session_id, schedule_id),
+    UNIQUE(session_id, lease_id)
 ) STRICT;
 "#;
 
