@@ -8,30 +8,50 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-enum class OpenAiAdapterError { INVALID_REQUEST, UNSUPPORTED_CAPABILITY, INVALID_JSON, INVARIANT }
-sealed interface OpenAiResult<out T> {
-    data class Success<T>(val value: T) : OpenAiResult<T>
-    data class Failure(val error: OpenAiAdapterError) : OpenAiResult<Nothing>
+/** Failure mapping neutral values to the admitted OpenAI Responses protocol. */
+public enum class OpenAiAdapterError { INVALID_REQUEST, UNSUPPORTED_CAPABILITY, INVALID_JSON, INVARIANT }
+/** Success/failure envelope for pure OpenAI codec operations. */
+public sealed interface OpenAiResult<out T> {
+    public data class Success<T>(public val value: T) : OpenAiResult<T>
+    public data class Failure(public val error: OpenAiAdapterError) : OpenAiResult<Nothing>
 }
-sealed interface HttpErrorAction {
-    data class Retry(val retryAfter: Duration?) : HttpErrorAction
-    data class Terminal(val outcome: InvokeOutcome) : HttpErrorAction
+/** Bounded action derived from an OpenAI non-success response. */
+public sealed interface HttpErrorAction {
+    public data class Retry(public val retryAfter: Duration?) : HttpErrorAction
+    public data class Terminal(public val outcome: InvokeOutcome) : HttpErrorAction
 }
-data class HttpRequestDescriptor(val method: String, val path: String,
-    val headers: List<Pair<String, String>>, val body: ByteArray)
-data class HttpResponseDescriptor(val status: Int, val retryAfter: String?, val body: ByteArray)
-enum class TransportFailure { BEFORE_DISPATCH, AMBIGUOUS }
-sealed interface TransportResult {
-    data class Success(val response: HttpResponseDescriptor) : TransportResult
-    data class Failure(val reason: TransportFailure) : TransportResult
+/** Secret-free HTTP descriptor rendered for a Runtime-owned transport. */
+public data class HttpRequestDescriptor(
+    public val method: String,
+    public val path: String,
+    public val headers: List<Pair<String, String>>,
+    public val body: ByteArray,
+)
+/** OpenAI response inputs consumed by the protocol classifier/decoder. */
+public data class HttpResponseDescriptor(
+    public val status: Int,
+    public val retryAfter: String?,
+    public val body: ByteArray,
+)
+/** Dispatch-point classification controlling safe retry. */
+public enum class TransportFailure { BEFORE_DISPATCH, AMBIGUOUS }
+/** Success/failure envelope returned by [OpenAiTransport]. */
+public sealed interface TransportResult {
+    public data class Success(public val response: HttpResponseDescriptor) : TransportResult
+    public data class Failure(public val reason: TransportFailure) : TransportResult
 }
-interface OpenAiTransport {
-    suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation): TransportResult
-    suspend fun wait(delay: Duration)
+/** Runtime-owned authenticated OpenAI HTTP execution boundary. */
+public interface OpenAiTransport {
+    public suspend fun execute(request: HttpRequestDescriptor, cancellation: ModelCancellation): TransportResult
+    public suspend fun wait(delay: Duration): Unit
 }
 
-class OpenAiModelPort(private val transport: OpenAiTransport, private val maxAttempts: Int) : ModelPort {
-    override suspend fun invoke(request: ModelRequest, observer: ModelObserver,
+/** Neutral [ModelPort] implementation for OpenAI Responses. */
+public class OpenAiModelPort(
+    private val transport: OpenAiTransport,
+    private val maxAttempts: Int,
+) : ModelPort {
+    public override suspend fun invoke(request: ModelRequest, observer: ModelObserver,
         cancellation: ModelCancellation): ModelPortResult {
         if (maxAttempts <= 0) return ModelPortResult.Failure(ModelPortFailure.INVALID_REQUEST)
         if (cancellation.isCancelled()) return ModelPortResult.Success(cancelled(null))
@@ -75,8 +95,10 @@ private enum class StreamKind { OUTPUT_TEXT, REFUSAL, FUNCTION_ARGUMENTS, REASON
 private data class StreamField(val kind: StreamKind, val subindex: UInt = 0u)
 private data class StartedItem(val id: String, val kind: String, val callId: String?, val name: String?)
 
-object OpenAiResponsesCodec {
-    fun renderHttpRequest(request: ModelRequest, stream: Boolean): OpenAiResult<HttpRequestDescriptor> = guard {
+/** Strict pure codec for the admitted OpenAI Responses JSON/SSE surface. */
+public object OpenAiResponsesCodec {
+    /** Renders a validated request into a secret-free HTTP descriptor. */
+    public fun renderHttpRequest(request: ModelRequest, stream: Boolean): OpenAiResult<HttpRequestDescriptor> = guard {
         val body = when (val rendered = renderRequest(request, stream)) {
             is OpenAiResult.Success -> rendered.value.toString().encodeToByteArray()
             is OpenAiResult.Failure -> fail(rendered.error)
@@ -85,7 +107,8 @@ object OpenAiResponsesCodec {
             "accept" to if (stream) "text/event-stream" else "application/json"), body)
     }
 
-    fun classifyHttpError(
+    /** Reduces an HTTP error to bounded retry or a normalized terminal fact. */
+    public fun classifyHttpError(
         status: Int,
         retryAfter: String?,
         body: ByteArray,
@@ -112,7 +135,8 @@ object OpenAiResponsesCodec {
         else HttpErrorAction.Terminal(InvokeOutcome.Unavailable(kind, delay))
     }
 
-    fun renderRequest(request: ModelRequest, stream: Boolean): OpenAiResult<JsonObject> = guard {
+    /** Maps a neutral request to the admitted OpenAI JSON body. */
+    public fun renderRequest(request: ModelRequest, stream: Boolean): OpenAiResult<JsonObject> = guard {
         if (request.validate() != null || request.traceMetadata.size > 16) fail(OpenAiAdapterError.INVALID_REQUEST)
         val input = request.inputItems.map { item ->
             val message = item as? ModelInputItem.Message ?: fail(OpenAiAdapterError.UNSUPPORTED_CAPABILITY)
@@ -147,9 +171,13 @@ object OpenAiResponsesCodec {
         }
     }
 
-    fun parseResponse(bytes: ByteArray): OpenAiResult<InvokeOutcome> = guard { response(parse(bytes.decodeToString())) }
+    /** Parses a complete Responses JSON body into one normalized outcome. */
+    public fun parseResponse(bytes: ByteArray): OpenAiResult<InvokeOutcome> = guard {
+        response(parse(bytes.decodeToString()))
+    }
 
-    fun parseSse(bytes: ByteArray): OpenAiResult<InvokeOutcome> = guard {
+    /** Validates and reduces a complete Responses SSE transcript. */
+    public fun parseSse(bytes: ByteArray): OpenAiResult<InvokeOutcome> = guard {
         var previous: ULong? = null
         val assembled = mutableMapOf<Pair<UInt, StreamField>, StringBuilder>()
         val started = sortedMapOf<UInt, StartedItem>()

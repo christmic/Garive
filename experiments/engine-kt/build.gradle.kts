@@ -30,7 +30,11 @@ gradle.beforeProject {
 
     project.extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)
-        if (project.name in setOf("llm", "ledger", "core")) explicitApi() else explicitApiWarning()
+        if (project.name in setOf("llm", "ledger", "core", "provider-openai")) {
+            explicitApi()
+        } else {
+            explicitApiWarning()
+        }
         compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 
