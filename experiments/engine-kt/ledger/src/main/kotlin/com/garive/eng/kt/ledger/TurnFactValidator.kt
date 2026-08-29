@@ -41,7 +41,7 @@ private fun JsonObject.input() {
     content("content")
     val kind = enum(
         "input_kind",
-        setOf("trusted_user", "trusted_system", "external_input", "reconciliation", "resource_ready"),
+        setOf("trusted_user", "trusted_system", "external_input", "reconciliation", "resource_ready", "delegation_result"),
     )
     val continuation = kind != "trusted_user" && kind != "trusted_system"
     require(continuation == containsKey("suspension_id"))
@@ -68,7 +68,7 @@ private fun JsonObject.suspended(turn: Boolean) {
     )
     nonEmpty("suspension_id")
     if (turn) nonEmpty("execution_id") else ulong("completed_iterations")
-    enum("reason", setOf("approval_required", "external_input_required", "operator_reconciliation", "resource_unavailable", "partial_output"))
+    enum("reason", setOf("approval_required", "external_input_required", "operator_reconciliation", "resource_unavailable", "partial_output", "delegation_pending"))
     content("continuation")
     usage(if (turn) "cumulative_usage" else "usage")
 }

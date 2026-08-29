@@ -89,6 +89,7 @@ fn input(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "external_input",
             "reconciliation",
             "resource_ready",
+            "delegation_result",
         ],
     )?;
     match (
@@ -167,6 +168,7 @@ fn suspended(value: &Map<String, Value>, turn: bool) -> Result<(), LedgerError> 
             "operator_reconciliation",
             "resource_unavailable",
             "partial_output",
+            "delegation_pending",
         ],
     )?;
     content(value, "continuation")?;

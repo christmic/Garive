@@ -191,6 +191,7 @@ const fn suspension_reason(reason: SuspensionReason) -> &'static str {
         SuspensionReason::OperatorReconciliation => "operator_reconciliation",
         SuspensionReason::PartialOutput => "partial_output",
         SuspensionReason::ResourceUnavailable => "resource_unavailable",
+        SuspensionReason::DelegationPending => "delegation_pending",
     }
 }
 

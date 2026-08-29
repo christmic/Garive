@@ -194,6 +194,7 @@ public enum class SuspensionReason {
     OPERATOR_RECONCILIATION,
     PARTIAL_OUTPUT,
     RESOURCE_UNAVAILABLE,
+    DELEGATION_PENDING,
 }
 /** Expected policy boundary that stops a Turn. */
 public enum class StopReason { ITERATION_LIMIT, TOKEN_LIMIT, DEADLINE, CANCELLED, RESOURCE_UNAVAILABLE }

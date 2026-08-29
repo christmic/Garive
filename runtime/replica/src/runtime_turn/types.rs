@@ -246,6 +246,8 @@ pub enum RuntimeSuspensionKind {
     ResourceUnavailable,
     /// Partial output awaits an explicit continuation input.
     PartialOutput,
+    /// An authorized child Turn has not produced an observed result.
+    DelegationPending,
 }
 
 impl RuntimeSuspensionKind {
@@ -256,6 +258,7 @@ impl RuntimeSuspensionKind {
             "operator_reconciliation" => Ok(Self::OperatorReconciliation),
             "resource_unavailable" => Ok(Self::ResourceUnavailable),
             "partial_output" => Ok(Self::PartialOutput),
+            "delegation_pending" => Ok(Self::DelegationPending),
             _ => Err(RuntimeCommandError::CorruptLedger),
         }
     }

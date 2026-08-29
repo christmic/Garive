@@ -389,6 +389,8 @@ pub enum SuspensionReason {
     PartialOutput,
     /// No frozen model resource can currently serve the request.
     ResourceUnavailable,
+    /// One authorized child Turn must reach a durable governed result.
+    DelegationPending,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

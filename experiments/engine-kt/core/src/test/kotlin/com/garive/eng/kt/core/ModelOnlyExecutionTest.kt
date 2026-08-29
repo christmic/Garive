@@ -489,6 +489,7 @@ class ModelOnlyExecutionTest {
             SuspensionReason.OPERATOR_RECONCILIATION -> "suspended:operator-reconciliation"
             SuspensionReason.PARTIAL_OUTPUT -> "suspended:partial-output"
             SuspensionReason.RESOURCE_UNAVAILABLE -> "suspended:resource-unavailable"
+            SuspensionReason.DELEGATION_PENDING -> "suspended:delegation-pending"
         }
         is AgentOutcome.Stopped -> when (outcome.reason) {
             StopReason.ITERATION_LIMIT -> "stopped:iteration-limit"
