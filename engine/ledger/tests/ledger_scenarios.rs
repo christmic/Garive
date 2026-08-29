@@ -6,6 +6,8 @@ use garive_ledger::{
 };
 use serde_json::Value;
 
+mod common;
+
 fn fixture() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../spec/fixtures/ledger/ledger-scenarios.json");
@@ -16,7 +18,7 @@ fn draft(value: &Value) -> FactDraft {
     let payload_value = value
         .get("payload")
         .cloned()
-        .unwrap_or_else(|| Value::Object(Default::default()));
+        .unwrap_or_else(|| common::runtime_payload(value["kind"].as_str().unwrap()));
     FactDraft {
         fact_id: FactId::try_from(value["id"].as_str().unwrap()).unwrap(),
         turn_id: value["turn"]

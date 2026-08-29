@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::projection::SessionProjection;
 use crate::{
-    CommitDisposition, CommitResult, DurableFact, FactDraft, FactId, FactKind, LedgerError,
-    ModelRequestId, SessionId, ToolInvocationId, TurnId,
+    validate_runtime_fact, CommitDisposition, CommitResult, DurableFact, FactDraft, FactId,
+    FactKind, LedgerError, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -55,6 +55,7 @@ impl LedgerState {
         let mut replayed = 0usize;
         for draft in &drafts {
             draft.validate()?;
+            validate_runtime_fact(draft)?;
             if self.identity_owned_by_other_session(&session_id, draft) {
                 return Err(LedgerError::InvalidTransition);
             }

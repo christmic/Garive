@@ -6,6 +6,8 @@ use garive_ledger::{
     LedgerError, LedgerState, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 
+mod common;
+
 fn fact(id: &str, kind: &str) -> FactDraft {
     let lifecycle = kind == "tool.preparation_rejected"
         || kind.starts_with("turn.")
@@ -27,7 +29,7 @@ fn fact(id: &str, kind: &str) -> FactDraft {
             .then(|| ToolInvocationId::try_from("tool").unwrap()),
         kind: FactKind::new(kind).unwrap(),
         schema_version: 1,
-        payload: CanonicalPayload::from_value(&serde_json::json!({})).unwrap(),
+        payload: CanonicalPayload::from_value(&common::runtime_payload(kind)).unwrap(),
         recorded_at: "2026-08-29T00:00:00Z".into(),
     }
 }
