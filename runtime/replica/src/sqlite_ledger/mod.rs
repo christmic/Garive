@@ -8,9 +8,11 @@ use rusqlite::{params, Connection, OpenFlags, Transaction, TransactionBehavior};
 
 mod lease;
 mod migrations;
+mod schedule_lease;
 mod storage;
 
 pub use lease::{ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest};
+pub use schedule_lease::{ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest};
 
 /// SQLite-backed durable Ledger adapter with restart-safe append semantics.
 pub struct SqliteLedger {
@@ -41,6 +43,8 @@ pub enum SqliteLedgerError {
     InvalidStoredValue(&'static str),
     /// An execution-side commit no longer owns its operational lease.
     Lease(ExecutionLeaseError),
+    /// A schedule-side commit no longer owns its operational occurrence lease.
+    ScheduleLease(ScheduleLeaseError),
 }
 
 impl SqliteLedger {
@@ -128,6 +132,62 @@ impl SqliteLedger {
         transaction
             .commit()
             .map_err(|_| ExecutionLeaseError::Storage)
+    }
+
+    /// Acquires, renews, or takes over one occurrence-scoped schedule lease.
+    pub fn acquire_schedule_lease(
+        &mut self,
+        request: &ScheduleLeaseRequest,
+    ) -> Result<ScheduleLease, ScheduleLeaseError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ScheduleLeaseError::Storage)?;
+        let lease = schedule_lease::acquire(&transaction, request)?;
+        transaction
+            .commit()
+            .map_err(|_| ScheduleLeaseError::Storage)?;
+        Ok(lease)
+    }
+
+    /// Appends occurrence facts only while the exact unexpired lease owns them.
+    pub fn commit_schedule_leased(
+        &mut self,
+        lease: &ScheduleLease,
+        now_ms: u64,
+        expected_session_version: u64,
+        drafts: Vec<FactDraft>,
+    ) -> Result<CommitResult, SqliteLedgerError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        schedule_lease::require_owned(&transaction, lease, now_ms)
+            .map_err(SqliteLedgerError::ScheduleLease)?;
+        schedule_lease::require_bound_facts(lease, &drafts)
+            .map_err(SqliteLedgerError::ScheduleLease)?;
+        let result = commit_transaction(
+            &transaction,
+            lease.session_id.clone(),
+            expected_session_version,
+            drafts,
+        )?;
+        transaction.commit()?;
+        Ok(result)
+    }
+
+    /// Releases a lease after its occurrence is durably handled or terminal.
+    pub fn release_schedule_lease(
+        &mut self,
+        lease: &ScheduleLease,
+    ) -> Result<(), ScheduleLeaseError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| ScheduleLeaseError::Storage)?;
+        schedule_lease::release(&transaction, lease)?;
+        transaction
+            .commit()
+            .map_err(|_| ScheduleLeaseError::Storage)
     }
 
     /// Reads a verified fixed-prefix fact range in ascending durable position.
@@ -295,6 +355,7 @@ impl fmt::Display for SqliteLedgerError {
             }
             Self::InvalidStoredValue(field) => write!(formatter, "invalid stored {field}"),
             Self::Lease(error) => write!(formatter, "execution lease error: {error}"),
+            Self::ScheduleLease(error) => write!(formatter, "schedule lease error: {error}"),
         }
     }
 }
@@ -304,6 +365,7 @@ impl Error for SqliteLedgerError {
         match self {
             Self::Storage(error) => Some(error),
             Self::Lease(error) => Some(error),
+            Self::ScheduleLease(error) => Some(error),
             _ => None,
         }
     }

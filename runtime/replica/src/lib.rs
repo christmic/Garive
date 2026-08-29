@@ -56,6 +56,6 @@ pub use runtime_turn::{
     RuntimeTurnStatus, RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };
 pub use sqlite_ledger::{
-    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, SessionWatermark, SqliteLedger,
-    SqliteLedgerError,
+    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, ScheduleLease, ScheduleLeaseError,
+    ScheduleLeaseRequest, SessionWatermark, SqliteLedger, SqliteLedgerError,
 };

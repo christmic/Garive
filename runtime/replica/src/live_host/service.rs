@@ -819,6 +819,7 @@ fn map_sqlite(error: SqliteLedgerError) -> LiveHostError {
         | SqliteLedgerError::UnsupportedSchema(_)
         | SqliteLedgerError::InvalidStoredValue(_)
         | SqliteLedgerError::Domain(_)
-        | SqliteLedgerError::Lease(_) => LiveHostError::CorruptState,
+        | SqliteLedgerError::Lease(_)
+        | SqliteLedgerError::ScheduleLease(_) => LiveHostError::CorruptState,
     }
 }

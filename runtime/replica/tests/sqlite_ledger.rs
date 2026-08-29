@@ -107,7 +107,8 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
             .connection_for_test()
             .execute_batch(
                 "DROP TABLE execution_leases; \
-                 DELETE FROM schema_migrations WHERE version = 2;",
+                 DROP TABLE schedule_leases; \
+                 DELETE FROM schema_migrations WHERE version >= 2;",
             )
             .unwrap();
     }
@@ -119,7 +120,7 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let leases: u32 = migrated
             .connection_for_test()
             .query_row(
@@ -129,17 +130,26 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
             )
             .unwrap();
         assert_eq!(leases, 1);
+        let schedule_leases: u32 = migrated
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name='schedule_leases'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(schedule_leases, 1);
         migrated
             .connection_for_test()
             .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (3, ?1)",
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (4, ?1)",
                 ["2026-08-29T00:00:00Z"],
             )
             .unwrap();
     }
     assert!(matches!(
         SqliteLedger::open(path),
-        Err(SqliteLedgerError::UnsupportedSchema(3))
+        Err(SqliteLedgerError::UnsupportedSchema(4))
     ));
 }
 
