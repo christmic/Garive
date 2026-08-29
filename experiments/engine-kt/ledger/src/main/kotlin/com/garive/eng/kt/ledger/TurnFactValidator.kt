@@ -60,28 +60,28 @@ private fun JsonObject.cancel() {
 private fun JsonObject.suspended(turn: Boolean) {
     exact(
         if (turn) setOf("suspension_id", "execution_id", "reason", "continuation", "cumulative_usage")
-        else setOf("suspension_id", "reason", "continuation", "usage"),
+        else setOf("suspension_id", "reason", "continuation", "usage", "completed_iterations"),
     )
     nonEmpty("suspension_id")
-    if (turn) nonEmpty("execution_id")
+    if (turn) nonEmpty("execution_id") else ulong("completed_iterations")
     enum("reason", setOf("approval_required", "external_input_required", "operator_reconciliation", "resource_unavailable", "partial_output"))
     content("continuation")
     usage(if (turn) "cumulative_usage" else "usage")
 }
 
 private fun JsonObject.completed(turn: Boolean) {
-    exact(if (turn) setOf("execution_id", "response", "cumulative_usage") else setOf("response", "usage"))
-    if (turn) nonEmpty("execution_id")
+    exact(if (turn) setOf("execution_id", "response", "cumulative_usage") else setOf("response", "usage", "completed_iterations"))
+    if (turn) nonEmpty("execution_id") else ulong("completed_iterations")
     content("response")
     usage(if (turn) "cumulative_usage" else "usage")
 }
 
 private fun JsonObject.stopped(turn: Boolean) {
     exact(
-        if (turn) setOf("execution_id", "reason", "cumulative_usage") else setOf("reason", "usage"),
+        if (turn) setOf("execution_id", "reason", "cumulative_usage") else setOf("reason", "usage", "completed_iterations"),
         setOf("evidence"),
     )
-    if (turn) nonEmpty("execution_id")
+    if (turn) nonEmpty("execution_id") else ulong("completed_iterations")
     enum("reason", setOf("iteration_limit", "token_limit", "deadline", "cancelled", "resource_unavailable"))
     optionalContent("evidence")
     usage(if (turn) "cumulative_usage" else "usage")
@@ -89,10 +89,10 @@ private fun JsonObject.stopped(turn: Boolean) {
 
 private fun JsonObject.failed(turn: Boolean) {
     exact(
-        if (turn) setOf("execution_id", "reason", "cumulative_usage") else setOf("reason", "usage"),
+        if (turn) setOf("execution_id", "reason", "cumulative_usage") else setOf("reason", "usage", "completed_iterations"),
         setOf("evidence"),
     )
-    if (turn) nonEmpty("execution_id")
+    if (turn) nonEmpty("execution_id") else ulong("completed_iterations")
     enum("reason", setOf("invalid_input", "invalid_model_output", "required_capability_unavailable", "port_failure", "invariant_violation", "durability_failure", "corrupt_recovery_state"))
     optionalContent("evidence")
     usage(if (turn) "cumulative_usage" else "usage")

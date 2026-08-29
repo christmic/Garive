@@ -125,12 +125,20 @@ fn suspended(value: &Map<String, Value>, turn: bool) -> Result<(), LedgerError> 
             "cumulative_usage",
         ][..]
     } else {
-        &["suspension_id", "reason", "continuation", "usage"][..]
+        &[
+            "suspension_id",
+            "reason",
+            "continuation",
+            "usage",
+            "completed_iterations",
+        ][..]
     };
     fields(value, required, EMPTY)?;
     non_empty(value, "suspension_id")?;
     if turn {
         non_empty(value, "execution_id")?;
+    } else {
+        unsigned(value, "completed_iterations", false)?;
     }
     enumeration(
         value,
@@ -151,11 +159,13 @@ fn completed(value: &Map<String, Value>, turn: bool) -> Result<(), LedgerError> 
     let required = if turn {
         &["execution_id", "response", "cumulative_usage"][..]
     } else {
-        &["response", "usage"][..]
+        &["response", "usage", "completed_iterations"][..]
     };
     fields(value, required, EMPTY)?;
     if turn {
         non_empty(value, "execution_id")?;
+    } else {
+        unsigned(value, "completed_iterations", false)?;
     }
     content(value, "response")?;
     usage(value, if turn { "cumulative_usage" } else { "usage" })
@@ -165,11 +175,13 @@ fn stopped(value: &Map<String, Value>, turn: bool) -> Result<(), LedgerError> {
     let required = if turn {
         &["execution_id", "reason", "cumulative_usage"][..]
     } else {
-        &["reason", "usage"][..]
+        &["reason", "usage", "completed_iterations"][..]
     };
     fields(value, required, &["evidence"])?;
     if turn {
         non_empty(value, "execution_id")?;
+    } else {
+        unsigned(value, "completed_iterations", false)?;
     }
     enumeration(
         value,
@@ -190,11 +202,13 @@ fn failed(value: &Map<String, Value>, turn: bool) -> Result<(), LedgerError> {
     let required = if turn {
         &["execution_id", "reason", "cumulative_usage"][..]
     } else {
-        &["reason", "usage"][..]
+        &["reason", "usage", "completed_iterations"][..]
     };
     fields(value, required, &["evidence"])?;
     if turn {
         non_empty(value, "execution_id")?;
+    } else {
+        unsigned(value, "completed_iterations", false)?;
     }
     enumeration(
         value,

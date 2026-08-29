@@ -91,6 +91,7 @@ fn terminal_mapping_preserves_unknown_usage_and_content_integrity() {
     assert_eq!(execution["usage"]["input_tokens"]["value"], 3);
     assert_eq!(execution["usage"]["output_tokens"]["kind"], "unknown");
     assert_eq!(execution["usage"]["source"], "provider_reported");
+    assert_eq!(execution["completed_iterations"], 1);
     assert_eq!(
         execution["response"]["inline_utf8"],
         r#"[{"kind":"text","text":"done"}]"#

@@ -109,6 +109,9 @@ Runtime accepts exactly one `ExecutionReport` containing one `AgentOutcome`,
 the cumulative usage evidence, and the completed-iteration cursor per
 Execution, then converts it into one atomic terminal transaction. Duplicate equal terminal proposals are
 idempotent; a different second terminal is corruption/invariant failure.
+Every Execution terminal persists `completed_iterations`; a continuation
+reconstructs its cursor from the matching `execution.suspended`, never from
+the older value recorded when that Execution started.
 
 A host crash can destroy an active Kernel invocation before it returns any
 `AgentOutcome`. C6 therefore adds Runtime-only `execution.abandoned`: it

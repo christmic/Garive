@@ -55,6 +55,21 @@ pub fn reconstruct_suspended_turn(
         })
         .ok_or(RuntimeCommandError::CorruptLedger)?;
     let execution_payload = payload(execution_start)?;
+    let execution_suspended = snapshot
+        .facts
+        .iter()
+        .rfind(|fact| {
+            fact.kind.as_str() == "execution.suspended"
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let execution_suspended_payload = payload(execution_suspended)?;
+    if text(&execution_suspended_payload, "suspension_id")?
+        != text(&suspended_payload, "suspension_id")?
+        || text(&execution_suspended_payload, "reason")? != text(&suspended_payload, "reason")?
+    {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
     let started_payload = payload(started)?;
     let suspension_kind = RuntimeSuspensionKind::parse(text(&suspended_payload, "reason")?)?;
     let interaction = pending_interaction(snapshot, &execution_id, &suspended_payload)?;
@@ -85,7 +100,7 @@ pub fn reconstruct_suspended_turn(
         snapshot_digest: text(&started_payload, "snapshot_digest")?.to_owned(),
         trusted_input_digest: text(&started_payload, "trusted_input_digest")?.to_owned(),
         through_position: snapshot.through_position,
-        completed_iterations: unsigned(&execution_payload, "completed_iterations")?,
+        completed_iterations: unsigned(&execution_suspended_payload, "completed_iterations")?,
         recovery_ordinal: unsigned(&execution_payload, "recovery_ordinal")?,
         limits: limits(&execution_payload)?,
     })

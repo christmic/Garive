@@ -192,6 +192,14 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
 
 fn suspension(repo: &Path, kind: &str, turn: &TurnId, execution: &ExecutionId) -> FactDraft {
     let mut output = fact(repo, kind, turn, execution, None, None);
+    if kind == "execution.suspended" {
+        let mut payload = payload(repo, kind);
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert("reason".into(), json!("approval_required"));
+        output.payload = CanonicalPayload::from_value(&payload).unwrap();
+    }
     if kind == "turn.suspended" {
         output.execution_id = None;
         let mut payload = payload(repo, kind);

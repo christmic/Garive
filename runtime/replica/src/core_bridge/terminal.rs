@@ -40,7 +40,7 @@ pub fn plan_core_terminal(
             (
                 "execution.completed",
                 "turn.completed",
-                json!({"response":response,"usage":usage}),
+                json!({"response":response,"usage":usage,"completed_iterations":report.completed_iterations}),
                 json!({"execution_id":context.execution_id.as_str(),"response":response,"cumulative_usage":usage}),
             )
         }
@@ -56,7 +56,7 @@ pub fn plan_core_terminal(
             (
                 "execution.suspended",
                 "turn.suspended",
-                json!({"suspension_id":suspension_id,"reason":reason,"continuation":continuation,"usage":usage}),
+                json!({"suspension_id":suspension_id,"reason":reason,"continuation":continuation,"usage":usage,"completed_iterations":report.completed_iterations}),
                 json!({"suspension_id":suspension_id,"execution_id":context.execution_id.as_str(),"reason":reason,"continuation":continuation,"cumulative_usage":usage}),
             )
         }
@@ -65,7 +65,7 @@ pub fn plan_core_terminal(
             (
                 "execution.stopped",
                 "turn.stopped",
-                json!({"reason":reason,"usage":usage}),
+                json!({"reason":reason,"usage":usage,"completed_iterations":report.completed_iterations}),
                 json!({"execution_id":context.execution_id.as_str(),"reason":reason,"cumulative_usage":usage}),
             )
         }
@@ -74,7 +74,7 @@ pub fn plan_core_terminal(
             (
                 "execution.failed",
                 "turn.failed",
-                json!({"reason":reason,"usage":usage}),
+                json!({"reason":reason,"usage":usage,"completed_iterations":report.completed_iterations}),
                 json!({"execution_id":context.execution_id.as_str(),"reason":reason,"cumulative_usage":usage}),
             )
         }

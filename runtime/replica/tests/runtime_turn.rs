@@ -251,6 +251,7 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     let mut ledger = SqliteLedger::open(&path).unwrap();
     let state = reconstruct_suspended_turn(&ledger.load_turn(&started.turn_id).unwrap()).unwrap();
     assert_eq!((state.session_version, state.through_position), (3, 6));
+    assert_eq!(state.completed_iterations, 1);
     let command = ContinueTurnCommand {
         command_id: RuntimeCommandId::new("continue-command").unwrap(),
         session_id: session.clone(),
@@ -263,6 +264,9 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     };
     let continued = plan_continue_turn(&command, &state).unwrap();
     assert_ne!(continued.execution_id, Some(prior_execution));
+    let continued_start: Value =
+        serde_json::from_str(continued.facts[2].payload.as_json()).unwrap();
+    assert_eq!(continued_start["completed_iterations"], 1);
     assert_eq!(
         ledger
             .commit(session, 3, continued.facts)

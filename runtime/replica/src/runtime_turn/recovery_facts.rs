@@ -28,6 +28,7 @@ pub fn plan_recovery_action_facts(
             )?;
             let mut facts = vec![uncertain];
             facts.extend(suspension_pair(
+                snapshot,
                 source,
                 "resource_unavailable",
                 recorded_at,
@@ -47,6 +48,7 @@ pub fn plan_recovery_action_facts(
             )?;
             let mut facts = vec![uncertain];
             facts.extend(suspension_pair(
+                snapshot,
                 source,
                 "operator_reconciliation",
                 recorded_at,
@@ -63,6 +65,7 @@ pub fn plan_recovery_action_facts(
 }
 
 fn suspension_pair(
+    snapshot: &TurnSnapshot,
     source: &DurableFact,
     reason: &str,
     recorded_at: &str,
@@ -70,11 +73,13 @@ fn suspension_pair(
     let suspension_id = format!("suspension-{}", digest_text(source.fact_id.as_str()));
     let continuation = json!({"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""});
     let usage = json!({"input_tokens":{"kind":"unknown"},"output_tokens":{"kind":"unknown"},"source":"estimated"});
+    let completed_iterations = completed_iterations(snapshot, source)?;
     let mut execution = fact(
         source,
         "execution.suspended",
         json!({
-            "suspension_id":suspension_id,"reason":reason,"continuation":continuation,"usage":usage
+            "suspension_id":suspension_id,"reason":reason,"continuation":continuation,"usage":usage,
+            "completed_iterations":completed_iterations
         }),
         recorded_at,
     )?;
@@ -139,7 +144,8 @@ fn recovery_bound_terminal(
         execution,
         "execution.failed",
         json!({
-            "reason":"corrupt_recovery_state","usage":usage
+            "reason":"corrupt_recovery_state","usage":usage,
+            "completed_iterations":completed_iterations(snapshot, execution)?
         }),
         recorded_at,
     )?;
@@ -153,6 +159,36 @@ fn recovery_bound_terminal(
     )?;
     turn_fact.execution_id = None;
     Ok(vec![execution_fact, turn_fact])
+}
+
+fn completed_iterations(
+    snapshot: &TurnSnapshot,
+    source: &DurableFact,
+) -> Result<u64, RuntimeCommandError> {
+    let execution_id = source
+        .execution_id
+        .as_ref()
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let started = snapshot
+        .facts
+        .iter()
+        .rfind(|fact| {
+            fact.execution_id.as_ref() == Some(execution_id)
+                && fact.kind.as_str() == "execution.started"
+        })
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let initial = unsigned(&payload(started)?, "completed_iterations")?;
+    let attempts = snapshot
+        .facts
+        .iter()
+        .filter(|fact| {
+            fact.execution_id.as_ref() == Some(execution_id)
+                && fact.kind.as_str() == "model.prepared"
+        })
+        .count() as u64;
+    initial
+        .checked_add(attempts)
+        .ok_or(RuntimeCommandError::CorruptLedger)
 }
 
 fn latest<'a>(
@@ -177,6 +213,13 @@ fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, Runtime
     value
         .get(key)
         .and_then(Value::as_str)
+        .ok_or(RuntimeCommandError::CorruptLedger)
+}
+
+fn unsigned(value: &Map<String, Value>, key: &str) -> Result<u64, RuntimeCommandError> {
+    value
+        .get(key)
+        .and_then(Value::as_u64)
         .ok_or(RuntimeCommandError::CorruptLedger)
 }
 

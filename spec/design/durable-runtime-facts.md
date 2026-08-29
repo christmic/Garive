@@ -162,6 +162,7 @@ execution.abandoned.v1 {
 execution.completed.v1 {
   response: ContentBinding
   usage: UsageEvidence
+  completed_iterations: u64
 }
 
 execution.suspended.v1 {
@@ -169,17 +170,20 @@ execution.suspended.v1 {
   reason: same enum as turn.suspended.v1
   continuation: ContentBinding
   usage: UsageEvidence
+  completed_iterations: u64
 }
 
 execution.stopped.v1 {
   reason: same enum as turn.stopped.v1
   usage: UsageEvidence
+  completed_iterations: u64
   evidence?: ContentBinding
 }
 
 execution.failed.v1 {
   reason: same enum as turn.failed.v1
   usage: UsageEvidence
+  completed_iterations: u64
   evidence?: ContentBinding
 }
 ```
