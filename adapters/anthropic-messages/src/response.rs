@@ -1,7 +1,7 @@
 //! Ordinary Messages response, usage, and protocol error envelopes.
 
 use crate::{Header, MessagesAdapter, MessagesAdapterError};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
 /// Official core message envelope with lossless optional extensions.
@@ -78,8 +78,7 @@ pub enum StopReason {
 }
 
 /// Portable output blocks plus a lossless future/hosted extension.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OutputBlock {
     /// Text with lossless citation objects.
     Text(OutputText),
@@ -91,6 +90,46 @@ pub enum OutputBlock {
     ToolUse(OutputToolUse),
     /// Hosted or future output block retained without promotion.
     Extension(Map<String, Value>),
+}
+
+impl Serialize for OutputBlock {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Text(value) => value.serialize(serializer),
+            Self::Thinking(value) => value.serialize(serializer),
+            Self::RedactedThinking(value) => value.serialize(serializer),
+            Self::ToolUse(value) => value.serialize(serializer),
+            Self::Extension(value) => value.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputBlock {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("Messages output block must be an object"))?;
+        let kind = object
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(|| D::Error::custom("Messages output block requires type"))?;
+        match kind {
+            "text" => serde_json::from_value(value)
+                .map(Self::Text)
+                .map_err(D::Error::custom),
+            "thinking" => serde_json::from_value(value)
+                .map(Self::Thinking)
+                .map_err(D::Error::custom),
+            "redacted_thinking" => serde_json::from_value(value)
+                .map(Self::RedactedThinking)
+                .map_err(D::Error::custom),
+            "tool_use" => serde_json::from_value(value)
+                .map(Self::ToolUse)
+                .map_err(D::Error::custom),
+            _ => Ok(Self::Extension(object.clone())),
+        }
+    }
 }
 
 impl OutputBlock {

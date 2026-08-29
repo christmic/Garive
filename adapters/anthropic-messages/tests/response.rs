@@ -83,6 +83,11 @@ fn incompatible_media_and_malformed_known_blocks_fail() {
     assert!(adapter()
         .decode_response(200, &[], &serde_json::to_vec(&value).unwrap())
         .is_err());
+
+    value["content"] = json!([{"type":"text"}]);
+    assert!(adapter()
+        .decode_response(200, &[], &serde_json::to_vec(&value).unwrap())
+        .is_err());
 }
 
 #[test]
