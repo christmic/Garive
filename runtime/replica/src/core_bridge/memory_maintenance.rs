@@ -4,14 +4,16 @@ use garive_memory::{
     complete_memory_promotion, DistillationWatermark, ErasureDisposition, ErasureTargetKind,
     ErasureTargetStatus, HypothesisState, MemoryAuditReport, MemoryCandidate,
     MemoryCandidateIntent, MemoryCandidateSource, MemoryErasureReceipt, MemoryErasureRequest,
-    MemoryLifecycle, MemoryMaintenanceDecision, MemoryPromotionReceipt, MemoryPromotionRequest,
+    MemoryErasureTarget, MemoryLifecycle, MemoryMaintenanceDecision, MemoryPromotionReceipt,
+    MemoryPromotionRequest, MemoryState, MemoryTombstone,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::runtime_turn::RuntimeCommandError;
 
-use super::PlannedMemoryTombstone;
+use super::memory_write::plan_user_memory_tombstone;
+use super::MemoryTombstoneContext;
 
 /// Session, namespace, and time ownership for asynchronous Memory maintenance facts.
 pub struct MemoryMaintenanceContext {
@@ -185,32 +187,72 @@ pub fn plan_memory_promotion_receipt(
     })
 }
 
-/// Builds the erasure-request fact after validating the referenced tombstone.
+/// Atomic user-forget plan with immediate tombstone and physical erasure request.
+pub struct PlannedMemoryForget {
+    /// Tombstone followed by erasure request; callers commit this exact batch.
+    pub facts: Vec<FactDraft>,
+    /// M0 state with the target immediately hidden from retrieval.
+    pub next_state: MemoryState,
+    /// Request used to validate later physical erasure receipts.
+    pub request: MemoryErasureRequest,
+}
+
+/// Builds an exact user tombstone and erasure request as one indivisible batch.
+#[allow(clippy::too_many_arguments)]
 pub fn plan_memory_forget(
     context: &MemoryMaintenanceContext,
     through_position: u64,
-    tombstone: PlannedMemoryTombstone,
-    request: &MemoryErasureRequest,
-) -> Result<Vec<FactDraft>, RuntimeCommandError> {
+    command_id: &str,
+    request_id: &str,
+    state: &MemoryState,
+    target: &MemoryTombstone,
+    policy_revision: &str,
+    targets: Vec<MemoryErasureTarget>,
+) -> Result<PlannedMemoryForget, RuntimeCommandError> {
     validate_context(context)?;
-    let reference = request.tombstone_fact();
-    let payload: Value = serde_json::from_str(tombstone.fact.payload.as_json())
-        .map_err(|_| RuntimeCommandError::InvariantViolation)?;
-    if request.namespace_id() != context.namespace_id
-        || reference.session_id() != context.session_id.as_str()
-        || reference.position()
-            != through_position
-                .checked_add(1)
-                .ok_or(RuntimeCommandError::InvalidCommand)?
-        || reference.fact_id() != tombstone.fact.fact_id.as_str()
-        || reference.payload_digest() != tombstone.fact.payload.sha256()
-        || payload["record_id"] != request.record_id()
-        || payload["revision_id"] != request.revision_id()
-    {
+    validate_text(request_id)?;
+    validate_text(policy_revision)?;
+    if !state.revisions().iter().any(|record| {
+        record.record_id() == target.record_id
+            && record.revision_id() == target.revision_id
+            && record.namespace_id() == context.namespace_id
+    }) {
         return Err(RuntimeCommandError::InvalidCommand);
     }
-    let request_fact = erasure_request_fact(context, request)?;
-    Ok(vec![tombstone.fact, request_fact])
+    let tombstone = plan_user_memory_tombstone(
+        &MemoryTombstoneContext {
+            command_id: command_id.into(),
+            recorded_at: context.recorded_at.clone(),
+        },
+        state,
+        target,
+    )?;
+    let position = through_position
+        .checked_add(1)
+        .ok_or(RuntimeCommandError::InvalidCommand)?;
+    let reference = garive_memory::DurableFactReference::new(
+        context.session_id.as_str(),
+        position,
+        tombstone.fact.fact_id.as_str(),
+        tombstone.fact.payload.sha256(),
+    )
+    .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+    let request = MemoryErasureRequest::new(
+        request_id,
+        &context.namespace_id,
+        target.record_id.clone(),
+        target.revision_id.clone(),
+        reference,
+        policy_revision,
+        targets,
+    )
+    .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+    let request_fact = erasure_request_fact(context, &request)?;
+    Ok(PlannedMemoryForget {
+        facts: vec![tombstone.fact, request_fact],
+        next_state: tombstone.next_state,
+        request,
+    })
 }
 
 /// Encodes one complete-coverage physical erasure attempt.

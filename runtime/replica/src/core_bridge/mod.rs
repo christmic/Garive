@@ -62,7 +62,8 @@ pub use memory_hypothesis_recovery::{
 pub use memory_maintenance::{
     plan_memory_audit, plan_memory_distillation_checkpoint, plan_memory_erasure_receipt,
     plan_memory_forget, plan_memory_maintenance_decision, plan_memory_promotion_receipt,
-    plan_memory_promotion_request, MemoryMaintenanceContext, PlannedMemoryPromotion,
+    plan_memory_promotion_request, MemoryMaintenanceContext, PlannedMemoryForget,
+    PlannedMemoryPromotion,
 };
 pub use memory_maintenance_projection::{
     MemoryMaintenanceProjection, RecordedMemoryDecision, RecordedMemoryErasure,

@@ -184,6 +184,26 @@ pub fn plan_memory_tombstone(
     target: &MemoryTombstone,
     reason: MemoryTombstoneReason,
 ) -> Result<PlannedMemoryTombstone, RuntimeCommandError> {
+    if reason == MemoryTombstoneReason::UserRequest {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    plan_memory_tombstone_inner(context, state, target, reason)
+}
+
+pub(super) fn plan_user_memory_tombstone(
+    context: &MemoryTombstoneContext,
+    state: &MemoryState,
+    target: &MemoryTombstone,
+) -> Result<PlannedMemoryTombstone, RuntimeCommandError> {
+    plan_memory_tombstone_inner(context, state, target, MemoryTombstoneReason::UserRequest)
+}
+
+fn plan_memory_tombstone_inner(
+    context: &MemoryTombstoneContext,
+    state: &MemoryState,
+    target: &MemoryTombstone,
+    reason: MemoryTombstoneReason,
+) -> Result<PlannedMemoryTombstone, RuntimeCommandError> {
     validate_time(&context.recorded_at)?;
     if context.command_id.is_empty() {
         return Err(RuntimeCommandError::InvalidCommand);
