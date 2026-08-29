@@ -5,6 +5,7 @@
 
 mod core_bridge;
 mod fake_host;
+mod model_http_transport;
 mod runtime_turn;
 mod sqlite_ledger;
 
@@ -19,6 +20,9 @@ pub use core_bridge::{
     TerminalPublisher,
 };
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
+pub use model_http_transport::{
+    RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
+};
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,
     plan_reconcile_invocation, plan_recovery_action_facts, plan_recovery_restart, plan_start_turn,
