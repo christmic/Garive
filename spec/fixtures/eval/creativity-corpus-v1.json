@@ -1,0 +1,44 @@
+{
+  "contract": "garive.creativity-corpus",
+  "version": 1,
+  "corpus_id": "garive-creativity-synthetic-reference",
+  "corpus_revision": "2026-08-30.v1",
+  "tasks": [
+    {
+      "task_id": "design-cache-invalidation",
+      "class": "design_alternatives",
+      "generator_prompt": "Propose materially different cache invalidation designs for an offline-capable client while preserving bounded staleness and recovery auditability.",
+      "evaluator_rubric_json": "{\"required_constraints\":[\"bounded_staleness\",\"offline_operation\",\"recovery_audit\"],\"cluster_axis\":\"invalidation_ownership\"}",
+      "max_candidates": 4,
+      "max_candidate_utf8_bytes": 2048,
+      "max_total_candidate_utf8_bytes": 8192
+    },
+    {
+      "task_id": "diagnose-duplicate-dispatch",
+      "class": "diagnostic_hypotheses",
+      "generator_prompt": "Form distinct testable hypotheses for a durable worker dispatching one logical invocation twice after restart, without assuming a missing receipt means no effect occurred.",
+      "evaluator_rubric_json": "{\"required_constraints\":[\"testable\",\"durability_aware\",\"no_missing_receipt_inference\"],\"cluster_axis\":\"causal_boundary\"}",
+      "max_candidates": 4,
+      "max_candidate_utf8_bytes": 2048,
+      "max_total_candidate_utf8_bytes": 8192
+    },
+    {
+      "task_id": "reconcile-latency-durability",
+      "class": "constraint_reconciliation",
+      "generator_prompt": "Develop different plans that reduce interactive latency while retaining commit-before-dispatch durability and a bounded shutdown contract.",
+      "evaluator_rubric_json": "{\"required_constraints\":[\"latency_reduction\",\"commit_before_dispatch\",\"bounded_shutdown\"],\"cluster_axis\":\"latency_mechanism\"}",
+      "max_candidates": 4,
+      "max_candidate_utf8_bytes": 2048,
+      "max_total_candidate_utf8_bytes": 8192
+    },
+    {
+      "task_id": "reframe-recovery-explanation",
+      "class": "transformation_reframing",
+      "generator_prompt": "Express the same uncertain-effect recovery rule through distinct explanatory structures for an engineer, preserving every authority and retry constraint.",
+      "evaluator_rubric_json": "{\"required_constraints\":[\"uncertainty_preserved\",\"authority_explicit\",\"retry_constraint\"],\"cluster_axis\":\"explanatory_structure\"}",
+      "max_candidates": 4,
+      "max_candidate_utf8_bytes": 2048,
+      "max_total_candidate_utf8_bytes": 8192
+    }
+  ]
+}

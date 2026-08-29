@@ -1168,6 +1168,17 @@ name = "garive-creativity"
 version = "0.1.0"
 
 [[package]]
+name = "garive-creativity-baseline"
+version = "0.1.0"
+dependencies = [
+ "garive-eval",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "garive-desktop"
 version = "0.1.0"
 dependencies = [

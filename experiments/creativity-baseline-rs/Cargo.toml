@@ -1,0 +1,17 @@
+[package]
+name = "garive-creativity-baseline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+garive-eval = { path = "../../engine/eval" }
+serde.workspace = true
+serde_json.workspace = true
+serde_jcs.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
