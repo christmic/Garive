@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod audit;
+mod control_plane;
 mod erasure;
 mod hypothesis;
 mod lifecycle;
@@ -19,6 +20,9 @@ mod write;
 pub use audit::{
     audit_memory, MemoryAuditAction, MemoryAuditEntry, MemoryAuditPolicy, MemoryAuditReport,
     MemoryContradiction,
+};
+pub use control_plane::{
+    parse_memory_document, MemoryControlDocument, MemoryControlError, MemoryDocumentLimits,
 };
 pub use erasure::{
     record_memory_erasure, ErasureDisposition, ErasureTargetKind, ErasureTargetStatus,
