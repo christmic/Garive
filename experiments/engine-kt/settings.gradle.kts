@@ -5,6 +5,7 @@ rootProject.name = "engine-kt"
 include(":core")
 include(":llm")
 include(":ledger")
+include(":tools")
 include(":persistence-postgres")
 include(":adapter-openai-responses")
 include(":adapter-anthropic-messages")
