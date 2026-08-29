@@ -2,9 +2,10 @@ use std::{fs, path::PathBuf};
 
 use garive_multiagent::{
     authorize_delegation, complete_delegation_result, release_delegation_budget,
-    CancellationPolicy, ChildRequirement, ContentBinding, DelegationAllowance, DelegationBudget,
-    DelegationConsumption, DelegationErrorCode, DelegationIntent, DelegationResultContext,
-    DelegationUsage, FactReference, TokenUsageEvidence,
+    settle_delegation_budget, BudgetAmounts, CancellationPolicy, ChildRequirement, ContentBinding,
+    DelegationAllowance, DelegationBudget, DelegationBudgetSettlement, DelegationConsumption,
+    DelegationErrorCode, DelegationIntent, DelegationResultContext, DelegationUsage, FactReference,
+    TokenUsageEvidence,
 };
 use serde_json::Value;
 
@@ -211,4 +212,71 @@ fn bounds_depth_concurrency_schema_and_unknown_usage_fail_closed() {
     )
     .unwrap_err();
     assert_eq!(invalid.code(), DelegationErrorCode::ResultSchemaMismatch);
+}
+
+#[test]
+fn settlement_never_creates_budget_and_checked_release_overflow_fails() {
+    let root = fixture();
+    let reservation = intent(&root).budget().clone();
+    for executions in 1..=reservation.max_child_executions {
+        for iterations in 0..=reservation.max_iterations {
+            let settlement = settle_delegation_budget(
+                &reservation,
+                DelegationConsumption {
+                    child_turns: 1,
+                    child_executions: executions,
+                    completed_iterations: iterations,
+                    elapsed_ms: iterations * 100,
+                },
+                DelegationUsage {
+                    input_tokens: TokenUsageEvidence::Known { value: iterations },
+                    output_tokens: TokenUsageEvidence::Unknown,
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                settlement.charged.child_executions + settlement.released.child_executions,
+                reservation.max_child_executions
+            );
+            assert_eq!(
+                settlement.charged.iterations + settlement.released.iterations,
+                reservation.max_iterations
+            );
+            assert_eq!(
+                settlement.charged.input_tokens + settlement.released.input_tokens,
+                reservation.max_input_tokens
+            );
+            assert_eq!(
+                settlement.charged.output_tokens,
+                reservation.max_output_tokens
+            );
+        }
+    }
+    let maximum = DelegationAllowance {
+        remaining_child_turns: u64::MAX,
+        remaining_child_executions: 0,
+        remaining_iterations: 0,
+        remaining_input_tokens: 0,
+        remaining_output_tokens: 0,
+        remaining_elapsed_ms: 0,
+        max_depth: 1,
+        max_objective_bytes: 1,
+        max_input_evidence: 1,
+        max_result_schema_bytes: 1,
+        max_result_bytes: 1,
+        max_result_evidence: 1,
+    };
+    let settlement = DelegationBudgetSettlement {
+        charged: BudgetAmounts::default(),
+        released: BudgetAmounts {
+            child_turns: 1,
+            ..BudgetAmounts::default()
+        },
+    };
+    assert_eq!(
+        release_delegation_budget(&maximum, settlement, &maximum)
+            .unwrap_err()
+            .code(),
+        DelegationErrorCode::BudgetOverflow
+    );
 }

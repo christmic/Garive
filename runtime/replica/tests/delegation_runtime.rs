@@ -40,13 +40,17 @@ fn fact(
 }
 
 fn intent() -> DelegationIntent {
+    intent_with_policy(CancellationPolicy::CancelWithParent)
+}
+
+fn intent_with_policy(policy: CancellationPolicy) -> DelegationIntent {
     DelegationIntent::new(
         "delegation-1", "parent-agent", "parent-turn", "parent-execution",
         ChildRequirement::definition("reviewer", "1").unwrap(),
         ContentBinding::from_inline("Review child task."), Vec::new(),
         ContentBinding::from_inline("{\"additionalProperties\":false,\"properties\":{\"answer\":{\"type\":\"string\"}},\"required\":[\"answer\"],\"type\":\"object\"}"),
         DelegationBudget { max_child_turns:1,max_child_executions:2,max_iterations:4,max_input_tokens:100,max_output_tokens:50,deadline_budget_ms:1_000,max_depth:2,max_objective_bytes:64,max_input_evidence:1,max_result_schema_bytes:256,max_result_bytes:64,max_result_evidence:1 },
-        CancellationPolicy::CancelWithParent, 3,
+        policy, 3,
     ).unwrap()
 }
 
@@ -176,6 +180,20 @@ fn durable_grant_precedes_atomic_child_and_observed_result() {
     assert_eq!(
         child_cancel.turn_id.as_ref().unwrap().as_str(),
         "child-turn"
+    );
+    let independent = intent_with_policy(CancellationPolicy::Independent);
+    let mut independent_binding = pending.delegation.clone().unwrap();
+    independent_binding.intent_digest = independent.intent_digest().unwrap();
+    assert_eq!(
+        plan_delegation_child_cancellation(
+            &independent,
+            &independent_binding,
+            durable_cancel,
+            CancelReason::User,
+            "2026-08-29T00:00:03Z",
+        )
+        .unwrap(),
+        None,
     );
     ledger
         .commit(session.clone(), 5, vec![child_cancel])

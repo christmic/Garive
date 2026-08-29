@@ -289,6 +289,7 @@ pub fn plan_delegation_child_cancellation(
     if parent_cancel.kind.as_str() != "turn.cancel_requested"
         || parent_cancel.turn_id.as_ref().map(TurnId::as_str) != Some(intent.parent_turn_id())
         || binding.delegation_id != intent.delegation_id()
+        || binding.intent_digest != intent.intent_digest().map_err(contract)?
     {
         return Err(DelegationRuntimeError::Contract(
             DelegationErrorCode::DelegationConflict,

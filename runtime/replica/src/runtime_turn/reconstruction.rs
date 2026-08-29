@@ -131,7 +131,7 @@ fn delegation_target(
     };
     let delegation_id = text(started, "delegation_id")?;
     let grant_id = text(started, "grant_id")?;
-    let requested = snapshot
+    let requested: Vec<_> = snapshot
         .facts
         .iter()
         .filter(|fact| {
@@ -139,8 +139,8 @@ fn delegation_target(
         })
         .filter_map(|fact| payload(fact).ok())
         .filter(|value| value.get("delegation_id").and_then(Value::as_str) == Some(delegation_id))
-        .count();
-    let authorized = snapshot
+        .collect();
+    let authorized: Vec<_> = snapshot
         .facts
         .iter()
         .filter(|fact| {
@@ -151,8 +151,11 @@ fn delegation_target(
             value.get("delegation_id").and_then(Value::as_str) == Some(delegation_id)
                 && value.get("grant_id").and_then(Value::as_str) == Some(grant_id)
         })
-        .count();
-    if requested != 1 || authorized != 1 {
+        .collect();
+    if requested.len() != 1
+        || authorized.len() != 1
+        || text(&authorized[0], "intent_digest")? != text(&requested[0], "intent_digest")?
+    {
         return Err(RuntimeCommandError::CorruptLedger);
     }
     let terminals: Vec<_> = snapshot
@@ -202,6 +205,7 @@ fn delegation_target(
     };
     Ok(Some(DelegationContinuation {
         delegation_id: delegation_id.to_owned(),
+        intent_digest: text(&requested[0], "intent_digest")?.to_owned(),
         grant_id: grant_id.to_owned(),
         child_agent_instance_id: text(started, "child_agent_instance_id")?.to_owned(),
         child_turn_id: identity(text(started, "child_turn_id")?)?,

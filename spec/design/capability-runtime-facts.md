@@ -347,6 +347,7 @@ DelegationConsumption {
 
 delegation.requested.v1 {
   delegation_id: DelegationId
+  parent_agent_instance_id: AgentInstanceId
   intent_digest: Digest
   intent: ContentBinding
   through_position: u64
@@ -363,9 +364,7 @@ delegation.authorized.v1 {
 delegation.denied.v1 {
   delegation_id: DelegationId
   intent_digest: Digest
-  reason: "authority_denied" | "child_not_found" |
-          "child_revision_mismatch" | "budget_exhausted" |
-          "depth_exceeded" | "concurrency_exceeded"
+  code: MA0 stable failure code
 }
 
 delegation.child_started.v1 {
@@ -374,7 +373,7 @@ delegation.child_started.v1 {
   child_agent_instance_id: AgentInstanceId
   child_turn_id: TurnId
   child_snapshot_digest: Digest
-  parent_suspension_id: SuspensionId
+  suspension_id: SuspensionId
 }
 
 delegation.child_terminal.v1 {
@@ -383,26 +382,17 @@ delegation.child_terminal.v1 {
   result_id: DelegationResultId
   child_agent_instance_id: AgentInstanceId
   child_turn_id: TurnId
-  child_snapshot_digest: Digest
-  outcome: "completed" | "stopped" | "failed"
-  content?: ContentBinding
-  evidence: FactReference[]
-  reason?: "iteration_limit" | "token_limit" | "deadline" |
-           "cancelled" | "resource_unavailable" | "invalid_input" |
-           "invalid_model_output" | "required_capability_unavailable" |
-           "port_failure" | "invariant_violation" |
-           "durability_failure" | "corrupt_recovery_state"
-  usage: UsageEvidence
-  consumption: DelegationConsumption
+  suspension_id: SuspensionId
+  result: ContentBinding
+  result_digest: Digest
 }
 
 delegation.observed.v1 {
   delegation_id: DelegationId
   grant_id: DelegationGrantId
   result_id: DelegationResultId
-  parent_suspension_id: SuspensionId
-  child_turn_id: TurnId
-  observation: ContentBinding
+  suspension_id: SuspensionId
+  result_digest: Digest
 }
 ```
 
@@ -411,18 +401,20 @@ may commit atomically with requested. Authorized commits before child creation.
 `delegation.requested.intent_digest` must equal
 `delegation.requested.intent.digest`.
 Child-started commits atomically with the child `turn.started` transaction and
-the parent's `DelegationPending` terminal pair. `outcome=completed` requires
-content and forbids reason; stopped/failed require reason and forbid content.
-Evidence may be empty. Consumption and usage cannot exceed reserved budget;
-unknown token usage consumes the full corresponding reservation.
-Child-terminal derives only from the exact child terminal. Observed commits
-before the parent's `delegation_result` continuation input and binds the same
+the parent's `DelegationPending` terminal pair. `result` is canonical
+`garive.delegation-result` v1 and binds child identity/snapshot, outcome,
+bounded evidence, usage and consumption; `result_digest` equals
+`result.digest`. Consumption and usage cannot exceed reserved budget; unknown
+token usage consumes the full corresponding reservation. Child-terminal
+derives only from the exact child terminal. Observed commits before the
+parent's `delegation_result` continuation input and binds the same
 suspension/result identities.
 
-Requested/authorized/denied are parent Turn/Execution scoped. Child-started is
-parent scoped while its atomic sibling `turn.started` is child scoped.
-Child-terminal is child Turn scoped. Observed is parent Turn scoped and names
-the parent suspension before continuation creates a fresh parent Execution.
+Requested/authorized/denied, child-started, child-terminal and observed are
+parent Turn/Execution scoped;
+their atomic child `turn.*` siblings are child scoped. This keeps the complete
+parent recovery binding in one Turn prefix while preserving the child's own
+lifecycle. Continuation creates a fresh parent Execution.
 
 ## Cross-family invariants
 

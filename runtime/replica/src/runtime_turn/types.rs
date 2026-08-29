@@ -295,6 +295,8 @@ pub struct ReconciliationTarget {
 pub struct DelegationContinuation {
     /// Logical delegation identity.
     pub delegation_id: String,
+    /// Exact canonical intent digest authorized for this lifecycle.
+    pub intent_digest: String,
     /// Authority grant identity.
     pub grant_id: String,
     /// Child Agent instance identity.

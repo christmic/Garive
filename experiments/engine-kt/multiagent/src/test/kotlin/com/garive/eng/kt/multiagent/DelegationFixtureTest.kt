@@ -68,6 +68,31 @@ class DelegationFixtureTest {
         )
     }
 
+    @Test
+    fun `settlement never creates budget and checked release overflow fails`() {
+        val reservation = intent().budget
+        for (executions in 1uL..reservation.maxChildExecutions) {
+            for (iterations in 0uL..reservation.maxIterations) {
+                val settlement = assertSuccess(
+                    settleDelegationBudget(
+                        reservation, DelegationConsumption(1uL, executions, iterations, iterations * 100uL),
+                        DelegationUsage(TokenUsageEvidence.Known(iterations), TokenUsageEvidence.Unknown),
+                    ),
+                )
+                assertEquals(reservation.maxChildExecutions, settlement.charged.childExecutions + settlement.released.childExecutions)
+                assertEquals(reservation.maxIterations, settlement.charged.iterations + settlement.released.iterations)
+                assertEquals(reservation.maxInputTokens, settlement.charged.inputTokens + settlement.released.inputTokens)
+                assertEquals(reservation.maxOutputTokens, settlement.charged.outputTokens)
+            }
+        }
+        val maximum = DelegationAllowance(ULong.MAX_VALUE, 0uL, 0uL, 0uL, 0uL, 0uL, 1uL, 1uL, 1uL, 1uL, 1uL, 1uL)
+        val zero = BudgetAmounts(0uL, 0uL, 0uL, 0uL, 0uL, 0uL)
+        assertFailure(
+            DelegationErrorCode.BUDGET_OVERFLOW,
+            releaseDelegationBudget(maximum, DelegationBudgetSettlement(zero, zero.copy(childTurns = 1uL)), maximum),
+        )
+    }
+
     private fun intent(): DelegationIntent {
         val value = root.intent
         val child = value.getValue("child_requirement").jsonObject

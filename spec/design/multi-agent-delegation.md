@@ -144,6 +144,11 @@ it in a later iteration. Stopped/failed child outcomes follow the frozen parent
 delegation policy: bounded observation, parent failure or explicit new
 delegation; they do not trigger an implicit retry.
 
+`result_digest` is the digest of canonical `garive.delegation-result` v1, not
+the digest of completed child content alone. That canonical object binds every
+result identity, child snapshot, bounded outcome/evidence, usage and
+consumption. Completed content retains its own nested `ContentBinding` digest.
+
 V1 delegation authorization is an immediate authorize/deny decision. A human
 interaction during delegation admission is deferred until a generic governed
 subject interaction contract replaces C5's tool-invocation-specific binding;

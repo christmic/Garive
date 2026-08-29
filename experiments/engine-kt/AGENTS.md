@@ -9,7 +9,9 @@
 ## Current scope
 
 The Gradle project contains `:config` (D0), `:core` (C0-C3), `:llm` (C1/C1b),
-`:tools` (C4-C5), `:ledger` (L0), `:persistence-postgres` (L1),
+`:tools` (C4-C5), `:ledger` (L0), `:skill` (S0), `:memory` (M0),
+`:knowledge` (K0), `:scheduler` (Q0), `:multiagent` (MA0),
+`:persistence-postgres` (L1),
 `:adapter-openai-responses`, `:adapter-anthropic-messages`, `:proto`, and an
 experimental `:server-host` composition
 fixture. Passing these modules proves only the declared conformance dimension.
@@ -25,6 +27,11 @@ experiments/engine-kt/
 ├── llm/                  experimental C1/C1b model contract
 ├── tools/                experimental C4-C5 prepared/governed effects
 ├── ledger/               experimental L0 durable fact semantics
+├── skill/                experimental S0 activation contract
+├── memory/               experimental M0 value/reduction contract
+├── knowledge/            experimental K0 retrieval contract
+├── scheduler/            experimental Q0 recurrence contract
+├── multiagent/           experimental MA0 delegation contract
 ├── persistence-postgres/ PostgreSQL portability experiment
 ├── adapter-openai-responses/    provider-independent Responses protocol
 ├── adapter-anthropic-messages/  provider-independent Messages protocol
