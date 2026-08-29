@@ -74,8 +74,24 @@ class PostgresLedgerIntegrationTest {
                     ),
                 )
             }
-            assertEquals(1uL, PostgresLedger.open(config).sessionVersion(session))
-            assertEquals(5, PostgresLedger.open(config).readFacts(session, 0u, 5u).size)
+            val classified = reopened.commit(
+                session,
+                1u,
+                listOf(draft("f6", "model.uncertain", "t1", "e1", "r1")),
+            )
+            assertEquals(listOf(6uL), classified.positions)
+            assertTrue(reopened.listUncertainModelRequests(session).isEmpty())
+            val restarted = reopened.commit(
+                session,
+                2u,
+                listOf(
+                    draft("f7", "execution.abandoned", "t1", "e1"),
+                    draft("f8", "execution.started", "t1", "e2"),
+                ),
+            )
+            assertEquals(listOf(7uL, 8uL), restarted.positions)
+            assertEquals(3uL, PostgresLedger.open(config).sessionVersion(session))
+            assertEquals(8, PostgresLedger.open(config).readFacts(session, 0u, 8u).size)
 
             dataSource.connection.use { connection ->
                 connection.createStatement().use {
