@@ -69,10 +69,10 @@ public sealed interface ResponseStreamEvent {
     public companion object {
         /** Parses and validates one complete Responses event object. */
         public fun parse(value: JsonObject): ResponseStreamEvent {
-            val discriminator = value.requiredText("type")
+            val discriminator = value.requiredText(ResponseFields.TYPE)
             val kind = PortableEventKind.fromWireName(discriminator)
-                ?: return Extension(discriminator, value.optionalULong("sequence_number"), value)
-            val sequence = value.requiredULong("sequence_number")
+                ?: return Extension(discriminator, value.optionalULong(ResponseFields.SEQUENCE_NUMBER), value)
+            val sequence = value.requiredULong(ResponseFields.SEQUENCE_NUMBER)
             validatePayload(kind, value)
             return Portable(kind, sequence, value)
         }
@@ -87,7 +87,7 @@ private fun validatePayload(kind: PortableEventKind, value: JsonObject): Unit {
         PortableEventKind.COMPLETED,
         PortableEventKind.FAILED,
         PortableEventKind.INCOMPLETE,
-        -> ResponseEnvelope.parse(value.getValue("response").jsonObject)
+        -> ResponseEnvelope.parse(value.getValue(ResponseFields.RESPONSE).jsonObject)
 
         PortableEventKind.OUTPUT_ITEM_ADDED,
         PortableEventKind.OUTPUT_ITEM_DONE,
@@ -100,7 +100,7 @@ private fun validatePayload(kind: PortableEventKind, value: JsonObject): Unit {
         PortableEventKind.CONTENT_PART_DONE,
         -> {
             value.requiredULong("output_index"); value.requiredULong("content_index")
-            value.requiredText("item_id"); value.getValue("part").jsonObject.requiredText("type")
+            value.requiredText("item_id"); value.getValue("part").jsonObject.requiredText(ResponseFields.TYPE)
         }
 
         PortableEventKind.OUTPUT_TEXT_DELTA,
@@ -121,7 +121,7 @@ private fun validatePayload(kind: PortableEventKind, value: JsonObject): Unit {
         PortableEventKind.REASONING_SUMMARY_PART_DONE,
         -> {
             value.requiredULong("output_index"); value.requiredULong("summary_index")
-            value.requiredText("item_id"); value.getValue("part").jsonObject.requiredText("type")
+            value.requiredText("item_id"); value.getValue("part").jsonObject.requiredText(ResponseFields.TYPE)
         }
 
         PortableEventKind.REASONING_SUMMARY_TEXT_DELTA,
@@ -156,18 +156,18 @@ private fun validateContentText(value: JsonObject, field: String): Unit {
 }
 
 private fun validateItem(value: JsonObject): Unit {
-    val type = value.requiredText("type")
+    val type = value.requiredText(ResponseFields.TYPE)
     value.requiredText("id")
     when (type) {
-        "message" -> {
-            require(value.requiredText("role") == "assistant")
+        ResponseKinds.MESSAGE -> {
+            require(value.requiredText(ResponseFields.ROLE) == ResponseKinds.ASSISTANT)
             require(value["content"] is kotlinx.serialization.json.JsonArray)
         }
-        "function_call" -> {
+        ResponseKinds.FUNCTION_CALL -> {
             value.requiredText("call_id"); value.requiredText("name")
             require(value.containsKey("arguments"))
         }
-        "reasoning" -> require(value["summary"] is kotlinx.serialization.json.JsonArray)
+        ResponseKinds.REASONING -> require(value["summary"] is kotlinx.serialization.json.JsonArray)
     }
 }
 

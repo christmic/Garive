@@ -56,7 +56,7 @@ public data class MessageResponse(
     public companion object {
         /** Parses required fields and portable output variants. */
         public fun parse(value: JsonObject): MessageResponse {
-            require(value.text("type") == "message" && value.text("role") == "assistant")
+            require(value.text(MessageFields.TYPE) == MessageKinds.MESSAGE && value.text("role") == MessageKinds.ASSISTANT)
             val id = value.text("id"); val model = value.text("model")
             require(id.isNotEmpty() && model.isNotEmpty())
             return MessageResponse(
@@ -73,9 +73,9 @@ public data class ErrorEnvelope(public val type: String, public val message: Str
     public companion object {
         /** Parses the standard outer error object. */
         public fun parse(value: JsonObject): ErrorEnvelope {
-            require(value.text("type") == "error")
-            val error = value.getValue("error").jsonObject
-            return ErrorEnvelope(error.text("type"), error.text("message"), value.stringOrNull("request_id"), value)
+            require(value.text(MessageFields.TYPE) == MessageKinds.ERROR)
+            val error = value.getValue(MessageFields.ERROR).jsonObject
+            return ErrorEnvelope(error.text(MessageFields.TYPE), error.text("message"), value.stringOrNull("request_id"), value)
                 .also { require(it.type.isNotEmpty() && it.message.isNotEmpty()) }
         }
     }
@@ -91,11 +91,11 @@ public sealed interface DecodedResponse {
 
 private fun parseOutputBlock(element: JsonElement): OutputBlock {
     val block = element.jsonObject
-    return when (val type = block.text("type")) {
-        "text" -> OutputBlock.Text(block.text("text").also(String::requireNotEmpty), (block["citations"] as? JsonArray)?.toList(), block)
-        "thinking" -> OutputBlock.Thinking(block.text("thinking").also(String::requireNotEmpty), block.text("signature").also(String::requireNotEmpty), block)
-        "redacted_thinking" -> OutputBlock.RedactedThinking(block.text("data").also(String::requireNotEmpty), block)
-        "tool_use" -> OutputBlock.ToolUse(block.text("id").also(String::requireNotEmpty), block.text("name").also(String::requireNotEmpty), block.getValue("input").jsonObject, block["caller"]?.takeUnless { it is JsonNull }, block)
+    return when (val type = block.text(MessageFields.TYPE)) {
+        MessageKinds.TEXT -> OutputBlock.Text(block.text("text").also(String::requireNotEmpty), (block["citations"] as? JsonArray)?.toList(), block)
+        MessageKinds.THINKING -> OutputBlock.Thinking(block.text("thinking").also(String::requireNotEmpty), block.text("signature").also(String::requireNotEmpty), block)
+        MessageKinds.REDACTED_THINKING -> OutputBlock.RedactedThinking(block.text("data").also(String::requireNotEmpty), block)
+        MessageKinds.TOOL_USE -> OutputBlock.ToolUse(block.text("id").also(String::requireNotEmpty), block.text("name").also(String::requireNotEmpty), block.getValue("input").jsonObject, block["caller"]?.takeUnless { it is JsonNull }, block)
         else -> OutputBlock.Extension(type.also(String::requireNotEmpty), block)
     }
 }

@@ -37,9 +37,9 @@ public data class MessagesAdapterConfig(
         require(uri != null && uri.isAbsolute && uri.host != null && uri.scheme in setOf("http", "https"))
         require(protocolVersion.isNotEmpty())
         val version = ProtocolHeader.create(versionHeaderName, protocolVersion, false)
-        require(version.name !in setOf("content-type", "accept"))
+        require(version.name !in setOf(HttpWire.HEADER_CONTENT_TYPE, HttpWire.HEADER_ACCEPT))
         require(headers.map { it.name }.distinct().size == headers.size)
-        require(headers.none { it.name in setOf("content-type", "accept", version.name) })
+        require(headers.none { it.name in setOf(HttpWire.HEADER_CONTENT_TYPE, HttpWire.HEADER_ACCEPT, version.name) })
     }
 }
 
@@ -50,7 +50,7 @@ public class ProtocolHttpRequest internal constructor(
     public val body: ByteArray,
 ) {
     /** Messages-compatible requests use POST. */
-    public val method: String = "POST"
+    public val method: String = HttpWire.METHOD_POST
 }
 
 /** Protocol-only Messages adapter; it owns no retry or model mapping. */
@@ -61,8 +61,8 @@ public class MessagesAdapter(public val config: MessagesAdapterConfig) {
         val body = request.toJson()
         val headers = config.headers + listOf(
             ProtocolHeader.create(config.versionHeaderName, config.protocolVersion, false),
-            ProtocolHeader.create("content-type", "application/json", false),
-            ProtocolHeader.create("accept", if (request.stream) "text/event-stream" else "application/json", false),
+            ProtocolHeader.create(HttpWire.HEADER_CONTENT_TYPE, HttpWire.MEDIA_JSON, false),
+            ProtocolHeader.create(HttpWire.HEADER_ACCEPT, if (request.stream) HttpWire.MEDIA_SSE else HttpWire.MEDIA_JSON, false),
         )
         return ProtocolHttpRequest(config.endpoint, headers, body.toString().encodeToByteArray())
     }
@@ -78,7 +78,7 @@ public class MessagesAdapter(public val config: MessagesAdapterConfig) {
 
 private val JSON: Json = Json { ignoreUnknownKeys = false }
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
-    if ((headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json").substringBefore(';') != "application/json") {
+    if ((headers.firstOrNull { it.name == HttpWire.HEADER_CONTENT_TYPE }?.value ?: HttpWire.MEDIA_JSON).substringBefore(';') != HttpWire.MEDIA_JSON) {
         throw MessagesProtocolException(MessagesProtocolError.INVALID_MEDIA_TYPE)
     }
 }

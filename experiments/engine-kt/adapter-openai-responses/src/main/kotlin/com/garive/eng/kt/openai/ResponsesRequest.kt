@@ -143,7 +143,7 @@ public data class CreateResponseRequest(
         tools.forEach { require(it.name.isNotEmpty()) }
         if (toolChoice is ToolChoice.Function) require(toolChoice.name.isNotEmpty())
         if (text?.format is TextFormat.JsonSchema) require(text.format.name.isNotEmpty())
-        require(extensions.keys.none { it in TYPED_REQUEST_FIELDS })
+        require(extensions.keys.none { it in ResponseFields.CREATE })
     }
 }
 
@@ -196,11 +196,11 @@ private fun validateContent(content: InputContent): Unit = when (content) {
 private fun InputItem.toJson(): JsonObject = buildJsonObject {
     when (this@toJson) {
         is InputItem.Message -> {
-            put("type", "message"); put("role", role.wire())
+            put(ResponseFields.TYPE, ResponseKinds.MESSAGE); put(ResponseFields.ROLE, role.wire())
             put("content", JsonArray(content.map(InputContent::toJson)))
         }
         is InputItem.FunctionCallOutput -> {
-            put("type", "function_call_output"); put("call_id", callId)
+            put(ResponseFields.TYPE, ResponseKinds.FUNCTION_CALL_OUTPUT); put("call_id", callId)
             put("output", when (val output = output) {
                 is FunctionOutput.Text -> JsonPrimitive(output.value)
                 is FunctionOutput.Content -> JsonArray(output.value.map(InputContent::toJson))
@@ -212,9 +212,9 @@ private fun InputItem.toJson(): JsonObject = buildJsonObject {
 
 private fun InputContent.toJson(): JsonObject = buildJsonObject {
     when (this@toJson) {
-        is InputContent.Text -> { put("type", "input_text"); put("text", text) }
+        is InputContent.Text -> { put(ResponseFields.TYPE, ResponseKinds.INPUT_TEXT); put("text", text) }
         is InputContent.Image -> {
-            put("type", "input_image")
+            put(ResponseFields.TYPE, ResponseKinds.INPUT_IMAGE)
             imageUrl?.let { put("image_url", it) }; fileId?.let { put("file_id", it) }
             detail?.let { put("detail", it.wire()) }
         }
@@ -222,21 +222,21 @@ private fun InputContent.toJson(): JsonObject = buildJsonObject {
 }
 
 private fun FunctionTool.toJson(): JsonObject = buildJsonObject {
-    put("type", "function"); put("name", name); description?.let { put("description", it) }
+    put(ResponseFields.TYPE, ResponseKinds.FUNCTION); put("name", name); description?.let { put("description", it) }
     put("parameters", parameters); put("strict", strict)
 }
 
 private fun ToolChoice.toJson(): JsonElement = when (this) {
     is ToolChoice.Mode -> JsonPrimitive(value.wire())
-    is ToolChoice.Function -> buildJsonObject { put("type", "function"); put("name", name) }
+    is ToolChoice.Function -> buildJsonObject { put(ResponseFields.TYPE, ResponseKinds.FUNCTION); put("name", name) }
 }
 
 private fun ResponseTextConfig.toJson(): JsonObject = buildJsonObject {
     put("format", when (val format = format) {
-        TextFormat.Text -> buildJsonObject { put("type", "text") }
-        TextFormat.JsonObjectFormat -> buildJsonObject { put("type", "json_object") }
+        TextFormat.Text -> buildJsonObject { put(ResponseFields.TYPE, ResponseKinds.TEXT) }
+        TextFormat.JsonObjectFormat -> buildJsonObject { put(ResponseFields.TYPE, ResponseKinds.JSON_OBJECT) }
         is TextFormat.JsonSchema -> buildJsonObject {
-            put("type", "json_schema"); put("name", format.name)
+            put(ResponseFields.TYPE, ResponseKinds.JSON_SCHEMA); put("name", format.name)
             format.description?.let { put("description", it) }; put("schema", format.schema); put("strict", format.strict)
         }
     })
@@ -247,8 +247,3 @@ private fun ReasoningConfig.toJson(): JsonObject = buildJsonObject {
 }
 private fun StreamOptions.toJson(): JsonObject = buildJsonObject { includeObfuscation?.let { put("include_obfuscation", it) } }
 private fun Enum<*>.wire(): String = name.lowercase()
-
-private val TYPED_REQUEST_FIELDS: Set<String> = setOf(
-    "model", "input", "stream", "max_output_tokens", "temperature", "top_p", "truncation",
-    "tools", "tool_choice", "parallel_tool_calls", "text", "reasoning", "metadata", "stream_options",
-)

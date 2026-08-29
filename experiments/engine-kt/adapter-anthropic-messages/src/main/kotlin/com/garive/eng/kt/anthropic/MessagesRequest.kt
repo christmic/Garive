@@ -198,7 +198,7 @@ public data class CreateMessageRequest(
         require(tools.map(Tool::name).distinct().size == tools.size && tools.all { it.name.isNotEmpty() })
         if (toolChoice is ToolChoice.Tool) require(toolChoice.name.isNotEmpty())
         if (thinking is ThinkingConfig.Enabled) require(thinking.budgetTokens >= 1_024u && thinking.budgetTokens < maxTokens)
-        require(extensions.keys.none { it in TYPED_FIELDS })
+        require(extensions.keys.none { it in MessageFields.CREATE })
     }
 }
 
@@ -249,30 +249,29 @@ private fun ContentBlock.valid(): Boolean = when (this) {
 
 private fun ContentBlock.toJson(): JsonObject = buildJsonObject {
     when (val block = this@toJson) {
-        is ContentBlock.Text -> { put("type", "text"); put("text", block.text); block.cacheControl?.let { put("cache_control", it.toJson()) }; block.citations?.let { put("citations", JsonArray(it)) } }
-        is ContentBlock.Image -> { put("type", "image"); put("source", block.source.toJson()); block.cacheControl?.let { put("cache_control", it.toJson()) } }
-        is ContentBlock.Document -> { put("type", "document"); put("source", block.source.toJson()); block.cacheControl?.let { put("cache_control", it.toJson()) }; block.citations?.let { put("citations", it.toJson()) }; block.title?.let { put("title", it) }; block.context?.let { put("context", it) } }
-        is ContentBlock.ToolUse -> { put("type", "tool_use"); put("id", block.id); put("name", block.name); put("input", block.input); block.cacheControl?.let { put("cache_control", it.toJson()) } }
-        is ContentBlock.ToolResult -> { put("type", "tool_result"); put("tool_use_id", block.toolUseId); block.content?.let { put("content", it.toJson()) }; block.isError?.let { put("is_error", it) }; block.cacheControl?.let { put("cache_control", it.toJson()) } }
-        is ContentBlock.Thinking -> { put("type", "thinking"); put("thinking", block.thinking); put("signature", block.signature) }
-        is ContentBlock.RedactedThinking -> { put("type", "redacted_thinking"); put("data", block.data) }
+        is ContentBlock.Text -> { put(MessageFields.TYPE, MessageKinds.TEXT); put("text", block.text); block.cacheControl?.let { put("cache_control", it.toJson()) }; block.citations?.let { put("citations", JsonArray(it)) } }
+        is ContentBlock.Image -> { put(MessageFields.TYPE, MessageKinds.IMAGE); put("source", block.source.toJson()); block.cacheControl?.let { put("cache_control", it.toJson()) } }
+        is ContentBlock.Document -> { put(MessageFields.TYPE, MessageKinds.DOCUMENT); put("source", block.source.toJson()); block.cacheControl?.let { put("cache_control", it.toJson()) }; block.citations?.let { put("citations", it.toJson()) }; block.title?.let { put("title", it) }; block.context?.let { put("context", it) } }
+        is ContentBlock.ToolUse -> { put(MessageFields.TYPE, MessageKinds.TOOL_USE); put("id", block.id); put("name", block.name); put("input", block.input); block.cacheControl?.let { put("cache_control", it.toJson()) } }
+        is ContentBlock.ToolResult -> { put(MessageFields.TYPE, MessageKinds.TOOL_RESULT); put("tool_use_id", block.toolUseId); block.content?.let { put("content", it.toJson()) }; block.isError?.let { put("is_error", it) }; block.cacheControl?.let { put("cache_control", it.toJson()) } }
+        is ContentBlock.Thinking -> { put(MessageFields.TYPE, MessageKinds.THINKING); put("thinking", block.thinking); put("signature", block.signature) }
+        is ContentBlock.RedactedThinking -> { put(MessageFields.TYPE, MessageKinds.REDACTED_THINKING); put("data", block.data) }
     }
 }
 
 private fun ImageSource.valid(): Boolean = when (this) { is ImageSource.Base64 -> data.isNotEmpty(); is ImageSource.Url -> url.isNotEmpty() }
-private fun ImageSource.toJson(): JsonObject = buildJsonObject { when (val source = this@toJson) { is ImageSource.Base64 -> { put("type", "base64"); put("media_type", source.mediaType.wireName); put("data", source.data) }; is ImageSource.Url -> { put("type", "url"); put("url", source.url) } } }
+private fun ImageSource.toJson(): JsonObject = buildJsonObject { when (val source = this@toJson) { is ImageSource.Base64 -> { put(MessageFields.TYPE, MessageKinds.BASE64); put("media_type", source.mediaType.wireName); put("data", source.data) }; is ImageSource.Url -> { put(MessageFields.TYPE, MessageKinds.URL); put("url", source.url) } } }
 private fun DocumentSource.valid(): Boolean = when (this) { is DocumentSource.Base64 -> data.isNotEmpty(); is DocumentSource.Url -> url.isNotEmpty(); is DocumentSource.Text -> data.isNotEmpty(); is DocumentSource.Content -> content.valid() }
-private fun DocumentSource.toJson(): JsonObject = buildJsonObject { when (val source = this@toJson) { is DocumentSource.Base64 -> { put("type", "base64"); put("media_type", "application/pdf"); put("data", source.data) }; is DocumentSource.Url -> { put("type", "url"); put("url", source.url) }; is DocumentSource.Text -> { put("type", "text"); put("media_type", "text/plain"); put("data", source.data) }; is DocumentSource.Content -> { put("type", "content"); put("content", source.content.toJson()) } } }
+private fun DocumentSource.toJson(): JsonObject = buildJsonObject { when (val source = this@toJson) { is DocumentSource.Base64 -> { put(MessageFields.TYPE, MessageKinds.BASE64); put("media_type", HttpWire.MEDIA_PDF); put("data", source.data) }; is DocumentSource.Url -> { put(MessageFields.TYPE, MessageKinds.URL); put("url", source.url) }; is DocumentSource.Text -> { put(MessageFields.TYPE, MessageKinds.TEXT); put("media_type", HttpWire.MEDIA_TEXT); put("data", source.data) }; is DocumentSource.Content -> { put(MessageFields.TYPE, MessageKinds.CONTENT); put("content", source.content.toJson()) } } }
 private fun DocumentContent.toJson(): JsonElement = when (this) { is DocumentContent.Text -> JsonPrimitive(value); is DocumentContent.Blocks -> JsonArray(value.map { block -> when (block) { is DocumentContentBlock.Text -> ContentBlock.Text(block.text, block.cacheControl).toJson(); is DocumentContentBlock.Image -> ContentBlock.Image(block.source, block.cacheControl).toJson() } }) }
 private fun DocumentContent.valid(): Boolean = when (this) { is DocumentContent.Text -> value.isNotEmpty(); is DocumentContent.Blocks -> value.isNotEmpty() && value.all { block -> when (block) { is DocumentContentBlock.Text -> block.text.isNotEmpty(); is DocumentContentBlock.Image -> block.source.valid() } } }
 private fun ToolResultContent.toJson(): JsonElement = when (this) { is ToolResultContent.Text -> JsonPrimitive(value); is ToolResultContent.Blocks -> JsonArray(value.map(ContentBlock::toJson)) }
 private fun SystemPrompt.toJson(): JsonElement = when (this) { is SystemPrompt.Text -> JsonPrimitive(value); is SystemPrompt.Blocks -> JsonArray(value.map(ContentBlock.Text::toJson)) }
-private fun CacheControl.toJson(): JsonObject = buildJsonObject { put("type", "ephemeral"); ttl?.let { put("ttl", it.wireName) } }
+private fun CacheControl.toJson(): JsonObject = buildJsonObject { put(MessageFields.TYPE, MessageKinds.EPHEMERAL); ttl?.let { put("ttl", it.wireName) } }
 private fun CitationsConfig.toJson(): JsonObject = buildJsonObject { enabled?.let { put("enabled", it) } }
 private fun Tool.toJson(): JsonObject = buildJsonObject { put("name", name); put("input_schema", inputSchema); description?.let { put("description", it) }; strict?.let { put("strict", it) }; cacheControl?.let { put("cache_control", it.toJson()) } }
-private fun ToolChoice.toJson(): JsonObject = buildJsonObject { when (val choice = this@toJson) { is ToolChoice.Auto -> { put("type", "auto"); choice.disableParallelToolUse?.let { put("disable_parallel_tool_use", it) } }; is ToolChoice.Any -> { put("type", "any"); choice.disableParallelToolUse?.let { put("disable_parallel_tool_use", it) } }; is ToolChoice.Tool -> { put("type", "tool"); put("name", choice.name); choice.disableParallelToolUse?.let { put("disable_parallel_tool_use", it) } }; ToolChoice.None -> put("type", "none") } }
-private fun OutputConfig.toJson(): JsonObject = buildJsonObject { effort?.let { put("effort", it.wire()) }; format?.let { put("format", buildJsonObject { put("type", "json_schema"); put("schema", it.schema) }) } }
-private fun ThinkingConfig.toJson(): JsonObject = buildJsonObject { when (val value = this@toJson) { ThinkingConfig.Disabled -> put("type", "disabled"); is ThinkingConfig.Enabled -> { put("type", "enabled"); put("budget_tokens", value.budgetTokens.toLong()); value.display?.let { put("display", it.wire()) } }; is ThinkingConfig.Adaptive -> { put("type", "adaptive"); value.display?.let { put("display", it.wire()) } } } }
+private fun ToolChoice.toJson(): JsonObject = buildJsonObject { when (val choice = this@toJson) { is ToolChoice.Auto -> { put(MessageFields.TYPE, MessageKinds.AUTO); choice.disableParallelToolUse?.let { put("disable_parallel_tool_use", it) } }; is ToolChoice.Any -> { put(MessageFields.TYPE, MessageKinds.ANY); choice.disableParallelToolUse?.let { put("disable_parallel_tool_use", it) } }; is ToolChoice.Tool -> { put(MessageFields.TYPE, MessageKinds.TOOL); put("name", choice.name); choice.disableParallelToolUse?.let { put("disable_parallel_tool_use", it) } }; ToolChoice.None -> put(MessageFields.TYPE, MessageKinds.NONE) } }
+private fun OutputConfig.toJson(): JsonObject = buildJsonObject { effort?.let { put("effort", it.wire()) }; format?.let { put("format", buildJsonObject { put(MessageFields.TYPE, MessageKinds.JSON_SCHEMA); put("schema", it.schema) }) } }
+private fun ThinkingConfig.toJson(): JsonObject = buildJsonObject { when (val value = this@toJson) { ThinkingConfig.Disabled -> put(MessageFields.TYPE, MessageKinds.DISABLED); is ThinkingConfig.Enabled -> { put(MessageFields.TYPE, MessageKinds.ENABLED); put("budget_tokens", value.budgetTokens.toLong()); value.display?.let { put("display", it.wire()) } }; is ThinkingConfig.Adaptive -> { put(MessageFields.TYPE, MessageKinds.ADAPTIVE); value.display?.let { put("display", it.wire()) } } } }
 private fun Metadata.toJson(): JsonObject = buildJsonObject { userId?.let { put("user_id", it) } }
 private fun Enum<*>.wire(): String = name.lowercase()
-private val TYPED_FIELDS: Set<String> = setOf("model", "max_tokens", "messages", "stream", "system", "stop_sequences", "temperature", "top_p", "top_k", "tools", "tool_choice", "output_config", "thinking", "metadata")

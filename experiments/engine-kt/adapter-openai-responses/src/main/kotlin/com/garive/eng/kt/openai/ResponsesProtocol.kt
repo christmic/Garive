@@ -37,7 +37,7 @@ public data class ResponsesAdapterConfig(
         val uri = runCatching { URI(endpoint) }.getOrNull()
         require(uri != null && uri.isAbsolute && uri.host != null && uri.scheme in setOf("http", "https"))
         require(headers.map { it.name }.distinct().size == headers.size)
-        require(headers.none { it.name in setOf("content-type", "accept") })
+        require(headers.none { it.name in setOf(HttpWire.HEADER_CONTENT_TYPE, HttpWire.HEADER_ACCEPT) })
     }
 }
 
@@ -48,7 +48,7 @@ public class ProtocolHttpRequest internal constructor(
     public val body: ByteArray,
 ) {
     /** Responses-compatible requests use POST. */
-    public val method: String = "POST"
+    public val method: String = HttpWire.METHOD_POST
 }
 
 /** Protocol-only Responses adapter. It performs exactly one wire exchange. */
@@ -58,8 +58,8 @@ public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
         request.validate()
         val body = request.toJson()
         val headers = config.headers + listOf(
-            ProtocolHeader.create("content-type", "application/json", false),
-            ProtocolHeader.create("accept", if (request.stream) "text/event-stream" else "application/json", false),
+            ProtocolHeader.create(HttpWire.HEADER_CONTENT_TYPE, HttpWire.MEDIA_JSON, false),
+            ProtocolHeader.create(HttpWire.HEADER_ACCEPT, if (request.stream) HttpWire.MEDIA_SSE else HttpWire.MEDIA_JSON, false),
         )
         return ProtocolHttpRequest(config.endpoint, headers, body.toString().encodeToByteArray())
     }
@@ -80,8 +80,8 @@ public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
 
 private val JSON: Json = Json { ignoreUnknownKeys = false }
 private fun requireJsonMedia(headers: List<ProtocolHeader>): Unit {
-    val media = headers.firstOrNull { it.name == "content-type" }?.value ?: "application/json"
-    if (media.substringBefore(';') != "application/json") {
+    val media = headers.firstOrNull { it.name == HttpWire.HEADER_CONTENT_TYPE }?.value ?: HttpWire.MEDIA_JSON
+    if (media.substringBefore(';') != HttpWire.MEDIA_JSON) {
         throw ResponsesProtocolException(ResponsesProtocolError.INVALID_MEDIA_TYPE)
     }
 }

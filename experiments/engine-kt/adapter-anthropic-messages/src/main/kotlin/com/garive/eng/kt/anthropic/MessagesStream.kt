@@ -74,7 +74,7 @@ public class MessagesStreamDecoder {
 
     private fun startBlock(value: JsonObject): Unit {
         val index = value.requiredUInt("index")
-        val kind = value.getValue("content_block").jsonObject.requiredText("type")
+        val kind = value.getValue(MessageFields.CONTENT_BLOCK).jsonObject.requiredText(MessageFields.TYPE)
         require(blocks.put(index, OpenBlock(kind)) == null)
     }
 
@@ -84,21 +84,21 @@ public class MessagesStreamDecoder {
         if (deltaKind != null) {
             require(
                 when (block.kind) {
-                    "text" -> deltaKind in setOf(DeltaKind.TEXT, DeltaKind.CITATION)
-                    "tool_use" -> deltaKind == DeltaKind.INPUT_JSON
-                    "thinking" -> deltaKind in setOf(DeltaKind.THINKING, DeltaKind.SIGNATURE)
+                    MessageKinds.TEXT -> deltaKind in setOf(DeltaKind.TEXT, DeltaKind.CITATION)
+                    MessageKinds.TOOL_USE -> deltaKind == DeltaKind.INPUT_JSON
+                    MessageKinds.THINKING -> deltaKind in setOf(DeltaKind.THINKING, DeltaKind.SIGNATURE)
                     else -> true
                 },
             )
         }
         if (deltaKind == DeltaKind.INPUT_JSON) {
-            block.partialJson.append(value.getValue("delta").jsonObject.requiredText("partial_json"))
+            block.partialJson.append(value.getValue(MessageFields.DELTA).jsonObject.requiredText(MessageFields.PARTIAL_JSON))
         }
     }
 
     private fun stopBlock(value: JsonObject): Unit {
         val block = requireNotNull(blocks.remove(value.requiredUInt("index")))
-        if (block.kind == "tool_use") MESSAGES_JSON.parseToJsonElement(block.partialJson.toString())
+        if (block.kind == MessageKinds.TOOL_USE) MESSAGES_JSON.parseToJsonElement(block.partialJson.toString())
     }
 }
 

@@ -86,10 +86,10 @@ public data class ResponseEnvelope(
     public companion object {
         /** Parses and validates the official portable response envelope. */
         public fun parse(value: JsonObject): ResponseEnvelope {
-            require(value.text("object") == "response")
+            require(value.text("object") == ResponseKinds.RESPONSE)
             val id = value.text("id"); val model = value.text("model"); val created = value.getValue("created_at").jsonPrimitive.double
             require(id.isNotEmpty() && model.isNotEmpty() && created.isFinite() && created >= 0.0)
-            val error = value.objectOrNull("error")?.let { ResponseError(it.text("code"), it.text("message"), it) }
+            val error = value.objectOrNull(ResponseFields.ERROR)?.let { ResponseError(it.text("code"), it.text("message"), it) }
             val incomplete = value.objectOrNull("incomplete_details")?.let { IncompleteDetails(it.text("reason"), it) }
             val status = value.stringOrNull("status")?.enumWire<ResponseStatus>()
             require(status != ResponseStatus.COMPLETED || error == null)
@@ -113,8 +113,8 @@ public data class ErrorEnvelope(
     public companion object {
         /** Parses the standard outer `error` object. */
         public fun parse(value: JsonObject): ErrorEnvelope {
-            val error = value.getValue("error").jsonObject
-            return ErrorEnvelope(error.text("type"), error.text("message"), error.stringOrNull("code"), error.stringOrNull("param"), value)
+            val error = value.getValue(ResponseFields.ERROR).jsonObject
+            return ErrorEnvelope(error.text(ResponseFields.TYPE), error.text("message"), error.stringOrNull("code"), error.stringOrNull("param"), value)
         }
     }
 }
@@ -129,27 +129,27 @@ public sealed interface DecodedResponse {
 
 private fun parseOutputItem(element: JsonElement): ResponseOutputItem {
     val item = element.jsonObject
-    return when (val type = item.text("type")) {
-        "message" -> {
-            require(item.text("role") == "assistant")
+    return when (val type = item.text(ResponseFields.TYPE)) {
+        ResponseKinds.MESSAGE -> {
+            require(item.text(ResponseFields.ROLE) == ResponseKinds.ASSISTANT)
             ResponseOutputItem.Message(item.text("id").also(String::requireNotEmpty), item.text("status").enumWire(), item.array("content").map(::parseContent), item.stringOrNull("phase"), item)
         }
-        "function_call" -> ResponseOutputItem.FunctionCall(item.stringOrNull("id"), item.text("call_id").also(String::requireNotEmpty), item.text("name").also(String::requireNotEmpty), item.text("arguments"), item.stringOrNull("status")?.enumWire(), item)
-        "reasoning" -> ResponseOutputItem.Reasoning(item.text("id").also(String::requireNotEmpty), item.array("summary").map(::parseReasoning), (item["content"] as? JsonArray)?.map(::parseReasoning), item.stringOrNull("encrypted_content"), item.stringOrNull("status")?.enumWire(), item)
+        ResponseKinds.FUNCTION_CALL -> ResponseOutputItem.FunctionCall(item.stringOrNull("id"), item.text("call_id").also(String::requireNotEmpty), item.text("name").also(String::requireNotEmpty), item.text("arguments"), item.stringOrNull("status")?.enumWire(), item)
+        ResponseKinds.REASONING -> ResponseOutputItem.Reasoning(item.text("id").also(String::requireNotEmpty), item.array("summary").map(::parseReasoning), (item["content"] as? JsonArray)?.map(::parseReasoning), item.stringOrNull("encrypted_content"), item.stringOrNull("status")?.enumWire(), item)
         else -> ResponseOutputItem.Extension(type, item)
     }
 }
 
 private fun parseContent(element: JsonElement): OutputContent {
     val content = element.jsonObject
-    return when (val type = content.text("type")) {
-        "output_text" -> OutputContent.Text(content.text("text"), content.array("annotations"), (content["logprobs"] as? JsonArray)?.toList() ?: emptyList(), content)
-        "refusal" -> OutputContent.Refusal(content.text("refusal"), content)
+    return when (val type = content.text(ResponseFields.TYPE)) {
+        ResponseKinds.OUTPUT_TEXT -> OutputContent.Text(content.text("text"), content.array("annotations"), (content["logprobs"] as? JsonArray)?.toList() ?: emptyList(), content)
+        ResponseKinds.REFUSAL -> OutputContent.Refusal(content.text("refusal"), content)
         else -> OutputContent.Extension(type, content)
     }
 }
 
-private fun parseReasoning(element: JsonElement): ReasoningPart = element.jsonObject.let { ReasoningPart(it.text("type"), it.text("text"), it) }
+private fun parseReasoning(element: JsonElement): ReasoningPart = element.jsonObject.let { ReasoningPart(it.text(ResponseFields.TYPE), it.text("text"), it) }
 private fun parseUsage(value: JsonObject): ResponseUsage {
     val input = value.getValue("input_tokens").jsonPrimitive.long.toULong()
     val output = value.getValue("output_tokens").jsonPrimitive.long.toULong()

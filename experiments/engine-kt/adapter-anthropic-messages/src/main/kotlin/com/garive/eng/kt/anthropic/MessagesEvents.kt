@@ -66,7 +66,7 @@ public sealed interface StreamEvent {
     public companion object {
         /** Parses and validates one complete event object. */
         public fun parse(value: JsonObject): StreamEvent {
-            val discriminator = value.requiredText("type")
+            val discriminator = value.requiredText(MessageFields.TYPE)
             val kind = PortableEventKind.fromWireName(discriminator)
                 ?: return Extension(discriminator, value)
             val deltaKind = validatePayload(kind, value)
@@ -82,12 +82,12 @@ private fun validatePayload(kind: PortableEventKind, value: JsonObject): DeltaKi
     }
     PortableEventKind.CONTENT_BLOCK_START -> {
         value.requiredUInt("index")
-        validateStartBlock(value.getValue("content_block").jsonObject)
+        validateStartBlock(value.getValue(MessageFields.CONTENT_BLOCK).jsonObject)
         null
     }
     PortableEventKind.CONTENT_BLOCK_DELTA -> {
         value.requiredUInt("index")
-        validateDelta(value.getValue("delta").jsonObject)
+        validateDelta(value.getValue(MessageFields.DELTA).jsonObject)
     }
     PortableEventKind.CONTENT_BLOCK_STOP -> {
         value.requiredUInt("index")
@@ -108,14 +108,14 @@ private fun validatePayload(kind: PortableEventKind, value: JsonObject): DeltaKi
 }
 
 private fun validateStartBlock(block: JsonObject): Unit {
-    when (block.requiredText("type")) {
-        "text" -> require(block["text"] is JsonPrimitive)
-        "thinking" -> {
+    when (block.requiredText(MessageFields.TYPE)) {
+        MessageKinds.TEXT -> require(block["text"] is JsonPrimitive)
+        MessageKinds.THINKING -> {
             require(block["thinking"] is JsonPrimitive)
             require(block["signature"] is JsonPrimitive)
         }
-        "redacted_thinking" -> block.requiredText("data")
-        "tool_use" -> {
+        MessageKinds.REDACTED_THINKING -> block.requiredText("data")
+        MessageKinds.TOOL_USE -> {
             block.requiredText("id"); block.requiredText("name")
             require(block["input"] is JsonObject)
         }
@@ -123,11 +123,11 @@ private fun validateStartBlock(block: JsonObject): Unit {
 }
 
 private fun validateDelta(delta: JsonObject): DeltaKind? {
-    val discriminator = delta.requiredText("type")
+    val discriminator = delta.requiredText(MessageFields.TYPE)
     val kind = DeltaKind.fromWireName(discriminator) ?: return null
     when (kind) {
         DeltaKind.TEXT -> require(delta["text"] is JsonPrimitive)
-        DeltaKind.INPUT_JSON -> require(delta["partial_json"] is JsonPrimitive)
+        DeltaKind.INPUT_JSON -> require(delta[MessageFields.PARTIAL_JSON] is JsonPrimitive)
         DeltaKind.THINKING -> require(delta["thinking"] is JsonPrimitive)
         DeltaKind.SIGNATURE -> require(delta["signature"] is JsonPrimitive)
         DeltaKind.CITATION -> require(delta.containsKey("citation"))

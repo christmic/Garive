@@ -93,7 +93,7 @@ public class ResponsesStreamDecoder {
 
             PortableEventKind.FUNCTION_ARGUMENTS_DELTA,
             PortableEventKind.FUNCTION_ARGUMENTS_DONE,
-            -> requireItemKind(value, "function_call")
+            -> requireItemKind(value, ResponseKinds.FUNCTION_CALL)
 
             PortableEventKind.REASONING_SUMMARY_PART_ADDED,
             PortableEventKind.REASONING_SUMMARY_PART_DONE,
@@ -101,7 +101,7 @@ public class ResponsesStreamDecoder {
             PortableEventKind.REASONING_SUMMARY_TEXT_DONE,
             PortableEventKind.REASONING_TEXT_DELTA,
             PortableEventKind.REASONING_TEXT_DONE,
-            -> requireItemKind(value, "reasoning")
+            -> requireItemKind(value, ResponseKinds.REASONING)
 
             PortableEventKind.CREATED,
             PortableEventKind.QUEUED,
@@ -113,7 +113,7 @@ public class ResponsesStreamDecoder {
     private fun addItem(value: JsonObject): Unit {
         val index = value.requiredULong("output_index")
         val item = value.getValue("item").jsonObject
-        val id = item.requiredText("id"); val kind = item.requiredText("type")
+        val id = item.requiredText("id"); val kind = item.requiredText(ResponseFields.TYPE)
         require(index !in items && items.values.none { it.id == id })
         items[index] = ItemState(id, kind)
     }
@@ -122,7 +122,7 @@ public class ResponsesStreamDecoder {
         val index = value.requiredULong("output_index")
         val item = value.getValue("item").jsonObject
         val state = requireNotNull(items[index])
-        require(!state.done && state.id == item.requiredText("id") && state.kind == item.requiredText("type"))
+        require(!state.done && state.id == item.requiredText("id") && state.kind == item.requiredText(ResponseFields.TYPE))
         require(state.content == state.contentDone)
         state.done = true
     }
@@ -130,7 +130,7 @@ public class ResponsesStreamDecoder {
     private fun addContent(value: JsonObject): Unit {
         val state = itemFor(value)
         val contentIndex = value.requiredULong("content_index")
-        require(state.kind == "message" && !state.done && state.content.add(contentIndex))
+        require(state.kind == ResponseKinds.MESSAGE && !state.done && state.content.add(contentIndex))
     }
 
     private fun finishContent(value: JsonObject): Unit {
