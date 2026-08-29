@@ -22,6 +22,19 @@ class SchedulerFixtureTest {
     fun `shared intent and occurrence digests are frozen`() {
         val intent = intent(MisfirePolicy.FIRE_ONCE)
         assertEquals(root.obj("intent").text("expected_intent_digest"), intent.intentDigest().success())
+        val binding = intent.intentBinding().success()
+        val restored = ScheduleIntent.fromBinding("schedule-1", "revision-1", binding).success()
+        assertEquals(binding, restored.intentBinding().success())
+        assertEquals(
+            ScheduleErrorCode.CORRUPT_SCHEDULE_STATE,
+            assertIs<ScheduleContractResult.Failure>(
+                ScheduleIntent.fromBinding(
+                    "schedule-1",
+                    "revision-1",
+                    binding.copy(digest = "0".repeat(64)),
+                ),
+            ).code,
+        )
         val first = assertIs<ScheduleDecision.Due>(
             nextOccurrence(intent, null, "2026-08-29T00:00:00Z").success(),
         ).occurrence

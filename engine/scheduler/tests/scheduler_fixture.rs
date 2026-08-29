@@ -48,6 +48,19 @@ fn shared_intent_and_occurrence_digests_are_frozen() {
         intent.intent_digest().unwrap(),
         root["intent"]["expected_intent_digest"]
     );
+    let binding = intent.intent_binding().unwrap();
+    assert_eq!(
+        ScheduleIntent::from_binding("schedule-1", "revision-1", &binding).unwrap(),
+        intent
+    );
+    let mut corrupt = binding;
+    corrupt.digest = "0".repeat(64);
+    assert_eq!(
+        ScheduleIntent::from_binding("schedule-1", "revision-1", &corrupt)
+            .unwrap_err()
+            .code(),
+        ScheduleErrorCode::CorruptScheduleState
+    );
     let decision = next_occurrence(&intent, None, "2026-08-29T00:00:00Z").unwrap();
     let ScheduleDecision::Due(first) = decision else {
         panic!("expected due")

@@ -1,5 +1,5 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -71,7 +71,7 @@ impl ScheduleError {
 }
 
 /// Portable command subject scheduled by Q0.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScheduleSubject {
     /// Start a new Turn from an exact installed definition/input binding.
@@ -81,7 +81,7 @@ pub enum ScheduleSubject {
 }
 
 /// Portable schedule timing without timezone or calendar semantics.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScheduleTiming {
     /// Fire once at one exact UTC instant.
@@ -102,7 +102,7 @@ pub enum ScheduleTiming {
 }
 
 /// Portable overdue-occurrence policy.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MisfirePolicy {
     /// Fire only the earliest unhandled overdue occurrence.
@@ -171,6 +171,37 @@ impl ScheduleIntent {
         }
     }
 
+    /// Reconstructs and verifies one persisted canonical inline intent binding.
+    pub fn from_binding(
+        schedule_id: impl Into<String>,
+        revision_id: impl Into<String>,
+        binding: &ScheduleIntentBinding,
+    ) -> Result<Self, ScheduleError> {
+        let value: IntentSemantics = serde_json::from_str(&binding.inline_utf8)
+            .map_err(|_| ScheduleError::new(ScheduleErrorCode::CorruptScheduleState))?;
+        let canonical = serde_jcs::to_string(&value)
+            .map_err(|_| ScheduleError::new(ScheduleErrorCode::CorruptScheduleState))?;
+        let actual = format!("{:x}", Sha256::digest(canonical.as_bytes()));
+        if canonical != binding.inline_utf8
+            || actual != binding.digest
+            || value.contract != INTENT_CONTRACT
+            || value.version != CONTRACT_VERSION
+        {
+            return Err(ScheduleError::new(ScheduleErrorCode::CorruptScheduleState));
+        }
+        Self::new(
+            schedule_id,
+            revision_id,
+            value.subject,
+            value.subject_binding_digest,
+            value.timing,
+            value.misfire_policy,
+            value.max_lateness_ms,
+            value.effective_limits_digest,
+        )
+        .map_err(|_| ScheduleError::new(ScheduleErrorCode::CorruptScheduleState))
+    }
+
     /// Computes RFC 8785 SHA-256 over portable intent semantics.
     pub fn intent_digest(&self) -> Result<String, ScheduleError> {
         self.intent_binding().map(|binding| binding.digest)
@@ -231,6 +262,19 @@ impl ScheduleIntent {
             "effective_limits_digest": self.effective_limits_digest,
         })
     }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct IntentSemantics {
+    contract: String,
+    version: u32,
+    subject: ScheduleSubject,
+    subject_binding_digest: String,
+    timing: ScheduleTiming,
+    misfire_policy: MisfirePolicy,
+    max_lateness_ms: u64,
+    effective_limits_digest: String,
 }
 
 pub(crate) fn canonical_utc(value: &str) -> Option<DateTime<Utc>> {
