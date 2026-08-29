@@ -49,6 +49,14 @@ class LedgerTransitionMatrixTest {
 
     @Test
     fun `every turn and execution terminal is admitted once`() {
+        assertValid(
+            "session.opened", "turn.started", "execution.started",
+            "execution.iteration_started", "execution.completed",
+        )
+        assertTransitionError(
+            "session.opened", "turn.started", "execution.started",
+            "execution.iteration_started", "execution.iteration_started",
+        )
         listOf("turn.completed", "turn.stopped", "turn.failed").forEach { terminal ->
             val executionTerminal = terminal.replaceFirst("turn.", "execution.")
             assertValid(

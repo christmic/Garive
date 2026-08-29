@@ -12,6 +12,7 @@ internal fun validateTurnFact(kind: String, value: JsonObject) {
         "turn.stopped" -> value.stopped(true)
         "turn.failed" -> value.failed(true)
         "execution.started" -> value.executionStarted()
+        "execution.iteration_started" -> value.iterationStarted()
         "execution.abandoned" -> value.abandoned()
         "execution.completed" -> value.completed(false)
         "execution.suspended" -> value.suspended(false)
@@ -103,6 +104,11 @@ private fun JsonObject.executionStarted() {
     digest("snapshot_digest")
     listOf("through_position", "completed_iterations", "recovery_ordinal").forEach(::ulong)
     limits("limits")
+}
+
+private fun JsonObject.iterationStarted() {
+    exact(setOf("iteration"))
+    ulong("iteration", true)
 }
 
 private fun JsonObject.abandoned() {

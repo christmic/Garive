@@ -153,6 +153,10 @@ execution.started.v1 {
   recovery_ordinal: u64
 }
 
+execution.iteration_started.v1 {
+  iteration: non-zero u64
+}
+
 execution.abandoned.v1 {
   reason: "runtime_lost"
   last_safe_position: u64

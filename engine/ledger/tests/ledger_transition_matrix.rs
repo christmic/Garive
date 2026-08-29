@@ -57,6 +57,20 @@ fn assert_transition_error(kinds: &[&str]) {
 
 #[test]
 fn every_turn_and_execution_terminal_is_admitted_once() {
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "execution.iteration_started",
+        "execution.completed",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "execution.iteration_started",
+        "execution.iteration_started",
+    ]);
     for terminal in ["turn.completed", "turn.stopped", "turn.failed"] {
         let execution_terminal = terminal.replacen("turn.", "execution.", 1);
         assert_valid(&[

@@ -112,6 +112,10 @@ idempotent; a different second terminal is corruption/invariant failure.
 Every Execution terminal persists `completed_iterations`; a continuation
 reconstructs its cursor from the matching `execution.suspended`, never from
 the older value recorded when that Execution started.
+Runtime also commits monotonic `execution.iteration_started` before context
+derivation for each Core iteration. This closes the recovery window before
+`model.prepared`; restart derives the consumed budget from that fact rather
+than parsing request IDs or trusting lost memory.
 
 A host crash can destroy an active Kernel invocation before it returns any
 `AgentOutcome`. C6 therefore adds Runtime-only `execution.abandoned`: it

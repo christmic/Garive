@@ -339,7 +339,7 @@ fn sqlite_dispatch_and_publication_cross_only_after_their_commits() {
         .unwrap();
         assert_eq!(result.publication.is_err(), fail_publication);
         assert_eq!(publisher.calls, 1);
-        assert_eq!(ledger.load_turn(&plan.turn_id).unwrap().facts.len(), 8);
+        assert_eq!(ledger.load_turn(&plan.turn_id).unwrap().facts.len(), 9);
     }
 }
 
@@ -438,7 +438,7 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
         result.report.outcome,
         AgentOutcome::Completed { .. }
     ));
-    assert_eq!(context.positions, [4, 13]);
+    assert_eq!(context.positions, [4, 14]);
     assert_eq!(publisher.calls, 1);
     let kinds = ledger
         .load_turn(&plan.turn_id)
@@ -453,6 +453,7 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
             "turn.started",
             "turn.input",
             "execution.started",
+            "execution.iteration_started",
             "model.prepared",
             "model.started",
             "model.completed",
@@ -462,6 +463,7 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
             "effect.receipt",
             "effect.completed",
             "effect.observation",
+            "execution.iteration_started",
             "model.prepared",
             "model.started",
             "model.completed",

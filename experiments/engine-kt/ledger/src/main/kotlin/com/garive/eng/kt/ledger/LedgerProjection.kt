@@ -26,6 +26,7 @@ internal class LedgerProjection(
     private var closed: Boolean = false,
     private val turns: MutableMap<TurnId, TurnState> = mutableMapOf(),
     private val executions: MutableMap<ExecutionId, Pair<TurnId, ExecutionState>> = mutableMapOf(),
+    private val executionIterations: MutableMap<ExecutionId, ULong> = mutableMapOf(),
     private val models: MutableMap<ModelRequestId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
     private val modelDigests: MutableMap<ModelRequestId, String> = mutableMapOf(),
     private val tools: MutableMap<ToolInvocationId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
@@ -42,6 +43,7 @@ internal class LedgerProjection(
         closed,
         turns.toMutableMap(),
         executions.toMutableMap(),
+        executionIterations.toMutableMap(),
         models.toMutableMap(),
         modelDigests.toMutableMap(),
         tools.toMutableMap(),
@@ -73,6 +75,7 @@ internal class LedgerProjection(
             "turn.input" -> admitTurnInput(fact)
             "turn.cancel_requested" -> requireNonTerminalTurn(fact.turnId)
             "execution.started" -> startExecution(fact)
+            "execution.iteration_started" -> startIteration(fact)
             "execution.abandoned" -> transitionExecution(fact, ExecutionState.ABANDONED)
             "execution.completed" -> transitionExecution(fact, ExecutionState.COMPLETED)
             "execution.suspended" -> transitionExecution(fact, ExecutionState.SUSPENDED)
@@ -218,6 +221,17 @@ internal class LedgerProjection(
         val execution = fact.executionId ?: return LedgerError.MissingReference
         if (execution in executions) return LedgerError.InvalidTransition
         executions[execution] = turn to ExecutionState.ACTIVE
+        executionIterations[execution] = fact.payloadObject().ulong("completed_iterations")
+        return null
+    }
+
+    private fun startIteration(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val current = executionIterations[execution] ?: return LedgerError.MissingReference
+        val iteration = fact.payloadObject().ulong("iteration")
+        if (current == ULong.MAX_VALUE || current + 1uL != iteration) return LedgerError.InvalidTransition
+        executionIterations[execution] = iteration
         return null
     }
 
@@ -461,3 +475,6 @@ internal class LedgerProjection(
 }
 
 private fun FactDraft.payloadObject(): JsonObject = Json.parseToJsonElement(payload.json).jsonObject
+
+private fun JsonObject.ulong(key: String): ULong =
+    getValue(key).jsonPrimitive.content.toULongOrNull() ?: throw IllegalArgumentException(key)

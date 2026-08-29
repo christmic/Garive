@@ -43,7 +43,7 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 fn every_c6_payload_fixture_is_applied_as_v1() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 34);
+    assert_eq!(cases.len(), 35);
     for case in cases {
         assert_eq!(
             validate_runtime_fact(&fact(case, 1)),

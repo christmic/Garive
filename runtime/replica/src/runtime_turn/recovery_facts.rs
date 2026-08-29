@@ -178,6 +178,12 @@ fn completed_iterations(
         })
         .ok_or(RuntimeCommandError::CorruptLedger)?;
     let initial = unsigned(&payload(started)?, "completed_iterations")?;
+    if let Some(iteration) = snapshot.facts.iter().rev().find(|fact| {
+        fact.execution_id.as_ref() == Some(execution_id)
+            && fact.kind.as_str() == "execution.iteration_started"
+    }) {
+        return unsigned(&payload(iteration)?, "iteration");
+    }
     let attempts = snapshot
         .facts
         .iter()

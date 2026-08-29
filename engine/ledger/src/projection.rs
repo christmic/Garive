@@ -55,6 +55,7 @@ pub(crate) struct SessionProjection {
     closed: bool,
     turns: BTreeMap<TurnId, TurnState>,
     executions: BTreeMap<ExecutionId, (TurnId, ExecutionState)>,
+    execution_iterations: BTreeMap<ExecutionId, u64>,
     models: BTreeMap<ModelRequestId, (ExecutionId, InvocationState)>,
     model_digests: BTreeMap<ModelRequestId, String>,
     tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
@@ -100,6 +101,7 @@ impl SessionProjection {
             "turn.input" => self.admit_turn_input(fact),
             "turn.cancel_requested" => self.require_non_terminal_turn(required(&fact.turn_id)?),
             "execution.started" => self.start_execution(fact),
+            "execution.iteration_started" => self.start_iteration(fact),
             "execution.abandoned" => self.transition_execution(fact, ExecutionState::Abandoned),
             "execution.completed" => self.transition_execution(fact, ExecutionState::Completed),
             "execution.suspended" => self.transition_execution(fact, ExecutionState::Suspended),
@@ -296,6 +298,25 @@ impl SessionProjection {
         }
         self.executions
             .insert(execution.clone(), (turn.clone(), ExecutionState::Active));
+        self.execution_iterations.insert(
+            execution.clone(),
+            unsigned(&payload(fact)?, "completed_iterations")?,
+        );
+        Ok(())
+    }
+
+    fn start_iteration(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let execution = required(&fact.execution_id)?;
+        let iteration = unsigned(&payload(fact)?, "iteration")?;
+        let current = self
+            .execution_iterations
+            .get_mut(execution)
+            .ok_or(LedgerError::MissingReference)?;
+        if current.checked_add(1) != Some(iteration) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        *current = iteration;
         Ok(())
     }
 
@@ -699,5 +720,12 @@ fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, LedgerE
     value
         .get(key)
         .and_then(Value::as_str)
+        .ok_or(LedgerError::InvalidFact)
+}
+
+fn unsigned(value: &Map<String, Value>, key: &str) -> Result<u64, LedgerError> {
+    value
+        .get(key)
+        .and_then(Value::as_u64)
         .ok_or(LedgerError::InvalidFact)
 }

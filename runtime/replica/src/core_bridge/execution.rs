@@ -4,13 +4,15 @@ use garive_core::{
     execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
     AgentToolCapabilities, AgentTurnRequest, ClockPort, ContextPort, EventSink, PortFailure,
 };
-use garive_ledger::{CommitResult, FactDraft, SessionId};
+use garive_ledger::{CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, SessionId};
 use garive_llm::{
     ModelCancellation, ModelFuture, ModelObserver, ModelPort, ModelPortFailure, ModelRequest,
 };
+use serde_json::json;
 
 use crate::{RuntimeCommandError, SqliteLedger};
 
+use super::encoding::digest;
 use super::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
     plan_model_uncertain, AuthorityPort, CoreTerminalContext, ExecutorPort, GovernedEffectConfig,
@@ -53,6 +55,8 @@ pub async fn execute_durable_model_only(
     let mut gated_events = PreparedEventGate {
         downstream: events,
         prepared_events: &prepared_events,
+        coordinator: &coordinator,
+        lifecycle: &config.model,
     };
     let report = {
         let mut ports = AgentExecutionPorts {
@@ -132,6 +136,8 @@ pub async fn execute_durable_agent(
     let mut gated_events = PreparedEventGate {
         downstream: events,
         prepared_events: &prepared_events,
+        coordinator: &coordinator,
+        lifecycle: &config.model,
     };
     let report = {
         let mut effects = SqliteGovernedEffectPort::coordinated(
@@ -209,15 +215,34 @@ impl CommitCoordinator<'_> {
             }
         }
     }
+
+    fn append_for_event(&mut self, fact: FactDraft) -> Result<(), PortFailure> {
+        match self.commit(vec![fact]) {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                self.failure = Some(error);
+                Err(PortFailure::Event)
+            }
+        }
+    }
 }
 
-struct PreparedEventGate<'a> {
+struct PreparedEventGate<'a, 'ledger> {
     downstream: &'a mut dyn EventSink,
     prepared_events: &'a Mutex<BTreeMap<String, String>>,
+    coordinator: &'a Mutex<CommitCoordinator<'ledger>>,
+    lifecycle: &'a ModelLifecycleContext,
 }
 
-impl EventSink for PreparedEventGate<'_> {
+impl EventSink for PreparedEventGate<'_, '_> {
     fn emit(&mut self, event: AgentEvent) -> Result<(), PortFailure> {
+        if let AgentEventKind::IterationStarted { iteration } = &event.kind {
+            let fact = plan_iteration_started(self.lifecycle, *iteration)?;
+            self.coordinator
+                .lock()
+                .map_err(|_| PortFailure::Event)?
+                .append_for_event(fact)?;
+        }
         if let AgentEventKind::ModelRequestPrepared {
             request_id,
             target_id,
@@ -230,6 +255,29 @@ impl EventSink for PreparedEventGate<'_> {
         }
         self.downstream.emit(event)
     }
+}
+
+fn plan_iteration_started(
+    lifecycle: &ModelLifecycleContext,
+    iteration: u32,
+) -> Result<FactDraft, PortFailure> {
+    if iteration == 0 {
+        return Err(PortFailure::Event);
+    }
+    let seed = format!("{}:iteration:{iteration}", lifecycle.execution_id.as_str());
+    Ok(FactDraft {
+        fact_id: FactId::try_from(format!("fact-{}", digest(seed.as_bytes())).as_str())
+            .map_err(|_| PortFailure::Event)?,
+        turn_id: Some(lifecycle.turn_id.clone()),
+        execution_id: Some(lifecycle.execution_id.clone()),
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new("execution.iteration_started").map_err(|_| PortFailure::Event)?,
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&json!({"iteration":iteration}))
+            .map_err(|_| PortFailure::Event)?,
+        recorded_at: lifecycle.recorded_at.clone(),
+    })
 }
 
 struct DurableModelPort<'a, 'ledger> {

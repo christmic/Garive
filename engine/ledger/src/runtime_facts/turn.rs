@@ -17,6 +17,7 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "turn.stopped" => stopped(value, true),
         "turn.failed" => failed(value, true),
         "execution.started" => execution_started(value),
+        "execution.iteration_started" => iteration_started(value),
         "execution.abandoned" => abandoned(value),
         "execution.completed" => completed(value, false),
         "execution.suspended" => suspended(value, false),
@@ -248,6 +249,11 @@ fn execution_started(value: &Map<String, Value>) -> Result<(), LedgerError> {
         unsigned(value, key, false)?;
     }
     limits(value, "limits")
+}
+
+fn iteration_started(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(value, &["iteration"], EMPTY)?;
+    unsigned(value, "iteration", true)
 }
 
 fn abandoned(value: &Map<String, Value>) -> Result<(), LedgerError> {
