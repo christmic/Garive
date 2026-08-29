@@ -93,6 +93,11 @@ missing attestation or any worktree entry fails before corpus loading,
 credential resolution, HTTP or evidence creation. Non-publication development
 runs may omit Git attestation.
 
+After provenance and corpus validation, the runner exclusively reserves the
+evidence destination before counter construction, credential resolution or any
+process/network effect. Existing paths fail without spending a provider call;
+an abandoned reservation is removed on every later failure.
+
 Publication writes evidence schema v2 with only the Git executable SHA-256 and
 canonical non-secret attestation-configuration SHA-256. Executable and
 repository paths never enter evidence. Existing development evidence remains

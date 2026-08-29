@@ -1,11 +1,9 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io::Write,
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use garive_eval::{CreativityAggregate, CreativityArmEvidence};
-use garive_experiment_evidence::GitAttestationDescriptor;
+use garive_experiment_evidence::{
+    reserve_evidence_file, EvidenceFileError, EvidenceFileReservation, GitAttestationDescriptor,
+};
 use serde_json::{json, Value};
 
 use crate::{CreativityBaselineRun, PublicationModelCoordinate};
@@ -49,22 +47,15 @@ impl PublicationEvidenceError {
 
 /// Exclusively created CR-B destination removed on failure before commit.
 pub struct PublicationEvidenceReservation {
-    path: PathBuf,
-    file: Option<File>,
+    inner: EvidenceFileReservation,
 }
 
 /// Reserves a non-overwriting destination before any model or credential call.
 pub fn reserve_publication_evidence(
     path: PathBuf,
 ) -> Result<PublicationEvidenceReservation, PublicationEvidenceError> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(|_| PublicationEvidenceError::CreateFailed)?;
     Ok(PublicationEvidenceReservation {
-        path,
-        file: Some(file),
+        inner: reserve_evidence_file(path).map_err(map_file_error)?,
     })
 }
 
@@ -122,26 +113,7 @@ impl PublicationEvidenceReservation {
                 "bounded_alternatives":aggregate(&run.summary.bounded_alternatives),
                 "classes":classes},
         });
-        let bytes = serde_json::to_vec_pretty(&evidence)
-            .map_err(|_| PublicationEvidenceError::EncodeFailed)?;
-        let file = self
-            .file
-            .as_mut()
-            .ok_or(PublicationEvidenceError::WriteFailed)?;
-        file.write_all(&bytes)
-            .and_then(|_| file.write_all(b"\n"))
-            .and_then(|_| file.sync_all())
-            .map_err(|_| PublicationEvidenceError::WriteFailed)?;
-        self.file.take();
-        Ok(())
-    }
-}
-
-impl Drop for PublicationEvidenceReservation {
-    fn drop(&mut self) {
-        if self.file.take().is_some() {
-            let _ = fs::remove_file(&self.path);
-        }
+        self.inner.commit_json(&evidence).map_err(map_file_error)
     }
 }
 
@@ -178,4 +150,12 @@ fn digest(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+const fn map_file_error(error: EvidenceFileError) -> PublicationEvidenceError {
+    match error {
+        EvidenceFileError::CreateFailed => PublicationEvidenceError::CreateFailed,
+        EvidenceFileError::EncodeFailed => PublicationEvidenceError::EncodeFailed,
+        EvidenceFileError::WriteFailed => PublicationEvidenceError::WriteFailed,
+    }
 }

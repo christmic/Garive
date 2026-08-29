@@ -1,15 +1,10 @@
-use std::{
-    collections::BTreeMap,
-    fs::{self, OpenOptions},
-    io::Write,
-    path::PathBuf,
-    process::ExitCode,
-};
+use std::{collections::BTreeMap, fs, path::PathBuf, process::ExitCode};
 
 use garive_context_pressure::{
     attest_clean_revision, build_publication_provider_counter, load_corpus,
-    measure_context_pressure, CommandTokenCounter, CommandTokenCounterConfig, GitAttestationConfig,
-    ProviderCounterRunConfig, SystemCredentialReferenceResolver, TokenCounter,
+    measure_context_pressure, reserve_evidence_file, CommandTokenCounter,
+    CommandTokenCounterConfig, GitAttestationConfig, ProviderCounterRunConfig,
+    SystemCredentialReferenceResolver, TokenCounter,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -100,6 +95,8 @@ fn execute() -> Result<(), &'static str> {
     };
     let corpus_bytes = bounded_read(&config.corpus_path, MAX_CORPUS_BYTES)?;
     let corpus = load_corpus(&corpus_bytes).map_err(|_| "invalid_corpus")?;
+    let mut evidence_reservation =
+        reserve_evidence_file(config.evidence_path.clone()).map_err(|error| error.code())?;
     let counter: Box<dyn TokenCounter> = match config.counter {
         CounterDocument::Command(value) => Box::new(
             CommandTokenCounter::new(CommandTokenCounterConfig {
@@ -172,16 +169,9 @@ fn execute() -> Result<(), &'static str> {
             }),
         );
     }
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&config.evidence_path)
-        .map_err(|_| "evidence_create_failed")?;
-    let bytes = serde_json::to_vec_pretty(&evidence).map_err(|_| "evidence_encode_failed")?;
-    output
-        .write_all(&bytes)
-        .and_then(|_| output.write_all(b"\n"))
-        .map_err(|_| "evidence_write_failed")?;
+    evidence_reservation
+        .commit_json(&evidence)
+        .map_err(|error| error.code())?;
     println!(
         "{}",
         json!({"case_count":run.summary.ordered_cases.len(),

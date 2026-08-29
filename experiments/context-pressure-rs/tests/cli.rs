@@ -46,6 +46,37 @@ fn explicit_cli_writes_non_publishable_evidence_without_overwrite() {
 }
 
 #[test]
+fn existing_evidence_fails_before_counter_process_side_effect() {
+    let directory = tempdir().unwrap();
+    let evidence = directory.path().join("evidence.json");
+    let marker = directory.path().join("counter-started");
+    let config_path = directory.path().join("config.json");
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../spec/fixtures/agent/context-pressure-corpus-v1.json");
+    fs::write(&evidence, b"original").unwrap();
+    fs::write(
+        &config_path,
+        json!({
+            "corpus_path":corpus,"evidence_path":evidence,
+            "garive_revision":"test-revision","runner_revision":"context-pressure-v1",
+            "dirty":true,"counter":{"kind":"command","counter_id":"fixture-counter",
+                "counter_revision":"v1","publishable":false,"executable":"/bin/sh",
+                "argv":["-c",format!("touch {}; exit 1", marker.display())],
+                "cwd":directory.path(),"environment":{},"timeout_ms":1000,
+                "max_stdout_bytes":128,"max_stderr_bytes":128}
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let output = run(&config_path);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("evidence_create_failed"));
+    assert!(!marker.exists());
+    assert_eq!(fs::read(&evidence).unwrap(), b"original");
+}
+
+#[test]
 fn dirty_publication_and_unknown_configuration_fail_before_output() {
     let directory = tempdir().unwrap();
     let config_path = directory.path().join("invalid.json");

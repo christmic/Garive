@@ -140,6 +140,9 @@ The non-overwriting sink writes:
 Evidence excludes credentials, header values marked sensitive, prompts,
 rubrics, candidates, selected candidate IDs, reasoning and raw provider bodies.
 Failures are content-free stable codes and create no evidence file.
+The runner exclusively reserves the destination before resolving either model
+credential or opening HTTP; an existing path fails before those effects and an
+abandoned reservation is removed.
 
 ## Acceptance
 

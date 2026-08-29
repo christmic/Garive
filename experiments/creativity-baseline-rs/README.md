@@ -28,7 +28,10 @@ CR-B is implemented by `garive-creativity-publication`. It accepts only two
 explicit compatible protocol dialects, resolves opaque credential references
 from the `com.garive.creativity` OS credential-store service, uses the normal
 Provider/adapter/Runtime transport path, and writes evidence v2 only for two
-public-HTTPS endpoints plus exact clean Git attestation. Start from
-`config.publication-reference-v1.json`; replace every placeholder with reviewed
-deployment and revision coordinates. A generated v2 document still requires
-human review before it can admit production Creativity behavior.
+public-HTTPS endpoints plus exact clean Git attestation. Copy
+`config.publication-reference-v1.json` outside the attested worktree, use
+absolute corpus, evidence and repository paths, then replace every placeholder
+with reviewed deployment and revision coordinates. Editing the tracked template
+or writing the output into the worktree would violate the required empty Git
+status. A generated v2 document still requires human review before it can admit
+production Creativity behavior.

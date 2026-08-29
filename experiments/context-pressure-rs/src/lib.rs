@@ -18,7 +18,8 @@ pub use corpus::{load_corpus, ContextPressureCase, ContextPressureCorpus};
 pub use counter::{TokenCounter, TokenCounterDescriptor, TokenCounterFailure};
 pub use error::{ContextPressureError, ContextPressureErrorCode};
 pub use garive_experiment_evidence::{
-    attest_clean_revision, GitAttestationConfig, GitAttestationDescriptor, GitAttestationFailure,
+    attest_clean_revision, reserve_evidence_file, EvidenceFileError, EvidenceFileReservation,
+    GitAttestationConfig, GitAttestationDescriptor, GitAttestationFailure,
 };
 pub use http_exchange::{ReqwestTokenCountExchangePort, TokenCountHttpLimits};
 pub use provider_counter::{

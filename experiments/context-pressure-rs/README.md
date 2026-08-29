@@ -30,8 +30,11 @@ module. Fake and loopback ports must be non-publishable; an eligible production
 port and externally resolved credential are required for publication evidence.
 
 `config.provider-reference-v1.json` is the strict non-secret publication
-template. Replace its clean full Git revision and exact supported model ID,
-then install the credential under OS credential-store service
+template. Copy it outside the attested worktree, use absolute corpus, evidence
+and repository paths, then replace its clean full Git revision and exact
+supported model ID. Do not edit the tracked template: publication requires an
+empty Git status, including untracked files. Install the credential under OS
+credential-store service
 `com.garive.context-pressure` with account/reference
 `anthropic-context-pressure`. Do not add a credential field or environment
 entry to the document. The runner independently verifies the configured HEAD
@@ -39,7 +42,7 @@ and empty porcelain status before resolving the credential or opening HTTP.
 
 ```text
 target/debug/garive-context-pressure run \
-  experiments/context-pressure-rs/config.provider-reference-v1.json
+  /absolute/path/outside/worktree/context-pressure-publication.json
 ```
 
 Provider publication uses only the in-process exact descriptor. The legacy
@@ -48,6 +51,10 @@ permanently non-publishable regardless of its executable identity.
 Publication evidence is schema v2 and binds SHA-256 digests of the actual Git
 executable and its non-secret attestation configuration; development evidence
 remains schema v1.
+
+The output destination is exclusively reserved before any counter process,
+credential lookup or HTTP request. A pre-existing path therefore fails without
+spending a provider call, and any later failure removes the empty reservation.
 
 All executable, argv, cwd, environment and resource limits are explicit in the
 configuration. The counter child inherits no environment. Evidence contains
