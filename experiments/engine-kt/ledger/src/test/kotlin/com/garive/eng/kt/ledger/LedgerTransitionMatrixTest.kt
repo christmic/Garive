@@ -155,6 +155,15 @@ class LedgerTransitionMatrixTest {
 
     @Test
     fun `every effect terminal and receipt path is explicit`() {
+        assertValid(
+            "session.opened",
+            "turn.started",
+            "execution.started",
+            "effect.prepared",
+            "effect.authorized",
+            "effect.failed",
+            "execution.completed",
+        )
         listOf(
             listOf("effect.prepared", "effect.started"),
             listOf("effect.prepared", "effect.authorized", "effect.started"),

@@ -472,6 +472,7 @@ impl SessionProjection {
                 | (InvocationState::Prepared, InvocationState::Denied)
                 | (InvocationState::Authorized, InvocationState::Started)
                 | (InvocationState::Authorized, InvocationState::Denied)
+                | (InvocationState::Authorized, InvocationState::Failed)
                 | (InvocationState::Started, InvocationState::Receipt)
                 | (InvocationState::Started, InvocationState::Failed)
                 | (InvocationState::Started, InvocationState::Uncertain)

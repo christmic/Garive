@@ -198,6 +198,15 @@ fn every_model_terminal_requires_prepared_started_and_same_execution() {
 
 #[test]
 fn every_effect_terminal_and_receipt_path_is_explicit() {
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "effect.prepared",
+        "effect.authorized",
+        "effect.failed",
+        "execution.completed",
+    ]);
     for prefix in [
         vec!["effect.prepared", "effect.started"],
         vec!["effect.prepared", "effect.authorized", "effect.started"],

@@ -3,6 +3,8 @@
 mod encoding;
 mod execution;
 mod execution_types;
+mod governed_effect;
+mod governed_effect_types;
 mod model_lifecycle;
 mod terminal;
 
@@ -11,6 +13,12 @@ pub use execution::execute_durable_model_only;
 pub use execution_types::{
     DurableExecutionConfig, DurableExecutionError, DurableExecutionResult,
     TerminalPublicationError, TerminalPublisher,
+};
+pub use governed_effect::SqliteGovernedEffectPort;
+pub use governed_effect_types::{
+    AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
+    ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
+    GovernedRuntimePortError, PreparedExecution,
 };
 pub use model_lifecycle::{
     plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,

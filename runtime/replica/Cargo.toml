@@ -10,6 +10,7 @@ publish = false
 garive-core = { path = "../../engine/core" }
 garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
+garive-tools = { path = "../../engine/tools" }
 chrono.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
@@ -17,7 +18,6 @@ sha2.workspace = true
 
 [dev-dependencies]
 futures.workspace = true
-garive-tools = { path = "../../engine/tools" }
 serde_json.workspace = true
 tempfile = "3.27.0"
 

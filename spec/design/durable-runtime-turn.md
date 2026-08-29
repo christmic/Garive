@@ -97,6 +97,14 @@ maps them:
 - payloads are redacted and schema-versioned before persistence/publication;
 - a port error never implies that an external action did not occur.
 
+The governed effect adapter is a single-owner Session writer. It tracks the
+optimistic Session commit `version` separately from the last fact `position`:
+the former guards each append, while only the latter may advance Core's frozen
+context watermark. Authority receives the exact invocation and Prepared Call
+after `effect.prepared`. Executor preflight proves enforceability and selects
+its identity before `effect.started`; dispatch is a separate call that is
+illegal until that Started fact commits.
+
 Runtime accepts exactly one `ExecutionReport` containing one `AgentOutcome`,
 the cumulative usage evidence, and the completed-iteration cursor per
 Execution, then converts it into one atomic terminal transaction. Duplicate equal terminal proposals are

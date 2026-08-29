@@ -325,6 +325,7 @@ internal class LedgerProjection(
             InvocationState.PREPARED to InvocationState.DENIED,
             InvocationState.AUTHORIZED to InvocationState.STARTED,
             InvocationState.AUTHORIZED to InvocationState.DENIED,
+            InvocationState.AUTHORIZED to InvocationState.FAILED,
             InvocationState.STARTED to InvocationState.RECEIPT,
             InvocationState.STARTED to InvocationState.FAILED,
             InvocationState.STARTED to InvocationState.UNCERTAIN,
