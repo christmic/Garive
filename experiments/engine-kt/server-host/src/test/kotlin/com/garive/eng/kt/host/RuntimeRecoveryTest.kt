@@ -16,7 +16,7 @@ class RuntimeRecoveryTest {
         val cases = Json.parseToJsonElement(
             root.resolve("spec/fixtures/agent/durable-runtime-turn.json").readText(),
         ).jsonObject.getValue("recovery_cases").jsonArray
-        assertEquals(8, cases.size)
+        assertEquals(9, cases.size)
         cases.forEach { element ->
             val case = element.jsonObject
             val snapshot = RuntimeRecoverySnapshot(

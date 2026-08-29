@@ -33,6 +33,8 @@ pub enum EffectRecoveryPosition {
     Started,
     /// Trustworthy receipt exists but explicit result is missing.
     Receipt,
+    /// Uncertain effect is durably suspended for operator reconciliation.
+    Uncertain,
     /// Interaction is durably awaiting continuation.
     InteractionRequested,
     /// Effect lifecycle is terminal.
@@ -87,7 +89,9 @@ pub fn select_runtime_recovery(snapshot: RuntimeRecoverySnapshot) -> RuntimeReco
     }
     match (snapshot.execution, snapshot.model, snapshot.effect) {
         (Execution::Terminal, _, _) => Action::ReturnCommittedTerminal,
-        (Execution::Suspended, _, Effect::InteractionRequested) => Action::AwaitContinuation,
+        (Execution::Suspended, _, Effect::InteractionRequested | Effect::Uncertain) => {
+            Action::AwaitContinuation
+        }
         (Execution::Suspended, _, _) => Action::FailCorruptLedger,
         (Execution::Active, _, _) if snapshot.recovery_ordinal >= snapshot.max_recoveries => {
             Action::FailRecoveryBound

@@ -12,6 +12,7 @@ public enum class EffectRecoveryPosition {
     PREPARED,
     STARTED,
     RECEIPT,
+    UNCERTAIN,
     INTERACTION_REQUESTED,
     TERMINAL,
 }
@@ -44,7 +45,10 @@ public fun selectRuntimeRecovery(snapshot: RuntimeRecoverySnapshot): RuntimeReco
         snapshot.execution == ExecutionRecoveryPosition.TERMINAL ->
             RuntimeRecoveryAction.RETURN_COMMITTED_TERMINAL
         snapshot.execution == ExecutionRecoveryPosition.SUSPENDED &&
-            snapshot.effect == EffectRecoveryPosition.INTERACTION_REQUESTED ->
+            snapshot.effect in setOf(
+                EffectRecoveryPosition.INTERACTION_REQUESTED,
+                EffectRecoveryPosition.UNCERTAIN,
+            ) ->
             RuntimeRecoveryAction.AWAIT_CONTINUATION
         snapshot.execution == ExecutionRecoveryPosition.SUSPENDED ->
             RuntimeRecoveryAction.FAIL_CORRUPT_LEDGER
