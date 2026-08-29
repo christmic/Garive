@@ -43,15 +43,22 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 just architecture
 ```
 
-The Kotlin C0-C3 implementation and proto module are verified separately:
+The Kotlin experimental workspace is compiled in strict explicit-API mode and
+verified as one build so provider, persistence, generated Proto, and Host
+consumers cannot drift behind Core:
 
 ```text
 cd experiments/engine-kt
-./gradlew :core:test :llm:test :proto:test
+./gradlew test
 ```
 
 `just conformance` is the joint C0-C3 gate; full Gradle build verifies all
 currently admitted Kotlin modules.
+
+Rust library crates deny `missing_docs` at the crate root. Kotlin uses
+workspace-wide `explicitApi()` and KDoc on the admitted public contract; keep
+implementation helpers `internal` or `private`. Generated API documentation
+comes from comments in the Proto SSOT rather than edits to generated files.
 
 ## Unit and property rules
 
