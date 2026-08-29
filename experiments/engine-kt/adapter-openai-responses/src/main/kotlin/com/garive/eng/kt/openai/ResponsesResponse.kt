@@ -131,10 +131,10 @@ private fun parseOutputItem(element: JsonElement): ResponseOutputItem {
     return when (val type = item.text("type")) {
         "message" -> {
             require(item.text("role") == "assistant")
-            ResponseOutputItem.Message(item.text("id"), item.text("status").enumWire(), item.array("content").map(::parseContent), item.stringOrNull("phase"), item)
+            ResponseOutputItem.Message(item.text("id").also(String::requireNotEmpty), item.text("status").enumWire(), item.array("content").map(::parseContent), item.stringOrNull("phase"), item)
         }
-        "function_call" -> ResponseOutputItem.FunctionCall(item.stringOrNull("id"), item.text("call_id"), item.text("name"), item.text("arguments"), item.stringOrNull("status")?.enumWire(), item)
-        "reasoning" -> ResponseOutputItem.Reasoning(item.text("id"), item.array("summary").map(::parseReasoning), (item["content"] as? JsonArray)?.map(::parseReasoning), item.stringOrNull("encrypted_content"), item.stringOrNull("status")?.enumWire(), item)
+        "function_call" -> ResponseOutputItem.FunctionCall(item.stringOrNull("id"), item.text("call_id").also(String::requireNotEmpty), item.text("name").also(String::requireNotEmpty), item.text("arguments"), item.stringOrNull("status")?.enumWire(), item)
+        "reasoning" -> ResponseOutputItem.Reasoning(item.text("id").also(String::requireNotEmpty), item.array("summary").map(::parseReasoning), (item["content"] as? JsonArray)?.map(::parseReasoning), item.stringOrNull("encrypted_content"), item.stringOrNull("status")?.enumWire(), item)
         else -> ResponseOutputItem.Extension(type, item)
     }
 }
@@ -163,4 +163,5 @@ private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonAr
 private fun JsonObject.objectOrNull(name: String): JsonObject? = get(name)?.takeUnless { it is JsonNull } as? JsonObject
 private fun JsonObject.stringOrNull(name: String): String? = get(name)?.takeUnless { it is JsonNull }?.jsonPrimitive?.contentOrNull
 private fun JsonObject.ulong(name: String): ULong = getValue(name).jsonPrimitive.long.also { require(it >= 0) }.toULong()
+private fun String.requireNotEmpty(): Unit = require(isNotEmpty())
 private inline fun <reified T : Enum<T>> String.enumWire(): T = enumValues<T>().first { it.name.lowercase() == this }

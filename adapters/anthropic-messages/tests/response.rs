@@ -134,3 +134,25 @@ fn full_usage_breakdowns_are_typed() {
         2
     );
 }
+
+#[test]
+fn shared_error_matrix_remains_unclassified_protocol_data() {
+    let matrix: Value = serde_json::from_slice(include_bytes!(
+        "../../../spec/fixtures/protocols/anthropic-messages/errors.json"
+    ))
+    .unwrap();
+    for case in matrix["cases"].as_array().unwrap() {
+        let status = u16::try_from(case["status"].as_u64().unwrap()).unwrap();
+        let body = serde_json::to_vec(&case["body"]).unwrap();
+        let DecodedResponse::Error {
+            status: decoded,
+            error,
+            ..
+        } = adapter().decode_response(status, &[], &body).unwrap()
+        else {
+            panic!("expected error")
+        };
+        assert_eq!(decoded, status);
+        assert_eq!(error.error.r#type, case["expected_error_type"]);
+    }
+}

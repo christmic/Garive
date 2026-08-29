@@ -87,3 +87,22 @@ fn media_and_usage_invariants_fail_closed() {
         Err(ResponsesAdapterError::InvalidMediaType)
     );
 }
+
+#[test]
+fn shared_error_matrix_remains_unclassified_protocol_data() {
+    let matrix: serde_json::Value = serde_json::from_slice(&fixture("errors.json")).unwrap();
+    for case in matrix["cases"].as_array().unwrap() {
+        let status = u16::try_from(case["status"].as_u64().unwrap()).unwrap();
+        let body = serde_json::to_vec(&case["body"]).unwrap();
+        let DecodedResponse::Error {
+            status: decoded,
+            error,
+            ..
+        } = adapter().decode_response(status, &[], &body).unwrap()
+        else {
+            panic!("expected error")
+        };
+        assert_eq!(decoded, status);
+        assert_eq!(error.error.r#type, case["expected_error_type"]);
+    }
+}

@@ -65,14 +65,29 @@ class MessagesProtocolTest {
         val decoded = assertIs<DecodedResponse.Message>(adapter.decodeResponse(
             200, emptyList(), bytes("spec/fixtures/protocols/anthropic-messages/ordinary.json"),
         ))
-        assertIs<OutputBlock.Text>(decoded.message.content[0])
-        assertIs<OutputBlock.ToolUse>(decoded.message.content[1])
+        assertEquals("hello back", assertIs<OutputBlock.Text>(decoded.message.content[0]).text)
+        assertEquals("weather", assertIs<OutputBlock.ToolUse>(decoded.message.content[1]).name)
+        assertEquals(8uL, decoded.message.usage.inputTokens)
         val raw = decoded.message.raw
         val hosted = JsonObject(raw + ("content" to JsonArray(listOf(
             Json.parseToJsonElement("""{"type":"web_search_tool_result","tool_use_id":"srv_1"}"""),
         ))))
         val extended = assertIs<DecodedResponse.Message>(adapter.decodeResponse(200, emptyList(), hosted.toString().encodeToByteArray()))
         assertIs<OutputBlock.Extension>(extended.message.content.single())
+    }
+
+    @Test
+    fun `shared error matrix remains unclassified protocol data`() {
+        val cases = json("spec/fixtures/protocols/anthropic-messages/errors.json").getValue("cases") as JsonArray
+        cases.forEach { element ->
+            val case = element.jsonObject
+            val status = case.getValue("status").jsonPrimitive.content.toInt()
+            val decoded = assertIs<DecodedResponse.Error>(adapter.decodeResponse(
+                status, emptyList(), case.getValue("body").toString().encodeToByteArray(),
+            ))
+            assertEquals(status, decoded.status)
+            assertEquals(case.getValue("expected_error_type").jsonPrimitive.content, decoded.error.type)
+        }
     }
 
     @Test

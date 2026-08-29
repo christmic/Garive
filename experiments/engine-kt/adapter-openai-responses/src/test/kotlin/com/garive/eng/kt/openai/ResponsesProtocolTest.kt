@@ -9,7 +9,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 class ResponsesProtocolTest {
@@ -66,13 +69,42 @@ class ResponsesProtocolTest {
     fun `ordinary and hosted outputs keep protocol identity`() {
         val fixture = bytes("spec/fixtures/protocols/openai-responses/ordinary.json")
         val decoded = assertIs<DecodedResponse.Response>(adapter.decodeResponse(200, emptyList(), fixture))
-        assertTrue(decoded.response.output.isNotEmpty())
+        val message = assertIs<ResponseOutputItem.Message>(decoded.response.output[0])
+        assertIs<OutputContent.Text>(message.content.single())
+        val call = assertIs<ResponseOutputItem.FunctionCall>(decoded.response.output[1])
+        assertEquals("call_weather", call.callId)
+        assertEquals(17uL, decoded.response.usage?.totalTokens)
         val value = Json.parseToJsonElement(fixture.decodeToString()) as JsonObject
         val modified = JsonObject(value + ("output" to kotlinx.serialization.json.JsonArray(listOf(
             kotlinx.serialization.json.buildJsonObject { put("type", "web_search_call"); put("id", "hosted_1") },
         ))))
         val hosted = assertIs<DecodedResponse.Response>(adapter.decodeResponse(200, emptyList(), modified.toString().encodeToByteArray()))
         assertIs<ResponseOutputItem.Extension>(hosted.response.output.single())
+    }
+
+    @Test
+    fun `shared error matrix remains unclassified protocol data`() {
+        val cases = json("spec/fixtures/protocols/openai-responses/errors.json").getValue("cases") as JsonArray
+        cases.forEach { element ->
+            val case = element.jsonObject
+            val status = case.getValue("status").jsonPrimitive.content.toInt()
+            val decoded = assertIs<DecodedResponse.Error>(adapter.decodeResponse(
+                status, emptyList(), case.getValue("body").toString().encodeToByteArray(),
+            ))
+            assertEquals(status, decoded.status)
+            assertEquals(case.getValue("expected_error_type").jsonPrimitive.content, decoded.error.type)
+        }
+    }
+
+    @Test
+    fun `malformed known output and usage fail closed`() {
+        val value = json("spec/fixtures/protocols/openai-responses/ordinary.json")
+        val invalidUsage = JsonObject(value + ("usage" to JsonObject(value.getValue("usage").jsonObject + ("total_tokens" to kotlinx.serialization.json.JsonPrimitive(18)))))
+        assertFails { adapter.decodeResponse(200, emptyList(), invalidUsage.toString().encodeToByteArray()) }
+        val invalidItem = JsonObject(value + ("output" to JsonArray(listOf(
+            kotlinx.serialization.json.buildJsonObject { put("type", "message"); put("id", ""); put("role", "assistant"); put("status", "completed"); put("content", JsonArray(emptyList())) },
+        ))))
+        assertFails { adapter.decodeResponse(200, emptyList(), invalidItem.toString().encodeToByteArray()) }
     }
 
     @Test
