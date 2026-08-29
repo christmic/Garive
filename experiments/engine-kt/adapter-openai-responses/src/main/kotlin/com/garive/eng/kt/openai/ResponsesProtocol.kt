@@ -65,65 +65,12 @@ public class ProtocolHttpRequest internal constructor(
     public val method: String = "POST"
 }
 
-/** Official string or item-array input union. */
-public sealed interface ResponseInput {
-    /** String shorthand input. */
-    public data class Text(public val value: String) : ResponseInput
-    /** Ordered official input item objects. */
-    public data class Items(public val value: List<JsonObject>) : ResponseInput
-}
-
-/** Typed portable create request; hosted fields live only in [extensions]. */
-public data class CreateResponseRequest(
-    public val model: String,
-    public val input: ResponseInput,
-    public val stream: Boolean,
-    public val maxOutputTokens: ULong? = null,
-    public val temperature: Double? = null,
-    public val topP: Double? = null,
-    public val tools: List<JsonObject> = emptyList(),
-    public val toolChoice: JsonElement? = null,
-    public val text: JsonObject? = null,
-    public val reasoning: JsonObject? = null,
-    public val metadata: Map<String, String> = emptyMap(),
-    public val extensions: JsonObject = JsonObject(emptyMap()),
-) {
-    /** Validates the official portable profile before encoding. */
-    public fun validate(): Unit {
-        require(model.isNotEmpty())
-        when (input) {
-            is ResponseInput.Text -> require(input.value.isNotEmpty())
-            is ResponseInput.Items -> require(input.value.isNotEmpty())
-        }
-        require(temperature == null || temperature.isFinite() && temperature in 0.0..2.0)
-        require(topP == null || topP.isFinite() && topP in 0.0..1.0)
-        require(metadata.size <= 16)
-        require(extensions.keys.none { it in TYPED_REQUEST_FIELDS })
-    }
-}
-
 /** Protocol-only Responses adapter. It performs exactly one wire exchange. */
 public class ResponsesAdapter(public val config: ResponsesAdapterConfig) {
     /** Encodes a validated official create request. */
     public fun prepare(request: CreateResponseRequest): ProtocolHttpRequest {
         request.validate()
-        val body = buildJsonObject {
-            put("model", request.model)
-            put("input", when (val input = request.input) {
-                is ResponseInput.Text -> JsonPrimitive(input.value)
-                is ResponseInput.Items -> JsonArray(input.value)
-            })
-            put("stream", request.stream)
-            request.maxOutputTokens?.let { require(it <= Long.MAX_VALUE.toULong()); put("max_output_tokens", it.toLong()) }
-            request.temperature?.let { put("temperature", it) }
-            request.topP?.let { put("top_p", it) }
-            if (request.tools.isNotEmpty()) put("tools", JsonArray(request.tools))
-            request.toolChoice?.let { put("tool_choice", it) }
-            request.text?.let { put("text", it) }
-            request.reasoning?.let { put("reasoning", it) }
-            if (request.metadata.isNotEmpty()) put("metadata", JsonObject(request.metadata.mapValues { JsonPrimitive(it.value) }))
-            request.extensions.forEach(::put)
-        }
+        val body = request.toJson()
         val headers = config.headers + listOf(
             ProtocolHeader.create("content-type", "application/json", false),
             ProtocolHeader.create("accept", if (request.stream) "text/event-stream" else "application/json", false),
@@ -205,7 +152,6 @@ public sealed interface DecodedResponse {
 }
 
 private val JSON: Json = Json { ignoreUnknownKeys = false }
-private val TYPED_REQUEST_FIELDS: Set<String> = setOf("model", "input", "stream", "max_output_tokens", "temperature", "top_p", "tools", "tool_choice", "text", "reasoning", "metadata")
 
 private fun JsonObject.text(name: String): String = getValue(name).jsonPrimitive.content
 private fun JsonObject.array(name: String): JsonArray = getValue(name) as JsonArray
