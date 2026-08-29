@@ -38,12 +38,16 @@ multiagent-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/multiagent/src experiments/engine-kt/multiagent/src/main; then echo 'MA0 Engine must remain a pure delegation value and reduction contract' >&2; exit 1; fi
     @if rg -n 'std::env|System\.getenv|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/delegation_runtime.rs; then echo 'MA0 Runtime must receive authority, child, clock and budget inputs explicitly' >&2; exit 1; fi
 
+observability-boundaries:
+    @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|reqwest|tokio|rusqlite|opentelemetry|tracing' engine/observability/src experiments/engine-kt/observability/src/main; then echo 'O0 Engine must remain a pure signal contract' >&2; exit 1; fi
+    @if rg -n 'std::env|System\.getenv|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/observability_runtime.rs; then echo 'O0 Runtime configuration must enter explicitly' >&2; exit 1; fi
+
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries
-    cargo test -p garive-config -p garive-core -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-scheduler -p garive-skill -p garive-tools
-    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :scheduler:test :skill:test :tools:test
+conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries
+    cargo test -p garive-config -p garive-core -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
+    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :scheduler:test :skill:test :tools:test
 
 adapter-boundaries:
     @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not read process configuration' >&2; exit 1; fi
@@ -77,6 +81,9 @@ scheduler-runtime: scheduler-boundaries
 multiagent-runtime: multiagent-boundaries
     cargo test -p garive-runtime --test delegation_continuation --test delegation_runtime --test process_kill_recovery
 
+observability-runtime: observability-boundaries
+    cargo test -p garive-runtime --test observability_runtime
+
 kotlin-experiment:
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
@@ -106,7 +113,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance protocol-adapters runtime-host knowledge-runtime scheduler-runtime multiagent-runtime kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters runtime-host knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime kotlin-experiment apps rust
 
 bench:
     cargo test -p bench
