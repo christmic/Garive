@@ -91,7 +91,7 @@ The first admitted vocabulary is:
 | Skill | `skill.activated` |
 | Memory | `memory.proposed`, `memory.committed`, `memory.rejected`, `memory.superseded`, `memory.tombstoned`, `memory.retrieval_recorded` |
 | Knowledge | `knowledge.requested`, `knowledge.dispatched`, `knowledge.completed`, `knowledge.failed` |
-| Scheduler | `schedule.created`, `schedule.claimed`, `schedule.fired`, `schedule.cancelled`, `schedule.failed` |
+| Scheduler | `schedule.created`, `schedule.claimed`, `schedule.fired`, `schedule.skipped`, `schedule.cancelled`, `schedule.failed` |
 | Delegation | `delegation.requested`, `delegation.authorized`, `delegation.denied`, `delegation.child_started`, `delegation.child_terminal`, `delegation.observed` |
 | Projection | `context.summary`, `privacy.redacted` |
 

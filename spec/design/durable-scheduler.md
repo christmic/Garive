@@ -69,20 +69,24 @@ operator reconciliation.
 ## Pure recurrence
 
 ```text
-next_occurrence(intent, last_fired_ordinal?, observed_now_utc)
-  -> NotDue | Due(ordinal, due_at, occurrence_id) | Exhausted | Invalid
+next_occurrence(intent, last_handled_ordinal?, observed_now_utc)
+  -> NotDue | Due(ordinal, due_at, occurrence_id) |
+     Skipped(first_ordinal, last_ordinal, first_due_at, last_due_at,
+             next_due?) | Exhausted | Invalid
 ```
 
 Fixed delay is anchored to the prior declared due instant, not worker finish
 time, so restart and slow execution do not drift semantics. Arithmetic is
-checked. `max_occurrences` counts committed `schedule.fired` facts.
+checked. `max_occurrences` bounds handled ordinals committed by
+`schedule.fired` or `schedule.skipped` facts.
 `At` has only ordinal 1. `FixedDelay` ordinal 1 is `first_due_at_utc`; ordinal
 `n` is that instant plus `(n - 1) * delay_ms`, using checked arithmetic.
 
 Misfire behavior when `now > due + max_lateness`:
 
 - `FireOnce`: produce only the earliest uncommitted overdue occurrence;
-- `Skip`: atomically record skipped ordinals and return the first future due;
+- `Skip`: return one bounded contiguous skipped range plus the first future due,
+  then atomically record that range before another reduction;
 - `Fail`: commit `schedule.failed` and disable the revision.
 
 Q0 never emits an unbounded catch-up burst.
@@ -92,6 +96,7 @@ Q0 never emits an unbounded catch-up burst.
 ```text
 Created -> Claimed -> Fired
    |          |        `-> next occurrence remains Created
+   +-> Skipped -> next occurrence remains Created
    +----------+-----> Cancelled | Failed | Exhausted
 ```
 
@@ -100,8 +105,9 @@ Created -> Claimed -> Fired
 3. `schedule.claimed` commits before dispatch and binds lease/occurrence;
 4. Runtime submits the deterministic C6 command;
 5. `schedule.fired` commits the C6 command identity and disposition;
-6. losing a lease prevents further writes but does not imply dispatch absence;
-7. restart reconstructs from facts and the C6 command receipt/replay result.
+6. `schedule.skipped` commits one deterministic contiguous misfire range;
+7. losing a lease prevents further writes but does not imply dispatch absence;
+8. restart reconstructs from facts and the C6 command receipt/replay result.
 
 Claiming is operational fencing, not a public success. A fired schedule means
 the C6 command was durably committed or exactly replayed; it does not mean the
@@ -128,6 +134,8 @@ The coordinated C6F amendment must define:
   observed durable prefix;
 - `schedule.fired`: occurrence, deterministic C6 command ID, commit/replay
   disposition and committed position;
+- `schedule.skipped`: deterministic contiguous ordinal/due range and observed
+  clock value;
 - `schedule.cancelled`: command, expected revision and safe reason;
 - `schedule.failed`: occurrence/revision and stable failure class.
 

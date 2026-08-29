@@ -76,7 +76,7 @@ amendment. The focused Specs define their exact payloads and transitions:
 - `knowledge.requested`, `knowledge.dispatched`, `knowledge.completed`,
   `knowledge.failed`;
 - `schedule.created`, `schedule.claimed`, `schedule.fired`,
-  `schedule.cancelled`, `schedule.failed`;
+  `schedule.skipped`, `schedule.cancelled`, `schedule.failed`;
 - `delegation.requested`, `delegation.authorized`, `delegation.denied`,
   `delegation.child_started`, `delegation.child_terminal`,
   `delegation.observed`.

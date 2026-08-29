@@ -269,6 +269,16 @@ schedule.fired.v1 {
   committed_position: non-zero u64
 }
 
+schedule.skipped.v1 {
+  schedule_id: ScheduleId
+  revision_id: ScheduleRevisionId
+  first_ordinal: non-zero u64
+  last_ordinal: non-zero u64
+  first_due_at_utc: timestamp
+  last_due_at_utc: timestamp
+  observed_at_utc: timestamp
+}
+
 schedule.cancelled.v1 {
   command_id: ScheduleCommandId
   schedule_id: ScheduleId
@@ -281,9 +291,12 @@ schedule.failed.v1 {
   revision_id: ScheduleRevisionId
   occurrence_id?: OccurrenceId
   ordinal?: non-zero u64
-  reason: "invalid_schedule" | "subject_not_resumable" |
-          "authority_denied" | "clock_invalid" | "occurrence_overflow" |
-          "misfire_limit_exceeded" | "dispatch_conflict"
+  reason: "invalid_schedule" | "schedule_not_found" |
+          "revision_conflict" | "subject_not_resumable" |
+          "authority_denied" | "clock_invalid" |
+          "occurrence_overflow" | "misfire_limit_exceeded" |
+          "lease_lost" | "dispatch_conflict" |
+          "durability_failure" | "corrupt_schedule_state"
 }
 ```
 
@@ -292,6 +305,8 @@ Occurrence ID/ordinal are both present or both absent in `schedule.failed`.
 Claimed commits before C6 dispatch. Fired commits only after that exact C6
 command committed/replayed. A lease takeover uses a higher epoch; a stale lease
 cannot append fired/failed. Cancellation cannot erase an already fired command.
+Skipped binds a non-empty ascending ordinal range and its exact endpoint due
+instants; Runtime admits it only as the pure reducer's next range.
 
 Scheduler facts are Session scoped with no Turn/Execution owner. The subject
 binding names the exact existing Session/Turn resources inside the canonical
