@@ -3,8 +3,11 @@ import SwiftUI
 import GariveShared
 #endif
 
+/// Fixture-backed Host facade used while the live durable Host is not composed.
 public struct FakeHost {
+    /// Creates the stateless fixture facade.
     public init() {}
+    /// Whether this build can delegate to the generated Kotlin shared framework.
     public static var usesSharedFramework: Bool {
 #if canImport(GariveShared)
         true
@@ -12,6 +15,7 @@ public struct FakeHost {
         false
 #endif
     }
+    /// Validates the sole admitted input and returns the ordered fixture output.
     public func run(_ input: String) throws -> String {
         guard input == "hello" else { throw HostError.unsupportedInput }
 #if canImport(GariveShared)
@@ -31,6 +35,7 @@ public struct FakeHost {
         return output
 #endif
     }
+    /// Stable validation failures from the local fallback reducer.
     public enum HostError: Error { case unsupportedInput, invalidSequence, missingTerminal }
 }
 

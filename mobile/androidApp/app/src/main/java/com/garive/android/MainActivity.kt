@@ -9,8 +9,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.garive.mobile.host.EmbeddedFakeHost
 import com.garive.mobile.host.HostClientResult
+
+/** Android shell entry point for the shared fixture-backed Host client. */
 class MainActivity : ComponentActivity() { override fun onCreate(state: Bundle?) { super.onCreate(state); setContent { GariveApp() } } }
-@Composable fun GariveApp() { var output by remember { mutableStateOf("") }; MaterialTheme { Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+@Composable private fun GariveApp() { var output by remember { mutableStateOf("") }; MaterialTheme { Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
     Text("Garive Agent", style = MaterialTheme.typography.headlineLarge); Text("You: hello")
     Button(onClick = { output = when (val result = EmbeddedFakeHost.runDefault()) {
         is HostClientResult.Success -> "${result.value.text} · ${result.value.terminal.name.lowercase()}"
