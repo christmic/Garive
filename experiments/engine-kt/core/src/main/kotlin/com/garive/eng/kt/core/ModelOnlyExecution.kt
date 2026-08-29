@@ -99,13 +99,24 @@ internal suspend fun executeKernel(
             return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
         }
         val contextRequest = request.contextRequest.copy(throughPosition = throughPosition)
-        val surface = when (val context = ports.context.derive(contextRequest, rebuildAttempt)) {
-            is ContextPortResult.Success -> context.surface
-            ContextPortResult.RequiredFactsExceedBudget -> {
-                return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT))
-            }
+        val base = when (val context = ports.context.readCandidates(contextRequest, rebuildAttempt)) {
+            is ContextPortResult.Success -> context.candidates
             is ContextPortResult.Failure -> {
                 return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            }
+        }
+        val merged = when (val value = mergeContextCandidates(base, request.capabilityContextCandidates)) {
+            is ContextMergeResult.Success -> value.candidates
+            is ContextMergeResult.Failure -> {
+                return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
+            }
+        }
+        val surface = when (val value = deriveContext(contextRequest, merged)) {
+            is ContextDerivationResult.Success -> value.surface
+            is ContextDerivationResult.Failure -> when (value.error) {
+                is ContextDerivationError.RequiredFactsExceedBudget ->
+                    return finish(request, ports, control, usage, AgentOutcome.Stopped(StopReason.TOKEN_LIMIT))
+                else -> return finish(request, ports, control, usage, AgentOutcome.Failed(AgentFailureReason.PORT_FAILURE))
             }
         }
         if (!emit(request, ports, AgentEventKind.ContextDerived(surface.itemCount, surface.utf8Bytes))) {
@@ -120,28 +131,27 @@ internal suspend fun executeKernel(
         }
         requestOrdinal += 1u
         val requestId = "${request.executionId.value}:$iteration:$requestOrdinal"
-        val memoryItems = surface.items.mapNotNull {
-            (it as? ContextItem.Input)?.takeIf { input -> input.kind == CandidateKind.MEMORY }?.item
-        }
-        val inputItems = surface.items.mapNotNull {
-            (it as? ContextItem.Input)?.takeIf { input -> input.kind != CandidateKind.MEMORY }?.item
-        }.toMutableList()
+        val visible = surface.items.mapNotNull { it as? ContextItem.Input }
+        val skillItems = visible.filter { it.kind == CandidateKind.SKILL }.map { it.item }
+        val memoryItems = visible.filter { it.kind == CandidateKind.MEMORY }.map { it.item }
+        val knowledgeItems = visible.filter { it.kind == CandidateKind.KNOWLEDGE }.map { it.item }
+        val inputItems = visible.filter {
+            it.kind !in setOf(CandidateKind.SKILL, CandidateKind.MEMORY, CandidateKind.KNOWLEDGE)
+        }.map { it.item }.toMutableList()
         val instructionBoundary = inputItems.indexOfFirst { item ->
             item !is ModelInputItem.Message || item.role !in setOf(ModelRole.SYSTEM, ModelRole.DEVELOPER)
         }.let { if (it < 0) inputItems.size else it }
         inputItems.addAll(
             instructionBoundary,
-            request.activatedSkills.map { skill ->
-                ModelInputItem.Message(ModelRole.DEVELOPER, listOf(ModelInputContent.Text(skill.instructions)))
-            },
+            skillItems,
         )
         inputItems.addAll(
-            instructionBoundary + request.activatedSkills.size,
-            memoryItems + request.attributedMemory.map(::memoryInput),
+            instructionBoundary + skillItems.size,
+            memoryItems,
         )
         inputItems.addAll(
-            instructionBoundary + request.activatedSkills.size + memoryItems.size + request.attributedMemory.size,
-            request.attributedKnowledge.map(::knowledgeInput),
+            instructionBoundary + skillItems.size + memoryItems.size,
+            knowledgeItems,
         )
         val modelRequest = ModelRequest(
             ModelRequestId(requestId),

@@ -146,6 +146,7 @@ public data class AgentTurnRequest(
     public val recoveryPolicy: ModelRecoveryPolicy,
     public val limits: ModelOnlyLimits,
     public val activatedSkills: List<ActivatedSkill> = emptyList(),
+    public val capabilityContextCandidates: List<ContextCandidate> = emptyList(),
     public val attributedMemory: List<AttributedMemory> = emptyList(),
     public val attributedKnowledge: List<AttributedKnowledge> = emptyList(),
 ) {
@@ -252,15 +253,14 @@ public data class AgentEvent(
 
 /** Sanitized class of a frozen execution-port failure. */
 public enum class PortFailure { CONTEXT, EVENT, CLOCK, TOOL }
-/** Context port result preserving budget exhaustion separately from failure. */
+/** Context port result containing the frozen Runtime read. */
 public sealed interface ContextPortResult {
-    public data class Success(public val surface: ContextSurface) : ContextPortResult
-    public data object RequiredFactsExceedBudget : ContextPortResult
+    public data class Success(public val candidates: List<ContextCandidate>) : ContextPortResult
     public data class Failure(public val failure: PortFailure) : ContextPortResult
 }
-/** Frozen purpose-specific context derivation port. */
+/** Frozen purpose-specific candidate read port. */
 public fun interface ContextPort {
-    public fun derive(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult
+    public fun readCandidates(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult
 }
 /** Sink for ordered semantic progress; emission is not proof of persistence. */
 public fun interface EventSink {

@@ -111,25 +111,33 @@ class ModelOnlyExecutionTest {
         val report = executeAgent(
             toolRequest().copy(
                 activatedSkills = activated,
-                attributedMemory = listOf(
-                    AttributedMemory(
-                        "record",
-                        "revision",
-                        "c064fbca9d9de8dd9bb0624984403b28d0da807a69365d4f7fb09123ecb0c405",
-                        "memory",
-                        listOf(MemoryEvidenceAttribution("session", 1uL, "fact", "a".repeat(64))),
-                    ),
+                contextRequest = toolRequest().contextRequest.copy(
+                    throughPosition = 4uL,
+                    maxUtf8Bytes = 500,
                 ),
-                attributedKnowledge = listOf(
-                    AttributedKnowledge(
-                        "docs", "1", "evidence", null,
-                        "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b",
-                        "knowledge", 9uL,
-                        KnowledgeCitationAttribution(
-                            "uri_fragment", "intro", null, "https://example.test/docs#intro",
-                            "e0f895872d65b2528feec97350a3a212b3d4ab88748e25d022a34641d338216b",
-                        ),
-                        "2026-08-29T00:00:00Z", "fresh", "curated", 9000u,
+                capabilityContextCandidates = listOf(
+                    capabilityCandidate(
+                        2uL, CandidateKind.SKILL, Retention.REQUIRED,
+                        activated.map {
+                            ModelInputItem.Message(
+                                ModelRole.DEVELOPER,
+                                listOf(ModelInputContent.Text(it.instructions)),
+                            )
+                        },
+                    ),
+                    capabilityCandidate(
+                        3uL, CandidateKind.MEMORY, Retention.OPTIONAL,
+                        listOf(ModelInputItem.Message(
+                            ModelRole.USER,
+                            listOf(ModelInputContent.Text("{\"type\":\"garive.memory\",\"content\":\"memory\"}")),
+                        )),
+                    ),
+                    capabilityCandidate(
+                        4uL, CandidateKind.KNOWLEDGE, Retention.OPTIONAL,
+                        listOf(ModelInputItem.Message(
+                            ModelRole.USER,
+                            listOf(ModelInputContent.Text("{\"type\":\"garive.knowledge\",\"content\":\"knowledge\"}")),
+                        )),
                     ),
                 ),
             ),
@@ -190,38 +198,41 @@ class ModelOnlyExecutionTest {
         }
     }
 
-    private class FakeContext(private val scripts: ArrayDeque<String>) : ContextPort {
+    private inner class FakeContext(private val scripts: ArrayDeque<String>) : ContextPort {
         var calls = 0
         val positions = mutableListOf<ULong>()
-        override fun derive(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult {
+        override fun readCandidates(request: ContextRequest, rebuildAttempt: UInt): ContextPortResult {
             calls += 1
             positions += request.throughPosition
             when (scripts.removeFirst()) {
                 "failure" -> return ContextPortResult.Failure(PortFailure.CONTEXT)
-                "required-budget" -> return ContextPortResult.RequiredFactsExceedBudget
+                "required-budget" -> return ContextPortResult.Success(
+                    listOf(contextCandidate(request, "x".repeat(request.maxUtf8Bytes + 1))),
+                )
             }
-            val ref = FactRef(request.sessionId, request.throughPosition)
             return ContextPortResult.Success(
-                ContextSurface(
-                    ContextPurpose.INFERENCE,
-                    1u,
-                    request.throughPosition,
-                    listOf(
-                        ContextItem.Input(
-                            ref,
-                            CandidateKind.USER_INPUT,
-                            ModelInputItem.Message(ModelRole.USER, listOf(ModelInputContent.Text("hi"))),
-                        ),
-                    ),
-                    listOf(ref),
-                    emptyList(),
-                    emptyList(),
-                    1,
-                    2,
-                ),
+                listOf(contextCandidate(request, "hi")),
             )
         }
     }
+
+    private fun contextCandidate(request: ContextRequest, text: String): ContextCandidate = ContextCandidate(
+        FactRef(request.sessionId, 1uL),
+        CandidateKind.USER_INPUT,
+        Retention.REQUIRED,
+        Visibility.Visible,
+        listOf(ModelInputItem.Message(ModelRole.USER, listOf(ModelInputContent.Text(text)))),
+    )
+
+    private fun capabilityCandidate(
+        position: ULong,
+        kind: CandidateKind,
+        retention: Retention,
+        items: List<ModelInputItem>,
+    ): ContextCandidate = ContextCandidate(
+        FactRef("session", position), kind, retention,
+        Visibility.Purposes(setOf(ContextPurpose.INFERENCE)), items,
+    )
 
     private class FakeModel(private val scripts: ArrayDeque<String>) : ModelPort {
         var calls = 0

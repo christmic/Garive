@@ -10,6 +10,7 @@ public enum class ContextPurpose { INFERENCE, GOVERNANCE, TOOL_PREPARATION, SUMM
 /** Semantic class of a durable fact considered for context. */
 public enum class CandidateKind {
     INSTRUCTION,
+    SKILL,
     USER_INPUT,
     MODEL_OUTPUT,
     TOOL_OBSERVATION,
@@ -19,6 +20,42 @@ public enum class CandidateKind {
     MEMORY,
     KNOWLEDGE,
 }
+
+/** Merges two independently ordered streams without repairing either. */
+public fun mergeContextCandidates(
+    base: List<ContextCandidate>,
+    capability: List<ContextCandidate>,
+): ContextMergeResult {
+    streamOrderError(base)?.let { return ContextMergeResult.Failure(it) }
+    streamOrderError(capability)?.let { return ContextMergeResult.Failure(it) }
+    val merged = ArrayList<ContextCandidate>(base.size + capability.size)
+    var left = 0
+    var right = 0
+    while (left < base.size && right < capability.size) {
+        when {
+            base[left].factRef.position < capability[right].factRef.position -> merged += base[left++]
+            base[left].factRef.position > capability[right].factRef.position -> merged += capability[right++]
+            else -> return ContextMergeResult.Failure(ContextDerivationError.DuplicateReference)
+        }
+    }
+    merged += base.subList(left, base.size)
+    merged += capability.subList(right, capability.size)
+    return ContextMergeResult.Success(merged)
+}
+
+public sealed interface ContextMergeResult {
+    public data class Success(public val candidates: List<ContextCandidate>) : ContextMergeResult
+    public data class Failure(public val error: ContextDerivationError) : ContextMergeResult
+}
+
+private fun streamOrderError(values: List<ContextCandidate>): ContextDerivationError? =
+    values.zipWithNext().firstNotNullOfOrNull { (left, right) ->
+        when {
+            left.factRef.position == right.factRef.position -> ContextDerivationError.DuplicateReference
+            left.factRef.position > right.factRef.position -> ContextDerivationError.NonIncreasingPosition
+            else -> null
+        }
+    }
 
 /** Whether a candidate may be dropped under budget pressure. */
 public enum class Retention { REQUIRED, OPTIONAL }
