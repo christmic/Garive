@@ -11,7 +11,8 @@ use garive_memory::{
 use garive_runtime::{
     plan_memory_erasure_receipt, plan_memory_forget, plan_memory_maintenance_decision,
     plan_memory_promotion_receipt, plan_memory_promotion_request, plan_memory_tombstone,
-    MemoryMaintenanceContext, MemoryTombstoneContext, MemoryTombstoneReason, SqliteLedger,
+    reconstruct_memory_maintenance_projection, MemoryMaintenanceContext, MemoryPrefix,
+    MemoryTombstoneContext, MemoryTombstoneReason, SqliteLedger,
 };
 use serde_json::json;
 use tempfile::tempdir;
@@ -164,6 +165,41 @@ fn maintenance_promotion_and_erasure_batches_survive_restart() {
     assert!(facts
         .iter()
         .all(|fact| fact.turn_id.is_none() && fact.execution_id.is_none()));
+    assert_eq!(
+        reconstruct_memory_maintenance_projection(
+            &restarted,
+            &[MemoryPrefix {
+                session_id: session.clone(),
+                through_position: 2
+            }],
+            "namespace",
+        ),
+        Err(garive_memory::MemoryErrorCode::CorruptMemoryState),
+    );
+    assert_eq!(
+        reconstruct_memory_maintenance_projection(
+            &restarted,
+            &[MemoryPrefix {
+                session_id: session.clone(),
+                through_position: 5
+            }],
+            "namespace",
+        ),
+        Err(garive_memory::MemoryErrorCode::CorruptMemoryState),
+    );
+    let projection = reconstruct_memory_maintenance_projection(
+        &restarted,
+        &[MemoryPrefix {
+            session_id: session,
+            through_position: 9,
+        }],
+        "namespace",
+    )
+    .unwrap();
+    assert_eq!(projection.decisions().len(), 1);
+    assert!(projection.is_promoted("record", "revision"));
+    let erasure = projection.erasure("erasure-request").unwrap();
+    assert_eq!(erasure.pending_targets, vec!["backup"]);
 }
 
 fn session_opened() -> FactDraft {
