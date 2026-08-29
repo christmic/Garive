@@ -2452,6 +2452,125 @@ preserved is the **human judgment** at tiers 3 / 4.
   that ProgressGuardian supersedes (above); four axes remain
   as detection inputs.
 
+## EventCatalog — the AgentEvent API handbook
+
+> **One sentence: the EventCatalog is the contract for every
+> `AgentEvent` the system broadcasts.** It's a registered
+> vocabulary, not a code skeleton — every event is declared
+> with four things and added to one of four families.
+
+The runtime streams `AgentEvent` continuously — TUI renders
+typing animations, channel adapters push to DingTalk / ACP,
+loggers archive, hook adapters listen. **Every consumer lives
+off the event stream**, so the event vocabulary is a
+**contract**. Wild growth breaks consumers silently. The
+catalog is the bounded list.
+
+### What every event declares — the four registration fields
+
+| Field | Question it answers | Example (`ToolCallStart`) |
+|-------|--------------------|------|
+| **Producer** | Who emits it | `ToolDispatcher` |
+| **Payload** | What fields it carries | `call_id`, `tool_name`, `args_summary` |
+| **Order constraint** | What must come before/after | "must precede the same `call_id`'s `OutputDelta` and `End`" (E1–E3) |
+| **Consumer types** | Who cares | UI (renders), Logger (optional archive), Hook adapter (subscribes) |
+
+The catalog lives as a **declarative table** in the runtime
+config — adding an event is one row + one struct, not a
+class hierarchy. The catalog is **append-only** at the
+vocabulary level; renames are breaking changes (a new
+vocabulary is forked).
+
+### The four event families
+
+```
+# Family A — lifecycle
+IterationStart, IterationEnd
+TurnTransition                  # state.phase transitions
+Suspended                        # round paused, awaiting human
+
+# Family B — call-side (model)
+ModelRetry                       # transient retry triggered
+RateWait                         # AIMD slowed + budget exhausted
+StreamPartial                    # cancellation mid-stream
+
+# Family C — tool side
+ToolCallStart
+ToolOutputDelta                  # streaming chunks
+ToolCallEnd                      # succeeded / ToolCancelled / timed out
+VerdictNotice                     # governance.judge verdict
+
+# Family D — progress + notifications
+ProgressAlert                    # ProgressGuardian detection (tier 1/2/3)
+CompressionStarted
+CompressionCompleted
+```
+
+Each event in a family shares an **ordering invariant** (the
+"what comes before/after" of Family B vs Family C is
+load-bearing).
+
+### Same philosophy as `kind` registry
+
+> **`kind` registry governs "what's in the ledger".**
+> **EventCatalog governs "what's broadcast on the wire".**
+> **Both are append-only vocabularies. Neither is a code
+> skeleton — entries are registered, not extended.**
+
+Both files live in the runtime config; both are validated
+at startup; both reject undeclared events. The runtime
+**does not invent** events that aren't in the catalog.
+
+### EventOrderingChecker — the executable version
+
+The catalog's "order constraint" column is a **declaration**.
+The runtime's `EventOrderingChecker` is the **executable
+version** — it consumes the event stream and asserts the
+declared order holds. Examples:
+
+| Constraint | What the checker verifies |
+|-----------|---------------------------|
+| `ToolCallStart → OutputDelta* → ToolCallEnd` (per call_id) | every `ToolCallEnd` has a preceding `Start` for the same `call_id`; intermediate `OutputDelta`s come between |
+| `IterationStart → ... → IterationEnd` | every `End` has a preceding `Start` |
+| `ProgressAlert` after persistent useless-work signal | `Alert` doesn't fire on a single round of noise; the checker asserts the trigger condition holds |
+| `RateWait` precedes `ModelRetry` | the retry's reason is "we waited"; the order is the message |
+
+> **Lesson from grok's DrainBarrier:** event ordering is
+> **easy to get wrong in practice**. The checker is the
+> test-suite that catches it. Property tests over the
+> catalog's order constraints are mandatory.
+
+### Event vs ledger — don't mix them
+
+Many events correspond to ledger entries (e.g. `ToolCallEnd`
+→ `tool.result` row), but the **separation is load-bearing**:
+
+| | Event | Ledger entry |
+|---|-------|--------------|
+| **Purpose** | Live signal | Source of truth |
+| **Completeness** | Partial / streaming OK | Full row, atomic |
+| **Loss** | Allowed (lossy event bus) | Forbidden (append-only) |
+| **Consumer** | UI / monitor / channel adapter | Audit / recovery / replay |
+| **Timing** | Live — "now happening" | After — "happened" |
+
+> **Events are what the system is doing right now. The
+> ledger is what happened. Both are needed; both are
+> bounded; both are documented; the same facts flow through
+> them but at different times.**
+
+### Cross-references
+
+- `loop.md` "Two protocols — event stream + ledger stream" —
+  the channel `AgentEvent` flows on.
+- `loop.md` "Layer reversibility" — the event stream is
+  lossy (acceptable); the ledger is not.
+- `ledger.md` "Entry Kinds — ten categories" — the
+  complement registry for the durable side.
+- `provider-adapter.md` "Outcome kinds" — the 8 kinds the
+  adapter emits onto the event stream.
+- `effect-layer.md` "Tool-call event contract" — the four
+  sites that emit Family C events.
+
 ## Convergence audit — `turn.loop` design closed
 
 The `turn_loop` skeleton has reached **architectural
