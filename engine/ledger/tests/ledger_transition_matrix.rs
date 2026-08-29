@@ -13,14 +13,16 @@ fn fact(id: &str, kind: &str) -> FactDraft {
         || kind.starts_with("turn.")
         || kind.starts_with("execution.")
         || kind.starts_with("model.")
-        || kind.starts_with("effect.");
+        || kind.starts_with("effect.")
+        || kind.starts_with("knowledge.");
     FactDraft {
         fact_id: FactId::try_from(id).unwrap(),
         turn_id: lifecycle.then(|| TurnId::try_from("turn").unwrap()),
         execution_id: (kind == "tool.preparation_rejected"
             || kind.starts_with("execution.")
             || kind.starts_with("model.")
-            || kind.starts_with("effect."))
+            || kind.starts_with("effect.")
+            || kind.starts_with("knowledge."))
         .then(|| ExecutionId::try_from("execution").unwrap()),
         model_request_id: (kind == "tool.preparation_rejected" || kind.starts_with("model."))
             .then(|| ModelRequestId::try_from("request").unwrap()),
@@ -277,6 +279,48 @@ fn every_effect_terminal_and_receipt_path_is_explicit() {
         "effect.started",
         "effect.uncertain",
         "effect.observation",
+    ]);
+}
+
+#[test]
+fn every_knowledge_terminal_requires_requested_and_exact_dispatch_state() {
+    assert_valid(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "knowledge.requested",
+        "knowledge.dispatched",
+        "knowledge.completed",
+        "execution.completed",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "knowledge.completed",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "knowledge.requested",
+        "knowledge.completed",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "knowledge.requested",
+        "knowledge.dispatched",
+        "knowledge.completed",
+        "knowledge.completed",
+    ]);
+    assert_transition_error(&[
+        "session.opened",
+        "turn.started",
+        "execution.started",
+        "knowledge.requested",
+        "execution.completed",
     ]);
 }
 

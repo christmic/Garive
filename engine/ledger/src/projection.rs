@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
@@ -49,6 +49,14 @@ struct InteractionRecord {
     terminal: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct KnowledgeRecord {
+    execution: ExecutionId,
+    request_digest: String,
+    dispatch_attempts: BTreeSet<String>,
+    terminal: bool,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SessionProjection {
     opened: bool,
@@ -66,6 +74,7 @@ pub(crate) struct SessionProjection {
     tool_reconciled_observations: BTreeMap<ToolInvocationId, Value>,
     suspensions: BTreeMap<TurnId, String>,
     interactions: BTreeMap<String, InteractionRecord>,
+    knowledge: BTreeMap<String, KnowledgeRecord>,
 }
 
 impl SessionProjection {
@@ -127,6 +136,9 @@ impl SessionProjection {
             "tool.preparation_rejected" => self.reject_tool_preparation(fact),
             "interaction.requested" => self.request_interaction(fact),
             "interaction.resolved" | "interaction.cancelled" => self.finish_interaction(fact),
+            "knowledge.requested" => self.request_knowledge(fact),
+            "knowledge.dispatched" => self.dispatch_knowledge(fact),
+            "knowledge.completed" | "knowledge.failed" => self.terminal_knowledge(fact),
             "context.summary" | "privacy.redacted" => Ok(()),
             _ => Ok(()),
         }
@@ -335,6 +347,7 @@ impl SessionProjection {
             return Err(LedgerError::InvalidTransition);
         }
         if self.has_recovery_pending_invocation(Some(execution))
+            || self.has_pending_knowledge(execution)
             || (next != ExecutionState::Suspended && self.has_pending_interaction(execution))
         {
             return Err(LedgerError::InvalidTransition);
@@ -687,6 +700,79 @@ impl SessionProjection {
                 .tools
                 .values()
                 .any(|(owner, state)| pending(owner, *state))
+    }
+
+    fn request_knowledge(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let execution = required(&fact.execution_id)?.clone();
+        let value = payload(fact)?;
+        let request_id = text(&value, "request_id")?.to_owned();
+        let record = KnowledgeRecord {
+            execution,
+            request_digest: text(&value, "request_digest")?.to_owned(),
+            dispatch_attempts: BTreeSet::new(),
+            terminal: false,
+        };
+        if self.knowledge.insert(request_id, record).is_some() {
+            Err(LedgerError::InvalidTransition)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn dispatch_knowledge(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let execution = required(&fact.execution_id)?;
+        let value = payload(fact)?;
+        let record = self
+            .knowledge
+            .get_mut(text(&value, "request_id")?)
+            .ok_or(LedgerError::InvalidTransition)?;
+        let attempt = text(&value, "dispatch_attempt_id")?.to_owned();
+        if &record.execution != execution
+            || record.terminal
+            || record.request_digest != text(&value, "request_digest")?
+            || !record.dispatch_attempts.insert(attempt)
+        {
+            Err(LedgerError::InvalidTransition)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn terminal_knowledge(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let execution = required(&fact.execution_id)?;
+        let value = payload(fact)?;
+        let record = self
+            .knowledge
+            .get_mut(text(&value, "request_id")?)
+            .ok_or(LedgerError::InvalidTransition)?;
+        let dispatched = !record.dispatch_attempts.is_empty();
+        let valid_phase = if fact.kind.as_str() == "knowledge.completed" {
+            dispatched
+        } else {
+            match text(&value, "phase")? {
+                "pre_dispatch" => !dispatched,
+                "dispatched" | "response_validation" => dispatched,
+                _ => false,
+            }
+        };
+        if &record.execution != execution
+            || record.terminal
+            || record.request_digest != text(&value, "request_digest")?
+            || !valid_phase
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.terminal = true;
+        Ok(())
+    }
+
+    fn has_pending_knowledge(&self, execution: &ExecutionId) -> bool {
+        self.knowledge
+            .values()
+            .any(|value| &value.execution == execution && !value.terminal)
     }
 
     fn has_pending_interaction(&self, execution: &ExecutionId) -> bool {
