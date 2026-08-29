@@ -48,10 +48,13 @@ evaluation-boundaries:
 creativity-boundaries:
     @if rg -n -v '^(//|#!\[|[[:space:]]*$$)' engine/creativity/src; then echo 'Creativity behavior remains gated; its Engine crate must stay empty' >&2; exit 1; fi
 
+creativity-publication-boundaries:
+    @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY|api[_-]?key' experiments/creativity-baseline-rs/src/model_ports.rs experiments/creativity-baseline-rs/src/publication_model.rs experiments/creativity-baseline-rs/src/publication_evidence.rs experiments/creativity-baseline-rs/src/system_credential.rs; then echo 'CR-B configuration and credentials must enter explicitly' >&2; exit 1; fi
+
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries creativity-boundaries
+conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries creativity-boundaries creativity-publication-boundaries
     cargo test -p garive-config -p garive-core -p garive-eval -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :scheduler:test :skill:test :tools:test
 

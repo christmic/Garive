@@ -1,0 +1,50 @@
+{
+  "corpus_path": "spec/fixtures/eval/creativity-corpus-v1.json",
+  "evidence_path": "experiments/creativity-baseline-rs/evidence/publication-v1.json",
+  "garive_revision": "replace-with-exact-clean-head",
+  "runner_revision": "creativity-publication-cr-b-v1",
+  "dirty": false,
+  "seed": 20260830,
+  "git": {
+    "executable": "/usr/bin/git",
+    "repository_path": ".",
+    "timeout_ms": 2000,
+    "max_executable_bytes": 104857600,
+    "max_stdout_bytes": 4096,
+    "max_stderr_bytes": 4096
+  },
+  "generator": {
+    "protocol": "responses_compatible",
+    "target_id": "replace-generator-target",
+    "model_id": "replace-generator-model",
+    "model_revision": "replace-generator-immutable-revision",
+    "endpoint": "https://generator.example/v1/responses",
+    "credential_ref": "replace-generator-credential-reference",
+    "credential_header_name": "authorization",
+    "credential_header_prefix": "Bearer ",
+    "non_secret_headers": [],
+    "messages_version_header_name": null,
+    "messages_protocol_version": null,
+    "max_output_tokens": 4096,
+    "connect_timeout_ms": 5000,
+    "request_timeout_ms": 120000,
+    "max_response_bytes": 1048576
+  },
+  "evaluator": {
+    "protocol": "messages_compatible",
+    "target_id": "replace-evaluator-target",
+    "model_id": "replace-evaluator-model",
+    "model_revision": "replace-evaluator-immutable-revision",
+    "endpoint": "https://evaluator.example/v1/messages",
+    "credential_ref": "replace-evaluator-credential-reference",
+    "credential_header_name": "x-api-key",
+    "credential_header_prefix": "",
+    "non_secret_headers": [],
+    "messages_version_header_name": "protocol-version",
+    "messages_protocol_version": "replace-explicit-protocol-version",
+    "max_output_tokens": 4096,
+    "connect_timeout_ms": 5000,
+    "request_timeout_ms": 120000,
+    "max_response_bytes": 1048576
+  }
+}
