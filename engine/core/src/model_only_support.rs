@@ -1,6 +1,6 @@
 use garive_llm::{
     ModelCancellation, ModelObserver, ModelRequest, ModelRequestId, ModelStreamEvent,
-    ObserverDecision, TokenCount,
+    ObserverDecision, TokenCount, ToolDescriptor,
 };
 
 use crate::{
@@ -16,6 +16,7 @@ pub(super) fn build_model_request(
     iteration: u32,
     request_ordinal: u32,
     target_index: usize,
+    tools: Vec<ToolDescriptor>,
 ) -> Result<(ModelRequest, String), ()> {
     let request_id = format!(
         "{}:{iteration}:{request_ordinal}",
@@ -34,7 +35,7 @@ pub(super) fn build_model_request(
                 ContextItem::RedactedItem { .. } => None,
             })
             .collect(),
-        tools: vec![],
+        tools,
         output: request.model_output.clone(),
         trace_metadata: vec![
             ("turn_id".into(), request.turn_id.as_str().into()),

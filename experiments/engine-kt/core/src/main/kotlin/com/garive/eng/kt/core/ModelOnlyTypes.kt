@@ -111,7 +111,13 @@ public data class UsageSummary(
     public val estimated: Boolean,
 )
 /** Requirement that keeps the durable Turn resumable. */
-public enum class SuspensionReason { PARTIAL_OUTPUT, RESOURCE_UNAVAILABLE }
+public enum class SuspensionReason {
+    APPROVAL_REQUIRED,
+    EXTERNAL_INPUT_REQUIRED,
+    OPERATOR_RECONCILIATION,
+    PARTIAL_OUTPUT,
+    RESOURCE_UNAVAILABLE,
+}
 /** Expected policy boundary that stops a Turn. */
 public enum class StopReason { ITERATION_LIMIT, TOKEN_LIMIT, DEADLINE, CANCELLED, RESOURCE_UNAVAILABLE }
 /** Non-success Execution failure classification. */

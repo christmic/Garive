@@ -211,6 +211,12 @@ pub struct UsageSummary {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Typed reason a turn remains open after the current execution closes.
 pub enum SuspensionReason {
+    /// A governed effect requires a durable approval response.
+    ApprovalRequired,
+    /// A governed effect requires typed external input.
+    ExternalInputRequired,
+    /// An uncertain effect requires operator evidence.
+    OperatorReconciliation,
     /// Valid partial model output requires later continuation.
     PartialOutput,
     /// No frozen model resource can currently serve the request.
@@ -344,6 +350,8 @@ pub enum PortFailure {
     Event,
     /// Logical clock dependency failed.
     Clock,
+    /// Durable governed-effect dependency failed.
+    Tool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

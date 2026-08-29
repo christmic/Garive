@@ -216,6 +216,19 @@ proven-safe retries within the same logical request and never rewrite intent.
 4. Core receives only a neutral observation, denial, required interaction, or
    operator-reconciliation suspension.
 
+The C3 `execute_model_only` entry remains an explicit no-tool capability. The
+C5 `execute_agent` entry receives the full exact C4 definitions plus a
+`GovernedEffectPort`; it never treats a model Tool Intent as an automatic
+failure merely because the earlier C3 slice had no effect port.
+
+Every governed port result includes the latest committed Session position.
+Core advances an Execution-local durable watermark monotonically and derives
+the next context surface through that position, so a committed tool
+observation can enter the next model request during the same disposable
+Execution. A regressing watermark is an invariant failure. This watermark is
+not resumable in-memory state: a later Execution still reconstructs it from
+the ledger.
+
 `ReplacementRequired` is not approval and does not mutate an authorized call.
 It rejects the old preparation and causes a new
 preparation/digest/invocation/authorization decision.

@@ -1,4 +1,11 @@
-use garive_llm::{InterruptionKind, InvokeOutcome, ModelItem, ModelPortFailure, RejectionKind};
+use garive_llm::{
+    InterruptionKind, InvokeOutcome, ModelCancellation, ModelItem, ModelPortFailure, RejectionKind,
+    ToolDescriptor,
+};
+use garive_tools::{
+    GovernedFailureCode, GovernedToolResult, InteractionKind, SuspensionRequirement, ToolCatalog,
+    ToolDefinition, ToolIntent,
+};
 
 use crate::{
     AgentEventKind, AgentExecutionPorts, AgentFailureReason, AgentOutcome, AgentTurnRequest,
@@ -20,6 +27,24 @@ pub async fn execute_model_only(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
 ) -> ExecutionReport {
+    execute_kernel(request, ports, &[], None).await
+}
+
+pub(crate) async fn execute_with_tools(
+    request: &AgentTurnRequest,
+    ports: &mut AgentExecutionPorts<'_>,
+    definitions: &[ToolDefinition],
+    effects: &dyn crate::GovernedEffectPort,
+) -> ExecutionReport {
+    execute_kernel(request, ports, definitions, Some(effects)).await
+}
+
+async fn execute_kernel(
+    request: &AgentTurnRequest,
+    ports: &mut AgentExecutionPorts<'_>,
+    definitions: &[ToolDefinition],
+    effects: Option<&dyn crate::GovernedEffectPort>,
+) -> ExecutionReport {
     let mut control = match prepare_control(request) {
         Ok(control) => control,
         Err(report) => return report,
@@ -29,6 +54,16 @@ pub async fn execute_model_only(
     let mut output_retries = 0;
     let mut target_index = 0;
     let mut request_ordinal = 0u32;
+    let mut through_position = request.cursor.last_durable_position;
+    let catalog = match ToolCatalog::new(definitions.iter().cloned()) {
+        Ok(value) => value,
+        Err(_) => return invalid_tool_setup(request, ports, &mut control, &usage),
+    };
+    let tool_descriptors: Vec<ToolDescriptor> =
+        match definitions.iter().map(tool_descriptor).collect() {
+            Ok(value) => value,
+            Err(()) => return invalid_tool_setup(request, ports, &mut control, &usage),
+        };
 
     if emit(ports, request, AgentEventKind::ExecutionStarted).is_err() {
         return finish(
@@ -121,10 +156,9 @@ pub async fn execute_model_only(
                 },
             );
         }
-        let surface = match ports
-            .context
-            .derive(&request.context_request, rebuild_attempt)
-        {
+        let mut context_request = request.context_request.clone();
+        context_request.through_position = through_position;
+        let surface = match ports.context.derive(&context_request, rebuild_attempt) {
             Ok(surface) => surface,
             Err(crate::ContextPortError::RequiredFactsExceedBudget) => {
                 return finish(
@@ -194,21 +228,27 @@ pub async fn execute_model_only(
                 );
             }
         };
-        let (model_request, request_id) =
-            match build_model_request(request, surface, iteration, request_ordinal, target_index) {
-                Ok(value) => value,
-                Err(()) => {
-                    return finish(
-                        request,
-                        ports,
-                        &mut control,
-                        &usage,
-                        AgentOutcome::Failed {
-                            reason: AgentFailureReason::InvalidInput,
-                        },
-                    );
-                }
-            };
+        let (model_request, request_id) = match build_model_request(
+            request,
+            surface,
+            iteration,
+            request_ordinal,
+            target_index,
+            tool_descriptors.clone(),
+        ) {
+            Ok(value) => value,
+            Err(()) => {
+                return finish(
+                    request,
+                    ports,
+                    &mut control,
+                    &usage,
+                    AgentOutcome::Failed {
+                        reason: AgentFailureReason::InvalidInput,
+                    },
+                );
+            }
+        };
         if emit(
             ports,
             request,
@@ -286,20 +326,6 @@ pub async fn execute_model_only(
                 }
                 if items
                     .iter()
-                    .any(|item| matches!(item, ModelItem::ToolIntent { .. }))
-                {
-                    return finish(
-                        request,
-                        ports,
-                        &mut control,
-                        &usage,
-                        AgentOutcome::Failed {
-                            reason: AgentFailureReason::RequiredCapabilityUnavailable,
-                        },
-                    );
-                }
-                if items
-                    .iter()
                     .any(|item| matches!(item, ModelItem::ToolObservation { .. }))
                 {
                     return finish(
@@ -311,6 +337,39 @@ pub async fn execute_model_only(
                             reason: AgentFailureReason::InvalidModelOutput,
                         },
                     );
+                }
+                if items
+                    .iter()
+                    .any(|item| matches!(item, ModelItem::ToolIntent { .. }))
+                {
+                    let Some(effects) = effects else {
+                        return finish(
+                            request,
+                            ports,
+                            &mut control,
+                            &usage,
+                            AgentOutcome::Failed {
+                                reason: AgentFailureReason::RequiredCapabilityUnavailable,
+                            },
+                        );
+                    };
+                    match govern_tool_intents(
+                        &items,
+                        &catalog,
+                        effects,
+                        ports.cancellation,
+                        through_position,
+                    )
+                    .await
+                    {
+                        ToolStep::Continue { position } => {
+                            through_position = position;
+                            continue;
+                        }
+                        ToolStep::Terminal(outcome) => {
+                            return finish(request, ports, &mut control, &usage, outcome);
+                        }
+                    }
                 }
                 return finish(
                     request,
@@ -462,4 +521,105 @@ pub async fn execute_model_only(
             }
         }
     }
+}
+
+enum ToolStep {
+    Continue { position: u64 },
+    Terminal(AgentOutcome),
+}
+
+async fn govern_tool_intents(
+    items: &[ModelItem],
+    catalog: &ToolCatalog,
+    effects: &dyn crate::GovernedEffectPort,
+    cancellation: &dyn ModelCancellation,
+    mut position: u64,
+) -> ToolStep {
+    for item in items {
+        let ModelItem::ToolIntent {
+            model_call_id,
+            tool_name,
+            arguments_json,
+        } = item
+        else {
+            continue;
+        };
+        if cancellation.is_cancelled() {
+            return ToolStep::Terminal(AgentOutcome::Stopped {
+                reason: StopReason::Cancelled,
+            });
+        }
+        let intent = ToolIntent::new(model_call_id, tool_name, arguments_json);
+        let committed = match catalog.prepare(&intent) {
+            Ok(prepared) => effects.invoke(&prepared).await,
+            Err(error) => effects.reject(&intent, &error).await,
+        };
+        let Ok(committed) = committed else {
+            return ToolStep::Terminal(AgentOutcome::Failed {
+                reason: AgentFailureReason::PortFailure,
+            });
+        };
+        if committed.through_position < position {
+            return ToolStep::Terminal(AgentOutcome::Failed {
+                reason: AgentFailureReason::InvariantViolation,
+            });
+        }
+        position = committed.through_position;
+        match committed.result {
+            GovernedToolResult::Observation(_) => {}
+            GovernedToolResult::Suspend(requirement) => {
+                let reason = match requirement {
+                    SuspensionRequirement::Interaction(request) => match request.kind {
+                        InteractionKind::Approval => SuspensionReason::ApprovalRequired,
+                        InteractionKind::ExternalInput => SuspensionReason::ExternalInputRequired,
+                    },
+                    SuspensionRequirement::OperatorReconciliation { .. } => {
+                        SuspensionReason::OperatorReconciliation
+                    }
+                };
+                return ToolStep::Terminal(AgentOutcome::Suspended {
+                    reason,
+                    partial_items: items.to_vec(),
+                    last_durable_position: position,
+                });
+            }
+            GovernedToolResult::Fail(failure) => {
+                let reason = match failure.code {
+                    GovernedFailureCode::InvalidModelOutput => {
+                        AgentFailureReason::InvalidModelOutput
+                    }
+                    _ => AgentFailureReason::InvariantViolation,
+                };
+                return ToolStep::Terminal(AgentOutcome::Failed { reason });
+            }
+        }
+    }
+    ToolStep::Continue { position }
+}
+
+fn tool_descriptor(definition: &ToolDefinition) -> Result<ToolDescriptor, ()> {
+    Ok(ToolDescriptor {
+        name: definition.name().to_owned(),
+        description: definition.description().to_owned(),
+        definition_revision: definition.revision().to_owned(),
+        input_schema_json: serde_json::to_string(definition.input_schema()).map_err(|_| ())?,
+        strict: true,
+    })
+}
+
+fn invalid_tool_setup(
+    request: &AgentTurnRequest,
+    ports: &mut AgentExecutionPorts<'_>,
+    control: &mut crate::ExecutionControl,
+    usage: &UsageAccumulator,
+) -> ExecutionReport {
+    finish(
+        request,
+        ports,
+        control,
+        usage,
+        AgentOutcome::Failed {
+            reason: AgentFailureReason::InvalidInput,
+        },
+    )
 }

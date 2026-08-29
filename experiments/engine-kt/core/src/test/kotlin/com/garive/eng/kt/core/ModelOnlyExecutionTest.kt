@@ -234,6 +234,9 @@ class ModelOnlyExecutionTest {
     private fun render(outcome: AgentOutcome): String = when (outcome) {
         is AgentOutcome.Completed -> "completed"
         is AgentOutcome.Suspended -> when (outcome.reason) {
+            SuspensionReason.APPROVAL_REQUIRED -> "suspended:approval-required"
+            SuspensionReason.EXTERNAL_INPUT_REQUIRED -> "suspended:external-input-required"
+            SuspensionReason.OPERATOR_RECONCILIATION -> "suspended:operator-reconciliation"
             SuspensionReason.PARTIAL_OUTPUT -> "suspended:partial-output"
             SuspensionReason.RESOURCE_UNAVAILABLE -> "suspended:resource-unavailable"
         }

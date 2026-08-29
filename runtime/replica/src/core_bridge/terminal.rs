@@ -132,6 +132,9 @@ fn token_count(count: TokenCount) -> Value {
 
 const fn suspension_reason(reason: SuspensionReason) -> &'static str {
     match reason {
+        SuspensionReason::ApprovalRequired => "approval_required",
+        SuspensionReason::ExternalInputRequired => "external_input_required",
+        SuspensionReason::OperatorReconciliation => "operator_reconciliation",
         SuspensionReason::PartialOutput => "partial_output",
         SuspensionReason::ResourceUnavailable => "resource_unavailable",
     }
