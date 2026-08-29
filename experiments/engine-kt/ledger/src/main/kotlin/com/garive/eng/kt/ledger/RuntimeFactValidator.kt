@@ -14,13 +14,14 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     val skillFamily = kind.startsWith("skill.")
     val memoryFamily = kind.startsWith("memory.")
     val knowledgeFamily = kind.startsWith("knowledge.")
+    val schedulerFamily = kind.startsWith("schedule.")
     val memoryTombstone = kind == "memory.tombstoned"
     val rejection = kind == "tool.preparation_rejected"
-    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !rejection) {
+    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !rejection) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     if (fact.schemaVersion != 1u) return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
-    if ((fact.turnId != null) != !memoryTombstone ||
+    if ((fact.turnId != null) != !(memoryTombstone || schedulerFamily) ||
         (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || skillFamily || knowledgeFamily || rejection || memoryFamily && !memoryTombstone) ||
         (fact.modelRequestId != null) != (modelFamily || rejection) ||
         (fact.toolInvocationId != null) != effectFamily
@@ -30,6 +31,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     return try {
         val payload = Json.parseToJsonElement(fact.payload.json).asObject()
         when {
+            schedulerFamily -> validateSchedulerFact(kind, payload)
             knowledgeFamily -> validateKnowledgeFact(kind, payload)
             memoryFamily -> validateMemoryFact(kind, payload)
             skillFamily -> validateSkillFact(kind, payload)
