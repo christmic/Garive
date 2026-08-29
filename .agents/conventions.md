@@ -135,7 +135,10 @@ default unless explicitly referenced.
 ## Security
 
 - No API keys, tokens, credentials, or private endpoints in any
-  tracked file. Use environment variables or a local `.env` that's
-  git-ignored.
+  tracked file. Shipping code receives configuration explicitly from
+  the Runtime and secrets through an injected OS credential resolver.
+  A git-ignored local file may support developer tooling, but Engine,
+  protocol adapter, Provider mapping, and SDK modules must not read
+  process environment variables for configuration discovery.
 - No customer data, internal hostnames, or proprietary URLs in
   examples unless they are obviously placeholder values.

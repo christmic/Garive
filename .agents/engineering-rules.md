@@ -20,6 +20,9 @@
   semantics from intuition or "compatible" third-party providers.
 - Mock fixtures must use official response shapes. A fixture invented
   only to fit an implementation is not evidence.
+- Toolchains, SDKs, and dependencies follow
+  `.agents/dependency-versions.md`; newest-stable is an evidence-backed
+  compatibility decision, not a dynamic version range.
 
 ## Verification Gates
 

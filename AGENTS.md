@@ -92,6 +92,7 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 ## Repository Rules (apply repo-wide)
 
 @.agents/engineering-rules.md
+@.agents/dependency-versions.md
 @.agents/git-workflow.md
 @.agents/conventions.md
 @.agents/multi-language.md
