@@ -1228,6 +1228,7 @@ dependencies = [
  "garive-core",
  "garive-ledger",
  "garive-llm",
+ "garive-memory",
  "garive-provider-anthropic",
  "garive-provider-compatible",
  "garive-provider-openai",

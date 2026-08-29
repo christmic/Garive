@@ -336,6 +336,18 @@ pub struct MemoryTombstone {
     pub revision_id: String,
 }
 
+impl MemoryTombstone {
+    /// Returns the stable logical record target.
+    pub fn record_id(&self) -> &str {
+        &self.record_id
+    }
+
+    /// Returns the exact active revision target.
+    pub fn revision_id(&self) -> &str {
+        &self.revision_id
+    }
+}
+
 /// Deterministic append-only record state used by Runtime projections.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MemoryState {
