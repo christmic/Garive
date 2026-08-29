@@ -165,7 +165,7 @@ pub fn plan_continue_turn(
             "turn.started",
             Some(&command.turn_id),
             None,
-            json!({"command_id":command.command_id.as_str(),"kind":"continue","agent_instance_id":state.agent_instance_id.as_str(),"definition_id":state.definition_id.as_str(),"definition_revision":state.definition_revision.as_str(),"snapshot_digest":state.snapshot_digest,"trusted_input_digest":state.trusted_input_digest,"prior_suspension_id":state.suspension_id}),
+            json!({"command_id":command.command_id.as_str(),"kind":"continue","agent_instance_id":state.agent_instance_id.as_str(),"definition_id":state.definition_id.as_str(),"definition_revision":state.definition_revision.as_str(),"snapshot_digest":state.snapshot_digest,"trusted_input_digest":state.trusted_input_digest,"prior_suspension_id":state.suspension_id,"expected_session_version":command.expected_session_version}),
             &command.recorded_at,
         )?,
         fact(

@@ -25,12 +25,15 @@ internal fun validateTurnFact(kind: String, value: JsonObject) {
 private fun JsonObject.started() {
     exact(
         setOf("command_id", "kind", "agent_instance_id", "definition_id", "definition_revision", "snapshot_digest", "trusted_input_digest"),
-        setOf("prior_suspension_id"),
+        setOf("prior_suspension_id", "expected_session_version"),
     )
     listOf("command_id", "agent_instance_id", "definition_id", "definition_revision").forEach(::nonEmpty)
     digest("snapshot_digest")
     digest("trusted_input_digest")
     conditionalIdentity("kind", "continue", "prior_suspension_id", setOf("start", "continue"))
+    val continuation = enum("kind", setOf("start", "continue")) == "continue"
+    require(continuation == containsKey("expected_session_version"))
+    if (continuation) ulong("expected_session_version", nonzero = true)
 }
 
 private fun JsonObject.input() {

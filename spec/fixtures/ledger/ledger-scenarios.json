@@ -33,7 +33,7 @@
       "operations": [
         {"commit": {"expected": 0, "facts": [{"id": "f1", "kind": "session.opened"}, {"id": "f2", "kind": "turn.started", "turn": "t1"}, {"id": "f3", "kind": "execution.started", "turn": "t1", "execution": "e1"}]}},
         {"commit": {"expected": 1, "facts": [{"id": "f4", "kind": "execution.suspended", "turn": "t1", "execution": "e1"}, {"id": "f5", "kind": "turn.suspended", "turn": "t1", "payload_overrides": {"execution_id": "e1"}}]}},
-        {"commit": {"expected": 2, "facts": [{"id": "f6", "kind": "turn.input", "turn": "t1", "payload_overrides": {"input_kind": "external_input", "suspension_id": "suspension"}}, {"id": "f7", "kind": "turn.started", "turn": "t1", "payload_overrides": {"kind": "continue", "prior_suspension_id": "suspension"}}, {"id": "f8", "kind": "execution.started", "turn": "t1", "execution": "e2"}]}}
+        {"commit": {"expected": 2, "facts": [{"id": "f6", "kind": "turn.input", "turn": "t1", "payload_overrides": {"input_kind": "external_input", "suspension_id": "suspension"}}, {"id": "f7", "kind": "turn.started", "turn": "t1", "payload_overrides": {"kind": "continue", "prior_suspension_id": "suspension", "expected_session_version": 2}}, {"id": "f8", "kind": "execution.started", "turn": "t1", "execution": "e2"}]}}
       ],
       "expected": {"results": ["committed:1:1-3", "committed:2:4-5", "committed:3:6-8"], "version": 3, "fact_count": 8, "uncertain": []}
     },
@@ -52,7 +52,7 @@
         {"commit": {"expected": 1, "facts": [
           {"id": "f8", "kind": "interaction.resolved", "turn": "t1", "execution": "e1", "tool": "tool1"},
           {"id": "f9", "kind": "turn.input", "turn": "t1", "payload_overrides": {"input_kind": "external_input", "suspension_id": "suspension"}},
-          {"id": "f10", "kind": "turn.started", "turn": "t1", "payload_overrides": {"kind": "continue", "prior_suspension_id": "suspension"}},
+          {"id": "f10", "kind": "turn.started", "turn": "t1", "payload_overrides": {"kind": "continue", "prior_suspension_id": "suspension", "expected_session_version": 1}},
           {"id": "f11", "kind": "execution.started", "turn": "t1", "execution": "e2"}
         ]}}
       ],

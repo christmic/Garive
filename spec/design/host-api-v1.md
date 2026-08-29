@@ -57,6 +57,9 @@ Every mutation requires exactly one `Idempotency-Key` header containing 1–128
 visible ASCII characters. The key becomes the C6 Runtime command identity.
 Identical replay returns the original identities and positions; reusing a key
 with different semantics returns `command_conflict` and commits nothing.
+The continuation `turn.started` fact binds `expected_session_version` so an
+identical command remains distinguishable from reuse against another durable
+version after restart.
 
 Start and continuation responses are emitted after their transaction commits
 and before later execution success is assumed. A configured `TurnDispatcher`

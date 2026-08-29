@@ -39,7 +39,7 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "snapshot_digest",
             "trusted_input_digest",
         ],
-        &["prior_suspension_id"],
+        &["prior_suspension_id", "expected_session_version"],
     )?;
     for key in [
         "command_id",
@@ -57,7 +57,24 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
         "continue",
         "prior_suspension_id",
         &["start", "continue"],
-    )
+    )?;
+    conditional_unsigned(value, "kind", "continue", "expected_session_version")
+}
+
+fn conditional_unsigned(
+    value: &Map<String, Value>,
+    enum_key: &str,
+    requiring: &str,
+    field: &str,
+) -> Result<(), LedgerError> {
+    match (
+        value.get(enum_key).and_then(Value::as_str) == Some(requiring),
+        value.get(field),
+    ) {
+        (true, Some(_)) => unsigned(value, field, true),
+        (false, None) => Ok(()),
+        _ => Err(LedgerError::InvalidFact),
+    }
 }
 
 fn input(value: &Map<String, Value>) -> Result<(), LedgerError> {
