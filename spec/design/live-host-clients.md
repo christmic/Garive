@@ -57,9 +57,9 @@ the fake `output.delta` presentation events.
 | Desktop | Typed IPC starts/reuses embedded R1; React consumes typed command/event results. |
 | Android/iOS | KMP owns Host request/event reduction; native UIs render shared state only. |
 
-Fixture clients may remain in test support but cannot be imported by a migrated
-shipping entry point. `FakeHost` and fake protobuf messages are removed after
-the final consumer migrates.
+Fixture transports may remain in test support but cannot be imported by a
+shipping entry point. `FakeHost`, its protobuf messages and scenario fixture
+were removed after the final consumer migrated.
 
 ## Bounds and privacy
 

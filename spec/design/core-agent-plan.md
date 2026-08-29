@@ -161,10 +161,8 @@ require independent Rust evidence.
 
 Provider adapters, the experimental Kotlin PostgreSQL verification host and
 executable client skeletons are governed by `agent-platform-delivery.md`.
-Product clients still use the versioned fake Host until a separate Runtime
-composition/credential-provisioning slice replaces it; H1 completion alone
-does not authorize clients to construct secrets or execution ports.
-That boundary is now specified by
+H1 completion alone does not authorize clients to construct secrets or
+execution ports. The replacement boundary is specified by
 [`local-runtime-composition.md`](local-runtime-composition.md) and
 [`live-host-clients.md`](live-host-clients.md); implementation must preserve
 their explicit configuration, reconstruction and retry rules.

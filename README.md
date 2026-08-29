@@ -21,8 +21,9 @@ only.
   exact error policies without loading configuration or executing HTTP.
 - Host API v1 has generated Rust, Kotlin and KMP bindings plus semantic
   round-trips.
-- CLI, TUI, Web, Tauri Desktop, Android and iOS provide executable fake-host
-  shells; Android APK verification still requires a local SDK.
+- CLI, TUI and Web consume live H1; Tauri Desktop embeds R1; Android and iOS
+  consume the shared live KMP H1 client. Android APK verification still
+  requires a local SDK.
 
 ## Repository map
 

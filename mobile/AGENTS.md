@@ -75,8 +75,8 @@ Each slice lands Red-Green-Refactor per `.agents/ddd.md`:
 - **3c. Refactor.** Move invariants into the aggregate root,
   push I/O behind a repository interface.
 
-The first Android Compose and iOS SwiftUI shells reproduce the Host API fake
-session. iOS is verified with SwiftPM; Android requires a local Android SDK.
+Android Compose and iOS SwiftUI call the shared live H1 client. KMP and iOS are
+verified natively; the Android APK gate requires a local Android SDK.
 
 ## Build
 

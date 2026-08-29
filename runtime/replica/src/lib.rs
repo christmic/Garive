@@ -5,7 +5,6 @@
 
 mod core_bridge;
 mod delegation_runtime;
-mod fake_host;
 mod live_host;
 mod local_composition;
 mod local_recovery;
@@ -46,7 +45,6 @@ pub use delegation_runtime::{
     plan_delegation_child_terminal, plan_delegation_denial, plan_delegation_observation,
     plan_delegation_request, DelegationChildStartCommand, DelegationRuntimeError,
 };
-pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use live_host::{
     CommittedTurn, CreateSessionResponse, HostClock, HostEventPage, InstalledAgent, LiveHost,
     LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,

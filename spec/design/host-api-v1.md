@@ -125,10 +125,10 @@ Continuation `turn.started` facts do not create a second UI Turn. Unknown and
 internal facts remain durable audit truth but are omitted from this public
 projection.
 
-H1 does **not** claim replayable token deltas. The old fake-shell
-`output.delta` events remain fixture-only presentation input. A future live
-delta slice requires an accepted persistence/backpressure/redaction contract;
-it cannot reuse ephemeral callbacks while claiming durable positions.
+H1 does **not** claim replayable token deltas. The retired fake-shell
+`output.delta` events were never part of H1. A future live delta slice requires
+an accepted persistence/backpressure/redaction contract; it cannot reuse
+ephemeral callbacks while claiming durable positions.
 
 ## Execution and recovery boundary
 
@@ -141,11 +141,10 @@ authoritative.
 H1-T supplies one Runtime-owned model HTTP transport. H1 neither performs
 provider retry nor reads provider configuration in route handlers.
 
-## Fake-host compatibility
+## Client compatibility
 
-`spec/fixtures/host/fake-session.json` remains the deterministic pre-network UI
-fixture. It is not durable Host evidence and its contiguous positions and two
-`output.delta` records must not be generalized to H1.
+The retired pre-network scenario and its `output.delta` event are not part of
+H1. App conformance uses `live-host-client-v1.json`.
 
 `spec/fixtures/host/live-host-v1.json` freezes command replay/conflict, event
 projection, gaps, cancellation wording and every stable error code. Native

@@ -1,7 +1,4 @@
-plugins { application }
-
 dependencies {
-    implementation(project(":proto"))
     implementation(project(":core"))
     implementation(project(":ledger"))
     implementation(project(":persistence-postgres"))
@@ -10,5 +7,3 @@ dependencies {
     testImplementation("io.zonky.test:embedded-postgres:2.2.2")
     testImplementation("io.zonky.test.postgres:embedded-postgres-binaries-darwin-arm64v8:18.4.0")
 }
-
-application { mainClass.set("com.garive.eng.kt.host.MainKt") }

@@ -21,24 +21,6 @@ message HostEventV1 {
   string text = 7;
 }
 
-// Fixture-backed command shape used by Host shell conformance tests.
-message FakeHostCommandV1 {
-  // Agent definition selected by the fixture.
-  string agent_definition_id = 1;
-  // Exact trusted input accepted by the fixture.
-  string text = 2;
-}
-
-// Complete deterministic fake Host scenario.
-message FakeHostScenarioV1 {
-  // Exact Host API version used throughout the scenario.
-  string api_version = 1;
-  // Single command admitted by the fixture.
-  FakeHostCommandV1 command = 2;
-  // Ordered event stream returned for the command.
-  repeated HostEventV1 events = 3;
-}
-
 // Creates one durable Session for an installed Agent definition.
 message CreateSessionRequestV1 {
   // Installed definition selected by the caller.

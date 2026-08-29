@@ -62,7 +62,7 @@ experiments/
     adapter-openai-responses/   Kotlin Responses-compatible protocol adapter
     adapter-anthropic-messages/ Kotlin Messages-compatible protocol adapter
     proto/                      generated experimental bindings
-    server-host/                executable verification fixture
+    server-host/                PostgreSQL recovery verification boundary
 
 cli/                            Rust one-shot host client
 tui/                            Rust interactive terminal host client
@@ -209,7 +209,7 @@ Each surface starts with a deliberately bounded executable slice:
 | TUI | Display ordered durable H1 events, cursor and one terminal state. |
 | Web | Use a strict injectable H1 HTTP/SSE client and render committed Session/Turn state. |
 | Desktop | Tauri backend embeds R1 and React consumes a typed terminal IPC result; backend configuration remains separate. |
-| Android | Compose app calls KMP fake Host client and renders terminal state. |
+| Android | Compose app calls the shared live KMP H1 client and renders terminal state. |
 | iOS | SwiftUI app calls the generated/shared bridge and renders terminal state. |
 
 Skeleton means runnable structure with a test, not empty directories or a

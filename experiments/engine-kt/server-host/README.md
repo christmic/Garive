@@ -1,13 +1,12 @@
-# Experimental Kotlin verification host
+# Experimental Kotlin PostgreSQL recovery host
 
-Executable JVM composition root. It depends inward on the portable Agent and
-ledger contracts and outward on the PostgreSQL/provider adapters. The current
-pre-network slice emits the generated Host API v1 fake scenario; production
-HTTP routing, credentials and deployment configuration remain Runtime work.
+JVM verification boundary for portable recovery decisions and the real
+PostgreSQL Ledger adapter. It is not a product server and does not implement
+HTTP routing or the Rust R1 composition.
 
-Run the verified shell with:
+Run its verified tests with:
 
 ```text
 java -classpath ../gradle/wrapper/gradle-wrapper.jar \
-  org.gradle.wrapper.GradleWrapperMain :server-host:run
+  org.gradle.wrapper.GradleWrapperMain :server-host:test
 ```
