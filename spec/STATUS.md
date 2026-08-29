@@ -88,6 +88,7 @@ planned without reopening a narrower completed row.
 
 ## See also
 
+- [`design/remaining-admission-audit.md`](design/remaining-admission-audit.md) — evidence-based decisions for every remaining gated/planned slice.
 - [`design/core-agent-plan.md`](design/core-agent-plan.md) — dependency DAG and work packages.
 - [`design/agent-platform-delivery.md`](design/agent-platform-delivery.md) — platform acceptance contract.
 - [`design/agent-capability-spec-set.md`](design/agent-capability-spec-set.md) — draft post-H1 capability review set.

@@ -135,7 +135,7 @@ buckets such as `common`, `manager`, `utils`, or `engine`.
 | Go gateway | planned | Activate after the Runtime host contract and first edge workflow exist. |
 | Desktop app | configured embedded Runtime | Tauri backend owns R1, strict typed IPC, bounded system configuration and OS credential resolution. |
 | Mobile app | live Host client shell | Shared KMP H1 client with Compose and SwiftUI consumers; Android APK evidence remains SDK-gated. |
-| SWE benchmark harness | deferred | Runnable Agent adapter and a reproducible baseline question. |
+| SWE benchmark harness | implemented | Strict official loading/evaluation boundary, bounded runner, explicit command ports and append-only evidence; real Docker publication remains externally gated. |
 
 Only slices listed in the cross-language matrix carry a conformance claim;
 directory similarity does not create production support or block Rust-only
