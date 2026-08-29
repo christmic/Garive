@@ -8,6 +8,7 @@ mod error;
 mod items;
 mod request;
 mod response;
+mod sse;
 
 pub use config::{Header, HttpRequest, ResponsesAdapter, ResponsesAdapterConfig};
 pub use error::ResponsesAdapterError;
@@ -25,3 +26,4 @@ pub use response::{
     ApiError, DecodedResponse, ErrorEnvelope, IncompleteDetails, InputTokenDetails,
     OutputTokenDetails, Response, ResponseError, ResponseObject, ResponseStatus, ResponseUsage,
 };
+pub use sse::{SseDecoder, SseFrame};
