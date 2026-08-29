@@ -2,7 +2,7 @@ use std::{error::Error, fmt};
 
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, ExecutionId, FactDraft, SessionId,
-    TurnId,
+    ToolInvocationId, TurnId,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -121,6 +121,69 @@ pub struct CancelTurnCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// Optional interaction response consumed by a continuation transaction.
+pub struct InteractionContinuation {
+    /// Prior Execution that requested the interaction.
+    pub execution_id: ExecutionId,
+    /// Effect invocation owning the interaction.
+    pub tool_invocation_id: ToolInvocationId,
+    /// Exact interaction identity.
+    pub interaction_id: String,
+    /// Prepared Call digest bound by the request.
+    pub prepared_digest: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// ContinueTurn input supplied by a Host after a typed suspension.
+pub struct ContinueTurnCommand {
+    /// Idempotency identity supplied by the caller.
+    pub command_id: RuntimeCommandId,
+    /// Owning Session.
+    pub session_id: SessionId,
+    /// Suspended Turn to reopen.
+    pub turn_id: TurnId,
+    /// Suspension identity the caller observed.
+    pub expected_suspension_id: String,
+    /// Session version the caller observed.
+    pub expected_session_version: u64,
+    /// Validated continuation UTF-8 content.
+    pub continuation_input: String,
+    /// Optional interaction binding consumed before reopening.
+    pub interaction: Option<InteractionContinuation>,
+    /// RFC 3339 observation time supplied by the Runtime clock port.
+    pub recorded_at: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Durable suspended state reconstructed from a fixed Ledger prefix.
+pub struct SuspendedTurnState {
+    /// Session version at the fixed prefix.
+    pub session_version: u64,
+    /// Suspended Turn identity.
+    pub turn_id: TurnId,
+    /// Exact suspension identity.
+    pub suspension_id: String,
+    /// Installed Agent instance retained from Turn start.
+    pub agent_instance_id: AgentInstanceId,
+    /// Exact definition identity retained from Turn start.
+    pub definition_id: AgentDefinitionId,
+    /// Exact definition revision retained from Turn start.
+    pub definition_revision: AgentDefinitionRevision,
+    /// Effective snapshot digest retained from Turn start.
+    pub snapshot_digest: String,
+    /// Original trusted-input digest retained from Turn start.
+    pub trusted_input_digest: String,
+    /// Fixed Ledger position used to rebuild the new cursor.
+    pub through_position: u64,
+    /// Cumulative completed iteration count.
+    pub completed_iterations: u64,
+    /// Number of prior Runtime recovery executions.
+    pub recovery_ordinal: u64,
+    /// Limits frozen for the fresh Execution.
+    pub limits: EffectiveRuntimeLimits,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Runtime-created identities and exact fact batch for one command.
 pub struct PlannedTurn {
     /// Runtime-created Turn identity.
@@ -136,6 +199,10 @@ pub struct PlannedTurn {
 pub enum RuntimeCommandError {
     /// A constructed command violates C6 input invariants.
     InvalidCommand,
+    /// Optimistic Session version is stale.
+    ConcurrentModification,
+    /// Expected suspension or Turn identity does not match durable state.
+    ContinuationMismatch,
 }
 
 impl RuntimeCommandError {
@@ -143,6 +210,8 @@ impl RuntimeCommandError {
     pub const fn code(self) -> &'static str {
         match self {
             Self::InvalidCommand => "invalid_command",
+            Self::ConcurrentModification => "concurrent_modification",
+            Self::ContinuationMismatch => "continuation_mismatch",
         }
     }
 }

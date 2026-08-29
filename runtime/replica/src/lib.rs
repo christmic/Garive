@@ -9,7 +9,8 @@ mod sqlite_ledger;
 
 pub use fake_host::{FakeHost, HostEvent, HostEventKind};
 pub use runtime_turn::{
-    plan_cancel_turn, plan_start_turn, CancelReason, CancelTurnCommand, EffectiveRuntimeLimits,
-    PlannedTurn, RuntimeCommandError, RuntimeCommandId, StartTurnCommand,
+    plan_cancel_turn, plan_continue_turn, plan_start_turn, CancelReason, CancelTurnCommand,
+    ContinueTurnCommand, EffectiveRuntimeLimits, InteractionContinuation, PlannedTurn,
+    RuntimeCommandError, RuntimeCommandId, StartTurnCommand, SuspendedTurnState,
 };
 pub use sqlite_ledger::{SqliteLedger, SqliteLedgerError};
