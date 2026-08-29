@@ -74,6 +74,14 @@ impl KnowledgeFilter {
     pub fn field(&self) -> &str {
         &self.field
     }
+    /// Returns the exact portable operator.
+    pub const fn operator(&self) -> KnowledgeFilterOperator {
+        self.operator
+    }
+    /// Returns the exact portable value.
+    pub const fn value(&self) -> &KnowledgeFilterValue {
+        &self.value
+    }
 }
 
 /// Exact request freshness requirement.
@@ -213,6 +221,10 @@ impl KnowledgeRequest {
     /// Returns query content.
     pub const fn query(&self) -> &ContentBinding {
         &self.query
+    }
+    /// Returns the ordered portable filters.
+    pub fn filters(&self) -> &[KnowledgeFilter] {
+        &self.filters
     }
     /// Returns fixed durable prefix.
     pub const fn through_position(&self) -> u64 {

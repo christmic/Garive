@@ -137,6 +137,10 @@ impl ContentBinding {
     pub fn inline_utf8(&self) -> Option<&str> {
         self.inline_utf8.as_deref()
     }
+    /// Returns an opaque Runtime-resolvable reference when present.
+    pub fn reference(&self) -> Option<&str> {
+        self.reference.as_deref()
+    }
 }
 
 /// Portable source category.
