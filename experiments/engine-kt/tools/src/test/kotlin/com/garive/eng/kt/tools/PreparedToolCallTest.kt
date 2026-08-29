@@ -4,11 +4,13 @@ import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.fail
 
 class PreparedToolCallTest {
@@ -115,5 +117,32 @@ class PreparedToolCallTest {
         assertEquals(PreparationErrorCode.INVALID_TOOL_DEFINITION, duplicate.error.code)
         val invalid = ExecutionRequirements.create(emptyList(), 0, 1) as ToolContractResult.Failure
         assertEquals(PreparationErrorCode.INVALID_TOOL_DEFINITION, invalid.error.code)
+    }
+
+    @Test
+    fun `executable meaning changes digest`() {
+        val base = fixture.getValue("definitions").jsonArray.first().jsonObject
+        val intent = ToolIntent("call", "read_file", "{\"path\":\"a\"}")
+        fun digest(value: JsonObject): String = ToolCatalog.create(listOf(definition(value)))
+            .value()
+            .prepare(intent)
+            .value()
+            .inputDigest
+        fun changed(name: String, value: JsonElement): JsonObject = JsonObject(base.toMutableMap().apply { put(name, value) })
+
+        val original = digest(base)
+        assertNotEquals(original, digest(changed("revision", JsonPrimitive("2"))))
+
+        val requirements = JsonObject(base.getValue("requirements").jsonObject.toMutableMap().apply {
+            put("max_output_bytes", JsonPrimitive(8192))
+        })
+        assertNotEquals(original, digest(changed("requirements", requirements)))
+        assertNotEquals(original, digest(changed("replay_class", JsonPrimitive("never_replay"))))
+
+        val arguments = ToolCatalog.create(fixture.getValue("definitions").jsonArray.map(::definition))
+            .value()
+            .prepare(ToolIntent("call", "read_file", "{\"path\":\"b\"}"))
+            .value()
+        assertNotEquals(original, arguments.inputDigest)
     }
 }

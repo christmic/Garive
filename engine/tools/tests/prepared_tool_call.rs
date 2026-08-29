@@ -155,3 +155,36 @@ fn duplicate_catalog_names_and_invalid_requirements_fail() {
         PreparationErrorCode::InvalidToolDefinition
     );
 }
+
+#[test]
+fn executable_meaning_changes_digest() {
+    let fixture = fixture();
+    let base = fixture["definitions"][0].clone();
+    let intent = ToolIntent::new("call", "read_file", r#"{"path":"a"}"#);
+    let digest = |value: Value| {
+        ToolCatalog::new([definition(&value).unwrap()])
+            .unwrap()
+            .prepare(&intent)
+            .unwrap()
+            .input_digest()
+            .to_owned()
+    };
+    let original = digest(base.clone());
+
+    let mut revision = base.clone();
+    revision["revision"] = Value::String("2".into());
+    assert_ne!(original, digest(revision));
+
+    let mut requirements = base.clone();
+    requirements["requirements"]["max_output_bytes"] = 8192.into();
+    assert_ne!(original, digest(requirements));
+
+    let mut replay = base;
+    replay["replay_class"] = Value::String("never_replay".into());
+    assert_ne!(original, digest(replay));
+
+    let changed_arguments = catalog(&fixture)
+        .prepare(&ToolIntent::new("call", "read_file", r#"{"path":"b"}"#))
+        .unwrap();
+    assert_ne!(original, changed_arguments.input_digest());
+}
