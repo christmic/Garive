@@ -2189,6 +2189,108 @@ while the entire loop is not implicitly in lockstep.
   drive → adapt → eval`) is the same shape, lifted one
   level up.
 
+## ProgressGuardian — useless-work detection (replaces TurnBudget)
+
+> **护栏从"限额"换成"识功"。** ProgressGuardian doesn't
+> limit how many calls you can make; it ensures you don't
+> spin in place. The only "upper limit" preserved is the
+> **human judgment** at escalation tiers 3 / 4.
+
+### Why — useless-work is the #1 agent failure mode
+
+Recent agent error-mode analysis ranks **stuck-in-loop** as
+the single most common failure mode. The four shapes:
+
+| Pattern | Characteristic | Example |
+|---------|-----------------|---------|
+| **重复** | Same / similar action repeated | Same command run 3× in a row |
+| **撞墙** | Same error keeps recurring | Every iteration hits the same `ImportError: X` |
+| **振荡** | A → B → A back-and-forth | File edited, then reverted, then re-edited |
+| **发散** | Many actions, no convergence | New directions opened, nothing finished |
+
+A **digital cap** (`max N calls per round`) doesn't catch any
+of these — the agent can do unlimited useless work. A
+**detection + intervention** design catches all four.
+
+### 5 detection signals — derived from a ledger window
+
+Every iteration boundary, the runtime runs a **window
+analysis** over the last K entries of the ledger:
+
+| Signal | What it checks |
+|--------|-----------------|
+| **① 调用相似度** | `tool.call` (name + args) hash repeat rate |
+| **② 错误模式** | `tool.result{error}` message similarity clustering |
+| **③ 进展产物** | Window contains "forward motion" — successful writes, tests failing → passing, diff growth |
+| **④ 振荡检测** | Edit sequence on the same file goes back to a prior hash |
+| **⑤ 效率比** | token_spent / useful_output ratio, trend over time |
+
+> **关键性质**：检测是**账本的纯分析** — 进展本身变成可推导的东西，和 surface 同构。**零额外数据源**。
+
+### 4-tier response ladder — escalating, never auto-killing
+
+Detection triggers a **ladder**, not a hard stop. Each tier
+brings **evidence** to the model — never just "stop doing
+that".
+
+| Tier | Trigger | Response |
+|------|---------|-----------|
+| **1 — 提醒** | First useless-work signal | Inject a reminder entry into the surface — **with evidence**: "you've run `pytest` 3 times in a row with the same `ImportError: X`; repeating the same action won't yield a different result" |
+| **2 — 反思** | Signal persists after the reminder | Stronger reflection prompt + show the full detected pattern (which file, which error, how many times) |
+| **3 — AskUser** | Still no progress after tier 2 | `governance.approval_request` — **show the evidence to the user**, ask for direction |
+| **4 — Suspend** | Headless (no human available) | `state.phase = Suspended` — wait for a human |
+
+**No tier is "auto-kill".** Termination decisions always
+have evidence behind them. The **only** "upper limit"
+preserved is the **human judgment** at tiers 3 / 4.
+
+### Architecture — one-line wiring
+
+| Aspect | Decision |
+|--------|----------|
+| Component | `ProgressPolicy` (L1 endpoint); default impl = ledger-window analyser |
+| When | Skeleton iteration boundary — same place as `usage` recording, **one query** |
+| Result | `progress.alert` row in the ledger — fully auditable ("when was this detected, what was the reminder") |
+| Inject | Reminders go through the **reminder-injection channel** (`loop.md` "Two protocols" — has its own `kind`, subject to surface eviction policy) |
+| Skeleton change | **+1 query** — continues the "new capabilities land in the seam, not the skeleton" rule |
+
+### Theoretical grounding
+
+- **Patience / plateau detection** — from ML training's
+  `early stopping with patience`: monitor a metric, tolerate
+  a window, change strategy when no improvement. Same idea —
+  the metric is "progress signal" instead of training loss.
+- **Agent failure-mode taxonomy** — recent research ranks
+  stuck-in-loop as the **#1 agent failure mode**. The detection
+  here targets exactly that enemy.
+- **Evidence-based intervention** — saying "stop repeating"
+  is useless. Feeding the model the **specific detected
+  pattern** lets it actually switch strategy. **Evidence-based
+  reminders are the most valuable part of this design**.
+
+### Migration from TurnBudget
+
+The previous tail-end entry **"TurnBudget — four-axis + graceful
+exit"** is **superseded** by ProgressGuardian:
+
+- TurnBudget's `iters / tokens / cost / wall-clock` axes
+  remain useful as **inputs to the detection** (token
+  consumption rate → efficiency-ratio signal).
+- The **hard caps** TurnBudget imposed are **removed** —
+  useless-work detection handles the runaway case more
+  precisely than a fixed cap.
+- The graceful-exit summary at the budget threshold
+  becomes the tier-3 / tier-4 escalation's summary entry.
+
+### Cross-references
+
+- `loop.md` "Two protocols" — reminder injection channel
+  (lossy event + durable ledger rows).
+- `ledger.md` "3. Instruction family" — `progress.alert` is a
+  new kind in the **notification** family.
+- `loop.md` "Convergence audit" — ProgressGuardian replaces
+  TurnBudget in the tail-end list.
+
 ## Convergence audit — `turn.loop` design closed
 
 The `turn_loop` skeleton has reached **architectural
