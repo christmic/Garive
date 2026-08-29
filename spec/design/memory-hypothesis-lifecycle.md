@@ -217,6 +217,61 @@ targets. Active entries may only be proposed Cold; stale Cold entries may only
 be proposed Archived.
 No audit action deletes, supersedes, promotes, or writes a record.
 
+```text
+MemoryPromotionPolicy {
+  revision, allowed_types, min_verified, max_falsified,
+  min_helpful_uses
+}
+
+MemoryPromotionRequest {
+  request_id, namespace_id, record_id, revision_id, memory_type,
+  policy_revision, knowledge_proposal_id, evidence_digest
+}
+
+MemoryPromotionReceipt {
+  request_id, knowledge_proposal_id, knowledge_record_id,
+  knowledge_revision_id, receipt_digest
+}
+```
+
+Only Active or Cold memory can request promotion. The portable reducer checks
+the frozen policy, exact lifecycle tally and committed helpful-use count, then
+produces an opaque Knowledge proposal binding; it does not publish Knowledge.
+Candidate, Archived and already Promoted memory fail with
+`promotion_not_eligible`. Threshold failure has the same safe code and exposes
+no content. A promotion receipt is accepted only when its request and proposal
+identities match. The receipt and the resulting lifecycle transition commit
+atomically; absence or mismatch fails before Promoted becomes visible.
+
+```text
+MemoryErasureRequest {
+  request_id, namespace_id, record_id, revision_id,
+  tombstone_fact, policy_revision,
+  targets: [{target_id, kind: PrimaryStore | Projection | Cache | Backup}]
+}
+
+MemoryErasureTargetResult {
+  target_id,
+  status: Erased | NotPresent | PendingBackupRetention | PendingRetry,
+  receipt_digest,
+  not_before_position? // required only for PendingBackupRetention
+}
+
+MemoryErasureReceipt {
+  request_id, attempt_id, attempted_at_position,
+  results, disposition: Complete | Partial
+}
+```
+
+An erasure request is valid only after the exact M0 tombstone fact is committed;
+Runtime verifies that reference binds the same namespace/record/revision. Target
+IDs are canonical and come from explicit Garive configuration. Every attempt
+reports every requested target exactly once in target order. `Complete` is
+derived only when all targets are Erased or NotPresent. Backup retention and
+retryable failure remain `Partial`; a backup-pending result must state a later
+position. Erasure receipts never reverse the tombstone and never make content
+model-visible again.
+
 - Distillation binds an exact ledger prefix, watermark and extractor revision;
   replay is idempotent.
 - Per-namespace/type count and byte quotas are explicit snapshot values.
@@ -246,7 +301,7 @@ each behavior slice; older projections treat unknown facts as opaque.
 Stable additions are `unknown_memory_type`, `authority_receipt_required`,
 `scope_policy_denied`, `invalid_transition`, `duplicate_observation`,
 `attribution_unsupported`, `selection_unreplayable`, `projection_stale`, and
-`promotion_receipt_required`.
+`promotion_receipt_required`, and `promotion_not_eligible`.
 
 ## Delivery and evidence
 

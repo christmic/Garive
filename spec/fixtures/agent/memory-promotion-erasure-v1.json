@@ -1,0 +1,34 @@
+{
+  "promotion_policy":{"revision":"promotion-v1","allowed_types":["semantic","lesson"],"min_verified":"3","max_falsified":"0","min_helpful_uses":"2"},
+  "promotion_cases":[
+    {"name":"active_eligible","type":"lesson","state":"active","verified":"3","falsified":"0","neutral":"1","last_position":"20","helpful_uses":"2","expected":"requested"},
+    {"name":"cold_eligible","type":"semantic","state":"cold","verified":"5","falsified":"0","neutral":"0","last_position":"30","helpful_uses":"4","expected":"requested"},
+    {"name":"candidate_not_eligible","type":"lesson","state":"candidate","verified":"3","falsified":"0","neutral":"0","last_position":"20","helpful_uses":"2","failure":"promotion_not_eligible"},
+    {"name":"archived_not_eligible","type":"lesson","state":"archived","verified":"3","falsified":"0","neutral":"0","last_position":"20","helpful_uses":"2","failure":"promotion_not_eligible"},
+    {"name":"type_not_admitted","type":"procedural","state":"active","verified":"3","falsified":"0","neutral":"0","last_position":"20","helpful_uses":"2","failure":"promotion_not_eligible"},
+    {"name":"verification_below_policy","type":"lesson","state":"active","verified":"2","falsified":"0","neutral":"0","last_position":"20","helpful_uses":"2","failure":"promotion_not_eligible"},
+    {"name":"falsification_above_policy","type":"lesson","state":"active","verified":"4","falsified":"1","neutral":"0","last_position":"20","helpful_uses":"2","failure":"promotion_not_eligible"},
+    {"name":"use_below_policy","type":"lesson","state":"active","verified":"4","falsified":"0","neutral":"0","last_position":"20","helpful_uses":"1","failure":"promotion_not_eligible"}
+  ],
+  "promotion_receipt_cases":[
+    {"name":"matching_receipt_promotes","request_id":"promotion-request","proposal_id":"knowledge-proposal","receipt_request_id":"promotion-request","receipt_proposal_id":"knowledge-proposal","position":"21","expected":"promoted"},
+    {"name":"wrong_request_is_rejected","request_id":"promotion-request","proposal_id":"knowledge-proposal","receipt_request_id":"other-request","receipt_proposal_id":"knowledge-proposal","position":"21","failure":"invalid_memory"},
+    {"name":"wrong_proposal_is_rejected","request_id":"promotion-request","proposal_id":"knowledge-proposal","receipt_request_id":"promotion-request","receipt_proposal_id":"other-proposal","position":"21","failure":"invalid_memory"},
+    {"name":"non_monotonic_position_is_rejected","request_id":"promotion-request","proposal_id":"knowledge-proposal","receipt_request_id":"promotion-request","receipt_proposal_id":"knowledge-proposal","position":"20","failure":"invalid_transition"}
+  ],
+  "tombstone_fact":{"session_id":"privacy-session","position":"40","fact_id":"fact-tombstone","payload_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "erasure_targets":[
+    {"target_id":"primary","kind":"primary_store"},
+    {"target_id":"projection","kind":"projection"},
+    {"target_id":"backup","kind":"backup"}
+  ],
+  "erasure_cases":[
+    {"name":"all_targets_finished","attempted_at_position":"50","results":[{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"projection","status":"not_present","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"target_id":"backup","status":"erased","receipt_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}],"expected":"complete"},
+    {"name":"retained_backup_is_partial","attempted_at_position":"50","results":[{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"projection","status":"not_present","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"target_id":"backup","status":"pending_backup_retention","receipt_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","not_before_position":"80"}],"expected":"partial"},
+    {"name":"retry_is_partial","attempted_at_position":"50","results":[{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"projection","status":"pending_retry","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"target_id":"backup","status":"erased","receipt_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}],"expected":"partial"},
+    {"name":"missing_target_is_invalid","attempted_at_position":"50","results":[{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"projection","status":"not_present","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],"failure":"invalid_memory"},
+    {"name":"wrong_target_order_is_invalid","attempted_at_position":"50","results":[{"target_id":"projection","status":"not_present","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"backup","status":"erased","receipt_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}],"failure":"invalid_memory"},
+    {"name":"backup_pending_needs_future_position","attempted_at_position":"50","results":[{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"projection","status":"not_present","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},{"target_id":"backup","status":"pending_backup_retention","receipt_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","not_before_position":"50"}],"failure":"invalid_memory"},
+    {"name":"non_backup_cannot_claim_retention","attempted_at_position":"50","results":[{"target_id":"primary","status":"erased","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},{"target_id":"projection","status":"pending_backup_retention","receipt_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","not_before_position":"80"},{"target_id":"backup","status":"erased","receipt_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}],"failure":"invalid_memory"}
+  ]
+}

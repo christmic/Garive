@@ -210,6 +210,62 @@ memory.lifecycle_transitioned.v1 {
 }
 ```
 
+M1 maintenance and privacy facts use these exact schema-v1 payloads:
+
+```text
+memory.candidate_recorded.v1 {
+  candidate_id, namespace_id, extractor_revision,
+  source, intent_kind, intent_digest
+}
+
+memory.maintenance_decided.v1 {
+  decision_id, candidate_id, namespace_id,
+  decision_kind: "add" | "update" | "delete" | "noop",
+  decision_digest
+}
+
+memory.distillation_checkpointed.v1 {
+  checkpoint_id, namespace_id, extractor_revision, session_id,
+  through_position, batch_digest
+}
+
+memory.audit_recorded.v1 {
+  audit_id, namespace_id, through_position, policy_digest,
+  inventory_digest, report_digest, action_count, truncated
+}
+
+memory.promotion_requested.v1 {
+  request_id, namespace_id, record_id, revision_id, memory_type,
+  policy_revision, knowledge_proposal_id, evidence_digest
+}
+
+memory.promotion_recorded.v1 {
+  request_id, namespace_id, record_id, revision_id,
+  knowledge_proposal_id, knowledge_record_id, knowledge_revision_id,
+  receipt_digest
+}
+
+memory.erasure_requested.v1 {
+  request_id, namespace_id, record_id, revision_id,
+  tombstone_fact, policy_revision,
+  targets: [{target_id, kind}]
+}
+
+memory.erasure_recorded.v1 {
+  request_id, namespace_id, record_id, revision_id,
+  attempt_id, attempted_at_position,
+  results: [{target_id, status, receipt_digest, not_before_position?}],
+  disposition: "complete" | "partial"
+}
+```
+
+Candidate and Noop facts carry digests, never rejected candidate content.
+`memory.tombstoned` and its first `memory.erasure_requested` commit atomically.
+`memory.promotion_recorded` and the matching Promoted
+`memory.lifecycle_transitioned` commit atomically. Runtime-generated audit
+actions require later lifecycle facts before changing visibility. A checkpoint
+advances only after every decision for its exact batch has committed.
+
 `memory.proposed` and `memory.committed` commit atomically for a direct accept;
 `memory.proposed` and `memory.rejected` commit atomically for a direct reject;
 an interaction may place a C5/C6 suspension between proposal and decision. A
