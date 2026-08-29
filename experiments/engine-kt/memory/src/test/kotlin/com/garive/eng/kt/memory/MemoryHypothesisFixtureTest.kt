@@ -59,6 +59,33 @@ public class MemoryHypothesisFixtureTest {
         assertEquals(MemoryErrorCode.INVALID_MEMORY, MemoryScopeBinding.create(MemoryScopeClass.PROJECT, "b".repeat(64)).failure().code)
     }
 
+    @Test
+    public fun sharedLifecycleReducesExactTalliesAndFailures(): Unit {
+        root.values("lifecycle_cases").forEach { value ->
+            val initial = value.getValue("initial").jsonObject
+            val lifecycle = MemoryLifecycle.create(
+                state(initial.text("state")),
+                EvidenceTally(initial.ulong("verified"), initial.ulong("falsified"), initial.ulong("neutral")),
+                initial.ulong("last_position"), null,
+            ).success()
+            val result = lifecycle.apply(event(value.getValue("event").jsonObject))
+            value.optional("failure")?.let { expected ->
+                assertEquals(expected, result.failure().code.wireName, value.text("name"))
+            } ?: run {
+                val expected = value.getValue("expected").jsonObject
+                val actual = result.success()
+                assertEquals(state(expected.text("state")), actual.state, value.text("name"))
+                assertEquals(
+                    EvidenceTally(expected.ulong("verified"), expected.ulong("falsified"), expected.ulong("neutral")),
+                    actual.tally,
+                )
+                if (actual.state == HypothesisState.PROMOTED) {
+                    assertEquals(true, actual.promotedKnowledgeReceiptDigest != null)
+                }
+            }
+        }
+    }
+
     private fun registry(): MemoryTypeRegistry = MemoryTypeRegistry.create(
         root.getValue("registry").jsonObject.text("revision"), descriptors(),
     ).success()
@@ -76,10 +103,22 @@ public class MemoryHypothesisFixtureTest {
 private fun type(value: String): MemoryType = MemoryType.entries.first { it.wireName == value }
 private fun role(value: String): MemoryKind = MemoryKind.entries.first { it.wireName == value }
 private fun authority(value: String): MemoryAuthority = MemoryAuthority.entries.first { it.wireName == value }
+private fun state(value: String): HypothesisState = HypothesisState.entries.first { it.wireName == value }
+private fun event(value: JsonObject): LifecycleEvent = when (value.text("kind")) {
+    "verified" -> LifecycleEvent.Verified(value.ulong("position"))
+    "falsified_in_scope" -> LifecycleEvent.Falsified(value.ulong("position"), true)
+    "falsified_out_of_scope" -> LifecycleEvent.Falsified(value.ulong("position"), false)
+    "neutral" -> LifecycleEvent.Neutral(value.ulong("position"))
+    "cool" -> LifecycleEvent.Cool(value.ulong("position"))
+    "archive" -> LifecycleEvent.Archive(value.ulong("position"))
+    "promote" -> LifecycleEvent.Promote(value.ulong("position"), value.optional("receipt_digest"))
+    else -> error("unknown event")
+}
 private fun JsonObject.text(key: String): String = getValue(key).jsonPrimitive.content
 private fun JsonObject.optional(key: String): String? = get(key)?.jsonPrimitive?.contentOrNull
 private fun JsonObject.values(key: String): List<JsonObject> = getValue(key).jsonArray.map { it.jsonObject }
 private fun JsonObject.strings(key: String): List<String> = getValue(key).jsonArray.map { it.jsonPrimitive.content }
+private fun JsonObject.ulong(key: String): ULong = text(key).toULong()
 private fun <T> MemoryContractResult<T>.success(): T = when (this) {
     is MemoryContractResult.Success -> value
     is MemoryContractResult.Failure -> error("unexpected failure: $error")

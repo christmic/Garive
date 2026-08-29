@@ -36,6 +36,12 @@ pub enum MemoryErrorCode {
     AuthorityReceiptRequired,
     /// Platform scope lacks its aggregation policy binding.
     ScopePolicyDenied,
+    /// Lifecycle event is not admitted from the exact prior state.
+    InvalidTransition,
+    /// Observation position is not strictly newer than the projection.
+    DuplicateObservation,
+    /// Promotion lacks a valid Knowledge publication receipt.
+    PromotionReceiptRequired,
 }
 
 impl MemoryErrorCode {
@@ -56,6 +62,9 @@ impl MemoryErrorCode {
             Self::UnknownMemoryType => "unknown_memory_type",
             Self::AuthorityReceiptRequired => "authority_receipt_required",
             Self::ScopePolicyDenied => "scope_policy_denied",
+            Self::InvalidTransition => "invalid_transition",
+            Self::DuplicateObservation => "duplicate_observation",
+            Self::PromotionReceiptRequired => "promotion_receipt_required",
         }
     }
 }

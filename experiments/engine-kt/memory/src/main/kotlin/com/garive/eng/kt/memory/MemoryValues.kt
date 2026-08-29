@@ -18,6 +18,9 @@ public enum class MemoryErrorCode(public val wireName: String) {
     UNKNOWN_MEMORY_TYPE("unknown_memory_type"),
     AUTHORITY_RECEIPT_REQUIRED("authority_receipt_required"),
     SCOPE_POLICY_DENIED("scope_policy_denied"),
+    INVALID_TRANSITION("invalid_transition"),
+    DUPLICATE_OBSERVATION("duplicate_observation"),
+    PROMOTION_RECEIPT_REQUIRED("promotion_receipt_required"),
 }
 
 /** Typed M0 failure. */

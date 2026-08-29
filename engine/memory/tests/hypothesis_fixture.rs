@@ -1,8 +1,9 @@
 use std::{fs, path::PathBuf};
 
 use garive_memory::{
-    import_m0_classification, MemoryAuthority, MemoryAuthorityBinding, MemoryErrorCode, MemoryKind,
-    MemoryScopeBinding, MemoryScopeClass, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
+    import_m0_classification, EvidenceTally, HypothesisState, LifecycleEvent, MemoryAuthority,
+    MemoryAuthorityBinding, MemoryErrorCode, MemoryKind, MemoryLifecycle, MemoryScopeBinding,
+    MemoryScopeClass, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use serde_json::Value;
 
@@ -88,6 +89,54 @@ fn registry_requires_complete_canonical_types_and_platform_policy_is_exact() {
     );
 }
 
+#[test]
+fn shared_lifecycle_reduces_exact_tallies_and_failures() {
+    let root = fixture();
+    for case in root["lifecycle_cases"].as_array().unwrap() {
+        let initial = &case["initial"];
+        let lifecycle = MemoryLifecycle::new(
+            state(initial["state"].as_str().unwrap()),
+            EvidenceTally {
+                verified: number(initial, "verified"),
+                falsified: number(initial, "falsified"),
+                neutral: number(initial, "neutral"),
+            },
+            number(initial, "last_position"),
+            None,
+        )
+        .unwrap();
+        let result = lifecycle.apply(event(&case["event"]));
+        if let Some(failure) = case.get("failure") {
+            assert_eq!(
+                result.unwrap_err().code().wire_name(),
+                failure.as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+        } else {
+            let actual = result.unwrap();
+            let expected = &case["expected"];
+            assert_eq!(
+                actual.state(),
+                state(expected["state"].as_str().unwrap()),
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                actual.tally(),
+                EvidenceTally {
+                    verified: number(expected, "verified"),
+                    falsified: number(expected, "falsified"),
+                    neutral: number(expected, "neutral"),
+                }
+            );
+            if actual.state() == HypothesisState::Promoted {
+                assert!(actual.promoted_knowledge_receipt_digest().is_some());
+            }
+        }
+    }
+}
+
 fn fixture() -> Value {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../spec/fixtures/agent/memory-hypothesis-lifecycle-v1.json");
@@ -157,5 +206,46 @@ fn authority(value: &str) -> MemoryAuthority {
         "agent_learned" => MemoryAuthority::AgentLearned,
         "organisation_published" => MemoryAuthority::OrganisationPublished,
         other => panic!("unknown authority: {other}"),
+    }
+}
+
+fn state(value: &str) -> HypothesisState {
+    match value {
+        "candidate" => HypothesisState::Candidate,
+        "active" => HypothesisState::Active,
+        "cold" => HypothesisState::Cold,
+        "archived" => HypothesisState::Archived,
+        "promoted" => HypothesisState::Promoted,
+        other => panic!("unknown state: {other}"),
+    }
+}
+
+fn number(value: &Value, key: &str) -> u64 {
+    value[key].as_str().unwrap().parse().unwrap()
+}
+
+fn event(value: &Value) -> LifecycleEvent {
+    let position = number(value, "position");
+    match value["kind"].as_str().unwrap() {
+        "verified" => LifecycleEvent::Verified { position },
+        "falsified_in_scope" => LifecycleEvent::Falsified {
+            position,
+            in_scope: true,
+        },
+        "falsified_out_of_scope" => LifecycleEvent::Falsified {
+            position,
+            in_scope: false,
+        },
+        "neutral" => LifecycleEvent::Neutral { position },
+        "cool" => LifecycleEvent::Cool { position },
+        "archive" => LifecycleEvent::Archive { position },
+        "promote" => LifecycleEvent::Promote {
+            position,
+            receipt_digest: value
+                .get("receipt_digest")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        },
+        other => panic!("unknown event: {other}"),
     }
 }

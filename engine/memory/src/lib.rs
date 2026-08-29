@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod hypothesis;
+mod lifecycle;
 mod query;
 mod values;
 mod write;
@@ -13,6 +14,7 @@ pub use hypothesis::{
     MemoryAuthorityBinding, MemoryRole, MemoryScopeBinding, MemoryScopeClass, MemoryType,
     MemoryTypeDescriptor, MemoryTypeRegistry,
 };
+pub use lifecycle::{EvidenceTally, HypothesisState, LifecycleEvent, MemoryLifecycle};
 pub use query::{
     retrieve_memory, MemoryMatch, MemoryPurpose, MemoryQuery, MemoryRetrieval, MemoryScore,
 };

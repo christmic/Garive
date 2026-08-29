@@ -17,5 +17,18 @@
     {"name":"agent_with_receipt","authority":"agent_learned","receipt_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected":"invalid_memory"},
     {"name":"platform_without_policy","scope":"platform","expected":"scope_policy_denied"},
     {"name":"unsupported_pair","type":"episodic","role":"preference","authority":"agent_learned","expected":"unknown_memory_type"}
+  ],
+  "lifecycle_cases": [
+    {"name":"candidate_verified_activates","initial":{"state":"candidate","verified":"0","falsified":"0","neutral":"0","last_position":"10"},"event":{"kind":"verified","position":"11"},"expected":{"state":"active","verified":"1","falsified":"0","neutral":"0"}},
+    {"name":"active_in_scope_falsification","initial":{"state":"active","verified":"2","falsified":"0","neutral":"0","last_position":"20"},"event":{"kind":"falsified_in_scope","position":"21"},"expected":{"state":"active","verified":"2","falsified":"1","neutral":"0"}},
+    {"name":"out_of_scope_is_neutral","initial":{"state":"active","verified":"2","falsified":"0","neutral":"0","last_position":"30"},"event":{"kind":"falsified_out_of_scope","position":"31"},"expected":{"state":"active","verified":"2","falsified":"0","neutral":"1"}},
+    {"name":"active_cools","initial":{"state":"active","verified":"1","falsified":"0","neutral":"0","last_position":"40"},"event":{"kind":"cool","position":"41"},"expected":{"state":"cold","verified":"1","falsified":"0","neutral":"0"}},
+    {"name":"cold_verified_reactivates","initial":{"state":"cold","verified":"1","falsified":"0","neutral":"0","last_position":"50"},"event":{"kind":"verified","position":"51"},"expected":{"state":"active","verified":"2","falsified":"0","neutral":"0"}},
+    {"name":"cold_archives","initial":{"state":"cold","verified":"1","falsified":"0","neutral":"0","last_position":"60"},"event":{"kind":"archive","position":"61"},"expected":{"state":"archived","verified":"1","falsified":"0","neutral":"0"}},
+    {"name":"promotion_requires_receipt","initial":{"state":"active","verified":"3","falsified":"0","neutral":"0","last_position":"70"},"event":{"kind":"promote","position":"71"},"failure":"promotion_receipt_required"},
+    {"name":"promotion_is_terminal","initial":{"state":"active","verified":"3","falsified":"0","neutral":"0","last_position":"80"},"event":{"kind":"promote","position":"81","receipt_digest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"expected":{"state":"promoted","verified":"3","falsified":"0","neutral":"0"}},
+    {"name":"position_must_advance","initial":{"state":"candidate","verified":"0","falsified":"0","neutral":"0","last_position":"90"},"event":{"kind":"neutral","position":"90"},"failure":"duplicate_observation"},
+    {"name":"candidate_cannot_cool","initial":{"state":"candidate","verified":"0","falsified":"0","neutral":"0","last_position":"100"},"event":{"kind":"cool","position":"101"},"failure":"invalid_transition"},
+    {"name":"tally_overflow_fails","initial":{"state":"active","verified":"18446744073709551615","falsified":"0","neutral":"0","last_position":"110"},"event":{"kind":"verified","position":"111"},"failure":"invalid_transition"}
   ]
 }
