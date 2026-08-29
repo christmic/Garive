@@ -12,16 +12,27 @@ const LIMITS: ClientLimits = ClientLimits {
 #[tokio::main]
 async fn main() {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
-    if arguments.len() != 3 {
-        eprintln!("usage: garive <loopback-host-url> <agent-definition-id> <message>");
-        std::process::exit(2);
-    }
-    let terminal = run(&arguments[0], &arguments[1], &arguments[2])
-        .await
-        .unwrap_or_else(|error| {
-            eprintln!("garive: {error}");
+    let command = match arguments.as_slice() {
+        [host_url, definition_id, message] => CommandTarget::Create {
+            host_url,
+            definition_id,
+            message,
+        },
+        [host_url, flag, session_id, message] if flag == "--session" => CommandTarget::Reuse {
+            host_url,
+            session_id,
+            message,
+        },
+        _ => {
+            eprintln!("usage: garive <host-url> <definition-id> <message>");
+            eprintln!("       garive <host-url> --session <session-id> <message>");
             std::process::exit(2);
-        });
+        }
+    };
+    let terminal = run(command).await.unwrap_or_else(|error| {
+        eprintln!("garive: {error}");
+        std::process::exit(2);
+    });
     std::process::exit(match terminal {
         HostTerminal::Completed => 0,
         HostTerminal::Suspended => 3,
@@ -30,21 +41,57 @@ async fn main() {
     });
 }
 
+enum CommandTarget<'a> {
+    Create {
+        host_url: &'a str,
+        definition_id: &'a str,
+        message: &'a str,
+    },
+    Reuse {
+        host_url: &'a str,
+        session_id: &'a str,
+        message: &'a str,
+    },
+}
+
 async fn run(
-    host_url: &str,
-    definition_id: &str,
-    message: &str,
+    command: CommandTarget<'_>,
 ) -> Result<HostTerminal, garive_host_client::HostClientError> {
+    let (host_url, session_id, message) = match command {
+        CommandTarget::Create {
+            host_url,
+            definition_id,
+            message,
+        } => {
+            let client = LiveHostClient::new(host_url, LIMITS)?;
+            let identity = command_identity();
+            let session = client
+                .create_session(&format!("create-{identity}"), definition_id)
+                .await?;
+            return run_turn(client, session.session_id, message, identity).await;
+        }
+        CommandTarget::Reuse {
+            host_url,
+            session_id,
+            message,
+        } => (host_url, session_id.to_owned(), message),
+    };
     let client = LiveHostClient::new(host_url, LIMITS)?;
     let identity = command_identity();
-    let session = client
-        .create_session(&format!("create-{identity}"), definition_id)
-        .await?;
+    run_turn(client, session_id, message, identity).await
+}
+
+async fn run_turn(
+    client: LiveHostClient,
+    session_id: String,
+    message: &str,
+    identity: String,
+) -> Result<HostTerminal, garive_host_client::HostClientError> {
     let turn = client
-        .start_turn(&format!("turn-{identity}"), &session.session_id, message)
+        .start_turn(&format!("turn-{identity}"), &session_id, message)
         .await?;
     let view = client
-        .follow_until_terminal(&session.session_id, turn.committed_position)
+        .follow_until_terminal(&session_id, turn.committed_position)
         .await?;
     let terminal = view
         .terminal

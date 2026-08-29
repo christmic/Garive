@@ -6,6 +6,7 @@ prints only the committed completion text.
 
 ```text
 cargo run -p garive-cli -- http://127.0.0.1:4317/ my-agent "hello"
+cargo run -p garive-cli -- http://127.0.0.1:4317/ --session session-1 "again"
 ```
 
 Exit codes are `0 completed`, `2 client/transport`, `3 suspended`, `4 stopped`

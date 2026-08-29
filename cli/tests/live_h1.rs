@@ -35,6 +35,39 @@ fn cli_maps_durable_failure_to_exit_five() {
     assert_eq!(status.code(), Some(5));
 }
 
+#[test]
+fn cli_reuses_an_explicit_session_without_creating_another() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let responses = [
+            json_response(
+                r#"{"session_id":"session-1","turn_id":"turn-1","execution_id":"execution-1","committed_position":2}"#,
+            ),
+            sse_response("turn.completed", "reused answer"),
+        ];
+        for response in responses {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 8_192];
+            let read = socket.read(&mut request).unwrap();
+            assert!(!String::from_utf8_lossy(&request[..read]).contains("POST /v1/sessions HTTP"));
+            socket.write_all(response.as_bytes()).unwrap();
+        }
+    });
+    let output = Command::new(env!("CARGO_BIN_EXE_garive"))
+        .args([
+            &format!("http://{address}/"),
+            "--session",
+            "session-1",
+            "again",
+        ])
+        .output()
+        .expect("CLI must launch");
+    server.join().expect("Host server must finish");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "reused answer\n");
+}
+
 fn host_server(terminal: &str, text: &str) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
