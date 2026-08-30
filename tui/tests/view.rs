@@ -78,6 +78,40 @@ fn overlay_is_rendered_above_without_mutating_model() {
 }
 
 #[test]
+fn recovery_overlay_shares_truthful_copy_and_actions_across_presentations() {
+    let model = AppModel {
+        overlay: Some(Overlay::UnknownCommand),
+        notice: Some("A prior command has an unknown durable outcome.".into()),
+        ..Default::default()
+    };
+    let visual = frame(&model, 100, 24);
+    let linear = view::linear_overlay(&model);
+    for expected in [
+        "Command result unknown",
+        "A prior command has an unknown durable outcome.",
+        "exact retry",
+        "abandon local record",
+    ] {
+        assert!(visual.contains(expected), "visual missed {expected}");
+        assert!(linear.contains(expected), "linear missed {expected}");
+    }
+    assert!(!visual.contains("Unknown command"));
+}
+
+#[test]
+fn action_overlay_geometry_preserves_actions_after_wrapped_multiline_details() {
+    let model = AppModel {
+        overlay: Some(Overlay::ErrorDetails),
+        notice: Some("Host: online\nSession: durable-session\nCursor: 42".into()),
+        ..Default::default()
+    };
+    let compact = frame(&model, 40, 16);
+    assert!(compact.contains("Host: online"));
+    assert!(compact.contains("Session: durable-session"));
+    assert!(compact.contains("Esc close"));
+}
+
+#[test]
 fn suspension_is_a_structured_action_card_not_raw_json() {
     let model = AppModel {
         overlay: Some(Overlay::Suspension),

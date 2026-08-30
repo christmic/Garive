@@ -296,6 +296,10 @@ The same action can disable it without restarting.
 blocks are printed once, status changes use concise lines, interactive overlays
 become numbered prompts, mouse is disabled, and animations are disabled. It
 consumes the same application model and Host contract.
+Non-list action overlays additionally consume the same typed bindings in the
+terminal controller, fullscreen renderer, and linear renderer. The controller
+dispatches semantic intents (`Close`, `ConfirmQuit`, `AcceptEphemeral`,
+`ExactRetry`, or `AbandonPending`) rather than duplicating presenter labels.
 
 ## Rendering contract
 

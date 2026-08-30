@@ -84,6 +84,12 @@ The linear screen-reader component uses that same filtered order and marks the
 selected numbered row explicitly; it cannot maintain a separate list model.
 Command rows also consume the registry's shared availability result. A
 disabled visual or linear row names the same safe reason that blocks Enter.
+Confirmation, status, ephemeral-mode, and unknown-result cards consume one
+typed action-binding table for visible keycaps, spoken key names, action copy,
+and controller intent. Their height is derived from the sanitized multiline
+body at the actual popup width; wrapping must never hide the primary or escape
+action. Durable uncertainty is titled `Command result unknown`, not the
+ambiguous `Unknown command`.
 
 ## Conformance
 
