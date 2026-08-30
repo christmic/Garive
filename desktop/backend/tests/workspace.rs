@@ -110,6 +110,102 @@ fn missing_private_bookmark_is_reported_without_blocking_other_recovery() {
     assert_eq!(status.needs_reauthorization_count, 1);
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn reauthorization_preserves_identity_rejects_wrong_roots_and_keeps_dormant_records() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("Original");
+    let wrong = root.path().join("Wrong");
+    let additional = root.path().join("Additional");
+    fs::create_dir(&workspace).unwrap();
+    fs::create_dir(&wrong).unwrap();
+    fs::create_dir(&additional).unwrap();
+    fs::write(workspace.join("brief.md"), "restored").unwrap();
+    let manifest = root.path().join(DESKTOP_WORKSPACE_MANIFEST_FILE);
+    let store = Arc::new(MemoryBookmarkStore::default());
+    let original = DesktopWorkspaceService::durable(manifest.clone(), store.clone());
+    let grant = original.admit_selected(&workspace, "main").unwrap();
+    drop(original);
+    store.0.lock().unwrap().clear();
+
+    let restored = DesktopWorkspaceService::durable(manifest, store);
+    assert_eq!(restored.recover("main").unwrap(), 0);
+    assert_eq!(
+        restored.authorizations().unwrap()[0].state,
+        "needs_reauthorization"
+    );
+    assert_eq!(
+        restored
+            .reauthorize(&grant.workspace_id, &wrong, "main")
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+    let additional_grant = restored.admit_selected(&additional, "main").unwrap();
+    assert_eq!(restored.authorizations().unwrap().len(), 2);
+
+    let renewed = restored
+        .reauthorize(&grant.workspace_id, &workspace, "main")
+        .unwrap();
+    assert_eq!(renewed.workspace_id, grant.workspace_id);
+    assert_eq!(renewed.grant_revision, grant.grant_revision + 1);
+    assert_eq!(restored.recovery_status().unwrap().state, "ready");
+    let authorizations = restored.authorizations().unwrap();
+    assert!(authorizations.iter().all(|item| item.state == "active"));
+    assert!(authorizations
+        .iter()
+        .any(|item| item.workspace_id == additional_grant.workspace_id));
+    assert_eq!(
+        restored
+            .list_entries(&renewed.workspace_id, "main", None, None, 8)
+            .unwrap()
+            .entries[0]
+            .display_name,
+        "brief.md"
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn native_selection_reuses_active_or_dormant_workspace_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("Project");
+    fs::create_dir(&workspace).unwrap();
+    let manifest = root.path().join(DESKTOP_WORKSPACE_MANIFEST_FILE);
+    let store = Arc::new(MemoryBookmarkStore::default());
+    let original = DesktopWorkspaceService::durable(manifest.clone(), store.clone());
+    let grant = original.admit_selected(&workspace, "main").unwrap();
+    let duplicate = original.admit_selected(&workspace, "main").unwrap();
+    assert_eq!(duplicate.workspace_id, grant.workspace_id);
+    assert_eq!(duplicate.grant_revision, grant.grant_revision);
+    drop(original);
+    store.0.lock().unwrap().clear();
+
+    let restored = DesktopWorkspaceService::durable(manifest, store);
+    assert_eq!(restored.recover("main").unwrap(), 0);
+    let renewed = restored.admit_selected(&workspace, "main").unwrap();
+    assert_eq!(renewed.workspace_id, grant.workspace_id);
+    assert_eq!(renewed.grant_revision, grant.grant_revision + 1);
+    assert_eq!(restored.authorizations().unwrap().len(), 1);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn filesystem_and_home_roots_are_rejected_as_overbroad_authority() {
+    let service = DesktopWorkspaceService::default();
+    assert_eq!(
+        service
+            .admit_selected(std::path::Path::new("/"), "main")
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+    assert_eq!(
+        service
+            .admit_selected(&garive_macos_bookmark::home_directory(), "main")
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+}
+
 #[test]
 fn revocation_drops_private_authority_without_falsifying_the_public_receipt() {
     let directory = tempfile::tempdir().unwrap();

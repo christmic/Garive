@@ -10,7 +10,8 @@ use std::{
 
 use objc2::rc::Retained;
 use objc2_foundation::{
-    NSData, NSString, NSURLBookmarkCreationOptions, NSURLBookmarkResolutionOptions, NSURL,
+    NSData, NSHomeDirectory, NSString, NSURLBookmarkCreationOptions,
+    NSURLBookmarkResolutionOptions, NSURL,
 };
 
 /// A stable native bookmark operation failure without path or Foundation details.
@@ -58,6 +59,11 @@ pub fn create_read_only(path: &Path) -> Result<Vec<u8>, BookmarkError> {
         )
         .map_err(|_| BookmarkError::NativeFailure)?;
     copy_data(&data)
+}
+
+/// Returns the operating-system home directory for broad-root rejection.
+pub fn home_directory() -> PathBuf {
+    PathBuf::from(NSHomeDirectory().to_string())
 }
 
 /// Resolves bookmark bytes without UI and starts balanced security-scoped access.

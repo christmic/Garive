@@ -114,6 +114,21 @@ pub struct DesktopWorkspaceRecoveryStatus {
     pub needs_reauthorization_count: usize,
 }
 
+/// One path-free durable Workspace authorization item for recovery UI.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopWorkspaceAuthorization {
+    /// Exact public schema version.
+    pub schema_version: u32,
+    /// Stable opaque Workspace identity retained across reauthorization.
+    pub workspace_id: String,
+    /// Bounded presentation-only root label.
+    pub display_name: String,
+    /// Monotonic grant revision.
+    pub grant_revision: u64,
+    /// Whether the Workspace is active or requires explicit reauthorization.
+    pub state: &'static str,
+}
+
 impl Default for DesktopWorkspaceRecoveryStatus {
     fn default() -> Self {
         Self {
@@ -154,7 +169,6 @@ struct PrivateWorkspace {
     identity: FileIdentity,
     expires_unix: u64,
     entries: BTreeMap<String, PrivateEntry>,
-    bookmark_ref: Option<String>,
     #[cfg(target_os = "macos")]
     _security_scope: Option<garive_macos_bookmark::ScopedBookmark>,
 }
@@ -177,6 +191,7 @@ struct FileIdentity {
 #[derive(Default)]
 pub struct DesktopWorkspaceService {
     active: Mutex<BTreeMap<String, PrivateWorkspace>>,
+    records: Mutex<BTreeMap<String, WorkspaceManifestRecord>>,
     persistence: Option<WorkspacePersistence>,
     recovery: Mutex<DesktopWorkspaceRecoveryStatus>,
 }
@@ -191,6 +206,7 @@ impl DesktopWorkspaceService {
     pub fn durable(manifest_path: PathBuf, store: Arc<dyn DesktopWorkspaceBookmarkStore>) -> Self {
         Self {
             active: Mutex::default(),
+            records: Mutex::default(),
             persistence: Some(WorkspacePersistence {
                 manifest_path,
                 store,
@@ -215,14 +231,19 @@ impl DesktopWorkspaceService {
                 return Err(error);
             }
         };
-        let now = unix_seconds()?;
-        let mut restored = BTreeMap::new();
+        let mut record_map = BTreeMap::new();
         let mut needs_reauthorization = 0;
         for record in records {
-            if restored.contains_key(&record.workspace_id) {
+            if record_map
+                .insert(record.workspace_id.clone(), record)
+                .is_some()
+            {
                 needs_reauthorization += 1;
-                continue;
             }
+        }
+        let now = unix_seconds()?;
+        let mut restored = BTreeMap::new();
+        for record in record_map.values().cloned() {
             let recovered = (|| {
                 let bytes = persistence.store.load(&record.bookmark_ref)?;
                 #[cfg(target_os = "macos")]
@@ -265,7 +286,6 @@ impl DesktopWorkspaceService {
                     identity,
                     expires_unix,
                     entries: BTreeMap::new(),
-                    bookmark_ref: Some(record.bookmark_ref),
                     #[cfg(target_os = "macos")]
                     _security_scope: Some(scope),
                 })
@@ -282,6 +302,10 @@ impl DesktopWorkspaceService {
             .active
             .lock()
             .map_err(|_| DesktopWorkspaceError::Unavailable)? = restored;
+        *self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)? = record_map;
         self.set_recovery_status(
             if needs_reauthorization == 0 {
                 "ready"
@@ -300,6 +324,140 @@ impl DesktopWorkspaceService {
             .lock()
             .map(|status| status.clone())
             .map_err(|_| DesktopWorkspaceError::Unavailable)
+    }
+
+    /// Lists bounded path-free durable Workspace authorization states.
+    pub fn authorizations(
+        &self,
+    ) -> Result<Vec<DesktopWorkspaceAuthorization>, DesktopWorkspaceError> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        Ok(records
+            .values()
+            .map(|record| DesktopWorkspaceAuthorization {
+                schema_version: 1,
+                workspace_id: record.workspace_id.clone(),
+                display_name: record.display_name.clone(),
+                grant_revision: record.grant_revision,
+                state: if active.contains_key(&record.workspace_id) {
+                    "active"
+                } else {
+                    "needs_reauthorization"
+                },
+            })
+            .collect())
+    }
+
+    /// Reauthorizes one durable Workspace only when the selected root identity matches.
+    pub fn reauthorize(
+        &self,
+        workspace_id: &str,
+        selected: &Path,
+        owner_window: &str,
+    ) -> Result<DesktopWorkspaceGrant, DesktopWorkspaceError> {
+        if owner_window.is_empty() || owner_window.len() > 128 {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        let persistence = self
+            .persistence
+            .as_ref()
+            .ok_or(DesktopWorkspaceError::Unavailable)?;
+        let record = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?
+            .get(workspace_id)
+            .cloned()
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        let (canonical_root, metadata) = validated_root(selected)?;
+        let identity = file_identity(&metadata);
+        if identity.device != record.device || identity.file != record.file {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        #[cfg(target_os = "macos")]
+        let bytes = garive_macos_bookmark::create_read_only(&canonical_root)
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        #[cfg(not(target_os = "macos"))]
+        let bytes: Vec<u8> = return Err(DesktopWorkspaceError::Unavailable);
+        persistence.store.store(&record.bookmark_ref, &bytes)?;
+        let now = unix_seconds()?;
+        let expires_unix = expires_after(now)?;
+        let revision = record
+            .grant_revision
+            .checked_add(1)
+            .ok_or(DesktopWorkspaceError::BoundExceeded)?;
+        let public = DesktopWorkspaceGrant {
+            schema_version: 1,
+            workspace_id: workspace_id.to_owned(),
+            display_name: display_name(&canonical_root)?,
+            access: "enumerate",
+            grant_revision: revision,
+            state: "active",
+            expires_at: format_expiry(expires_unix)?,
+        };
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let previous = active.insert(
+            workspace_id.to_owned(),
+            PrivateWorkspace {
+                public: public.clone(),
+                owner_window: owner_window.into(),
+                canonical_root,
+                identity,
+                expires_unix,
+                entries: BTreeMap::new(),
+                #[cfg(target_os = "macos")]
+                _security_scope: None,
+            },
+        );
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let prior_record = records.insert(
+            workspace_id.to_owned(),
+            WorkspaceManifestRecord {
+                grant_revision: revision,
+                display_name: public.display_name.clone(),
+                ..record
+            },
+        );
+        if let Err(error) = self.persist_records_locked(&records) {
+            match previous {
+                Some(workspace) => {
+                    active.insert(workspace_id.to_owned(), workspace);
+                }
+                None => {
+                    active.remove(workspace_id);
+                }
+            }
+            if let Some(record) = prior_record {
+                records.insert(workspace_id.to_owned(), record);
+            }
+            return Err(error);
+        }
+        let restored_count = active.len();
+        let needs_reauthorization_count = records.len().saturating_sub(restored_count);
+        drop(records);
+        drop(active);
+        self.set_recovery_status(
+            if needs_reauthorization_count == 0 {
+                "ready"
+            } else {
+                "attention_required"
+            },
+            restored_count,
+            needs_reauthorization_count,
+        )?;
+        Ok(public)
     }
 
     fn set_recovery_status(
@@ -329,23 +487,35 @@ impl DesktopWorkspaceService {
         if owner_window.is_empty() || owner_window.len() > 128 {
             return Err(DesktopWorkspaceError::CapabilityInvalid);
         }
-        let metadata =
-            fs::symlink_metadata(selected).map_err(|_| DesktopWorkspaceError::Unavailable)?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        let (canonical_root, canonical_metadata) = validated_root(selected)?;
+        let selected_identity = file_identity(&canonical_metadata);
+        let now = unix_seconds()?;
+        {
+            let mut active = self
+                .active
+                .lock()
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            if let Some(workspace) = active.values_mut().find(|workspace| {
+                workspace.owner_window == owner_window && workspace.identity == selected_identity
+            }) {
+                workspace.expires_unix = expires_after(now)?;
+                workspace.public.expires_at = format_expiry(workspace.expires_unix)?;
+                return Ok(workspace.public.clone());
+            }
         }
-        let canonical_root =
-            fs::canonicalize(selected).map_err(|_| DesktopWorkspaceError::Unavailable)?;
-        if canonical_root.parent().is_none() {
-            return Err(DesktopWorkspaceError::CapabilityInvalid);
-        }
-        let canonical_metadata = fs::symlink_metadata(&canonical_root)
-            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-        if !canonical_metadata.is_dir() || canonical_metadata.file_type().is_symlink() {
-            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        let durable_match = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?
+            .values()
+            .find(|record| {
+                record.device == selected_identity.device && record.file == selected_identity.file
+            })
+            .map(|record| record.workspace_id.clone());
+        if let Some(workspace_id) = durable_match {
+            return self.reauthorize(&workspace_id, selected, owner_window);
         }
         let display_name = display_name(&canonical_root)?;
-        let now = unix_seconds()?;
         let expires_unix = expires_after(now)?;
         let expires_at = format_expiry(expires_unix)?;
         let bookmark_ref = self
@@ -383,16 +553,34 @@ impl DesktopWorkspaceService {
                 public: public.clone(),
                 owner_window: owner_window.into(),
                 canonical_root,
-                identity: file_identity(&canonical_metadata),
+                identity: selected_identity,
                 expires_unix,
                 entries: BTreeMap::new(),
-                bookmark_ref: bookmark_ref.clone(),
                 #[cfg(target_os = "macos")]
                 _security_scope: None,
             },
         );
-        if let Err(error) = self.persist_locked(&active) {
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        if let Some(reference) = bookmark_ref.as_ref() {
+            records.insert(
+                public.workspace_id.clone(),
+                WorkspaceManifestRecord {
+                    schema_version: 1,
+                    workspace_id: public.workspace_id.clone(),
+                    display_name: public.display_name.clone(),
+                    grant_revision: public.grant_revision,
+                    bookmark_ref: reference.clone(),
+                    device: selected_identity.device,
+                    file: selected_identity.file,
+                },
+            );
+        }
+        if let Err(error) = self.persist_records_locked(&records) {
             active.remove(&public.workspace_id);
+            records.remove(&public.workspace_id);
             if let (Some(persistence), Some(reference)) =
                 (&self.persistence, bookmark_ref.as_deref())
             {
@@ -451,13 +639,22 @@ impl DesktopWorkspaceService {
         let removed = active
             .remove(workspace_id)
             .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
-        if let Err(error) = self.persist_locked(&active) {
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let removed_record = records.remove(workspace_id);
+        if let Err(error) = self.persist_records_locked(&records) {
             active.insert(workspace_id.to_owned(), removed);
+            if let Some(record) = removed_record {
+                records.insert(workspace_id.to_owned(), record);
+            }
             return Err(error);
         }
-        if let (Some(persistence), Some(reference)) =
-            (&self.persistence, removed.bookmark_ref.as_deref())
-        {
+        if let (Some(persistence), Some(reference)) = (
+            &self.persistence,
+            removed_record.as_ref().map(|record| &*record.bookmark_ref),
+        ) {
             persistence.store.delete(reference)?;
         }
         Ok(())
@@ -657,31 +854,17 @@ impl DesktopWorkspaceService {
         Ok(context)
     }
 
-    fn persist_locked(
+    fn persist_records_locked(
         &self,
-        active: &BTreeMap<String, PrivateWorkspace>,
+        records: &BTreeMap<String, WorkspaceManifestRecord>,
     ) -> Result<(), DesktopWorkspaceError> {
         let Some(persistence) = &self.persistence else {
             return Ok(());
         };
-        let records = active
-            .values()
-            .filter_map(|workspace| {
-                workspace
-                    .bookmark_ref
-                    .as_ref()
-                    .map(|reference| WorkspaceManifestRecord {
-                        schema_version: 1,
-                        workspace_id: workspace.public.workspace_id.clone(),
-                        display_name: workspace.public.display_name.clone(),
-                        grant_revision: workspace.public.grant_revision,
-                        bookmark_ref: reference.clone(),
-                        device: workspace.identity.device,
-                        file: workspace.identity.file,
-                    })
-            })
-            .collect();
-        write_manifest(&persistence.manifest_path, records)
+        write_manifest(
+            &persistence.manifest_path,
+            records.values().cloned().collect(),
+        )
     }
 }
 
@@ -703,6 +886,31 @@ fn display_name(root: &Path) -> Result<String, DesktopWorkspaceError> {
     root.file_name()
         .ok_or(DesktopWorkspaceError::CapabilityInvalid)
         .and_then(safe_display_name)
+}
+
+fn validated_root(selected: &Path) -> Result<(PathBuf, fs::Metadata), DesktopWorkspaceError> {
+    let metadata =
+        fs::symlink_metadata(selected).map_err(|_| DesktopWorkspaceError::Unavailable)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(DesktopWorkspaceError::CapabilityInvalid);
+    }
+    let canonical_root =
+        fs::canonicalize(selected).map_err(|_| DesktopWorkspaceError::Unavailable)?;
+    if canonical_root.parent().is_none() {
+        return Err(DesktopWorkspaceError::CapabilityInvalid);
+    }
+    #[cfg(target_os = "macos")]
+    if fs::canonicalize(garive_macos_bookmark::home_directory())
+        .is_ok_and(|home| home == canonical_root)
+    {
+        return Err(DesktopWorkspaceError::CapabilityInvalid);
+    }
+    let canonical_metadata =
+        fs::symlink_metadata(&canonical_root).map_err(|_| DesktopWorkspaceError::Unavailable)?;
+    if !canonical_metadata.is_dir() || canonical_metadata.file_type().is_symlink() {
+        return Err(DesktopWorkspaceError::CapabilityInvalid);
+    }
+    Ok((canonical_root, canonical_metadata))
 }
 
 fn safe_display_name(value: &std::ffi::OsStr) -> Result<String, DesktopWorkspaceError> {
