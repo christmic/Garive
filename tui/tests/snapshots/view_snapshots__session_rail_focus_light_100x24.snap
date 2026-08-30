@@ -25,4 +25,4 @@ expression: "frame(&rail, Theme::Light, 100, 24)"
    ● running  ·  1 turn    │╭ Compose ─────────────────────────────────────────────────────────────╮
                            ││ Ask a follow-up…                                                     │
   Ctrl+N new · Ctrl+S list │╰──────────────────────────────────────────────────────────────────────╯
-                           │  Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help   18 / 4096 B
+                           │  Esc cancel   ↑/↓ select   Enter open   Tab next           18 / 4096 B

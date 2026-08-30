@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 mod conversation;
+mod footer;
 mod overlay;
 pub(crate) mod presentation;
 mod primitives;
@@ -18,8 +19,9 @@ mod style;
 
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
+use footer::render_footer;
 use overlay::render_overlay;
-use primitives::{centered_column, key_hints, selection_window, status_chip};
+use primitives::{centered_column, selection_window, status_chip};
 use session::rail_lines;
 use style::{
     connection_icon, connection_name, connection_style, execution_name, execution_style, palette,
@@ -273,48 +275,6 @@ fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buff
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0))
         .render(inner, buffer);
-}
-
-fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
-    let colors = palette(theme);
-    let cells = Layout::horizontal([Constraint::Min(1), Constraint::Length(14)]).split(area);
-    let hint = if let Some(notice) = model.notice.as_deref() {
-        Line::from(vec![
-            Span::styled(" ● ", colors.notice),
-            Span::styled(notice, colors.normal),
-        ])
-    } else if area.width < 60 && model.execution == ExecutionState::Following {
-        key_hints(&[("Esc", "cancel"), ("?", "help")], colors)
-    } else if area.width < 60 {
-        key_hints(&[("Enter", "send"), ("?", "help")], colors)
-    } else if model.execution == ExecutionState::Following {
-        key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("Ctrl+S", "sessions"),
-                ("Ctrl+P", "commands"),
-                ("?", "help"),
-            ],
-            colors,
-        )
-    } else {
-        key_hints(
-            &[
-                ("Enter", "send"),
-                ("Ctrl+J", "newline"),
-                ("Ctrl+P", "commands"),
-                ("?", "help"),
-            ],
-            colors,
-        )
-    };
-    hint.render(cells[0], buffer);
-    Line::styled(
-        format!("{} / 4096 B ", model.composer.text().len()),
-        colors.muted,
-    )
-    .alignment(Alignment::Right)
-    .render(cells[1], buffer);
 }
 
 fn composer_cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {

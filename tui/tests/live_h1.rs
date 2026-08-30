@@ -198,6 +198,14 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
             expect "draft survives"
             exec stty rows 28 columns 160 < $spawn_out(slave,name)
             expect "draft survives"
+            send "\011"
+            expect "select"
+            send "\177"
+            send "\011"
+            expect "scroll"
+            send "\177"
+            send "\011"
+            expect "draft survives"
             send "\021"
             send "\r"
             expect eof
