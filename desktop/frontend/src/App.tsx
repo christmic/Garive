@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   continueAgentTurn, getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   type HostSessionSummary,
@@ -106,7 +108,7 @@ export function App() {
         turn_id: `visual-turn-${state.messages.length}`,
         execution_id: "visual-execution",
         cursor: state.messages.length + 9,
-        text: "I turned the outcome into a concise work brief with decisions, risks, and the next actions clearly separated.",
+        text: "## Decision brief\n\nThe outcome is ready to move forward with a clear owner and a reversible first step.\n\n| Priority | Next action |\n| --- | --- |\n| High | Confirm the launch owner |\n| Next | Share the review draft |\n\n- [x] Decisions separated from assumptions\n- [ ] Confirm the final date",
         terminal: "completed",
       } });
       return;
@@ -269,10 +271,19 @@ function Timeline({ state }: { state: WorkState }) {
       setCopiedId(undefined);
     }
   };
+  const exportResult = (id: string, text: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `garive-result-${id.slice(0, 12)}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
   return <div className="timeline" aria-live="polite">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
-    : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><p>{message.text || terminalCopy(message.terminal)}</p>
-      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal)}</span><button type="button" onClick={() => void copyResult(message.id, message.text)}>{copiedId === message.id ? "Copied" : "Copy"}</button></div></div></article>)}
+    : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+      components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal)}</Markdown></div>
+      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => exportResult(message.id, message.text)}>Export .md</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{copiedId === message.id ? "Copied" : "Copy"}</button></div></div></div></article>)}
     {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>Working on your outcome…</p><span className="working-line" /></div></article>}
   </div>;
 }
