@@ -148,6 +148,8 @@ Work 按处理优先级分组：
 
 ![Android 新建任务](assets/mobile/android-05-new-task.png)
 
+![iOS 新建任务](assets/mobile/ios-05-new-task.png)
+
 1. 在 Work 点击 **New task**，或从 Agents 选择一个 Agent。
 2. 明确核对 Agent 名称；默认选择只是便利，不会改变服务端权限。
 3. 在 **Outcome for the Agent** 写清楚期望结果和验收条件。
@@ -163,10 +165,14 @@ Work 按处理优先级分组：
 
 ![Android Sessions](assets/mobile/android-03-sessions.png)
 
+![iOS Sessions](assets/mobile/ios-03-sessions.png)
+
 Sessions 提供 **All**、**Working**、**Needs you** 和 **Done** 状态筛选。列表来自服务端持久化
 投影；重新打开任务不会复制 Session，也不会丢失已有 Turn。
 
 ![Android Agents](assets/mobile/android-04-agents.png)
+
+![iOS Agents](assets/mobile/ios-04-agents.png)
 
 Agents 展示服务端已安装的 Agent、用途和可用状态。移动端只能选择服务端已经允许的定义，
 不能在本地伪造 Agent ID、模型或工具权限。
@@ -222,6 +228,8 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 ## 12. Settings 与解除配对
 
 ![Android Settings](assets/mobile/android-07-settings.png)
+
+![iOS Settings](assets/mobile/ios-07-settings.png)
 
 Settings 显示当前配对服务和通知状态。选择 **Unpair this device** 时：
 
