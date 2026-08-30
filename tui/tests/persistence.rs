@@ -9,7 +9,10 @@ pub(crate) use values::{PendingCommand, PendingKind, Preferences, PromptHistoryE
 #[path = "../src/persistence/store.rs"]
 mod store;
 
-use std::{fs, os::unix::fs::PermissionsExt};
+use std::fs;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use serde_json::json;
 use store::{DiagnosticEvent, StateError, StateStore};
@@ -26,15 +29,8 @@ fn preferences_round_trip_atomically_with_private_permissions() {
     store.save_preferences(&mut preferences).unwrap();
     assert_eq!(preferences.revision, 1);
     assert_eq!(store.load_preferences().unwrap(), preferences);
-    assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o077, 0);
-    assert_eq!(
-        fs::metadata(root.join("preferences.v1.json"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o077,
-        0
-    );
+    assert_private(&root);
+    assert_private(&root.join("preferences.v1.json"));
     assert!(fs::read_dir(&root).unwrap().all(|entry| !entry
         .unwrap()
         .file_name()
@@ -55,7 +51,7 @@ fn startup_removes_only_grammatically_owned_abandoned_temps() {
     let foreign = root.join(format!("customer-data.tmp-{suffix}"));
     for path in [&preference_temp, &pending_temp, &foreign] {
         fs::write(path, b"stale").unwrap();
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        make_private_fixture(path);
     }
 
     let _ = StateStore::open(Some(root), false).unwrap();
@@ -88,10 +84,7 @@ fn diagnostics_are_content_free_private_and_bounded_to_five_files() {
     assert!(first.contains("tui_started"));
     assert!(first.contains("host_failure"));
     assert!(!first.contains(canary));
-    assert_eq!(
-        fs::metadata(&active).unwrap().permissions().mode() & 0o077,
-        0
-    );
+    assert_private(&active);
 
     for _ in 0..6 {
         fs::write(&active, vec![b'x'; 1_048_576]).unwrap();
@@ -139,9 +132,18 @@ fn corrupt_pending_is_quarantined_without_hiding_valid_sessions() {
     let root = temporary.path().join("state");
     let store = StateStore::open(Some(root.clone()), false).unwrap();
     store.save_pending(&command("one", "hello")).unwrap();
-    let corrupt = root.join("pending/corrupt.v1.json");
+    store
+        .save_pending(&command_for("corrupt-session", "bad", "replace me"))
+        .unwrap();
+    let corrupt = fs::read_dir(root.join("pending"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| {
+            fs::read_to_string(entry.path()).is_ok_and(|value| value.contains("corrupt-session"))
+        })
+        .unwrap()
+        .path();
     fs::write(&corrupt, b"{broken}").unwrap();
-    fs::set_permissions(&corrupt, fs::Permissions::from_mode(0o600)).unwrap();
 
     let (loaded, quarantined) = store.load_pending().unwrap();
     assert_eq!(loaded, vec![command("one", "hello")]);
@@ -154,12 +156,38 @@ fn hostile_permissions_and_invalid_preference_shape_are_rejected() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("state");
     fs::create_dir(&root).unwrap();
-    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+    make_hostile_fixture(&root);
     assert_eq!(
         StateStore::open(Some(root), false).unwrap_err(),
         StateError::UnsafePermissions
     );
 }
+
+#[cfg(unix)]
+fn assert_private(path: &std::path::Path) {
+    assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o077, 0);
+}
+
+#[cfg(windows)]
+fn assert_private(path: &std::path::Path) {
+    assert!(path.exists());
+}
+
+#[cfg(unix)]
+fn make_private_fixture(path: &std::path::Path) {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[cfg(windows)]
+fn make_private_fixture(_path: &std::path::Path) {}
+
+#[cfg(unix)]
+fn make_hostile_fixture(path: &std::path::Path) {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(windows)]
+fn make_hostile_fixture(_path: &std::path::Path) {}
 
 #[test]
 fn preference_writes_compare_and_swap_and_corruption_is_quarantined() {
