@@ -63,7 +63,11 @@ Agent Runtime and not a compressed desktop IDE.
 
 ## Information architecture
 
-The bottom navigation has four stable destinations.
+Compact phones expose four stable destinations in an overlay drawer so the
+conversation keeps the full vertical canvas. Regular-width tablets keep the
+same destinations in an approximately 300-point persistent sidebar with an
+independent detail stack. Navigation placement changes with width; destination
+identity and state do not.
 
 | Destination | Purpose | Primary contents |
 |---|---|---|
@@ -102,6 +106,9 @@ then one safe-area composer or blocking decision card.
   same position without declaring failure from stream EOF.
 - Long output is selectable and shareable only through an explicit user action.
   Code blocks use horizontal scrolling and copy only their visible content.
+- Expanded Activity shows its public label, committed state, and optional
+  stable safe code. The code is selectable for support but never replaced by a
+  raw provider error, tool argument, path, or internal Ledger value.
 
 ### Decisions and intervention
 

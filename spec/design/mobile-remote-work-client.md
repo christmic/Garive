@@ -266,6 +266,8 @@ does not retain the local credential.
   until an admitted server search contract exists. A matched internal ID is not
   rendered in the result row or exposed through accessibility semantics.
 - Filter chips are `All`, `Working`, `Needs you`, and `Done`.
+- Exactly one filter is visibly and semantically selected; selection is not
+  conveyed by list contents or color alone.
 - Rows expose Agent label, state, safe time decoration, and latest public text
   preview when admitted; swipe does not delete because deletion is absent.
 
@@ -274,6 +276,9 @@ does not retain the local credential.
 - Navigation title uses Agent label; status sits beneath it.
 - Timeline bubbles distinguish user, Agent, system status, suspension, and
   activity. Activity is collapsed by default.
+- Expanded Activity renders the public label and committed state plus an
+  optional selectable stable safe code. Raw provider bodies, paths, arguments,
+  and internal identifiers remain absent.
 - Sticky composer respects keyboard/safe area and supports multiline input.
 - Blocking suspension replaces composer actions but never hides prior content.
 - Approval exposes two explicit actions, `Decline` and `Approve once`, and

@@ -74,6 +74,7 @@ def verify_candidate_evidence() -> None:
     required = {
         "android-03-sessions.png",
         "android-05-new-task.png",
+        "android-06-approval.png",
         "android-09-steering.png",
         "ios-03-sessions.png",
         "ios-05-new-task.png",

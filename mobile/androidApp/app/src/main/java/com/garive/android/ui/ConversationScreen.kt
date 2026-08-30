@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
@@ -300,12 +301,22 @@ private fun TurnCard(turn: MobileTurnItem) {
                             Modifier.fillMaxWidth().padding(vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                activity.label,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    activity.label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                )
+                                activity.safeCode?.let { code ->
+                                    SelectionContainer {
+                                        Text(
+                                            "Code · $code",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                             Text(
                                 activity.state.replace('_', ' '),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

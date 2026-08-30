@@ -2,6 +2,7 @@ package com.garive.android.ui
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -36,10 +37,11 @@ public class SessionsScreenTest {
         )
         compose.setContent { GariveTheme { SessionsScreen(state, {}, {}) } }
 
+        compose.onNodeWithText("All").assertIsSelected()
         compose.onNodeWithText("Search Agent or Session").performTextInput("Beta")
         compose.onNodeWithText("Beta Agent").assertIsDisplayed()
         compose.onAllNodesWithText("Alpha Agent").assertCountEquals(0)
-        compose.onNodeWithText("Working").performClick()
+        compose.onNodeWithText("Working").performClick().assertIsSelected()
         compose.onAllNodesWithText("Beta Agent").assertCountEquals(0)
     }
 
@@ -97,7 +99,7 @@ public class SessionsScreenTest {
         val turn = MobileTurnItem(
             "turn-a", "Finish the mobile release", "The release is ready for review.",
             MobileWorkStatus.NEEDS_INPUT, 4, false, decision,
-            listOf(MobileActivityItem("activity-a", "Ran 4 checks", "completed", true, null)),
+            listOf(MobileActivityItem("activity-a", "Ran 4 checks", "completed", true, "verification_checked")),
         )
         val state = MobileWorkState(
             connection = MobileConnectionState.ONLINE,
@@ -117,6 +119,7 @@ public class SessionsScreenTest {
         compose.onAllNodesWithText("Ran 4 checks").assertCountEquals(0)
         compose.onNodeWithText("Activity · 1").performClick()
         compose.onNodeWithText("Ran 4 checks").assertIsDisplayed()
+        compose.onNodeWithText("Code · verification_checked").assertIsDisplayed()
         compose.runOnIdle { assertEquals(listOf("false", "true"), responses) }
     }
 

@@ -217,7 +217,8 @@ Work 按处理优先级分组：
 
 Sessions 提供本地搜索，以及 **All**、**Working**、**Needs you** 和 **Done** 状态筛选。搜索只
 匹配当前已加载的公开 Agent 名称和内部 Session 标识，不把查询发送给服务端；内部标识仅作为
-协议坐标和本地匹配键，默认列表、无障碍标签和截图均不展示。列表来自服务端持久化投影；重新
+协议坐标和本地匹配键，默认列表、无障碍标签和截图均不展示。筛选始终有且只有一个明确的视觉
+和无障碍选中态，不要求用户根据列表变化猜测当前条件。列表来自服务端持久化投影；重新
 打开任务不会复制 Session，也不会丢失已有 Turn。
 
 ![Android Agents](assets/mobile/android-04-agents.png)
@@ -240,6 +241,9 @@ Execution 不接受绕过协议的即时文本注入。
 ![Android 在原 Session 中追加方向](assets/mobile/android-09-steering.png)
 
 ![iOS 运行中的远程会话](assets/mobile/ios-17-steering.png)
+
+展开 **Activity** 后会显示服务端公开标签、提交状态，以及可用时的稳定安全代码。安全代码可以
+选择并交给管理员排障，但不会替换成 Provider 原始错误、工具参数、文件路径或内部 Ledger 信息。
 
 会话右上角的系统分享入口只导出当前界面已经渲染的 **You / Agent** 文本，并由系统分享面板要求
 用户明确选择接收方；不会附带授权、服务地址、设备或 Session ID、内部活动坐标及未展示的事件。
@@ -440,7 +444,8 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 `accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
-Android 与 iOS 的 Sessions、新建任务和运行中 Conversation 六个核心遥控场景还绑定了截图 SHA-256、
+Android 与 iOS 的 Sessions、新建任务和运行中 Conversation 六个核心遥控场景，以及 Android
+展开 Activity/审批场景，还绑定了截图 SHA-256、
 尺寸及当前原生 UI/KMP/Demo Host 源码摘要。相关源码变化但未重新运行、检查并捕获这些场景时，
 证据校验器会直接失败，避免旧版底部导航或半展开 sheet 截图继续冒充当前候选。
 

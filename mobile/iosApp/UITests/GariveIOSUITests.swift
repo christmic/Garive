@@ -59,6 +59,7 @@ final class GariveIOSUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Activity · 1"].exists)
         app.buttons["Activity · 1"].tap()
         XCTAssertTrue(app.staticTexts["Verification"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Code · verification_checked"].exists)
         app.buttons["Approve once"].tap()
         XCTAssertTrue(
             app.staticTexts["Approved. The agent resumed on the server and completed the release checks."]

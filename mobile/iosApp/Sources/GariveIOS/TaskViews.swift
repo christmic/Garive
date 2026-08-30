@@ -218,7 +218,15 @@ private struct TurnView: View {
                             HStack(spacing: 9) {
                                 Image(systemName: activity.terminal ? "checkmark.circle.fill" : "gearshape.2.fill")
                                     .foregroundStyle(activity.terminal ? GarivePalette.mint : .secondary)
-                                Text(activity.label).font(.subheadline)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(activity.label).font(.subheadline)
+                                    if let code = activity.safeCode {
+                                        Text("Code · \(code)")
+                                            .font(.caption.monospaced())
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                    }
+                                }
                                 Spacer()
                                 Text(activity.state.lowercased()).font(.caption).foregroundStyle(.secondary)
                             }

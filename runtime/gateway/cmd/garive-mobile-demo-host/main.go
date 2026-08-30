@@ -229,7 +229,7 @@ func timelineTurn(id, state string, position int, userText, completion string, s
 	case "stopped":
 		activityState, terminal = "cancelled", true
 	}
-	turn := map[string]any{"turn_id": id, "started_position": max(1, position-2), "latest_position": position, "state": state, "user_text": userText, "content_truncated": false, "activities": []any{map[string]any{"api_version": "v1", "activity_id": "activity-" + id, "kind": "work", "label_key": "agent.activity.verification", "state": activityState, "source_position": position, "terminal": terminal}}}
+	turn := map[string]any{"turn_id": id, "started_position": max(1, position-2), "latest_position": position, "state": state, "user_text": userText, "content_truncated": false, "activities": []any{map[string]any{"api_version": "v1", "activity_id": "activity-" + id, "kind": "work", "label_key": "agent.activity.verification", "state": activityState, "source_position": position, "terminal": terminal, "safe_code": "verification_checked"}}}
 	if completion != "" {
 		turn["completion_text"] = completion
 	}

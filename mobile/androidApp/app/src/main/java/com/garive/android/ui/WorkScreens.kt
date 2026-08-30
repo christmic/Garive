@@ -31,7 +31,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -132,7 +132,11 @@ internal fun SessionsScreen(state: MobileWorkState, onOpen: (String) -> Unit, on
             Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(listOf("All", "Working", "Needs you", "Done")) { label ->
-                    AssistChip(onClick = { filter = label }, label = { Text(label) })
+                    FilterChip(
+                        selected = filter == label,
+                        onClick = { filter = label },
+                        label = { Text(label) },
+                    )
                 }
             }
             Spacer(Modifier.height(4.dp))
