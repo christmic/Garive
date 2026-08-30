@@ -471,17 +471,131 @@ sampling:
 conf = E × R × B × F
 ```
 
-| Factor | Meaning | How it's computed | Default |
-|--------|---------|-------------------|----------|
-| **E** (Evidence) | Evidence strength | Direct quote `0.9` / paraphrase `0.7` / inference `0.5` | Determined by the extractor's `evidence` field |
-| **R** (Reproducibility) | How many independent sessions reproduced the same conclusion | `1 − (1 − r)^n`, where `n` = independent session count, `r` ≈ 0.6 single-session reliability | `n ≥ 3` to be considered `R ≥ 0.94` |
-| **B** (Best-fit / Boundary) | Match to current query | Vector + FTS score, fused | Per-query |
-| **F** (Freshness) | Time since last verification | `1 − (now − last_verified) / F_max_age` | `F_max_age` per type |
-
 The four are **multiplied**, not averaged — a single zero
 factor (e.g. `E = 0` for an unanchored inference) makes the
 whole conf zero. The product captures the **joint** hypothesis
 strength, not "averaged opinions".
+
+The **absolute** value of `conf` is **calibrated** against
+historical data — the formula shape is fixed, but the
+coefficients (e.g. the `r ≈ 0.6` prior) come from regression
+on the memory bank's own outcome log. Calibration runs
+weekly as part of the maintenance loop.
+
+### E — Evidence
+
+| Strength | Score |
+|----------|-------|
+| Direct quote of source ledger entry | 0.9 |
+| Paraphrase of source | 0.7 |
+| Inference (no direct source) | 0.5 |
+| No source (anchor-less) | **0** — entry rejected at admission |
+
+The **anchor-mandatory** rule (E = 0 → reject) is the same
+principle that rejects unanchored extractions at admission
+(angle ③). `E` is binary in the sense that the `0` case
+short-circuits the formula.
+
+### R — Reproducibility (Beta-Binomial conjugate)
+
+`R` is **not** a heuristic. It's the posterior mean of a
+**Beta distribution** with a uniform prior — the standard
+Bayesian reliability score.
+
+```
+Prior:   Beta(α₀ = 1, β₀ = 1)   (uniform)
+Update:  on success → α += 1; on failure → β += 1
+R = α / (α + β)
+```
+
+The **uniform prior** (`α₀ = β₀ = 1`) means "we don't know
+whether this entry is reliable — one piece of evidence
+should move the estimate halfway". Subsequent successes and
+failures **update the posterior**. This is the
+**Beta-Binomial conjugate prior** — the Bayesian standard
+for reliability scoring.
+
+The **calibration** of `R`'s absolute scale happens against
+historical data:
+
+- The weekly regression computes, for each `conf ≈ 0.8`
+  cohort, "of those entries, how often did they succeed?"
+- If the predicted `0.8` matches the observed `0.78`, the
+  prior's effective scale is right.
+- If the prediction is off (e.g. predicted `0.8` but
+  observed `0.5`), the prior and the mapping are recalibrated.
+
+> **The formula shape is fixed. The coefficients are
+> calibrated.** The hypothesis is that a `conf` value
+> calibrated against observed outcomes is a usable
+> ranking signal — the absolute number is the **output**
+> of the calibration, not its input.
+
+### B — Best-fit (per-query retrieval score)
+
+`B` is the per-query retrieval score — how well this entry
+matches the **current** query. Two-leg retrieval:
+
+```
+B = α_v · vector_score  +  α_t · fts_score
+```
+
+with weights `α_v` and `α_t` calibrated per query type (the
+calibration data is the same outcome log as for R). `B` is
+**the only per-query factor**; the other three are
+context-independent.
+
+### F — Freshness (last-verified-driven, **not** auto-decay)
+
+`F` is **not** a simple "time since creation" decay. It is
+"**time since last verification**":
+
+```
+F = 1 − (now − last_verified) / F_max_age
+```
+
+`F` is **reset to 1** whenever the entry is verified —
+reproduced in another session, validated by a recall-and-apply
+cycle, or audit-confirmed. An entry that hasn't been
+re-verified for a long time decays; one that **is** being used
+stays fresh.
+
+> **Time alone doesn't kill memory.** Time **without
+> re-verification** does. The decay is "**not proven
+> recently enough**", not "**ancient**".
+
+This is the principle that **lessons are exempt from
+time-only tombstone** — a lesson about a failure that the
+agent still re-discovers every time stays fresh because the
+**use** itself is the re-verification.
+
+### Censored observations — survival analysis
+
+Right-censored observations (entry was recalled, but the
+**model didn't act on it** in a verifiable way) are
+**withheld** from the `β` update. **Recall ≠ use**.
+
+```
+if recall.outcome == applied:
+    α += 1   # success — the entry was useful
+elif recall.outcome == contradicted:
+    β += 1   # failure — the entry was wrong
+elif recall.outcome == recalled_not_used:
+    # censored — no information, no update
+    pass
+elif recall.outcome == ignored:
+    # censored — recall was offered, model chose not to use
+    pass
+```
+
+> **"Wasn't recalled" ≠ "wasn't useful".** Wasn't recalled
+> is just data we don't have; treating it as "useless"
+> would penalise **high-traffic, high-avoidance** memories —
+> exactly the ones we want to keep.
+
+The `β` update is **only** for **observed outcomes** —
+applied or contradicted. The `R` regression uses these same
+observed outcomes for calibration.
 
 ### Three-way observability — the recall → apply → verify loop
 
