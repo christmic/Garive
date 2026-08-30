@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "candidate-isolated-process",
+  "build_profile": "release",
+  "workload": {
+    "sessions": 10,
+    "loaded_timeline_cells": 5000,
+    "render_area": "200x60"
+  },
+  "environment": {
+    "os": "Darwin 25.6.0 Darwin Kernel Version 25.6.0: Sat Jul 11 15:26:21 PDT 2026; root:xnu-12377.161.13~4/RELEASE_ARM64_T6000 arm64 arm",
+    "cpu": "Apple M1 Pro",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18) (Homebrew)",
+    "garive_commit": "d907ea633f024474de21bd3be50b63f5b53f7875",
+    "measurement_backend": "Darwin /usr/bin/time -l child peak RSS"
+  },
+  "peak_rss_bytes": [
+    4177920,
+    4227072,
+    4227072
+  ],
+  "gate_bytes": 104857600
+}
