@@ -78,7 +78,7 @@ describe("A1 fetch transport", () => {
     expect(calls.slice(0, 3)).toEqual([
       "http://127.0.0.1:1430/v1/agent-definitions",
       "http://127.0.0.1:1430/v1/sessions?limit=64",
-      `http://127.0.0.1:1430/v1/sessions/${fixture.session_id}/timeline?after_position=0&limit=128`,
+      `http://127.0.0.1:1430/v1/sessions/${fixture.session_id}/timeline?after_position=0&limit=64`,
     ]);
     expect(positions).toEqual([1, 2]);
   });

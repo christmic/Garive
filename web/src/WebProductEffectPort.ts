@@ -94,7 +94,11 @@ export class WebProductEffectPort implements ProductEffectPort {
           await this.#clear(pending); yield commandResult(receipt); return;
         }
       }
-    } catch (cause) { throw admitted(cause); }
+    } catch (cause) {
+      const error = admitted(cause);
+      console.warn("[garive:web] product effect failed", effect.kind, error.kind, error.code);
+      throw error;
+    }
   }
 
   async #persist(effect: AppEffect, snapshot: AppViewState) {
@@ -111,7 +115,7 @@ export class WebProductEffectPort implements ProductEffectPort {
     const items = []; let after = 0; let observed: number | undefined;
     for (let pageNumber = 0; pageNumber < 8; pageNumber += 1) {
       const page = decodeHostTimelinePage(normalizeTimeline(
-        await this.host.readTimeline(sessionId, after, 128)));
+        await this.host.readTimeline(sessionId, after, 64)));
       if (page.session_id !== sessionId || page.scanned_through_position < after ||
           (observed !== undefined && page.observed_max_position !== observed)) protocol();
       observed ??= page.observed_max_position; items.push(...page.items);

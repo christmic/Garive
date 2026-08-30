@@ -21,8 +21,8 @@ try {
 } catch { configured = false; }
 
 const capabilities: DesktopCapabilities = {
-  configured, agent_definition_id: configured ? "web-host-definition" : undefined,
-  multi_turn: configured, durable_navigation: configured, activity: configured,
+  configured, agent_definition_id: undefined,
+  multi_turn: configured, durable_navigation: configured, activity: false,
   setup: false, workspaces: false, artifacts: false, updater: false,
 };
 const createProductPort = host ? () => new WebProductEffectPort(host!) : undefined;

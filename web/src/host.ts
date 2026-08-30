@@ -146,7 +146,7 @@ export class FetchHostClient {
     if (!Number.isSafeInteger(limit) || limit <= 0) throw new HostClientError("invalid_command");
     return this.get(`/v1/sessions?limit=${limit}`);
   }
-  public readTimeline(sessionId: string, afterPosition = 0, limit = 128): Promise<HostReadDocument> {
+  public readTimeline(sessionId: string, afterPosition = 0, limit = 64): Promise<HostReadDocument> {
     if (!sessionId || !Number.isSafeInteger(afterPosition) || afterPosition < 0 ||
         !Number.isSafeInteger(limit) || limit <= 0) throw new HostClientError("invalid_command");
     return this.get(`/v1/sessions/${encodeURIComponent(sessionId)}/timeline?after_position=${afterPosition}&limit=${limit}`);
