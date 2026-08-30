@@ -8,6 +8,10 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod lifecycle;
+
+pub use lifecycle::{GoalEvidenceKind, GoalEvidenceV1, GoalSnapshot, GoalState, GoalTransition};
+
 const DEFINITION_CONTRACT: &str = "garive.goal-definition";
 const CONTRACT_VERSION: u8 = 1;
 
