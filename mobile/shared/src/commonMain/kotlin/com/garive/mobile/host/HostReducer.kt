@@ -14,6 +14,12 @@ public enum class HostClientError(public val wireName: String) {
     EVENT_LIMIT_EXCEEDED("event_limit_exceeded"),
     HOST_FAILURE("host_failure"),
     UNKNOWN_HOST_ERROR("unknown_host_error"),
+    AUTHENTICATION_REQUIRED("authentication_required"),
+    ACTOR_FORBIDDEN("actor_forbidden"),
+    DEVICE_REAUTH_REQUIRED("device_reauth_required"),
+    RATE_LIMITED("rate_limited"),
+    RUNTIME_UNAVAILABLE("runtime_unavailable"),
+    PAIRING_REJECTED("pairing_rejected"),
     TRANSPORT_FAILURE("transport_failure"),
     FOLLOW_DEADLINE("follow_deadline"),
 }

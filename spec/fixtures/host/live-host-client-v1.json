@@ -47,5 +47,5 @@
     "non_canonical_json":"{ \"approved\": true }",
     "non_canonical_error":"invalid_command"
   },
-  "failure_codes":["invalid_configuration","invalid_command","invalid_event","event_order_violation","event_limit_exceeded","host_failure","unknown_host_error","transport_failure","follow_deadline"]
+  "failure_codes":["invalid_configuration","invalid_command","invalid_event","event_order_violation","event_limit_exceeded","host_failure","unknown_host_error","authentication_required","actor_forbidden","device_reauth_required","rate_limited","runtime_unavailable","pairing_rejected","transport_failure","follow_deadline"]
 }

@@ -36,3 +36,7 @@ tempfile = "3.27.0"
 [[bin]]
 name = "garive-tui"
 path = "src/main.rs"
+
+[[bench]]
+name = "release_baseline"
+harness = false

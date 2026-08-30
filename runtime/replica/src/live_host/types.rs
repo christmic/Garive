@@ -196,6 +196,24 @@ pub struct SessionPageV1 {
     pub next_before: Option<String>,
 }
 
+/// Content-free Session transition state consumed only by the mobile Gateway.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MobileWakeObservation {
+    pub session_id: String,
+    pub latest_position: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wake_category: Option<&'static str>,
+}
+
+/// Bounded private Runtime snapshot used for Gateway transition detection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MobileWakePage {
+    pub api_version: &'static str,
+    pub observations: Vec<MobileWakeObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_before: Option<String>,
+}
+
 /// Restart-safe public coordinates for one resumable Turn.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SuspensionViewV1 {

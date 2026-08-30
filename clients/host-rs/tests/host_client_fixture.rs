@@ -251,6 +251,44 @@ async fn host_fixture_errors_are_typed_without_body_disclosure() {
         assert_eq!(error.status, Some(host_error.status));
         assert!(!format!("{error:?} {error}").contains("must-not-leak"));
     }
+
+    for (status, code, expected) in [
+        (
+            401,
+            "authentication_required",
+            HostClientErrorCode::AuthenticationRequired,
+        ),
+        (403, "actor_forbidden", HostClientErrorCode::ActorForbidden),
+        (
+            409,
+            "device_reauth_required",
+            HostClientErrorCode::DeviceReauthRequired,
+        ),
+        (429, "rate_limited", HostClientErrorCode::RateLimited),
+        (
+            503,
+            "runtime_unavailable",
+            HostClientErrorCode::RuntimeUnavailable,
+        ),
+        (
+            401,
+            "pairing_rejected",
+            HostClientErrorCode::PairingRejected,
+        ),
+    ] {
+        let body = serde_json::json!({"code": code, "secret": "must-not-leak"});
+        let responses = vec![http_json(status, &body.to_string())];
+        let (base_url, server) = serve(responses, Arc::new(Mutex::new(Vec::new()))).await;
+        let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+        let error = client
+            .create_session("stable", "definition")
+            .await
+            .expect_err("gateway error");
+        server.await.expect("server task");
+        assert_eq!(error.code, expected);
+        assert_eq!(error.status, Some(status));
+        assert!(!format!("{error:?} {error}").contains("must-not-leak"));
+    }
 }
 
 #[tokio::test]

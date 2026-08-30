@@ -172,99 +172,101 @@ fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: Usage
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
-    let temporary = tempfile::tempdir().unwrap();
-    let database = temporary.path().join("runtime.sqlite3");
-    let host = LiveHost::new(
-        &database,
-        installed(),
-        LiveHostLimits {
-            max_command_bytes: 4_096,
-            event_batch_size: 64,
-            event_poll_interval_ms: 10,
-            activity: None,
-        },
-        Arc::new(Clock),
-        Arc::new(CompletingDispatcher {
-            database: database.clone(),
-            calls: AtomicUsize::new(0),
-        }),
-    )
-    .unwrap();
-    let server = LiveHostServer::bind(host.clone(), "127.0.0.1:0".parse().unwrap())
-        .await
+    for _ in 0..2 {
+        let temporary = tempfile::tempdir().unwrap();
+        let database = temporary.path().join("runtime.sqlite3");
+        let host = LiveHost::new(
+            &database,
+            installed(),
+            LiveHostLimits {
+                max_command_bytes: 4_096,
+                event_batch_size: 64,
+                event_poll_interval_ms: 10,
+                activity: None,
+            },
+            Arc::new(Clock),
+            Arc::new(CompletingDispatcher {
+                database: database.clone(),
+                calls: AtomicUsize::new(0),
+            }),
+        )
         .unwrap();
-    let address = server.local_addr();
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-    let server_task = tokio::spawn(server.serve(async move {
-        let _ = shutdown_rx.await;
-    }));
+        let server = LiveHostServer::bind(host.clone(), "127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = server.local_addr();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let server_task = tokio::spawn(server.serve(async move {
+            let _ = shutdown_rx.await;
+        }));
 
-    let state = temporary.path().join("state");
-    let first_log = temporary.path().join("first.log");
-    assert!(run_expect(address, &state, &first_log, false));
-    let first = fs::read_to_string(&first_log).unwrap();
-    assert!(first.contains("answer"));
-    assert!(first.contains("production"));
-    assert!(first.contains("runtime"));
-    assert!(first.as_bytes().contains(&b'\x07'));
-    assert!(!first.contains("unavailable"));
+        let state = temporary.path().join("state");
+        let first_log = temporary.path().join("first.log");
+        assert!(run_expect(address, &state, &first_log, false));
+        let first = fs::read_to_string(&first_log).unwrap();
+        assert!(first.contains("answer"));
+        assert!(first.contains("production"));
+        assert!(first.contains("runtime"));
+        assert!(first.as_bytes().contains(&b'\x07'));
+        assert!(!first.contains("unavailable"));
 
-    let sessions = SqliteLedger::open(&database)
-        .unwrap()
-        .list_sessions()
-        .unwrap();
-    assert_eq!(sessions.len(), 2);
-    let session = sessions
-        .iter()
-        .find(|session| {
-            host.get_timeline(session.as_str(), 0, 10)
-                .unwrap()
-                .items
-                .len()
-                == 3
-        })
-        .unwrap()
-        .clone();
-    let timeline = host.get_timeline(session.as_str(), 0, 10).unwrap();
-    assert_eq!(timeline.items[0].user_text, "hello durable tui");
-    assert_eq!(
-        timeline.items[0].completion_text.as_deref(),
-        Some("answer from production runtime")
-    );
-    assert_eq!(timeline.items[1].user_text, "second question");
-    assert_eq!(
-        timeline.items[1].completion_text.as_deref(),
-        Some("answer after continuation")
-    );
-    assert_eq!(timeline.items[2].user_text, "cancel this turn");
-    assert_eq!(timeline.items[2].state, "stopped");
-    let background = sessions.iter().find(|value| **value != session).unwrap();
-    let background_timeline = host.get_timeline(background.as_str(), 0, 10).unwrap();
-    assert_eq!(background_timeline.items[0].user_text, "background task");
-    assert_eq!(
-        background_timeline.items[0].completion_text.as_deref(),
-        Some("background completion")
-    );
-    let preferences: serde_json::Value =
-        serde_json::from_slice(&fs::read(state.join("preferences.v1.json")).unwrap()).unwrap();
-    assert_eq!(
-        preferences["selected_session_id"].as_str(),
-        Some(session.as_str())
-    );
+        let sessions = SqliteLedger::open(&database)
+            .unwrap()
+            .list_sessions()
+            .unwrap();
+        assert_eq!(sessions.len(), 2);
+        let session = sessions
+            .iter()
+            .find(|session| {
+                host.get_timeline(session.as_str(), 0, 10)
+                    .unwrap()
+                    .items
+                    .len()
+                    == 3
+            })
+            .unwrap()
+            .clone();
+        let timeline = host.get_timeline(session.as_str(), 0, 10).unwrap();
+        assert_eq!(timeline.items[0].user_text, "hello durable\n耐久 tui");
+        assert_eq!(
+            timeline.items[0].completion_text.as_deref(),
+            Some("answer from production runtime")
+        );
+        assert_eq!(timeline.items[1].user_text, "second question");
+        assert_eq!(
+            timeline.items[1].completion_text.as_deref(),
+            Some("answer after continuation")
+        );
+        assert_eq!(timeline.items[2].user_text, "cancel this turn");
+        assert_eq!(timeline.items[2].state, "stopped");
+        let background = sessions.iter().find(|value| **value != session).unwrap();
+        let background_timeline = host.get_timeline(background.as_str(), 0, 10).unwrap();
+        assert_eq!(background_timeline.items[0].user_text, "background task");
+        assert_eq!(
+            background_timeline.items[0].completion_text.as_deref(),
+            Some("background completion")
+        );
+        let preferences: serde_json::Value =
+            serde_json::from_slice(&fs::read(state.join("preferences.v1.json")).unwrap()).unwrap();
+        assert_eq!(
+            preferences["selected_session_id"].as_str(),
+            Some(session.as_str())
+        );
 
-    let restart_log = temporary.path().join("restart.log");
-    assert!(run_expect(address, &state, &restart_log, true));
-    let restarted = fs::read_to_string(restart_log).unwrap();
-    assert!(restarted.contains("You: hello durable tui"));
-    assert!(restarted.contains("Garive: answer from production runtime"));
-    assert!(SqliteLedger::open(&database)
-        .unwrap()
-        .session_watermark(&SessionId::try_from(session.as_str()).unwrap())
-        .unwrap()
-        .is_some());
+        let restart_log = temporary.path().join("restart.log");
+        assert!(run_expect(address, &state, &restart_log, true));
+        let restarted = fs::read_to_string(restart_log).unwrap();
+        assert!(restarted.contains("You: hello durable\n耐久 tui"));
+        assert!(restarted.contains("Garive: answer from production runtime"));
+        assert!(SqliteLedger::open(&database)
+            .unwrap()
+            .session_watermark(&SessionId::try_from(session.as_str()).unwrap())
+            .unwrap()
+            .is_some());
 
-    let _ = shutdown_tx.send(());
-    server_task.await.unwrap().unwrap();
+        let _ = shutdown_tx.send(());
+        server_task.await.unwrap().unwrap();
+    }
 }
 
 fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> bool {
@@ -273,7 +275,8 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             set timeout 8
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
-            expect "You: hello durable tui"
+            expect "You: hello durable"
+            expect "耐久 tui"
             expect "Garive: answer from production runtime"
             expect "You: second question"
             expect "Garive: answer after continuation"
@@ -290,8 +293,18 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "definition-m"
-            send "hello durable tui\r"
-            expect "answer from production runtime"
+            encoding system utf-8
+            send -- "\033\[200~"
+            send -- "hello durable\n\u8010\u4e45 tuX"
+            send -- "\033\[201~"
+            after 200
+            send "\177"
+            send "i\r"
+            send "?"
+            expect { "Keyboard guide" {} timeout { exit 20 } }
+            after 300
+            send "\033"
+            expect { "answer from production runtime" {} timeout { exit 21 } }
             send "second question\r"
             expect "Action required"
             send "\r"

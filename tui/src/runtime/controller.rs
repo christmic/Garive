@@ -217,6 +217,12 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         }
         return;
     }
+    if key.code == KeyCode::Char('?')
+        && (state.model.composer.text().is_empty() || state.composer_is_frozen())
+    {
+        state.dispatch(AppAction::OverlayOpened(Overlay::Help));
+        return;
+    }
     if state.composer_is_frozen()
         && matches!(
             key.code,
@@ -238,9 +244,6 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     match key.code {
         KeyCode::Tab => cycle_focus(state, key.modifiers.contains(KeyModifiers::SHIFT)),
         KeyCode::BackTab => cycle_focus(state, true),
-        KeyCode::Char('?') if state.model.composer.text().is_empty() => {
-            state.dispatch(AppAction::OverlayOpened(Overlay::Help))
-        }
         KeyCode::Char(character) => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Composer));
             let _ = state.model.composer.insert(&character.to_string());

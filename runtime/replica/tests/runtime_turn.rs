@@ -354,6 +354,7 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
         tool_invocation_id: garive_ledger::ToolInvocationId::try_from("tool-1").unwrap(),
         interaction_id: "interaction-1".into(),
         prepared_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        prompt: json!({"message":"Approve?","schema_version":1}),
         response_schema_digest: "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553"
             .into(),
         response_schema: json!({"type":"boolean"}),

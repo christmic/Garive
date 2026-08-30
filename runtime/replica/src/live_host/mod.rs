@@ -25,5 +25,6 @@ pub(crate) use activity_projection::project_activities;
 pub(crate) use projection::{completion_text, project_fact};
 pub(crate) use service::validate_key;
 pub(crate) use types::{
-    CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHostState, StartTurnBody,
+    CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHostState,
+    MobileWakeObservation, MobileWakePage, StartTurnBody,
 };

@@ -1,8 +1,12 @@
 package com.garive.mobile.host
 
 import com.garive.host.v1.CreateSessionResponseV1
+import com.garive.host.v1.AgentDefinitionPageV1
 import com.garive.host.v1.HostEventV1
+import com.garive.host.v1.SessionPageV1
+import com.garive.host.v1.SessionViewV1
 import com.garive.host.v1.TurnCommandResponseV1
+import com.garive.host.v1.TurnTimelinePageV1
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -10,6 +14,7 @@ import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.serverSentEvents
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
@@ -43,16 +48,33 @@ public data class HostClientLimits(
 )
 
 /** Bounded loopback H1 HTTP/SSE client shared by Android and iOS. */
-public class LiveHostClient internal constructor(
+public class LiveHostClient private constructor(
     baseUrl: String,
+    private val authorization: RemoteAuthorization?,
     private val limits: HostClientLimits,
     private val client: HttpClient,
-) {
+) : MobileHost {
     /** Creates a production client with fixed no-redirect CIO transport policy. */
     @Throws(HostClientException::class)
     public constructor(baseUrl: String, limits: HostClientLimits) :
-        this(baseUrl, limits, defaultHostHttpClient())
-    private val origin: String = validateBaseUrl(baseUrl)
+        this(baseUrl, null, limits, defaultHostHttpClient())
+
+    /** Creates an authenticated remote client that accepts only a public HTTPS DNS origin. */
+    @Throws(HostClientException::class)
+    public constructor(baseUrl: String, bearerToken: String, limits: HostClientLimits) :
+        this(baseUrl, bearerAuthorization(bearerToken), limits, defaultHostHttpClient())
+
+    internal constructor(baseUrl: String, limits: HostClientLimits, client: HttpClient) :
+        this(baseUrl, null, limits, client)
+
+    internal constructor(
+        baseUrl: String,
+        bearerToken: String,
+        limits: HostClientLimits,
+        client: HttpClient,
+    ) : this(baseUrl, bearerAuthorization(bearerToken), limits, client)
+
+    private val origin: String = validateBaseUrl(baseUrl, authorization != null)
 
     init {
         if (limits.maxCommandBytes <= 0 || limits.maxEventBytes <= 0 ||
@@ -60,9 +82,46 @@ public class LiveHostClient internal constructor(
         ) fail(HostClientError.INVALID_CONFIGURATION)
     }
 
+    /** Loads installed Agent definitions available for new Sessions. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun agentDefinitions(): AgentDefinitionPageV1 =
+        decodeAgentDefinitionPage(read("/v1/agent-definitions"))
+
+    /** Loads one bounded reverse-opened Session page. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun sessions(limit: Int): SessionPageV1 {
+        if (limit <= 0 || limit > limits.maxEvents) fail(HostClientError.INVALID_COMMAND)
+        return decodeSessionPage(read("/v1/sessions?limit=$limit"))
+    }
+
+    /** Loads one exact durable Session summary. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun session(sessionId: String): SessionViewV1 {
+        if (sessionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        val value = decodeSessionView(read("/v1/sessions/${sessionId.encodeURLPathPart()}"))
+        if (value.session?.session_id != sessionId) fail(HostClientError.INVALID_EVENT)
+        return value
+    }
+
+    /** Loads complete durable Turns changed after the supplied watermark. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun timeline(sessionId: String, afterPosition: Long, limit: Int): TurnTimelinePageV1 {
+        if (sessionId.isEmpty() || afterPosition < 0 || limit <= 0 || limit > limits.maxEvents) {
+            fail(HostClientError.INVALID_COMMAND)
+        }
+        val value = decodeTimelinePage(
+            read(
+                "/v1/sessions/${sessionId.encodeURLPathPart()}/timeline" +
+                    "?after_position=$afterPosition&limit=$limit",
+            ),
+        )
+        if (value.session_id != sessionId) fail(HostClientError.INVALID_EVENT)
+        return value
+    }
+
     /** Creates a Session with a caller-owned stable command identity. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun createSession(commandId: String, definitionId: String): CreateSessionResponseV1 {
+    override suspend fun createSession(commandId: String, definitionId: String): CreateSessionResponseV1 {
         if (definitionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         val value = post("/v1/sessions", commandId, buildJsonObject { put("agent_definition_id", definitionId) })
         return CreateSessionResponseV1(
@@ -74,7 +133,7 @@ public class LiveHostClient internal constructor(
 
     /** Starts one Turn with a caller-owned stable command identity. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
+    override suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         return postTurn(
             "/v1/sessions/${sessionId.encodeURLPathPart()}/turns", commandId, sessionId, null,
@@ -84,7 +143,7 @@ public class LiveHostClient internal constructor(
 
     /** Requests cancellation through one observed durable position. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun cancelTurn(
+    override suspend fun cancelTurn(
         commandId: String, sessionId: String, turnId: String, requestedThroughPosition: Long,
     ): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || turnId.isEmpty() || requestedThroughPosition <= 0) {
@@ -100,13 +159,14 @@ public class LiveHostClient internal constructor(
 
     /** Continues one exact durable suspension. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun continueTurn(
+    override suspend fun continueTurn(
         commandId: String,
         sessionId: String,
         turnId: String,
         suspensionId: String,
         expectedSessionVersion: Long,
         input: String,
+        inputJson: Boolean,
     ): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || turnId.isEmpty() || suspensionId.isEmpty() ||
             expectedSessionVersion <= 0 || input.isEmpty()
@@ -115,14 +175,15 @@ public class LiveHostClient internal constructor(
             "/v1/turns/${turnId.encodeURLPathPart()}:continue", commandId, sessionId, turnId,
             buildJsonObject {
                 put("session_id", sessionId); put("suspension_id", suspensionId)
-                put("expected_session_version", expectedSessionVersion); put("input", input)
+                put("expected_session_version", expectedSessionVersion)
+                if (inputJson) put("input_json", input) else put("input", input)
             },
         )
     }
 
     /** Follows committed events until an explicit durable terminal. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun followUntilTerminal(sessionId: String, afterPosition: Long = 0): HostView {
+    override suspend fun followUntilTerminal(sessionId: String, afterPosition: Long): HostView {
         if (sessionId.isEmpty() || afterPosition < 0) fail(HostClientError.INVALID_COMMAND)
         try {
             return withTimeout(limits.followDeadlineMs) {
@@ -130,7 +191,10 @@ public class LiveHostClient internal constructor(
                 var count = 0
                 client.serverSentEvents(
                     urlString = "$origin/v1/sessions/${sessionId.encodeURLPathPart()}/events?after_position=$afterPosition",
-                    request = { accept(ContentType.Text.EventStream) },
+                    request = {
+                        accept(ContentType.Text.EventStream)
+                        authorization?.let { header(HttpHeaders.Authorization, it.header) }
+                    },
                 ) {
                     incoming.first { wire ->
                         val data = wire.data ?: return@first false
@@ -187,8 +251,25 @@ public class LiveHostClient internal constructor(
         if (encoded.encodeToByteArray().size > limits.maxCommandBytes) fail(HostClientError.INVALID_COMMAND)
         val response = try {
             client.post { url(origin + path); contentType(ContentType.Application.Json)
-                header(IDEMPOTENCY_KEY, commandId); setBody(encoded) }
+                header(IDEMPOTENCY_KEY, commandId)
+                authorization?.let { header(HttpHeaders.Authorization, it.header) }
+                setBody(encoded) }
         } catch (_: Throwable) { fail(HostClientError.TRANSPORT_FAILURE) }
+        return decodeResponse(response)
+    }
+
+    private suspend fun read(path: String): JsonObject {
+        val response = try {
+            client.get {
+                url(origin + path)
+                accept(ContentType.Application.Json)
+                authorization?.let { header(HttpHeaders.Authorization, it.header) }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            fail(HostClientError.TRANSPORT_FAILURE)
+        }
         return decodeResponse(response)
     }
 
@@ -199,8 +280,7 @@ public class LiveHostClient internal constructor(
         val raw = bytes.decodeToString()
         if (response.status.value !in 200..299) {
             val code = runCatching { decodeObject(raw).optionalText("code") }.getOrDefault("")
-            fail(if (code in KNOWN_HOST_ERRORS) HostClientError.HOST_FAILURE else HostClientError.UNKNOWN_HOST_ERROR,
-                response.status.value)
+            fail(classifyServerError(code), response.status.value)
         }
         return decodeObject(raw)
     }
@@ -220,13 +300,37 @@ private val KNOWN_HOST_ERRORS: Set<String> = setOf(
     "precondition_failed", "durability_unavailable", "corrupt_state",
 )
 
-private fun validateBaseUrl(value: String): String {
+internal fun classifyServerError(code: String): HostClientError = when (code) {
+    "authentication_required" -> HostClientError.AUTHENTICATION_REQUIRED
+    "actor_forbidden" -> HostClientError.ACTOR_FORBIDDEN
+    "device_reauth_required" -> HostClientError.DEVICE_REAUTH_REQUIRED
+    "rate_limited" -> HostClientError.RATE_LIMITED
+    "runtime_unavailable" -> HostClientError.RUNTIME_UNAVAILABLE
+    "pairing_rejected" -> HostClientError.PAIRING_REJECTED
+    in KNOWN_HOST_ERRORS -> HostClientError.HOST_FAILURE
+    else -> HostClientError.UNKNOWN_HOST_ERROR
+}
+
+internal fun validateBaseUrl(value: String, remote: Boolean): String {
     val url = runCatching { Url(value) }.getOrElse { fail(HostClientError.INVALID_CONFIGURATION) }
-    if (url.protocol.name != "http" || url.host !in setOf("localhost", "127.0.0.1", "::1") ||
+    val loopback = url.host in setOf("localhost", "127.0.0.1", "::1")
+    val validRemoteHost = url.host.isNotEmpty() && !loopback && ':' !in url.host &&
+        !url.host.endsWith(".local") && !url.host.all { it.isDigit() || it == '.' }
+    if ((!remote && (url.protocol.name != "http" || !loopback)) ||
+        (remote && (url.protocol.name != "https" || !validRemoteHost)) ||
         url.encodedPath != "/" || url.parameters.entries().isNotEmpty() || url.fragment.isNotEmpty()
     ) fail(HostClientError.INVALID_CONFIGURATION)
     val renderedHost = if (":" in url.host) "[${url.host}]" else url.host
-    return "http://$renderedHost:${url.port}"
+    return "${url.protocol.name}://$renderedHost:${url.port}"
+}
+
+private class RemoteAuthorization(val header: String)
+
+private fun bearerAuthorization(token: String): RemoteAuthorization {
+    if (token.isEmpty() || token.length > 4_096 || token.any { it.code !in 0x21..0x7e }) {
+        fail(HostClientError.INVALID_CONFIGURATION)
+    }
+    return RemoteAuthorization("Bearer $token")
 }
 
 private fun validCommandId(value: String): Boolean =

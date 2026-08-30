@@ -47,6 +47,7 @@ impl LiveHostServer {
             .route("/v1/sessions/:session_id/turns", post(start_turn))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
+            .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot))
             .fallback(not_found)
             .with_state(host);
         Ok(Self {
@@ -94,6 +95,19 @@ async fn session_page(State(host): State<LiveHost>, RawQuery(query): RawQuery) -
         .await
         .map_err(|_| LiveHostError::DurabilityUnavailable)
         .and_then(|result| result);
+    command_response(result)
+}
+
+async fn mobile_wake_snapshot(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
+    let (limit, before) = match parse_session_query(query.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    let result =
+        tokio::task::spawn_blocking(move || host.mobile_wake_page(limit, before.as_deref()))
+            .await
+            .map_err(|_| LiveHostError::DurabilityUnavailable)
+            .and_then(|result| result);
     command_response(result)
 }
 

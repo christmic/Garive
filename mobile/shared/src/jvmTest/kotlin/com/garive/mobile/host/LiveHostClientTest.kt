@@ -116,7 +116,7 @@ public class LiveHostClientTest {
     public fun rejectsNonLoopbackAndRedactsKnownHostFailure(): Unit = runBlocking {
         assertEquals(
             HostClientError.INVALID_CONFIGURATION,
-            assertFailsWith<HostClientException> { LiveHostClient("https://example.com/", limits()) }.code,
+            assertFailsWith<HostClientException> { LiveHostClient("http://example.com/", limits()) }.code,
         )
         val engine = MockEngine {
             respondJson("""{"code":"not_found","secret":"must-not-leak"}""", HttpStatusCode.NotFound)
@@ -128,6 +128,80 @@ public class LiveHostClientTest {
         assertEquals(HostClientError.HOST_FAILURE, error.code)
         assertEquals(404, error.status)
         assertTrue("must-not-leak" !in error.toString())
+    }
+
+    @Test
+    public fun remoteHttpsSendsBearerWithoutLeakingIt(): Unit = runBlocking {
+        var authorization: String? = null
+        val engine = MockEngine { request ->
+            authorization = request.headers[HttpHeaders.Authorization]
+            respondJson(
+                """{"session_id":"session-client","agent_instance_id":"agent-1","committed_position":1}""",
+            )
+        }
+        val client = LiveHostClient("https://agent.example.test/", "mobile-secret", limits(), HttpClient(engine))
+        client.createSession("create-stable", "definition-main")
+        assertEquals("Bearer mobile-secret", authorization)
+        assertTrue("mobile-secret" !in client.toString())
+    }
+
+    @Test
+    public fun remoteConfigurationFailsBeforeTransport(): Unit {
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> {
+                LiveHostClient("https://127.0.0.1/", "token", limits())
+            }.code,
+        )
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> {
+                LiveHostClient("https://agent.example.test/path", "token", limits())
+            }.code,
+        )
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> {
+                LiveHostClient("https://agent.example.test/", "", limits())
+            }.code,
+        )
+    }
+
+    @Test
+    public fun remoteReadModelsUseExactH2RoutesAndGeneratedValues(): Unit = runBlocking {
+        val seen = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            seen += "${request.method.value} ${request.url.encodedPath}?${request.url.encodedQuery} ${request.headers[HttpHeaders.Authorization]}"
+            val body = when (request.url.encodedPath) {
+                "/v1/agent-definitions" ->
+                    """{"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"definition-main","definition_revision":"revision-1","capabilities":["work"]}]}"""
+                "/v1/sessions" ->
+                    """{"api_version":"v1","sessions":[{"api_version":"v1","session_id":"session-client","agent_instance_id":"agent-1","definition_id":"definition-main","definition_revision":"revision-1","opened_at":"2026-08-30T00:00:00Z","latest_position":9,"latest_turn_id":"turn-client","latest_turn_state":"suspended","turn_count":1}]}"""
+                "/v1/sessions/session-client" ->
+                    """{"api_version":"v1","session":{"api_version":"v1","session_id":"session-client","agent_instance_id":"agent-1","definition_id":"definition-main","definition_revision":"revision-1","opened_at":"2026-08-30T00:00:00Z","latest_position":9,"latest_turn_id":"turn-client","latest_turn_state":"suspended","turn_count":1},"observed_max_position":9}"""
+                "/v1/sessions/session-client/timeline" ->
+                    """{"api_version":"v1","session_id":"session-client","items":[{"turn_id":"turn-client","started_position":2,"latest_position":9,"state":"suspended","user_text":"ship mobile","suspension":{"suspension_id":"suspension-1","session_version":3,"kind":"approval_required","prompt_schema":"garive.public-suspension-prompt.v1","prompt_json":"{\"message\":\"Approve?\",\"schema_version\":1}","prompt_digest":"885cfe3367b0344b40518f34170c6b4e81e64722ade58a0a9e61bc0e136e6b86","response_schema_json":"{\"type\":\"boolean\"}","response_schema_digest":"7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553"},"content_truncated":false,"activities":[{"api_version":"v1","activity_id":"activity-1","kind":"tool","label_key":"agent.activity.work","state":"waiting_for_input","source_position":8,"terminal":false}]}],"scanned_through_position":9,"observed_max_position":9,"has_more":false}"""
+                else -> error("unexpected path ${request.url.encodedPath}")
+            }
+            respondJson(body)
+        }
+        val client = LiveHostClient("https://agent.example.test/", "mobile-secret", limits(), HttpClient(engine))
+
+        assertEquals("definition-main", client.agentDefinitions().definitions.single().definition_id)
+        assertEquals("suspended", client.sessions(8).sessions.single().latest_turn_state)
+        assertEquals(9, client.session("session-client").observed_max_position)
+        val timeline = client.timeline("session-client", 0, 8)
+        assertEquals("approval_required", timeline.items.single().suspension?.kind)
+        assertEquals("agent.activity.work", timeline.items.single().activities.single().label_key)
+        assertEquals(
+            listOf(
+                "GET /v1/agent-definitions? Bearer mobile-secret",
+                "GET /v1/sessions?limit=8 Bearer mobile-secret",
+                "GET /v1/sessions/session-client? Bearer mobile-secret",
+                "GET /v1/sessions/session-client/timeline?after_position=0&limit=8 Bearer mobile-secret",
+            ),
+            seen,
+        )
     }
 
     @Test
@@ -158,7 +232,7 @@ public class LiveHostClientTest {
         val client = LiveHostClient("http://127.0.0.1:4317/", limits(), HttpClient(engine))
         client.cancelTurn("cancel-stable", "session-client", "turn-client", 9)
         client.continueTurn(
-            "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input",
+            "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input", false,
         )
         assertEquals(listOf("/v1/turns/turn-client:cancel", "/v1/turns/turn-client:continue"), paths)
     }
