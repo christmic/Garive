@@ -84,3 +84,125 @@ message HostErrorV1 {
   // Non-secret operator-safe summary.
   string message = 2;
 }
+
+// One installed immutable Agent definition safe for client discovery.
+message AgentDefinitionSummaryV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Immutable Agent definition identity.
+  string definition_id = 2;
+  // Immutable Agent definition revision.
+  string definition_revision = 3;
+  // Sorted stable public capability names.
+  repeated string capabilities = 4;
+}
+
+// Bounded installed Agent definition result.
+message AgentDefinitionPageV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Installed definitions in stable identity order.
+  repeated AgentDefinitionSummaryV1 definitions = 2;
+}
+
+// Restart-safe summary of one verified durable Session prefix.
+message SessionSummaryV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Stable durable Session identity.
+  string session_id = 2;
+  // Runtime-owned Agent instance identity.
+  string agent_instance_id = 3;
+  // Immutable Agent definition identity.
+  string definition_id = 4;
+  // Immutable Agent definition revision.
+  string definition_revision = 5;
+  // RFC 3339 opening time.
+  string opened_at = 6;
+  // Frozen highest durable Session position.
+  uint64 latest_position = 7;
+  // Most recently first-started Turn.
+  optional string latest_turn_id = 8;
+  // Stable lifecycle of the latest Turn.
+  optional string latest_turn_state = 9;
+  // Number of verified first-started Turns.
+  uint64 turn_count = 10;
+}
+
+// Reverse-opened bounded page of durable Sessions.
+message SessionPageV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Session summaries in page order.
+  repeated SessionSummaryV1 sessions = 2;
+  // Opaque cursor for the next older page.
+  optional string next_before = 3;
+}
+
+// One exact Session summary at a frozen watermark.
+message SessionViewV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Verified Session summary.
+  SessionSummaryV1 session = 2;
+  // Highest durable position included in this response.
+  uint64 observed_max_position = 3;
+}
+
+// Exact durable coordinates and public schemas for one current suspension.
+message SuspensionViewV1 {
+  // Exact durable suspension identity.
+  string suspension_id = 1;
+  // Session version required by continuation.
+  uint64 session_version = 2;
+  // Stable suspension family.
+  string kind = 3;
+  // Exact public prompt schema identity.
+  string prompt_schema = 4;
+  // Canonical RFC 8785 public prompt JSON.
+  bytes prompt_json = 5;
+  // Lowercase SHA-256 of prompt_json.
+  string prompt_digest = 6;
+  // Canonical portable response schema when interactive.
+  optional bytes response_schema_json = 7;
+  // Lowercase SHA-256 of response_schema_json.
+  optional string response_schema_digest = 8;
+}
+
+// One complete Turn projected from a verified Session prefix.
+message TurnTimelineItemV1 {
+  // Stable durable Turn identity.
+  string turn_id = 1;
+  // Position of the first Turn start.
+  uint64 started_position = 2;
+  // Latest lifecycle or continuation position.
+  uint64 latest_position = 3;
+  // Stable public lifecycle state.
+  string state = 4;
+  // Exact verified first trusted-user input.
+  string user_text = 5;
+  // Redacted committed completion text.
+  optional string completion_text = 6;
+  // Current restart-safe suspension coordinates.
+  optional SuspensionViewV1 suspension = 7;
+  // Whether display content was explicitly truncated.
+  bool content_truncated = 8;
+  // Tag 9 is reserved for H3 activities.
+  reserved 9;
+}
+
+// Bounded ascending page of complete Turn projections.
+message TurnTimelinePageV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Owning Session identity.
+  string session_id = 2;
+  // Complete changed Turns in first-start order.
+  repeated TurnTimelineItemV1 items = 3;
+  // Highest durable position fully scanned.
+  uint64 scanned_through_position = 4;
+  // Frozen Session watermark used by this response.
+  uint64 observed_max_position = 5;
+  // Whether another bounded scan is required.
+  bool has_more = 6;
+}

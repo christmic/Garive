@@ -153,6 +153,69 @@ pub struct SessionPageV1 {
     pub next_before: Option<String>,
 }
 
+/// Restart-safe public coordinates for one resumable Turn.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SuspensionViewV1 {
+    /// Exact durable suspension identity.
+    pub suspension_id: String,
+    /// Session version required by optimistic continuation.
+    pub session_version: u64,
+    /// Stable suspension family.
+    pub kind: String,
+    /// Exact public prompt schema identity.
+    pub prompt_schema: &'static str,
+    /// Canonical RFC 8785 public prompt JSON.
+    pub prompt_json: String,
+    /// Lowercase SHA-256 of `prompt_json`.
+    pub prompt_digest: String,
+    /// Canonical portable response schema for interactive suspensions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_schema_json: Option<String>,
+    /// Lowercase SHA-256 of `response_schema_json`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_schema_digest: Option<String>,
+}
+
+/// One complete Turn projected from a verified fixed Session prefix.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelineItemV1 {
+    /// Stable durable Turn identity.
+    pub turn_id: String,
+    /// Position of the first `turn.started` fact.
+    pub started_position: u64,
+    /// Latest lifecycle or continuation position for this Turn.
+    pub latest_position: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Exact verified first trusted-user input.
+    pub user_text: String,
+    /// Redacted terminal response text when completed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_text: Option<String>,
+    /// Current restart-safe suspension coordinates when suspended.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suspension: Option<SuspensionViewV1>,
+    /// Whether display text was explicitly bounded by Runtime.
+    pub content_truncated: bool,
+}
+
+/// Bounded ascending page of complete durable Turn projections.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelinePageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Complete changed Turns in first-start order.
+    pub items: Vec<TurnTimelineItemV1>,
+    /// Highest durable position fully scanned for this page.
+    pub scanned_through_position: u64,
+    /// Frozen Session watermark used by this response.
+    pub observed_max_position: u64,
+    /// Whether another bounded scan is required.
+    pub has_more: bool,
+}
+
 /// Explicit Runtime clock used to stamp durable Host commands.
 pub trait HostClock: Send + Sync {
     /// Returns one RFC 3339 observation time.
