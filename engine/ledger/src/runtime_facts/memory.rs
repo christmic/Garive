@@ -410,7 +410,7 @@ fn recall(value: &Map<String, Value>) -> Result<(), LedgerError> {
         }
         if item["safe_label"]
             .as_str()
-            .map_or(true, |text| text.len() > 256)
+            .is_none_or(|text| text.len() > 256)
         {
             return Err(LedgerError::InvalidFact);
         }

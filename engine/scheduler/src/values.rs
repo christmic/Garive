@@ -298,7 +298,7 @@ fn valid_timing(value: &ScheduleTiming) -> bool {
         } => {
             canonical_utc(first_due_at_utc).is_some()
                 && *delay_ms != 0
-                && max_occurrences.map_or(true, |count| count != 0)
+                && max_occurrences.is_none_or(|count| count != 0)
         }
     }
 }
