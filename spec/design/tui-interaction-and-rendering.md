@@ -193,6 +193,7 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Shift+Enter` | composer, when distinguishable | insert newline |
 | `Tab` / `Shift+Tab` | no blocking overlay | move focus forward/backward |
 | `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
+| `Up` / `Down`, `PageUp` / `PageDown`, `Home` / `End` | focused conversation | scroll one cell, scroll one viewport, jump oldest, or follow latest |
 | `Ctrl+P` | any ready view | open command palette |
 | `Ctrl+R` | composer | open prompt-history search |
 | `Ctrl+N` | ready | create Session using selected/default definition |
@@ -211,6 +212,9 @@ frozen behind the pending command and cannot be edited into a different retry.
 The key router resolves overlay, editor, focused region, then global bindings
 in that order. A key is consumed by at most one owner. Footer hints reflect the
 current resolved bindings rather than a static list.
+Typing a printable character outside an overlay explicitly transfers focus to
+the composer before inserting it. Editing and deletion keys never mutate a
+draft while the Session rail or conversation owns focus.
 
 ## Slash commands
 

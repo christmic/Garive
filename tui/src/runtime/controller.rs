@@ -241,6 +241,32 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             return;
         }
     }
+    if state.model.focus == FocusTarget::Conversation {
+        match key.code {
+            KeyCode::Up => state.model.scroll_conversation_up(1),
+            KeyCode::Down => state.model.scroll_conversation_down(1),
+            KeyCode::PageUp => state
+                .model
+                .scroll_conversation_up(conversation_page_cells(state)),
+            KeyCode::PageDown => state
+                .model
+                .scroll_conversation_down(conversation_page_cells(state)),
+            KeyCode::Home => state.model.jump_to_oldest(),
+            KeyCode::End => state.model.follow_latest(),
+            _ => {}
+        }
+        if matches!(
+            key.code,
+            KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+        ) {
+            return;
+        }
+    }
     if state.composer_is_frozen()
         && matches!(
             key.code,
@@ -266,6 +292,17 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Composer));
             let _ = state.model.composer.insert(&character.to_string());
         }
+        KeyCode::Esc if state.model.execution == ExecutionState::Following => cancel(state),
+        _ => {}
+    }
+    if matches!(
+        key.code,
+        KeyCode::Tab | KeyCode::BackTab | KeyCode::Char(_) | KeyCode::Esc
+    ) || state.model.focus != FocusTarget::Composer
+    {
+        return;
+    }
+    match key.code {
         KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
             state.model.composer.delete_word_left();
         }
@@ -314,22 +351,6 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             let _ = state.model.composer.insert("\n");
         }
         KeyCode::Enter => submit(state),
-        KeyCode::PageUp => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state
-                .model
-                .scroll_conversation_up(conversation_page_cells(state));
-        }
-        KeyCode::PageDown => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state
-                .model
-                .scroll_conversation_down(conversation_page_cells(state));
-        }
-        KeyCode::End if state.model.focus == FocusTarget::Conversation => {
-            state.model.follow_latest()
-        }
-        KeyCode::Esc if state.model.execution == ExecutionState::Following => cancel(state),
         _ => {}
     }
 }

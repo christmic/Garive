@@ -75,6 +75,12 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "session_rail_focus_mono_100x24",
         frame(&rail, Theme::Mono, 100, 24)
     );
+
+    rail.focus = application::FocusTarget::Conversation;
+    insta::assert_snapshot!(
+        "conversation_focus_dark_100x24",
+        frame(&rail, Theme::Dark, 100, 24)
+    );
 }
 
 #[test]

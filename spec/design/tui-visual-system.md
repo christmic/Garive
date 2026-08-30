@@ -37,6 +37,8 @@ Higher-level renderers must reuse these primitives for equivalent behavior.
 The shared Session identity/state presentation lives in `view/session.rs`; the
 rail and picker may change density, but cannot invent separate labels, glyphs,
 or state wording.
+The context footer lives in `view/footer.rs` and derives its hints from the
+same focus, execution, and responsive state used by input routing.
 
 ## Composite components
 
