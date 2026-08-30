@@ -364,6 +364,16 @@ the existing `40x12` snapshot preserves the tiny-height policy. All 43 view,
 25 snapshot/boundary, and ten shipping-binary macOS PTY tests pass, as do
 strict all-target/all-feature Clippy, formatting, and diff checks.
 
+Merge revision `e23018f4` routes composer Up/Down through that shared visual
+layout at the actual responsive inner width. Contracts cover sticky
+terminal-cell columns, shorter-row clamping, CJK double-cell graphemes, and an
+exact-width continuation row. After rebasing onto `1ae331e7`, all 11 editor,
+45 view, 27 snapshot/boundary, and 11 shipping-binary macOS PTY tests passed.
+The new `20x16` Expect case types a single logical line, sends a real Up escape
+sequence across its soft wrap, inserts `X` at the first visual row's target,
+and proves normal terminal restoration. Strict all-target/all-feature Clippy,
+formatting, and diff checks passed.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

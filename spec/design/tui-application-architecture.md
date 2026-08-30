@@ -114,6 +114,11 @@ The component also owns screen-cell-to-grapheme hit testing. The mouse
 controller stores only the transient down/drag/up ownership bit and sends
 grapheme placement intents to `EditorState`; it does not inspect text widths,
 line breaks, theme spans, or responsive coordinates.
+Keyboard Up/Down follows the same boundary: root view derives the composer's
+actual inner width, `EditorLayout` returns the visual-row target and preferred
+terminal-cell column, and the controller forwards that intent to
+`EditorState`. The editor owns directional selection collapse and mutation but
+does not duplicate responsive wrapping geometry.
 
 The title presenter is pure and returns only bounded product labels derived
 from typed connection/execution state plus a loaded Session ordinal. The

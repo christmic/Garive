@@ -310,6 +310,18 @@ shipping-binary PTY tests passed. Strict all-target/all-feature Clippy passed
 with warnings denied; formatting and diff checks were clean. The snapshot is
 semantic buffer evidence, not a physical-window image.
 
+Merge revision `e23018f4` makes Up/Down consume the same visual rows. On native
+macOS arm64 after rebasing onto `1ae331e7`, all 11 editor, 45 view, 27
+snapshot/boundary, and 11 shipping-binary PTY tests passed. The added `20x16`
+Expect PTY types `hello wonderful world` as one logical line, sends a real Up
+escape sequence, types `X`, and observes `helloX` on the first visual row; it
+then exits normally and proves alternate-screen restoration. Focused unit
+contracts additionally bind sticky terminal-cell columns, short rows, CJK
+double-cell graphemes, and exact-width continuation. Strict
+all-target/all-feature Clippy passed with warnings denied; formatting and diff
+checks were clean. This is executable PTY evidence, not a physical-window
+Terminal/iTerm2-class screenshot.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

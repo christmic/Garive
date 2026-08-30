@@ -50,6 +50,11 @@ spans, cursor coordinates, and vertical scroll. It measures sanitized extended
 graphemes in terminal cells, prefers whitespace wrap points, and hard-wraps an
 oversized word without splitting a grapheme. Screens and controllers may not
 recompute composer wrapping or cursor coordinates.
+Visual Up/Down navigation also consumes this layout. Its sticky column is a
+terminal-cell column, and destinations clamp only at complete grapheme
+insertion points. Rendering, cursor placement, selection, scrolling, height,
+pointer hit testing, and vertical navigation therefore cannot disagree about
+where a row begins or ends.
 At non-tiny heights the composer frame grows from three to at most seven rows
 using the layout's visual row count, including an exact-width cursor
 continuation row. It does not grow from logical newline count. Below the

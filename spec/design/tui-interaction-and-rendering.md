@@ -185,6 +185,14 @@ hold the composer at three rows and scroll internally. Thus a long single-line
 draft expands like an explicit multiline draft when space exists, without
 stealing the compact footer or minimum conversation surface.
 
+Up and Down consume those same visual rows, not logical newline ranges. The
+first vertical move records the cursor's terminal-cell column; subsequent
+moves retain that column and clamp to the nearest grapheme insertion point on
+shorter rows. A non-vertical edit or movement clears the preferred column.
+Exact-width continuation rows and double-cell graphemes obey the same rule.
+The controller requests a target from the composer at the actual responsive
+inner width, while `EditorState` alone applies selection and cursor mutation.
+
 | Operation | Required behavior |
 |---|---|
 | Insert | one transaction per typed cluster; adjacent typing may coalesce within a bounded interval |

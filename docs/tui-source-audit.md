@@ -241,6 +241,16 @@ logical newlines. Garive now adopts that directly observed invariant through
 its own bounded `EditorLayout::desired_height`; the `3..=7` frame policy and
 tiny-height fallback are Garive product decisions.
 
+Codex `bottom_pane/textarea.rs:1229-1340` also uses its cached wrapped ranges
+for Up/Down, retains a preferred display-width column, and clamps at visual-row
+boundaries. Pi `packages/tui/src/components/editor.ts:1319-1375` independently
+moves between precomputed visual lines with a preferred visual column and
+grapheme-safe segment correction. These are direct observations at the pinned
+revisions. Garive authors a different boundary: its private `EditorLayout`
+computes targets at the current composer width, while `EditorState` applies
+grapheme-indexed cursor and selection intent. No reference data structure or
+code is copied.
+
 ### Pi corroboration
 
 At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`

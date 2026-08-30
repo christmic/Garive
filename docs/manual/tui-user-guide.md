@@ -174,6 +174,10 @@ displayed character when a word is wider than the composer. Explicit newlines,
 wrapped text, selection highlighting, the cursor, and automatic vertical
 scroll all use the same terminal-cell layout, so the cursor remains aligned at
 line boundaries and while a narrow composer scrolls.
+Up and Down move between those visible wrapped rows even when the draft has no
+newline. Repeated vertical moves keep the original screen column where the row
+has one and otherwise land at its nearest complete-character boundary; CJK and
+combining characters are never split.
 When height permits, the composer grows from three to seven rows according to
 what is visibly wrapped, even if the draft contains no explicit newline. On an
 extremely short terminal it stays compact and scrolls internally so the
