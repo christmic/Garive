@@ -61,6 +61,8 @@ message ContinueTurnRequestV1 {
   uint64 expected_session_version = 3;
   // Trusted external input satisfying the suspension.
   string input = 4;
+  // Exact RFC 8785 JSON text satisfying a typed interaction schema.
+  optional string input_json = 5;
 }
 
 // Durable result of a Turn mutation or exact idempotent replay.

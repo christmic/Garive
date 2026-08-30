@@ -454,6 +454,7 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     let text = String::from_utf8(first.to_vec()).unwrap();
     assert!(text.contains("event: host"));
     assert!(text.contains("session.created"));
+    assert!(text.contains(r#""api_version":"v1""#));
     drop(bytes);
 
     shutdown_tx.send(()).unwrap();
