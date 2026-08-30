@@ -5,10 +5,10 @@ expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
   GARIVE                    ●  ·  ready
 
 ╭ Commands ────────────────────────────╮
-│  /theme system  Follow terminal theme│
-│› /theme dark  Use dark theme         │
-│  /theme light  Use light theme       │
-│  /theme mono  Use mono theme         │
+│   /theme system  Follow terminal th… │
+│ › /theme dark  Use dark theme        │
+│   /theme light  Use light theme      │
+│   /theme mono  Use mono theme        │
 ╰──────────────────────────────────────╯
 ╔ Compose ═════════════════════════════╗
 ║ /theme                               ║

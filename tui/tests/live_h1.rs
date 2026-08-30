@@ -156,6 +156,46 @@ fn slash_prefix_opens_adjacent_suggestions_and_tab_completes_in_a_real_pty() {
 }
 
 #[test]
+fn slash_suggestion_mouse_click_completes_only_the_visible_row() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("command-suggestion-mouse.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            send "/theme d"
+            expect "Use dark theme"
+            send "\033\[<0;32;19M"
+            expect "/theme dark"
+            send "\r"
+            after 100
+            send "\021"
+            expect "Garive?"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("Use dark theme"));
+    assert!(text.contains("/theme dark"));
+    assert!(text.contains("\x1b[?1000h"));
+    assert!(text.contains("\x1b[?1000l"));
+}
+
+#[test]
 fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
     for _ in 0..2 {
         let (address, server) = empty_host();
