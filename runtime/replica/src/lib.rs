@@ -65,7 +65,8 @@ pub use core_bridge::{
     PlannedMemoryTombstone, PlannedMemoryWrite, PlannedSkillActivation, PreparedAgentCapabilities,
     PreparedExecution, PreparedKnowledgeCapability, PreparedKnowledgeRequest, PreparedModelRequest,
     RecordedMemoryDecision, RecordedMemoryErasure, RecordedMemoryRecall, RecoveredMemoryRepository,
-    RuntimeModelUncertainReason, ScheduleCancelReason, ScheduleDispatchDisposition,
+    RuntimeModelUncertainReason, SafetyFuture, SafetyPort, SandboxAdmission, SandboxAdmissionPort,
+    SandboxAdmissionRequest, ScheduleCancelReason, ScheduleDispatchDisposition,
     ScheduleLifecycleContext, SkillActivationContext, SqliteGovernedEffectPort,
     TerminalPublicationError, TerminalPublisher,
 };
@@ -150,7 +151,8 @@ pub use sandbox_facts::{
     plan_f0_effect_admission, F0EffectAdmissionContext, PlannedF0EffectAdmission,
 };
 pub use sandbox_runtime::{
-    preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SandboxBindingV1, SandboxPreflightError,
+    preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SafetyRequestV1, SandboxBindingV1,
+    SandboxPreflightError,
 };
 pub use scheduler_runtime::{
     cancel_schedule, create_schedule, reconstruct_schedule_state, run_schedule_once,

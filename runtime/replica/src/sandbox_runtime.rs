@@ -3,8 +3,124 @@
 use garive_tools::{
     InvocationGrant, PreparedToolCall, SandboxRequirementsV1, ToolAccessPolicyV1, ToolInvocationId,
 };
+use sha2::{Digest, Sha256};
 
 use crate::PreparedExecution;
+
+/// Exact Runtime-owned input evaluated by F0 safety policy before C5 grant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SafetyRequestV1 {
+    request_id: String,
+    invocation_id: ToolInvocationId,
+    prepared_digest: String,
+    tool_name: String,
+    tool_revision: String,
+    actor_authority_reference: String,
+    goal_reference: Option<String>,
+    plan_reference: Option<String>,
+    exact_access_digest: String,
+    sandbox_requirements_digest: String,
+    effective_policy_revision: String,
+}
+
+impl SafetyRequestV1 {
+    /// Derives all tool and access bindings from one exact Prepared-v3 call.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        request_id: impl Into<String>,
+        invocation_id: ToolInvocationId,
+        prepared: &PreparedToolCall,
+        actor_authority_reference: impl Into<String>,
+        goal_reference: Option<String>,
+        plan_reference: Option<String>,
+        effective_policy_revision: impl Into<String>,
+    ) -> Result<Self, SandboxPreflightError> {
+        let accesses = prepared
+            .invocation_accesses()
+            .ok_or(SandboxPreflightError::InvalidBinding)?;
+        let exact_access_digest = serde_jcs::to_vec(accesses)
+            .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+            .map_err(|_| SandboxPreflightError::InvalidBinding)?;
+        let value = Self {
+            request_id: request_id.into(),
+            invocation_id,
+            prepared_digest: prepared.input_digest().into(),
+            tool_name: prepared.tool_name().into(),
+            tool_revision: prepared.tool_revision().into(),
+            actor_authority_reference: actor_authority_reference.into(),
+            goal_reference,
+            plan_reference,
+            exact_access_digest,
+            sandbox_requirements_digest: prepared
+                .sandbox_requirements_digest()
+                .ok_or(SandboxPreflightError::InvalidBinding)?
+                .into(),
+            effective_policy_revision: effective_policy_revision.into(),
+        };
+        if prepared.contract_version() != 3
+            || [
+                value.request_id.as_str(),
+                value.actor_authority_reference.as_str(),
+                value.effective_policy_revision.as_str(),
+            ]
+            .iter()
+            .any(|field| field.is_empty())
+            || value.goal_reference.as_deref() == Some("")
+            || value.plan_reference.as_deref() == Some("")
+        {
+            return Err(SandboxPreflightError::InvalidBinding);
+        }
+        Ok(value)
+    }
+
+    /// Returns the stable request identity.
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// Returns the exact invocation identity.
+    pub const fn invocation_id(&self) -> &ToolInvocationId {
+        &self.invocation_id
+    }
+
+    /// Returns the Prepared Call digest evaluated by policy.
+    pub fn prepared_digest(&self) -> &str {
+        &self.prepared_digest
+    }
+
+    /// Returns the effective policy revision used by the decision.
+    pub fn effective_policy_revision(&self) -> &str {
+        &self.effective_policy_revision
+    }
+
+    pub(crate) fn tool_name(&self) -> &str {
+        &self.tool_name
+    }
+
+    pub(crate) fn tool_revision(&self) -> &str {
+        &self.tool_revision
+    }
+
+    pub(crate) fn actor_authority_reference(&self) -> &str {
+        &self.actor_authority_reference
+    }
+
+    pub(crate) fn goal_reference(&self) -> Option<&str> {
+        self.goal_reference.as_deref()
+    }
+
+    pub(crate) fn plan_reference(&self) -> Option<&str> {
+        self.plan_reference.as_deref()
+    }
+
+    pub(crate) fn exact_access_digest(&self) -> &str {
+        &self.exact_access_digest
+    }
+
+    pub(crate) fn sandbox_requirements_digest(&self) -> &str {
+        &self.sandbox_requirements_digest
+    }
+}
 
 /// Closed policy outcome before a C5 grant may reach sandbox preflight.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -7,6 +7,8 @@ use garive_tools::{
 };
 use serde_json::Value;
 
+use crate::{SafetyDecisionV1, SafetyRequestV1, SandboxBindingV1};
+
 /// Frozen durable ownership and time values for one effect-capable Execution.
 pub struct GovernedEffectConfig {
     /// Session receiving every effect fact.
@@ -70,6 +72,47 @@ pub type AuthorityFuture<'a> =
 pub trait AuthorityPort: Send {
     /// Decides without allocating Runtime identities or crossing execution.
     fn authorize<'a>(&'a mut self, request: AuthorityRequest<'a>) -> AuthorityFuture<'a>;
+}
+
+/// Asynchronous F0 Safety policy result for one exact request.
+pub type SafetyFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<SafetyDecisionV1, GovernedRuntimePortError>> + Send + 'a>>;
+
+/// Runtime policy boundary that cannot allocate a C5 grant or select an executor.
+pub trait SafetyPort: Send {
+    /// Evaluates one immutable request without crossing an external-effect boundary.
+    fn decide<'a>(&'a mut self, request: &'a SafetyRequestV1) -> SafetyFuture<'a>;
+}
+
+/// Exact inputs used to select and prove one concrete Sandbox binding.
+pub struct SandboxAdmissionRequest<'a> {
+    /// Safety request whose exact resources must be enforceable.
+    pub safety_request: &'a SafetyRequestV1,
+    /// Safety decision committed before grant conversion.
+    pub decision: &'a SafetyDecisionV1,
+    /// C5 grant derived from the exact Allow constraints.
+    pub grant: &'a InvocationGrant,
+}
+
+/// Concrete preflight evidence returned without dispatching the tool.
+pub struct SandboxAdmission {
+    /// Immutable OS/executor/workspace binding.
+    pub binding: SandboxBindingV1,
+    /// Digest of post-narrowing concrete limits.
+    pub effective_limits_digest: String,
+    /// Runtime-owned stable preflight identity.
+    pub preflight_id: String,
+    /// Executor dispatch-attempt identity.
+    pub dispatch_attempt_id: String,
+}
+
+/// Runtime Sandbox broker boundary; selection and proof occur before Started.
+pub trait SandboxAdmissionPort: Send {
+    /// Selects an enforceable binding but must not dispatch the invocation.
+    fn admit(
+        &mut self,
+        request: SandboxAdmissionRequest<'_>,
+    ) -> Result<SandboxAdmission, GovernedRuntimePortError>;
 }
 
 /// Executor identity and dispatch attempt proven enforceable before Started.

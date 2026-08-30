@@ -1,7 +1,7 @@
 use garive_ledger::{ExecutionId, TurnId};
 use garive_runtime::{
     plan_f0_effect_admission, preflight_sandbox, F0EffectAdmissionContext, SafetyDecisionV1,
-    SafetyDisposition, SandboxBindingV1, SandboxPreflightError,
+    SafetyDisposition, SafetyRequestV1, SandboxBindingV1, SandboxPreflightError,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
@@ -47,19 +47,25 @@ fn exact_allow_and_stricter_binding_prepare_without_dispatch() {
 #[test]
 fn allowed_v3_admission_plans_the_complete_durable_prestart_chain() {
     let fixture = fixture("src", 4);
+    let request = SafetyRequestV1::new(
+        "safety-request",
+        fixture.invocation.clone(),
+        &fixture.prepared,
+        "actor-authority",
+        Some("goal-1:2".into()),
+        Some("plan-1:1".into()),
+        "policy-v1",
+    )
+    .unwrap();
     let planned = plan_f0_effect_admission(
         &F0EffectAdmissionContext {
             turn_id: TurnId::try_from("turn").unwrap(),
             execution_id: ExecutionId::try_from("execution").unwrap(),
-            safety_request_id: "safety-request".into(),
-            actor_authority_reference: "actor-authority".into(),
-            goal_reference: Some("goal-1:2".into()),
-            plan_reference: Some("plan-1:1".into()),
             preflight_id: "preflight".into(),
             effective_limits_digest: "e".repeat(64),
             recorded_at: "2026-08-31T00:00:00Z".into(),
         },
-        &fixture.invocation,
+        &request,
         &fixture.prepared,
         &fixture.grant,
         &fixture.decision,

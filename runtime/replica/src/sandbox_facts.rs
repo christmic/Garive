@@ -4,14 +4,14 @@ use garive_ledger::{
     CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, ToolInvocationId as LedgerToolId,
     TurnId,
 };
-use garive_tools::{InvocationGrant, PreparedToolCall, ReplayClass, ToolInvocationId};
+use garive_tools::{InvocationGrant, PreparedToolCall, ReplayClass};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    preflight_sandbox, PreparedExecution, SafetyDecisionV1, SafetyDisposition, SandboxBindingV1,
-    SandboxPreflightError,
+    preflight_sandbox, PreparedExecution, SafetyDecisionV1, SafetyDisposition, SafetyRequestV1,
+    SandboxBindingV1, SandboxPreflightError,
 };
 
 /// Frozen ownership, authority context and audit identities for one F0 admission.
@@ -21,14 +21,6 @@ pub struct F0EffectAdmissionContext {
     pub turn_id: TurnId,
     /// Active Execution owning the invocation.
     pub execution_id: ExecutionId,
-    /// Stable Safety request identity.
-    pub safety_request_id: String,
-    /// Authenticated actor-authority reference.
-    pub actor_authority_reference: String,
-    /// Optional active Goal revision reference.
-    pub goal_reference: Option<String>,
-    /// Optional adopted Plan revision reference.
-    pub plan_reference: Option<String>,
     /// Stable Sandbox preflight identity.
     pub preflight_id: String,
     /// Digest of effective post-narrowing limits.
@@ -50,7 +42,7 @@ pub struct PlannedF0EffectAdmission {
 #[allow(clippy::too_many_arguments)]
 pub fn plan_f0_effect_admission(
     context: &F0EffectAdmissionContext,
-    invocation_id: &ToolInvocationId,
+    request: &SafetyRequestV1,
     prepared: &PreparedToolCall,
     grant: &InvocationGrant,
     decision: &SafetyDecisionV1,
@@ -58,9 +50,18 @@ pub fn plan_f0_effect_admission(
     dispatch_attempt_id: &str,
 ) -> Result<PlannedF0EffectAdmission, SandboxPreflightError> {
     validate_context(context)?;
+    let invocation_id = request.invocation_id();
     if decision.disposition() != SafetyDisposition::Allow
         || decision.invocation_id() != invocation_id
         || decision.prepared_digest() != prepared.input_digest()
+        || request.prepared_digest() != prepared.input_digest()
+        || request.tool_name() != prepared.tool_name()
+        || request.tool_revision() != prepared.tool_revision()
+        || request.sandbox_requirements_digest()
+            != prepared
+                .sandbox_requirements_digest()
+                .ok_or(SandboxPreflightError::InvalidBinding)?
+        || request.effective_policy_revision() != decision.policy_revision()
     {
         return Err(SandboxPreflightError::InvalidBinding);
     }
@@ -79,6 +80,9 @@ pub fn plan_f0_effect_admission(
         .sandbox_requirements()
         .ok_or(SandboxPreflightError::InvalidBinding)?;
     let access = content(accesses)?;
+    if access["digest"] != request.exact_access_digest() {
+        return Err(SandboxPreflightError::InvalidBinding);
+    }
     let sandbox = content(requirements)?;
     let granted = content(&grant.granted_requirements)?;
     let access_scope_digest = canonical_digest(binding.access_scope())?;
@@ -92,19 +96,19 @@ pub fn plan_f0_effect_admission(
         fact(context, &tool, suffix, kind, schema_version, payload)
     };
     let mut safety = json!({
-        "request_id":context.safety_request_id,"decision_id":decision.decision_id(),
+        "request_id":request.request_id(),"decision_id":decision.decision_id(),
         "disposition":"allow","prepared_digest":prepared.input_digest(),
         "tool_name":prepared.tool_name(),"tool_revision":prepared.tool_revision(),
-        "actor_authority_reference":context.actor_authority_reference,
+        "actor_authority_reference":request.actor_authority_reference(),
         "exact_access_digest":access["digest"],
         "sandbox_requirements_digest":sandbox["digest"],
         "policy_revision":decision.policy_revision(),
         "constraints_digest":decision.constraints_digest().ok_or(SandboxPreflightError::InvalidBinding)?,
     });
-    if let Some(value) = &context.goal_reference {
+    if let Some(value) = request.goal_reference() {
         safety["goal_reference"] = json!(value);
     }
-    if let Some(value) = &context.plan_reference {
+    if let Some(value) = request.plan_reference() {
         safety["plan_reference"] = json!(value);
     }
     let facts = vec![
@@ -161,12 +165,8 @@ pub fn plan_f0_effect_admission(
 }
 
 fn validate_context(value: &F0EffectAdmissionContext) -> Result<(), SandboxPreflightError> {
-    if value.safety_request_id.is_empty()
-        || value.actor_authority_reference.is_empty()
-        || value.preflight_id.is_empty()
+    if value.preflight_id.is_empty()
         || value.effective_limits_digest.len() != 64
-        || value.goal_reference.as_deref() == Some("")
-        || value.plan_reference.as_deref() == Some("")
         || chrono::DateTime::parse_from_rfc3339(&value.recorded_at).is_err()
     {
         Err(SandboxPreflightError::InvalidBinding)
