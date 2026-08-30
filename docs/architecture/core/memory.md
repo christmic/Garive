@@ -1042,6 +1042,146 @@ of the memory lifecycle:
 Bloat is intercepted at **every** of the four gates, with exact decisions and
 bounds owned by M1 rather than prose defaults here.
 
+## Anomaly handling — memory error vs context mismatch
+
+When a failure happens, the first question is **why**:
+is the memory wrong, or is the memory right but **the
+current context is out of its applicability scope**? The
+answer determines what to update.
+
+### Scope is a first-class field — extracted at write time
+
+The ⑦ MemoryTypeRegistry entry schema already has `scope` as
+a first-class field. The **extraction prompt** must enforce
+it:
+
+```yaml
+# memory.lesson extraction
+- content:        "method X fails because Y"
+- applicability:  "when input file is in the format X, with condition Z"
+  # not just the conclusion — the APPLICABILITY conditions too
+- scope:          {scope_marker_1, scope_marker_2}
+  # the entry's claim is bounded by these scope markers
+- evidence:      tool.result excerpt
+- source_session: ...
+- source_seq:     ...
+```
+
+**The structured extraction captures both the conclusion AND
+the applicability conditions.** Not just "method X fails" —
+but "method X fails **when input file is in format X with
+condition Z**". Scope markers are first-class — they're a
+field on the entry, not a side comment.
+
+### Conditional update rule
+
+When a failure happens, the causal attribution is:
+
+| Signal | Outcome | What happens |
+|--------|---------|--------------|
+| Memory applies to current context + context is similar | **Memory is wrong** | β +1, mark as falsified; rule refinement recorded |
+| Memory does not apply to current context, or context is very different | **Context is out of scope** | β unchanged; **narrow the entry's scope**; record the new failure case as a boundary example |
+| Memory's applicability is unclear | **Uncertain** | Defer; `dream` re-evaluates with the new evidence |
+
+> **Failure inside scope + similar context → falsify the
+> rule.** **Failure outside scope or dissimilar context →
+> narrow the rule.** The two responses are different.
+
+This is **case-based reasoning** (Schank's theoretical core):
+**a failure is a case**, and the case teaches the **boundary
+of the rule**, not the rule itself. The fix adjusts the
+**applicability**, not the conclusion — unless the conclusion
+is itself wrong.
+
+### Two failure modes are different updates
+
+| Failure mode | What changes | β effect | Entry effect |
+|--------------|------------|----------|--------------|
+| Memory error | Conclusion might be wrong | β +1 (failure counts) | `status = falsified`, candidate re-derivation |
+| Context mismatch | Conclusion stays, applicability narrows | β unchanged | `applicability` narrowed; new boundary case added |
+
+The **two failure modes are different updates**. Conflating
+them is the bug — a memory that fires only in similar
+contexts but gets blamed in dissimilar ones accumulates
+false-failure β over time, leading to "the memory is
+unreliable" — when the real problem is "the memory is
+over-confident about its applicability".
+
+### Recall — context similarity gate
+
+At recall time, compute:
+
+```
+context_similarity = sim(query_context, entry.source_context)
+```
+
+Where `entry.source_context` is the **provenance snapshot**
+captured at write time (the state of the conversation when
+the entry was created).
+
+If `context_similarity ≥ threshold`:
+
+- Normal recall; inject with standard `E × R × B × F`
+- The entry's "applicability was right for this query".
+
+If `context_similarity < threshold`:
+
+- Recall **but** inject with a **scope-mismatch marker**:
+  ```
+  [mem:abc] POSSIBLY-OUT-OF-SCOPE: this entry was written
+  under context X (source_session=S42, ...). Current
+  context is Y. Treat as a hypothesis, verify before acting.
+  ```
+- Apply a **weight discount** to the conf (`B *= weight_discount`,
+  `weight_discount < 1`).
+- The model still sees the entry — we're not hiding useful
+  information — but the epistemic label is honest.
+
+> **The scope-mismatch is declared at injection, not at
+> failure.** The agent knows the entry is from a different
+> context and acts accordingly; the failure-after-the-fact
+> attribution does not apply.
+
+### Five-state outcome — extended
+
+The earlier `recall.outcome` schema has four states
+(applied, contradicted, recalled_not_used, ignored). The
+anomaly handling adds a fifth:
+
+| State | Meaning |
+|-------|---------|
+| `applied` | Model cited and used; outcome was success → α +1 |
+| `contradicted` | Model cited; world disagreed → β +1 (failure) |
+| `recalled_not_used` | Model was shown the entry but didn't cite it → censored |
+| `ignored` | Model chose not to use it → censored |
+| **scope_mismatch_warning** | Recall occurred; `context_similarity < threshold`; injection carried the scope-mismatch marker; **not a feedback signal, an observability row** |
+
+The fifth state is **observability** — it's not used to
+update β, but it tells us "this recall was across
+contexts". It's the data the weekly regression uses to
+**shift the ranker weights** away from cross-context
+patterns.
+
+### Counter-example as boundary case
+
+When the conditional update rule narrows a memory's
+applicability, the new failure is recorded as a
+**boundary case**:
+
+```
+memory.lesson "method X fails because Y"
+  applicability: "input file in format Z"
+  examples:
+    - success_in: [S3, S7]                # positive examples
+    - failure_in: [S12 (output: Z)]      # boundary case
+    - test_cases: [{ctx: "Z+other", result: success}]
+```
+
+The new failure becomes a **test case** — next time dream
+distills this memory, the boundary case is one of the
+inputs that constrains the rule's scope. **Counter-examples
+teach the boundary** — that is the Schank theoretical core.
+
 ## Landscape — three swimlanes + one extraction channel
 
 The memory layer touches **three swimlanes** that flow in
