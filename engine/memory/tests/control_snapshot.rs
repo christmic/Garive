@@ -19,6 +19,16 @@ fn projection_and_package_validation_are_canonical() {
     .unwrap();
     assert_eq!(projected.manifest.entries[0].record_id, "mem-a");
     assert_eq!(projected.manifest.manifest_digest.len(), 64);
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/memory-control-plane-v1.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        projected.manifest.manifest_digest,
+        fixture["snapshot_vector"]["manifest_digest"]
+            .as_str()
+            .unwrap()
+    );
     assert_eq!(
         projected.manifest_json,
         serde_jcs::to_vec(&projected.manifest).unwrap()

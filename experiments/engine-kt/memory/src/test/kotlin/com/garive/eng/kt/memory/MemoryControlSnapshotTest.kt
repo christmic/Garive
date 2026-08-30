@@ -1,10 +1,15 @@
 package com.garive.eng.kt.memory
 
 import java.util.Base64
+import java.nio.file.Path
+import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class MemoryControlSnapshotTest {
     @Test
@@ -14,7 +19,10 @@ class MemoryControlSnapshotTest {
             listOf(document("mem-b", "rev-b", "second"), document("mem-a", "rev-a", "first")),
         ))
         assertEquals("mem-a", projected.manifest.entries.first().recordId)
-        assertEquals("79bc86a14a215dd48e41496ce418ffb8719025f79b095a5da055faab8a4db341", projected.manifest.manifestDigest)
+        assertEquals(
+            fixture()["snapshot_vector"]!!.jsonObject["manifest_digest"]!!.jsonPrimitive.content,
+            projected.manifest.manifestDigest,
+        )
         val files = projected.documents.mapIndexed { index, (name, document) ->
             MemorySnapshotFile(name, document.render().encodeToByteArray(), "storage-$index", true)
         } + MemorySnapshotFile(
@@ -72,4 +80,9 @@ class MemoryControlSnapshotTest {
     }
     private fun encoded(value: String): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(value.encodeToByteArray())
+
+    private fun fixture() = Json.parseToJsonElement(
+        Path.of(System.getProperty("garive.repo.root"))
+            .resolve("spec/fixtures/agent/memory-control-plane-v1.json").readText(),
+    ).jsonObject
 }

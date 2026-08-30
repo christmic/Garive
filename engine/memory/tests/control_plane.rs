@@ -12,8 +12,15 @@ const DOCUMENT: &str = "---\nschema_version: 1\nrecord_ref: existing.bWVtLTAx.cm
 
 #[test]
 fn exact_identities_round_trip_and_crlf_normalizes() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/memory-control-plane-v1.json"
+    ))
+    .unwrap();
+    let canonical = fixture["document_vector"]["canonical_markdown"]
+        .as_str()
+        .unwrap();
     let parsed =
-        parse_memory_document(DOCUMENT.replace('\n', "\r\n").as_bytes(), limits()).unwrap();
+        parse_memory_document(canonical.replace('\n', "\r\n").as_bytes(), limits()).unwrap();
     assert_eq!(parsed.record_ref().record_id(), Some("mem-01"));
     assert_eq!(parsed.record_ref().revision_id(), Some("rev-04"));
     assert_eq!(parsed.authority(), MemoryAuthority::UserDeclared);
@@ -23,9 +30,19 @@ fn exact_identities_round_trip_and_crlf_normalizes() {
     assert_eq!(parsed.scope_owner_id(), "agent-01");
     assert_eq!(parsed.lifecycle(), HypothesisState::Active);
     assert_eq!(parsed.sensitivity(), MemorySensitivity::Ordinary);
-    assert_eq!(parsed.render(), DOCUMENT);
-    assert_eq!(parsed.content_digest().len(), 64);
-    assert_eq!(parsed.document_digest().len(), 64);
+    assert_eq!(parsed.render(), canonical);
+    assert_eq!(
+        parsed.content_digest(),
+        fixture["document_vector"]["content_digest"]
+            .as_str()
+            .unwrap()
+    );
+    assert_eq!(
+        parsed.document_digest(),
+        fixture["document_vector"]["document_digest"]
+            .as_str()
+            .unwrap()
+    );
 }
 
 #[test]

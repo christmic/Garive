@@ -1,10 +1,15 @@
 package com.garive.eng.kt.memory
 
 import java.util.Base64
+import java.nio.file.Path
+import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class MemoryControlPlannerTest {
     @Test
@@ -42,7 +47,7 @@ class MemoryControlPlannerTest {
         assertEquals(listOf(1uL, 2uL, 1uL, 1uL), listOf(
             plan.addCount, plan.supersedeCount, plan.archiveCount, plan.eraseCount,
         ))
-        assertEquals("6a1d4227f53d3cd4e1b13b7fa9f4c40df320da2625d54caa79373da5aa546c50", plan.planDigest)
+        assertEquals(fixture()["plan_vector"]!!.jsonObject["plan_digest"]!!.jsonPrimitive.content, plan.planDigest)
         assertTrue(plan.operations[0] is MemoryImportOperation.Supersede)
         assertTrue(plan.operations[2] is MemoryImportOperation.Archive)
         assertTrue(plan.operations[3] is MemoryImportOperation.Erase)
@@ -102,6 +107,11 @@ class MemoryControlPlannerTest {
 
     private fun encoded(value: String): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(value.encodeToByteArray())
+
+    private fun fixture() = Json.parseToJsonElement(
+        Path.of(System.getProperty("garive.repo.root"))
+            .resolve("spec/fixtures/agent/memory-control-plane-v1.json").readText(),
+    ).jsonObject
 
     private companion object {
         const val DIGEST: String = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

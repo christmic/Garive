@@ -98,6 +98,14 @@ fn plans_all_variants_in_canonical_order_with_exact_counts() {
         (1, 2, 1, 1)
     );
     assert_eq!(plan.plan_digest.len(), 64);
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/memory-control-plane-v1.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        plan.plan_digest,
+        fixture["plan_vector"]["plan_digest"].as_str().unwrap()
+    );
     assert!(
         matches!(&plan.operations[0], MemoryImportOperation::Supersede { record_id, .. } if record_id == "mem-a")
     );
