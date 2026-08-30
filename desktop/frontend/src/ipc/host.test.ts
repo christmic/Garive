@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  commitSetup, decodeHostTimelinePage, getSetupCatalogue, prepareSetup, runAgentTurn,
+  cancelSetup, commitSetup, decodeHostTimelinePage, getSetupCatalogue, prepareSetup, runAgentTurn,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -60,5 +60,15 @@ describe("desktop Host IPC", () => {
       deployment_id: "deployment", definition_id: "definition" }, invoke);
     expect((await commitSetup("plan-1", "secret-once", invoke)).restart_required).toBe(true);
     expect(calls).toEqual(["get_setup_catalogue", "prepare_setup", "commit_setup"]);
+  });
+
+  it("cancels only one exact prepared setup plan", async () => {
+    const result = await cancelSetup("plan-1", async <T>(
+      command: string, args: Record<string, unknown>,
+    ) => {
+      expect({ command, args }).toEqual({ command: "cancel_setup", args: { planDigest: "plan-1" } });
+      return "cancelled" as T;
+    });
+    expect(result).toBe("cancelled");
   });
 });

@@ -71,6 +71,7 @@ export interface SetupInput {
 export interface SetupPlan {
   readonly schema_version: 1; readonly setup_id: string; readonly caller_nonce: string;
   readonly catalogue_revision: string; readonly effective_configuration_digest: string;
+  readonly expires_at: string;
   readonly summary: Omit<SetupInput, "schema_version" | "caller_nonce" | "catalogue_revision"> & {
     readonly endpoint_mode: "fixed" | "override";
   };
@@ -157,6 +158,14 @@ export async function commitSetup(
 ): Promise<SetupReceipt> {
   if (!planDigest || !credential) throw new Error("setup_credential_rejected");
   return invoke<SetupReceipt>("commit_setup", { planDigest, credential });
+}
+
+export async function cancelSetup(
+  planDigest: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<"cancelled" | "already_committed"> {
+  if (!planDigest) throw new Error("setup_plan_stale");
+  return invoke<"cancelled" | "already_committed">("cancel_setup", { planDigest });
 }
 
 export async function restartDesktop(invoke: Invoke = tauriInvoke): Promise<void> {

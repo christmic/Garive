@@ -1,8 +1,11 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicI64, Ordering},
+    Arc, Mutex,
+};
 
 use garive_desktop::{
-    DesktopSetupError, DesktopSetupInput, DesktopSetupService, DesktopSystemConfiguration,
-    SetupCredentialStore, OPENAI_RESPONSES_PROFILE_ID,
+    DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput, DesktopSetupService,
+    DesktopSystemConfiguration, SetupClock, SetupCredentialStore, OPENAI_RESPONSES_PROFILE_ID,
 };
 
 #[derive(Clone, Default)]
@@ -23,6 +26,25 @@ impl SetupCredentialStore for RecordingCredentials {
             .map_err(|_| DesktopSetupError::RecoveryFailed)?
             .push((credential_ref.to_owned(), "<deleted>".into()));
         Ok(())
+    }
+}
+
+#[derive(Default)]
+struct FixedClock(AtomicI64);
+
+impl FixedClock {
+    fn at(unix_seconds: i64) -> Arc<Self> {
+        Arc::new(Self(AtomicI64::new(unix_seconds)))
+    }
+
+    fn set(&self, unix_seconds: i64) {
+        self.0.store(unix_seconds, Ordering::SeqCst);
+    }
+}
+
+impl SetupClock for FixedClock {
+    fn unix_seconds(&self) -> Result<i64, DesktopSetupError> {
+        Ok(self.0.load(Ordering::SeqCst))
     }
 }
 
@@ -75,7 +97,7 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
 }
 
 #[test]
-fn invalid_input_secret_and_replayed_plan_fail_with_stable_codes() {
+fn invalid_input_secret_and_replayed_commit_are_stable_and_idempotent() {
     let directory = tempfile::tempdir().unwrap();
     let service =
         DesktopSetupService::new(directory.path().to_owned(), RecordingCredentials::default());
@@ -90,10 +112,49 @@ fn invalid_input_secret_and_replayed_plan_fail_with_stable_codes() {
         service.commit(&plan.plan_digest, "").unwrap_err().code(),
         "setup_credential_rejected"
     );
-    service.commit(&plan.plan_digest, "secret").unwrap();
+    let receipt = service.commit(&plan.plan_digest, "secret").unwrap();
+    assert_eq!(
+        service.commit(&plan.plan_digest, "secret").unwrap(),
+        receipt
+    );
+}
+
+#[test]
+fn duplicate_nonce_conflict_expiry_and_cancellation_are_bounded() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FixedClock::at(1_800_000_000);
+    let service = DesktopSetupService::with_clock(
+        directory.path().to_owned(),
+        RecordingCredentials::default(),
+        clock.clone(),
+    );
+    let original = input("same");
+    let plan = service.prepare(original.clone()).unwrap();
+    assert_eq!(service.prepare(original).unwrap(), plan);
+    let mut conflict = input("same");
+    conflict.model_id = "different-model".into();
+    assert_eq!(
+        service.prepare(conflict).unwrap_err().code(),
+        "setup_plan_conflict"
+    );
+    assert_eq!(
+        service.cancel(&plan.plan_digest).unwrap(),
+        DesktopSetupCancellation::Cancelled
+    );
     assert_eq!(
         service
             .commit(&plan.plan_digest, "secret")
+            .unwrap_err()
+            .code(),
+        "setup_plan_stale"
+    );
+
+    let expiring = service.prepare(input("expiring")).unwrap();
+    assert!(expiring.expires_at.ends_with('Z'));
+    clock.set(1_800_001_000);
+    assert_eq!(
+        service
+            .commit(&expiring.plan_digest, "secret")
             .unwrap_err()
             .code(),
         "setup_plan_stale"

@@ -43,6 +43,16 @@ fn commit_setup(
 }
 
 #[tauri::command]
+fn cancel_setup(
+    setup: tauri::State<'_, SetupState>,
+    plan_digest: String,
+) -> Result<garive_desktop::DesktopSetupCancellation, String> {
+    setup
+        .cancel(&plan_digest)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn restart_desktop(app: tauri::AppHandle) {
     app.restart()
 }
@@ -79,6 +89,7 @@ fn main() {
             get_setup_catalogue,
             prepare_setup,
             commit_setup,
+            cancel_setup,
             restart_desktop,
             run_agent_turn
         ])

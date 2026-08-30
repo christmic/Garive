@@ -18,9 +18,10 @@ mod system_configuration;
 mod system_provider;
 
 pub use setup::{
-    DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput, DesktopSetupPlan,
-    DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService, DesktopSetupSummary,
-    SetupCredentialStore, SystemSetupCredentialStore,
+    DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput,
+    DesktopSetupPlan, DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService,
+    DesktopSetupSummary, SetupClock, SetupCredentialStore, SystemSetupClock,
+    SystemSetupCredentialStore,
 };
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,
