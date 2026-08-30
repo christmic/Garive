@@ -10,7 +10,7 @@ use crate::{
     application::{
         AppModel, BootState, ConnectionState, ExecutionState, Overlay, TerminalSize, TimelineRole,
     },
-    input::COMMAND_PALETTE,
+    input::{describe_schema, COMMAND_PALETTE},
     Theme,
 };
 use markdown::render_markdown;
@@ -290,7 +290,7 @@ fn render_overlay(
         Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
         Overlay::PromptHistory => (" Prompt history ", history_text(model), (model.prompt_history.len() as u16 + 5).clamp(7, 16)),
-        Overlay::Suspension => (" Action required ", suspension_text(model), 9),
+        Overlay::Suspension => (" Action required ", suspension_text(model), 11),
         Overlay::UnknownCommand => (" Unknown command ", format!("{}\n\nEnter  Exact retry     A  Abandon local record", model.notice.as_deref().unwrap_or("Nothing was sent to the Host.")), 8),
         Overlay::ErrorDetails => (" Status details ", model.notice.clone().unwrap_or_else(|| "No additional safe details.".into()), 7),
         Overlay::EphemeralConfirmation => (" Ephemeral mode ", "A lost response cannot be recovered after exit.\n\nEnter  Accept for this run     Esc  Cancel".into(), 7),
@@ -398,9 +398,16 @@ fn suspension_text(model: &AppModel) -> String {
         .as_ref()
         .map(|value| value.prompt_json.as_str())
         .unwrap_or("Action required");
+    let guidance = model
+        .suspension
+        .as_ref()
+        .and_then(|value| value.response_schema_json.as_deref())
+        .map(describe_schema)
+        .unwrap_or("Enter a text response.");
     format!(
-        "{}\n\nEnter  Reply now     Ctrl+Q  Leave safely",
-        safe_text(prompt)
+        "{}\n\n{}\n\nEnter  Reply now     Ctrl+Q  Leave safely",
+        safe_text(prompt),
+        guidance
     )
 }
 

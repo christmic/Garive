@@ -4,7 +4,7 @@ use crossterm::event::{
 
 use crate::{
     application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize},
-    input::{parse_command, Command, CommandParse, COMMAND_PALETTE},
+    input::{parse_command, parse_schema_input, Command, CommandParse, COMMAND_PALETTE},
     persistence::{now, PendingCommand, PendingKind},
 };
 use serde_json::{json, Value};
@@ -313,8 +313,12 @@ fn submit(state: &mut RuntimeState) {
         state.model.suspension.clone(),
     ) {
         if suspension.response_schema_json.is_some() {
-            let Ok(input_json) = serde_json::from_str::<Value>(&text) else {
-                state.model.notice = Some("This request expects a valid JSON response.".into());
+            let Some(schema) = suspension.response_schema_json.as_deref() else {
+                return;
+            };
+            let Ok(input_json) = parse_schema_input(schema, &text) else {
+                state.model.notice =
+                    Some("The response does not match the public response schema.".into());
                 state.model.overlay = Some(Overlay::ErrorDetails);
                 return;
             };
