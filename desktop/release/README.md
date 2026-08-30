@@ -70,7 +70,18 @@ exist, `spec/STATUS.md` remains active and no signed-release claim is valid.
 ## Screenshot and manual evidence
 
 The accepted M01–M85 matrix is tracked without duplicating its ID list in code.
-Run the gate from the repository root:
+Start from a clean candidate revision and initialize its exact DMG once:
+
+```sh
+node desktop/release/initialize-desktop-evidence.mjs \
+  target/universal-apple-darwin/release/bundle/dmg/Garive_0.1.0_universal.dmg \
+  15.6
+```
+
+The initializer rejects packages outside this checkout's `target/`, symlinks,
+dirty Git state, non-DMG input, invalid macOS versions, admitted captures, and
+an already initialized manifest. Use `--dry-run` to print the derived candidate
+identity without changing the manifest. Then run the gate:
 
 ```sh
 node desktop/release/verify-desktop-evidence.mjs

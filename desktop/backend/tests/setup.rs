@@ -359,42 +359,29 @@ fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
         serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
     assert_eq!(capability["windows"], serde_json::json!(["main"]));
     let permissions = capability["permissions"].as_array().unwrap();
-    let expected = [
-        "allow-set-desktop-menu-locale",
-        "allow-get-desktop-capabilities",
-        "allow-get-setup-state",
-        "allow-get-setup-catalogue",
-        "allow-prepare-setup",
-        "allow-commit-setup",
-        "allow-cancel-setup",
-        "allow-choose-workspace",
-        "allow-verify-workspace",
-        "allow-get-workspace-recovery-status",
-        "allow-list-workspace-authorizations",
-        "allow-reauthorize-workspace",
-        "allow-authorize-workspace-writes",
-        "allow-revoke-workspace",
-        "allow-list-workspace-entries",
-        "allow-create-work-session",
-        "allow-attach-workspace-to-session",
-        "allow-get-session-workspaces",
-        "allow-detach-workspace-from-session",
-        "allow-list-artifacts",
-        "allow-get-artifact-preview",
-        "allow-prepare-artifact-export",
-        "allow-commit-artifact-export",
-        "allow-restart-desktop",
-        "allow-get-recent-sessions",
-        "allow-get-session-timeline",
-        "allow-continue-agent-turn",
-        "allow-resolve-turn-approval",
-        "allow-run-agent-turn-with-workspace-context",
-        "allow-run-agent-turn",
-    ];
+    let handler_commands = command_block(
+        include_str!("../src/main.rs"),
+        ".invoke_handler(tauri::generate_handler![",
+        "])",
+        false,
+    );
+    let build_commands = command_block(
+        include_str!("../build.rs"),
+        "tauri_build::AppManifest::new().commands(&[",
+        "]),",
+        true,
+    );
+    assert_eq!(handler_commands, build_commands);
+    assert_eq!(handler_commands.len(), 30);
+    let expected: Vec<_> = build_commands
+        .iter()
+        .map(|command| format!("allow-{}", command.replace('_', "-")))
+        .collect();
     let admitted: Vec<_> = permissions
         .iter()
         .filter_map(|value| value.as_str())
         .filter(|value| value.starts_with("allow-"))
+        .map(str::to_owned)
         .collect();
     assert_eq!(admitted, expected);
     assert!(permissions
@@ -406,6 +393,27 @@ fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
         authorize_setup_window("extension").unwrap_err().code(),
         "setup_not_allowed"
     );
+}
+
+fn command_block(source: &str, start: &str, end: &str, quoted: bool) -> Vec<String> {
+    let block = source
+        .split_once(start)
+        .and_then(|(_, remainder)| remainder.split_once(end))
+        .map(|(block, _)| block)
+        .expect("command block must remain statically inspectable");
+    block
+        .lines()
+        .map(str::trim)
+        .map(|line| line.trim_end_matches(',').trim())
+        .map(|line| if quoted { line.trim_matches('"') } else { line })
+        .filter(|line| {
+            !line.is_empty()
+                && line
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase() || character == '_')
+        })
+        .map(str::to_owned)
+        .collect()
 }
 
 #[test]
