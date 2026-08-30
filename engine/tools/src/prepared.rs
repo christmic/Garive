@@ -28,6 +28,8 @@ pub enum PreparationErrorCode {
     NonCanonicalValue,
     /// A C5b access declaration, key, resolver result, or policy is invalid.
     EffectAccessInvalid,
+    /// An F0 portable sandbox requirement is malformed or incomplete.
+    SandboxRequirementInvalid,
 }
 
 /// Deterministic JSON Schema assertion failure.

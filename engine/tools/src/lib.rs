@@ -9,6 +9,7 @@ mod governed_outcome;
 mod governed_reducer;
 mod governed_types;
 mod prepared;
+mod sandbox;
 mod schema;
 mod schema_validate;
 mod unique_json;
@@ -37,4 +38,5 @@ pub use prepared::{
     ExecutionCapability, ExecutionRequirements, PreparationError, PreparationErrorCode,
     PreparedToolCall, ReplayClass, SchemaFailure, ToolCatalog, ToolDefinition, ToolIntent,
 };
+pub use sandbox::{SandboxControl, SandboxRequirementsV1};
 pub use schema::{validate_portable_value, validate_portable_value_schema};
