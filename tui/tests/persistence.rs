@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 #[path = "../src/args.rs"]
 mod args;
 pub use args::{MouseMode, Theme};
@@ -17,8 +19,10 @@ fn preferences_round_trip_atomically_with_private_permissions() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("state");
     let store = StateStore::open(Some(root.clone()), false).unwrap();
-    let mut preferences = Preferences::default();
-    preferences.theme = Theme::Dark;
+    let mut preferences = Preferences {
+        theme: Theme::Dark,
+        ..Preferences::default()
+    };
     store.save_preferences(&mut preferences).unwrap();
     assert_eq!(preferences.revision, 1);
     assert_eq!(store.load_preferences().unwrap(), preferences);

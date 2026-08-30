@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 #[path = "../src/args.rs"]
 mod args;
 pub use args::{MouseMode, Theme};

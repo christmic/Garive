@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 #[path = "../src/runtime/clipboard.rs"]
 mod clipboard;
 

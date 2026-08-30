@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 #[path = "../src/input/schema_form.rs"]
 mod schema_form;
 

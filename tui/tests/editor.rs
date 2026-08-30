@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 #[path = "../src/input/editor.rs"]
 mod editor;
 

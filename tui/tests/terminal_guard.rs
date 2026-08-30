@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 use std::{cell::RefCell, io, rc::Rc};
 
 #[path = "../src/runtime/terminal.rs"]
