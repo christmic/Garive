@@ -233,6 +233,48 @@ fn session_view_tracks_first_starts_and_latest_lifecycle() {
 }
 
 #[test]
+fn timeline_pages_complete_turns_by_latest_change_without_splitting() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("timeline-session", "definition-main")
+        .unwrap();
+    let first = harness
+        .host
+        .start_turn("timeline-first", &session.session_id, "first")
+        .unwrap();
+    let second = harness
+        .host
+        .start_turn("timeline-second", &session.session_id, "second")
+        .unwrap();
+
+    let page = harness
+        .host
+        .get_timeline(&session.session_id, 0, 1)
+        .unwrap();
+    assert_eq!(page.api_version, "v1");
+    assert_eq!(page.observed_max_position, 7);
+    assert_eq!(page.scanned_through_position, 3);
+    assert!(page.has_more);
+    assert_eq!(page.items[0].turn_id, first.turn_id);
+    assert_eq!(page.items[0].user_text, "first");
+    assert_eq!(page.items[0].state, "running");
+
+    let next = harness
+        .host
+        .get_timeline(&session.session_id, page.scanned_through_position, 1)
+        .unwrap();
+    assert!(!next.has_more);
+    assert_eq!(next.scanned_through_position, 7);
+    assert_eq!(next.items[0].turn_id, second.turn_id);
+    assert_eq!(next.items[0].user_text, "second");
+    assert_eq!(
+        harness.host.get_timeline(&session.session_id, 8, 1),
+        Err(LiveHostError::InvalidRequest)
+    );
+}
+
+#[test]
 fn session_pages_use_stable_checked_cursors() {
     let harness = Harness::new(64);
     let first = harness
@@ -344,6 +386,14 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
         .unwrap();
     assert_eq!(completed.events[0].event, "turn.completed");
     assert_eq!(completed.events[0].text, "done");
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 10)
+        .unwrap();
+    assert_eq!(timeline.items.len(), 1);
+    assert_eq!(timeline.items[0].state, "completed");
+    assert_eq!(timeline.items[0].completion_text.as_deref(), Some("done"));
+    assert!(!timeline.items[0].content_truncated);
 
     let restarted = LiveHost::new(
         &harness.database,
@@ -442,6 +492,16 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
         .load_turn(&garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap())
         .unwrap();
     let state = garive_runtime::reconstruct_suspended_turn(&snapshot).unwrap();
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 10)
+        .unwrap();
+    let public = timeline.items[0].suspension.as_ref().unwrap();
+    assert_eq!(public.suspension_id, state.suspension_id);
+    assert_eq!(public.kind, "partial_output");
+    assert_eq!(public.session_version, 3);
+    assert!(public.response_schema_json.is_none());
+    assert!(public.prompt_json.contains("suspension.partial_output"));
     let continued = harness
         .host
         .continue_turn(
@@ -454,6 +514,13 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
         )
         .unwrap();
     assert_eq!(continued.committed_position, 9);
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 10)
+        .unwrap();
+    assert_eq!(timeline.items[0].state, "running");
+    assert!(timeline.items[0].suspension.is_none());
+    assert_eq!(timeline.items[0].user_text, "hello");
 
     let restarted = LiveHost::new(
         &harness.database,
@@ -572,6 +639,26 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .await
         .unwrap();
     assert_eq!(started.status(), reqwest::StatusCode::OK);
+    let timeline = client
+        .get(format!(
+            "{base}/v1/sessions/{session_id}/timeline?after_position=0&limit=20"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(timeline.status(), reqwest::StatusCode::OK);
+    let timeline: Value = serde_json::from_slice(&timeline.bytes().await.unwrap()).unwrap();
+    assert_eq!(timeline["items"][0]["user_text"], "hello");
+    assert_eq!(timeline["items"][0]["state"], "running");
+
+    let bad_timeline = client
+        .get(format!(
+            "{base}/v1/sessions/{session_id}/timeline?limit=20&unknown=1"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad_timeline.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let response = client
         .get(format!(
