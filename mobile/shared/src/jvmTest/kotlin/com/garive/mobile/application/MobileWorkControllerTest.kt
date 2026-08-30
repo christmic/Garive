@@ -76,29 +76,61 @@ public class MobileWorkControllerTest {
         assertEquals(true, host.continuationIsJson)
     }
 
+    @Test
+    public fun revokedGrantFailsClosedToSignedOut(): Unit = runBlocking {
+        val controller = MobileWorkController(
+            FakeMobileHost(failDefinitionsWith = HostClientError.AUTHENTICATION_REQUIRED),
+            identities(),
+        )
+
+        val state = controller.boot()
+
+        assertEquals(MobileConnectionState.SIGNED_OUT, state.connection)
+        assertEquals("authentication_required", state.noticeCode)
+    }
+
+    @Test
+    public fun deviceBindingFailureIsAVisibleSecurityError(): Unit = runBlocking {
+        val controller = MobileWorkController(
+            FakeMobileHost(failDefinitionsWith = HostClientError.DEVICE_REAUTH_REQUIRED),
+            identities(),
+        )
+
+        val state = controller.boot()
+
+        assertEquals(MobileConnectionState.SECURITY_ERROR, state.connection)
+        assertEquals("device_reauth_required", state.noticeCode)
+    }
+
     private fun identities(): CommandIdentitySource {
         var next = 0
         return CommandIdentitySource { "command-${++next}" }
     }
 }
 
-private class FakeMobileHost(private var failFirstStart: Boolean = false) : MobileHost {
+private class FakeMobileHost(
+    private var failFirstStart: Boolean = false,
+    private val failDefinitionsWith: HostClientError? = null,
+) : MobileHost {
     val startCommandIds: MutableList<String> = mutableListOf()
     var continuationInput: String? = null
     var continuationIsJson: Boolean? = null
     private var created: Boolean = false
 
-    override suspend fun agentDefinitions(): AgentDefinitionPageV1 = AgentDefinitionPageV1(
-        api_version = "v1",
-        definitions = listOf(
-            AgentDefinitionSummaryV1(
-                api_version = "v1",
-                definition_id = "definition-main",
-                definition_revision = "revision-1",
-                capabilities = listOf("work"),
+    override suspend fun agentDefinitions(): AgentDefinitionPageV1 {
+        failDefinitionsWith?.let { throw HostClientException(it) }
+        return AgentDefinitionPageV1(
+            api_version = "v1",
+            definitions = listOf(
+                AgentDefinitionSummaryV1(
+                    api_version = "v1",
+                    definition_id = "definition-main",
+                    definition_revision = "revision-1",
+                    capabilities = listOf("work"),
+                ),
             ),
-        ),
-    )
+        )
+    }
 
     override suspend fun sessions(limit: Int): SessionPageV1 = SessionPageV1(
         api_version = "v1",
