@@ -34,6 +34,30 @@ pub struct HostEvent {
     pub execution_id: String,
     /// Committed presentation text, empty when not applicable.
     pub text: String,
+    /// Redacted committed Agent activity state when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity: Option<HostActivity>,
+}
+
+/// One client-safe committed Agent activity state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct HostActivity {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Opaque Session-scoped activity identity.
+    pub activity_id: String,
+    /// Stable or future activity kind.
+    pub kind: String,
+    /// Installed localization key rather than a raw tool name.
+    pub label_key: String,
+    /// Stable or future lifecycle state.
+    pub state: String,
+    /// Exact committed source position.
+    pub source_position: u64,
+    /// Authoritative terminal marker for known states.
+    pub terminal: bool,
+    /// Optional admitted stable safe code.
+    pub safe_code: Option<String>,
 }
 
 /// Durable terminal state recognized by A1 clients.
@@ -60,6 +84,8 @@ pub struct HostView {
     pub text: String,
     /// Unknown event names retained for forward-compatible diagnostics.
     pub unknown_events: Vec<String>,
+    /// Latest validated public state by opaque activity identity.
+    pub activities: BTreeMap<String, HostActivity>,
     /// Applied event fingerprints used to verify duplicate positions.
     pub(crate) seen: BTreeMap<u64, HostEvent>,
 }
