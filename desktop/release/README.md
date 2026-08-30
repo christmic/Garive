@@ -99,11 +99,15 @@ the bundled PDF runtime (or another Python environment containing ReportLab):
 
 ```sh
 python3 desktop/release/build-desktop-manual.py
+python3 desktop/release/build-desktop-manual.py --tagged
 ```
 
 The default output is `output/pdf/garive-macos-user-guide-draft.pdf`. The
 builder fails closed when the manual's screenshot placeholders differ from the
 accepted evidence spec and replaces the PDF atomically. This draft validates
-layout, extractable text, navigation, and evidence placement only: it is not a
-public manual while placeholders remain, and ReportLab does not emit a tagged
-PDF, so PDF/UA and VoiceOver reading order require a separate final gate.
+layout, extractable text, navigation, and evidence placement only. The tagged
+lane additionally requires `soffice` plus Pypdf, configures an isolated macOS
+CJK font cache, exports PDF/UA mode, and normalizes the document language to
+`zh-CN`. Neither draft is public while placeholders remain; `Tagged: yes` and a
+structure tree are necessary evidence, not a PDF/UA conformance or VoiceOver
+reading-order result, so those still require independent final gates.

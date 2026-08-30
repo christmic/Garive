@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import html
+import os
 import re
-import sys
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -20,6 +23,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
+    Image,
     KeepTogether,
     PageBreak,
     PageTemplate,
@@ -29,11 +33,14 @@ from reportlab.platypus import (
     TableStyle,
 )
 from reportlab.platypus.tableofcontents import TableOfContents
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import NameObject, TextStringObject
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 SOURCE = REPOSITORY / "docs/manual/desktop-user-guide.md"
 SPEC = REPOSITORY / "spec/design/desktop-visual-manual-evidence.md"
 DEFAULT_OUTPUT = REPOSITORY / "output/pdf/garive-macos-user-guide-draft.pdf"
+DEFAULT_TAGGED_OUTPUT = REPOSITORY / "output/pdf/garive-macos-user-guide-tagged-draft.pdf"
 FONT_PATH = Path("/System/Library/Fonts/STHeiti Medium.ttc")
 INK = colors.HexColor("#17202A")
 MUTED = colors.HexColor("#5E6A73")
@@ -90,6 +97,13 @@ def inline(text: str) -> str:
         r'<a href="\2" color="#176B63"><u>\1</u></a>', escaped,
     )
     return escaped
+
+
+def semantic_inline(text: str) -> str:
+    escaped = html.escape(text, quote=True)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    return re.sub(r"\[([^]]+)]\(([^)]+)\)", r'<a href="\2">\1</a>', escaped)
 
 
 def styles() -> dict[str, ParagraphStyle]:
@@ -158,6 +172,19 @@ def screenshot_placeholder(line: str, sheet: dict[str, ParagraphStyle]):
     return KeepTogether([box, Spacer(1, 2.5 * mm)])
 
 
+def validate_manual(lines: list[str]) -> None:
+    expected_ids = re.findall(r"\| `(M\d{2})` \|", SPEC.read_text(encoding="utf-8"))
+    pending_ids = [match.group(1) for line in lines
+        if (match := re.search(r"SCREENSHOT (M\d{2}) PENDING:", line))]
+    image_ids = [match.group(1) for line in lines
+        if (match := re.search(r"!\[(M\d{2})[^]]*]\(assets/desktop/[^)]+\.png\)", line))]
+    manual_ids = pending_ids + image_ids
+    if len(expected_ids) != len(set(expected_ids)):
+        raise RuntimeError("accepted Desktop evidence spec contains duplicate capture IDs")
+    if len(manual_ids) != len(set(manual_ids)) or set(manual_ids) != set(expected_ids):
+        raise RuntimeError("manual screenshot placeholders do not match the accepted evidence spec")
+
+
 def body_story(lines: list[str], sheet: dict[str, ParagraphStyle]):
     story = []
     paragraph_lines: list[str] = []
@@ -179,7 +206,13 @@ def body_story(lines: list[str], sheet: dict[str, ParagraphStyle]):
                 index += 1
             story.extend([markdown_table(table_rows, sheet), Spacer(1, 3 * mm)])
             continue
-        if line.startswith("<!-- SCREENSHOT"):
+        if match := re.match(r"!\[(M\d{2})[^]]*]\((assets/desktop/[^)]+\.png)\)", line):
+            flush()
+            capture_id, relative = match.groups()
+            artwork = Image(str(SOURCE.parent / relative))
+            artwork._restrictSize(157 * mm, 178 * mm)
+            story.extend([artwork, Paragraph(capture_id, sheet["Small"]), Spacer(1, 3 * mm)])
+        elif line.startswith("<!-- SCREENSHOT"):
             flush()
             placeholder = screenshot_placeholder(line, sheet)
             if placeholder:
@@ -209,14 +242,8 @@ def body_story(lines: list[str], sheet: dict[str, ParagraphStyle]):
 def build(output: Path) -> None:
     if not FONT_PATH.exists():
         raise RuntimeError(f"required macOS CJK font is unavailable: {FONT_PATH}")
-    expected_ids = re.findall(r"\| `(M\d{2})` \|", SPEC.read_text(encoding="utf-8"))
     lines = SOURCE.read_text(encoding="utf-8").splitlines()
-    manual_ids = [match.group(1) for line in lines
-        if (match := re.search(r"SCREENSHOT (M\d{2}) PENDING:", line))]
-    if len(expected_ids) != len(set(expected_ids)):
-        raise RuntimeError("accepted Desktop evidence spec contains duplicate capture IDs")
-    if len(manual_ids) != len(set(manual_ids)) or set(manual_ids) != set(expected_ids):
-        raise RuntimeError("manual screenshot placeholders do not match the accepted evidence spec")
+    validate_manual(lines)
     pdfmetrics.registerFont(TTFont("GariveCJK", str(FONT_PATH), subfontIndex=0))
     sheet = styles()
     first_section = next(index for index, line in enumerate(lines) if line.startswith("## 1."))
@@ -243,5 +270,131 @@ def build(output: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def semantic_html(lines: list[str]) -> str:
+    content: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].rstrip()
+        heading_match = re.match(r"^(#{1,3}) (.+)$", line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            content.append(f"<h{level}>{semantic_inline(heading_match.group(2))}</h{level}>")
+        elif line.startswith("> "):
+            quote = []
+            while index < len(lines) and lines[index].startswith("> "):
+                quote.append(semantic_inline(lines[index][2:]))
+                index += 1
+            content.append(f"<blockquote>{'<br>'.join(quote)}</blockquote>")
+            continue
+        elif line.startswith("|"):
+            rows = []
+            while index < len(lines) and lines[index].startswith("|"):
+                rows.append([cell.strip() for cell in lines[index].strip().strip("|").split("|")])
+                index += 1
+            rows = [row for row in rows if not all(re.fullmatch(r":?-{3,}:?", cell) for cell in row)]
+            head = "".join(f"<th>{semantic_inline(cell)}</th>" for cell in rows[0])
+            body = "".join("<tr>" + "".join(
+                f"<td>{semantic_inline(cell)}</td>" for cell in row) + "</tr>" for row in rows[1:])
+            content.append(f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
+            continue
+        elif re.match(r"^\d+\. ", line):
+            items = []
+            while index < len(lines) and re.match(r"^\d+\. ", lines[index]):
+                items.append(re.sub(r"^\d+\. ", "", lines[index]))
+                index += 1
+            content.append("<ol>" + "".join(f"<li>{semantic_inline(item)}</li>" for item in items) + "</ol>")
+            continue
+        elif line.startswith("- "):
+            items = []
+            while index < len(lines) and lines[index].startswith("- "):
+                items.append(lines[index][2:])
+                index += 1
+            content.append("<ul>" + "".join(f"<li>{semantic_inline(item)}</li>" for item in items) + "</ul>")
+            continue
+        elif line.startswith("<!-- SCREENSHOT"):
+            match = re.search(r"SCREENSHOT (M\d{2}) PENDING: (.+?) -->", line)
+            if match:
+                capture_id, description = match.groups()
+                content.append(f'<p class="shot"><strong>{capture_id} · 截图待录入</strong> — '
+                    f"{semantic_inline(description)}</p>")
+        elif match := re.match(r"!\[((M\d{2})[^]]*)]\((assets/desktop/[^)]+\.png)\)", line):
+            alt_text, capture_id, relative = match.groups()
+            source = (SOURCE.parent / relative).resolve().as_uri()
+            content.append(f'<figure><img src="{source}" alt="{html.escape(alt_text, quote=True)}" '
+                f'style="max-width:100%"><figcaption>{capture_id}</figcaption></figure>')
+        elif line:
+            paragraph = [line]
+            while index + 1 < len(lines) and lines[index + 1].strip() and not re.match(
+                r"^(#{1,3} |>|\||\d+\. |- |<!-- SCREENSHOT|!\[)", lines[index + 1],
+            ):
+                index += 1
+                paragraph.append(lines[index].strip())
+            content.append(f"<p>{semantic_inline(' '.join(paragraph))}</p>")
+        index += 1
+    css = """
+      @page { size: A4; margin: 18mm 19mm 18mm 19mm; }
+      body { font-family: 'Heiti SC', 'Hiragino Sans GB', sans-serif; color: #17202a;
+        font-size: 10pt; line-height: 1.55; }
+      h1 { font-size: 25pt; margin: 16mm 0 7mm; }
+      h2 { color: #176b63; font-size: 18pt; margin: 8mm 0 3mm; page-break-after: avoid; }
+      h3 { font-size: 13pt; margin: 5mm 0 2mm; page-break-after: avoid; }
+      p, li { margin: 0 0 2mm; } code { color: #176b63; }
+      blockquote { background: #eaf5f2; border: 1pt solid #176b63; padding: 4mm; margin: 4mm 0; }
+      table { border-collapse: collapse; width: 100%; margin: 4mm 0; }
+      th { background: #eaf5f2; } th, td { border: .5pt solid #d7e0e3; padding: 2mm; text-align: left; }
+      .shot { background: #fff4d8; border: .5pt solid #d9b75b; color: #5e6a73;
+        padding: 3mm; margin: 2mm 5mm; page-break-inside: avoid; }
+    """
+    return ("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+        "<title>Garive macOS 用户手册 - Tagged Draft</title><style>" + css
+        + "</style></head><body>" + "\n".join(content) + "</body></html>")
+
+
+def build_tagged(output: Path, soffice: str | None) -> None:
+    lines = SOURCE.read_text(encoding="utf-8").splitlines()
+    validate_manual(lines)
+    executable = soffice or os.environ.get("SOFFICE") or shutil.which("soffice")
+    if not executable:
+        raise RuntimeError("tagged PDF generation requires soffice on PATH or --soffice")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="garive-manual-") as directory:
+        temporary = Path(directory)
+        source = temporary / "garive-manual.html"
+        source.write_text(semantic_html(lines), encoding="utf-8")
+        profile = temporary / "profile"
+        font_cache = temporary / "font-cache"
+        font_config = temporary / "fonts.conf"
+        font_config.write_text("""<?xml version="1.0"?>
+<fontconfig>
+  <dir>/System/Library/Fonts</dir><dir>/Library/Fonts</dir>
+  <cachedir>{cache}</cachedir>
+</fontconfig>
+""".format(cache=html.escape(str(font_cache))), encoding="utf-8")
+        filter_options = ('pdf:writer_pdf_Export:{"PDFUACompliance":{"type":"boolean","value":"true"},'
+            '"UseTaggedPDF":{"type":"boolean","value":"true"},'
+            '"ExportBookmarks":{"type":"boolean","value":"true"}}')
+        environment = {**os.environ, "FONTCONFIG_FILE": str(font_config)}
+        subprocess.run([executable, f"-env:UserInstallation={profile.as_uri()}", "--headless",
+            "--convert-to", filter_options, "--outdir", str(temporary), str(source)],
+            check=True, env=environment)
+        generated = temporary / "garive-manual.pdf"
+        if not generated.is_file():
+            raise RuntimeError("soffice did not produce the expected tagged PDF")
+        normalized = temporary / "garive-manual-zh-CN.pdf"
+        reader = PdfReader(str(generated))
+        writer = PdfWriter(clone_from=reader)
+        writer.pdf_header = reader.pdf_header
+        writer.root_object[NameObject("/Lang")] = TextStringObject("zh-CN")
+        with normalized.open("wb") as stream:
+            writer.write(stream)
+        normalized.replace(output)
+
+
 if __name__ == "__main__":
-    build(Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else DEFAULT_OUTPUT)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("output", nargs="?", type=Path)
+    parser.add_argument("--tagged", action="store_true")
+    parser.add_argument("--soffice")
+    arguments = parser.parse_args()
+    destination = (arguments.output or (DEFAULT_TAGGED_OUTPUT if arguments.tagged else DEFAULT_OUTPUT)).resolve()
+    build_tagged(destination, arguments.soffice) if arguments.tagged else build(destination)
