@@ -149,6 +149,10 @@ impl DesktopSystemConfiguration {
     pub fn setup_id(&self) -> Option<&str> {
         self.setup_id.as_deref()
     }
+
+    pub(crate) fn credential_ref(&self) -> &str {
+        &self.execution.credential_ref
+    }
 }
 
 #[derive(Deserialize)]
