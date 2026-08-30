@@ -93,6 +93,19 @@ describe("Desktop product experience", () => {
     expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
   });
 
+  it("opens one truthful usage view without changing durable task state", async () => {
+    render(<App usageBudget={{ source: "included_plan", state: "critical",
+      scopeLabel: "Personal plan", periodLabel: "5-hour window", remainingPercent: 8,
+      resetsAtLabel: "Resets in 42m", attribution: "reported",
+      modelPostureLabel: "Efficient", activeTurnMayFinish: true }} />);
+    const trigger = await screen.findByRole("button", { name: "Capacity: 8% · 5-hour window" });
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("heading", { name: "Usage & capacity" })).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "8% remaining" })).toBeTruthy();
+    expect(screen.getByText("Current work may finish if included capacity reaches its limit.")).toBeTruthy();
+    expect(screen.getByText("Local Runtime")).toBeTruthy();
+  });
+
   it("submits on Enter but not Shift+Enter or an active IME composition", async () => {
     const view = render(<App />);
     await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());

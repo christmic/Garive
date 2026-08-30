@@ -19,6 +19,7 @@ import type { DesktopUpdateClient } from "./ipc/desktop-update";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import type { DesktopUpdateState } from "./state/desktop-update";
 import { Icon, type IconName } from "./ui/Icon";
+import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
@@ -92,14 +93,21 @@ const visualArtifactPreview = {
   content_utf8: "# Launch decision\n\nProceed with a reversible pilot for the design-partner cohort.\n\n## Decision\n\n- Owner: Product Operations\n- Review gate: 14 September\n- Rollback: pause new invitations while preserving collected feedback\n\n## Next step\n\nPublish the pilot brief and confirm the named launch owner.",
   truncated: false,
 } satisfies ArtifactPreview;
+const visualUsageBudget = {
+  source: "included_plan", state: "watch", scopeLabel: "Personal plan",
+  periodLabel: "5-hour window", remainingPercent: 28, resetsAtLabel: "Resets in 1h 40m",
+  attribution: "reported", modelPostureLabel: "Balanced", activeTurnMayFinish: true,
+} satisfies UsageBudgetSnapshot;
 
 export interface AppProps {
   readonly client?: "desktop" | "web";
   readonly webCapabilities?: WorkState["capabilities"];
   readonly createProductPort?: () => ProductEffectPort;
+  readonly usageBudget?: UsageBudgetSnapshot;
 }
 
-export function App({ client = "desktop", webCapabilities, createProductPort }: AppProps = {}) {
+export function App({ client = "desktop", webCapabilities, createProductPort,
+  usageBudget }: AppProps = {}) {
   const desktop = client === "desktop";
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
@@ -117,6 +125,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
   const taskSummary = useMemo(() => summarizeTasks(recents), [recents]);
   const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
     [recentTitles, recents]);
+  const visibleUsage = usageBudget ?? (visualTestMode === "usage" ? visualUsageBudget : undefined);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
@@ -262,6 +271,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
         });
         setCommandOpen(true);
       }
+      if (visualTestMode === "usage") setScreen("settings");
       if (visualTestMode === "approval") dispatch({ type: "session_loaded", timeline: {
         api_version: "v1", session_id: "visual-session", scanned_through_position: 12,
         observed_max_position: 12, has_more: false, items: [{
@@ -564,6 +574,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
+            {visibleUsage && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
+              onOpen={() => setScreen("settings")} />}
             <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}
               aria-label={t("command.open")}><Icon name="search" /><span>{t("command.open")}</span><kbd>⌘K</kbd></button>
             {screen === "work" && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
@@ -584,7 +596,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} t={t} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} update={desktopUpdate} runUpdate={runUpdateAction}
-              restartBlocked={state.phase === "submitting"} t={t} />}
+              restartBlocked={state.phase === "submitting"} usage={visibleUsage} t={t} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch} t={t} />}
     </div>
@@ -963,13 +975,14 @@ function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettin
 function SetupRequired({ t }: { t: (key: MessageKey) => string }) { return <StatusCard icon="shield" title={t("shell.setupRequired")} body={t("setup.unavailable")} />; }
 function AgentsScreen({ definition, t }: { definition?: string; t: (key: MessageKey) => string }) { return <section className="content-page"><p className="eyebrow">{t("agents.eyebrow")}</p><h1>{t("agents.title")}</h1><p>{t("agents.description")}</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? t("agents.none")}</h2><p>{t(definition ? "agents.readyBody" : "agents.configureBody")}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{t(definition ? "common.ready" : "common.unavailable")}</span></div></section>; }
 function SettingsScreen({ capabilities, preferences, setPreferences, update, runUpdate,
-  restartBlocked, t }: {
+  restartBlocked, usage, t }: {
   capabilities?: WorkState["capabilities"];
   preferences: DesktopPreferences;
   setPreferences: React.Dispatch<React.SetStateAction<DesktopPreferences>>;
   update: DesktopUpdateState;
   runUpdate: () => void;
   restartBlocked: boolean;
+  usage?: UsageBudgetSnapshot;
   t: (key: MessageKey) => string;
 }) {
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
@@ -1053,6 +1066,11 @@ function SettingsScreen({ capabilities, preferences, setPreferences, update, run
   ];
   const recoveryReady = workspaceRecovery?.state === "ready";
   return <section className="content-page settings-page"><p className="eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.title")}</h1>
+    {usage && <UsageBudgetCard value={usage} copy={{ title: t("usage.title"),
+      description: t("usage.description"), remaining: t("usage.remaining"),
+      reported: t("usage.reported"), estimated: t("usage.estimated"), reset: t("usage.reset"),
+      modelPosture: t("usage.modelPosture"), activeMayFinish: t("usage.activeMayFinish"),
+      activeMayStop: t("usage.activeMayStop") }} />}
     <div className="settings-card"><h2>{t("settings.appearance.title")}</h2><p>{t("settings.appearance.description")}</p>
       <div className="setting-row"><span>{t("settings.theme")}</span><ThemeOptions value={preferences.theme} onChange={(theme) => setPreferences((current) => ({ ...current, theme }))} t={t} /></div>
       <div className="setting-row"><span>{t("settings.density")}</span><DensityOptions value={preferences.density} onChange={(density) => setPreferences((current) => ({ ...current, density }))} t={t} /></div>
