@@ -9,12 +9,16 @@ Garive Mobile 是服务端 Agent 的远程控制台，不是在手机上运行 A
 Agent、Session、Turn、工具执行和持久化事实都留在服务端 Runtime。手机退出、锁屏或断网时，
 已经提交并得到服务端确认的工作仍会继续。
 
-四个固定入口分别是：
+点击左上角菜单可打开与桌面 Work 对齐的 Remote 导航。主画面不常驻底部栏，把空间留给
+会话和输入；抽屉中的四个入口分别是：
 
 - **Work**：先处理需要你决定的工作，再看正在运行和最近结束的工作。
 - **Sessions**：浏览持久化任务，按状态筛选并重新打开。
 - **Agents**：查看服务端已安装的 Agent，并选择合适的 Agent 发起任务。
 - **Settings**：查看配对服务、通知状态，或解除本设备配对。
+
+抽屉顶部始终显示当前 Remote Host，下面直接列出最近 Session；因此可以从任意一级页面用一次
+菜单操作切换功能，或直接回到最近工作。右上角 **+** 在主画面始终可发起新任务。
 
 移动端不会直接暴露 Runtime 端口。公网访问必须先经过 Garive Gateway；Gateway 只接受
 经过授权的移动端路由，Runtime 继续只监听本机 loopback。
@@ -135,6 +139,15 @@ garive://pair?origin=https%3A%2F%2Fagent.example.com&code=...&exp=...&name=...
 
 ![iOS Work 首页](assets/mobile/ios-02-work.png)
 
+导航、字号和空间层级与桌面 Work 使用同一视觉语言，同时保留原生平台手感。深色使用黑色工作台、
+深灰选中态和高对比蓝色操作；浅色使用桌面端暖纸白、低对比边界和同一主蓝色：
+
+![Android 深色 Remote 导航](assets/mobile/android-18-navigation-dark.png)
+
+![iOS 深色 Remote 导航](assets/mobile/ios-13-navigation-dark.png)
+
+![iOS 浅色 Remote 导航](assets/mobile/ios-14-navigation-light.png)
+
 深色模式与超大字体同样保留完整任务身份、状态和可操作目标：
 
 ![Android 深色模式与 200% 字体 Work](assets/mobile/android-10-a11y-dark-work.png)
@@ -154,7 +167,8 @@ Work 按处理优先级分组：
 3. **Recent**：最近完成、停止或失败的持久化工作，可随时重新打开。
 
 顶部连接状态表示最近一次认证刷新结果，不表示手机正在运行 Agent。点击刷新只重新读取服务端
-事实，不会重启任务。卡片同时使用文字、图标和颜色，不能仅凭颜色判断状态。
+事实，不会重启任务。普通尺寸使用紧凑文字行和状态点；辅助功能大字体会自动展开为宽松布局。
+状态始终同时使用文字和颜色，不能仅凭颜色判断。
 
 ## 7. 新建远程任务
 
@@ -226,8 +240,13 @@ Execution 不接受绕过协议的即时文本注入。
 
 1. 阅读公开问题和当前活动。
 2. 确认这确实是你希望服务端继续的动作。
-3. 点击 **Approve**（或按卡片要求回答/拒绝）。
+3. 点击 **Approve once** 只批准当前 Turn 的这一次动作，或点击 **Decline** 明确拒绝。
 4. 等待状态变为服务端确认的 `Completed`、继续运行或新的等待状态。
+
+拒绝和批准走同一个带精确 suspension/version/schema 坐标的继续协议，但提交的布尔响应不同；
+客户端不把“关闭页面”冒充拒绝。下面是从 Android 原生 UI 点击批准后，由演示 Host 提交并回读的结果：
+
+![Android 批准后服务端提交结果](assets/mobile/android-19-approved.png)
 
 应用不会根据通知文本直接审批。通知只带一次性 opaque route token；打开通知后，应用先向
 Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片。
@@ -323,20 +342,59 @@ Settings 显示当前配对服务、已验证 host、设备与构建诊断、通
 排障时可以安全分享稳定错误码、应用版本、系统版本和发生时间。不要分享配对码、授权、管理员
 令牌、完整请求/响应正文、私有 Session ID、文件路径或推送 registration ID。
 
-## 14. 截图与验收说明
+## 14. 可重复功能演示
+
+仓库内置的 walkthrough Host 是真实 HTTP 状态机，只在 Debug 构建使用。它会实际创建 Session、
+追加 Turn、提交批准或拒绝、记录取消，并返回多 Turn 持久化时间线；不是静态 UI fixture。
+
+在 `runtime/gateway/` 启动：
+
+```text
+go run ./cmd/garive-mobile-demo-host
+```
+
+Android Debug APK 安装后，可直接打开首页或确定性的审批 Session：
+
+```text
+adb reverse tcp:4318 tcp:4318
+adb shell am start -n com.garive.android/.MainActivity --ez garive_walkthrough true
+adb shell am start -n com.garive.android/.MainActivity \
+  --ez garive_walkthrough true --es garive_walkthrough_session release-approval
+```
+
+iOS Simulator 可直接打开首页、导航抽屉或审批 Session：
+
+```text
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-sidebar
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-conversation
+```
+
+| 演示动作 | UI 入口 | 可观察服务端事实 |
+|---|---|---|
+| 新建并启动 | `+` → Agent → Outcome → Start | 新 Session 与第一条 running Turn |
+| 继续同一 Session | 终态会话底部输入并发送 | 原 Turn 保留，新增 Turn |
+| 批准 | Approval needed → Approve once | completion 以 `Approved.` 开头 |
+| 拒绝 | Approval needed → Decline | completion 以 `Declined.` 开头 |
+| 取消 | 运行会话右上角停止 → Request cancel | Turn 进入 stopped，历史保留 |
+| Activity | 点击 `Activity · N` | 默认折叠，可展开公开活动 |
+| 重启恢复 | 输入草稿后终止并重开应用 | 导航、Session 草稿与精确 pending 有界恢复 |
+| 结果未知 | walkthrough 错误场景 | 只允许 Retry exact 或带警告 Forget retry |
+
+## 15. 截图与验收说明
 
 本手册中的截图来自实际运行的原生 SwiftUI/Compose 应用、共享 KMP 控制器和实时 HTTP Host，
 不是设计稿或静态 mock。为了让状态可重复，截图使用了仅在 Debug 构建可启用的 loopback
 walkthrough Host；Release 构建无法进入该模式。审批、新建、刷新、取消及状态回读均通过真实
 客户端协议执行。深色模式证据同时使用 Android `font_scale=2.0` 和 iOS
-`accessibility-extra-large`；Android 在空间不足时切换为图标底栏，但四个目标仍向无障碍服务暴露
-Work、Sessions、Agents、Settings 语义标签。
+`accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
+Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
 界面流程（9 条）、Swift 测试（7 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 29 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 33 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图

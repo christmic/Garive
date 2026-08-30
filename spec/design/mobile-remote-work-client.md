@@ -236,11 +236,16 @@ does not retain the local credential.
 
 ### Work
 
-- Large destination title and compact authenticated service state.
-- `Needs you` cards first with one clear action and safe context.
-- Running cards show Agent label, state, bounded last-update decoration, and a
-  reduced-motion-safe live marker.
-- Recent cards show completed/stopped/failed label and reopen action.
+- The compact native top bar shows `Remote`, authenticated Host context, a
+  navigation affordance, and new-task action; it does not duplicate a desktop
+  window title at mobile large-title scale.
+- A leading navigation drawer adapts the desktop sidebar: Work, Sessions,
+  Agents, Settings, and bounded recent Sessions. The conversation canvas does
+  not lose vertical space to a permanent four-item bottom bar.
+- `Needs you` rows come first with one clear action and safe context.
+- Running and recent Sessions use flat text-first rows, compact metadata, and
+  a redundant status label/mark. Cards are reserved for decisions, composer,
+  errors, and content that benefits from containment.
 - Empty state explains how to start work and offers `New task`.
 
 ### Sessions
@@ -258,6 +263,8 @@ does not retain the local credential.
   activity. Activity is collapsed by default.
 - Sticky composer respects keyboard/safe area and supports multiline input.
 - Blocking suspension replaces composer actions but never hides prior content.
+- Approval exposes two explicit actions, `Decline` and `Approve once`, and
+  states that scope is the current Turn and committed history remains.
 - Cancel uses a confirmation sheet. Share/copy is an explicit menu action.
 
 ### Agents and new task
@@ -289,6 +296,14 @@ status.success, status.failure, border.subtle, focus.visible
 space.1=4, space.2=8, space.3=12, space.4=16, space.6=24, space.8=32
 radius.control=12, radius.card=20, radius.sheet=28
 ```
+
+The light palette follows desktop Work's warm paper canvas (`#fbfaf6`), strong
+paper surface, ink text, and `#315fcf` primary action. Dark appearance maps the
+same roles to a black canvas, near-black raised surfaces, high-contrast text,
+and a brighter blue action. It is not a separate layout. Default-size hierarchy
+uses native system typography near 17 pt for primary rows, 13 pt for metadata,
+and compact inline navigation titles; accessibility sizes reflow instead of
+shrinking or clipping.
 
 All text/control combinations meet WCAG AA. Touch targets are at least 44×44
 points. Dynamic Type/font scaling 200%, TalkBack/VoiceOver, keyboard traversal,
@@ -409,5 +424,5 @@ native evidence does not close A-MOBILE-R.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-08-31
 - Status: accepted for implementation
