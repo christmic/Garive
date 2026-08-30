@@ -1,5 +1,8 @@
 #if canImport(GariveShared)
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 @preconcurrency import GariveShared
 
 struct WorkView: View {
@@ -89,17 +92,49 @@ struct AgentsView: View {
 struct SettingsView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
+    @Binding var theme: String
+
+    private var origin: String { model.credentials?.origin ?? "—" }
+    private var host: String { URL(string: origin)?.host ?? "—" }
+    private var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
 
     var body: some View {
         List {
             Section("Connection") {
                 LabeledContent("Status") { StatusBadge(status: state.connection.name.lowercased()) }
-                LabeledContent("Service", value: model.credentials?.origin ?? "—")
+                LabeledContent("Service", value: origin)
+                LabeledContent("Verified host", value: host)
                 Label("Access grant protected by Keychain", systemImage: "lock.shield")
             }
-            Section("Privacy") {
+            Section("Notifications") {
                 Label("Notification previews hide agent output", systemImage: "bell.slash")
+                Button("Open notification settings") {
+#if os(iOS)
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+#endif
+                }
+            }
+            Section("Appearance") {
+                Picker("Theme", selection: $theme) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }
+                .pickerStyle(.segmented)
+            }
+            Section("Privacy") {
                 Label("Durable work remains on your service", systemImage: "externaldrive")
+            }
+            Section("Diagnostics") {
+#if os(iOS)
+                LabeledContent("Device", value: UIDevice.current.name)
+                LabeledContent("iOS", value: UIDevice.current.systemVersion)
+#endif
+                LabeledContent("Garive", value: version)
+                LabeledContent("Connection", value: state.connection.name.lowercased())
             }
             Section {
                 Button("Disconnect this device", role: .destructive) { model.signOut() }

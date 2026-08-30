@@ -36,6 +36,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +56,10 @@ import com.garive.mobile.model.MobileConnectionState
 import com.garive.mobile.model.MobileSessionCard
 import com.garive.mobile.model.MobileWorkState
 import com.garive.mobile.model.MobileWorkStatus
+import com.garive.mobile.preferences.Theme
+import com.garive.android.BuildConfig
+import android.os.Build
+import android.net.Uri
 
 @Composable
 internal fun WorkScreen(
@@ -196,7 +203,14 @@ internal fun AgentsScreen(state: MobileWorkState, onStart: (MobileAgentCard) -> 
 }
 
 @Composable
-internal fun SettingsScreen(origin: String, state: MobileWorkState, onSignOut: () -> Unit) {
+internal fun SettingsScreen(
+    origin: String,
+    state: MobileWorkState,
+    theme: Theme,
+    onTheme: (Theme) -> Unit,
+    openNotificationSettings: () -> Unit,
+    onSignOut: () -> Unit,
+) {
     LazyColumn(
         modifier = Modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -206,6 +220,10 @@ internal fun SettingsScreen(origin: String, state: MobileWorkState, onSignOut: (
             SettingsCard {
                 Text("Paired service", style = MaterialTheme.typography.titleMedium)
                 Text(origin, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "Verified host · ${Uri.parse(origin).host ?: "—"}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 HorizontalDivider(Modifier.padding(vertical = 14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.CloudDone, contentDescription = null, tint = GariveMint)
@@ -222,6 +240,32 @@ internal fun SettingsScreen(origin: String, state: MobileWorkState, onSignOut: (
                         Text("Status only on lock screen", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                OutlinedButton(onClick = openNotificationSettings, modifier = Modifier.padding(top = 14.dp)) {
+                    Text("Open notification settings")
+                }
+            }
+        }
+        item {
+            SettingsCard {
+                Text("Appearance", style = MaterialTheme.typography.titleMedium)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    Theme.entries.forEachIndexed { index, choice ->
+                        SegmentedButton(
+                            selected = choice == theme,
+                            onClick = { onTheme(choice) },
+                            shape = SegmentedButtonDefaults.itemShape(index, Theme.entries.size),
+                        ) { Text(choice.wireName.replaceFirstChar(Char::uppercase)) }
+                    }
+                }
+            }
+        }
+        item {
+            SettingsCard {
+                Text("Diagnostics", style = MaterialTheme.typography.titleMedium)
+                Text("Device · ${Build.MODEL}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Android · ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Garive · ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Connection · ${state.connection.name.lowercase()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item {

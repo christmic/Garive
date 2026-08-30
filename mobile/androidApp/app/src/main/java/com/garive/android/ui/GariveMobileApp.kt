@@ -45,6 +45,7 @@ import com.garive.mobile.host.MobileWakeRoute
 import com.garive.mobile.model.MobileAgentCard
 import com.garive.mobile.model.MobileDestination
 import com.garive.mobile.model.MobileWorkState
+import com.garive.mobile.preferences.Theme
 import kotlinx.coroutines.launch
 
 /** Connected Android product shell backed only by the shared controller. */
@@ -55,6 +56,9 @@ internal fun GariveMobileApp(
     wakeRoute: MobileWakeRoute?,
     onWakeConsumed: () -> Unit,
     onSignOut: () -> Unit,
+    theme: Theme,
+    onTheme: (Theme) -> Unit,
+    openNotificationSettings: () -> Unit,
 ) {
     var state by remember(controller) { mutableStateOf(controller.state()) }
     var showNewTask by remember { mutableStateOf(false) }
@@ -127,7 +131,9 @@ internal fun GariveMobileApp(
                         onStart = { selectedAgent = it; showNewTask = true },
                         onRefresh = { scope.launch { state = controller.refresh() } },
                     )
-                    MobileDestination.SETTINGS -> SettingsScreen(origin, state) {
+                    MobileDestination.SETTINGS -> SettingsScreen(
+                        origin, state, theme, onTheme, openNotificationSettings,
+                    ) {
                         controller.signOut()
                         onSignOut()
                     }
