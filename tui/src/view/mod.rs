@@ -11,6 +11,7 @@ use crate::{
     input::COMMAND_PALETTE,
     Theme,
 };
+use markdown::render_markdown;
 
 pub(crate) fn render(
     model: &AppModel,
@@ -174,7 +175,13 @@ fn render_conversation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut 
                     Span::styled("◆  GARIVE ", colors.agent),
                     Span::styled(format!("#{}", item.position), colors.muted),
                 ]));
-                push_content(&mut lines, &item.text, "   ", colors.normal);
+                lines.extend(render_markdown(
+                    &item.text,
+                    "   ",
+                    colors.normal,
+                    colors.agent,
+                    colors.muted,
+                ));
             }
             TimelineRole::Status => lines.push(Line::from(vec![
                 Span::styled("  ◌  ", colors.activity),
@@ -386,7 +393,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
-fn safe_text(value: &str) -> String {
+pub(super) fn safe_text(value: &str) -> String {
     value
         .chars()
         .map(|character| match character {
@@ -521,3 +528,4 @@ fn palette(theme: Theme) -> Palette {
         empty_title: Style::default().fg(text).add_modifier(Modifier::BOLD),
     }
 }
+mod markdown;

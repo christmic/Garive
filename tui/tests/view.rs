@@ -66,3 +66,24 @@ fn overlay_is_rendered_above_without_mutating_model() {
     assert!(rendered.contains("Quit Garive?"));
     assert_eq!(format!("{model:?}"), before);
 }
+
+#[test]
+fn agent_markdown_is_structured_and_terminal_safe() {
+    let mut model = AppModel {
+        boot: BootState::Ready,
+        ..Default::default()
+    };
+    model.timeline.push(TimelineItem {
+        stable_key: "markdown".into(),
+        position: 1,
+        role: TimelineRole::Agent,
+        text: "## Result\n\n- **done**\n- `cargo test`\n\n> <script>bad</script>\u{1b}[2J".into(),
+    });
+
+    let rendered = frame(&model, 100, 20);
+    assert!(rendered.contains("## Result"));
+    assert!(rendered.contains("• done"));
+    assert!(rendered.contains("• cargo test"));
+    assert!(rendered.contains("│ <script>bad</script>�[2J"));
+    assert!(!rendered.contains('\u{1b}'));
+}

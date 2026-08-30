@@ -13,6 +13,7 @@ crossterm.workspace = true
 futures.workspace = true
 garive-host-client = { path = "../clients/host-rs" }
 ratatui.workspace = true
+pulldown-cmark = { version = "0.13.0", default-features = false }
 serde.workspace = true
 serde_jcs.workspace = true
 serde_json.workspace = true
