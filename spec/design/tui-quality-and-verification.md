@@ -218,9 +218,13 @@ loaded production timeline cells peaked at `4,128,768`, `4,210,688`, and
 `docs/evidence/tui-release-memory-2026-08-30.json`. These acceptances are
 specific to the named reference environment.
 
-Stress tests also prove cancellation latency under a saturated Host channel and
-memory stability during 30 minutes of bounded event/reconnect churn. Duration
-is a scheduled/release gate after the shorter deterministic harness passes.
+Stress tests also prove cancellation latency under a saturated Host channel.
+The candidate-bound release harness proves memory stability during 30 minutes
+of bounded event/reconnect churn: Garive `8b077f12` completed 1,426 reconnects
+and 143 unique committed Turns in 1,800.080 seconds. TUI RSS peaked and ended at
+12,784 KiB; the late five-minute peak exceeded the early peak by 1,104 KiB,
+passing the 100 MiB absolute and 20 MiB window-growth gates. The raw report is
+stored in `docs/evidence/tui-release-churn-2026-08-31.json`.
 
 ## Compatibility matrix
 
@@ -282,8 +286,10 @@ just tui-boundaries
 just tui
 ```
 
-`just tui` runs every blocking focused gate except scheduled stress and
-unavailable native-platform runs. Repository completion also requires:
+`just tui` runs every blocking focused gate except the 30-minute release churn
+and unavailable native-platform runs. The churn gate is an explicit release
+command documented with its pinned result above. Repository completion also
+requires:
 
 ```text
 cargo fmt --check
