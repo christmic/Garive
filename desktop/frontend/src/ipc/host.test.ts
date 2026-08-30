@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+  commitSetup, getSetupCatalogue, prepareSetup,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -45,5 +46,22 @@ describe("desktop Host IPC", () => {
     };
     expect(await getRecentSessions(12, invoke)).toEqual([{ session_id: "session-1" }]);
     expect((await getSessionTimeline("session-1", 0, 32, invoke)).session_id).toBe("session-1");
+  });
+
+  it("keeps setup credential in the write-only commit command", async () => {
+    const calls: string[] = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push(command);
+      if (command === "get_setup_catalogue") return { catalogue_revision: "catalogue-1" } as T;
+      if (command === "prepare_setup") return { plan_digest: "plan-1" } as T;
+      expect(args).toEqual({ planDigest: "plan-1", credential: "secret-once" });
+      return { restart_required: true } as T;
+    };
+    await getSetupCatalogue(invoke);
+    await prepareSetup({ schema_version: 1, caller_nonce: "nonce", catalogue_revision: "catalogue-1",
+      profile_id: "profile", model_target_id: "target", model_id: "model",
+      deployment_id: "deployment", definition_id: "definition" }, invoke);
+    expect((await commitSetup("plan-1", "secret-once", invoke)).restart_required).toBe(true);
+    expect(calls).toEqual(["get_setup_catalogue", "prepare_setup", "commit_setup"]);
   });
 });

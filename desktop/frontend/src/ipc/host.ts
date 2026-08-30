@@ -44,6 +44,40 @@ export interface HostTimelinePage {
   readonly has_more: boolean;
 }
 
+export interface SetupProfile {
+  readonly profile_id: string; readonly display_name_key: string;
+  readonly endpoint_mode: "fixed" | "optional_override";
+  readonly supported_capabilities: readonly string[];
+}
+
+export interface SetupCatalogue {
+  readonly schema_version: 1; readonly catalogue_revision: string;
+  readonly profiles: readonly SetupProfile[]; readonly max_text_bytes: number;
+  readonly max_endpoint_bytes: number; readonly max_secret_bytes: number;
+}
+
+export interface SetupInput {
+  readonly schema_version: 1; readonly caller_nonce: string; readonly catalogue_revision: string;
+  readonly profile_id: string; readonly endpoint_override?: string;
+  readonly model_target_id: string; readonly model_id: string;
+  readonly deployment_id: string; readonly definition_id: string;
+}
+
+export interface SetupPlan {
+  readonly schema_version: 1; readonly setup_id: string; readonly caller_nonce: string;
+  readonly catalogue_revision: string; readonly effective_configuration_digest: string;
+  readonly summary: Omit<SetupInput, "schema_version" | "caller_nonce" | "catalogue_revision"> & {
+    readonly endpoint_mode: "fixed" | "override";
+  };
+  readonly plan_digest: string;
+}
+
+export interface SetupReceipt {
+  readonly schema_version: 1; readonly setup_id: string; readonly plan_digest: string;
+  readonly configuration_revision: number; readonly configuration_digest: string;
+  readonly restart_required: true; readonly receipt_digest: string;
+}
+
 /** Loads the capability snapshot without exposing configuration values. */
 export async function getDesktopCapabilities(
   invoke: Invoke = tauriInvoke,
@@ -70,6 +104,30 @@ export async function getSessionTimeline(
   return invoke<HostTimelinePage>("get_session_timeline", {
     sessionId, afterPosition, limit,
   });
+}
+
+export async function getSetupCatalogue(invoke: Invoke = tauriInvoke): Promise<SetupCatalogue> {
+  return invoke<SetupCatalogue>("get_setup_catalogue", {});
+}
+
+export async function prepareSetup(
+  input: SetupInput,
+  invoke: Invoke = tauriInvoke,
+): Promise<SetupPlan> {
+  return invoke<SetupPlan>("prepare_setup", { input });
+}
+
+export async function commitSetup(
+  planDigest: string,
+  credential: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<SetupReceipt> {
+  if (!planDigest || !credential) throw new Error("setup_credential_rejected");
+  return invoke<SetupReceipt>("commit_setup", { planDigest, credential });
+}
+
+export async function restartDesktop(invoke: Invoke = tauriInvoke): Promise<void> {
+  await invoke<void>("restart_desktop", {});
 }
 
 /** Invokes one typed Turn against the backend-owned embedded R1 composition. */
