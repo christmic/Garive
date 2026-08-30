@@ -204,6 +204,12 @@ current state. Technical identities live in Details. The timeline contains:
 Hidden reasoning, raw tool arguments/results, credentials, paths, provider
 bodies, and internal facts are never rendered. Unknown activity is neutral.
 
+Opening a Session follows 64-item H2 pages with a strictly increasing durable
+watermark until the fixed prefix is complete. Desktop admits at most 512 Turns
+and 256 immutable Artifacts into one restored view; a repeated/decreasing cursor,
+wrong Session identity, or additional page beyond those bounds fails closed
+instead of presenting a plausible but incomplete history.
+
 ### Composer
 
 Enter sends, Shift+Enter inserts a line break, and IME composition never sends.
