@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
+
 use crate::input::EditorState;
 
 use super::{EffectId, EffectKind};
@@ -116,8 +118,14 @@ pub(crate) struct AppModel {
     pub(crate) dirty: bool,
     pub(crate) quit_requested: bool,
     pub(crate) definition_count: usize,
+    pub(crate) definitions: Vec<AgentDefinitionSummary>,
     pub(crate) session_count: usize,
+    pub(crate) sessions: Vec<SessionSummary>,
+    pub(crate) session_selection: usize,
     pub(crate) selected_session: Option<String>,
+    pub(crate) selected_turn: Option<String>,
+    pub(crate) observed_position: u64,
+    pub(crate) suspension: Option<SuspensionView>,
     pub(crate) timeline: Vec<TimelineItem>,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,

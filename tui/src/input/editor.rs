@@ -138,6 +138,17 @@ impl EditorState {
         true
     }
 
+    pub(crate) fn clear(&mut self) {
+        if self.text.is_empty() {
+            return;
+        }
+        self.checkpoint();
+        self.text.clear();
+        self.cursor_grapheme = 0;
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+    }
+
     fn grapheme_len(&self) -> usize {
         self.text.graphemes(true).count()
     }
