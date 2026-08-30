@@ -5,4 +5,5 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/prepared-tool-call.json"))
+    inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/deterministic-effect-batches-v1.json"))
 }
