@@ -235,6 +235,14 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .settings-card { margin-top: 18px; padding: 18px; }
 .settings-card > p { margin: 6px 0 16px; color: var(--muted); font-size: 12px; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; min-height: 41px; border-top: 1px solid var(--line); font-size: 12px; }
+.workspace-auth-row { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 54px; border-top: 1px solid var(--line); }
+.workspace-auth-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--accent); background: var(--accent-soft); }
+.workspace-auth-row strong, .workspace-auth-row small { display: block; }
+.workspace-auth-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.workspace-auth-row small { margin-top: 2px; color: var(--muted); font-size: 10px; }
+.workspace-auth-row .secondary-button { min-height: 30px; padding: 0 11px; font-size: 10px; }
+.workspace-auth-row .spinner { width: 11px; height: 11px; margin-right: 5px; }
+.workspace-recovery-error { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding: 9px 10px; border-radius: 9px; color: #8f3f2d; background: #fff0eb; font-size: 11px; }
 
 .workspace-scrim { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 34px; background: rgba(29,29,26,.34); backdrop-filter: blur(8px); }
 .workspace-sheet { display: grid; grid-template-rows: auto auto minmax(250px, 1fr) auto; width: min(680px, 100%); max-height: min(720px, calc(100vh - 68px)); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--paper-strong); box-shadow: 0 30px 100px rgba(24,24,20,.28), inset 0 1px rgba(255,255,255,.6); }
@@ -377,6 +385,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
   .inspector { background: #1b1c1a; }
   .state-chip.ready { color: #8bd8b3; background: #18382b; }
   .state-chip.attention { color: #f1c27d; background: #47351d; }
+  .workspace-recovery-error { color: #f5a18e; background: #422721; }
   .error-banner { color: #f0aaa4; background: #3a2422; }
   .search-results { background: rgba(255,255,255,.025); }
   .setup-card { background: rgba(35,36,33,.86); box-shadow: 0 28px 80px rgba(0,0,0,.3); }

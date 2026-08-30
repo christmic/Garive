@@ -3,7 +3,8 @@ import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
-  getWorkspaceRecoveryStatus, revokeWorkspace, runAgentTurnWithWorkspaceContext, verifyWorkspace,
+  getWorkspaceRecoveryStatus, listWorkspaceAuthorizations, reauthorizeWorkspace, revokeWorkspace,
+  runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -121,6 +122,27 @@ describe("desktop Host IPC", () => {
     expect(status).toEqual({ schema_version: 1, state: "attention_required", restored_count: 2,
       needs_reauthorization_count: 1 });
     expect(JSON.stringify(status)).not.toContain("/");
+  });
+
+  it("lists and reauthorizes Workspaces without paths crossing IPC", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push({ command, args });
+      if (command === "list_workspace_authorizations") return [{ schema_version: 1,
+        workspace_id: "workspace-1", display_name: "Project", grant_revision: 1,
+        state: "needs_reauthorization" }] as T;
+      return { schema_version: 1, workspace_id: "workspace-1", display_name: "Project",
+        access: "enumerate", grant_revision: 2, state: "active",
+        expires_at: "2026-08-30T15:30:00Z" } as T;
+    };
+    const items = await listWorkspaceAuthorizations(invoke);
+    const renewed = await reauthorizeWorkspace(items[0].workspace_id, invoke);
+    expect(renewed?.grant_revision).toBe(2);
+    expect(calls).toEqual([
+      { command: "list_workspace_authorizations", args: {} },
+      { command: "reauthorize_workspace", args: { workspaceId: "workspace-1" } },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("/");
   });
 
   it("durably attaches Workspace context before a Turn", async () => {

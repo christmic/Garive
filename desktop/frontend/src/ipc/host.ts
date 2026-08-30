@@ -109,6 +109,14 @@ export interface WorkspaceRecoveryStatus {
   readonly needs_reauthorization_count: number;
 }
 
+export interface WorkspaceAuthorization {
+  readonly schema_version: 1;
+  readonly workspace_id: string;
+  readonly display_name: string;
+  readonly grant_revision: number;
+  readonly state: "active" | "needs_reauthorization";
+}
+
 export interface WorkspaceAttachment {
   readonly api_version: "v1"; readonly session_id: string; readonly workspace_id: string;
   readonly display_name: string; readonly grant_revision: number; readonly access: "enumerate";
@@ -198,6 +206,20 @@ export async function getWorkspaceRecoveryStatus(
   invoke: Invoke = tauriInvoke,
 ): Promise<WorkspaceRecoveryStatus> {
   return invoke<WorkspaceRecoveryStatus>("get_workspace_recovery_status", {});
+}
+
+export async function listWorkspaceAuthorizations(
+  invoke: Invoke = tauriInvoke,
+): Promise<readonly WorkspaceAuthorization[]> {
+  return invoke<WorkspaceAuthorization[]>("list_workspace_authorizations", {});
+}
+
+export async function reauthorizeWorkspace(
+  workspaceId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceGrant | null> {
+  if (!workspaceId) throw new Error("workspace_capability_invalid");
+  return invoke<WorkspaceGrant | null>("reauthorize_workspace", { workspaceId });
 }
 
 export async function verifyWorkspace(

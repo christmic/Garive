@@ -115,6 +115,39 @@ fn get_workspace_recovery_status(
 }
 
 #[tauri::command]
+fn list_workspace_authorizations(
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+) -> Result<Vec<garive_desktop::DesktopWorkspaceAuthorization>, String> {
+    workspaces
+        .authorizations()
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+async fn reauthorize_workspace(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    workspace_id: String,
+) -> Result<Option<garive_desktop::DesktopWorkspaceGrant>, String> {
+    let Some(selection) = app
+        .dialog()
+        .file()
+        .set_title("Restore access to this Garive Workspace")
+        .blocking_pick_folder()
+    else {
+        return Ok(None);
+    };
+    let path = selection
+        .into_path()
+        .map_err(|_| "workspace_unavailable".to_owned())?;
+    workspaces
+        .reauthorize(&workspace_id, &path, window.label())
+        .map(Some)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn revoke_workspace(
     window: tauri::WebviewWindow,
     workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
@@ -293,6 +326,8 @@ fn main() {
             choose_workspace,
             verify_workspace,
             get_workspace_recovery_status,
+            list_workspace_authorizations,
+            reauthorize_workspace,
             revoke_workspace,
             list_workspace_entries,
             create_work_session,
