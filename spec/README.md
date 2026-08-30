@@ -48,3 +48,5 @@ The complete active increment is indexed by
 [`design/agent-product-increment-spec-set.md`](design/agent-product-increment-spec-set.md);
 its repository dependency order is also maintained in
 [`design/core-agent-plan.md`](design/core-agent-plan.md#next-accepted-increments).
+The macOS product composition and work-quality bar are defined by
+[`design/desktop-work-product.md`](design/desktop-work-product.md).
