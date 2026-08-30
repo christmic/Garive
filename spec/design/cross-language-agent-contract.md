@@ -27,6 +27,7 @@ domain models.
 | D0 definition snapshot | supported | experimental | semantic resolution + canonical digest fixtures |
 | C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
 | C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
+| C5b-A deterministic batch plan | supported | experimental | canonical access/graph/plan fixture + sequential-order properties; no Kotlin executor claim |
 | C6 Runtime | supported | admitted PostgreSQL recovery subset | shared public decisions + independent native crash evidence |
 | C7 compression | planned | not admitted | measured admission decision required |
 | P2-VX-ATC token count | supported | experimental | provider request/response/profile fixture + native tests |
@@ -43,6 +44,7 @@ The accepted Agent Core Spec set has delivered the following current support:
 | D0 definition snapshot | supported | experimental | semantic resolution + canonical digest fixtures |
 | C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
 | C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
+| C5b-A deterministic batch plan | supported | experimental | canonical access/graph/plan fixture + sequential-order properties |
 | C6 Runtime | production Rust/SQLite | PostgreSQL experiment subset | shared public decisions plus independent native crash evidence |
 
 ## Capability delivery evidence
@@ -187,7 +189,7 @@ The following do not prove parity:
 
 ## Acceptance
 
-D0 and C0-C5 carry an experimental Rust/Kotlin conformance claim only when native
-tests pass, both consume the same complete fixture set, `just conformance`
+D0, C0-C5, and C5b-A carry an experimental Rust/Kotlin conformance claim only
+when native tests pass, both consume the same complete fixture set, `just conformance`
 invokes both, and the matrix matches executable reality. This evidence does not
 promote Kotlin into a production Engine or Runtime.

@@ -63,7 +63,7 @@ Not just a Coding Agent. Garive is an Agent that **grows**:
 
 - **Core Agent** — one bounded reasoning execution, production-first in Rust.
   Kotlin experimentally re-implements admitted portable slices (currently
-  D0 and C0-C5) from accepted specs and shared semantic fixtures; it is neither a
+  D0, C0-C5, and C5b-A) from accepted specs and shared semantic fixtures; it is neither a
   product Runtime nor a second source of truth.
 - **Multi-channel capability** — chat surfaces beyond the coding IDE.
 - **Protocol adapters** — provider-independent implementations of admitted LLM

@@ -782,6 +782,7 @@ The cache is **observable**:
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: **mixed maturity** — C4/C5/C6 are implemented and verified; C5b is
-  accepted and active. Streaming, speculative dispatch, adaptive concurrency,
+- Status: **mixed maturity** — C4/C5/C6 and the C5b-A pure planner are
+  implemented and verified; C5b-R Runtime execution is accepted and active.
+  Streaming, speculative dispatch, adaptive concurrency,
   mutating parallelism, workspace snapshots, and caching remain research.
