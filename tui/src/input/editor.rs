@@ -72,6 +72,10 @@ impl EditorState {
             .count()
     }
 
+    pub(crate) fn cursor_grapheme(&self) -> usize {
+        self.cursor_grapheme
+    }
+
     pub(crate) fn line_count(&self) -> usize {
         self.text.bytes().filter(|byte| *byte == b'\n').count() + 1
     }
