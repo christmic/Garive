@@ -354,20 +354,46 @@ fn shared_setup_fixture_freezes_catalogue_plans_and_redaction() {
 }
 
 #[test]
-fn tauri_capability_limits_setup_commands_to_the_main_window() {
+fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
     let capability: serde_json::Value =
         serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
     assert_eq!(capability["windows"], serde_json::json!(["main"]));
     let permissions = capability["permissions"].as_array().unwrap();
-    for permission in [
+    let expected = [
+        "allow-get-desktop-capabilities",
         "allow-get-setup-state",
         "allow-get-setup-catalogue",
         "allow-prepare-setup",
         "allow-commit-setup",
         "allow-cancel-setup",
-    ] {
-        assert!(permissions.iter().any(|value| value == permission));
-    }
+        "allow-choose-workspace",
+        "allow-verify-workspace",
+        "allow-get-workspace-recovery-status",
+        "allow-list-workspace-authorizations",
+        "allow-reauthorize-workspace",
+        "allow-authorize-workspace-writes",
+        "allow-revoke-workspace",
+        "allow-list-workspace-entries",
+        "allow-create-work-session",
+        "allow-attach-workspace-to-session",
+        "allow-get-session-workspaces",
+        "allow-detach-workspace-from-session",
+        "allow-list-artifacts",
+        "allow-get-artifact-preview",
+        "allow-prepare-artifact-export",
+        "allow-commit-artifact-export",
+        "allow-restart-desktop",
+        "allow-get-recent-sessions",
+        "allow-get-session-timeline",
+        "allow-continue-agent-turn",
+        "allow-resolve-turn-approval",
+        "allow-run-agent-turn-with-workspace-context",
+        "allow-run-agent-turn",
+    ];
+    let admitted: Vec<_> = permissions.iter().filter_map(|value| value.as_str())
+        .filter(|value| value.starts_with("allow-")).collect();
+    assert_eq!(admitted, expected);
+    assert!(permissions.iter().any(|value| value == "core:webview:allow-set-webview-zoom"));
     assert!(capability.get("remote").is_none());
     authorize_setup_window("main").unwrap();
     assert_eq!(
