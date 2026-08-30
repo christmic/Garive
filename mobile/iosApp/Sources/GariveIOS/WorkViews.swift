@@ -99,47 +99,62 @@ struct SettingsView: View {
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
     }
+    private var walkthroughBottom: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--garive-walkthrough-settings-bottom")
+#else
+        false
+#endif
+    }
 
     var body: some View {
-        List {
-            Section("Connection") {
-                LabeledContent("Status") { StatusBadge(status: state.connection.name.lowercased()) }
-                LabeledContent("Service", value: origin)
-                LabeledContent("Verified host", value: host)
-                Label("Access grant protected by Keychain", systemImage: "lock.shield")
-            }
-            Section("Notifications") {
-                Label("Notification previews hide agent output", systemImage: "bell.slash")
-                Button("Open notification settings") {
-#if os(iOS)
-                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                    UIApplication.shared.open(url)
-#endif
+        ScrollViewReader { proxy in
+            List {
+                Section("Connection") {
+                    LabeledContent("Status") { StatusBadge(status: state.connection.name.lowercased()) }
+                    LabeledContent("Service", value: origin)
+                    LabeledContent("Verified host", value: host)
+                    Label("Access grant protected by Keychain", systemImage: "lock.shield")
                 }
-            }
-            Section("Appearance") {
-                Picker("Theme", selection: $theme) {
-                    Text("System").tag("system")
-                    Text("Light").tag("light")
-                    Text("Dark").tag("dark")
-                }
-                .pickerStyle(.segmented)
-            }
-            Section("Privacy") {
-                Label("Durable work remains on your service", systemImage: "externaldrive")
-            }
-            Section("Diagnostics") {
+                Section("Notifications") {
+                    Label("Notification previews hide agent output", systemImage: "bell.slash")
+                    Button("Open notification settings") {
 #if os(iOS)
-                LabeledContent("Device", value: UIDevice.current.name)
-                LabeledContent("iOS", value: UIDevice.current.systemVersion)
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        UIApplication.shared.open(url)
 #endif
-                LabeledContent("Garive", value: version)
-                LabeledContent("Connection", value: state.connection.name.lowercased())
+                    }
+                }
+                Section("Appearance") {
+                    Picker("Theme", selection: $theme) {
+                        Text("System").tag("system")
+                        Text("Light").tag("light")
+                        Text("Dark").tag("dark")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Privacy") {
+                    Label("Durable work remains on your service", systemImage: "externaldrive")
+                }
+                Section("Diagnostics") {
+#if os(iOS)
+                    LabeledContent("Device", value: UIDevice.current.name)
+                    LabeledContent("iOS", value: UIDevice.current.systemVersion)
+#endif
+                    LabeledContent("Garive", value: version)
+                    LabeledContent("Connection", value: state.connection.name.lowercased())
+                }
+                Section {
+                    Button("Unpair this device", role: .destructive) { model.signOut() }
+                }
+                .id("unpair")
             }
-            Section {
-                Button("Disconnect this device", role: .destructive) { model.signOut() }
+            .scrollContentBackground(.hidden).background(GarivePalette.ink).navigationTitle("Settings")
+            .onAppear {
+                guard walkthroughBottom else { return }
+                DispatchQueue.main.async { proxy.scrollTo("unpair", anchor: .bottom) }
             }
-        }.scrollContentBackground(.hidden).background(GarivePalette.ink).navigationTitle("Settings")
+        }
     }
 }
 
