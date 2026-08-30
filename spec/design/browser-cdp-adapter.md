@@ -45,6 +45,13 @@ The typed observation client performs `Browser.getVersion`, flat
 values remain adapter types. It accepts explicit target/session/frame inputs;
 it does not enumerate or select ambient pages.
 
+Typed navigation enables the Page domain, dispatches one admitted HTTP(S) URL,
+then waits for the exact `domContentEventFired`, `loadEventFired`, or main-frame
+`lifecycleEvent{name=networkIdle}` requested by T2. It separately consumes the
+same main frame's `frameNavigated` event and returns the committed final URL for
+Runtime redirect-origin revalidation. The early `Page.navigate` response alone
+is never treated as completion.
+
 ## Semantic observation
 
 The adapter enables Accessibility and requests `getFullAXTree` with an explicit

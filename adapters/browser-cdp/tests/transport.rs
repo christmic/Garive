@@ -30,6 +30,14 @@ async fn call_correlates_session_and_queues_bounded_events() {
         let command: Value = serde_json::from_slice(command.as_bytes()).expect("json");
         socket
             .send(Message::Text(
+                json!({"method":"Network.requestWillBeSent","params":{"requestId":"r1"},"sessionId":"target-1"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("unrelated event");
+        socket
+            .send(Message::Text(
                 json!({"method":"Page.loadEventFired","params":{"timestamp":1},"sessionId":"target-1"})
                     .to_string()
                     .into(),
@@ -56,10 +64,15 @@ async fn call_correlates_session_and_queues_bounded_events() {
             .await,
         Ok(json!({"nodes":[]}))
     );
-    assert!(matches!(
-        transport.pop_event(),
-        Some(CdpIncoming::Event { method, .. }) if method == "Page.loadEventFired"
-    ));
+    assert_eq!(
+        transport
+            .wait_for_event("Page.loadEventFired", Some("target-1"))
+            .await,
+        Ok(json!({"timestamp":1}))
+    );
+    assert!(
+        matches!(transport.pop_event(), Some(CdpIncoming::Event { method, .. }) if method == "Network.requestWillBeSent")
+    );
     server.await.expect("server");
 }
 

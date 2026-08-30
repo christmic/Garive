@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 
 use serde_json::{json, Map, Value};
+use url::Url;
 
 use crate::{CdpProtocolError, CdpTransport, CdpTransportError};
 
@@ -58,6 +59,30 @@ pub struct CdpAxNode {
 pub struct CdpAxTree {
     /// Nodes in browser-returned order.
     pub nodes: Vec<CdpAxNode>,
+}
+
+/// Exact T2 page readiness condition mapped to CDP events.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CdpWaitUntil {
+    /// Main document DOM content loaded event.
+    DomContentLoaded,
+    /// Main page load event.
+    Load,
+    /// Main frame CDP lifecycle `networkIdle` event.
+    NetworkIdle,
+}
+
+/// Typed navigation result used by Runtime redirect/origin revalidation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpNavigationResult {
+    /// Navigated main frame identity.
+    pub frame_id: String,
+    /// Optional new-document loader identity.
+    pub loader_id: Option<String>,
+    /// Final committed frame URL after redirects.
+    pub final_url: String,
+    /// Whether Chromium classified the navigation as a download.
+    pub is_download: bool,
 }
 
 /// Sequential typed client over one exact managed-browser transport.
@@ -118,6 +143,97 @@ impl CdpClient {
             .call("Accessibility.enable", json!({}), Some(session_id.into()))
             .await?;
         Ok(())
+    }
+
+    /// Navigates one attached page and waits for the exact admitted readiness event.
+    pub async fn navigate(
+        &mut self,
+        session_id: &str,
+        destination_url: &str,
+        wait_until: CdpWaitUntil,
+    ) -> Result<CdpNavigationResult, CdpTransportError> {
+        validate_id(session_id)?;
+        validate_http_url(destination_url)?;
+        self.transport
+            .call("Page.enable", json!({}), Some(session_id.into()))
+            .await?;
+        if wait_until == CdpWaitUntil::NetworkIdle {
+            self.transport
+                .call(
+                    "Page.setLifecycleEventsEnabled",
+                    json!({"enabled":true}),
+                    Some(session_id.into()),
+                )
+                .await?;
+        }
+        let result = self
+            .transport
+            .call(
+                "Page.navigate",
+                json!({"url":destination_url}),
+                Some(session_id.into()),
+            )
+            .await?;
+        if result
+            .get("errorText")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+        {
+            return Err(CdpTransportError::NavigationFailed);
+        }
+        let frame_id = bounded_text(&result, "frameId", 4_096)?;
+        match wait_until {
+            CdpWaitUntil::DomContentLoaded => {
+                self.transport
+                    .wait_for_event("Page.domContentEventFired", Some(session_id))
+                    .await?;
+            }
+            CdpWaitUntil::Load => {
+                self.transport
+                    .wait_for_event("Page.loadEventFired", Some(session_id))
+                    .await?;
+            }
+            CdpWaitUntil::NetworkIdle => {
+                self.transport
+                    .wait_for_event_matching("Page.lifecycleEvent", Some(session_id), |params| {
+                        params.get("frameId").and_then(Value::as_str) == Some(frame_id.as_str())
+                            && params.get("name").and_then(Value::as_str) == Some("networkIdle")
+                    })
+                    .await?;
+            }
+        }
+        let frame = self
+            .transport
+            .wait_for_event_matching("Page.frameNavigated", Some(session_id), |params| {
+                params
+                    .get("frame")
+                    .and_then(|frame| frame.get("id"))
+                    .and_then(Value::as_str)
+                    == Some(frame_id.as_str())
+            })
+            .await?;
+        let final_url = frame
+            .get("frame")
+            .and_then(|frame| frame.get("url"))
+            .and_then(Value::as_str)
+            .filter(|value| value.len() <= 32_768)
+            .ok_or_else(protocol)?
+            .to_owned();
+        validate_http_url(&final_url)?;
+        Ok(CdpNavigationResult {
+            frame_id,
+            loader_id: optional_object_text(
+                result.as_object().ok_or_else(protocol)?,
+                "loaderId",
+                4_096,
+            )?,
+            final_url,
+            is_download: result
+                .get("isDownload")
+                .map(|value| value.as_bool().ok_or_else(protocol))
+                .transpose()?
+                .unwrap_or(false),
+        })
     }
 
     /// Fetches and validates one full AX tree under explicit depth/node/text bounds.
@@ -320,6 +436,19 @@ fn optional_text_array(
 
 fn validate_id(value: &str) -> Result<(), CdpTransportError> {
     if value.is_empty() || value.len() > 4_096 {
+        Err(protocol())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_http_url(value: &str) -> Result<(), CdpTransportError> {
+    let url = Url::parse(value).map_err(|_| protocol())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
         Err(protocol())
     } else {
         Ok(())

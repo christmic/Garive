@@ -186,6 +186,7 @@ fn admitted_method(method: &str) -> bool {
             | "Page.enable"
             | "Page.navigate"
             | "Page.reload"
+            | "Page.setLifecycleEventsEnabled"
             | "Page.getNavigationHistory"
             | "Page.navigateToHistoryEntry"
             | "Input.dispatchKeyEvent"

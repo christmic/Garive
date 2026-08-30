@@ -65,6 +65,51 @@ impl CdpTransport {
         self.events.pop_front()
     }
 
+    /// Waits for one exact event method/session while retaining bounded unrelated events.
+    pub async fn wait_for_event(
+        &mut self,
+        method: &str,
+        session_id: Option<&str>,
+    ) -> Result<Value, CdpTransportError> {
+        self.wait_for_event_matching(method, session_id, |_| true)
+            .await
+    }
+
+    /// Waits for an exact event whose bounded parameters satisfy a pure predicate.
+    pub async fn wait_for_event_matching<F>(
+        &mut self,
+        method: &str,
+        session_id: Option<&str>,
+        mut predicate: F,
+    ) -> Result<Value, CdpTransportError>
+    where
+        F: FnMut(&Value) -> bool,
+    {
+        if method.is_empty() || session_id == Some("") {
+            return Err(CdpTransportError::Protocol(
+                CdpProtocolError::InvalidMessage,
+            ));
+        }
+        if let Some(index) = self.events.iter().position(|event| {
+            matches!(event, CdpIncoming::Event { method: queued, params, session_id: queued_session }
+                if queued == method && queued_session.as_deref() == session_id && predicate(params))
+        }) {
+            let Some(CdpIncoming::Event { params, .. }) = self.events.remove(index) else {
+                return Err(CdpTransportError::Protocol(
+                    CdpProtocolError::InvalidMessage,
+                ));
+            };
+            return Ok(params);
+        }
+        let duration = Duration::from_millis(self.limits.operation_timeout_ms);
+        tokio::time::timeout(
+            duration,
+            self.wait_for_event_inner(method, session_id.map(str::to_owned), &mut predicate),
+        )
+        .await
+        .map_err(|_| CdpTransportError::Timeout)?
+    }
+
     async fn call_inner(
         &mut self,
         method: String,
@@ -131,6 +176,67 @@ impl CdpTransport {
         }
     }
 
+    async fn wait_for_event_inner<F>(
+        &mut self,
+        method: &str,
+        session_id: Option<String>,
+        predicate: &mut F,
+    ) -> Result<Value, CdpTransportError>
+    where
+        F: FnMut(&Value) -> bool,
+    {
+        loop {
+            let incoming = self.read_incoming().await?;
+            match incoming {
+                CdpIncoming::Event {
+                    method: incoming_method,
+                    params,
+                    session_id: incoming_session,
+                } if incoming_method == method
+                    && incoming_session == session_id
+                    && predicate(&params) =>
+                {
+                    return Ok(params)
+                }
+                event @ CdpIncoming::Event { .. } => {
+                    if self.events.len() >= self.limits.max_queued_events {
+                        return Err(CdpTransportError::EventQueueExceeded);
+                    }
+                    self.events.push_back(event);
+                }
+                _ => return Err(CdpTransportError::CorrelationMismatch),
+            }
+        }
+    }
+
+    async fn read_incoming(&mut self) -> Result<CdpIncoming, CdpTransportError> {
+        loop {
+            let message = self
+                .stream
+                .next()
+                .await
+                .ok_or(CdpTransportError::ConnectionLost)?
+                .map_err(|_| CdpTransportError::ConnectionLost)?;
+            match message {
+                Message::Text(text) => {
+                    return parse_incoming(text.as_bytes(), self.limits.max_frame_bytes)
+                        .map_err(CdpTransportError::Protocol)
+                }
+                Message::Ping(payload) => {
+                    self.stream
+                        .send(Message::Pong(payload))
+                        .await
+                        .map_err(|_| CdpTransportError::ConnectionLost)?;
+                }
+                Message::Pong(_) => {}
+                Message::Close(_) => return Err(CdpTransportError::ConnectionLost),
+                Message::Binary(_) | Message::Frame(_) => {
+                    return Err(CdpTransportError::UnsupportedFrame)
+                }
+            }
+        }
+    }
+
     fn allocate_id(&mut self) -> Result<u64, CdpTransportError> {
         if self.next_id == 0 || self.next_id > MAX_JS_UINT {
             return Err(CdpTransportError::CorrelationExhausted);
@@ -152,6 +258,8 @@ pub enum CdpTransportError {
     ConnectionLost,
     /// Command exceeded its explicit wall-clock limit.
     Timeout,
+    /// Browser reported navigation did not start or commit successfully.
+    NavigationFailed,
     /// Incoming or outgoing protocol data failed validation.
     Protocol(CdpProtocolError),
     /// Browser returned one correlated protocol error.
@@ -173,6 +281,7 @@ impl fmt::Display for CdpTransportError {
             Self::EncodeFailed => "CDP command encoding failed",
             Self::ConnectionLost => "CDP connection lost",
             Self::Timeout => "CDP command timed out",
+            Self::NavigationFailed => "CDP navigation failed",
             Self::Protocol(_) => "CDP protocol validation failed",
             Self::Remote(_) => "CDP remote command failed",
             Self::CorrelationMismatch => "CDP response correlation mismatch",
