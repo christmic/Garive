@@ -107,15 +107,19 @@ fn main() {
                 garive_desktop::SystemDesktopSecretResolver,
                 garive_desktop::BuiltinDesktopProfileRegistry,
             );
-            let state = garive_desktop::DesktopState::default();
-            state
-                .install_from(&provider)
-                .map_err(|error| stable_setup_error(error.code()))?;
-            app.manage(state);
-            app.manage(garive_desktop::DesktopSetupService::new(
+            let setup = garive_desktop::DesktopSetupService::new(
                 directory,
                 garive_desktop::SystemSetupCredentialStore,
-            ));
+            );
+            let state = garive_desktop::DesktopState::default();
+            let installed = state
+                .install_from(&provider)
+                .map_err(|error| stable_setup_error(error.code()))?;
+            setup
+                .recover(installed)
+                .map_err(|error| stable_setup_error(error.code()))?;
+            app.manage(state);
+            app.manage(setup);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

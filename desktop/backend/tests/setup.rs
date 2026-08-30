@@ -16,6 +16,14 @@ impl SetupCredentialStore for RecordingCredentials {
             .push((credential_ref.to_owned(), credential.to_owned()));
         Ok(())
     }
+
+    fn delete(&self, credential_ref: &str) -> Result<(), DesktopSetupError> {
+        self.0
+            .lock()
+            .map_err(|_| DesktopSetupError::RecoveryFailed)?
+            .push((credential_ref.to_owned(), "<deleted>".into()));
+        Ok(())
+    }
 }
 
 fn input(revision: &str) -> DesktopSetupInput {
@@ -90,4 +98,69 @@ fn invalid_input_secret_and_replayed_plan_fail_with_stable_codes() {
             .code(),
         "setup_plan_stale"
     );
+}
+
+#[test]
+fn recovery_rolls_back_uncommitted_credentials_without_configuration() {
+    let directory = tempfile::tempdir().unwrap();
+    let credentials = RecordingCredentials::default();
+    let journal = serde_json::json!({
+        "schema_version": 1,
+        "setup_id": "setup-interrupted",
+        "plan_digest": "a".repeat(64),
+        "configuration_digest": "b".repeat(64),
+        "configuration_revision": 1,
+        "new_credential_ref": "credential-uncommitted",
+        "old_credential_ref": null,
+        "stage": "credential_stored"
+    });
+    std::fs::write(
+        directory.path().join("desktop-setup-recovery.json"),
+        serde_json::to_vec(&journal).unwrap(),
+    )
+    .unwrap();
+    DesktopSetupService::new(directory.path().to_owned(), credentials.clone())
+        .recover(false)
+        .unwrap();
+    assert_eq!(
+        credentials.0.lock().unwrap().as_slice(),
+        &[("credential-uncommitted".into(), "<deleted>".into())]
+    );
+    assert!(!directory
+        .path()
+        .join("desktop-setup-recovery.json")
+        .exists());
+}
+
+#[test]
+fn recovery_repairs_receipt_then_cleans_obsolete_credential_after_runtime_start() {
+    let directory = tempfile::tempdir().unwrap();
+    let credentials = RecordingCredentials::default();
+    let service = DesktopSetupService::new(directory.path().to_owned(), credentials.clone());
+    let first = service.prepare(input("first")).unwrap();
+    service.commit(&first.plan_digest, "first-secret").unwrap();
+    let old_ref = credentials.0.lock().unwrap()[0].0.clone();
+    let second = service.prepare(input("second")).unwrap();
+    service
+        .commit(&second.plan_digest, "second-secret")
+        .unwrap();
+    assert!(directory
+        .path()
+        .join("desktop-setup-recovery.json")
+        .exists());
+    std::fs::remove_file(directory.path().join("desktop-setup-receipt.json")).unwrap();
+
+    DesktopSetupService::new(directory.path().to_owned(), credentials.clone())
+        .recover(true)
+        .unwrap();
+    assert!(directory.path().join("desktop-setup-receipt.json").exists());
+    assert!(!directory
+        .path()
+        .join("desktop-setup-recovery.json")
+        .exists());
+    assert!(credentials
+        .0
+        .lock()
+        .unwrap()
+        .contains(&(old_ref, "<deleted>".into())));
 }

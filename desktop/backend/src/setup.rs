@@ -20,6 +20,10 @@ const CATALOGUE_REVISION: &str = "desktop-setup-catalogue-1";
 const MAX_TEXT_BYTES: usize = 256;
 const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_SECRET_BYTES: usize = 16_384;
+const MAX_RECOVERY_BYTES: usize = 32_768;
+const RECOVERY_FILE: &str = "desktop-setup-recovery.json";
+const RECEIPT_FILE: &str = "desktop-setup-receipt.json";
+const RECOVERY_TEMP_FILE: &str = ".desktop-setup-recovery.tmp";
 
 /// One backend-installed connection profile safe to render during setup.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -114,7 +118,8 @@ pub struct DesktopSetupPlan {
 }
 
 /// Non-secret proof that setup committed and requires process restart.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DesktopSetupReceipt {
     /// Exact receipt schema version.
     pub schema_version: u32,
@@ -143,6 +148,8 @@ pub enum DesktopSetupError {
     CredentialRejected,
     /// Configuration could not be committed durably.
     PersistenceFailed,
+    /// A staged setup could not be classified or repaired safely.
+    RecoveryFailed,
 }
 
 impl DesktopSetupError {
@@ -153,6 +160,7 @@ impl DesktopSetupError {
             Self::PlanStale => "setup_plan_stale",
             Self::CredentialRejected => "setup_credential_rejected",
             Self::PersistenceFailed => "setup_persistence_failed",
+            Self::RecoveryFailed => "setup_recovery_failed",
         }
     }
 }
@@ -161,6 +169,8 @@ impl DesktopSetupError {
 pub trait SetupCredentialStore: Send + Sync {
     /// Stores a credential under one fresh opaque reference.
     fn store(&self, credential_ref: &str, credential: &str) -> Result<(), DesktopSetupError>;
+    /// Removes one exact obsolete or uncommitted credential reference.
+    fn delete(&self, credential_ref: &str) -> Result<(), DesktopSetupError>;
 }
 
 /// Shipping setup writer backed by the operating-system credential store.
@@ -175,6 +185,38 @@ impl SetupCredentialStore for SystemSetupCredentialStore {
             .set_password(credential)
             .map_err(|_| DesktopSetupError::CredentialRejected)
     }
+
+    fn delete(&self, credential_ref: &str) -> Result<(), DesktopSetupError> {
+        let entry = keyring::Entry::new(DESKTOP_CREDENTIAL_SERVICE, credential_ref)
+            .map_err(|_| DesktopSetupError::RecoveryFailed)?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(DesktopSetupError::RecoveryFailed),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RecoveryStage {
+    Planned,
+    CredentialStored,
+    ConfigCommitted,
+    ReceiptCommitted,
+    CleanupPending,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveryJournal {
+    schema_version: u32,
+    setup_id: String,
+    plan_digest: String,
+    configuration_digest: String,
+    configuration_revision: u64,
+    new_credential_ref: String,
+    old_credential_ref: Option<String>,
+    stage: RecoveryStage,
 }
 
 #[derive(Clone)]
@@ -302,8 +344,21 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         if current_revision(&self.directory)? != revision - 1 {
             return Err(DesktopSetupError::PlanStale);
         }
+        let mut journal = RecoveryJournal {
+            schema_version: 1,
+            setup_id: prepared.public.setup_id.clone(),
+            plan_digest: plan_digest.to_owned(),
+            configuration_digest: prepared.public.effective_configuration_digest.clone(),
+            configuration_revision: revision,
+            new_credential_ref: prepared.credential_ref.clone(),
+            old_credential_ref: current_credential_ref(&self.directory)?,
+            stage: RecoveryStage::Planned,
+        };
+        write_journal(&self.directory, &journal)?;
         self.credentials
             .store(&prepared.credential_ref, credential)?;
+        journal.stage = RecoveryStage::CredentialStored;
+        write_journal(&self.directory, &journal)?;
         let bytes = serde_json::to_vec_pretty(&prepared.configuration)
             .map_err(|_| DesktopSetupError::PersistenceFailed)?;
         atomic_write(
@@ -312,22 +367,74 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
                 .join(format!(".desktop-setup-{}.tmp", prepared.public.setup_id)),
             &bytes,
         )?;
-        let receipt_value = json!({"schema_version":1,"setup_id":prepared.public.setup_id,"plan_digest":plan_digest,"configuration_revision":revision,"configuration_digest":prepared.public.effective_configuration_digest,"restart_required":true});
-        let receipt_digest = digest_value(&receipt_value)?;
-        let receipt = DesktopSetupReceipt {
-            schema_version: 1,
-            setup_id: prepared.public.setup_id,
-            plan_digest: plan_digest.to_owned(),
-            configuration_revision: revision,
-            configuration_digest: prepared.public.effective_configuration_digest,
-            restart_required: true,
-            receipt_digest,
-        };
+        journal.stage = RecoveryStage::ConfigCommitted;
+        write_journal(&self.directory, &journal)?;
+        let receipt = receipt(&journal)?;
+        let receipt_bytes = serde_json::to_vec_pretty(&receipt)
+            .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+        atomic_write(
+            self.directory.join(RECEIPT_FILE),
+            self.directory
+                .join(format!(".desktop-setup-receipt-{}.tmp", journal.setup_id)),
+            &receipt_bytes,
+        )?;
+        journal.stage = RecoveryStage::ReceiptCommitted;
+        write_journal(&self.directory, &journal)?;
         self.plans
             .lock()
             .map_err(|_| DesktopSetupError::PersistenceFailed)?
             .remove(plan_digest);
+        if journal.old_credential_ref.is_some() {
+            journal.stage = RecoveryStage::CleanupPending;
+            write_journal(&self.directory, &journal)?;
+        } else {
+            remove_recovery(&self.directory)?;
+        }
         Ok(receipt)
+    }
+
+    /// Repairs or rolls back one staged setup before Desktop admits Agent IPC.
+    pub fn recover(&self, runtime_started: bool) -> Result<(), DesktopSetupError> {
+        let Some(mut journal) = read_journal(&self.directory)? else {
+            remove_known_temporary(&self.directory, None);
+            return Ok(());
+        };
+        validate_journal(&journal)?;
+        remove_known_temporary(&self.directory, Some(&journal.setup_id));
+        if configuration_matches(&self.directory, &journal)? {
+            let expected = receipt(&journal)?;
+            if !receipt_matches(&self.directory, &expected)? {
+                let bytes = serde_json::to_vec_pretty(&expected)
+                    .map_err(|_| DesktopSetupError::RecoveryFailed)?;
+                atomic_write(
+                    self.directory.join(RECEIPT_FILE),
+                    self.directory
+                        .join(format!(".desktop-setup-receipt-{}.tmp", journal.setup_id)),
+                    &bytes,
+                )
+                .map_err(|_| DesktopSetupError::RecoveryFailed)?;
+            }
+            if runtime_started {
+                if let Some(old) = journal.old_credential_ref.as_deref() {
+                    self.credentials.delete(old)?;
+                }
+                remove_recovery(&self.directory)?;
+            } else {
+                journal.stage = RecoveryStage::CleanupPending;
+                write_journal(&self.directory, &journal)?;
+            }
+            return Ok(());
+        }
+        if matches!(
+            journal.stage,
+            RecoveryStage::ConfigCommitted
+                | RecoveryStage::ReceiptCommitted
+                | RecoveryStage::CleanupPending
+        ) {
+            return Err(DesktopSetupError::RecoveryFailed);
+        }
+        self.credentials.delete(&journal.new_credential_ref)?;
+        remove_recovery(&self.directory)
     }
 }
 
@@ -373,6 +480,138 @@ fn current_revision(directory: &std::path::Path) -> Result<u64, DesktopSetupErro
     let config = DesktopSystemConfiguration::parse(&bytes, directory)
         .map_err(|_| DesktopSetupError::PersistenceFailed)?;
     Ok(config.configuration_revision().unwrap_or(0))
+}
+
+fn current_credential_ref(
+    directory: &std::path::Path,
+) -> Result<Option<String>, DesktopSetupError> {
+    let bytes = match fs::read(directory.join(DESKTOP_CONFIG_FILE)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(DesktopSetupError::PersistenceFailed),
+    };
+    let config = DesktopSystemConfiguration::parse(&bytes, directory)
+        .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    Ok(Some(config.credential_ref().to_owned()))
+}
+
+fn receipt(journal: &RecoveryJournal) -> Result<DesktopSetupReceipt, DesktopSetupError> {
+    let value = json!({"schema_version":1,"setup_id":journal.setup_id,"plan_digest":journal.plan_digest,"configuration_revision":journal.configuration_revision,"configuration_digest":journal.configuration_digest,"restart_required":true});
+    Ok(DesktopSetupReceipt {
+        schema_version: 1,
+        setup_id: journal.setup_id.clone(),
+        plan_digest: journal.plan_digest.clone(),
+        configuration_revision: journal.configuration_revision,
+        configuration_digest: journal.configuration_digest.clone(),
+        restart_required: true,
+        receipt_digest: digest_value(&value)?,
+    })
+}
+
+fn write_journal(
+    directory: &std::path::Path,
+    journal: &RecoveryJournal,
+) -> Result<(), DesktopSetupError> {
+    let bytes =
+        serde_json::to_vec_pretty(journal).map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    if bytes.len() > MAX_RECOVERY_BYTES {
+        return Err(DesktopSetupError::PersistenceFailed);
+    }
+    atomic_write(
+        directory.join(RECOVERY_FILE),
+        directory.join(RECOVERY_TEMP_FILE),
+        &bytes,
+    )
+}
+
+fn read_journal(directory: &std::path::Path) -> Result<Option<RecoveryJournal>, DesktopSetupError> {
+    let path = directory.join(RECOVERY_FILE);
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(DesktopSetupError::RecoveryFailed),
+    };
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > MAX_RECOVERY_BYTES as u64
+    {
+        return Err(DesktopSetupError::RecoveryFailed);
+    }
+    let bytes = fs::read(path).map_err(|_| DesktopSetupError::RecoveryFailed)?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| DesktopSetupError::RecoveryFailed)
+}
+
+fn validate_journal(journal: &RecoveryJournal) -> Result<(), DesktopSetupError> {
+    let valid_digest = |value: &str| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    };
+    if journal.schema_version != 1
+        || journal.setup_id.is_empty()
+        || journal.configuration_revision == 0
+        || journal.new_credential_ref.is_empty()
+        || journal.old_credential_ref.as_deref() == Some("")
+        || !valid_digest(&journal.plan_digest)
+        || !valid_digest(&journal.configuration_digest)
+    {
+        return Err(DesktopSetupError::RecoveryFailed);
+    }
+    Ok(())
+}
+
+fn configuration_matches(
+    directory: &std::path::Path,
+    journal: &RecoveryJournal,
+) -> Result<bool, DesktopSetupError> {
+    let bytes = match fs::read(directory.join(DESKTOP_CONFIG_FILE)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(DesktopSetupError::RecoveryFailed),
+    };
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::RecoveryFailed)?;
+    let config = DesktopSystemConfiguration::parse(&bytes, directory)
+        .map_err(|_| DesktopSetupError::RecoveryFailed)?;
+    Ok(config.setup_id() == Some(journal.setup_id.as_str())
+        && config.configuration_revision() == Some(journal.configuration_revision)
+        && digest_value(&value).map_err(|_| DesktopSetupError::RecoveryFailed)?
+            == journal.configuration_digest)
+}
+
+fn receipt_matches(
+    directory: &std::path::Path,
+    expected: &DesktopSetupReceipt,
+) -> Result<bool, DesktopSetupError> {
+    let bytes = match fs::read(directory.join(RECEIPT_FILE)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(DesktopSetupError::RecoveryFailed),
+    };
+    let actual: DesktopSetupReceipt =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::RecoveryFailed)?;
+    Ok(&actual == expected)
+}
+
+fn remove_known_temporary(directory: &std::path::Path, setup_id: Option<&str>) {
+    let _ = fs::remove_file(directory.join(RECOVERY_TEMP_FILE));
+    if let Some(setup_id) = setup_id {
+        let _ = fs::remove_file(directory.join(format!(".desktop-setup-{setup_id}.tmp")));
+        let _ = fs::remove_file(directory.join(format!(".desktop-setup-receipt-{setup_id}.tmp")));
+    }
+}
+
+fn remove_recovery(directory: &std::path::Path) -> Result<(), DesktopSetupError> {
+    match fs::remove_file(directory.join(RECOVERY_FILE)) {
+        Ok(()) => fs::File::open(directory)
+            .and_then(|file| file.sync_all())
+            .map_err(|_| DesktopSetupError::RecoveryFailed),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(DesktopSetupError::RecoveryFailed),
+    }
 }
 
 fn configuration(
