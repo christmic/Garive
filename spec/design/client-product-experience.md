@@ -279,6 +279,28 @@ ordered intents/effect results, and the complete expected state/effect list.
 TypeScript Desktop/Web and KMP consume every semantic case; platform UI tests
 cover rendering/focus/navigation and do not reimplement controller semantics.
 
+### UX-A implementation evidence
+
+UX-A is implemented by the pure TypeScript reducer in
+`desktop/frontend/src/state/controller.ts` and the conforming KMP reducer in
+`mobile/shared/src/commonMain/kotlin/com/garive/mobile/application/ProductController.kt`.
+Both consume every ordered case in
+`spec/fixtures/host/client-product-experience-v1.json`; strict readers reject
+unknown root/case fields, duplicate case names, and omitted expected results.
+The product projection adapters in `desktop/frontend/src/state/hostProjection.ts`
+and `mobile/shared/src/commonMain/kotlin/com/garive/mobile/host/ProductHostMapping.kt`
+map the complete public H2/H3 views without importing Engine, Ledger, Runtime,
+database, or provider types.
+
+Executable evidence covers exact result correlation, navigation-generation
+invalidation, mutation survival, one mutation per Session, UTF-8 bounds,
+bounded unknown activity, durable-ack draft clearing, transport-unknown exact
+retry, disconnect/reconnect cursor retention, suspension coordinates, strict
+preference/pending documents, and single-flight coalesced preference writes.
+Desktop production TypeScript/Vite build, KMP JVM tests, and the iOS/macOS
+XCFramework build are the UX-A delivery gates. UX-B and UX-C remain separate;
+UX-A completion does not claim any product UI or live-device reachability.
+
 ## See also
 
 - [`host-read-model-v1.md`](host-read-model-v1.md) — navigation and timeline data.

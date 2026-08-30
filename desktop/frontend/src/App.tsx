@@ -428,7 +428,7 @@ export function App() {
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} t={t} />}
       </main>
-      {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
+      {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} t={t} />}
     </div>
     {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest} t={t}
       onCancel={() => { setPickerGrant(undefined);
@@ -473,40 +473,40 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} />}
+      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} t={t} />}
     </div>
     {state.error && <div className="error-banner" role="alert"><Icon name="warning" /><span>{errorCopy[state.error] ?? "This work could not continue."}</span>
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
-        {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label="Workspace write approval required">
+        {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
           <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
-            ? `${activityLabel(approvalEffect.label_key)} in ` : "Approve one local operation in "}<bdi>{approvalWorkspace?.display_name ?? "the attached Workspace"}</bdi>?</strong>
-            <div className="approval-facts"><span><b>Scope</b>{approvalWorkspace?.access === "read_write" ? "Create one new file" : "Exact prepared operation"}</span>
-              <span><b>Duration</b>Once · this prepared call only</span><span><b>Overwrite</b>Never</span></div>
-            <p>A changed request, Workspace grant, or destination requires a new approval.</p></div>
+            ? `${activityLabel(approvalEffect.label_key, t)} · ` : `${t("approval.operationPrefix")} `}<bdi>{approvalWorkspace?.display_name ?? t("approval.attachedWorkspace")}</bdi>?</strong>
+            <div className="approval-facts"><span><b>{t("approval.scope")}</b>{t(approvalWorkspace?.access === "read_write" ? "approval.createOne" : "approval.exactOperation")}</span>
+              <span><b>{t("approval.duration")}</b>{t("approval.durationValue")}</span><span><b>{t("approval.overwrite")}</b>{t("approval.overwriteValue")}</span></div>
+            <p>{t("approval.changed")}</p></div>
           <div className="approval-actions"><button ref={approvalAction} type="button" autoFocus disabled={state.phase === "submitting"}
-            onClick={() => void resolveApproval(false)}>Decline</button><button className="primary" type="button"
-              disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>Approve once</button></div>
+            onClick={() => void resolveApproval(false)}>{t("approval.decline")}</button><button className="primary" type="button"
+              disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>{t("approval.approveOnce")}</button></div>
         </div>}
         {state.workspaces.length > 0 && <div className="attached-workspaces"
-          aria-label="Workspaces attached to this work">
+          aria-label={t("context.attached")}>
           {state.workspaces.map((workspace) => <span className="context-chip workspace-chip"
             key={`${workspace.workspace_id}-${workspace.grant_revision}`}>
             <Icon name="work" /><span><strong dir="auto">{workspace.display_name}</strong>
-              <small>{workspace.access === "read_write" ? "Read and output" : "Read-only"} · attached</small></span>
-            <button type="button" title="Detach from this work"
-              aria-label="Detach Workspace from this work"
+              <small>{t(workspace.access === "read_write" ? "context.readOutput" : "context.readOnly")} · {t("context.attachedState")}</small></span>
+            <button type="button" title={t("context.detach")}
+              aria-label={t("context.detach")}
               disabled={state.phase === "submitting" || Boolean(detachingWorkspaceId)}
               onClick={() => void detachWorkspace(workspace)}>{detachingWorkspaceId === workspace.workspace_id
                 ? <span className="spinner" /> : <Icon name="close" />}</button>
           </span>)}</div>}
-        {context && <div className="context-chips" aria-label="Context selected for next Turn">
+        {context && <div className="context-chips" aria-label={t("context.nextTurn")}>
           {context.entries.map((entry) => <span className="context-chip" key={entry.entry_id}>
             <Icon name="file" /><span><strong dir="auto">{entry.display_name}</strong>
-              <small>{state.phase === "submitting" ? "Committing with Turn…" : context.grant.display_name}</small></span>
+              <small>{state.phase === "submitting" ? t("context.committing") : context.grant.display_name}</small></span>
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
-              aria-label="Remove selected context file"><Icon name="close" /></button>
+              aria-label={t("context.remove")}><Icon name="close" /></button>
           </span>)}</div>}
         <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
           aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
@@ -543,7 +543,7 @@ function Welcome({ onSelect, t }: { onSelect: (text: string) => void; t: (key: M
   </div>;
 }
 
-function Timeline({ state }: { state: WorkState }) {
+function Timeline({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
   const [copiedId, setCopiedId] = useState<string>();
   const copyResult = async (id: string, text: string) => {
     try {
@@ -555,27 +555,27 @@ function Timeline({ state }: { state: WorkState }) {
     }
   };
   const latest = state.messages.at(-1);
-  const announcement = state.phase === "submitting" ? "Garive is working."
-    : latest?.role === "assistant" ? `Turn ${terminalCopy(latest.terminal).toLocaleLowerCase()}.` : "";
+  const announcement = state.phase === "submitting" ? t("timeline.workingAnnouncement")
+    : latest?.role === "assistant" ? `${t("timeline.turn")} ${terminalCopy(latest.terminal, t)}。` : "";
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
-      components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal)}</Markdown></div>
-      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>Export .md</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{copiedId === message.id ? "Copied" : "Copy"}</button></div></div></div></article>)}
-    {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>Working on your outcome…</p><span className="working-line" /></div></article>}
+      components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
+      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>{t("timeline.export")}</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}</button></div></div></div></article>)}
+    {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>{t("timeline.working")}</p><span className="working-line" /></div></article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
 }
 
-function Inspector({ state, dispatch }: { state: WorkState; dispatch: WorkDispatch }) {
-  return <aside className="inspector" aria-label="Work inspector"><header><div className="inspector-tabs" role="tablist" aria-label="Inspector views"><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>Activity</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>Artifacts</button></div>
-    <button className="icon-button" type="button" aria-label="Close inspector" onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
-    {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} /></div>
-      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} /></div>}
+function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch; t: (key: MessageKey) => string }) {
+  return <aside className="inspector" aria-label={t("inspector.aria")}><header><div className="inspector-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>{t("inspector.activity")}</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>{t("inspector.artifacts")}</button></div>
+    <button className="icon-button" type="button" aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
+    {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
+      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} /></div>}
   </aside>;
 }
 
-function ResultDeliverables({ state }: { state: WorkState }) {
+function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
   const [selected, setSelected] = useState<HostArtifact>();
   const [preview, setPreview] = useState<ArtifactPreview>();
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
@@ -622,34 +622,34 @@ function ResultDeliverables({ state }: { state: WorkState }) {
       setExportStates((current) => ({ ...current, [key]: exists ? "exists" : "unavailable" }));
     }
   };
-  if (!results.length && !state.artifacts.length) return <div className="inspector-empty"><Icon name="file" /><h2>No deliverables yet</h2><p>Committed results and created files will appear here.</p></div>;
-  return <div className="deliverable-list"><div className="activity-intro"><h2>Deliverables</h2><p>Immutable results committed by the local Runtime.</p></div>
+  if (!results.length && !state.artifacts.length) return <div className="inspector-empty"><Icon name="file" /><h2>{t("artifact.emptyTitle")}</h2><p>{t("artifact.emptyBody")}</p></div>;
+  return <div className="deliverable-list"><div className="activity-intro"><h2>{t("artifact.title")}</h2><p>{t("artifact.description")}</p></div>
     {state.artifacts.map((artifact) => { const key = `${artifact.artifact_id}-${artifact.revision}`;
       const exportState = exportStates[key]; const receipt = exportReceipts[key];
       return <article className="artifact-card" key={key}>
       <span className="deliverable-icon"><Icon name="file" /></span><div className="artifact-card-body">
         <div className="artifact-title"><strong dir="auto">{artifact.display_name}</strong><span>v{artifact.revision}</span></div>
-        <p>{formatBytes(artifact.byte_size)} · {artifact.mime_type} · Committed</p>
+        <p>{formatBytes(artifact.byte_size)} · {artifact.mime_type} · {t("artifact.committed")}</p>
         <div className="artifact-actions"><div><button type="button" disabled={artifact.preview !== "text"}
-          onClick={() => void openPreview(artifact)}>Preview</button><button type="button"
+          onClick={() => void openPreview(artifact)}>{t("artifact.preview")}</button><button type="button"
             disabled={!artifact.exportable || exportState === "exporting"}
-            onClick={() => void exportCopy(artifact)}>{exportState === "exporting" ? "Choosing…" : "Export copy…"}</button></div>
-          {artifact.workspace_id && <span><Icon name="shield" />Authorized Workspace</span>}</div>
-        {exportState === "exported" && receipt && <p className="artifact-export-state success" role="status"><Icon name="check" />Exported as {receipt.display_name}</p>}
-        {exportState === "exists" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />Choose a new file name; Garive never overwrites.</p>}
-        {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />Export unavailable. Check Workspace access and try again.</p>}
+            onClick={() => void exportCopy(artifact)}>{t(exportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}</button></div>
+          {artifact.workspace_id && <span><Icon name="shield" />{t("artifact.authorizedWorkspace")}</span>}</div>
+        {exportState === "exported" && receipt && <p className="artifact-export-state success" role="status"><Icon name="check" />{t("artifact.exportedAs")} <bdi>{receipt.display_name}</bdi></p>}
+        {exportState === "exists" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.overwriteError")}</p>}
+        {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}
       </div>
     </article>; })}
-    {selected && <section className="artifact-preview" aria-label="Verified Artifact preview"><header><div><span>VERIFIED PREVIEW</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label="Close Artifact preview"
+    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><header><div><span>{t("artifact.previewVerified")}</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label={t("artifact.closePreview")}
       onClick={() => { setSelected(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
-      {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />Verifying committed bytes…</div>
-        : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />The backing file changed or access is unavailable.</div>
+      {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />{t("artifact.verifying")}</div>
+        : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
           : preview && <pre>{preview.content_utf8}</pre>}
-      <footer><Icon name="shield" />SHA-256 checked against revision {selected.revision}</footer>
+      <footer><Icon name="shield" />{t("artifact.digestPrefix")} {selected.revision}</footer>
     </section>}
-    {results.length > 0 && <div className="deliverable-section-label">Response snapshots</div>}
-    {results.map((result, index) => <article className="deliverable-card" key={result.id}><span className="deliverable-icon"><Icon name="file" /></span><div><strong>Result {index + 1}.md</strong><p>{result.text.replace(/[#|*`>\[\]]/g, " ").trim().slice(0, 92)}</p><button type="button" onClick={() => downloadMarkdown(result.id, result.text)}>Export Markdown</button></div></article>)}
-    {!state.capabilities?.artifacts && <p className="activity-gate"><Icon name="shield" />These are redacted Runtime results. Governed workspace files remain gated.</p>}
+    {results.length > 0 && <div className="deliverable-section-label">{t("artifact.snapshots")}</div>}
+    {results.map((result, index) => <article className="deliverable-card" key={result.id}><span className="deliverable-icon"><Icon name="file" /></span><div><strong>{t("artifact.result")} {index + 1}.md</strong><p>{result.text.replace(/[#|*`>\[\]]/g, " ").trim().slice(0, 92)}</p><button type="button" onClick={() => downloadMarkdown(result.id, result.text)}>{t("artifact.exportMarkdown")}</button></div></article>)}
+    {!state.capabilities?.artifacts && <p className="activity-gate"><Icon name="shield" />{t("artifact.gated")}</p>}
   </div>;
 }
 
@@ -657,45 +657,47 @@ function formatBytes(bytes: number) {
   return bytes < 1_024 ? `${bytes} B` : `${(bytes / 1_024).toFixed(bytes < 10_240 ? 1 : 0)} KB`;
 }
 
-function CommittedActivity({ state }: { state: WorkState }) {
+function CommittedActivity({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
   if (state.capabilities?.activity && state.activities.length) {
     const activities = [...state.activities].sort((left, right) =>
       Number(right.state === "attention_required") - Number(left.state === "attention_required")
         || left.source_position - right.source_position);
-    return <div className="activity-list"><div className="activity-intro"><h2>Committed activity</h2><p>Redacted lifecycle states verified by the local Runtime.</p></div>
+    return <div className="activity-list"><div className="activity-intro"><h2>{t("activity.committedTitle")}</h2><p>{t("activity.committedBody")}</p></div>
       {activities.map((activity) => <div className="activity-row" key={`${activity.kind}-${activity.activity_id}`}>
         <span className={`activity-status ${activity.state}`}><Icon name={activityIcon(activity.state)} /></span>
-        <div><strong>{activityLabel(activity.label_key)}</strong><small>{activityState(activity.state)}</small></div>
+        <div><strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small></div>
       </div>)}
     </div>;
   }
   const turns = state.messages.filter((message) => message.role === "assistant");
-  if (!turns.length && state.phase !== "submitting") return <div className="inspector-empty"><Icon name="activity" /><h2>No committed Turns yet</h2><p>Durable Turn states appear here after work begins.</p></div>;
-  return <div className="activity-list"><div className="activity-intro"><h2>Turn activity</h2><p>Only states committed by the local Runtime are shown.</p></div>
+  if (!turns.length && state.phase !== "submitting") return <div className="inspector-empty"><Icon name="activity" /><h2>{t("activity.emptyTitle")}</h2><p>{t("activity.emptyBody")}</p></div>;
+  return <div className="activity-list"><div className="activity-intro"><h2>{t("activity.turnTitle")}</h2><p>{t("activity.turnBody")}</p></div>
     {turns.map((turn, index) => <div className="activity-row" key={turn.id}><span className={`activity-status ${turn.terminal ?? "running"}`}><Icon name={turn.terminal === "completed" ? "check" : "warning"} /></span>
-      <div><strong>Turn {index + 1}</strong><small>{terminalCopy(turn.terminal)}</small></div></div>)}
-    {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>Current Turn</strong><small>Working</small></div></div>}
-    {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />Tool-level details stay hidden until the H3 committed projection is installed.</p>}
+      <div><strong>{t("timeline.turn")} {index + 1}</strong><small>{terminalCopy(turn.terminal, t)}</small></div></div>)}
+    {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>{t("activity.currentTurn")}</strong><small>{t("status.working")}</small></div></div>}
+    {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />{t("activity.gated")}</p>}
   </div>;
 }
 
-function activityLabel(key: string) {
-  const labels: Record<string, string> = {
-    "agent.activity.read_file": "Read scoped file",
-    "agent.activity.write_file": "Write scoped file",
-    "agent.activity.approval": "Approval decision",
-    "agent.activity.external_input": "Requested input",
-    "agent.activity.tool_rejected": "Rejected tool request",
+function activityLabel(key: string, t: (key: MessageKey) => string) {
+  const labels: Record<string, MessageKey> = {
+    "agent.activity.read_file": "activity.readFile",
+    "agent.activity.write_file": "activity.writeFile",
+    "agent.activity.approval": "activity.approval",
+    "agent.activity.external_input": "activity.externalInput",
+    "agent.activity.tool_rejected": "activity.rejected",
   };
-  return labels[key] ?? "Agent activity";
+  return t(labels[key] ?? "activity.generic");
 }
-function activityState(state: string) {
-  const labels: Record<string, string> = {
-    prepared: "Prepared", waiting_for_input: "Waiting for input", input_received: "Input received",
-    authorized: "Authorized", running: "Running", completed: "Completed", denied: "Denied",
-    failed: "Failed", cancelled: "Cancelled", attention_required: "Needs reconciliation",
+function activityState(state: string, t: (key: MessageKey) => string) {
+  const labels: Record<string, MessageKey> = {
+    prepared: "activity.state.prepared", waiting_for_input: "activity.state.waiting",
+    input_received: "activity.state.received", authorized: "activity.state.authorized",
+    running: "activity.state.running", completed: "activity.state.completed",
+    denied: "activity.state.denied", failed: "activity.state.failed",
+    cancelled: "activity.state.cancelled", attention_required: "activity.state.attention",
   };
-  return labels[state] ?? "Updated";
+  return t(labels[state] ?? "activity.state.updated");
 }
 function activityIcon(state: string): IconName {
   return state === "completed" || state === "input_received" ? "check"

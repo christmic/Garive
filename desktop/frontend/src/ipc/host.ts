@@ -21,13 +21,33 @@ export interface DesktopCapabilities {
   readonly artifacts: boolean;
 }
 
-/** Restart-safe durable Session navigation summary. */
+/** Installed immutable Agent definition exposed by H2. */
+export interface HostDefinition {
+  readonly api_version: "v1"; readonly definition_id: string;
+  readonly definition_revision: string; readonly capabilities: readonly string[];
+}
+/** Bounded installed-Agent discovery page. */
+export interface HostDefinitionPage {
+  readonly api_version: "v1"; readonly definitions: readonly HostDefinition[];
+}
+/** Restart-safe H2 Session navigation summary. */
 export interface HostSessionSummary {
   readonly api_version: "v1"; readonly session_id: string; readonly agent_instance_id: string;
   readonly definition_id: string; readonly definition_revision: string; readonly opened_at: string;
   readonly latest_position: number; readonly latest_turn_id?: string;
   readonly latest_turn_state?: "running" | "suspended" | "completed" | "stopped" | "failed";
   readonly turn_count: number;
+}
+/** Reverse-opened H2 Session page. */
+export interface HostSessionPage {
+  readonly api_version: "v1"; readonly sessions: readonly HostSessionSummary[]; readonly next_before?: string;
+}
+
+/** One public H1/H3 event; unknown event names remain strings. */
+export interface HostEvent {
+  readonly api_version: "v1"; readonly session_id: string; readonly position: number;
+  readonly event: string; readonly turn_id: string; readonly execution_id: string;
+  readonly text: string; readonly activity?: HostActivity;
 }
 
 /** One complete durable Turn restored from the Runtime. */
@@ -48,8 +68,10 @@ export interface HostActivity {
 
 export interface HostSuspension {
   readonly suspension_id: string; readonly session_version: number;
-  readonly kind: "approval_required" | "external_input_required" | "operator_reconciliation"
-    | "resource_unavailable" | "partial_output" | "delegation_pending";
+  readonly kind: string;
+  readonly prompt_schema?: string; readonly prompt_json?: readonly number[];
+  readonly prompt_digest?: string; readonly response_schema_json?: readonly number[];
+  readonly response_schema_digest?: string;
 }
 
 /** Bounded durable conversation page. */
@@ -95,6 +117,106 @@ export interface ArtifactExportReceipt {
   readonly state: "exported";
 }
 
+/** Maps untrusted IPC JSON without collapsing optional presence. */
+export function decodeHostTimelinePage(raw: unknown): HostTimelinePage {
+  const value = object(raw); return {
+    api_version: apiVersion(value.api_version), session_id: text(value.session_id),
+    items: array(value.items).map((item) => timelineItem(object(item))),
+    scanned_through_position: position(value.scanned_through_position),
+    observed_max_position: position(value.observed_max_position), has_more: boolean(value.has_more),
+  };
+}
+
+/** Strictly maps an untrusted H2 definition page. */
+export function decodeHostDefinitionPage(raw: unknown): HostDefinitionPage {
+  const value = object(raw); return { api_version: apiVersion(value.api_version),
+    definitions: array(value.definitions).map((rawDefinition) => {
+      const definition = object(rawDefinition); return { api_version: apiVersion(definition.api_version),
+        definition_id: text(definition.definition_id), definition_revision: text(definition.definition_revision),
+        capabilities: array(definition.capabilities).map(text) };
+    }) };
+}
+
+/** Strictly maps an untrusted H2 Session page. */
+export function decodeHostSessionPage(raw: unknown): HostSessionPage {
+  const value = object(raw); return { api_version: apiVersion(value.api_version),
+    sessions: array(value.sessions).map((rawSession) => {
+      const session = object(rawSession); return { api_version: apiVersion(session.api_version),
+        session_id: text(session.session_id), agent_instance_id: text(session.agent_instance_id),
+        definition_id: text(session.definition_id), definition_revision: text(session.definition_revision),
+        opened_at: text(session.opened_at), latest_position: position(session.latest_position),
+        latest_turn_id: optionalText(session.latest_turn_id), latest_turn_state: optionalTurnState(session.latest_turn_state),
+        turn_count: position(session.turn_count) };
+    }), next_before: optionalText(value.next_before) };
+}
+
+/** Strictly maps one untrusted H1/H3 event. */
+export function decodeHostEvent(raw: unknown): HostEvent {
+  const value = object(raw); return { api_version: apiVersion(value.api_version), session_id: text(value.session_id),
+    position: position(value.position), event: text(value.event), turn_id: optionalText(value.turn_id) ?? "",
+    execution_id: optionalText(value.execution_id) ?? "", text: optionalText(value.text) ?? "",
+    activity: value.activity === undefined ? undefined : activity(object(value.activity)) };
+}
+
+function timelineItem(value: Record<string, unknown>): HostTimelineItem {
+  return {
+    turn_id: text(value.turn_id), started_position: position(value.started_position),
+    latest_position: position(value.latest_position), state: turnState(value.state),
+    user_text: text(value.user_text), completion_text: optionalText(value.completion_text),
+    suspension: value.suspension === undefined ? undefined : suspension(object(value.suspension)),
+    content_truncated: boolean(value.content_truncated),
+    activities: array(value.activities).map((item) => activity(object(item))),
+  };
+}
+function activity(value: Record<string, unknown>): HostActivity {
+  return { api_version: apiVersion(value.api_version), activity_id: text(value.activity_id),
+    kind: text(value.kind), label_key: text(value.label_key), state: text(value.state),
+    source_position: position(value.source_position), terminal: boolean(value.terminal),
+    safe_code: optionalText(value.safe_code) };
+}
+function suspension(value: Record<string, unknown>): HostSuspension {
+  return { suspension_id: text(value.suspension_id), session_version: position(value.session_version),
+    kind: text(value.kind), prompt_schema: text(value.prompt_schema),
+    prompt_json: bytes(value.prompt_json), prompt_digest: text(value.prompt_digest),
+    response_schema_json: value.response_schema_json === undefined ? undefined : bytes(value.response_schema_json),
+    response_schema_digest: optionalText(value.response_schema_digest) };
+}
+function object(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("invalid_host_value");
+  return value as Record<string, unknown>;
+}
+function array(value: unknown): readonly unknown[] {
+  if (!Array.isArray(value)) throw new Error("invalid_host_value"); return value;
+}
+function text(value: unknown): string {
+  if (typeof value !== "string" || value.length === 0) throw new Error("invalid_host_value"); return value;
+}
+function optionalText(value: unknown): string | undefined { return value === undefined ? undefined : text(value); }
+function position(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error("invalid_host_value");
+  return value as number;
+}
+function boolean(value: unknown): boolean {
+  if (typeof value !== "boolean") throw new Error("invalid_host_value"); return value;
+}
+function bytes(value: unknown): readonly number[] {
+  const output = array(value);
+  if (!output.every((item) => Number.isInteger(item) && Number(item) >= 0 && Number(item) <= 255)) {
+    throw new Error("invalid_host_value");
+  }
+  return output as readonly number[];
+}
+function apiVersion(value: unknown): "v1" {
+  if (value !== "v1") throw new Error("invalid_host_value"); return "v1";
+}
+function turnState(value: unknown): NonNullable<HostSessionSummary["latest_turn_state"]> {
+  const parsed = text(value);
+  if (!["running", "suspended", "completed", "stopped", "failed"].includes(parsed)) throw new Error("invalid_host_value");
+  return parsed as NonNullable<HostSessionSummary["latest_turn_state"]>;
+}
+function optionalTurnState(value: unknown): HostSessionSummary["latest_turn_state"] {
+  return value === undefined ? undefined : turnState(value);
+}
 export interface SetupProfile {
   readonly profile_id: string; readonly display_name_key: string;
   readonly endpoint_mode: "fixed" | "optional_override";
