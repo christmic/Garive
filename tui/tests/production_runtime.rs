@@ -299,10 +299,10 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             send "\177"
             send "i\r"
             send "?"
-            expect "Keyboard guide"
+            expect { "Keyboard guide" {} timeout { exit 20 } }
             after 300
             send "\033"
-            expect "answer from production runtime"
+            expect { "answer from production runtime" {} timeout { exit 21 } }
             send "second question\r"
             expect "Action required"
             send "\r"
