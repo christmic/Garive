@@ -16,6 +16,7 @@ pub(crate) enum HostMessage {
         session_id: String,
         view: SessionView,
         items: Vec<TurnTimelineItem>,
+        follow_position: u64,
     },
     SessionCreated(CreateSessionResponse),
     TurnAccepted {
@@ -60,24 +61,85 @@ pub(crate) fn load_snapshot(
             let view = client.get_session(&session_id).await?;
             let mut after = 0;
             let mut items = Vec::new();
-            loop {
-                let page = client
-                    .get_timeline(&session_id, after, PAGE_LIMIT)
-                    .await?;
+            let follow_position = loop {
+                let page = client.get_timeline(&session_id, after, PAGE_LIMIT).await?;
                 after = page.scanned_through_position;
                 items.extend(page.items);
                 if !page.has_more {
-                    break;
+                    break page.observed_max_position;
                 }
-            }
-            Ok::<_, garive_host_client::HostClientError>((view, items))
+            };
+            Ok::<_, garive_host_client::HostClientError>((view, items, follow_position))
         }
         .await;
         let message = match result {
-            Ok((view, items)) => HostMessage::SnapshotLoaded {
+            Ok((view, items, follow_position)) => HostMessage::SnapshotLoaded {
                 session_id,
                 view,
                 items,
+                follow_position,
+            },
+            Err(error) => HostMessage::Failed(error.code),
+        };
+        let _ = sender.send(message).await;
+    });
+}
+
+pub(crate) fn cancel_turn(
+    client: LiveHostClient,
+    command_id: String,
+    session_id: String,
+    turn_id: String,
+    requested_through_position: u64,
+    sender: mpsc::Sender<HostMessage>,
+) {
+    tokio::spawn(async move {
+        let message = match client
+            .cancel_turn(
+                &command_id,
+                &session_id,
+                &turn_id,
+                requested_through_position,
+            )
+            .await
+        {
+            Ok(response) => HostMessage::TurnAccepted {
+                session_id,
+                submitted_text: String::new(),
+                response,
+            },
+            Err(error) => HostMessage::Failed(error.code),
+        };
+        let _ = sender.send(message).await;
+    });
+}
+
+pub(crate) fn continue_turn(
+    client: LiveHostClient,
+    command_id: String,
+    session_id: String,
+    turn_id: String,
+    suspension_id: String,
+    expected_session_version: u64,
+    input: String,
+    sender: mpsc::Sender<HostMessage>,
+) {
+    tokio::spawn(async move {
+        let message = match client
+            .continue_turn(
+                &command_id,
+                &session_id,
+                &turn_id,
+                &suspension_id,
+                expected_session_version,
+                &input,
+            )
+            .await
+        {
+            Ok(response) => HostMessage::TurnAccepted {
+                session_id,
+                submitted_text: input,
+                response,
             },
             Err(error) => HostMessage::Failed(error.code),
         };
