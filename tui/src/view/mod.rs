@@ -17,6 +17,7 @@ pub(crate) mod presentation;
 mod primitives;
 mod session;
 mod style;
+mod title;
 
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
@@ -28,6 +29,7 @@ use session::{rail_lines, rail_window};
 use style::{
     connection_icon, connection_name, connection_style, execution_name, execution_style, palette,
 };
+pub(crate) use title::terminal_title;
 
 pub(crate) fn render_cached(
     model: &AppModel,

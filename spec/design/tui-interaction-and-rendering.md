@@ -358,7 +358,12 @@ Animated spinners are optional decoration beside text and stop under reduced
 motion. The TUI may ring one bell for a background action-required or terminal
 transition when enabled; repeated replay and reconnect events do not ring.
 Terminal title contains `Garive`, safe Session label, and semantic state, never
-user/Agent content or internal IDs.
+user/Agent content or internal IDs. Its exact grammar is
+`Garive · <Workspace|Session N|Session active> · <connection> · <execution>`.
+`Session N` is the selected row's one-based ordinal in the currently admitted
+Host page; an as-yet-unloaded selection is `Session active`. Title writes occur
+only when that presentation changes and every restore path resets it to
+neutral `Garive`.
 
 ## Theme and accessibility
 

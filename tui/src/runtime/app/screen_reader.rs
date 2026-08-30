@@ -44,6 +44,9 @@ pub(super) async fn run(
     let mut last_overlay = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
     loop {
+        guard
+            .set_title(&crate::view::terminal_title(&state.model))
+            .map_err(map_terminal_error)?;
         if std::mem::take(&mut state.bell_requested) {
             write_linear_bell()?;
         }
