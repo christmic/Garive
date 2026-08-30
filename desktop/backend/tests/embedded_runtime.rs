@@ -412,7 +412,8 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
         arguments,
     });
     let factory = Arc::new(
-        DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces, "main").unwrap(),
+        DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces.clone(), "main")
+            .unwrap(),
     );
     let state = DesktopState::default();
     state
@@ -464,6 +465,34 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
     assert!(!serde_json::to_string(&artifacts)
         .unwrap()
         .contains(directory.path().to_string_lossy().as_ref()));
+    let preview = workspaces
+        .preview_text_artifact(
+            &artifact_view.artifact_id,
+            artifact_view.revision,
+            artifact_view.workspace_id.as_deref().unwrap(),
+            &artifact_view.display_name,
+            &artifact_view.content_digest,
+            "main",
+        )
+        .unwrap();
+    assert_eq!(preview.content_utf8, "durable artifact");
+    assert!(!serde_json::to_string(&preview)
+        .unwrap()
+        .contains(directory.path().to_string_lossy().as_ref()));
+    std::fs::write(workspace_path.join("result.md"), "tampered").unwrap();
+    assert_eq!(
+        workspaces
+            .preview_text_artifact(
+                &artifact_view.artifact_id,
+                artifact_view.revision,
+                artifact_view.workspace_id.as_deref().unwrap(),
+                &artifact_view.display_name,
+                &artifact_view.content_digest,
+                "main",
+            )
+            .unwrap_err(),
+        garive_desktop::DesktopWorkspaceError::Unavailable
+    );
 
     let restarted = desktop_host(&database, Arc::new(CompletingModel));
     assert_eq!(restarted.artifacts(&session_id, 0, 8).unwrap(), artifacts);

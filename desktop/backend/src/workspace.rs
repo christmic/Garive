@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
+    io::Read,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -23,6 +24,7 @@ const MAX_CACHED_ENTRIES: usize = 4_096;
 const MAX_CONTEXT_FILES: usize = 8;
 const MAX_CONTEXT_FILE_BYTES: usize = 48 * 1_024;
 const MAX_CONTEXT_TOTAL_BYTES: usize = 60 * 1_024;
+const MAX_ARTIFACT_PREVIEW_BYTES: usize = 64 * 1_024;
 const WORKSPACE_LIFETIME_SECONDS: u64 = 1_800;
 
 /// Opaque path-free public view of one process-local Workspace selection.
@@ -99,6 +101,23 @@ pub struct DesktopWorkspaceContextFile {
     pub content_digest: String,
     /// Exact bounded UTF-8 content for Runtime, never frontend IPC.
     pub content_utf8: String,
+}
+
+/// One digest-verified bounded text preview returned by explicit Artifact IPC.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopArtifactPreview {
+    /// Exact public schema version.
+    pub schema_version: u32,
+    /// Stable Artifact identity.
+    pub artifact_id: String,
+    /// Exact immutable Artifact revision.
+    pub revision: u64,
+    /// Preview family.
+    pub kind: &'static str,
+    /// Digest-verified bounded UTF-8 content.
+    pub content_utf8: String,
+    /// Whether content was deliberately truncated.
+    pub truncated: bool,
 }
 
 /// Path-free aggregate health of durable Workspace authorization recovery.
@@ -722,6 +741,74 @@ impl DesktopWorkspaceService {
         if grant.access != "read_write" || grant.grant_revision != grant_revision {
             return Err(DesktopWorkspaceError::CapabilityInvalid);
         }
+        self.resolve_root_descriptor(workspace_id)
+    }
+
+    /// Reads one exact committed text Artifact through its active Workspace descriptor.
+    #[allow(clippy::too_many_arguments)]
+    pub fn preview_text_artifact(
+        &self,
+        artifact_id: &str,
+        revision: u64,
+        workspace_id: &str,
+        display_name: &str,
+        content_digest: &str,
+        owner_window: &str,
+    ) -> Result<DesktopArtifactPreview, DesktopWorkspaceError> {
+        if artifact_id.is_empty()
+            || revision == 0
+            || display_name.is_empty()
+            || display_name.starts_with('.')
+            || display_name.contains(['/', '\\'])
+            || content_digest.len() != 64
+        {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        self.verify(workspace_id, owner_window)?;
+        let root = self.resolve_root_descriptor(workspace_id)?;
+        #[cfg(unix)]
+        let descriptor = rustix::fs::openat(
+            root.directory(),
+            display_name,
+            rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        #[cfg(unix)]
+        let mut file = File::from(descriptor);
+        #[cfg(not(unix))]
+        return Err(DesktopWorkspaceError::Unavailable);
+        let metadata = file
+            .metadata()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        if !metadata.is_file()
+            || metadata.len() > MAX_ARTIFACT_PREVIEW_BYTES as u64
+            || metadata.file_type().is_symlink()
+        {
+            return Err(DesktopWorkspaceError::BoundExceeded);
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        file.read_to_end(&mut bytes)
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        if hex_digest(&bytes) != content_digest {
+            return Err(DesktopWorkspaceError::Unavailable);
+        }
+        let content_utf8 =
+            String::from_utf8(bytes).map_err(|_| DesktopWorkspaceError::CapabilityInvalid)?;
+        Ok(DesktopArtifactPreview {
+            schema_version: 1,
+            artifact_id: artifact_id.into(),
+            revision,
+            kind: "text",
+            content_utf8,
+            truncated: false,
+        })
+    }
+
+    fn resolve_root_descriptor(
+        &self,
+        workspace_id: &str,
+    ) -> Result<WorkspaceWriteRoot, DesktopWorkspaceError> {
         let active = self
             .active
             .lock()

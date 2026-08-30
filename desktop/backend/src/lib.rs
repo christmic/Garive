@@ -47,8 +47,8 @@ pub use system_provider::{
     DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
 pub use workspace::{
-    DesktopWorkspaceAuthorization, DesktopWorkspaceContextFile, DesktopWorkspaceEntry,
-    DesktopWorkspaceEntryPage, DesktopWorkspaceError, DesktopWorkspaceGrant,
+    DesktopArtifactPreview, DesktopWorkspaceAuthorization, DesktopWorkspaceContextFile,
+    DesktopWorkspaceEntry, DesktopWorkspaceEntryPage, DesktopWorkspaceError, DesktopWorkspaceGrant,
     DesktopWorkspaceRecoveryStatus, DesktopWorkspaceService,
 };
 pub use workspace_bookmark::{
