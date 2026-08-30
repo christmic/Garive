@@ -57,7 +57,7 @@ official version audit ───────────────────
                                                                     v
 H1 version/typed-continuation repair --------------------------------+
 
-M2-A parser/projection -> M2-B planner -> M2-C durable control -> M2-D
+M2-A parser/projection -> M2-B planner -> M2-C durable control -> M2-C2 bridge -> M2-D
              `---------- shared Rust/Kotlin fixtures ---------'       |
                                                                     v
 H2 wire -----------------> H2 Runtime read model ---------+
@@ -75,7 +75,7 @@ M1-G committed recall -> M1-H attributable application/outcome chain
 H2 and H3 wire changes coordinate in one additive Host v1 tag review. H3
 timeline snapshots depend on H2; its event projection otherwise builds on H1.
 UX-A begins only after H2/H3 wire fixtures are accepted. UX-B requires their
-Runtime projections and C2 setup. M2-D requires M2-C and the Desktop controller.
+Runtime projections and C2 setup. M2-D requires M2-C2 and the Desktop controller.
 UX-C may prove controller/native presentation with an injected contract
 transport, but physical-device live connectivity remains gated on an
 authenticated Gateway or separately admitted on-device Runtime.
@@ -101,8 +101,9 @@ or native-UI enforcement.
 | 10 | A-DESKTOP-C2 | Staged setup/rotation backend and first-run UI. | Credential-store, crash recovery, redaction and configured restart E2E. |
 | 11 | UX-A | Pure application controller and persistence adapter. | Shared scenarios across TypeScript and KMP. |
 | 12 | UX-B | Desktop reference product. | Embedded Runtime restart E2E and accessibility scenarios. |
-| 13 | M2-D | Desktop Memory file capability, review and control workflow. | Product E2E over M2-C and the Desktop controller. |
-| 14 | UX-C | Web and native Android/iOS presentation. | Same-host Web E2E, controller fixtures, API 37/iOS builds and UI scenarios. |
+| 13 | M2-C2 | Production repository bridge from committed M0/M1 facts to the M2 current projection. | Atomic fact/projection and reconstruction parity over real Memory writes. |
+| 14 | M2-D | Desktop Memory file capability, review and control workflow. | Product E2E over M2-C2 and the Desktop controller. |
+| 15 | UX-C | Web and native Android/iOS presentation. | Same-host Web E2E, controller fixtures, API 37/iOS builds and UI scenarios. |
 
 An order entry is a dependency-safe default, not permission to combine unrelated
 changes. Repository small-batch and status-evidence rules still apply.
@@ -112,7 +113,7 @@ changes. Repository small-batch and status-evidence rules still apply.
 | Contract | Rust | Kotlin/KMP | TypeScript/native UI |
 |---|---|---|---|
 | M2 snapshot and plan | Canonical parser, projector, planner | Independent parser/planner semantics | No parser; consumes redacted M2-D views. |
-| M2 durable control | Runtime filesystem/SQLite owner | No product adapter | Desktop typed IPC and React workflow. |
+| M2 durable control | Runtime filesystem/SQLite owner; M2-C2 binds the production M0/M1 projection | No product adapter | Desktop typed IPC and React workflow. |
 | C5b plan | Canonical resolver/planner | Independent semantic planner | No scheduling authority. |
 | C5b execution | Runtime/executor owner | No parity claim | Public state only through H3. |
 | H2/H3 wire | Host projection and Proto binding | Generated binding plus controller mapping | Strict generated/mapped values; native UI renders shared state. |

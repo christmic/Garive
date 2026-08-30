@@ -174,7 +174,7 @@ dependency/toolchain audit ─────────────────�
                                                          v
 H1 version/typed-continuation repair ---------------------+
 
-M2-A projection/parser -> M2-B planner -> M2-C SQLite -> M2-D Desktop flow
+M2-A projection/parser -> M2-B planner -> M2-C SQLite -> M2-C2 Runtime bridge -> M2-D Desktop flow
                               |                              ^
                               v                              |
                          shared Rust/Kotlin                  |
@@ -202,8 +202,9 @@ C5b declarations -> shared planner -> Runtime read batches -> executor evidence
 | 9 | A-DESKTOP-C2 | Staged backend setup/rotation and first-run UI. | OS credential-store, crash recovery, redaction and configured restart E2E. |
 | 10 | UX-A | Shared pure application controller. | Complete TypeScript/KMP controller scenarios over H2/H3 fixtures. |
 | 11 | UX-B | Desktop reference product UI. | Configured embedded-Runtime restart E2E plus accessibility gates. |
-| 12 | M2-D | Desktop Memory export, edit handoff, dry-run diff, confirmation, import/erasure receipt. | Product E2E over M2-C and the A-UX1 controller boundary. |
-| 13 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Same-host Web E2E, controller conformance, native builds and platform UI scenarios. |
+| 12 | M2-C2 | One production Memory projection shared by M0/M1 transitions, recall and M2 control. | Atomic fact/projection and reconstruction parity over real Memory writes. |
+| 13 | M2-D | Desktop Memory export, edit handoff, dry-run diff, confirmation, import/erasure receipt. | Product E2E over M2-C2 and the A-UX1 controller boundary. |
+| 14 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Same-host Web E2E, controller conformance, native builds and platform UI scenarios. |
 
 M2, C5b, and the H2/H3 Host chain may progress independently after their own
 fixtures are accepted. UX-A requires coordinated H2/H3 wire fixtures; UX-B
