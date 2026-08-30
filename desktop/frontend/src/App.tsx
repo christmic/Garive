@@ -271,19 +271,11 @@ function Timeline({ state }: { state: WorkState }) {
       setCopiedId(undefined);
     }
   };
-  const exportResult = (id: string, text: string) => {
-    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `garive-result-${id.slice(0, 12)}.md`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
   return <div className="timeline" aria-live="polite">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal)}</Markdown></div>
-      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => exportResult(message.id, message.text)}>Export .md</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{copiedId === message.id ? "Copied" : "Copy"}</button></div></div></div></article>)}
+      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>Export .md</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{copiedId === message.id ? "Copied" : "Copy"}</button></div></div></div></article>)}
     {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>Working on your outcome…</p><span className="working-line" /></div></article>}
   </div>;
 }
@@ -292,8 +284,17 @@ function Inspector({ state, dispatch }: { state: WorkState; dispatch: WorkDispat
   return <aside className="inspector" aria-label="Work inspector"><header><div className="inspector-tabs"><button className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>Activity</button><button className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>Artifacts</button></div>
     <button className="icon-button" type="button" aria-label="Close inspector" onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
     {state.inspectorTab === "activity" ? <div className="inspector-body"><CommittedActivity state={state} /></div>
-      : <div className="inspector-body"><div className="inspector-empty"><Icon name="file" /><h2>No artifacts yet</h2><p>Verified files and deliverables will appear here when the artifact capability is installed.</p></div></div>}
+      : <div className="inspector-body"><ResultDeliverables state={state} /></div>}
   </aside>;
+}
+
+function ResultDeliverables({ state }: { state: WorkState }) {
+  const results = state.messages.filter((message) => message.role === "assistant" && message.text);
+  if (!results.length) return <div className="inspector-empty"><Icon name="file" /><h2>No deliverables yet</h2><p>Completed Markdown results become exportable here.</p></div>;
+  return <div className="deliverable-list"><div className="activity-intro"><h2>Result deliverables</h2><p>Durable response projections from this Session.</p></div>
+    {results.map((result, index) => <article className="deliverable-card" key={result.id}><span className="deliverable-icon"><Icon name="file" /></span><div><strong>Result {index + 1}.md</strong><p>{result.text.replace(/[#|*`>\[\]]/g, " ").trim().slice(0, 92)}</p><button type="button" onClick={() => downloadMarkdown(result.id, result.text)}>Export Markdown</button></div></article>)}
+    {!state.capabilities?.artifacts && <p className="activity-gate"><Icon name="shield" />These are redacted Runtime results. Governed workspace files remain gated.</p>}
+  </div>;
 }
 
 function CommittedActivity({ state }: { state: WorkState }) {
@@ -337,4 +338,13 @@ function recentLabel(session: HostSessionSummary) {
   return Number.isNaN(opened.valueOf())
     ? "Durable work"
     : `Work · ${opened.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
+
+function downloadMarkdown(id: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `garive-result-${id.slice(0, 12)}.md`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

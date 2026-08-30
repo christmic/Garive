@@ -174,6 +174,13 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .activity-status .spinner { width: 12px; height: 12px; border-color: rgba(49,95,207,.25); border-top-color: var(--accent); }
 .activity-gate { display: flex; gap: 7px; margin: 15px 0 0; color: var(--subtle); font-size: 10px; line-height: 1.45; }
 .activity-gate svg { width: 13px; }
+.deliverable-list { align-self: start; width: 100%; }
+.deliverable-card { display: grid; grid-template-columns: 33px 1fr; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.deliverable-icon { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 9px; color: var(--accent); background: var(--accent-wash); }
+.deliverable-icon svg { width: 15px; }
+.deliverable-card strong { font-size: 11px; }
+.deliverable-card p { display: -webkit-box; margin: 4px 0 8px; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.deliverable-card button { padding: 0; border: 0; color: var(--accent); background: transparent; font-size: 10px; }
 
 .search-page { min-height: 0; overflow: auto; padding: 62px max(32px, calc((100% - 760px) / 2)); }
 .search-heading h1 { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -.035em; }
