@@ -226,6 +226,27 @@ fn focused_session_rail_keeps_stable_keyboard_selection_visible() {
 }
 
 #[test]
+fn session_rail_mouse_hit_test_uses_the_rendered_window() {
+    let model = AppModel {
+        focus: FocusTarget::Navigation,
+        terminal_size: application::TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        sessions: (0..12)
+            .map(|index| session(&format!("session-{index:06}"), &format!("agent-{index:06}")))
+            .collect(),
+        navigation_selection: Some("session-000011".into()),
+        ..Default::default()
+    };
+
+    assert_eq!(view::navigation_hit_test(&model, 1, 3), Some(6));
+    assert_eq!(view::navigation_hit_test(&model, 10, 18), Some(11));
+    assert_eq!(view::navigation_hit_test(&model, 10, 21), None);
+    assert_eq!(view::navigation_hit_test(&model, 28, 3), None);
+}
+
+#[test]
 fn agent_markdown_is_structured_and_terminal_safe() {
     let mut model = AppModel {
         boot: BootState::Ready,
