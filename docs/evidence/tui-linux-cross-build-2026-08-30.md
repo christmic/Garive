@@ -52,12 +52,13 @@ Result: `Finished dev profile`; exit `0`; elapsed `7.21s`.
 
 ## What remains open
 
-- build and link the shipping executable in a native Linux environment;
-- run the complete test suite, including real Runtime/SQLite behavior;
-- execute the shipping binary under an xterm-compatible PTY and tmux;
+- build, link, and run the shipping executable on native Linux x86_64;
+- execute the shipping binary in named physical terminal emulators and tmux;
 - prove resize, paste/focus modes, panic/signal restoration, screen-reader
   output, `TERM=dumb`, and private-mode filesystem behavior;
 - retain candidate-bound native logs and screenshots.
 
-Until those gates pass, documentation may say “Linux source-level all-target
-check passes,” but must not say “Linux is natively supported.”
+Native Linux arm64 container execution, production Runtime/SQLite, and
+xterm-compatible PTY automation are recorded separately in
+[`tui-linux-native-2026-08-30.md`](tui-linux-native-2026-08-30.md). That evidence
+does not turn this x86_64 cross-check into an x86_64 native result.
