@@ -69,6 +69,63 @@ CREATE TABLE schedule_leases (
 ) STRICT;
 "#;
 
+const MIGRATION_4: &str = r#"
+CREATE TABLE memory_namespaces (
+    namespace_id TEXT PRIMARY KEY NOT NULL CHECK(length(namespace_id) > 0),
+    repository_revision BLOB NOT NULL CHECK(length(repository_revision) = 8)
+) STRICT;
+
+CREATE TABLE memory_control_journal (
+    namespace_id TEXT NOT NULL REFERENCES memory_namespaces(namespace_id),
+    sequence BLOB NOT NULL CHECK(length(sequence) = 8),
+    event_id TEXT NOT NULL UNIQUE CHECK(length(event_id) > 0),
+    command_id TEXT NOT NULL CHECK(length(command_id) > 0),
+    event_kind TEXT NOT NULL CHECK(event_kind IN ('import', 'export')),
+    schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+    binding_digest TEXT NOT NULL CHECK(length(binding_digest) = 64),
+    previous_repository_revision BLOB NOT NULL CHECK(length(previous_repository_revision) = 8),
+    committed_repository_revision BLOB NOT NULL CHECK(length(committed_repository_revision) = 8),
+    operations_json TEXT,
+    operations_sha256 TEXT CHECK(operations_sha256 IS NULL OR length(operations_sha256) = 64),
+    receipt_json TEXT NOT NULL,
+    receipt_sha256 TEXT NOT NULL CHECK(length(receipt_sha256) = 64),
+    event_json TEXT NOT NULL,
+    event_sha256 TEXT NOT NULL CHECK(length(event_sha256) = 64),
+    PRIMARY KEY(namespace_id, sequence),
+    UNIQUE(namespace_id, command_id),
+    CHECK((event_kind = 'import') = (operations_json IS NOT NULL)),
+    CHECK((operations_json IS NULL) = (operations_sha256 IS NULL))
+) STRICT;
+
+CREATE TABLE memory_control_revisions (
+    namespace_id TEXT NOT NULL REFERENCES memory_namespaces(namespace_id),
+    record_id TEXT NOT NULL CHECK(length(record_id) > 0),
+    revision_id TEXT NOT NULL CHECK(length(revision_id) > 0),
+    document_markdown TEXT NOT NULL,
+    document_digest TEXT NOT NULL CHECK(length(document_digest) = 64),
+    created_sequence BLOB NOT NULL CHECK(length(created_sequence) = 8),
+    PRIMARY KEY(namespace_id, record_id, revision_id)
+) STRICT;
+
+CREATE TABLE memory_control_current (
+    namespace_id TEXT NOT NULL REFERENCES memory_namespaces(namespace_id),
+    record_id TEXT NOT NULL,
+    revision_id TEXT NOT NULL,
+    lifecycle TEXT NOT NULL CHECK(lifecycle IN (
+        'candidate', 'active', 'cold', 'archived', 'promoted', 'erased'
+    )),
+    updated_sequence BLOB NOT NULL CHECK(length(updated_sequence) = 8),
+    PRIMARY KEY(namespace_id, record_id),
+    FOREIGN KEY(namespace_id, record_id, revision_id)
+        REFERENCES memory_control_revisions(namespace_id, record_id, revision_id)
+) STRICT;
+
+CREATE INDEX memory_journal_by_command
+    ON memory_control_journal(namespace_id, command_id);
+CREATE INDEX memory_current_by_lifecycle
+    ON memory_control_current(namespace_id, lifecycle, record_id);
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -80,7 +137,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         [],
         |row| row.get(0),
     )?;
-    if version > 3 {
+    if version > 4 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -111,6 +168,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 3;
+    }
+    if version == 3 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_4)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;
