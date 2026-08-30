@@ -43,6 +43,11 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain app:connectedDebugAndroidTest
 ```
 
+The gate includes the connected product shell itself: Work boot, drawer
+navigation, Sessions, the native new-task sheet, goal starters, and enabled
+server submission are exercised together in addition to focused component and
+secure-storage tests.
+
 The app includes `../shared` as a Gradle project, accepts an explicit loopback
 Host URL and renders the terminal returned by `LiveHostClient`; it does not
 duplicate Host reduction in the UI tier.
