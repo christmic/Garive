@@ -249,6 +249,21 @@ pub struct HostWorkspaceAttachment {
     pub attached_position: u64,
 }
 
+/// Backend-supplied selected Workspace text admitted with one Turn command.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostWorkspaceContextEntry {
+    /// Opaque entry capability identity.
+    pub entry_id: String,
+    /// Bounded presentation-only file label.
+    pub display_name: String,
+    /// Exact coarse content kind; V1 admits text only.
+    pub kind: String,
+    /// SHA-256 digest of the exact UTF-8 content.
+    pub content_digest: String,
+    /// Exact bounded UTF-8 content; never a frontend response value.
+    pub content_utf8: String,
+}
+
 /// One complete durable Turn projection for conversation restoration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TurnTimelineItem {

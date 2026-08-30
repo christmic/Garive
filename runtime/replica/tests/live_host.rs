@@ -13,9 +13,9 @@ use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, To
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
     plan_core_terminal, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, HostClock, HostContinuationInput, InstalledActivityCatalogue,
-    InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits,
-    LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    EffectiveRuntimeLimits, HostClock, HostContinuationInput, HostWorkspaceContextEntry,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
+    LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -307,6 +307,85 @@ fn workspace_attachment_is_path_free_idempotent_and_restart_safe() {
     assert_eq!(
         restarted.session_workspaces(&session.session_id).unwrap(),
         vec![attached]
+    );
+}
+
+#[test]
+fn workspace_context_and_turn_commit_atomically_and_replay_exactly() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-context", "definition-main")
+        .unwrap();
+    harness
+        .host
+        .attach_workspace(
+            "attach-context",
+            &session.session_id,
+            "workspace-opaque",
+            "Briefs",
+            1,
+            "enumerate",
+        )
+        .unwrap();
+    let context = vec![HostWorkspaceContextEntry {
+        entry_id: "entry-opaque".into(),
+        display_name: "brief.md".into(),
+        kind: "text".into(),
+        content_digest: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".into(),
+        content_utf8: "hello".into(),
+    }];
+    let started = harness
+        .host
+        .start_turn_with_workspace_context(
+            "start-context",
+            &session.session_id,
+            "summarize",
+            "workspace-opaque",
+            1,
+            &context,
+        )
+        .unwrap();
+    assert_eq!(started.committed_position, 6);
+    let ledger = SqliteLedger::open(&harness.database).unwrap();
+    let facts = ledger
+        .read_facts(
+            &SessionId::try_from(session.session_id.as_str()).unwrap(),
+            0,
+            started.committed_position,
+            None,
+        )
+        .unwrap();
+    assert_eq!(facts[2].kind.as_str(), "workspace.context_selected");
+    assert_eq!(facts[3].kind.as_str(), "turn.started");
+    assert_eq!(
+        harness
+            .host
+            .start_turn_with_workspace_context(
+                "start-context",
+                &session.session_id,
+                "summarize",
+                "workspace-opaque",
+                1,
+                &context,
+            )
+            .unwrap(),
+        started
+    );
+    let mut changed = context;
+    changed[0].content_utf8 = "changed".into();
+    changed[0].content_digest =
+        "d67e2e944994496c8d8ec76eed0cf9f09679448d584b532bebf941852a37f5ed".into();
+    assert_eq!(
+        harness.host.start_turn_with_workspace_context(
+            "start-context",
+            &session.session_id,
+            "summarize",
+            "workspace-opaque",
+            1,
+            &changed,
+        ),
+        Err(LiveHostError::CommandConflict)
     );
 }
 

@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fmt::Write, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write,
+    path::Path,
+    sync::Arc,
+};
 
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
@@ -20,9 +25,9 @@ use crate::{
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
     CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
-    HostWorkspaceAttachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelinePage,
+    HostWorkspaceAttachment, HostWorkspaceContextEntry, InstalledAgent, LiveHostError,
+    LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, TurnCommandResponse,
+    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -406,6 +411,111 @@ impl LiveHost {
         ))
     }
 
+    /// Atomically commits selected Workspace text and the Turn that consumes it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_turn_with_workspace_context(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        trusted_input: &str,
+        workspace_id: &str,
+        grant_revision: u64,
+        entries: &[HostWorkspaceContextEntry],
+    ) -> Result<TurnCommandResponse, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(trusted_input, self.state.limits.max_command_bytes)?;
+        let payload = workspace_context_payload(
+            idempotency_key,
+            workspace_id,
+            grant_revision,
+            entries,
+            self.state.limits.max_command_bytes,
+        )?;
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let attached = self.session_workspaces(session)?.into_iter().any(|value| {
+            value.workspace_id == workspace_id && value.grant_revision == grant_revision
+        });
+        if !attached {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        if let Some(response) = self.replay_contextual_start(
+            &facts,
+            &session_id,
+            idempotency_key,
+            trusted_input,
+            &payload,
+        )? {
+            return Ok(response);
+        }
+        let recorded_at = self.recorded_at()?;
+        let mut plan = plan_start_turn(
+            &StartTurnCommand {
+                command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
+                session_id: session_id.clone(),
+                agent_instance_id: binding.agent_instance_id,
+                definition_id: binding.definition_id,
+                definition_revision: binding.definition_revision,
+                snapshot_digest: binding.snapshot_digest,
+                trusted_input: trusted_input.to_owned(),
+                limits: self.state.installed.runtime_limits,
+                recorded_at: recorded_at.clone(),
+            },
+            binding.max_position,
+        )
+        .map_err(map_runtime)?;
+        let execution_id = plan
+            .execution_id
+            .clone()
+            .ok_or(LiveHostError::CorruptState)?;
+        plan.facts.insert(
+            0,
+            FactDraft {
+                fact_id: FactId::try_from(
+                    format!("workspace-context-{}", digest(idempotency_key.as_bytes())).as_str(),
+                )
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+                turn_id: None,
+                execution_id: None,
+                model_request_id: None,
+                tool_invocation_id: None,
+                kind: FactKind::new("workspace.context_selected")
+                    .map_err(|_| LiveHostError::InvalidRequest)?,
+                schema_version: 1,
+                payload: CanonicalPayload::from_value(&payload)
+                    .map_err(|_| LiveHostError::InvalidRequest)?,
+                recorded_at,
+            },
+        );
+        let committed = commit_planned_turn(
+            &mut ledger,
+            session_id.clone(),
+            binding.session_version,
+            &plan,
+        )
+        .map_err(map_runtime)?;
+        let last = last_position(&committed.positions)?;
+        if committed.disposition == CommitDisposition::Committed {
+            let _ = self.state.dispatcher.dispatch(&CommittedTurn {
+                session_id: session_id.clone(),
+                turn_id: plan.turn_id.clone(),
+                execution_id: execution_id.clone(),
+                session_version: committed.session_version,
+                committed_position: last,
+            });
+        }
+        Ok(turn_response(
+            &session_id,
+            &plan.turn_id,
+            Some(&execution_id),
+            last,
+        ))
+    }
+
     /// Durably requests cancellation without claiming that work already stopped.
     pub fn cancel_turn(
         &self,
@@ -761,6 +871,12 @@ impl LiveHost {
             reject_other_command(&facts, command_id)?;
             return Ok(None);
         };
+        if facts
+            .get(index.saturating_sub(1))
+            .is_some_and(|fact| fact.kind.as_str() == "workspace.context_selected")
+        {
+            return Err(LiveHostError::CommandConflict);
+        }
         if started.kind != "start"
             || started.definition_id != self.state.installed.definition_id
             || started.definition_revision != self.state.installed.definition_revision
@@ -770,6 +886,36 @@ impl LiveHost {
             return Err(LiveHostError::CommandConflict);
         }
         replay_started_batch(session_id, &facts, index, ReplayInput::Start(input), None)
+    }
+
+    fn replay_contextual_start(
+        &self,
+        facts: &[DurableFact],
+        session_id: &SessionId,
+        command_id: &str,
+        input: &str,
+        expected_context: &serde_json::Value,
+    ) -> Result<Option<TurnCommandResponse>, LiveHostError> {
+        let Some((index, started)) = find_started(facts, command_id)? else {
+            reject_other_command(facts, command_id)?;
+            return Ok(None);
+        };
+        let context_index = index.checked_sub(1).ok_or(LiveHostError::CommandConflict)?;
+        let context = facts
+            .get(context_index)
+            .filter(|fact| fact.kind.as_str() == "workspace.context_selected")
+            .ok_or(LiveHostError::CommandConflict)?;
+        let actual_context: serde_json::Value = decode_payload(context)?;
+        if &actual_context != expected_context
+            || started.kind != "start"
+            || started.definition_id != self.state.installed.definition_id
+            || started.definition_revision != self.state.installed.definition_revision
+            || started.snapshot_digest != self.state.installed.snapshot_digest
+            || started.trusted_input_digest != digest(input.as_bytes())
+        {
+            return Err(LiveHostError::CommandConflict);
+        }
+        replay_started_batch(session_id, facts, index, ReplayInput::Start(input), None)
     }
 
     fn replay_continue(
@@ -1141,7 +1287,10 @@ fn reject_other_command(facts: &[DurableFact], command_id: &str) -> Result<(), L
     for fact in facts {
         if !matches!(
             fact.kind.as_str(),
-            "session.opened" | "turn.started" | "turn.cancel_requested"
+            "session.opened"
+                | "turn.started"
+                | "turn.cancel_requested"
+                | "workspace.context_selected"
         ) {
             continue;
         }
@@ -1155,6 +1304,51 @@ fn reject_other_command(facts: &[DurableFact], command_id: &str) -> Result<(), L
         }
     }
     Ok(())
+}
+
+fn workspace_context_payload(
+    command_id: &str,
+    workspace_id: &str,
+    grant_revision: u64,
+    entries: &[HostWorkspaceContextEntry],
+    max_bytes: usize,
+) -> Result<serde_json::Value, LiveHostError> {
+    validate_key(workspace_id)?;
+    if grant_revision == 0 || entries.is_empty() || entries.len() > 8 {
+        return Err(LiveHostError::InvalidRequest);
+    }
+    let mut identities = BTreeSet::new();
+    let mut total = 0usize;
+    let mut values = Vec::with_capacity(entries.len());
+    for entry in entries {
+        validate_key(&entry.entry_id)?;
+        validate_text(&entry.display_name, 128)?;
+        if entry.kind != "text"
+            || entry.content_digest != digest(entry.content_utf8.as_bytes())
+            || !identities.insert(entry.entry_id.as_str())
+        {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        total = total
+            .checked_add(entry.content_utf8.len())
+            .filter(|value| *value <= max_bytes.min(60 * 1_024))
+            .ok_or(LiveHostError::InvalidRequest)?;
+        values.push(serde_json::json!({
+            "entry_id":entry.entry_id,
+            "display_name":entry.display_name,
+            "kind":entry.kind,
+            "content":{
+                "digest":entry.content_digest,
+                "inline_utf8":entry.content_utf8,
+            },
+        }));
+    }
+    Ok(serde_json::json!({
+        "command_id":command_id,
+        "workspace_id":workspace_id,
+        "grant_revision":grant_revision,
+        "entries":values,
+    }))
 }
 
 fn validate_installed(

@@ -57,10 +57,10 @@ pub use delegation_runtime::{
 pub use live_host::{
     ActivityProjectionLimits, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
     HostActivity, HostClock, HostContinuationInput, HostEventPage, HostWorkspaceAttachment,
-    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,
-    SessionSummary, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelinePage,
+    HostWorkspaceContextEntry, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, LiveHost, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer,
+    LiveHostServerError, SessionSummary, TurnCommandResponse, TurnDispatchError, TurnDispatcher,
+    TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
