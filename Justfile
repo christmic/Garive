@@ -139,7 +139,7 @@ apps: host-client web desktop mobile
     cargo test -p garive-cli -p garive-tui
 
 tui-unit:
-    cargo test -p garive-tui --test args --test application_reducer --test commands --test editor --test schema_form --test clipboard --test product_fixture --test view --test terminal_guard
+    cargo test -p garive-tui --test architecture --test args --test application_reducer --test commands --test editor --test schema_form --test clipboard --test product_fixture --test view --test terminal_guard
 
 tui-snapshots:
     cargo test -p garive-tui --test view_snapshots
