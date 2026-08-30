@@ -53,6 +53,36 @@ describe("A1 event reducer", () => {
 });
 
 describe("A1 fetch transport", () => {
+  it("reads H2 navigation and exposes ordered SSE events to the shared product controller", async () => {
+    const calls: string[] = [];
+    const responses = [
+      jsonResponse({ api_version: "v1", definitions: [] }),
+      jsonResponse({ api_version: "v1", sessions: [] }),
+      jsonResponse({ api_version: "v1", session_id: fixture.session_id, items: [],
+        scanned_through_position: 0, observed_max_position: 0, has_more: false }),
+      sseResponse(fixture.valid_stream.slice(0, 2)),
+    ];
+    const client = new FetchHostClient("http://127.0.0.1:1430/", limits(), async (input) => {
+      calls.push(String(input)); return responses.shift()!;
+    });
+    await client.readDefinitions(); await client.readSessions();
+    await client.readTimeline(fixture.session_id);
+    const controller = new AbortController(); const positions: number[] = [];
+    try {
+      for await (const event of client.followEvents(fixture.session_id, 0, controller.signal)) {
+        positions.push(event.position); if (positions.length === 2) controller.abort();
+      }
+    } catch (error) {
+      expect(error).toMatchObject({ code: "transport_failure" });
+    }
+    expect(calls.slice(0, 3)).toEqual([
+      "http://127.0.0.1:1430/v1/agent-definitions",
+      "http://127.0.0.1:1430/v1/sessions?limit=64",
+      `http://127.0.0.1:1430/v1/sessions/${fixture.session_id}/timeline?after_position=0&limit=128`,
+    ]);
+    expect(positions).toEqual([1, 2]);
+  });
+
   it("sends stable command IDs and follows SSE until durable terminal", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const responses = [
