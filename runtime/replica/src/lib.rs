@@ -22,6 +22,7 @@ mod memory_export;
 mod memory_export_io;
 mod model_http_transport;
 mod observability_runtime;
+mod plan_recovery;
 mod plan_runtime;
 mod runtime_turn;
 mod sandbox_runtime;
@@ -126,6 +127,7 @@ pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,
     ObservabilitySink, RedactionPolicy, ShutdownReport, SinkDisposition,
 };
+pub use plan_recovery::reconstruct_plan;
 pub use plan_runtime::{
     commit_plan_command, plan_plan_transition, plan_propose_plan, ActivePlanClaim,
     PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
