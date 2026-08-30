@@ -402,20 +402,144 @@ prove atomic coordination and recovery without a cross-database transaction.
 
 ### Four recall **ways** (the methods)
 
-| Way | What it solves |
-|-----|----------------|
-| **Vector semantic search** | Fuzzy recall — "the deployment issue from last time" |
-| **FTS keyword** | Exact terms — tool name, error string |
-| **Recency scan** | Recent context continuity — what's been on the surface lately |
-| **Menu index (always-on)** | Discoverability — framework injects a lightweight catalog so the agent knows **what's available** |
+| Way | What it solves | Failure mode covered |
+|-----|----------------|------------------------|
+| **Vector semantic search** | Fuzzy recall — "the deployment issue from last time" | Query paraphrases the entry; exact terms don't match |
+| **FTS keyword** | Exact terms — tool name, error string | Vector search drifts to "similar" items; user wants the specific one |
+| **Recency scan** | Recent context continuity — what's been on the surface lately | "I just saw it" — vector/FTS miss because the entry isn't indexed recently |
+| **Menu index (always-on)** | Discoverability — framework injects a lightweight catalog so the agent knows **what's available** | The agent didn't think to call `memory_search` — at least the menu is on the surface |
 
-### Ranking fusion
+The three "real" retrieval methods — **vector, FTS, recency**
+— have **complementary failure modes**. The menu is the
+always-on overlay that solves "I don't know to look".
 
-The accepted baseline uses bounded integer relevance, recency, and importance
-components with a deterministic lexical tie-break. A multiplicative fusion,
-confidence factor, RRF/rerank stage, or fixed percentage of the context window
-requires its own versioned policy and evaluation evidence. Memory competes
-under the same C2 item and UTF-8 budgets as other durable candidates.
+### Hybrid retrieval — three failure modes are complementary
+
+Each retrieval method has its own blind spot:
+
+- **Vector** fails on **specific terms** — a tool name or error
+  string doesn't have semantic neighbours; the closest
+  vector hit is "similar concept", not "this thing".
+- **FTS** fails on **paraphrased queries** — if the user
+  asked "deployment thing" and the entry is "CI cache
+  invalidation", no keyword match.
+- **Recency** fails on **deliberate lookup** — old but
+  important items are downweighted by their `last_used`.
+
+**Hybrid recall** runs all three and **fuses** the result
+sets. Each method's hits are unioned with the others; the
+fusion reranks.
+
+### RRF (Reciprocal Rank Fusion) — the formula
+
+For query `q`, each ranker returns a ranked list:
+
+```
+RRF(q, entry) = Σ_r  weight_r / (k_r + rank_r(entry))
+```
+
+- `rank_r(entry)` is entry's position in ranker `r`'s list (1-indexed; 0 if absent)
+- `weight_r` is the ranker's weight (calibrated; default 1.0 each)
+- `k_r` is a constant per ranker that dampens the contribution of low-rank items (Cormack's constant k=60 is the canonical default)
+
+The fused ranking is `RRF_score(q, entry)` summed across all
+rankers. Top-k is the **k entries with the highest fused
+RRF score**. This is **closed-form math** — no LLM in the
+loop during fusion.
+
+### Two-stage — coarse + fine
+
+The four-stage pipeline:
+
+1. **Coarse retrieval** (the three recall methods fused via
+   RRF) — returns top-K candidates where `K` is generous
+   (e.g. `K = 200`).
+2. **Rerank** — the K candidates are scored against the query
+   by a stronger model or a richer feature set (cross-encoder,
+   or an LLM-based relevance judge). The rerank returns the
+   final top-k.
+3. **Filter** — apply the 5 recall gates (confidence,
+   freshness, etc.) on the rerank top-k.
+4. **Inject** — the final top-k enters the surface as memory
+   entries with provenance + conf + staleness markers.
+
+This is the standard two-stage retrieval pattern — coarse
+recall is cheap and recall-oriented (high recall); rerank
+is expensive and precision-oriented. The two together give
+the best of both.
+
+### Query expansion — multiple phrasings
+
+A single query often misses relevant entries because the
+phrasing doesn't match the entry's wording. **Query
+expansion** generates **multiple phrasings** of the same
+intent and runs the hybrid retrieval against each:
+
+```
+expansions = llm_expand(query, n=3)
+# e.g. ("deployment issue", "CI failure", "release broken")
+
+results = {}
+for q' in expansions + [query]:
+    for ranker in [vector, fts, recency]:
+        results.update(ranker.search(q', k=20))
+
+# deduplicate by entry_id
+top_k = rrf_fuse(results, k=K)
+```
+
+The `llm_expand` is **lightweight** — the LLM is asked to
+produce "3 different ways a user might phrase this query",
+not to extract anything substantive. The expansion is **the
+LLM's** contribution; the **retrieval and ranking** are pure
+math.
+
+If query expansion is too expensive, a **zero-LLM fallback**:
+use the entry's known metadata — `mtype`, `confidence`,
+`last_verified`, `source_session` keywords — as expanded
+query forms. **Pure math**, no LLM.
+
+### Recall surface — the menu (always-on)
+
+The recall menu is the **single thing** the framework injects
+into the surface every turn:
+
+```
+<memory_menu scope="user=abc">
+  <index>
+    <category kind="memory.lesson" entries=12 high_conf=8>
+      "X fails because Y" (mem:abc, conf=0.9, T-3d)
+      "Z returns null on empty" (mem:def, conf=0.7, T-1w)
+      ...
+    <category kind="memory.fact" entries=23 high_conf=18>
+      ...
+    <category kind="memory.playbook" entries=4 high_conf=3>
+      ...
+  </index>
+</memory_menu>
+```
+
+- Compact (titles + meta only — no full body in the menu)
+- High-confidence items first
+- Sorted by `mtype` × `last_used`
+
+The **menu's only job** is to make recall possible: the
+agent sees **what's available** and decides **whether to pull**.
+Detail is on demand (recall tool / knowledge lookups).
+
+### Read-path audit — three observation rows per recall
+
+Every read goes through the three-way observability
+contract (angle ⑧):
+
+| Row | Captures |
+|-----|----------|
+| `recall.event` | Which entries were retrieved, fused RRF score, `E × R × B × F` per entry |
+| `recall.apply` | Which entries the model actually cited (`[mem:xxx]`) in its reply |
+| `recall.outcome` | Did the cited entry match reality? → β +1 / -1 / censored |
+
+The `recall.outcome` row is the **weekly calibration input**
+for `R` (Beta-Binomial) and for the ranker weights.
 
 ### Five recall **timings**
 
