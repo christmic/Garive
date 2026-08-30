@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::access::{AccessMode, InvocationAccessSet, ToolAccessPolicyV1, ToolAccessResolver};
+use crate::sandbox::SandboxRequirementsV1;
 use crate::schema::{parse_arguments, validate_arguments, validate_definition};
 
 /// Stable failure classification for C4 preparation.
@@ -185,6 +186,8 @@ pub struct ToolDefinition {
     replay_class: ReplayClass,
     #[serde(skip_serializing_if = "Option::is_none")]
     access_contract: Option<ToolAccessContract>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sandbox_requirements: Option<SandboxRequirementsV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -249,6 +252,7 @@ impl ToolDefinition {
             requirements,
             replay_class,
             access_contract: None,
+            sandbox_requirements: None,
         })
     }
 
@@ -285,6 +289,34 @@ impl ToolDefinition {
         });
         Ok(definition)
     }
+
+    /// Constructs a Prepared v3 definition with exact access and F0 controls.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_v3(
+        name: impl Into<String>,
+        revision: impl Into<String>,
+        description: impl Into<String>,
+        input_schema: Value,
+        requirements: ExecutionRequirements,
+        replay_class: ReplayClass,
+        access_policy: ToolAccessPolicyV1,
+        access_resolver_revision: impl Into<String>,
+        sandbox_requirements: SandboxRequirementsV1,
+    ) -> Result<Self, PreparationError> {
+        sandbox_requirements.validate_for(requirements.capabilities())?;
+        let mut definition = Self::new_v2(
+            name,
+            revision,
+            description,
+            input_schema,
+            requirements,
+            replay_class,
+            access_policy,
+            access_resolver_revision,
+        )?;
+        definition.sandbox_requirements = Some(sandbox_requirements);
+        Ok(definition)
+    }
     /// Returns the admitted provider-neutral name.
     pub fn name(&self) -> &str {
         &self.name
@@ -312,7 +344,9 @@ impl ToolDefinition {
 
     /// Returns the opted-in Prepared Call contract version.
     pub const fn prepared_contract_version(&self) -> u16 {
-        if self.access_contract.is_some() {
+        if self.sandbox_requirements.is_some() {
+            3
+        } else if self.access_contract.is_some() {
             2
         } else {
             1
@@ -395,6 +429,11 @@ impl ToolCatalog {
         resolver: &dyn ToolAccessResolver,
     ) -> Result<PreparedToolCall, PreparationError> {
         let (definition, arguments) = self.validate_intent(intent)?;
+        if definition.sandbox_requirements.is_some() {
+            return Err(PreparationError::new(
+                PreparationErrorCode::SandboxRequirementInvalid,
+            ));
+        }
         let contract = definition
             .access_contract
             .as_ref()
@@ -424,6 +463,47 @@ impl ToolCatalog {
             ));
         }
         PreparedToolCall::from_v2(intent, definition, arguments, accesses, contract)
+    }
+
+    /// Prepares one v3 call bound to exact resources and F0 requirements.
+    pub fn prepare_v3(
+        &self,
+        intent: &ToolIntent,
+        resolver: &dyn ToolAccessResolver,
+    ) -> Result<PreparedToolCall, PreparationError> {
+        let (definition, arguments) = self.validate_intent(intent)?;
+        let contract = definition
+            .access_contract
+            .as_ref()
+            .ok_or_else(|| PreparationError::new(PreparationErrorCode::EffectAccessInvalid))?;
+        let sandbox = definition.sandbox_requirements.as_ref().ok_or_else(|| {
+            PreparationError::new(PreparationErrorCode::SandboxRequirementInvalid)
+        })?;
+        if resolver.revision() != contract.resolver_revision {
+            return Err(PreparationError::new(
+                PreparationErrorCode::EffectAccessInvalid,
+            ));
+        }
+        let accesses = resolver.resolve(&arguments)?;
+        let mutating = accesses
+            .values()
+            .iter()
+            .any(|access| access.mode() != AccessMode::Read);
+        let requires_mutation = definition.requirements.capabilities().any(|capability| {
+            matches!(
+                capability,
+                ExecutionCapability::FilesystemWrite | ExecutionCapability::Process
+            )
+        });
+        if !contract.policy.covers(&accesses)
+            || (definition.replay_class == ReplayClass::ReadOnly && mutating)
+            || (definition.replay_class != ReplayClass::ReadOnly && requires_mutation && !mutating)
+        {
+            return Err(PreparationError::new(
+                PreparationErrorCode::EffectAccessInvalid,
+            ));
+        }
+        PreparedToolCall::from_v3(intent, definition, arguments, accesses, contract, sandbox)
     }
 
     fn validate_intent<'a>(
@@ -469,6 +549,8 @@ pub struct PreparedToolCall {
     access_resolver_revision: Option<String>,
     invocation_accesses: Option<InvocationAccessSet>,
     max_result_bytes: Option<u64>,
+    sandbox_requirements: Option<SandboxRequirementsV1>,
+    sandbox_requirements_digest: Option<String>,
 }
 
 impl PreparedToolCall {
@@ -496,6 +578,8 @@ impl PreparedToolCall {
             access_resolver_revision: None,
             invocation_accesses: None,
             max_result_bytes: None,
+            sandbox_requirements: None,
+            sandbox_requirements_digest: None,
         })
     }
 
@@ -536,6 +620,54 @@ impl PreparedToolCall {
             access_resolver_revision: Some(contract.resolver_revision.clone()),
             invocation_accesses: Some(accesses),
             max_result_bytes: Some(contract.policy.max_result_bytes()),
+            sandbox_requirements: None,
+            sandbox_requirements_digest: None,
+        })
+    }
+
+    fn from_v3(
+        intent: &ToolIntent,
+        definition: &ToolDefinition,
+        arguments: Value,
+        accesses: InvocationAccessSet,
+        contract: &ToolAccessContract,
+        sandbox: &SandboxRequirementsV1,
+    ) -> Result<Self, PreparationError> {
+        let normalized_arguments = serde_jcs::to_string(&arguments)
+            .map_err(|_| PreparationError::new(PreparationErrorCode::NonCanonicalValue))?;
+        let sandbox_digest = sandbox.digest()?;
+        let preimage = json!({
+            "contract": "garive.prepared-tool-call",
+            "version": 3,
+            "tool_name": definition.name,
+            "tool_revision": definition.revision,
+            "arguments": arguments,
+            "requirements": definition.requirements,
+            "replay_class": definition.replay_class,
+            "access_policy_revision": contract.policy.policy_revision(),
+            "access_resolver_revision": contract.resolver_revision,
+            "invocation_accesses": accesses,
+            "max_result_bytes": contract.policy.max_result_bytes(),
+            "sandbox_requirements": sandbox,
+            "sandbox_requirements_digest": sandbox_digest,
+        });
+        let canonical = serde_jcs::to_vec(&preimage)
+            .map_err(|_| PreparationError::new(PreparationErrorCode::NonCanonicalValue))?;
+        Ok(Self {
+            model_call_id: intent.model_call_id.clone(),
+            tool_name: definition.name.clone(),
+            tool_revision: definition.revision.clone(),
+            normalized_arguments,
+            input_digest: format!("{:x}", Sha256::digest(canonical)),
+            requirements: definition.requirements.clone(),
+            replay_class: definition.replay_class,
+            contract_version: 3,
+            access_policy_revision: Some(contract.policy.policy_revision().to_owned()),
+            access_resolver_revision: Some(contract.resolver_revision.clone()),
+            invocation_accesses: Some(accesses),
+            max_result_bytes: Some(contract.policy.max_result_bytes()),
+            sandbox_requirements: Some(sandbox.clone()),
+            sandbox_requirements_digest: Some(sandbox_digest),
         })
     }
     /// Returns untrusted model correlation retained for observations.
@@ -590,5 +722,15 @@ impl PreparedToolCall {
     /// Returns the v2 buffered result charge, absent for v1.
     pub const fn max_result_bytes(&self) -> Option<u64> {
         self.max_result_bytes
+    }
+
+    /// Returns the v3 F0 enforcement profile, absent for earlier contracts.
+    pub const fn sandbox_requirements(&self) -> Option<&SandboxRequirementsV1> {
+        self.sandbox_requirements.as_ref()
+    }
+
+    /// Returns the v3 canonical F0 profile digest, absent for earlier contracts.
+    pub fn sandbox_requirements_digest(&self) -> Option<&str> {
+        self.sandbox_requirements_digest.as_deref()
     }
 }

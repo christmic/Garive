@@ -144,6 +144,20 @@ impl SandboxRequirementsV1 {
             }
     }
 
+    /// Revalidates this frozen profile against one exact Tool capability set.
+    pub fn validate_for(
+        &self,
+        capabilities: impl IntoIterator<Item = ExecutionCapability>,
+    ) -> Result<(), PreparationError> {
+        Self::new(
+            capabilities,
+            self.controls.iter().copied(),
+            self.max_processes,
+            self.max_open_files,
+        )
+        .map(|_| ())
+    }
+
     /// Returns lowercase SHA-256 over the RFC 8785 canonical profile.
     pub fn digest(&self) -> Result<String, PreparationError> {
         let bytes = serde_jcs::to_vec(self)
