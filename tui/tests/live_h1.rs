@@ -8,11 +8,12 @@ use std::{
 
 #[test]
 fn shipping_tui_boots_and_restores_a_real_pty() {
-    let (address, server) = empty_host();
+    for _ in 0..2 {
+        let (address, server) = empty_host();
 
-    let temporary = tempfile::tempdir().unwrap();
-    let transcript = temporary.path().join("pty.log");
-    let status = Command::new("expect")
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join("pty.log");
+        let status = Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
@@ -37,24 +38,26 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         ])
         .status()
         .expect("expect must launch the shipping binary in a PTY");
-    server.join().unwrap();
-    assert!(status.success());
-    let output = fs::read(&transcript).unwrap();
-    let text = String::from_utf8_lossy(&output);
-    assert!(text.contains("Garive"));
-    assert!(text.contains("Press Ctrl+C"));
-    assert!(text.contains("Garive?"));
-    assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
-    assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
-    assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
+        server.join().unwrap();
+        assert!(status.success());
+        let output = fs::read(&transcript).unwrap();
+        let text = String::from_utf8_lossy(&output);
+        assert!(text.contains("Garive"));
+        assert!(text.contains("Press Ctrl+C"));
+        assert!(text.contains("Garive?"));
+        assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
+        assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
+        assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
+    }
 }
 
 #[test]
 fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
-    let (address, server) = empty_host();
-    let temporary = tempfile::tempdir().unwrap();
-    let transcript = temporary.path().join("linear.log");
-    let status = Command::new("expect")
+    for _ in 0..2 {
+        let (address, server) = empty_host();
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join("linear.log");
+        let status = Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
@@ -77,24 +80,26 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         "#])
         .status()
         .unwrap();
-    server.join().unwrap();
-    assert!(status.success());
-    let output = fs::read(&transcript).unwrap();
-    let text = String::from_utf8_lossy(&output);
-    assert!(text.contains("Connection online"));
-    assert!(text.contains("Command palette."));
-    assert!(!text.contains("\x1b[6n"));
-    assert!(!text.contains("\x1b[2J"));
-    assert!(!text.contains("\x1b[?1049h"));
-    assert!(text.contains("\x1b[?2004l"));
+        server.join().unwrap();
+        assert!(status.success());
+        let output = fs::read(&transcript).unwrap();
+        let text = String::from_utf8_lossy(&output);
+        assert!(text.contains("Connection online"));
+        assert!(text.contains("Command palette."));
+        assert!(!text.contains("\x1b[6n"));
+        assert!(!text.contains("\x1b[2J"));
+        assert!(!text.contains("\x1b[?1049h"));
+        assert!(text.contains("\x1b[?2004l"));
+    }
 }
 
 #[test]
 fn termination_signal_restores_the_shipping_terminal() {
-    let (address, server) = empty_host();
-    let temporary = tempfile::tempdir().unwrap();
-    let transcript = temporary.path().join("signal.log");
-    let status = Command::new("expect")
+    for _ in 0..2 {
+        let (address, server) = empty_host();
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join("signal.log");
+        let status = Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
@@ -116,20 +121,22 @@ fn termination_signal_restores_the_shipping_terminal() {
         "#])
         .status()
         .unwrap();
-    server.join().unwrap();
-    assert!(status.success());
-    let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("\x1b[?1049l"));
-    assert!(text.contains("\x1b[?2004l"));
-    assert!(text.contains("\x1b[?1004l"));
+        server.join().unwrap();
+        assert!(status.success());
+        let text = fs::read_to_string(transcript).unwrap();
+        assert!(text.contains("\x1b[?1049l"));
+        assert!(text.contains("\x1b[?2004l"));
+        assert!(text.contains("\x1b[?1004l"));
+    }
 }
 
 #[test]
 fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
-    let (address, server) = empty_host();
-    let temporary = tempfile::tempdir().unwrap();
-    let transcript = temporary.path().join("resize.log");
-    let status = Command::new("expect")
+    for _ in 0..2 {
+        let (address, server) = empty_host();
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join("resize.log");
+        let status = Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
@@ -155,13 +162,14 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
         "#])
         .status()
         .unwrap();
-    server.join().unwrap();
-    assert!(status.success());
-    let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("Need 20"));
-    assert!(text.contains("draft"));
-    assert!(text.contains("survives"));
-    assert!(text.contains("\x1b[?1049l"));
+        server.join().unwrap();
+        assert!(status.success());
+        let text = fs::read_to_string(transcript).unwrap();
+        assert!(text.contains("Need 20"));
+        assert!(text.contains("draft"));
+        assert!(text.contains("survives"));
+        assert!(text.contains("\x1b[?1049l"));
+    }
 }
 
 fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
