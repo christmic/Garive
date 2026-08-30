@@ -163,3 +163,9 @@ func mobileGoalStartersMatchDesktopWorkOutcomes() {
         MobileGoalStarter(label: "Create", prompt: "Draft a polished project brief from my outline"),
     ])
 }
+
+@Test
+func stableMobileNoticesUseActionableCopy() {
+    #expect(mobileNoticeMessage("runtime_unavailable") == "Runtime unavailable. Verified history is still shown.")
+    #expect(mobileNoticeMessage("validation_input_too_large") == "Outcome is over 16 KiB. Shorten it before sending.")
+}

@@ -66,12 +66,25 @@ private struct RemoteWorkspaceView: View {
     let state: MobileWorkState
     @Binding var theme: String
     @State private var sidebarPresented = false
+    @State private var confirmingAbandonRetry = false
 
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 NavigationStack {
                     destinationView
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            if state.destination != .conversation,
+                               let code = state.noticeCode {
+                                MobileNoticeBanner(
+                                    code: code,
+                                    pending: state.pendingCommand != nil,
+                                    dismiss: model.dismissNotice,
+                                    retry: model.retryExact,
+                                    abandon: { confirmingAbandonRetry = true }
+                                )
+                            }
+                        }
                         .toolbar {
                             ToolbarItem(placement: .navigation) {
                                 Button { withAnimation(.snappy) { sidebarPresented = true } } label: {
@@ -104,6 +117,16 @@ private struct RemoteWorkspaceView: View {
         }
         .sheet(isPresented: $model.presentingNewTask) {
             NewTaskView(model: model, agents: state.agents)
+        }
+        .confirmationDialog(
+            "Forget exact retry?",
+            isPresented: $confirmingAbandonRetry,
+            titleVisibility: .visible
+        ) {
+            Button("Forget retry", role: .destructive, action: model.abandonPending)
+            Button("Keep retry", role: .cancel) {}
+        } message: {
+            Text("The server may already have accepted this command. Verify history before replacing the work.")
         }
         .sheet(isPresented: Binding(
             get: { state.destination.name == "CONVERSATION" },

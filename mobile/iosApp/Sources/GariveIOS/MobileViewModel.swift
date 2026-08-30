@@ -162,6 +162,7 @@ final class MobileViewModel: ObservableObject {
     }
     func retryExact() { perform { callback in self.controller?.retryExact(completionHandler: callback) } }
     func abandonPending() { state = controller?.abandonPending() }
+    func dismissNotice() { state = controller?.dismissNotice() }
 
     func select(_ destination: MobileDestination) {
         guard let controller else { return }

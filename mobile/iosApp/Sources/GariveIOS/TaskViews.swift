@@ -107,9 +107,10 @@ struct ConversationView: View {
                 ScrollView {
                     LazyVStack(spacing: 18) {
                         if state.pendingCommand != nil || state.noticeCode != nil {
-                            RetryNotice(
+                            MobileNoticeBanner(
                                 code: state.noticeCode ?? "command_unknown",
                                 pending: state.pendingCommand != nil,
+                                dismiss: model.dismissNotice,
                                 retry: model.retryExact,
                                 abandon: { confirmingAbandonRetry = true }
                             )
@@ -340,23 +341,44 @@ private struct Composer: View {
     }
 }
 
-private struct RetryNotice: View {
+struct MobileNoticeBanner: View {
     let code: String
     let pending: Bool
+    let dismiss: () -> Void
     let retry: () -> Void
     let abandon: () -> Void
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
-            Text(code.replacingOccurrences(of: "_", with: " ")).font(.subheadline)
+            Text(mobileNoticeMessage(code)).font(.subheadline)
             Spacer()
             if pending {
                 VStack(alignment: .trailing) {
                     Button("Retry exact command", action: retry).font(.caption.bold())
                     Button("Forget retry", role: .destructive, action: abandon).font(.caption)
                 }
+            } else {
+                Button(action: dismiss) {
+                    Image(systemName: "xmark").frame(width: 32, height: 32)
+                }
+                .accessibilityLabel("Dismiss notice")
             }
         }.padding(13).background(GarivePalette.amber.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+func mobileNoticeMessage(_ code: String) -> String {
+    switch code {
+    case "validation_input_empty": "Add an outcome before sending."
+    case "validation_input_too_large": "Outcome is over 16 KiB. Shorten it before sending."
+    case "command_unknown": "Result unknown. Verify history or retry the exact command."
+    case "pending_retry_abandoned": "Exact retry was forgotten. Verify server history before replacing the work."
+    case "runtime_unavailable": "Runtime unavailable. Verified history is still shown."
+    case "transport_failure", "follow_deadline": "Connection interrupted. Verified history is still shown."
+    case "rate_limited": "The service is busy. Wait before trying again."
+    case "actor_forbidden": "This device cannot access that work."
+    case "device_reauth_required": "This device must pair again before remote work can continue."
+    default: code.replacingOccurrences(of: "_", with: " ").capitalized
     }
 }
 #endif
