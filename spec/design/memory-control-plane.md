@@ -41,7 +41,8 @@ capability. Runtime refuses a non-empty destination and never follows symlinks.
 garive-memory-v1/
   manifest.json
   entries/
-    <memory-id>.md
+    <record-key>.md
+    new-<draft-token>.md  # optional user-created import document
 ```
 
 `manifest.json` is canonical JSON and contains:
@@ -65,18 +66,22 @@ MemorySnapshotManifestV1 {
   manifest_digest
 }
 MemorySnapshotEntryV1 {
-  memory_id, file_name, revision, authority, kind, scope, lifecycle
+  record_id, revision_id, file_name
+  authority, memory_type, memory_role, scope, lifecycle, sensitivity
   content_digest, document_digest
 }
 ```
 
-`file_name` is exactly `entries/<memory_id>.md`. `content_digest` hashes the
-normalized content including its one final LF; `document_digest` hashes the
-complete canonical Markdown bytes. `manifest_digest` is lowercase SHA-256 over
-RFC 8785 JSON for the manifest with `manifest_digest` omitted. Entries are
-sorted by raw UTF-8 `memory_id`; duplicate identities, file names, or digests
-fail closed. `exported_at` participates in the manifest digest but not any
-entry digest.
+`record_id` and `revision_id` are the exact M0 identities; M2 creates no numeric
+entry revision or alias identity. `file_name` is exactly
+`entries/<record-key>.md`, where `record-key` is lowercase SHA-256 over UTF-8
+`record_id`. `content_digest` hashes the normalized content including its one
+final LF; `document_digest` hashes the complete canonical Markdown bytes.
+`manifest_digest` is lowercase SHA-256 over RFC 8785 JSON for the manifest with
+`manifest_digest` omitted. Entries sort by raw UTF-8 `record_id`, then
+`revision_id`; duplicate record/revision identities, file names, or digests fail
+closed. Exactly one current revision per record is exported. `exported_at`
+participates in the manifest digest but not any entry digest.
 
 Each entry file is UTF-8 Markdown with one strict YAML-compatible front matter
 block followed by the Memory content:
@@ -84,12 +89,13 @@ block followed by the Memory content:
 ```markdown
 ---
 schema_version: 1
-memory_id: mem-01
-revision: 4
+record_ref: existing.bWVtLTAx.cmV2LTA0
 authority: user_declared
-kind: semantic
-scope: agent
+memory_type: semantic
+memory_role: preference
+scope: agent_instance
 lifecycle: active
+sensitivity: ordinary
 ---
 Prefer concise status updates.
 ```
@@ -100,11 +106,28 @@ duplicate keys, unknown keys, and extra document markers fail closed. Content
 is normalized to UTF-8 with LF endings and exactly one final newline for digest
 calculation. Runtime preserves no filesystem metadata as domain truth.
 
-The seven fields shown above are required. An optional eighth field
-`erase: true` may follow `lifecycle` and has no other accepted value. It is an
+The eight fields shown above are required. An optional ninth field
+`erase: true` may follow `sensitivity` and has no other accepted value. It is an
 explicit import instruction, never an exported default. A document with erase
 set still carries its unchanged content so the planner can bind the destructive
 request to the exact exported revision and digest.
+
+Enums are the accepted M1 snake-case names. `memory_role` preserves the M0
+content kind; `memory_type` is the orthogonal M1 classification. Import cannot
+change type, role, scope, or sensitivity of an existing record. Platform scope,
+restricted content, and organisation authority still require their existing
+frozen Runtime grants/receipts; text in a file proves none of them.
+
+For an exported entry, `record_ref` is exactly
+`existing.<record-id-b64>.<revision-id-b64>`. Both components are unpadded
+base64url encodings of exact non-empty UTF-8 M0 identities; canonical decoding
+requires re-encoding to reproduce each component. A user-created entry instead
+uses `record_ref: new.<draft-token>` and file name
+`entries/new-<draft-token>.md`, where the token is 1–64 ASCII alphanumeric,
+hyphen, or underscore characters and is unique in the package. Runtime treats
+it only as import correlation and allocates the real record/revision identities
+before returning the plan. A new document is not inserted into the original
+manifest; all other unlisted files remain invalid.
 
 ## Bounds and privacy
 
@@ -144,34 +167,37 @@ MemoryImportPlanV1 {
   plan_digest
 }
 MemoryImportOperationV1 =
-  Add {source_memory_id, new_record_id, expected_absent, document_digest}
-  | Supersede {record_id, expected_revision, new_revision_id,
-               authority, document_digest, supersedes_learned_record_id?}
-  | Archive {record_id, expected_revision, document_digest}
-  | Erase {record_id, expected_revision, document_digest}
+  Add {source_draft_token, record_id, revision_id,
+       expected_absent: true, document_digest}
+  | Supersede {record_id, expected_active_revision_id, new_revision_id,
+               authority, document_digest, supersedes_learned_revision_id?}
+  | Archive {record_id, expected_active_revision_id, document_digest}
+  | Erase {record_id, expected_active_revision_id, document_digest}
 ```
 
 Runtime allocates proposed new identities before presentation and freezes them
-in the plan. Operations order by raw UTF-8 `record_id`/`new_record_id`, then
+in the plan. `Add.record_id` is a fresh M0 record identity; every add/supersede
+revision identity is fresh. Operations order by raw UTF-8 `record_id`, then
 variant order `add`, `supersede`, `archive`, `erase`. Counts must exactly match
 the list. `plan_digest` is lowercase SHA-256 over RFC 8785 JSON with that field
 omitted. Unchanged entries produce no operation. A command retry with the same
-identity and byte-equivalent plan returns the original receipt; different bytes
-conflict.
+identity and byte-equivalent plan returns the original receipt; different
+bytes conflict.
 
 The planner input is the verified manifest/documents plus an ordered current
-Memory projection containing exact identity, revision, authority, kind, scope,
-lifecycle, content digest, and supersession provenance. It performs no I/O,
-clock read, ID generation, authorization lookup, or implicit merge.
+Memory projection containing exact record/revision identities, authority,
+type, role, scope, lifecycle, sensitivity, content digest, and supersession
+provenance. It performs no I/O, clock read, ID generation, authorization lookup,
+or implicit merge.
 
 ## Authority semantics
 
 | Edited snapshot entry | Result |
 |---|---|
-| Existing `user_declared` content | New revision under the same identity; prior revision stays attributable. |
-| Existing `agent_learned` content | New `user_declared` entry supersedes it and records the learned identity as provenance; learned evidence is not rewritten. |
-| Existing `org_published` content | Rejected; organization publication uses its owning channel. |
-| New entry | Allowed only as `user_declared` with a caller-authorized scope no broader than the export scope. |
+| Existing `user_declared` content | New revision under the same record identity; prior revision stays attributable. |
+| Existing `agent_learned` content | New `user_declared` revision under the same record identity supersedes it and records the learned revision as provenance; learned evidence is not rewritten. |
+| Existing `organisation_published` content | Rejected; organization publication uses its owning channel. |
+| New entry | Allowed only as `user_declared` with an exact scope class/owner present in the authorized export scope set; no implicit scope hierarchy is used. |
 | Missing entry | No action. Absence is never deletion. |
 | Lifecycle changed to `archived` | Archive plan if authority permits. |
 | Explicit `erase: true` marker | Erasure plan and existing M1 erasure receipt; content must be otherwise unchanged. |

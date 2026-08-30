@@ -73,9 +73,9 @@ completed | denied | failed | cancelled | attention_required
 Unknown future strings remain decodable and render as a neutral non-terminal
 activity. Clients never infer authority or terminal state from an unknown value.
 `terminal` is authoritative and must agree with the known-state table:
-`completed`, `denied`, `failed`, and `cancelled` are terminal; all other known
-states are not. `source_position` is non-zero and no greater than the enclosing
-event/timeline watermark.
+`input_received`, `completed`, `denied`, `failed`, and `cancelled` are terminal;
+all other known states are not. `source_position` is non-zero and no greater
+than the enclosing event/timeline watermark.
 
 `safe_code` is absent except for the closed mappings below. It is a stable enum
 string, not an internal error, evidence value, exception, or provider response.

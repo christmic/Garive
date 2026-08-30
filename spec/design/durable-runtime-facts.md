@@ -423,6 +423,13 @@ request that contains the corresponding LLM `ToolObservation`.
 never receives one; it binds the outer Model Request/Execution IDs and is also
 committed before the correcting observation enters a later model request.
 
+C6 v1 payloads above remain byte-for-byte stable. The accepted C5b increment
+owns additive `effect.prepared.v2` and
+`execution.effect_batch_planned.v1` schemas; implementing them requires a
+coordinated Ledger catalogue/projection change and does not reinterpret any v1
+fact. See
+[`deterministic-effect-batches.md`](deterministic-effect-batches.md#durable-execution-protocol).
+
 ## Atomicity and idempotency
 
 - facts in one declared boundary transaction receive contiguous positions;

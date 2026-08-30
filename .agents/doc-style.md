@@ -115,7 +115,7 @@ understanding.
 
 ```
 See [engine/AGENTS.md](../engine/AGENTS.md) for tier rules.
-See [.agents/testing.md](.agents/testing.md) for the pyramid.
+See [.agents/testing.md](testing.md) for the pyramid.
 ```
 
 Relative paths make the repo portable and the link survives

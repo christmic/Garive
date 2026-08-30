@@ -31,6 +31,7 @@ profile constructors:
 ```text
 DesktopSetupCatalogueV1 {
   schema_version: 1
+  catalogue_revision
   profiles: SetupProfileV1[]
   limits: SetupInputLimitsV1
 }
@@ -41,11 +42,17 @@ SetupProfileV1 {
   credential_label_key
   supported_capabilities[]
 }
+SetupInputLimitsV1 {
+  max_profiles, max_text_bytes, max_endpoint_bytes, max_secret_bytes,
+  max_plan_count, plan_lifetime_seconds
+}
 ```
 
 Display keys are localizable presentation metadata. The stable setup wire has
 opaque profile identities and neutral capabilities; it does not branch on a
 vendor enum. Hosted special capabilities require their own admitted Specs.
+Profiles sort by raw UTF-8 `profile_id`; capabilities sort by stable enum order.
+Empty/duplicate identities and zero limits are invalid.
 
 ## Typed IPC
 
@@ -58,12 +65,44 @@ commit_setup(plan_digest, credential) -> DesktopSetupReceiptV1
 cancel_setup(plan_digest) -> Cancelled | AlreadyCommitted
 ```
 
-`DesktopSetupInputV1` contains exact `profile_id`, optional endpoint override,
-model target/model/deployment identities, installed Agent identity, non-secret
-Runtime bounds/policies, and a caller nonce. It contains no credential.
-`prepare_setup` validates all non-secret values, resolves the immutable profile
-constructor, generates a fresh opaque credential reference and setup identity,
-and returns a bounded redacted summary plus SHA-256/JCS plan digest.
+```text
+DesktopSetupInputV1 {
+  schema_version: 1
+  caller_nonce, catalogue_revision
+  installed_agent, host, execution, http
+  dispatch_capacity, execution_lease_duration_ms
+}
+DesktopSetupPlanV1 {
+  schema_version: 1
+  setup_id, caller_nonce, catalogue_revision
+  expected_configuration_revision?
+  expires_at
+  normalized_input: DesktopSetupInputV1
+  plan_digest
+}
+DesktopSetupReceiptV1 {
+  schema_version: 1
+  setup_id, plan_digest, configuration_revision, restart_required: true
+}
+```
+
+`DesktopSetupInputV1` is the exact C1 document shape with `schema_version`,
+`database_file`, and `execution.credential_ref` removed. All remaining nested
+fields and enum strings retain C1 meaning; they are messages, never extensible
+maps. Backend fixes the database file to its admitted app-data-relative name.
+`prepare_setup` validates every value, resolves the immutable profile
+constructor, generates a fresh opaque credential reference/setup identity, and
+stores the reference only in a backend-private prepared record keyed by plan
+digest. The returned plan may echo only the caller's normalized non-secret
+input for review; it is not a read of persisted configuration.
+
+`plan_digest` is lowercase SHA-256 over RFC 8785 JSON for the complete plan with
+itself omitted. `expires_at` is canonical UTC RFC 3339 and comes from the
+injected backend clock. Duplicate caller nonces with byte-equivalent input
+return the same unexpired plan; different input conflicts. The public setup
+identity and expiry are frozen before digesting. The private credential
+reference is bound to that digest in backend state but never serialized through
+IPC. Unknown fields/versions fail closed.
 
 `commit_setup` accepts the exact unexpired plan and one bounded secret byte
 buffer. The IPC layer marks the credential parameter sensitive: Debug,
@@ -74,23 +113,36 @@ credential reference.
 
 ## Staged commit and recovery
 
-Backend commits in this order:
+Before touching the secret store, backend writes and fsyncs a bounded recovery
+journal containing setup identity, plan/config digests, old/new credential
+references, and one stage. It contains no credential or user-entered endpoint,
+model, or policy value and is never exposed through IPC.
+
+```text
+SetupRecoveryStage = planned | credential_stored | config_committed |
+                     receipt_committed | cleanup_pending
+```
+
+Backend commits in this order, durably advancing the journal after each stage:
 
 1. Revalidate plan identity, digest, expiry, current configuration revision,
    installed registry revision, and all bounds.
-2. Store the new credential under the fresh reference in the OS credential
+2. Persist and fsync the `planned` journal entry.
+3. Store the new credential under the fresh reference in the OS credential
    service. Never overwrite the current reference.
-3. Write and fsync a new strict C1 document to a same-directory temporary file.
-4. Atomically rename it to `desktop-v1.json` and fsync the directory.
-5. Persist a non-secret setup receipt and mark the new revision committed.
-6. On a later successful Runtime start, delete an obsolete credential reference
+4. Write and fsync a new strict C1 document to a same-directory temporary file.
+5. Atomically rename it to `desktop-v1.json` and fsync the directory.
+6. Persist a non-secret setup receipt and mark the new revision committed.
+7. On a later successful Runtime start, delete an obsolete credential reference
    best-effort; failure becomes bounded cleanup work, not rollback.
 
 A crash before rename leaves the old configuration authoritative and startup
 removes an uncommitted new credential/temp file from the non-secret recovery
 journal. A crash after rename treats the new document as committed; startup
 validates it, repairs the receipt if needed, and never restores old config from
-memory. Recovery is bounded and completes before Agent IPC admission.
+memory. When journal stage and filesystem disagree, the exact new document
+revision/digest decides whether rename committed. Recovery is bounded,
+idempotent, and completes before Agent IPC admission.
 
 V1 does not hot-swap Runtime. Initial setup or reconfiguration returns
 `restart_required`; the app offers an explicit restart action. The current

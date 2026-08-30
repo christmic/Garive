@@ -34,15 +34,20 @@ export_memory_snapshot(command_id, capability_id, scope) -> ExportReceiptV1
 choose_memory_import_source() -> MemoryFileCapabilityV1 | Cancelled
 prepare_memory_import(capability_id) -> MemoryImportReviewV1
 commit_memory_import(command_id, plan_digest,
-                     expected_repository_revision) -> ImportReceiptV1
+                     expected_repository_revision,
+                     confirmation) -> ImportReceiptV1
 discard_memory_import(plan_digest) -> Discarded | AlreadyCommitted
 reveal_export(capability_id) -> Revealed
+get_memory_command(command_id) -> Unknown | Pending |
+                                  Committed {receipt} | Failed {code}
 ```
 
 `MemoryFileCapabilityV1` contains only an opaque random identity, operation
-`export_target | import_source`, bounded display name, expiry, and single-use
-state. It contains no path. It is process-local, main-window-bound, non-
-serializable to preferences, and invalid after expiry/restart/use/discard.
+`export_target | import_source`, bounded display name, expiry, and state
+`fresh | consumed | export_committed`. It contains no path. It is process-local,
+main-window-bound, non-serializable to preferences, and invalid after
+expiry/restart/discard. Import consumption is terminal; a committed export may
+be used only by `reveal_export` until expiry.
 
 Export selects an empty directory and invokes M2-C. `ExportReceiptV1` returns
 export identity, manifest digest, entry count, through revision, and display
@@ -60,12 +65,15 @@ MemoryImportReviewV1 {
   expires_at
 }
 MemoryChangeReviewV1 {
-  operation, memory_id, kind, scope
+  operation, record_id, memory_type, memory_role, scope, sensitivity
   authority_before?, authority_after?
   lifecycle_before?, lifecycle_after?
-  content_before?, content_after?
+  content_before?: MemoryContentReviewV1
+  content_after?: MemoryContentReviewV1
   destructive, provenance_note_key?
 }
+MemoryContentReviewV1 =
+  Visible { text } | Redacted { content_digest, utf8_bytes }
 ```
 
 Changes use M2 canonical order. Content is included only after exact read
@@ -79,6 +87,11 @@ User-declared supersession, not rewritten evidence. Organisation-published
 changes are rejected before review. Archive and erase are visually distinct;
 erase requires a second explicit confirmation naming the number of entries and
 cannot be combined with an unchecked bulk action.
+
+`confirmation` is exactly `None` when `erase_count = 0` and exactly
+`ConfirmErase { plan_digest, erase_count }` when it is non-zero. Any mismatch
+fails before Runtime commit. The backend plan, not a frontend count, remains
+authoritative.
 
 ## State machine
 
@@ -104,8 +117,10 @@ files. After prepare, changed source bytes make the plan stale at commit.
   expected revision follow M2.
 - Backend stores at most a bounded number of active capabilities/plans and
   zeroizes in-memory restricted content when discarded/expired.
-- IPC/log/debug/analytics never contain paths, full manifests, raw files,
-  content, credential data, evidence payloads, or repository internals.
+- IPC may contain only the authorized bounded `Visible.text` or redacted marker
+  in `MemoryImportReviewV1`. IPC otherwise, and all log/debug/analytics values,
+  contain no paths, full manifests, raw files, Memory content, credential data,
+  evidence payloads, or repository internals.
 - A successful response is emitted only after the export rename or import
   database transaction and receipt are durable.
 - File capability loss after restart does not affect committed receipts.

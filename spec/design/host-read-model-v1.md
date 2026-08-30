@@ -109,8 +109,10 @@ required semantic values fail protocol validation.
 | `GET /v1/sessions/{session_id}/timeline?after_position=P&limit=N` | Ascending complete Turn items whose latest position is after `P`. |
 
 `limit` is required, non-zero, and no greater than the Runtime construction
-limit. Unknown query fields, duplicate fields, malformed UTF-8/percent encoding,
-zero positions, and oversized tokens return `invalid_request`.
+limit. Timeline `after_position = 0` means from the beginning; every returned
+or cursor-bound durable position is non-zero. Unknown query fields, duplicate
+fields, malformed UTF-8/percent encoding, and oversized tokens return
+`invalid_request`.
 
 Timeline pagination never splits one Turn: Runtime scans at most its separate
 fact bound, completes the current Turn projection, and returns

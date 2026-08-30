@@ -36,12 +36,15 @@ C5b does not silently change the shipped C4 digest. C4 v1 Prepared Calls retain
 their exact preimage and are always sequential. A C5b-capable definition opts
 into `prepared_contract_version = 2`; the v2 preimage extends v1 with
 `access_policy_revision`, `access_resolver_revision`, and the exact normalized
-`invocation_accesses`. Version is itself inside the preimage.
+`invocation_accesses` plus `max_result_bytes`. Version is itself inside the
+preimage.
 
-Runtime, grants, durable facts, and recovery queries carry the Prepared Call's
-contract version. Unknown versions fail before authorization. A definition
-revision cannot change contract version, policy, or resolver meaning; doing so
-requires a new Tool revision and effective Agent snapshot.
+Runtime values and the `effect.prepared.v2` fact carry the Prepared Call's
+contract version. Later grants/facts bind its digest, and recovery resolves the
+version from that exact prepared fact. Unknown versions fail before
+authorization. A definition revision cannot change contract version, policy,
+resolver meaning, or result bound; doing so requires a new Tool revision and
+effective Agent snapshot.
 
 ## Two-level resource declaration
 
@@ -69,7 +72,7 @@ ToolAccessPolicyV1 {
   process_lanes[]
   network_origins[]
   runtime_lanes[]
-  max_accesses
+  max_accesses, max_result_bytes
 }
 ```
 
@@ -80,9 +83,9 @@ Runtime-normalized origin identities, never credentials or full URLs. Process
 keys identify an admitted executor lane, not arbitrary command text. Unknown
 namespaces and empty keys fail preparation.
 
-The Prepared Call digest includes policy revision, resolver revision, and the
-ordered exact access set. Grants bind that digest, so claims cannot change after
-authorization.
+The Prepared Call digest includes policy revision, resolver revision, ordered
+exact access set, and non-zero `max_result_bytes`. Grants bind that digest, so
+claims and buffer charge cannot change after authorization.
 
 Policy lists and access sets sort by namespace enum order
 `filesystem, process, network, runtime`, then raw UTF-8 key, then mode enum
@@ -116,11 +119,12 @@ and duration/output bounds. Resource claims never grant authority.
 
 ## Conflict relation
 
-Two accesses conflict when namespace and canonical resource key are equal and
-at least one mode is `write` or `exclusive`. `exclusive` also conflicts with
-every access in its declared namespace lane. Distinct filesystem descendants
-are independent only when the resolver proves exact non-overlapping paths;
-ancestor/wildcard policies are admission bounds, not invocation keys.
+Two accesses conflict when their namespace/key are equal and at least one mode
+is `write`, or when their namespaces are equal and at least one mode is
+`exclusive`. Thus `exclusive` conservatively closes its complete namespace for
+that step. Distinct filesystem descendants are independent only when the
+resolver proves exact non-overlapping paths; ancestor/wildcard policies are
+admission bounds, not invocation keys.
 
 Two invocations conflict if any access pair conflicts. Graph construction uses
 original intent indexes as node identities and evaluates all pairs in ascending
@@ -147,19 +151,20 @@ EffectBatchPlanV1 {
 }
 ```
 
-All counts are non-zero. Intent indexes are zero-based, unique, cover every
-input exactly once, and increase within/across steps. Graph bytes are the upper
-triangle of the boolean adjacency matrix in pair iteration order. Its digest
-and the plan digest are lowercase SHA-256 over their named canonical bytes;
-the plan uses RFC 8785 JSON with `plan_digest` omitted.
+All counts and every Prepared Call `max_result_bytes` are non-zero. Intent
+indexes are zero-based, unique, cover every input exactly once, and increase
+within/across steps. Graph bytes contain one byte (`0x00` or `0x01`) for each
+upper-triangle pair in ascending `(left_index, right_index)` order. Its digest
+and the plan digest are lowercase SHA-256 over their named canonical bytes; the
+plan uses RFC 8785 JSON with `plan_digest` omitted.
 
 1. Walk Prepared Calls in model order.
 2. A read-only call with a non-empty exact access set may join the current read
    group when it has no graph edge with any member and group bounds permit.
 3. Every other call closes the current group and becomes one sequential step.
 4. A suspension-capable interaction boundary also closes the group.
-5. Group size, total access count, total buffered output, and planner work have
-   explicit non-zero Runtime limits.
+5. Group size, total access count, sum of member `max_result_bytes`, and planner
+   work must fit the explicit non-zero Runtime limits.
 
 The planner does not inspect model prose or scheduling hints. The same ordered
 Prepared Calls and limits always produce the same graph and plan in Rust and
@@ -171,12 +176,37 @@ measurable path to broader concurrency without changing C5 recovery semantics.
 
 ## Durable execution protocol
 
+C5b coordinates two additive L0 schemas:
+
+```text
+effect.prepared.v2 {
+  prepared_contract_version: 2
+  prepared_digest, tool_name, tool_revision, replay_class, model_call_id
+  access_policy_revision, access_resolver_revision
+  invocation_accesses: ContentBinding
+  max_result_bytes
+}
+execution.effect_batch_planned.v1 {
+  plan_digest, conflict_graph_digest, ordered_prepared_digests: ContentBinding
+  steps: ContentBinding, max_parallel_reads, max_buffered_result_bytes
+}
+```
+
+Both ContentBindings contain canonical JSON matching the pure plan. The batch
+fact is scoped to the active Turn/Execution and has no Tool Invocation ID. It
+commits after every included preparation/authorization and before the first
+member `effect.started`. One Prepared Call appears in at most one committed
+batch plan. Recovery validates/reuses that fact; it never silently recomputes a
+different plan after restart. Sequential v1 calls require no batch fact.
+
 For each plan step Runtime performs:
 
 1. Revalidate exact grants, cancellation, lease, Tool revision, plan digest,
    access policy, and workspace capability.
-2. Commit `effect.prepared`, authorization, and `effect.started` facts in model
-   order before dispatch. No executor begins before its own `started` commit.
+2. Validate the committed `execution.effect_batch_planned`, then commit
+   `effect.started` facts in model order before dispatch. Preparation and
+   authorization were already committed before the plan. No executor begins
+   before its own `started` commit.
 3. Dispatch a parallel group with one frozen `max_parallel_reads` bound. Each
    invocation receives its own non-zero timeout and cancellation token.
 4. Collect executor terminals into bounded per-index slots. A completion may be

@@ -88,13 +88,21 @@ separate connection screen.
 ## Application state machine
 
 ```text
-Booting -> NotConfigured | LoadingNavigation | Unavailable
-LoadingNavigation -> Ready | Unavailable
-Ready -> Submitting -> Following -> Terminal
-Ready/Following -> Cancelling -> Following | Terminal
-Following -> Disconnected -> Reconnecting -> Following | Unavailable
-Following -> Suspended -> Continuing -> Following
+AppShell: Booting -> NotConfigured | LoadingNavigation | Unavailable
+          LoadingNavigation -> Ready | Unavailable
+
+ConversationExecution:
+  Idle -> Submitting -> Following -> Idle
+  Idle/Following -> Cancelling -> Following | Idle
+  Following -> Disconnected -> Reconnecting -> Following | Unavailable
+  Following -> Suspended -> Continuing -> Following
 ```
+
+`Idle` means no mutation/follow operation is currently controlling the selected
+Turn; the timeline still retains its latest terminal view. A committed
+completion/stop/failure returns execution state to `Idle`, so the same durable
+Session can submit its next Turn. Changing navigation never changes the durable
+state of a running Turn.
 
 One immutable `AppViewState` contains configuration state, definitions, Session
 page, selected Session, timeline watermark, composer draft, pending command,
@@ -112,14 +120,21 @@ AppEffect =
   | CreateSessionCommand | StartTurnCommand | CancelTurnCommand
   | ContinueTurnCommand | LoadPreferences | SavePreferences
 
+AppEffectResult {
+  effect_id, issued_generation, session_id?, request_digest?,
+  result: DefinitionsLoaded | SessionPageLoaded | TimelineLoaded |
+          HostEventReceived | EventStreamEnded | CommandSucceeded |
+          PreferencesLoaded | PreferencesSaved | Failed {AppError}
+}
+
 PendingCommand {
   kind, command_id, semantic_request_digest,
   session_id?, turn_id?, issued_generation, status
 }
 ```
 
-The reducer is pure: it emits ordered effects, and only typed effect results
-re-enter as intents. At most one mutation is pending per selected Session;
+The reducer is pure: it emits ordered effects, and only `AppEffectResult`
+values re-enter as result intents. At most one mutation is pending per Session;
 navigation reads and event following may coexist. Effect-result correlation
 requires exact effect identity, Session, generation, and request digest.
 
