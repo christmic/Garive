@@ -12,5 +12,5 @@ expression: "markdown_style_preview(Theme::Light)"
 "" <fg=Some(Black) bg=None +NONE -NONE> | "macOS" <fg=Some(Black) bg=None +NONE -NONE> | "  " <fg=Some(Black) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE> | "ready" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE>
 "" <fg=Some(Black) bg=None +NONE -NONE> | "Other" <fg=Some(Black) bg=None +NONE -NONE> | "  " <fg=Some(Black) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE> | "later" <fg=Some(Black) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE>
 "╭─ CODE" <fg=Some(Blue) bg=None +BOLD -NONE> | " · " <fg=Some(DarkGray) bg=None +NONE -NONE> | "rust" <fg=Some(Blue) bg=None +BOLD -NONE>
-"│ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "fn main() {}" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"│ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "fn" <fg=Some(Magenta) bg=None +BOLD -NONE> | " " <fg=Some(Black) bg=None +NONE -NONE> | "main" <fg=Some(Magenta) bg=None +BOLD -NONE> | "(" <fg=Some(DarkGray) bg=None +NONE -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE> | " " <fg=Some(Black) bg=None +NONE -NONE> | "{" <fg=Some(DarkGray) bg=None +NONE -NONE> | "}" <fg=Some(DarkGray) bg=None +NONE -NONE>
 "╰─" <fg=Some(DarkGray) bg=None +NONE -NONE>

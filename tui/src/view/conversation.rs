@@ -269,6 +269,7 @@ fn render_timeline_item(
                 colors.normal,
                 colors.agent,
                 colors.muted,
+                super::markdown_syntax::SyntaxPalette::from_palette(colors),
                 width,
             ));
         }

@@ -12,6 +12,7 @@ use ratatui::{
 mod conversation;
 mod footer;
 mod linear;
+mod markdown_syntax;
 mod markdown_table;
 mod motion;
 mod overlay;
@@ -409,5 +410,13 @@ pub(crate) fn markdown_preview_at_width(
     width: u16,
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
-    markdown::render_markdown(source, "", colors.normal, colors.agent, colors.muted, width)
+    markdown::render_markdown(
+        source,
+        "",
+        colors.normal,
+        colors.agent,
+        colors.muted,
+        markdown_syntax::SyntaxPalette::from_palette(colors),
+        width,
+    )
 }

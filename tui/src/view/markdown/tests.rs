@@ -1,6 +1,10 @@
 use super::*;
 use ratatui::style::Color;
 
+fn syntax() -> SyntaxPalette {
+    SyntaxPalette::from_palette(super::super::style::palette(crate::Theme::Dark))
+}
+
 fn text(lines: &[Line<'static>]) -> Vec<String> {
     lines
         .iter()
@@ -24,6 +28,7 @@ fn nested_inline_styles_compose_and_links_expose_their_destination() {
         normal,
         accent,
         muted,
+        syntax(),
         80,
     );
 
@@ -48,6 +53,7 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
         Style::default(),
         Style::default().add_modifier(Modifier::BOLD),
         Style::default().add_modifier(Modifier::DIM),
+        syntax(),
         80,
     );
 
@@ -68,6 +74,7 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
         Style::default().fg(Color::White),
         Style::default().fg(Color::Cyan),
         Style::default().fg(Color::DarkGray),
+        syntax(),
         80,
     );
     assert!(heading[0].spans[0]
@@ -86,10 +93,40 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
         Style::default(),
         Style::default(),
         Style::default(),
+        syntax(),
         10,
     );
     assert_eq!(text(&clipped)[1], "│     界a…");
     assert_eq!(UnicodeWidthStr::width(text(&clipped)[1].as_str()), 10);
+}
+
+#[test]
+fn fenced_code_highlights_known_languages_and_preserves_unknown_ones() {
+    let known = render_markdown(
+        "```rust\nfn answer() -> u64 { 42 }\n```",
+        "",
+        Style::default(),
+        Style::default(),
+        Style::default(),
+        syntax(),
+        80,
+    );
+    assert!(
+        known[1].spans.len() > 2,
+        "expected gutter plus styled tokens"
+    );
+
+    let unknown = render_markdown(
+        "```garive-unknown\nvalue = 42\n```",
+        "",
+        Style::default(),
+        Style::default(),
+        Style::default(),
+        syntax(),
+        80,
+    );
+    assert_eq!(text(&unknown)[1], "│ value = 42");
+    assert_eq!(unknown[1].spans.len(), 2, "gutter plus one plain span");
 }
 
 #[test]
@@ -99,7 +136,7 @@ fn tables_switch_between_styled_grid_and_narrow_records() {
     let accent = Style::default().fg(Color::Cyan);
     let muted = Style::default().fg(Color::DarkGray);
 
-    let grid = render_markdown(source, "   ", normal, accent, muted, 32);
+    let grid = render_markdown(source, "   ", normal, accent, muted, syntax(), 32);
     let grid_text = text(&grid);
     assert!(grid_text[0].contains("Name"));
     assert!(grid_text[0].contains("│"));
@@ -118,7 +155,7 @@ fn tables_switch_between_styled_grid_and_narrow_records() {
         .expect("ready cell");
     assert!(ready.style.add_modifier.contains(Modifier::BOLD));
 
-    let records = render_markdown(source, "   ", normal, accent, muted, 17);
+    let records = render_markdown(source, "   ", normal, accent, muted, syntax(), 17);
     assert_eq!(
         text(&records),
         vec![

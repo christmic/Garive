@@ -6,6 +6,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use super::markdown_syntax::{CodeHighlighter, SyntaxPalette};
 use super::markdown_table::TableBuilder;
 use super::safe_text;
 
@@ -15,9 +16,10 @@ pub(super) fn render_markdown(
     normal: Style,
     accent: Style,
     muted: Style,
+    syntax: SyntaxPalette,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let mut renderer = Renderer::new(prefix, normal, accent, muted, width);
+    let mut renderer = Renderer::new(prefix, normal, accent, muted, syntax, width);
     let options =
         Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
     for event in Parser::new_ext(source, options) {
@@ -31,6 +33,7 @@ struct Renderer<'a> {
     normal: Style,
     accent: Style,
     muted: Style,
+    syntax: SyntaxPalette,
     block_style: Style,
     inline_styles: Vec<Style>,
     lines: Vec<Line<'static>>,
@@ -38,6 +41,7 @@ struct Renderer<'a> {
     lists: Vec<ListState>,
     quote_depth: usize,
     code_block: bool,
+    code_highlighter: Option<CodeHighlighter>,
     link: Option<LinkState>,
     table: Option<TableBuilder>,
     width: usize,
@@ -54,12 +58,20 @@ struct LinkState {
 }
 
 impl<'a> Renderer<'a> {
-    fn new(prefix: &'a str, normal: Style, accent: Style, muted: Style, width: u16) -> Self {
+    fn new(
+        prefix: &'a str,
+        normal: Style,
+        accent: Style,
+        muted: Style,
+        syntax: SyntaxPalette,
+        width: u16,
+    ) -> Self {
         Self {
             prefix,
             normal,
             accent,
             muted,
+            syntax,
             block_style: normal,
             inline_styles: Vec::new(),
             lines: Vec::new(),
@@ -67,6 +79,7 @@ impl<'a> Renderer<'a> {
             lists: Vec::new(),
             quote_depth: 0,
             code_block: false,
+            code_highlighter: None,
             link: None,
             table: None,
             width: usize::from(width.max(1)),
@@ -144,12 +157,15 @@ impl<'a> Renderer<'a> {
                     CodeBlockKind::Indented => None,
                 };
                 self.push("╭─ CODE", self.accent);
-                if let Some(language) = language {
+                if let Some(language) = language.as_deref() {
                     self.push(" · ", self.muted);
-                    self.push(&language, self.accent);
+                    self.push(language, self.accent);
                 }
                 self.flush();
                 self.code_block = true;
+                self.code_highlighter = language
+                    .as_deref()
+                    .and_then(|value| CodeHighlighter::new(value, self.syntax));
                 self.block_style = self.muted;
             }
             Tag::Table(alignments) => {
@@ -220,6 +236,7 @@ impl<'a> Renderer<'a> {
             TagEnd::CodeBlock => {
                 self.flush();
                 self.code_block = false;
+                self.code_highlighter = None;
                 self.block_style = self.normal;
                 self.push("╰─", self.muted);
                 self.flush();
@@ -237,8 +254,16 @@ impl<'a> Renderer<'a> {
             }
             self.record_link_label(line);
             if self.code_block {
-                let line = code_display_line(line, self.code_content_width());
-                self.push(&line, self.current_style());
+                let fallback_style = self.current_style();
+                let spans = self.code_highlighter.as_mut().map_or_else(
+                    || vec![Span::styled(line.to_owned(), fallback_style)],
+                    |highlighter| highlighter.highlight_line(line),
+                );
+                self.spans.extend(code_display_spans(
+                    spans,
+                    self.code_content_width(),
+                    self.muted,
+                ));
             } else {
                 self.push(line, self.current_style());
             }
@@ -381,26 +406,43 @@ fn bounded_destination(value: &str) -> Option<String> {
     Some(bounded)
 }
 
-fn code_display_line(value: &str, width: usize) -> String {
-    let expanded = value.replace('\t', "    ");
-    if UnicodeWidthStr::width(expanded.as_str()) <= width {
-        return expanded;
-    }
+fn code_display_spans(
+    spans: Vec<Span<'static>>,
+    width: usize,
+    ellipsis_style: Style,
+) -> Vec<Span<'static>> {
     if width == 0 {
-        return String::new();
+        return Vec::new();
     }
     let available = width.saturating_sub(1);
-    let mut rendered = String::new();
+    let total = spans
+        .iter()
+        .map(|span| UnicodeWidthStr::width(span.content.replace('\t', "    ").as_str()))
+        .sum::<usize>();
+    let limit = if total > width { available } else { width };
+    let mut rendered = Vec::new();
     let mut used = 0_usize;
-    for grapheme in expanded.graphemes(true) {
-        let grapheme_width = UnicodeWidthStr::width(grapheme);
-        if used.saturating_add(grapheme_width) > available {
-            break;
+    'spans: for span in spans {
+        let expanded = span.content.replace('\t', "    ");
+        let mut content = String::new();
+        for grapheme in expanded.graphemes(true) {
+            let grapheme_width = UnicodeWidthStr::width(grapheme);
+            if used.saturating_add(grapheme_width) > limit {
+                if !content.is_empty() {
+                    rendered.push(Span::styled(content, span.style));
+                }
+                break 'spans;
+            }
+            content.push_str(grapheme);
+            used = used.saturating_add(grapheme_width);
         }
-        rendered.push_str(grapheme);
-        used = used.saturating_add(grapheme_width);
+        if !content.is_empty() {
+            rendered.push(Span::styled(content, span.style));
+        }
     }
-    rendered.push('…');
+    if total > width {
+        rendered.push(Span::styled("…", ellipsis_style));
+    }
     rendered
 }
 
