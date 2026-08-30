@@ -23,6 +23,7 @@ pub use audit::{
 };
 pub use control_plane::{
     parse_memory_document, MemoryControlDocument, MemoryControlError, MemoryDocumentLimits,
+    MemoryRecordRef,
 };
 pub use erasure::{
     record_memory_erasure, ErasureDisposition, ErasureTargetKind, ErasureTargetStatus,
