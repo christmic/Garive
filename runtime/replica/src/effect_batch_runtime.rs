@@ -3,9 +3,10 @@
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use futures::{stream::FuturesUnordered, StreamExt};
+use garive_ledger::CanonicalPayload;
 use garive_tools::{
     EffectBatchPlanV1, EffectBatchStep, ExecutionFact, InvocationGrant, PreparedToolCall,
-    ToolInvocationId,
+    TerminalClassification, ToolInvocationId,
 };
 use tokio::sync::{Notify, Semaphore};
 
@@ -328,16 +329,20 @@ async fn run_invocation(
     };
     let mut dispatch = executor.dispatch(command, child.clone());
     let cancelled = tokio::select! {
-        result = &mut dispatch => return (index, execution, normalize(result, invocation)),
+        result = &mut dispatch => {
+            let terminal = normalize(result, invocation, &execution);
+            return (index, execution, terminal);
+        },
         _ = tokio::time::sleep(limits.invocation_timeout) => BatchTerminal::ExecutionTimedOut,
         _ = batch_cancellation.cancelled() => BatchTerminal::Cancelled,
     };
     child.cancel();
     if let Ok(result) = tokio::time::timeout(limits.cancellation_grace, &mut dispatch).await {
-        return (index, execution, normalize(result, invocation));
+        let terminal = normalize(result, invocation, &execution);
+        return (index, execution, terminal);
     }
     let terminal = match executor.cancellation_evidence(&invocation.invocation_id) {
-        CancellationEvidence::Terminal(value) => normalize(Ok(*value), invocation),
+        CancellationEvidence::Terminal(value) => normalize(Ok(*value), invocation, &execution),
         CancellationEvidence::ProvenNotCompleted => cancelled,
         CancellationEvidence::Unknown => BatchTerminal::Uncertain,
     };
@@ -347,10 +352,14 @@ async fn run_invocation(
 fn normalize(
     result: Result<ExecutionFact, ExecutorDispatchError>,
     invocation: &AuthorizedBatchInvocation,
+    execution: &PreparedExecution,
 ) -> BatchTerminal {
     let Ok(fact) = result else {
         return BatchTerminal::Uncertain;
     };
+    if !valid_terminal_binding(&fact, invocation, execution) {
+        return BatchTerminal::Uncertain;
+    }
     let bytes = match &fact {
         ExecutionFact::Completed { content, .. } => serde_jcs::to_vec(content).map(|v| v.len()),
         ExecutionFact::Failed { partial, .. } => partial
@@ -365,4 +374,46 @@ fn normalize(
     } else {
         BatchTerminal::Execution(Box::new(fact))
     }
+}
+
+fn valid_terminal_binding(
+    fact: &ExecutionFact,
+    invocation: &AuthorizedBatchInvocation,
+    execution: &PreparedExecution,
+) -> bool {
+    let receipt = match fact {
+        ExecutionFact::Completed { receipt, .. } | ExecutionFact::Failed { receipt, .. } => {
+            receipt.as_ref()
+        }
+        _ => None,
+    };
+    let Some(receipt) = receipt else {
+        return false;
+    };
+    let evidence = match fact {
+        ExecutionFact::Completed { content, .. } => content.clone(),
+        ExecutionFact::Failed {
+            code,
+            details,
+            partial,
+            ..
+        } => serde_json::json!({"code":code,"details":details,"partial":partial}),
+        _ => return false,
+    };
+    receipt.validate().is_ok()
+        && receipt.receipt_id.as_str() == invocation.receipt_id
+        && receipt.invocation_id == invocation.invocation_id
+        && receipt.prepared_digest == invocation.prepared.input_digest()
+        && receipt.grant_id == invocation.grant.grant_id
+        && receipt.executor_id == execution.executor_id
+        && receipt.executor_revision == execution.executor_revision
+        && CanonicalPayload::from_value(&evidence)
+            .is_ok_and(|canonical| canonical.sha256() == receipt.result_digest)
+        && matches!(
+            (fact, receipt.terminal_classification),
+            (
+                ExecutionFact::Completed { .. },
+                TerminalClassification::Completed
+            ) | (ExecutionFact::Failed { .. }, TerminalClassification::Failed)
+        )
 }

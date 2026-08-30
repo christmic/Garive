@@ -162,6 +162,7 @@ enum Mode {
     Complete(Vec<u64>),
     Pending(CancellationEvidence),
     Oversized,
+    InvalidReceipt,
 }
 
 struct Executor {
@@ -198,6 +199,7 @@ impl ConcurrentExecutorPort for Executor {
             let content = match &self.mode {
                 Mode::Pending(_) => return pending().await,
                 Mode::Oversized => json!({"value":"x".repeat(600)}),
+                Mode::InvalidReceipt => json!({"value":"x"}),
                 Mode::Complete(delays) => {
                     let index = command
                         .invocation_id
@@ -216,7 +218,12 @@ impl ConcurrentExecutorPort for Executor {
                 .to_owned();
             Ok(ExecutionFact::Completed {
                 receipt: Some(EffectReceipt {
-                    receipt_id: ReceiptId::new(command.receipt_id).unwrap(),
+                    receipt_id: ReceiptId::new(if matches!(&self.mode, Mode::InvalidReceipt) {
+                        "wrong-receipt".into()
+                    } else {
+                        command.receipt_id
+                    })
+                    .unwrap(),
                     invocation_id: command.invocation_id,
                     prepared_digest: command.prepared.input_digest().into(),
                     grant_id: command.grant.grant_id,
@@ -342,6 +349,10 @@ async fn timeout_cancellation_uncertainty_and_result_bounds_are_explicit() {
     )
     .await;
     assert!(uncertain
+        .iter()
+        .all(|value| *value == BatchTerminal::Uncertain));
+    let (_, invalid_receipt) = run(Mode::InvalidReceipt, EffectCancellation::default()).await;
+    assert!(invalid_receipt
         .iter()
         .all(|value| *value == BatchTerminal::Uncertain));
     let (_, oversized) = run(Mode::Oversized, EffectCancellation::default()).await;
