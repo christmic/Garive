@@ -1,5 +1,7 @@
 //! Pure M2 import planning over verified documents and current projection state.
 
+use std::collections::BTreeSet;
+
 use crate::{
     control_plan_values::{
         MemoryAuthorizedScope, MemoryCurrentEntry, MemoryIdentityAllocation, MemoryImportOperation,
@@ -37,6 +39,16 @@ pub fn prepare_memory_import(
     }
     if !ordered_current(current) || !ordered_scopes(authorized_scopes) {
         return Err(MemoryControlError::InvalidSnapshot);
+    }
+    let mut references = BTreeSet::new();
+    for document in documents {
+        let key = match document.record_ref() {
+            MemoryRecordRef::Existing { record_id, .. } => format!("existing:{record_id}"),
+            MemoryRecordRef::New { draft_token } => format!("new:{draft_token}"),
+        };
+        if !references.insert(key) {
+            return Err(MemoryControlError::InvalidSnapshot);
+        }
     }
 
     let mut operations = Vec::new();

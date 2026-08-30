@@ -29,6 +29,15 @@ public fun prepareMemoryImport(
     if (!strictlyOrdered(current.map(MemoryCurrentEntry::recordId)) ||
         !strictlyOrdered(authorizedScopes)
     ) return controlFailure(MemoryControlError.INVALID_SNAPSHOT)
+    val references = documents.map {
+        when (val reference = it.recordRef) {
+            is MemoryRecordRef.Existing -> "existing:${reference.recordId}"
+            is MemoryRecordRef.New -> "new:${reference.draftToken}"
+        }
+    }
+    if (references.distinct().size != references.size) {
+        return controlFailure(MemoryControlError.INVALID_SNAPSHOT)
+    }
 
     val operations = mutableListOf<MemoryImportOperation>()
     for (document in documents) {

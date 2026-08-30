@@ -145,6 +145,10 @@ fn stale_authority_and_metadata_changes_fail_closed() {
         plan(&[widened], &current, 7).unwrap_err(),
         MemoryControlError::ForbiddenChange,
     );
+    assert_eq!(
+        plan(&[original.clone(), original], &current, 7).unwrap_err(),
+        MemoryControlError::InvalidSnapshot,
+    );
 }
 
 fn plan(

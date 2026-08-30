@@ -69,6 +69,13 @@ class MemoryControlPlannerTest {
             MemoryControlError.FORBIDDEN_CHANGE,
             failure(prepareMemoryImport("export-1", "namespace-1", 7uL, DIGEST, 7uL, listOf(widened), current, emptyList(), emptyList())),
         )
+        assertEquals(
+            MemoryControlError.INVALID_SNAPSHOT,
+            failure(prepareMemoryImport(
+                "export-1", "namespace-1", 7uL, DIGEST, 7uL,
+                listOf(original, original), current, emptyList(), emptyList(),
+            )),
+        )
     }
 
     private fun failure(value: MemoryControlResult<MemoryImportPlan>): MemoryControlError =
