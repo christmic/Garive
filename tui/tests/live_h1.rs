@@ -160,6 +160,7 @@ fn installed() -> InstalledAgent {
         definition_revision: "revision-1".into(),
         snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
         agent_instance_namespace: "installed-main".into(),
+        public_capabilities: Vec::new(),
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: 4,
             max_input_tokens: None,

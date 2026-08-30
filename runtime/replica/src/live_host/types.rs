@@ -16,6 +16,8 @@ pub struct InstalledAgent {
     pub snapshot_digest: String,
     /// Stable namespace used while deriving installed Agent instance identities.
     pub agent_instance_namespace: String,
+    /// Sorted stable public capabilities available to newly created Sessions.
+    pub public_capabilities: Vec<String>,
     /// Effective Runtime limits frozen into each first Execution.
     pub runtime_limits: EffectiveRuntimeLimits,
     /// Optional snapshot-bound H3 public label catalogue.

@@ -86,7 +86,7 @@ impl LiveHost {
                 api_version: "v1",
                 definition_id: self.state.installed.definition_id.clone(),
                 definition_revision: self.state.installed.definition_revision.clone(),
-                capabilities: Vec::new(),
+                capabilities: self.state.installed.public_capabilities.clone(),
             }],
         };
         if page.definitions.len() > self.state.read_limits.max_definitions
@@ -253,7 +253,7 @@ impl LiveHost {
             api_version: "v1",
             definition_id: self.state.installed.definition_id.clone(),
             definition_revision: self.state.installed.definition_revision.clone(),
-            capabilities: Vec::new(),
+            capabilities: self.state.installed.public_capabilities.clone(),
         }]
     }
 
@@ -1244,6 +1244,11 @@ fn validate_installed(
         || limits.event_batch_size == 0
         || limits.event_poll_interval_ms == 0
         || installed.public_activity_catalogue.is_some() != limits.activity.is_some()
+        || installed.public_capabilities.iter().any(String::is_empty)
+        || installed
+            .public_capabilities
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
     {
         return Err(LiveHostError::InvalidRequest);
     }

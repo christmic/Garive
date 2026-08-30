@@ -117,6 +117,7 @@ fn installed() -> InstalledAgent {
         definition_revision: "revision-1".into(),
         snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
         agent_instance_namespace: "installed-main".into(),
+        public_capabilities: vec!["timeline".into(), "tools".into()],
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: 4,
             max_input_tokens: Some(1_024),
@@ -203,6 +204,7 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].api_version, "v1");
     assert_eq!(definitions[0].definition_id, "definition-main");
+    assert_eq!(definitions[0].capabilities, ["timeline", "tools"]);
     assert_eq!(definitions[0].definition_revision, "revision-1");
     assert!(definitions[0].capabilities.is_empty());
 

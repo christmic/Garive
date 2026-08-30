@@ -88,6 +88,7 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "desktop-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 2,
                 max_input_tokens: Some(64),
