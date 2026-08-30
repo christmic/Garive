@@ -7,9 +7,10 @@ use std::{path::PathBuf, sync::Arc};
 
 use garive_llm::ModelPort;
 use garive_runtime::{
-    local_dispatch_queue, HostClock, HostContinuationInput, HostWorkspaceContextEntry,
-    InstalledAgent, LiveHost, LiveHostLimits, LocalDispatchQueue, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, TurnCommandResponse,
+    local_dispatch_queue, HostClock, HostContinuationInput, HostEventPage,
+    HostWorkspaceContextEntry, InstalledAgent, LiveHost, LiveHostEvent, LiveHostLimits,
+    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LocalGovernedExecutionFactory,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -32,6 +33,10 @@ pub use desktop_menu::{
     build_desktop_menu, build_desktop_menu_for_locale, DesktopMenuIntent, DesktopMenuLocale,
     DESKTOP_MENU_EVENT,
 };
+/// Bounded installed-Agent catalogue exposed to Desktop clients.
+pub use garive_runtime::AgentDefinitionPageV1 as DesktopDefinitionPage;
+/// Exact durable Session command receipt exposed to Desktop clients.
+pub use garive_runtime::CreateSessionResponse as DesktopCreateSessionReceipt;
 /// Immutable committed Artifact projection exposed to Desktop clients.
 pub use garive_runtime::HostArtifact as DesktopArtifact;
 /// Bounded committed Artifact page exposed to Desktop clients.
@@ -42,6 +47,8 @@ pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
 pub use garive_runtime::HostWorkspaceDetachment as DesktopWorkspaceDetachment;
 /// Restart-safe durable Session summary exposed to Desktop clients.
 pub use garive_runtime::SessionSummary as DesktopSessionSummary;
+/// Exact durable Turn mutation receipt exposed to Desktop clients.
+pub use garive_runtime::TurnCommandResponse as DesktopTurnCommandReceipt;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
 pub use product_store::{DesktopProductStore, DesktopProductStoreError, MAX_PRODUCT_STORE_BYTES};
@@ -73,6 +80,27 @@ pub use workspace_bookmark::{
     DESKTOP_WORKSPACE_BOOKMARK_SERVICE, DESKTOP_WORKSPACE_MANIFEST_FILE,
 };
 pub use workspace_execution::DesktopWorkspaceExecutionFactory;
+
+/// Serializable bounded H1 event scan returned to product clients.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopEventPage {
+    /// Public events found in the scanned durable range.
+    pub events: Vec<LiveHostEvent>,
+    /// Highest durable position scanned, including private facts.
+    pub scanned_through_position: u64,
+    /// Frozen durable watermark observed by this read.
+    pub observed_max_position: u64,
+}
+
+impl From<HostEventPage> for DesktopEventPage {
+    fn from(value: HostEventPage) -> Self {
+        Self {
+            events: value.events,
+            scanned_through_position: value.scanned_through_position,
+            observed_max_position: value.observed_max_position,
+        }
+    }
+}
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.
 pub trait DesktopOperations: Send + Sync {
@@ -248,6 +276,94 @@ impl DesktopHost {
 
     fn supports_activity(&self) -> bool {
         self.host.limits().activity.is_some()
+    }
+
+    /// Returns the bounded immutable Agent definition catalogue.
+    pub fn definitions(&self) -> Result<DesktopDefinitionPage, DesktopHostError> {
+        self.host
+            .list_agent_definitions()
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    /// Creates or exactly replays a Session under a caller-owned command identity.
+    pub fn create_session_command(
+        &self,
+        command_id: &str,
+        definition_id: &str,
+    ) -> Result<DesktopCreateSessionReceipt, DesktopHostError> {
+        self.host
+            .create_session(command_id, definition_id)
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Starts or exactly replays a Turn without waiting for its terminal.
+    pub fn start_turn_command(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        input: &str,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.host
+            .start_turn(command_id, session_id, input)
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Requests cancellation at one exact client-observed durable prefix.
+    pub fn cancel_turn_command(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        requested_through_position: u64,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.host
+            .cancel_turn(command_id, session_id, turn_id, requested_through_position)
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Continues or exactly replays one suspension without waiting for its terminal.
+    pub fn continue_turn_command(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        session_version: u64,
+        input: &str,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.host
+            .continue_turn(
+                command_id,
+                session_id,
+                turn_id,
+                suspension_id,
+                session_version,
+                HostContinuationInput::String(input),
+            )
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Reads one bounded event page after an exact durable cursor.
+    pub fn event_page(
+        &self,
+        session_id: &str,
+        after_position: u64,
+    ) -> Result<DesktopEventPage, DesktopHostError> {
+        self.host
+            .read_event_page(session_id, after_position)
+            .map(DesktopEventPage::from)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    async fn drive_next(&self) -> Result<(), DesktopHostError> {
+        let attempt = self.operations.execution_attempt()?;
+        self.queue
+            .lock()
+            .await
+            .try_run_next(&self.worker, &attempt)
+            .await
+            .map(|_| ())
+            .map_err(|_| DesktopHostError::ExecutionFailure)
     }
 
     /// Creates one empty durable Session before attaching selected context.
@@ -452,7 +568,7 @@ impl DesktopHost {
     async fn finish_turn(
         &self,
         session_id: String,
-        turn: TurnCommandResponse,
+        turn: DesktopTurnCommandReceipt,
     ) -> Result<DesktopTurnResult, DesktopHostError> {
         let attempt = self.operations.execution_attempt()?;
         self.queue
@@ -551,6 +667,112 @@ impl DesktopState {
             workspaces: configured,
             artifacts: configured,
         }
+    }
+
+    /// Returns the installed immutable Agent definitions.
+    pub fn definitions(&self) -> Result<DesktopDefinitionPage, DesktopHostError> {
+        self.installed_host()?.definitions()
+    }
+
+    /// Creates or exactly replays one caller-addressed Session command.
+    pub fn create_session_command(
+        &self,
+        command_id: &str,
+        definition_id: &str,
+    ) -> Result<DesktopCreateSessionReceipt, DesktopHostError> {
+        self.installed_host()?
+            .create_session_command(command_id, definition_id)
+    }
+
+    /// Starts one caller-addressed Turn and drives execution after acknowledging commit.
+    pub async fn start_turn_detached(
+        &self,
+        command_id: String,
+        session_id: String,
+        input: String,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        let host = self.installed_host()?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let result = host.start_turn_command(&command_id, &session_id, &input);
+            let committed = result.is_ok();
+            let _ = sender.send(result);
+            if committed {
+                if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    let _ = runtime.block_on(host.drive_next());
+                }
+            }
+        });
+        receiver
+            .await
+            .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Requests cancellation at one exact caller-observed durable prefix.
+    pub fn cancel_turn_command(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        requested_through_position: u64,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.installed_host()?.cancel_turn_command(
+            command_id,
+            session_id,
+            turn_id,
+            requested_through_position,
+        )
+    }
+
+    /// Continues one caller-addressed suspension and drives its fresh execution.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn continue_turn_detached(
+        &self,
+        command_id: String,
+        session_id: String,
+        turn_id: String,
+        suspension_id: String,
+        session_version: u64,
+        input: String,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        let host = self.installed_host()?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let result = host.continue_turn_command(
+                &command_id,
+                &session_id,
+                &turn_id,
+                &suspension_id,
+                session_version,
+                &input,
+            );
+            let committed = result.is_ok();
+            let _ = sender.send(result);
+            if committed {
+                if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    let _ = runtime.block_on(host.drive_next());
+                }
+            }
+        });
+        receiver
+            .await
+            .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Reads one bounded durable Host event page.
+    pub fn event_page(
+        &self,
+        session_id: &str,
+        after_position: u64,
+    ) -> Result<DesktopEventPage, DesktopHostError> {
+        self.installed_host()?
+            .event_page(session_id, after_position)
     }
 
     /// Loads and installs one backend-only system composition when present.

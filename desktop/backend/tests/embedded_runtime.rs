@@ -280,6 +280,101 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
 }
 
 #[tokio::test]
+async fn product_commands_acknowledge_exact_commits_before_bounded_follow() {
+    let directory = tempdir().expect("temp directory");
+    let state = DesktopState::default();
+    state
+        .install(desktop_host(
+            &directory.path().join("product-commands.db"),
+            Arc::new(CompletingModel),
+        ))
+        .expect("install");
+
+    let definitions = state.definitions().expect("definitions");
+    assert_eq!(definitions.definitions[0].definition_id, "definition-main");
+    let created = state
+        .create_session_command("client-create-1", "definition-main")
+        .expect("create commit");
+    assert_eq!(
+        state
+            .create_session_command("client-create-1", "definition-main")
+            .expect("exact create replay"),
+        created
+    );
+
+    let started = state
+        .start_turn_detached(
+            "client-turn-1".into(),
+            created.session_id.clone(),
+            "hello product".into(),
+        )
+        .await
+        .expect("start commit");
+    assert!(started.committed_position > created.committed_position);
+    let mut cursor = started.committed_position;
+    let mut events = Vec::new();
+    for _ in 0..100 {
+        let page = match state.event_page(&created.session_id, cursor) {
+            Ok(page) => page,
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                continue;
+            }
+        };
+        cursor = page.scanned_through_position;
+        events.extend(page.events);
+        if events.iter().any(|event| event.event == "turn.completed") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    }
+    assert!(events.iter().any(|event| event.event == "turn.completed"));
+    assert_eq!(
+        state
+            .start_turn_detached(
+                "client-turn-1".into(),
+                created.session_id,
+                "hello product".into(),
+            )
+            .await
+            .expect("exact Turn replay"),
+        started
+    );
+}
+
+#[test]
+fn cancellation_binds_the_exact_observed_prefix() {
+    let directory = tempdir().expect("temp directory");
+    let host = desktop_host(
+        &directory.path().join("product-cancel.db"),
+        Arc::new(CompletingModel),
+    );
+    let created = host
+        .create_session_command("client-create-cancel", "definition-main")
+        .expect("create");
+    let started = host
+        .start_turn_command("client-turn-cancel", &created.session_id, "cancel me")
+        .expect("start");
+    let cancelled = host
+        .cancel_turn_command(
+            "client-cancel-1",
+            &created.session_id,
+            &started.turn_id,
+            started.committed_position,
+        )
+        .expect("cancel");
+    assert!(cancelled.committed_position > started.committed_position);
+    assert!(host
+        .cancel_turn_command(
+            "client-cancel-1",
+            &created.session_id,
+            &started.turn_id,
+            started.committed_position - 1,
+        )
+        .is_err());
+}
+
+#[tokio::test]
 async fn product_reopens_after_process_restart_and_commits_a_second_turn() {
     let directory = tempdir().expect("temp directory");
     let database = directory.path().join("product-restart.db");
