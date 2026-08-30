@@ -6,6 +6,7 @@ struct PairingView: View {
     @State private var showingCode = false
     let errorCode: String?
     let pairing: Bool
+    let suggestion: PairingSuggestion?
     let connect: (String, String) -> Void
 
     private var valid: Bool {
@@ -26,6 +27,13 @@ struct PairingView: View {
                     Text("Your agents, wherever you are").font(.system(.largeTitle, design: .rounded).bold())
                     Text("Securely steer work running on your Garive service, review progress, and answer decisions without carrying your computer.")
                         .font(.title3).foregroundStyle(.secondary).lineSpacing(4)
+                }
+
+                if let suggestion {
+                    Label("Pairing with \(suggestion.serviceName)", systemImage: "qrcode.viewfinder")
+                        .font(.headline).padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(GarivePalette.mint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
                 }
 
                 VStack(spacing: 16) {
@@ -61,6 +69,17 @@ struct PairingView: View {
                 Spacer(minLength: 24)
             }
             .frame(maxWidth: 560, alignment: .leading).padding(28).frame(maxWidth: .infinity)
+            .onChange(of: suggestion) { _, value in
+                guard let value else { return }
+                origin = value.origin
+                accessCode = value.code
+            }
+            .onAppear {
+                if let suggestion {
+                    origin = suggestion.origin
+                    accessCode = suggestion.code
+                }
+            }
         }.background(GarivePalette.ink)
     }
 

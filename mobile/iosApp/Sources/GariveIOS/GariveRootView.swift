@@ -14,7 +14,11 @@ struct GariveRootView: View {
     var body: some View {
         Group {
             if model.credentials == nil {
-                PairingView(errorCode: model.errorCode, pairing: model.pairing) {
+                PairingView(
+                    errorCode: model.errorCode,
+                    pairing: model.pairing,
+                    suggestion: model.pairingSuggestion
+                ) {
                     model.pair(origin: $0, accessGrant: $1)
                 }
             } else if let state = model.state {
@@ -27,6 +31,7 @@ struct GariveRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, model.state != nil { model.refresh() }
         }
+        .onOpenURL { model.acceptPairingURL($0) }
     }
 }
 

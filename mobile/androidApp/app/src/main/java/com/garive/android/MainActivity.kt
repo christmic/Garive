@@ -2,6 +2,8 @@ package com.garive.android
 
 import android.os.Bundle
 import android.os.Build
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
@@ -27,22 +29,30 @@ import kotlinx.coroutines.launch
 
 /** Native Android entry point for secure remote Agent work. */
 public class MainActivity : ComponentActivity() {
+    private val pairingSuggestion = mutableStateOf<PairingSuggestion?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pairingSuggestion.value = parsePairingLink(intent?.data)
         val store = AndroidConnectionStore(this)
-        setContent { GariveTheme { GariveRoot(store) } }
+        setContent { GariveTheme { GariveRoot(store, pairingSuggestion.value) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pairingSuggestion.value = parsePairingLink(intent.data)
     }
 }
 
 @Composable
-private fun GariveRoot(store: AndroidConnectionStore) {
+private fun GariveRoot(store: AndroidConnectionStore, suggestion: PairingSuggestion?) {
     var connection by remember { mutableStateOf(store.load()) }
     var pairingError by remember { mutableStateOf<String?>(null) }
     var pairing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val current = connection
     if (current == null) {
-        PairingScreen(pairingError, pairing) { origin, code ->
+        PairingScreen(pairingError, pairing, suggestion) { origin, code ->
             scope.launch {
                 pairing = true
                 try {
@@ -70,6 +80,21 @@ private fun GariveRoot(store: AndroidConnectionStore) {
             }
         }
     }
+}
+
+internal data class PairingSuggestion(val origin: String, val code: String, val serviceName: String)
+
+private fun parsePairingLink(uri: Uri?): PairingSuggestion? {
+    if (uri?.scheme != "garive" || uri.host != "pair") return null
+    val allowed = setOf("origin", "code", "exp", "name")
+    if (uri.queryParameterNames != allowed || allowed.any { uri.getQueryParameters(it).size != 1 }) return null
+    val expiry = uri.getQueryParameter("exp")?.toLongOrNull() ?: return null
+    val now = System.currentTimeMillis() / 1_000
+    val origin = uri.getQueryParameter("origin") ?: return null
+    val code = uri.getQueryParameter("code") ?: return null
+    val name = uri.getQueryParameter("name") ?: return null
+    if (expiry <= now || expiry > now + 600 || code.length !in 6..128 || name.length !in 1..100) return null
+    return PairingSuggestion(origin, code, name)
 }
 
 @Composable

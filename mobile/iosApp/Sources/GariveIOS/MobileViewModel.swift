@@ -18,6 +18,7 @@ final class MobileViewModel: ObservableObject {
     @Published private(set) var errorCode: String?
     @Published private(set) var pairing = false
     @Published var presentingNewTask = false
+    @Published private(set) var pairingSuggestion: PairingSuggestion?
 
     private let store: ConnectionStore
     private var controller: MobileWorkController?
@@ -57,6 +58,28 @@ final class MobileViewModel: ObservableObject {
             pairing = false
             errorCode = "secure_connection_failed"
         }
+    }
+
+    func acceptPairingURL(_ url: URL) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let names = items.map(\.name)
+        let allowed = Set(["origin", "code", "exp", "name"])
+        func one(_ name: String) -> String? {
+            let values = items.filter { $0.name == name }.compactMap(\.value)
+            return values.count == 1 ? values[0] : nil
+        }
+        guard url.scheme == "garive", url.host == "pair", Set(names).isSubset(of: allowed),
+              names.count == Set(names).count,
+              let origin = one("origin"), let code = one("code"), let rawExpiry = one("exp"),
+              let expiry = TimeInterval(rawExpiry), let serviceName = one("name"),
+              expiry > Date().timeIntervalSince1970, expiry <= Date().timeIntervalSince1970 + 600,
+              serviceName.count <= 100, code.count >= 6 else {
+            errorCode = "invalid_pairing_link"
+            pairingSuggestion = nil
+            return
+        }
+        pairingSuggestion = PairingSuggestion(origin: origin, code: code, serviceName: serviceName)
+        errorCode = nil
     }
 
     func refresh() { perform { callback in self.controller?.refresh(completionHandler: callback) } }
@@ -129,5 +152,11 @@ final class MobileViewModel: ObservableObject {
             }
         }
     }
+}
+
+struct PairingSuggestion: Equatable {
+    let origin: String
+    let code: String
+    let serviceName: String
 }
 #endif

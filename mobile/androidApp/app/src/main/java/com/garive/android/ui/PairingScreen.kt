@@ -24,21 +24,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.garive.android.PairingSuggestion
 
 /** Secure first-run connection surface. */
 @Composable
 internal fun PairingScreen(
     errorCode: String?,
     pairing: Boolean,
+    suggestion: PairingSuggestion?,
     onConnect: (String, String) -> Unit,
 ) {
     var origin by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    LaunchedEffect(suggestion) {
+        suggestion?.let { origin = it.origin; code = it.code }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -68,6 +74,13 @@ internal fun PairingScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (suggestion != null) {
+                Text(
+                    "Pairing with ${suggestion.serviceName}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
             OutlinedTextField(
                 value = origin,
                 onValueChange = { origin = it },
