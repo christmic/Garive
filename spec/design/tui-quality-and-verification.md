@@ -250,12 +250,15 @@ physical terminal, tmux, and `TERM=dumb` rows remain open.
 
 The current macOS arm64 componentized candidate rerun is pinned in
 [`../../docs/evidence/tui-macos-native-2026-08-31.md`](../../docs/evidence/tui-macos-native-2026-08-31.md).
-Merge revision `8aa1db9f` covers release linking, all 96 listed TUI test cases,
+Merge revision `0fa1dda8` covers release linking, all 103 listed TUI test cases,
 strict Clippy, production Runtime/file-SQLite/PTTY execution, and six repeated
 shipping-binary PTY cases. These include SGR-mouse modal
-activation/restoration, filtered screen-reader command activation, and the
-same typed command-availability reason across visual, linear, and activation
-paths. Earlier exact revisions in the same evidence record cover the automatic
+activation/restoration, filtered screen-reader command activation, the same
+typed command-availability reason across visual, linear, and activation paths,
+and one typed action-overlay contract across controller activation, visual
+popups, and linear output. Multiline status details and adaptive popup geometry
+are verified alongside reviewed Help and durable-recovery snapshots. Earlier
+exact revisions in the same evidence record cover the automatic
 `TERM=dumb` accessible fallback and native tmux 3.7c with terminal restoration;
 those rows are not relabeled as a later rerun. The locked login session
 prevented real-window screenshot admission.
