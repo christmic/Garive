@@ -192,7 +192,7 @@ fn require_latest_active(
     turn_id: &TurnId,
     execution_id: &ExecutionId,
 ) -> Result<(), ExecutionLeaseError> {
-    let snapshot = storage::load_state(transaction)
+    let snapshot = storage::load_state_in_transaction(transaction)
         .map_err(|_| ExecutionLeaseError::Storage)?
         .load_turn(turn_id)
         .map_err(|_| ExecutionLeaseError::ExecutionNotActive)?;
@@ -225,7 +225,7 @@ fn require_terminal(
     execution: &str,
 ) -> Result<(), ExecutionLeaseError> {
     let execution = ExecutionId::try_from(execution).map_err(|_| ExecutionLeaseError::Storage)?;
-    let snapshot = storage::load_state(transaction)
+    let snapshot = storage::load_state_in_transaction(transaction)
         .map_err(|_| ExecutionLeaseError::Storage)?
         .load_turn(turn_id)
         .map_err(|_| ExecutionLeaseError::Storage)?;
