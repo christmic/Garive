@@ -27,7 +27,7 @@ struct WorkView: View {
         .navigationTitle("Remote work")
         .toolbar {
             ToolbarItem { Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") } }
-            ToolbarItem { Button { model.presentingNewTask = true } label: { Label("New task", systemImage: "plus") } }
+            ToolbarItem { Button { model.showNewTask() } label: { Label("New task", systemImage: "plus") } }
         }
         .refreshable { model.refresh() }
     }
@@ -67,7 +67,7 @@ struct SessionsView: View {
         }
         .scrollContentBackground(.hidden).background(GarivePalette.ink)
         .navigationTitle("Sessions").searchable(text: $search, prompt: "Agent or session")
-        .toolbar { Button { model.presentingNewTask = true } label: { Label("New task", systemImage: "plus") } }
+        .toolbar { Button { model.showNewTask() } label: { Label("New task", systemImage: "plus") } }
         .refreshable { model.refresh() }
     }
 }
@@ -94,7 +94,7 @@ struct AgentsView: View {
                             Text(agent.capabilities.joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
                         Button("Start with this agent") {
-                            model.presentingNewTask = true
+                            model.showNewTask(definitionID: agent.definitionId)
                         }.buttonStyle(.bordered)
                     }
                     .padding(18).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))

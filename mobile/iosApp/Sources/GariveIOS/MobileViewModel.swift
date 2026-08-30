@@ -51,6 +51,7 @@ final class MobileViewModel: ObservableObject {
     @Published private(set) var errorCode: String?
     @Published private(set) var pairing = false
     @Published var presentingNewTask = false
+    @Published private(set) var preferredDefinitionID: String?
     @Published private(set) var pairingSuggestion: PairingSuggestion?
 
     private let store: ConnectionStore
@@ -135,8 +136,16 @@ final class MobileViewModel: ObservableObject {
     func refresh() { perform { callback in self.controller?.refresh(completionHandler: callback) } }
     func open(_ id: String) { perform { callback in self.controller?.openSession(sessionId: id, completionHandler: callback) } }
     func send(_ text: String) { perform { callback in self.controller?.sendTurn(text: text, completionHandler: callback) } }
-    func start(definitionID: String, text: String) {
+    func showNewTask(definitionID: String? = nil) {
+        preferredDefinitionID = definitionID
+        presentingNewTask = true
+    }
+    func dismissNewTask() {
+        preferredDefinitionID = nil
         presentingNewTask = false
+    }
+    func start(definitionID: String, text: String) {
+        dismissNewTask()
         perform { callback in
             self.controller?.startTask(definitionId: definitionID, text: text, completionHandler: callback)
         }

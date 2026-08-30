@@ -36,13 +36,21 @@ struct NewTaskView: View {
             }
             .navigationTitle(dynamicTypeSize.isAccessibilitySize ? "New task" : "New remote task")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { model.dismissNewTask(); dismiss() }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") { model.start(definitionID: selectedID, text: prompt) }
                         .disabled(selectedID.isEmpty || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .onAppear { if definitionID.isEmpty { definitionID = agents.first?.definitionId ?? "" } }
+            .onAppear {
+                if definitionID.isEmpty {
+                    definitionID = agents.contains { $0.definitionId == model.preferredDefinitionID }
+                        ? model.preferredDefinitionID ?? ""
+                        : agents.first?.definitionId ?? ""
+                }
+            }
         }.presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
     }
 
@@ -100,9 +108,11 @@ struct ConversationView: View {
                         .accessibilityLabel("Share conversation")
                 }
             }
-            ToolbarItem {
-                Button(role: .destructive) { confirmingCancel = true } label: { Image(systemName: "stop.circle") }
-                    .accessibilityLabel("Stop current work")
+            if canCancel {
+                ToolbarItem {
+                    Button(role: .destructive) { confirmingCancel = true } label: { Image(systemName: "stop.circle") }
+                        .accessibilityLabel("Stop current work")
+                }
             }
         }
         .confirmationDialog("Stop this agent’s current turn?", isPresented: $confirmingCancel, titleVisibility: .visible) {
@@ -118,6 +128,11 @@ struct ConversationView: View {
 
     private var title: String {
         state.sessions.first(where: { $0.sessionId == state.selectedSessionId })?.agentName ?? "Session"
+    }
+
+    private var canCancel: Bool {
+        guard let status = state.timeline.last?.status else { return false }
+        return status == .working || status == .needsInput
     }
 
     private var transcript: String {

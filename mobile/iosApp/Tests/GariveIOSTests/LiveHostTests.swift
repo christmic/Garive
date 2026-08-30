@@ -135,3 +135,17 @@ func wakeHintsAreContentFreeAndExact() {
     ]]
     #expect(WakeEnvelope.routeToken(from: leaking) == nil)
 }
+
+@Test @MainActor
+func newTaskPresentationPreservesExplicitAgentChoice() {
+    let defaults = UserDefaults(suiteName: "garive-agent-choice-\(UUID())")!
+    let model = MobileViewModel(store: ConnectionStore(defaults: defaults))
+
+    model.showNewTask(definitionID: "definition-review")
+    #expect(model.presentingNewTask)
+    #expect(model.preferredDefinitionID == "definition-review")
+
+    model.dismissNewTask()
+    #expect(!model.presentingNewTask)
+    #expect(model.preferredDefinitionID == nil)
+}
