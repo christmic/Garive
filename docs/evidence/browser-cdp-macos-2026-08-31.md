@@ -35,6 +35,17 @@ cargo test -p garive-adapter-browser-cdp --test managed_chromium -- --ignored --
 Latest result: 1 passed, 0 failed, 0.77 seconds. The ordinary adapter suite also
 passed 11 tests; strict all-target Clippy and Rustdoc passed.
 
+The Runtime-owned concrete-port gate independently launched a fresh managed
+Chrome profile, created and attached one blank target, observed its initial
+snapshot through `CdpNativeAdapterPort`, navigated the same-origin redirect
+through governed preflight/dispatch, verified the completed receipt and then
+observed the form from a new target revision. It passed 1 test in 0.61 seconds;
+strict Runtime test-target Clippy and warning-free Rustdoc also passed.
+
+```sh
+cargo test -p garive-runtime --test native_cdp_managed_chromium -- --ignored --nocapture
+```
+
 ## Open acceptance evidence
 
 The Runtime mock-transport gate additionally proves concrete-port observe,
@@ -48,8 +59,9 @@ The baseline now covers one navigation redirect, one form, open shadow DOM and
 actual click, Unicode text insertion and clear. Snapshot/node freshness is
 deliberately enforced by Runtime's exact target/snapshot/revision binding; it
 is not delegated to CDP backend-node lifetime. Click, type-text and clear
-binding cases pass in the Runtime unit gate. A real managed-Chrome run through
-the concrete port, cross-origin frames, select/key/scroll/history actions,
+binding cases pass in the Runtime unit gate. The real managed-Chrome concrete
+port gate now binds initial observation, governed navigation, receipt and fresh
+observation/revision evidence. Cross-origin frames, select/key/scroll/history actions,
 popups, downloads, protected-field redaction in the real browser, attachment
 loss and durable Started/crash fault injection remain open. This is not a
 complete Browser Use claim.

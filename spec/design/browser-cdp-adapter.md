@@ -136,10 +136,12 @@ controls. It also clicks the form button through the typed adapter operation
 using an unexposed backend identity and observes the resulting AX-name change.
 The same gate inserts Unicode text and clears the textbox, observing both AX
 states. Runtime separately proves the exact click binding gate; text-action
-binding now passes the same exact gate. The concrete port gate covers observe,
-click/type/clear and success/uncertain binding invalidation against a mock
-transport. This baseline does not satisfy the remaining frame/action/fault
-matrix by itself.
+binding now passes the same exact gate. Mock-transport concrete-port gates cover
+observe, navigate/click/type/clear and success/failed/uncertain binding
+invalidation. A second managed-Chrome gate passes initial observation,
+same-origin redirected navigation, completed receipt, target-revision rotation
+and fresh semantic observation through the concrete Runtime port itself. This
+baseline does not satisfy the remaining frame/action/fault matrix by itself.
 
 ## Meta
 
