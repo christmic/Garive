@@ -47,7 +47,9 @@ struct NewTaskView: View {
                     }
                 }
                 Section("Goal") {
-                    TextEditor(text: $prompt).frame(minHeight: 150)
+                    TextEditor(text: $prompt)
+                        .frame(minHeight: 150)
+                        .accessibilityLabel("Outcome for the Agent")
                     Text("Be specific about the outcome. The agent keeps working on your service if this app closes.")
                         .font(.footnote).foregroundStyle(.secondary)
                     if prompt.utf8.count > maxInputBytes {
@@ -76,7 +78,7 @@ struct NewTaskView: View {
                 prompt = model.state?.draft ?? ""
             }
             .onChange(of: prompt) { _, value in model.editDraft(value) }
-        }.presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        }.presentationDetents([.large])
     }
 
     private var selectedID: String { definitionID.isEmpty ? agents.first?.definitionId ?? "" : definitionID }

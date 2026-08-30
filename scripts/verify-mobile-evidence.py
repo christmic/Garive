@@ -49,21 +49,39 @@ def android_source_digest() -> str:
     return digest_files(paths)
 
 
+def ios_source_digest() -> str:
+    paths: list[Path] = []
+    for base in (
+        ROOT / "mobile/iosApp/Sources/GariveIOS",
+        ROOT / "mobile/shared/src/commonMain",
+    ):
+        paths.extend(path for path in base.rglob("*") if path.is_file())
+    paths.extend((
+        ROOT / "mobile/iosApp/GariveIOS.xcodeproj/project.pbxproj",
+        ROOT / "runtime/gateway/cmd/garive-mobile-demo-host/main.go",
+    ))
+    return digest_files(paths)
+
+
 def verify_candidate_evidence() -> None:
     evidence = json.loads(CANDIDATE_EVIDENCE.read_text())
     if evidence.get("schema_version") != 1:
         raise ValueError("unsupported mobile candidate-evidence schema")
-    actual_source = android_source_digest()
-    if evidence.get("android_source_digest") != actual_source:
+    if evidence.get("android_source_digest") != android_source_digest():
         raise ValueError("Android core screenshots must be recaptured after candidate source changes")
+    if evidence.get("ios_source_digest") != ios_source_digest():
+        raise ValueError("iOS core screenshots must be recaptured after candidate source changes")
     required = {
         "android-03-sessions.png",
         "android-05-new-task.png",
         "android-09-steering.png",
+        "ios-03-sessions.png",
+        "ios-05-new-task.png",
+        "ios-17-steering.png",
     }
     screenshots = evidence.get("screenshots", {})
     if set(screenshots) != required:
-        raise ValueError("Android core candidate evidence is incomplete")
+        raise ValueError("native core candidate evidence is incomplete")
     for name, expected in screenshots.items():
         path = ASSETS / name
         actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -82,8 +100,8 @@ def verify(artifacts: bool) -> None:
             f"mobile screenshot drift; missing={sorted(references - files)}, "
             f"unreferenced={sorted(files - references)}"
         )
-    if len(files) != 37 or "当前手册包含 37 张实际运行截图" not in text:
-        raise ValueError(f"manual must contain and declare exactly 37 screenshots, found {len(files)}")
+    if len(files) != 38 or "当前手册包含 38 张实际运行截图" not in text:
+        raise ValueError(f"manual must contain and declare exactly 38 screenshots, found {len(files)}")
 
     required = {
         "android-02-work-light.png",
@@ -114,7 +132,7 @@ def verify(artifacts: bool) -> None:
             raise ValueError(f"missing mobile delivery source: {path.relative_to(ROOT)}")
 
     status = (ROOT / "spec/STATUS.md").read_text()
-    if "complete 37-screenshot user guide" not in status:
+    if "complete 38-screenshot user guide" not in status:
         raise ValueError("spec/STATUS.md does not match the checked-in mobile evidence")
 
     if artifacts:

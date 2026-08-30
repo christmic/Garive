@@ -55,11 +55,13 @@ xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
 The seven UI tests require `go run ./cmd/garive-mobile-demo-host` from
 `runtime/gateway/` for the six connected journeys. They exercise secure
 pairing fields, the Remote drawer, Sessions search/status filtering, new-task starters and enabled
-server submit control plus an actual loopback create/start, cancellation and
+server submit control in a fully expanded sheet plus an actual loopback create/start, cancellation and
 second-Turn append in the opened Conversation, collapsed Activity, approve/decline and cancellation
 confirmation, committed real-Host `Approve once` and `Decline` results, safe
 diagnostics, notification entry, the native system share sheet with its Copy
-activity, and confirmed unpair.
+activity, and confirmed unpair. The new-task goal editor has a stable
+accessibility label, and UI coverage requires it to be visible and hittable on
+first presentation.
 The Settings journey additionally selects Light, Dark, and System and verifies
 the native segmented-control state after every change. It terminates and
 relaunches the shipping app after both explicit choices to prove AppStorage

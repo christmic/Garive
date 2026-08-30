@@ -24,6 +24,9 @@ final class GariveIOSUITests: XCTestCase {
             app.navigationBars["New remote task"].waitForExistence(timeout: 2)
                 || app.navigationBars["New task"].waitForExistence(timeout: 2)
         )
+        let goal = app.textViews["Outcome for the Agent"]
+        XCTAssertTrue(goal.waitForExistence(timeout: 2))
+        XCTAssertTrue(goal.isHittable)
         let form = app.collectionViews.firstMatch
         let synthesize = starterButton("Synthesize", in: app)
         XCTAssertTrue(reveal(synthesize, in: form))

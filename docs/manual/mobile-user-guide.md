@@ -239,6 +239,8 @@ Execution 不接受绕过协议的即时文本注入。
 
 ![Android 在原 Session 中追加方向](assets/mobile/android-09-steering.png)
 
+![iOS 运行中的远程会话](assets/mobile/ios-17-steering.png)
+
 会话右上角的系统分享入口只导出当前界面已经渲染的 **You / Agent** 文本，并由系统分享面板要求
 用户明确选择接收方；不会附带授权、服务地址、设备或 Session ID、内部活动坐标及未展示的事件。
 
@@ -438,8 +440,8 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 `accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
-Android 的 Sessions、新建任务和运行中 Conversation 三个核心遥控场景还绑定了截图 SHA-256、
-尺寸及当前 Compose/KMP/Demo Host 源码摘要。相关源码变化但未重新运行、检查并捕获这些场景时，
+Android 与 iOS 的 Sessions、新建任务和运行中 Conversation 六个核心遥控场景还绑定了截图 SHA-256、
+尺寸及当前原生 UI/KMP/Demo Host 源码摘要。相关源码变化但未重新运行、检查并捕获这些场景时，
 证据校验器会直接失败，避免旧版底部导航或半展开 sheet 截图继续冒充当前候选。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
@@ -449,7 +451,7 @@ Light → Dark 切换与系统分享 chooser）、Swift 测试（9 条）、iOS 
 create/start → cancel → append、批准/拒绝提交、Sessions 搜索/状态筛选、系统分享 sheet、Light/Dark 跨应用重启恢复与 System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 37 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 38 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
