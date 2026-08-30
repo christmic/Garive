@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PeopleAlt
@@ -53,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -83,6 +85,7 @@ internal fun GariveMobileApp(
     onTheme: (Theme) -> Unit,
     openNotificationSettings: () -> Unit,
     walkthroughSessionId: String? = null,
+    forcePrivacyShield: Boolean = false,
 ) {
     var state by remember(controller) { mutableStateOf(controller.state()) }
     var showNewTask by remember { mutableStateOf(false) }
@@ -90,6 +93,7 @@ internal fun GariveMobileApp(
     var confirmCancel by remember { mutableStateOf(false) }
     var confirmUnpair by remember { mutableStateOf(false) }
     var confirmAbandonRetry by remember { mutableStateOf(false) }
+    var privacyCovered by remember(forcePrivacyShield) { mutableStateOf(forcePrivacyShield) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -110,8 +114,10 @@ internal fun GariveMobileApp(
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        privacyCovered = forcePrivacyShield
         if (state.connection.name != "CONNECTING") scope.launch { state = controller.refresh() }
     }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { privacyCovered = true }
     LaunchedEffect(state.connection) {
         if (state.connection == MobileConnectionState.SIGNED_OUT) {
             controller.signOut()
@@ -119,7 +125,9 @@ internal fun GariveMobileApp(
         }
     }
 
-    if (state.destination == MobileDestination.CONVERSATION) {
+    if (privacyCovered) {
+        MobilePrivacyShield()
+    } else if (state.destination == MobileDestination.CONVERSATION) {
         ConversationScreen(
             state = state,
             onBack = { state = controller.selectDestination(MobileDestination.WORK) },
@@ -330,6 +338,44 @@ internal fun GariveMobileApp(
                 OutlinedButton(onClick = { confirmAbandonRetry = false }) { Text("Keep retry") }
             },
         )
+    }
+}
+
+@Composable
+internal fun MobilePrivacyShield() {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            ) {
+                Icon(
+                    Icons.Rounded.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(20.dp),
+                )
+            }
+            Text(
+                "Remote work is private",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(top = 20.dp),
+            )
+            Text(
+                "Return to Garive to view your Agent activity.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
 }
 

@@ -13,19 +13,25 @@ struct GariveRootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
-            if model.credentials == nil {
-                PairingView(
-                    errorCode: model.errorCode,
-                    pairing: model.pairing,
-                    suggestion: model.pairingSuggestion
-                ) {
-                    model.pair(origin: $0, accessGrant: $1)
-                }
-            } else if let state = model.state {
-                RemoteWorkspaceView(model: model, state: state, theme: $theme)
+        ZStack {
+            if privacyCovered {
+                MobilePrivacyShield().transition(.opacity).zIndex(10)
             } else {
-                LoadingView(errorCode: model.errorCode, retry: model.refresh)
+                Group {
+                    if model.credentials == nil {
+                        PairingView(
+                            errorCode: model.errorCode,
+                            pairing: model.pairing,
+                            suggestion: model.pairingSuggestion
+                        ) {
+                            model.pair(origin: $0, accessGrant: $1)
+                        }
+                    } else if let state = model.state {
+                        RemoteWorkspaceView(model: model, state: state, theme: $theme)
+                    } else {
+                        LoadingView(errorCode: model.errorCode, retry: model.refresh)
+                    }
+                }
             }
         }
         .tint(GarivePalette.coral)
@@ -36,6 +42,33 @@ struct GariveRootView: View {
             if phase == .active, model.state != nil { model.refresh() }
         }
         .onOpenURL { model.acceptPairingURL($0) }
+    }
+
+    private var privacyCovered: Bool {
+        guard model.credentials != nil else { return false }
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--garive-walkthrough-privacy-shield") { return true }
+#endif
+        return scenePhase != .active
+    }
+}
+
+private struct MobilePrivacyShield: View {
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(GarivePalette.coral)
+                .frame(width: 72, height: 72)
+                .background(GarivePalette.coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 22))
+            Text("Remote work is private").font(.title2.bold())
+            Text("Return to Garive to view your Agent activity.")
+                .font(.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(GarivePalette.ink.ignoresSafeArea())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Remote work hidden while Garive is inactive")
     }
 }
 

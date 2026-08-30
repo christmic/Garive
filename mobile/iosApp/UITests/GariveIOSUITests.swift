@@ -124,6 +124,15 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testInactiveWorkspaceShowsOnlyThePrivacyShield() throws {
+        let app = walkthroughApp("--garive-walkthrough-privacy-shield")
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Remote work hidden while Garive is inactive"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.navigationBars["Remote"].exists)
+    }
+
+    @MainActor
     func testSessionsSearchAndStatusFilterChangeTheVisibleWork() throws {
         let app = walkthroughApp("--garive-walkthrough-sessions")
         app.launch()

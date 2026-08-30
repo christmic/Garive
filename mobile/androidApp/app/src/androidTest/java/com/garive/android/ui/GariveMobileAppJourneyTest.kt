@@ -35,6 +35,7 @@ import com.garive.mobile.host.MobileHost
 import com.garive.mobile.preferences.Theme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -105,6 +106,35 @@ public class GariveMobileAppJourneyTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Light").performScrollTo().assertIsSelected()
         compose.onNodeWithText("Dark").performClick().assertIsSelected()
+    }
+
+    @Test
+    public fun inactiveWorkspaceReplacesAllRemoteContentWithPrivacyShield(): Unit {
+        JourneyHost.reset()
+        val controller = MobileWorkController(
+            host = JourneyHost,
+            identities = CommandIdentitySource { "01k000000000000000000000" },
+            maxInputBytes = 16 * 1_024,
+            persistence = EphemeralMobileWorkPersistence,
+        )
+        compose.setContent {
+            GariveTheme(Theme.DARK) {
+                GariveMobileApp(
+                    origin = "https://demo.garive.local/",
+                    controller = controller,
+                    wakeRoute = null,
+                    onWakeConsumed = {},
+                    onSignOut = {},
+                    theme = Theme.DARK,
+                    onTheme = {},
+                    openNotificationSettings = {},
+                    forcePrivacyShield = true,
+                )
+            }
+        }
+
+        compose.onNodeWithText("Remote work is private").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("Your Agents are ready").fetchSemanticsNodes().isEmpty())
     }
 
     @Test

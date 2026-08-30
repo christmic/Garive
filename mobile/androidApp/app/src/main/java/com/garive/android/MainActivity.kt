@@ -69,6 +69,7 @@ public class MainActivity : ComponentActivity() {
                         selectTheme,
                         ::openNotificationSettings,
                         intent.getStringExtra(WALKTHROUGH_SESSION_EXTRA),
+                        intent.getBooleanExtra(WALKTHROUGH_PRIVACY_EXTRA, false),
                     )
                 } else {
                     GariveRoot(
@@ -107,6 +108,7 @@ public class MainActivity : ComponentActivity() {
         const val NOTIFICATION_PERMISSION_REQUEST = 41
         const val WALKTHROUGH_EXTRA = "garive_walkthrough"
         const val WALKTHROUGH_SESSION_EXTRA = "garive_walkthrough_session"
+        const val WALKTHROUGH_PRIVACY_EXTRA = "garive_walkthrough_privacy_shield"
     }
 }
 
@@ -116,6 +118,7 @@ private fun GariveWalkthroughRoot(
     onTheme: (Theme) -> Unit,
     openNotificationSettings: () -> Unit,
     walkthroughSessionId: String?,
+    forcePrivacyShield: Boolean,
 ) {
     val context = LocalContext.current
     val origin = "http://127.0.0.1:4318/"
@@ -130,6 +133,7 @@ private fun GariveWalkthroughRoot(
     GariveMobileApp(
         origin, controller, null, {}, {}, theme, onTheme, openNotificationSettings,
         walkthroughSessionId = walkthroughSessionId,
+        forcePrivacyShield = forcePrivacyShield,
     )
 }
 
