@@ -203,9 +203,13 @@ private fun recallRequest(value: JsonObject): MemoryContractResult<RecallSelecti
     )
 }
 private fun obligation(value: JsonObject): MemoryObligation {
+    val recall = value.getValue("recall_fact").jsonObject
     val fact = value.getValue("application_fact").jsonObject
     return MemoryObligation.create(
         value.text("obligation_id"), value.text("record_id"), value.text("revision_id"),
+        DurableFactReference.create(
+            recall.text("session_id"), recall.ulong("position"), recall.text("fact_id"), recall.text("payload_digest"),
+        ).success(), value.text("selection_id"),
         DurableFactReference.create(
             fact.text("session_id"), fact.ulong("position"), fact.text("fact_id"), fact.text("payload_digest"),
         ).success(), value.text("expected_outcome_digest"), value.text("application_scope_digest"),

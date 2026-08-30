@@ -456,11 +456,20 @@ fn recall_request(value: &Value) -> Result<RecallSelectionRequest, garive_memory
 }
 
 fn obligation(value: &Value) -> MemoryObligation {
+    let recall = &value["recall_fact"];
     let fact = &value["application_fact"];
     MemoryObligation::new(
         value["obligation_id"].as_str().unwrap(),
         value["record_id"].as_str().unwrap(),
         value["revision_id"].as_str().unwrap(),
+        DurableFactReference::new(
+            recall["session_id"].as_str().unwrap(),
+            number(recall, "position"),
+            recall["fact_id"].as_str().unwrap(),
+            recall["payload_digest"].as_str().unwrap(),
+        )
+        .unwrap(),
+        value["selection_id"].as_str().unwrap(),
         DurableFactReference::new(
             fact["session_id"].as_str().unwrap(),
             number(fact, "position"),
