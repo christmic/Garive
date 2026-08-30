@@ -7,8 +7,9 @@ use serde_json::Value;
 use tokio::time::{timeout, Duration};
 
 use crate::{
-    reduce_host_events, ClientLimits, CreateSessionResponse, HostClientError, HostClientErrorCode,
-    HostEvent, HostView, TurnCommandResponse,
+    reduce_host_events, AgentDefinitionPage, ClientLimits, CreateSessionResponse, HostClientError,
+    HostClientErrorCode, HostEvent, HostView, SessionPage, SessionSummary, SessionView,
+    SuspensionView, TurnCommandResponse, TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -62,6 +63,125 @@ impl LiveHostClient {
             limits,
             http,
         })
+    }
+
+    /// Lists the bounded installed Agent definitions exposed by the Host.
+    pub async fn list_agent_definitions(&self) -> Result<AgentDefinitionPage, HostClientError> {
+        let page: AgentDefinitionPage = decode(self.get("v1/agent-definitions").await?)?;
+        if page.api_version != "v1"
+            || page.definitions.is_empty()
+            || page.definitions.len() > self.limits.max_events
+            || page.definitions.iter().any(|item| {
+                item.api_version != "v1"
+                    || item.definition_id.is_empty()
+                    || item.definition_revision.is_empty()
+                    || !is_sorted_unique(&item.capabilities)
+            })
+        {
+            return Err(invalid_event());
+        }
+        Ok(page)
+    }
+
+    /// Lists one reverse-opened bounded page of durable Sessions.
+    pub async fn list_sessions(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<SessionPage, HostClientError> {
+        if limit == 0
+            || limit > self.limits.max_events
+            || before.is_some_and(|value| {
+                value.is_empty()
+                    || !value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            })
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let mut path = format!("v1/sessions?limit={limit}");
+        if let Some(cursor) = before {
+            path.push_str("&before=");
+            path.push_str(cursor);
+        }
+        let page: SessionPage = decode(self.get(&path).await?)?;
+        if page.api_version != "v1"
+            || page.sessions.len() > limit
+            || page.sessions.iter().any(|session| !valid_session(session))
+            || page.next_before.as_deref().is_some_and(|value| {
+                value.is_empty()
+                    || !value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            })
+        {
+            return Err(invalid_event());
+        }
+        Ok(page)
+    }
+
+    /// Reads one exact durable Session summary.
+    pub async fn get_session(&self, session_id: &str) -> Result<SessionView, HostClientError> {
+        if session_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}", encode_segment(session_id));
+        let view: SessionView = decode(self.get(&path).await?)?;
+        if view.api_version != "v1"
+            || view.session.session_id != session_id
+            || view.observed_max_position != view.session.latest_position
+            || !valid_session(&view.session)
+        {
+            return Err(invalid_event());
+        }
+        Ok(view)
+    }
+
+    /// Reads one bounded page of complete durable Turn projections.
+    pub async fn get_timeline(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<TurnTimelinePage, HostClientError> {
+        if session_id.is_empty() || limit == 0 || limit > self.limits.max_events {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!(
+            "v1/sessions/{}/timeline?after_position={after_position}&limit={limit}",
+            encode_segment(session_id)
+        );
+        let page: TurnTimelinePage = decode(self.get(&path).await?)?;
+        if page.api_version != "v1"
+            || page.session_id != session_id
+            || page.observed_max_position == 0
+            || page.scanned_through_position < after_position
+            || page.scanned_through_position > page.observed_max_position
+            || page.items.len() > limit
+            || page.items.iter().any(|item| {
+                item.turn_id.is_empty()
+                    || item.started_position == 0
+                    || item.latest_position < item.started_position
+                    || item.latest_position > page.scanned_through_position
+                    || !valid_state(&item.state)
+                    || (item.state == "completed") != item.completion_text.is_some()
+                    || (item.state == "suspended") != item.suspension.is_some()
+                    || item
+                        .suspension
+                        .as_ref()
+                        .is_some_and(|value| !valid_suspension(value))
+            })
+            || page
+                .items
+                .windows(2)
+                .any(|items| items[0].latest_position >= items[1].latest_position)
+            || (page.has_more && page.items.is_empty())
+            || (!page.has_more && page.scanned_through_position != page.observed_max_position)
+        {
+            return Err(invalid_event());
+        }
+        Ok(page)
     }
 
     /// Creates a Session using a caller-owned stable command identity.
@@ -364,6 +484,30 @@ impl LiveHostClient {
             .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))
     }
 
+    async fn get(&self, path: &str) -> Result<Value, HostClientError> {
+        let response = self
+            .http
+            .get(self.join(path)?)
+            .send()
+            .await
+            .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+        let status = response.status();
+        if status.is_redirection() {
+            return Err(HostClientError::new(HostClientErrorCode::TransportFailure));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+        if !status.is_success() {
+            return Err(classify_host_error(status, &bytes));
+        }
+        if bytes.len() > self.limits.max_event_bytes {
+            return Err(invalid_event());
+        }
+        serde_json::from_slice(&bytes).map_err(|_| invalid_event())
+    }
+
     fn join(&self, path: &str) -> Result<Url, HostClientError> {
         self.base_url
             .join(path)
@@ -473,6 +617,83 @@ fn validate_owned_turn_response(
         return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
     }
     Ok(response)
+}
+
+fn valid_session(value: &SessionSummary) -> bool {
+    value.api_version == "v1"
+        && !value.session_id.is_empty()
+        && !value.agent_instance_id.is_empty()
+        && !value.definition_id.is_empty()
+        && !value.definition_revision.is_empty()
+        && !value.opened_at.is_empty()
+        && value.latest_position > 0
+        && match (
+            value.turn_count,
+            value.latest_turn_id.as_deref(),
+            value.latest_turn_state.as_deref(),
+        ) {
+            (0, None, None) => true,
+            (count, Some(id), Some(state)) => count > 0 && !id.is_empty() && valid_state(state),
+            _ => false,
+        }
+}
+
+fn valid_state(value: &str) -> bool {
+    matches!(
+        value,
+        "running" | "suspended" | "completed" | "stopped" | "failed"
+    )
+}
+
+fn valid_suspension(value: &SuspensionView) -> bool {
+    !value.suspension_id.is_empty()
+        && value.session_version > 0
+        && matches!(
+            value.kind.as_str(),
+            "approval_required"
+                | "external_input_required"
+                | "operator_reconciliation"
+                | "resource_unavailable"
+                | "partial_output"
+                | "delegation_pending"
+        )
+        && value.prompt_schema == "garive.public-suspension-prompt.v1"
+        && !value.prompt_json.is_empty()
+        && valid_digest(&value.prompt_digest)
+        && match (
+            value.response_schema_json.as_deref(),
+            value.response_schema_digest.as_deref(),
+        ) {
+            (Some(schema), Some(digest)) => {
+                matches!(
+                    value.kind.as_str(),
+                    "approval_required" | "external_input_required"
+                ) && !schema.is_empty()
+                    && valid_digest(digest)
+            }
+            (None, None) => !matches!(
+                value.kind.as_str(),
+                "approval_required" | "external_input_required"
+            ),
+            _ => false,
+        }
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn is_sorted_unique(values: &[String]) -> bool {
+    values
+        .windows(2)
+        .all(|pair| pair[0].as_str() < pair[1].as_str())
+}
+
+fn invalid_event() -> HostClientError {
+    HostClientError::new(HostClientErrorCode::InvalidEvent)
 }
 
 fn decode<T: DeserializeOwned>(value: Value) -> Result<T, HostClientError> {

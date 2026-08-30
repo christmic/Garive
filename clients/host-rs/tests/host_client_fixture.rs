@@ -207,6 +207,69 @@ async fn live_client_round_trips_real_http_and_sse() {
 }
 
 #[tokio::test]
+async fn h2_reads_use_exact_paths_and_validate_durable_views() {
+    let fixture = fixture();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let session = r#"{"api_version":"v1","session_id":"session-client","agent_instance_id":"agent-1","definition_id":"definition-1","definition_revision":"revision-1","opened_at":"2026-08-30T00:00:00Z","latest_position":4,"latest_turn_id":"turn-client","latest_turn_state":"running","turn_count":1}"#;
+    let prompt_digest = "a".repeat(64);
+    let responses = vec![
+        http_json(
+            200,
+            r#"{"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"definition-1","definition_revision":"revision-1","capabilities":[]}]}"#,
+        ),
+        http_json(
+            200,
+            &format!(r#"{{"api_version":"v1","sessions":[{session}]}}"#),
+        ),
+        http_json(
+            200,
+            &format!(r#"{{"api_version":"v1","session":{session},"observed_max_position":4}}"#),
+        ),
+        http_json(
+            200,
+            &format!(
+                r#"{{"api_version":"v1","session_id":"session-client","items":[{{"turn_id":"turn-client","started_position":2,"latest_position":3,"state":"running","user_text":"hello","content_truncated":false}}],"scanned_through_position":4,"observed_max_position":4,"has_more":false,"ignored_future":"{prompt_digest}"}}"#
+            ),
+        ),
+    ];
+    let (base_url, server) = serve(responses, Arc::clone(&requests)).await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+    assert_eq!(
+        client
+            .list_agent_definitions()
+            .await
+            .unwrap()
+            .definitions
+            .len(),
+        1
+    );
+    assert_eq!(
+        client.list_sessions(10, None).await.unwrap().sessions.len(),
+        1
+    );
+    assert_eq!(
+        client
+            .get_session("session-client")
+            .await
+            .unwrap()
+            .session
+            .turn_count,
+        1
+    );
+    let timeline = client.get_timeline("session-client", 0, 10).await.unwrap();
+    assert_eq!(timeline.items[0].user_text, "hello");
+    server.await.expect("server task");
+
+    let requests = requests.lock().await;
+    assert!(requests[0].starts_with("GET /v1/agent-definitions HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with("GET /v1/sessions?limit=10 HTTP/1.1\r\n"));
+    assert!(requests[2].starts_with("GET /v1/sessions/session-client HTTP/1.1\r\n"));
+    assert!(requests[3].starts_with(
+        "GET /v1/sessions/session-client/timeline?after_position=0&limit=10 HTTP/1.1\r\n"
+    ));
+}
+
+#[tokio::test]
 async fn host_fixture_errors_are_typed_without_body_disclosure() {
     let fixture = fixture();
     for host_error in &fixture.host_errors {
