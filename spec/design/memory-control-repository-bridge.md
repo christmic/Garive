@@ -52,6 +52,9 @@ transaction as its source M0 revision:
 memory.revision_classified.v1 {
   classification_id, namespace_id, record_id, revision_id
   memory_type, authority, lifecycle: candidate | active
+  scope: session | agent_instance | user | project | platform
+  scope_owner_id
+  aggregation_policy_digest?: Digest
   policy_revision
   source_commit: DurableFactReference
   authority_receipt_digest?: Digest
@@ -60,7 +63,11 @@ memory.revision_classified.v1 {
 
 `source_commit` binds the exact `memory.committed.v1` payload. User-declared
 and organisation-published authority require the receipt digest; Agent-learned
-authority forbids it. Later lifecycle changes use the existing exact
+authority forbids it. Session and Agent-instance scope must equal the source
+M0 scope and owner. An M0 namespace scope requires Runtime to freeze one exact
+authorized user, project or platform owner; it is never inferred. Platform
+scope alone requires `aggregation_policy_digest`; every other scope forbids it.
+Later lifecycle changes use the existing exact
 `memory.lifecycle_transitioned.v1` facts.
 
 ## Transaction contract

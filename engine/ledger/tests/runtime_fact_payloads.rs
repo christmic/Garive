@@ -175,6 +175,35 @@ fn memory_revision_classification_binds_authority_receipt_shape() {
 }
 
 #[test]
+fn memory_revision_classification_binds_platform_policy_shape() {
+    let fixture = fixture();
+    let case = fixture["valid_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| value["kind"] == "memory.revision_classified")
+        .unwrap();
+    let original = fact(case, 1);
+    let mut platform = case["payload"].clone();
+    platform
+        .as_object_mut()
+        .unwrap()
+        .insert("scope".into(), Value::String("platform".into()));
+    assert_eq!(
+        validate_runtime_fact(&with_payload(original.clone(), platform.clone())),
+        Err(LedgerError::InvalidFact)
+    );
+    platform.as_object_mut().unwrap().insert(
+        "aggregation_policy_digest".into(),
+        Value::String("b".repeat(64)),
+    );
+    assert_eq!(
+        validate_runtime_fact(&with_payload(original, platform)),
+        Ok(RuntimeFactDisposition::AppliedV1)
+    );
+}
+
+#[test]
 fn unknown_kinds_and_newer_schemas_remain_opaque() {
     let fixture = fixture();
     let case = &fixture["unknown_schema"];

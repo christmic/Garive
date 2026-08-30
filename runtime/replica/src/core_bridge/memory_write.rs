@@ -1,7 +1,11 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use garive_ledger::{CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, TurnId};
+use garive_ledger::{
+    CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
+};
 use garive_memory::{
-    MemoryCommit, MemoryErrorCode, MemoryProposal, MemoryRecord, MemoryState, MemoryTombstone,
+    MemoryAuthority, MemoryCommit, MemoryErrorCode, MemoryProposal, MemoryRecord,
+    MemoryRevisionClassification, MemoryScope, MemoryScopeClass, MemoryState, MemoryTombstone,
+    MemoryType,
 };
 use serde_json::{json, Value};
 
@@ -146,6 +150,104 @@ pub fn plan_memory_write(
     }
 }
 
+/// Plans an accepted M0 write and its registry-admitted M1 classification as one fact batch.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_classified_memory_write(
+    context: &MemoryWriteContext,
+    state: &MemoryState,
+    proposal: &MemoryProposal,
+    commit: MemoryCommit,
+    session_id: &SessionId,
+    classification_id: &str,
+    classification: &MemoryRevisionClassification,
+) -> Result<PlannedMemoryWrite, RuntimeCommandError> {
+    if classification.role() != proposal.kind()
+        || classification_id.is_empty()
+        || !classification_scope_matches(proposal.scope(), classification)
+    {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let mut planned = plan_memory_write(
+        context,
+        state,
+        proposal,
+        MemoryWriteDecision::Commit(commit),
+    )?;
+    let committed = planned
+        .facts
+        .get(1)
+        .filter(|fact| fact.kind.as_str() == "memory.committed")
+        .ok_or(RuntimeCommandError::InvariantViolation)?;
+    let position = context
+        .through_position
+        .checked_add(2)
+        .ok_or(RuntimeCommandError::InvalidCommand)?;
+    let record = planned
+        .record
+        .as_ref()
+        .ok_or(RuntimeCommandError::InvariantViolation)?;
+    let mut payload = json!({
+        "classification_id": classification_id,
+        "namespace_id": proposal.namespace_id(),
+        "record_id": record.record_id(),
+        "revision_id": record.revision_id(),
+        "memory_type": memory_type(classification.memory_type()),
+        "authority": memory_authority(classification.authority().authority()),
+        "lifecycle": initial_lifecycle(classification.lifecycle())?,
+        "scope": memory_scope_class(classification.scope().scope()),
+        "scope_owner_id": classification.scope().owner_id(),
+        "policy_revision": classification.policy_revision(),
+        "source_commit": {
+            "session_id": session_id.as_str(),
+            "position": position,
+            "fact_id": committed.fact_id.as_str(),
+            "payload_digest": committed.payload.sha256(),
+        },
+    });
+    if let Some(receipt) = classification.authority().receipt_digest() {
+        payload
+            .as_object_mut()
+            .ok_or(RuntimeCommandError::InvariantViolation)?
+            .insert("authority_receipt_digest".into(), json!(receipt));
+    }
+    if let Some(policy) = classification.scope().aggregation_policy_digest() {
+        payload
+            .as_object_mut()
+            .ok_or(RuntimeCommandError::InvariantViolation)?
+            .insert("aggregation_policy_digest".into(), json!(policy));
+    }
+    planned.facts.insert(
+        2,
+        fact(
+            "memory.revision_classified",
+            classification_id,
+            None,
+            payload,
+            &context.recorded_at,
+        )?,
+    );
+    Ok(planned)
+}
+
+fn classification_scope_matches(
+    source: &MemoryScope,
+    classification: &MemoryRevisionClassification,
+) -> bool {
+    let target = classification.scope();
+    match source {
+        MemoryScope::Session { owner_id } => {
+            target.scope() == MemoryScopeClass::Session && target.owner_id() == owner_id
+        }
+        MemoryScope::AgentInstance { owner_id } => {
+            target.scope() == MemoryScopeClass::AgentInstance && target.owner_id() == owner_id
+        }
+        MemoryScope::Namespace => matches!(
+            target.scope(),
+            MemoryScopeClass::User | MemoryScopeClass::Project | MemoryScopeClass::Platform
+        ),
+    }
+}
+
 /// Durable ownership for one session-scoped tombstone command.
 pub struct MemoryTombstoneContext {
     /// Idempotency identity for the user/operator/policy command.
@@ -287,5 +389,42 @@ fn map_memory_error(error: garive_memory::MemoryError) -> RuntimeCommandError {
     match error.code() {
         MemoryErrorCode::RevisionConflict => RuntimeCommandError::CommandConflict,
         _ => RuntimeCommandError::InvalidCommand,
+    }
+}
+
+const fn memory_type(value: MemoryType) -> &'static str {
+    match value {
+        MemoryType::Semantic => "semantic",
+        MemoryType::Episodic => "episodic",
+        MemoryType::Lesson => "lesson",
+        MemoryType::Procedural => "procedural",
+    }
+}
+
+const fn memory_authority(value: MemoryAuthority) -> &'static str {
+    match value {
+        MemoryAuthority::UserDeclared => "user_declared",
+        MemoryAuthority::AgentLearned => "agent_learned",
+        MemoryAuthority::OrganisationPublished => "organisation_published",
+    }
+}
+
+const fn memory_scope_class(value: MemoryScopeClass) -> &'static str {
+    match value {
+        MemoryScopeClass::Session => "session",
+        MemoryScopeClass::AgentInstance => "agent_instance",
+        MemoryScopeClass::User => "user",
+        MemoryScopeClass::Project => "project",
+        MemoryScopeClass::Platform => "platform",
+    }
+}
+
+fn initial_lifecycle(
+    value: garive_memory::HypothesisState,
+) -> Result<&'static str, RuntimeCommandError> {
+    match value {
+        garive_memory::HypothesisState::Candidate => Ok("candidate"),
+        garive_memory::HypothesisState::Active => Ok("active"),
+        _ => Err(RuntimeCommandError::InvalidCommand),
     }
 }

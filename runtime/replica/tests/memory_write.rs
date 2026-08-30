@@ -1,19 +1,22 @@
 use std::path::PathBuf;
 
 use garive_ledger::{
-    CanonicalPayload, CommitDisposition, ExecutionId, FactDraft, FactId, FactKind, LedgerError,
-    SessionId, TurnId,
+    validate_runtime_fact, CanonicalPayload, CommitDisposition, ExecutionId, FactDraft, FactId,
+    FactKind, LedgerError, RuntimeFactDisposition, SessionId, TurnId,
 };
 use garive_memory::{
-    ContentBinding, DurableFactReference, MemoryCommit, MemoryErrorCode, MemoryKind,
-    MemoryProposal, MemoryPurpose, MemoryQuery, MemoryScope, MemorySensitivity, MemoryState,
-    MemoryStatus, MemoryTombstone,
+    ContentBinding, DurableFactReference, HypothesisState, MemoryAuthority, MemoryAuthorityBinding,
+    MemoryCommit, MemoryErrorCode, MemoryKind, MemoryProposal, MemoryPurpose, MemoryQuery,
+    MemoryRevisionClassification, MemoryRevisionScope, MemoryScope, MemoryScopeClass,
+    MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
+    MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use garive_runtime::{
-    authorize_memory_query, authorize_memory_write, plan_memory_tombstone, plan_memory_write,
-    reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryPrefix,
-    MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision,
-    MemoryWriteRejection, RuntimeCommandError, SqliteLedger, SqliteLedgerError,
+    authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
+    plan_memory_tombstone, plan_memory_write, reconstruct_memory_state, verify_memory_evidence,
+    MemoryAccessGrant, MemoryPrefix, MemoryTombstoneContext, MemoryTombstoneReason,
+    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError,
+    SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -96,6 +99,148 @@ fn commit(record: &str, revision: &str, position: u64, prior: Option<&str>) -> M
         prior.map(str::to_owned),
     )
     .unwrap()
+}
+
+fn classification_registry() -> MemoryTypeRegistry {
+    let descriptor = |memory_type, roles, authorities, name: &str| {
+        MemoryTypeDescriptor::new(
+            memory_type,
+            roles,
+            authorities,
+            format!("{name}-v1"),
+            format!("{name}-v1"),
+            format!("{name}-v1"),
+            format!("memory.{name}"),
+        )
+        .unwrap()
+    };
+    MemoryTypeRegistry::new(
+        "registry-v1",
+        vec![
+            descriptor(
+                MemoryType::Semantic,
+                vec![
+                    MemoryKind::Preference,
+                    MemoryKind::Constraint,
+                    MemoryKind::Decision,
+                    MemoryKind::LearnedFact,
+                ],
+                vec![
+                    MemoryAuthority::UserDeclared,
+                    MemoryAuthority::AgentLearned,
+                    MemoryAuthority::OrganisationPublished,
+                ],
+                "semantic",
+            ),
+            descriptor(
+                MemoryType::Episodic,
+                vec![MemoryKind::Summary],
+                vec![MemoryAuthority::AgentLearned],
+                "episodic",
+            ),
+            descriptor(
+                MemoryType::Lesson,
+                vec![MemoryKind::LearnedFact],
+                vec![
+                    MemoryAuthority::AgentLearned,
+                    MemoryAuthority::OrganisationPublished,
+                ],
+                "lesson",
+            ),
+            descriptor(
+                MemoryType::Procedural,
+                vec![MemoryKind::LearnedFact, MemoryKind::Summary],
+                vec![
+                    MemoryAuthority::AgentLearned,
+                    MemoryAuthority::OrganisationPublished,
+                ],
+                "procedural",
+            ),
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
+    let directory = tempdir().unwrap();
+    let session = SessionId::try_from("session").unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("classified.sqlite3")).unwrap();
+    ledger.commit(session.clone(), 0, initial_facts()).unwrap();
+    let evidence_digest = ledger.read_facts(&session, 0, 1, None).unwrap()[0]
+        .payload
+        .sha256()
+        .to_owned();
+    let proposal = proposal(None, "dark mode", &evidence_digest);
+    let classification = MemoryRevisionClassification::new(
+        MemoryKind::Preference,
+        MemoryAuthorityBinding::new(MemoryAuthority::AgentLearned, None).unwrap(),
+        MemoryRevisionScope::new(MemoryScopeClass::Session, "session", None).unwrap(),
+        HypothesisState::Candidate,
+        "classification-v1",
+        &classification_registry(),
+    )
+    .unwrap();
+    let planned = plan_classified_memory_write(
+        &context(3),
+        &MemoryState::default(),
+        &proposal,
+        commit("record", "revision-1", 5, None),
+        &session,
+        "classification",
+        &classification,
+    )
+    .unwrap();
+    assert_eq!(
+        planned
+            .facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "memory.proposed",
+            "memory.committed",
+            "memory.revision_classified"
+        ]
+    );
+    assert_eq!(
+        validate_runtime_fact(&planned.facts[2]),
+        Ok(RuntimeFactDisposition::AppliedV1)
+    );
+    let classification_payload: Value =
+        serde_json::from_str(planned.facts[2].payload.as_json()).unwrap();
+    assert_eq!(classification_payload["source_commit"]["position"], 5);
+    assert_eq!(classification_payload["scope_owner_id"], "session");
+    let result = ledger.commit(session.clone(), 1, planned.facts).unwrap();
+    assert_eq!(result.positions, vec![4, 5, 6]);
+    drop(ledger);
+    let ledger = SqliteLedger::open(directory.path().join("classified.sqlite3")).unwrap();
+    let facts = ledger.read_facts(&session, 0, 6, None).unwrap();
+    assert_eq!(facts[5].kind.as_str(), "memory.revision_classified");
+
+    let mismatched = MemoryRevisionClassification::new(
+        MemoryKind::Preference,
+        MemoryAuthorityBinding::new(MemoryAuthority::AgentLearned, None).unwrap(),
+        MemoryRevisionScope::new(MemoryScopeClass::Project, "project", None).unwrap(),
+        HypothesisState::Candidate,
+        "classification-v1",
+        &classification_registry(),
+    )
+    .unwrap();
+    assert_eq!(
+        plan_classified_memory_write(
+            &context(3),
+            &MemoryState::default(),
+            &proposal,
+            commit("record", "revision-1", 5, None),
+            &session,
+            "classification",
+            &mismatched
+        )
+        .err()
+        .unwrap(),
+        RuntimeCommandError::InvalidCommand,
+    );
 }
 
 #[test]

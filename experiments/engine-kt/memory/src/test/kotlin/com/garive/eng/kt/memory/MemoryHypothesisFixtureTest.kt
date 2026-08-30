@@ -32,6 +32,26 @@ public class MemoryHypothesisFixtureTest {
     }
 
     @Test
+    public fun revisionClassificationFreezesRegistryAuthorityScopeAndInitialState(): Unit {
+        val authority = MemoryAuthorityBinding.create(
+            MemoryAuthority.USER_DECLARED, "a".repeat(64),
+        ).success()
+        val scope = MemoryRevisionScope.create(MemoryScopeClass.PROJECT, "project-1", null).success()
+        val value = MemoryRevisionClassification.create(
+            MemoryKind.PREFERENCE, authority, scope, HypothesisState.ACTIVE,
+            "classification-v1", registry(),
+        ).success()
+        assertEquals(MemoryType.SEMANTIC, value.memoryType)
+        assertEquals(MemoryScopeClass.PROJECT, value.scope.scope)
+        assertEquals("project-1", value.scope.ownerId)
+        assertEquals("a".repeat(64), value.authority.receiptDigest)
+        assertEquals(
+            MemoryErrorCode.SCOPE_POLICY_DENIED,
+            MemoryRevisionScope.create(MemoryScopeClass.PLATFORM, "platform-1", null).failure().code,
+        )
+    }
+
+    @Test
     public fun sharedInvalidCasesFailClosed(): Unit {
         val registry = registry()
         root.values("invalid").forEach { value ->

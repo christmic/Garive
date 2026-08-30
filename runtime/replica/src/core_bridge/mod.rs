@@ -73,9 +73,9 @@ pub use memory_maintenance_recovery::reconstruct_memory_maintenance_projection;
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};
 pub use memory_retrieval::{plan_memory_retrieval, MemoryRetrievalContext, PlannedMemoryRetrieval};
 pub use memory_write::{
-    plan_memory_tombstone, plan_memory_write, MemoryTombstoneContext, MemoryTombstoneReason,
-    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, PlannedMemoryTombstone,
-    PlannedMemoryWrite,
+    plan_classified_memory_write, plan_memory_tombstone, plan_memory_write, MemoryTombstoneContext,
+    MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection,
+    PlannedMemoryTombstone, PlannedMemoryWrite,
 };
 pub use model_lifecycle::{
     plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,

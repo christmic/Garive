@@ -4,9 +4,10 @@ use garive_memory::{
     import_m0_classification, reduce_observation, select_recall, DurableFactReference,
     EvidenceTally, HypothesisState, LifecycleEvent, MemoryAuthority, MemoryAuthorityBinding,
     MemoryErrorCode, MemoryKind, MemoryLifecycle, MemoryObligation, MemoryObservation,
-    MemoryRecallCandidate, MemoryScopeBinding, MemoryScopeClass, MemoryType, MemoryTypeDescriptor,
-    MemoryTypeRegistry, ObservationEvidence, ObservationEvidenceKind, ObservationVerdict,
-    RecallExploration, RecallProduct, RecallScore, RecallSelectionKind, RecallSelectionRequest,
+    MemoryRecallCandidate, MemoryRevisionClassification, MemoryRevisionScope, MemoryScopeBinding,
+    MemoryScopeClass, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry, ObservationEvidence,
+    ObservationEvidenceKind, ObservationVerdict, RecallExploration, RecallProduct, RecallScore,
+    RecallSelectionKind, RecallSelectionRequest,
 };
 use serde_json::Value;
 
@@ -34,6 +35,37 @@ fn shared_registry_and_m0_imports_are_exact() {
             imported.authority.authority()
         ));
     }
+}
+
+#[test]
+fn revision_classification_freezes_registry_authority_scope_and_initial_state() {
+    let root = fixture();
+    let registry = registry(&root);
+    let authority =
+        MemoryAuthorityBinding::new(MemoryAuthority::UserDeclared, Some("a".repeat(64))).unwrap();
+    let scope = MemoryRevisionScope::new(MemoryScopeClass::Project, "project-1", None).unwrap();
+    let value = MemoryRevisionClassification::new(
+        MemoryKind::Preference,
+        authority,
+        scope,
+        HypothesisState::Active,
+        "classification-v1",
+        &registry,
+    )
+    .unwrap();
+    assert_eq!(value.memory_type(), MemoryType::Semantic);
+    assert_eq!(value.scope().scope(), MemoryScopeClass::Project);
+    assert_eq!(value.scope().owner_id(), "project-1");
+    assert_eq!(
+        value.authority().receipt_digest(),
+        Some("a".repeat(64).as_str())
+    );
+    assert_eq!(
+        MemoryRevisionScope::new(MemoryScopeClass::Platform, "platform-1", None)
+            .unwrap_err()
+            .code(),
+        MemoryErrorCode::ScopePolicyDenied,
+    );
 }
 
 #[test]

@@ -270,6 +270,110 @@ pub fn import_m0_classification(
     }
 }
 
+/// One registry-admitted initial classification for a newly committed M0 revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryRevisionClassification {
+    classification: ImportedMemoryClassification,
+    scope: MemoryRevisionScope,
+    lifecycle: crate::HypothesisState,
+    policy_revision: String,
+}
+
+impl MemoryRevisionClassification {
+    /// Validates role mapping, authority admission, initial lifecycle and policy identity.
+    pub fn new(
+        role: MemoryKind,
+        authority: MemoryAuthorityBinding,
+        scope: MemoryRevisionScope,
+        lifecycle: crate::HypothesisState,
+        policy_revision: impl Into<String>,
+        registry: &MemoryTypeRegistry,
+    ) -> Result<Self, MemoryError> {
+        let classification = import_m0_classification(role, authority);
+        let value = Self {
+            classification,
+            scope,
+            lifecycle,
+            policy_revision: policy_revision.into(),
+        };
+        if !matches!(
+            value.lifecycle,
+            crate::HypothesisState::Candidate | crate::HypothesisState::Active
+        ) || !valid_text(&value.policy_revision, MAX_REFERENCE_BYTES)
+            || !registry.admits(
+                value.classification.memory_type,
+                value.classification.role,
+                value.classification.authority.authority(),
+            )
+        {
+            return Err(MemoryError::new(MemoryErrorCode::InvalidMemory));
+        }
+        Ok(value)
+    }
+
+    /// Returns the admitted cognitive type.
+    pub const fn memory_type(&self) -> MemoryType {
+        self.classification.memory_type
+    }
+    /// Returns the preserved M0 role.
+    pub const fn role(&self) -> MemoryRole {
+        self.classification.role
+    }
+    /// Returns the exact authority and receipt binding.
+    pub const fn authority(&self) -> &MemoryAuthorityBinding {
+        &self.classification.authority
+    }
+    /// Returns the exact Runtime-authorized owner and scope policy.
+    pub const fn scope(&self) -> &MemoryRevisionScope {
+        &self.scope
+    }
+    /// Returns the only admitted initial lifecycle state.
+    pub const fn lifecycle(&self) -> crate::HypothesisState {
+        self.lifecycle
+    }
+    /// Returns the frozen classification-policy revision.
+    pub fn policy_revision(&self) -> &str {
+        &self.policy_revision
+    }
+}
+
+/// Runtime-authorized M1 scope frozen for one committed revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryRevisionScope {
+    scope: MemoryScopeBinding,
+    owner_id: String,
+}
+
+impl MemoryRevisionScope {
+    /// Validates the opaque owner plus the Platform-only aggregation policy.
+    pub fn new(
+        scope: MemoryScopeClass,
+        owner_id: impl Into<String>,
+        aggregation_policy_digest: Option<String>,
+    ) -> Result<Self, MemoryError> {
+        let value = Self {
+            scope: MemoryScopeBinding::new(scope, aggregation_policy_digest)?,
+            owner_id: owner_id.into(),
+        };
+        if !valid_text(&value.owner_id, MAX_REFERENCE_BYTES) {
+            return Err(MemoryError::new(MemoryErrorCode::InvalidMemory));
+        }
+        Ok(value)
+    }
+    /// Returns the frozen scope class.
+    pub const fn scope(&self) -> MemoryScopeClass {
+        self.scope.scope()
+    }
+    /// Returns the opaque authorized owner identity.
+    pub fn owner_id(&self) -> &str {
+        &self.owner_id
+    }
+    /// Returns the required Platform policy digest when present.
+    pub fn aggregation_policy_digest(&self) -> Option<&str> {
+        self.scope.aggregation_policy_digest.as_deref()
+    }
+}
+
 fn ordered_unique<T: Ord>(values: &[T]) -> bool {
     values.windows(2).all(|pair| pair[0] < pair[1])
 }

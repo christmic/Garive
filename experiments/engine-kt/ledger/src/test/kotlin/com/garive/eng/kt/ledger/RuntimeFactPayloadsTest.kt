@@ -100,6 +100,18 @@ class RuntimeFactPayloadsTest {
     }
 
     @Test
+    fun `memory revision classification binds platform policy shape`() {
+        val case = document.getValue("valid_cases").jsonArray.map(JsonElement::jsonObject)
+            .first { it.text("kind") == "memory.revision_classified" }
+        val payload = case.getValue("payload").jsonObject
+        val platform = JsonObject(payload + ("scope" to JsonPrimitive("platform")))
+        assertInvalid(fact(case).withPayload(platform), "missing platform policy")
+        assertEquals(LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1),
+            validateRuntimeFact(fact(case).withPayload(JsonObject(platform +
+                ("aggregation_policy_digest" to JsonPrimitive("b".repeat(64)))))))
+    }
+
+    @Test
     fun `unknown kinds and newer schemas remain opaque`() {
         val newer = document.getValue("unknown_schema").jsonObject
         assertEquals(

@@ -21,6 +21,7 @@ const SENSITIVITIES: &[&str] = &["ordinary", "restricted"];
 const MEMORY_TYPES: &[&str] = &["semantic", "episodic", "lesson", "procedural"];
 const AUTHORITIES: &[&str] = &["user_declared", "agent_learned", "organisation_published"];
 const STATES: &[&str] = &["candidate", "active", "cold", "archived", "promoted"];
+const CONTROL_SCOPES: &[&str] = &["session", "agent_instance", "user", "project", "platform"];
 
 pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), LedgerError> {
     match kind {
@@ -58,16 +59,19 @@ fn revision_classified(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "memory_type",
             "authority",
             "lifecycle",
+            "scope",
+            "scope_owner_id",
             "policy_revision",
             "source_commit",
         ],
-        &["authority_receipt_digest"],
+        &["aggregation_policy_digest", "authority_receipt_digest"],
     )?;
     for key in [
         "classification_id",
         "namespace_id",
         "record_id",
         "revision_id",
+        "scope_owner_id",
         "policy_revision",
     ] {
         non_empty(value, key)?;
@@ -75,6 +79,7 @@ fn revision_classified(value: &Map<String, Value>) -> Result<(), LedgerError> {
     enumeration(value, "memory_type", MEMORY_TYPES)?;
     let authority = enumeration(value, "authority", AUTHORITIES)?;
     enumeration(value, "lifecycle", &["candidate", "active"])?;
+    let scope = enumeration(value, "scope", CONTROL_SCOPES)?;
     fact_reference(object(
         value.get("source_commit").ok_or(LedgerError::InvalidFact)?,
     )?)?;
@@ -84,6 +89,13 @@ fn revision_classified(value: &Map<String, Value>) -> Result<(), LedgerError> {
     }
     if requires_receipt {
         digest(value, "authority_receipt_digest")?;
+    }
+    let platform = scope == "platform";
+    if platform != value.contains_key("aggregation_policy_digest") {
+        return Err(LedgerError::InvalidFact);
+    }
+    if platform {
+        digest(value, "aggregation_policy_digest")?;
     }
     Ok(())
 }

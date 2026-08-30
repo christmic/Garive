@@ -50,8 +50,8 @@ pub use feedback_quality::{
 };
 pub use hypothesis::{
     import_m0_classification, ImportedMemoryClassification, MemoryAuthority,
-    MemoryAuthorityBinding, MemoryRole, MemoryScopeBinding, MemoryScopeClass, MemoryType,
-    MemoryTypeDescriptor, MemoryTypeRegistry,
+    MemoryAuthorityBinding, MemoryRevisionClassification, MemoryRevisionScope, MemoryRole,
+    MemoryScopeBinding, MemoryScopeClass, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 pub use lifecycle::{EvidenceTally, HypothesisState, LifecycleEvent, MemoryLifecycle};
 pub use maintenance::{

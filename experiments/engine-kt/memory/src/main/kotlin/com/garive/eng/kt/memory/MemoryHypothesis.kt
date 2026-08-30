@@ -138,5 +138,63 @@ public fun importM0Classification(
     authority,
 )
 
+/** One registry-admitted initial classification for a newly committed M0 revision. */
+@ConsistentCopyVisibility
+public data class MemoryRevisionClassification private constructor(
+    public val memoryType: MemoryType,
+    public val role: MemoryKind,
+    public val authority: MemoryAuthorityBinding,
+    public val scope: MemoryRevisionScope,
+    public val lifecycle: HypothesisState,
+    public val policyRevision: String,
+) {
+    public companion object {
+        /** Validates role mapping, authority admission, initial lifecycle and policy identity. */
+        public fun create(
+            role: MemoryKind,
+            authority: MemoryAuthorityBinding,
+            scope: MemoryRevisionScope,
+            lifecycle: HypothesisState,
+            policyRevision: String,
+            registry: MemoryTypeRegistry,
+        ): MemoryContractResult<MemoryRevisionClassification> {
+            val imported = importM0Classification(role, authority)
+            return if (lifecycle !in setOf(HypothesisState.CANDIDATE, HypothesisState.ACTIVE) ||
+                !validText(policyRevision, MAX_REFERENCE_BYTES) ||
+                !registry.admits(imported.memoryType, imported.role, imported.authority.authority)
+            ) MemoryContractResult.Failure(MemoryError(MemoryErrorCode.INVALID_MEMORY))
+            else MemoryContractResult.Success(MemoryRevisionClassification(
+                imported.memoryType, imported.role, imported.authority, scope, lifecycle, policyRevision,
+            ))
+        }
+    }
+}
+
+/** Runtime-authorized M1 scope frozen for one committed revision. */
+@ConsistentCopyVisibility
+public data class MemoryRevisionScope private constructor(
+    public val scope: MemoryScopeClass,
+    public val ownerId: String,
+    public val aggregationPolicyDigest: String?,
+) {
+    public companion object {
+        /** Validates the opaque owner plus the Platform-only aggregation policy. */
+        public fun create(
+            scope: MemoryScopeClass,
+            ownerId: String,
+            aggregationPolicyDigest: String?,
+        ): MemoryContractResult<MemoryRevisionScope> = when (
+            val binding = MemoryScopeBinding.create(scope, aggregationPolicyDigest)
+        ) {
+            is MemoryContractResult.Failure -> binding
+            is MemoryContractResult.Success -> if (!validText(ownerId, MAX_REFERENCE_BYTES)) {
+                MemoryContractResult.Failure(MemoryError(MemoryErrorCode.INVALID_MEMORY))
+            } else MemoryContractResult.Success(MemoryRevisionScope(
+                binding.value.scope, ownerId, binding.value.aggregationPolicyDigest,
+            ))
+        }
+    }
+}
+
 private fun <T : Enum<T>> orderedEnums(values: List<T>): Boolean =
     values.zipWithNext().all { (left, right) -> left.ordinal < right.ordinal }

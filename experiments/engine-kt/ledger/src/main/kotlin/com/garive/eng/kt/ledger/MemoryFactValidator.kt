@@ -12,6 +12,7 @@ private val sensitivities = setOf("ordinary", "restricted")
 private val memoryTypes = setOf("semantic", "episodic", "lesson", "procedural")
 private val memoryAuthorities = setOf("user_declared", "agent_learned", "organisation_published")
 private val hypothesisStates = setOf("candidate", "active", "cold", "archived", "promoted")
+private val controlScopes = setOf("session", "agent_instance", "user", "project", "platform")
 
 internal fun validateMemoryFact(kind: String, value: JsonObject) {
     when (kind) {
@@ -41,16 +42,19 @@ internal fun validateMemoryFact(kind: String, value: JsonObject) {
 private fun JsonObject.revisionClassified() {
     exact(
         setOf("classification_id", "namespace_id", "record_id", "revision_id", "memory_type",
-            "authority", "lifecycle", "policy_revision", "source_commit"),
-        setOf("authority_receipt_digest"),
+            "authority", "lifecycle", "scope", "scope_owner_id", "policy_revision", "source_commit"),
+        setOf("aggregation_policy_digest", "authority_receipt_digest"),
     )
-    listOf("classification_id", "namespace_id", "record_id", "revision_id", "policy_revision").forEach(::nonEmpty)
+    listOf("classification_id", "namespace_id", "record_id", "revision_id", "scope_owner_id", "policy_revision").forEach(::nonEmpty)
     enum("memory_type", memoryTypes)
     val authority = enum("authority", memoryAuthorities)
     enum("lifecycle", setOf("candidate", "active"))
+    val scope = enum("scope", controlScopes)
     getValue("source_commit").jsonObject.factReference()
     require((authority != "agent_learned") == ("authority_receipt_digest" in this))
     if (authority != "agent_learned") digest("authority_receipt_digest")
+    require((scope == "platform") == ("aggregation_policy_digest" in this))
+    if (scope == "platform") digest("aggregation_policy_digest")
 }
 
 private fun JsonObject.candidate() {
