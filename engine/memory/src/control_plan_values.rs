@@ -182,14 +182,17 @@ impl MemoryImportPlan {
                 .filter(|v| matches!(v, MemoryImportOperation::Erase { .. }))
                 .count() as u64,
         );
-        let ordered = self.operations.windows(2).all(|pair| {
-            pair[0].record_id() < pair[1].record_id()
-                || pair[0].record_id() == pair[1].record_id() && pair[0].rank() < pair[1].rank()
-        });
-        if self.export_id.is_empty()
-            || self.namespace_id.is_empty()
+        let ordered = self
+            .operations
+            .windows(2)
+            .all(|pair| pair[0].record_id() < pair[1].record_id());
+        if !valid_identity(&self.export_id)
+            || !valid_identity(&self.namespace_id)
             || self.through_revision == 0
             || self.expected_repository_revision == 0
+            || !valid_sha256(&self.input_manifest_digest)
+            || !valid_sha256(&self.plan_digest)
+            || self.operations.iter().any(|operation| !operation.valid())
             || !ordered
             || counts
                 != (
@@ -231,6 +234,67 @@ impl MemoryImportPlan {
             erase_count: self.erase_count,
         }
     }
+}
+
+impl MemoryImportOperation {
+    fn valid(&self) -> bool {
+        match self {
+            Self::Add {
+                source_draft_token,
+                record_id,
+                revision_id,
+                expected_absent,
+                document_digest,
+            } => {
+                valid_identity(source_draft_token)
+                    && valid_identity(record_id)
+                    && valid_identity(revision_id)
+                    && *expected_absent
+                    && valid_sha256(document_digest)
+            }
+            Self::Supersede {
+                record_id,
+                expected_active_revision_id,
+                new_revision_id,
+                document_digest,
+                supersedes_learned_revision_id,
+                ..
+            } => {
+                valid_identity(record_id)
+                    && valid_identity(expected_active_revision_id)
+                    && valid_identity(new_revision_id)
+                    && valid_sha256(document_digest)
+                    && supersedes_learned_revision_id
+                        .as_ref()
+                        .is_none_or(|revision| valid_identity(revision))
+            }
+            Self::Archive {
+                record_id,
+                expected_active_revision_id,
+                document_digest,
+            }
+            | Self::Erase {
+                record_id,
+                expected_active_revision_id,
+                document_digest,
+            } => {
+                valid_identity(record_id)
+                    && valid_identity(expected_active_revision_id)
+                    && valid_sha256(document_digest)
+            }
+        }
+    }
+}
+
+fn valid_identity(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 128 && value.trim() == value
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Serialize)]
