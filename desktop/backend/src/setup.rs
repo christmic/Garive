@@ -409,6 +409,31 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         )
     }
 
+    /// Publishes the secret-free result after recovery and Runtime construction.
+    pub fn complete_startup(
+        &self,
+        runtime_started: bool,
+        invalid_code: Option<&str>,
+    ) -> Result<(), DesktopSetupError> {
+        let state = match (runtime_started, invalid_code) {
+            (_, Some(code)) if !code.is_empty() && code.len() <= MAX_TEXT_BYTES => {
+                DesktopSetupState::InvalidConfiguration {
+                    code: code.to_owned(),
+                }
+            }
+            (true, None) => DesktopSetupState::Configured {
+                restart_required: false,
+            },
+            (false, None) => DesktopSetupState::NotConfigured,
+            _ => return Err(DesktopSetupError::RecoveryFailed),
+        };
+        *self
+            .state
+            .lock()
+            .map_err(|_| DesktopSetupError::RecoveryFailed)? = state;
+        Ok(())
+    }
+
     /// Validates choices and returns a redacted immutable review plan.
     pub fn prepare(&self, input: DesktopSetupInput) -> Result<DesktopSetupPlan, DesktopSetupError> {
         validate_input(&input)?;

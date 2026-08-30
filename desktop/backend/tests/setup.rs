@@ -136,6 +136,28 @@ fn invalid_input_secret_and_replayed_commit_are_stable_and_idempotent() {
 }
 
 #[test]
+fn setup_state_reports_startup_without_configuration_values() {
+    let directory = tempfile::tempdir().unwrap();
+    let service =
+        DesktopSetupService::new(directory.path().to_owned(), RecordingCredentials::default());
+    assert_eq!(service.state(), DesktopSetupState::SetupRecovering);
+    service.complete_startup(false, None).unwrap();
+    assert_eq!(service.state(), DesktopSetupState::NotConfigured);
+    service
+        .complete_startup(false, Some("config_invalid_document"))
+        .unwrap();
+    assert_eq!(
+        service.state(),
+        DesktopSetupState::InvalidConfiguration {
+            code: "config_invalid_document".to_owned()
+        }
+    );
+    assert!(!serde_json::to_string(&service.state())
+        .unwrap()
+        .contains(directory.path().to_string_lossy().as_ref()));
+}
+
+#[test]
 fn duplicate_nonce_conflict_expiry_and_cancellation_are_bounded() {
     let directory = tempfile::tempdir().unwrap();
     let clock = FixedClock::at(1_800_000_000);

@@ -22,6 +22,11 @@ fn get_setup_catalogue(
 }
 
 #[tauri::command]
+fn get_setup_state(setup: tauri::State<'_, SetupState>) -> garive_desktop::DesktopSetupState {
+    setup.state()
+}
+
+#[tauri::command]
 fn prepare_setup(
     setup: tauri::State<'_, SetupState>,
     input: garive_desktop::DesktopSetupInput,
@@ -75,17 +80,35 @@ fn main() {
                 garive_desktop::SystemSetupCredentialStore,
             );
             let state = garive_desktop::DesktopState::default();
-            let installed = state
-                .install_from(&provider)
-                .map_err(|error| stable_setup_error(error.code()))?;
-            setup
-                .recover(installed)
-                .map_err(|error| stable_setup_error(error.code()))?;
+            let recovered = setup.recover(false).is_ok();
+            if recovered {
+                match state.install_from(&provider) {
+                    Ok(installed) => {
+                        if setup.recover(installed).is_err() {
+                            setup
+                                .complete_startup(false, Some("setup_recovery_failed"))
+                                .map_err(|error| stable_setup_error(error.code()))?;
+                        } else {
+                            setup
+                                .complete_startup(installed, None)
+                                .map_err(|error| stable_setup_error(error.code()))?;
+                        }
+                    }
+                    Err(error) => setup
+                        .complete_startup(false, Some(error.code()))
+                        .map_err(|setup_error| stable_setup_error(setup_error.code()))?,
+                }
+            } else {
+                setup
+                    .complete_startup(false, Some("setup_recovery_failed"))
+                    .map_err(|error| stable_setup_error(error.code()))?;
+            }
             app.manage(state);
             app.manage(setup);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_setup_state,
             get_setup_catalogue,
             prepare_setup,
             commit_setup,
