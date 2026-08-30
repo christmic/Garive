@@ -89,6 +89,28 @@ impl StateStore {
         })
     }
 
+    pub(crate) fn save_preferences_merged(
+        &self,
+        value: &mut Preferences,
+        base: &mut Preferences,
+    ) -> Result<(), StateError> {
+        for _ in 0..3 {
+            match self.save_preferences(value) {
+                Ok(()) => {
+                    *base = value.clone();
+                    return Ok(());
+                }
+                Err(StateError::Conflict) => {
+                    let current = self.load_preferences()?;
+                    *value = Preferences::merge(base, value, &current)?;
+                    *base = current;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(StateError::Conflict)
+    }
+
     pub(crate) fn save_pending(&self, value: &PendingCommand) -> Result<(), StateError> {
         value.validate()?;
         let Some(root) = &self.root else {

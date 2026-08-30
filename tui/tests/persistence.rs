@@ -110,6 +110,41 @@ fn preference_writes_compare_and_swap_and_corruption_is_quarantined() {
 }
 
 #[test]
+fn preference_conflicts_merge_independent_fields_and_reject_same_field_edits() {
+    let temporary = tempfile::tempdir().unwrap();
+    let store = StateStore::open(Some(temporary.path().join("state")), false).unwrap();
+    let mut theme_base = store.load_preferences().unwrap();
+    let mut mouse_base = theme_base.clone();
+    let mut theme = theme_base.clone();
+    let mut mouse = mouse_base.clone();
+    theme.theme = Theme::Dark;
+    mouse.mouse = MouseMode::On;
+    store
+        .save_preferences_merged(&mut theme, &mut theme_base)
+        .unwrap();
+    store
+        .save_preferences_merged(&mut mouse, &mut mouse_base)
+        .unwrap();
+    let merged = store.load_preferences().unwrap();
+    assert_eq!(merged.theme, Theme::Dark);
+    assert_eq!(merged.mouse, MouseMode::On);
+
+    let mut first_base = merged.clone();
+    let mut stale_base = merged.clone();
+    let mut first = merged.clone();
+    let mut stale = merged;
+    first.theme = Theme::Light;
+    stale.theme = Theme::Mono;
+    store
+        .save_preferences_merged(&mut first, &mut first_base)
+        .unwrap();
+    assert_eq!(
+        store.save_preferences_merged(&mut stale, &mut stale_base),
+        Err(StateError::Conflict)
+    );
+}
+
+#[test]
 fn history_compacts_duplicates_ignores_torn_tail_and_quarantines_corruption() {
     use std::io::Write;
     let temporary = tempfile::tempdir().unwrap();

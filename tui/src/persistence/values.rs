@@ -91,6 +91,117 @@ impl Preferences {
             self.drafts.truncate(32);
         }
     }
+
+    pub(crate) fn merge(base: &Self, local: &Self, current: &Self) -> Result<Self, StateError> {
+        base.validate()?;
+        local.validate()?;
+        current.validate()?;
+        if base.schema_version != current.schema_version
+            || base.schema_version != local.schema_version
+            || local.revision != base.revision
+            || current.revision < base.revision
+        {
+            return Err(StateError::Conflict);
+        }
+        let mut merged = Self {
+            schema_version: current.schema_version,
+            revision: current.revision,
+            theme: merge_field(&base.theme, &local.theme, &current.theme)?,
+            reduced_motion: merge_field(
+                &base.reduced_motion,
+                &local.reduced_motion,
+                &current.reduced_motion,
+            )?,
+            mouse: merge_field(&base.mouse, &local.mouse, &current.mouse)?,
+            selected_session_id: merge_field(
+                &base.selected_session_id,
+                &local.selected_session_id,
+                &current.selected_session_id,
+            )?,
+            session_rail: merge_field(
+                &base.session_rail,
+                &local.session_rail,
+                &current.session_rail,
+            )?,
+            activity_inspector: merge_field(
+                &base.activity_inspector,
+                &local.activity_inspector,
+                &current.activity_inspector,
+            )?,
+            bell: merge_field(&base.bell, &local.bell, &current.bell)?,
+            persist_drafts: merge_field(
+                &base.persist_drafts,
+                &local.persist_drafts,
+                &current.persist_drafts,
+            )?,
+            drafts: merge_drafts(&base.drafts, &local.drafts, &current.drafts)?,
+        };
+        merged
+            .drafts
+            .sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        merged.drafts.truncate(32);
+        merged.validate()?;
+        Ok(merged)
+    }
+}
+
+fn merge_field<T: Clone + Eq>(base: &T, local: &T, current: &T) -> Result<T, StateError> {
+    if local == base {
+        Ok(current.clone())
+    } else if current == base || current == local {
+        Ok(local.clone())
+    } else {
+        Err(StateError::Conflict)
+    }
+}
+
+fn merge_drafts(
+    base: &[Draft],
+    local: &[Draft],
+    current: &[Draft],
+) -> Result<Vec<Draft>, StateError> {
+    let base = index_drafts(base);
+    let local = index_drafts(local);
+    let current = index_drafts(current);
+    let sessions = base
+        .keys()
+        .chain(local.keys())
+        .chain(current.keys())
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut output = Vec::with_capacity(sessions.len());
+    for session in sessions {
+        let base_value = base.get(session).copied();
+        let local_value = local.get(session).copied();
+        let current_value = current.get(session).copied();
+        let selected = if local_value == base_value {
+            current_value
+        } else if current_value == base_value || current_value == local_value {
+            local_value
+        } else {
+            match (local_value, current_value) {
+                (Some(left), Some(right)) if left.updated_at != right.updated_at => {
+                    Some(if left.updated_at > right.updated_at {
+                        left
+                    } else {
+                        right
+                    })
+                }
+                _ => return Err(StateError::Conflict),
+            }
+        };
+        if let Some(value) = selected {
+            output.push(value.clone());
+        }
+    }
+    Ok(output)
+}
+
+fn index_drafts(values: &[Draft]) -> std::collections::BTreeMap<&str, &Draft> {
+    values
+        .iter()
+        .map(|value| (value.session_id.as_str(), value))
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

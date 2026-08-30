@@ -270,6 +270,7 @@ pub(super) struct RuntimeState {
     reconnect_attempt: u32,
     pub(super) store: StateStore,
     pub(super) preferences: Preferences,
+    persisted_preferences: Preferences,
     pub(super) pending: Vec<PendingCommand>,
     pub(super) ephemeral_confirmed: bool,
     pub(super) queued_prompt: Option<String>,
@@ -314,6 +315,7 @@ impl RuntimeState {
             ));
         }
         model.has_pending_command = !restored.pending.is_empty();
+        let persisted_preferences = restored.preferences.clone();
         Self {
             config,
             client,
@@ -324,6 +326,7 @@ impl RuntimeState {
             reconnect_attempt: 0,
             store: restored.store,
             preferences: restored.preferences,
+            persisted_preferences,
             pending: restored.pending,
             ephemeral_confirmed: false,
             queued_prompt: None,
@@ -380,7 +383,10 @@ impl RuntimeState {
         self.preferences.theme = self.config.theme;
         self.preferences.mouse = self.config.mouse;
         self.preferences.reduced_motion = self.config.reduced_motion;
-        if let Err(error) = self.store.save_preferences(&mut self.preferences) {
+        if let Err(error) = self
+            .store
+            .save_preferences_merged(&mut self.preferences, &mut self.persisted_preferences)
+        {
             self.model.notice = Some(format!("Local state: {}", state_error_name(error)));
         }
     }
