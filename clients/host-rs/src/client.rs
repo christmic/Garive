@@ -489,13 +489,15 @@ fn classify_host_error(status: StatusCode, bytes: &[u8]) -> HostClientError {
     let code = serde_json::from_slice::<Value>(bytes)
         .ok()
         .and_then(|value| value.get("code")?.as_str().map(str::to_owned));
-    let category = if code
-        .as_deref()
-        .is_some_and(|code| KNOWN_HOST_ERRORS.contains(&code))
-    {
-        HostClientErrorCode::HostFailure
-    } else {
-        HostClientErrorCode::UnknownHostError
+    let category = match code.as_deref() {
+        Some("authentication_required") => HostClientErrorCode::AuthenticationRequired,
+        Some("actor_forbidden") => HostClientErrorCode::ActorForbidden,
+        Some("device_reauth_required") => HostClientErrorCode::DeviceReauthRequired,
+        Some("rate_limited") => HostClientErrorCode::RateLimited,
+        Some("runtime_unavailable") => HostClientErrorCode::RuntimeUnavailable,
+        Some("pairing_rejected") => HostClientErrorCode::PairingRejected,
+        Some(code) if KNOWN_HOST_ERRORS.contains(&code) => HostClientErrorCode::HostFailure,
+        _ => HostClientErrorCode::UnknownHostError,
     };
     HostClientError::with_status(category, status.as_u16())
 }
