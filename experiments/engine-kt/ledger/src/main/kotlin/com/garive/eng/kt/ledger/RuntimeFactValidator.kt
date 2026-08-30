@@ -17,6 +17,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     val schedulerFamily = kind.startsWith("schedule.")
     val delegationFamily = kind.startsWith("delegation.")
     val goalFamily = kind.startsWith("goal.")
+    val planFamily = kind.startsWith("plan.")
     val memorySessionScoped = kind in setOf(
         "memory.tombstoned", "memory.revision_classified", "memory.observation_recorded", "memory.lifecycle_transitioned",
         "memory.candidate_recorded", "memory.maintenance_decided", "memory.distillation_checkpointed",
@@ -24,14 +25,14 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
         "memory.erasure_requested", "memory.erasure_recorded",
     )
     val rejection = kind == "tool.preparation_rejected"
-    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !delegationFamily && !goalFamily && !rejection) {
+    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !delegationFamily && !goalFamily && !planFamily && !rejection) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     val effectPreparedV2 = kind == "effect.prepared" && fact.schemaVersion == 2u
     if (fact.schemaVersion != 1u && !effectPreparedV2) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
-    if ((fact.turnId != null) != !(memorySessionScoped || schedulerFamily || goalFamily) ||
+    if ((fact.turnId != null) != !(memorySessionScoped || schedulerFamily || goalFamily || planFamily) ||
         (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || skillFamily || knowledgeFamily || delegationFamily || rejection || memoryFamily && !memorySessionScoped) ||
         (fact.modelRequestId != null) != (modelFamily || rejection) ||
         (fact.toolInvocationId != null) != effectFamily
@@ -43,6 +44,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
         when {
             effectPreparedV2 -> validateEffectPreparedV2(payload)
             goalFamily -> validateGoalFact(kind, payload)
+            planFamily -> validatePlanFact(kind, payload)
             delegationFamily -> validateDelegationFact(kind, payload)
             schedulerFamily -> validateSchedulerFact(kind, payload)
             knowledgeFamily -> validateKnowledgeFact(kind, payload)
