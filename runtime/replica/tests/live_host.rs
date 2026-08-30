@@ -717,6 +717,27 @@ fn interaction_continuation_validates_schema_and_representation_before_commit() 
         .session_watermark(&SessionId::try_from(session.session_id.as_str()).unwrap())
         .unwrap()
         .unwrap();
+    let timeline = harness
+        .host
+        .read_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    let suspension = timeline.items[0].suspension.as_ref().unwrap();
+    assert_eq!(
+        suspension.prompt_schema,
+        "garive.public-suspension-prompt.v1"
+    );
+    assert_eq!(
+        suspension.prompt_json,
+        r#"{"message":"","schema_version":1}"#
+    );
+    assert_eq!(
+        suspension.response_schema_json.as_deref(),
+        Some(r#"{"type":"boolean"}"#)
+    );
+    assert_eq!(
+        suspension.response_schema_digest.as_deref(),
+        Some("7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553")
+    );
 
     assert_eq!(
         harness.host.continue_turn(

@@ -189,6 +189,8 @@ pub struct InteractionContinuation {
     pub interaction_id: String,
     /// Prepared Call digest bound by the request.
     pub prepared_digest: String,
+    /// Exact redacted public prompt frozen by the interaction request.
+    pub prompt: serde_json::Value,
     /// Response-schema digest frozen by the interaction request.
     pub response_schema_digest: String,
     /// Exact portable response schema frozen by the interaction request.

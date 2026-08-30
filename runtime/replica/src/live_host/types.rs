@@ -284,7 +284,7 @@ pub struct TurnTimelineItem {
     pub activities: Vec<HostActivity>,
 }
 
-/// Minimal restart-safe public continuation coordinates.
+/// Restart-safe public continuation coordinates and redacted typed prompt.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TurnSuspensionView {
     /// Exact durable suspension identity.
@@ -293,6 +293,18 @@ pub struct TurnSuspensionView {
     pub session_version: u64,
     /// Stable public suspension kind.
     pub kind: String,
+    /// Stable public prompt schema identity.
+    pub prompt_schema: &'static str,
+    /// Canonical RFC 8785 public prompt JSON.
+    pub prompt_json: String,
+    /// Lowercase SHA-256 digest of the public prompt.
+    pub prompt_digest: String,
+    /// Canonical portable response schema when the interaction is typed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_schema_json: Option<String>,
+    /// Digest of the canonical response schema when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_schema_digest: Option<String>,
 }
 
 /// One ascending bounded page of complete durable Turn projections.

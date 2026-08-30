@@ -148,11 +148,7 @@ impl LiveHost {
             let turn_id = identity::<TurnId>(&item.turn_id)?;
             let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite_query)?;
             let suspended = reconstruct_suspended_turn(&snapshot).map_err(map_runtime)?;
-            item.suspension = Some(TurnSuspensionView {
-                suspension_id: suspended.suspension_id,
-                session_version: suspended.session_version,
-                kind: suspension_kind(suspended.suspension_kind).into(),
-            });
+            item.suspension = Some(public_suspension(suspended)?);
         }
         items.retain(|item| item.latest_position > after_position);
         let has_more = items.len() > limit;
@@ -870,6 +866,42 @@ fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {
         RuntimeSuspensionKind::PartialOutput => "partial_output",
         RuntimeSuspensionKind::DelegationPending => "delegation_pending",
     }
+}
+
+fn public_suspension(
+    state: crate::SuspendedTurnState,
+) -> Result<TurnSuspensionView, LiveHostError> {
+    let kind = suspension_kind(state.suspension_kind);
+    let (prompt_json, prompt_digest, response_schema_json, response_schema_digest) =
+        if let Some(interaction) = state.interaction {
+            let prompt = serde_jcs::to_string(&interaction.prompt)
+                .map_err(|_| LiveHostError::CorruptState)?;
+            let prompt_digest = format!("{:x}", Sha256::digest(prompt.as_bytes()));
+            (
+                prompt,
+                prompt_digest,
+                Some(
+                    serde_jcs::to_string(&interaction.response_schema)
+                        .map_err(|_| LiveHostError::CorruptState)?,
+                ),
+                Some(interaction.response_schema_digest),
+            )
+        } else {
+            let prompt = serde_jcs::to_string(&json!({"kind":kind,"schema_version":1}))
+                .map_err(|_| LiveHostError::CorruptState)?;
+            let digest = format!("{:x}", Sha256::digest(prompt.as_bytes()));
+            (prompt, digest, None, None)
+        };
+    Ok(TurnSuspensionView {
+        suspension_id: state.suspension_id,
+        session_version: state.session_version,
+        kind: kind.into(),
+        prompt_schema: "garive.public-suspension-prompt.v1",
+        prompt_json,
+        prompt_digest,
+        response_schema_json,
+        response_schema_digest,
+    })
 }
 
 struct ContinueReplay<'a> {
