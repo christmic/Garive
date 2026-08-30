@@ -11,8 +11,8 @@
     },
     {
       "tool_name": "garive.workspace.list",
-      "arguments": {"path":".","max_entries":10,"include_hidden":false},
-      "prepared_digest": "8e94755f0f582d0b934de45ca73c5d2717b6d69c6fb0eb71781d88f926fc0196",
+      "arguments": {"path":".","max_entries":10,"include_hidden":false,"max_nodes":100},
+      "prepared_digest": "9c412c7773d5783abe7a88e0dc1598c7bef2ed4caab83e571e40ee126c0392e7",
       "accesses": [{"namespace":"filesystem","resource_key":".","mode":"read"}]
     },
     {
@@ -48,7 +48,7 @@
     },
     {
       "tool_name": "garive.workspace.list",
-      "arguments": {"path":"../outside","max_entries":1,"include_hidden":false},
+      "arguments": {"path":"../outside","max_entries":1,"include_hidden":false,"max_nodes":1},
       "error": "effect_access_invalid"
     },
     {

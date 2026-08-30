@@ -118,6 +118,7 @@ enum Operation {
         path: String,
         max_entries: usize,
         include_hidden: bool,
+        max_nodes: usize,
         result_bound: u64,
     },
     Search {
@@ -193,6 +194,8 @@ fn operation(
                 .get("include_hidden")
                 .and_then(Value::as_bool)
                 .ok_or_else(|| "invalid T1 hidden policy".to_owned())?,
+            max_nodes: usize::try_from(number(&arguments, "max_nodes")?)
+                .map_err(|_| "invalid T1 node bound")?,
             result_bound,
         }),
         T1_SEARCH_TEXT => Ok(Operation::Search {
@@ -246,8 +249,16 @@ fn execute(root: OwnedFd, operation: Operation) -> Result<Value, WorkspaceExecut
             path,
             max_entries,
             include_hidden,
+            max_nodes,
             result_bound,
-        } => list(root, &path, max_entries, include_hidden, result_bound),
+        } => list(
+            root,
+            &path,
+            max_entries,
+            include_hidden,
+            max_nodes,
+            result_bound,
+        ),
         Operation::Search {
             path,
             query,
@@ -301,6 +312,7 @@ fn list(
     path: &str,
     max_entries: usize,
     include_hidden: bool,
+    max_nodes: usize,
     result_bound: u64,
 ) -> Result<Value, WorkspaceExecutionError> {
     let directory = open_target(root, path)?;
@@ -311,10 +323,18 @@ fn list(
     let mut stream = Dir::new(directory).map_err(map_errno)?;
     let mut smallest = BinaryHeap::<(String, &'static str)>::new();
     let mut eligible = 0usize;
+    let mut nodes = 0usize;
     while let Some(entry) = stream.next() {
         let entry = entry.map_err(map_errno)?;
         let name = entry.file_name().to_bytes();
-        if matches!(name, b"." | b"..") || (!include_hidden && name.first() == Some(&b'.')) {
+        if matches!(name, b"." | b"..") {
+            continue;
+        }
+        nodes = nodes.saturating_add(1);
+        if nodes > max_nodes {
+            return Err(WorkspaceExecutionError::EntryBoundExceeded);
+        }
+        if !include_hidden && name.first() == Some(&b'.') {
             continue;
         }
         let name = std::str::from_utf8(name)

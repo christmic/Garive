@@ -106,7 +106,7 @@ async fn list_is_raw_name_sorted_bounded_and_never_follows_links() {
     let result = run_completed(
         directory.path(),
         T1_LIST,
-        r#"{"path":".","max_entries":2,"include_hidden":false}"#,
+        r#"{"path":".","max_entries":2,"include_hidden":false,"max_nodes":100}"#,
     )
     .await;
     assert_eq!(
@@ -120,7 +120,7 @@ async fn list_is_raw_name_sorted_bounded_and_never_follows_links() {
     let all = run_completed(
         directory.path(),
         T1_LIST,
-        r#"{"path":".","max_entries":10,"include_hidden":true}"#,
+        r#"{"path":".","max_entries":10,"include_hidden":true,"max_nodes":100}"#,
     )
     .await;
     assert_eq!(
@@ -132,6 +132,15 @@ async fn list_is_raw_name_sorted_bounded_and_never_follows_links() {
             {"name":"dir","kind":"directory"},
             {"name":"link","kind":"symlink"}
         ])
+    );
+    assert_eq!(
+        run_failure(
+            directory.path(),
+            T1_LIST,
+            r#"{"path":".","max_entries":10,"include_hidden":false,"max_nodes":1}"#,
+        )
+        .await,
+        "entry_bound_exceeded"
     );
 }
 

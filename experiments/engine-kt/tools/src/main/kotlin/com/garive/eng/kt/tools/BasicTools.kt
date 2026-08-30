@@ -156,7 +156,7 @@ private fun readDefinition(policy: String): ToolDefinition = fileDefinition(
 private fun listDefinition(policy: String): ToolDefinition = fileDefinition(
     T1_LIST,
     "List one workspace directory without following links.",
-    schema("""{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"max_entries":{"type":"integer","minimum":1,"maximum":4096},"include_hidden":{"type":"boolean"}},"required":["path","max_entries","include_hidden"],"additionalProperties":false}"""),
+    schema("""{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"max_entries":{"type":"integer","minimum":1,"maximum":4096},"include_hidden":{"type":"boolean"},"max_nodes":{"type":"integer","minimum":1,"maximum":10000}},"required":["path","max_entries","include_hidden","max_nodes"],"additionalProperties":false}"""),
     ReplayClass.READ_ONLY,
     listOf(ExecutionCapability.FILESYSTEM_READ),
     listOf(AccessMode.READ),

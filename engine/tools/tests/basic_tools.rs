@@ -43,7 +43,7 @@ fn read_list_and_search_resolve_exact_workspace_access() {
         ),
         (
             T1_LIST,
-            r#"{"path":".","max_entries":10,"include_hidden":false}"#,
+            r#"{"path":".","max_entries":10,"include_hidden":false,"max_nodes":100}"#,
             ".",
         ),
         (

@@ -28,7 +28,7 @@ class BasicToolsTest {
         val catalogue = catalogue()
         listOf(
             Triple(T1_READ_TEXT, """{"path":"src/lib.rs","max_bytes":4096}""", "src/lib.rs"),
-            Triple(T1_LIST, """{"path":".","max_entries":10,"include_hidden":false}""", "."),
+            Triple(T1_LIST, """{"path":".","max_entries":10,"include_hidden":false,"max_nodes":100}""", "."),
             Triple(
                 T1_SEARCH_TEXT,
                 """{"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096,"max_nodes":100}""",

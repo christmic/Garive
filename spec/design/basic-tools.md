@@ -53,7 +53,7 @@ The exact revision-1 ceilings are frozen with the catalogue:
 | path | 4,096 Unicode scalars |
 | literal query | 4,096 Unicode scalars |
 | list entries or search matches | 4,096 |
-| search traversal nodes | 10,000 |
+| list or search traversal nodes | 10,000 |
 | patch text | 1,048,576 Unicode scalars |
 | patch targets | 128 |
 | process argv entries | 256 |
@@ -95,8 +95,8 @@ an envelope compatibility assertion.
 
 ## `garive.workspace.list@1`
 
-Input requires `path`, `max_entries`, and `include_hidden`; `path = "."`
-explicitly selects the workspace root. The exact access is
+Input requires `path`, `max_entries`, `include_hidden`, and `max_nodes`;
+`path = "."` explicitly selects the workspace root. The exact access is
 one `Filesystem(path, Read)`. Requirements/replay/F0 profile equal read_text.
 
 The executor opens the exact directory capability, reads no entry target and
@@ -113,6 +113,10 @@ returns entries sorted by raw UTF-8 name bytes:
 `kind = file | directory | symlink | other`. Symlinks are reported but never
 followed. Hidden means the name begins with ASCII `.`. More than `max_entries`
 returns the first bounded prefix with `truncated: true`; omission is explicit.
+`max_nodes` counts every non-dot directory entry encountered, including hidden
+entries excluded from the result. Exceeding it returns
+`entry_bound_exceeded` without a partial observation; this bounds enumeration
+work needed to determine the raw-name-sorted prefix.
 
 ## `garive.workspace.search_text@1`
 
