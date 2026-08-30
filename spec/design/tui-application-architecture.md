@@ -108,6 +108,8 @@ grapheme-indexed editing state; the private `EditorLayout` in
 width-dependent presentation model. Text spans, selection styles, cursor
 placement, and scroll derive from those rows. Ratatui receives already-wrapped
 lines and does not perform a second, divergent wrapping pass.
+Root layout asks the composer component for desired visual height at the
+available width; it never estimates height from `EditorState::line_count`.
 The component also owns screen-cell-to-grapheme hit testing. The mouse
 controller stores only the transient down/drag/up ownership bit and sends
 grapheme placement intents to `EditorState`; it does not inspect text widths,

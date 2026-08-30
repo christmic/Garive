@@ -179,6 +179,11 @@ otherwise hard-wraps at an extended-grapheme boundary. Sanitization happens
 before terminal-cell measurement, so a visible safety marker and its width
 cannot disagree. A cursor exactly after a full-width row advances to column
 zero of a continuation row and is scrolled into view by the same layout.
+The composer requests frame height from that visual result: content plus two
+border rows, clamped to `3..=7`. Terminals whose content area is below 12 rows
+hold the composer at three rows and scroll internally. Thus a long single-line
+draft expands like an explicit multiline draft when space exists, without
+stealing the compact footer or minimum conversation surface.
 
 | Operation | Required behavior |
 |---|---|

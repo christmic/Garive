@@ -356,6 +356,14 @@ mono reverse video, replaces the selection with `X` to produce `aX`, and proves
 mouse-capture plus alternate-screen restoration. Strict all-target/all-feature
 Clippy, formatting, and diff checks pass.
 
+Merge revision `92f54da7` makes composer frame height consume visual wrapped
+rows instead of logical newline count. Contracts cover an empty draft,
+whitespace-wrapped prose, and an exact-width continuation cursor. A reviewed
+`40x16` monochrome product snapshot binds two visible soft-wrapped rows, while
+the existing `40x12` snapshot preserves the tiny-height policy. All 43 view,
+25 snapshot/boundary, and ten shipping-binary macOS PTY tests pass, as do
+strict all-target/all-feature Clippy, formatting, and diff checks.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

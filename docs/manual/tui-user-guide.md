@@ -174,6 +174,10 @@ displayed character when a word is wider than the composer. Explicit newlines,
 wrapped text, selection highlighting, the cursor, and automatic vertical
 scroll all use the same terminal-cell layout, so the cursor remains aligned at
 line boundaries and while a narrow composer scrolls.
+When height permits, the composer grows from three to seven rows according to
+what is visibly wrapped, even if the draft contains no explicit newline. On an
+extremely short terminal it stays compact and scrolls internally so the
+conversation and active footer controls remain available.
 
 While a mutation has an unknown durable result for the active Session, the
 draft is frozen to prevent a second conflicting command. Global Help remains

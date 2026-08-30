@@ -50,6 +50,11 @@ spans, cursor coordinates, and vertical scroll. It measures sanitized extended
 graphemes in terminal cells, prefers whitespace wrap points, and hard-wraps an
 oversized word without splitting a grapheme. Screens and controllers may not
 recompute composer wrapping or cursor coordinates.
+At non-tiny heights the composer frame grows from three to at most seven rows
+using the layout's visual row count, including an exact-width cursor
+continuation row. It does not grow from logical newline count. Below the
+height breakpoint it remains three rows and follows the cursor so conversation
+and footer affordances survive.
 When mouse capture is enabled, composer pointer placement and drag selection
 must call the same component geometry. The border and padding are inert; CJK
 double-cell glyphs expose stable before/after insertion points, and selection

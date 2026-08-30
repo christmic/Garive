@@ -236,6 +236,11 @@ but authors its own Rust `EditorLayout`, safety-marker measurement, selection
 spans, exact-width continuation, and tests; it does not copy either data model
 or implementation.
 
+The same Codex ranges make desired height depend on wrapped lines rather than
+logical newlines. Garive now adopts that directly observed invariant through
+its own bounded `EditorLayout::desired_height`; the `3..=7` frame policy and
+tiny-height fallback are Garive product decisions.
+
 ### Pi corroboration
 
 At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`

@@ -302,6 +302,14 @@ Strict all-target/all-feature Clippy passed with warnings denied; formatting
 and diff checks were clean. This remains executable PTY evidence rather than a
 physical-window screenshot.
 
+Merge revision `92f54da7` derives composer frame height from visual wrapped
+rows. The reviewed `40x16` mono snapshot shows both soft-wrapped rows inside a
+four-row frame; the existing `40x12` product snapshot remains compact by
+policy. On native macOS arm64, 43 view, 25 snapshot/boundary, and all ten
+shipping-binary PTY tests passed. Strict all-target/all-feature Clippy passed
+with warnings denied; formatting and diff checks were clean. The snapshot is
+semantic buffer evidence, not a physical-window image.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
