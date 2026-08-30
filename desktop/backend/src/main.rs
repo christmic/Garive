@@ -11,6 +11,25 @@ struct WorkspaceTurnCommand {
     entry_ids: Vec<String>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ArtifactCommand {
+    session_id: String,
+    artifact_id: String,
+    revision: u64,
+    committed_position: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ArtifactExportCommand {
+    session_id: String,
+    artifact_id: String,
+    revision: u64,
+    committed_position: u64,
+    export_target_id: String,
+}
+
 #[tauri::command]
 async fn run_agent_turn(
     state: tauri::State<'_, garive_desktop::DesktopState>,
@@ -271,6 +290,30 @@ fn list_artifacts(
         .map_err(|error| error.code().to_owned())
 }
 
+fn exact_artifact(
+    state: &garive_desktop::DesktopState,
+    session_id: &str,
+    artifact_id: &str,
+    revision: u64,
+    committed_position: u64,
+) -> Result<garive_desktop::DesktopArtifact, String> {
+    let after = committed_position
+        .checked_sub(1)
+        .ok_or_else(|| "artifact_not_found".to_owned())?;
+    state
+        .artifacts(session_id, after, 1)
+        .map_err(|error| error.code().to_owned())?
+        .items
+        .into_iter()
+        .next()
+        .filter(|artifact| {
+            artifact.artifact_id == artifact_id
+                && artifact.revision == revision
+                && artifact.committed_position == committed_position
+        })
+        .ok_or_else(|| "artifact_not_found".to_owned())
+}
+
 #[tauri::command]
 fn get_artifact_preview(
     window: tauri::WebviewWindow,
@@ -281,22 +324,16 @@ fn get_artifact_preview(
     revision: u64,
     committed_position: u64,
 ) -> Result<garive_desktop::DesktopArtifactPreview, String> {
-    let after = committed_position
-        .checked_sub(1)
-        .ok_or_else(|| "artifact_not_found".to_owned())?;
-    let page = state
-        .artifacts(&session_id, after, 1)
-        .map_err(|error| error.code().to_owned())?;
-    let artifact = page
-        .items
-        .first()
-        .filter(|artifact| {
-            artifact.artifact_id == artifact_id
-                && artifact.revision == revision
-                && artifact.committed_position == committed_position
-                && artifact.preview == "text"
-        })
-        .ok_or_else(|| "artifact_not_found".to_owned())?;
+    let artifact = exact_artifact(
+        &state,
+        &session_id,
+        &artifact_id,
+        revision,
+        committed_position,
+    )?;
+    if artifact.preview != "text" {
+        return Err("artifact_not_found".into());
+    }
     let workspace_id = artifact
         .workspace_id
         .as_deref()
@@ -311,6 +348,85 @@ fn get_artifact_preview(
             window.label(),
         )
         .map_err(|_| "artifact_preview_unavailable".to_owned())
+}
+
+#[tauri::command]
+async fn prepare_artifact_export(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    exports: tauri::State<'_, garive_desktop::DesktopArtifactExportService>,
+    request: ArtifactCommand,
+) -> Result<Option<garive_desktop::DesktopArtifactExportTarget>, String> {
+    let artifact = exact_artifact(
+        &state,
+        &request.session_id,
+        &request.artifact_id,
+        request.revision,
+        request.committed_position,
+    )?;
+    if !artifact.exportable {
+        return Err("artifact_export_invalid".into());
+    }
+    let Some(selection) = app
+        .dialog()
+        .file()
+        .set_title("Export a new Artifact copy")
+        .set_file_name(artifact.display_name)
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = selection
+        .into_path()
+        .map_err(|_| "artifact_export_unavailable".to_owned())?;
+    exports
+        .admit_selected(&path, window.label())
+        .map(Some)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn commit_artifact_export(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    exports: tauri::State<'_, garive_desktop::DesktopArtifactExportService>,
+    request: ArtifactExportCommand,
+) -> Result<garive_desktop::DesktopArtifactExportReceipt, String> {
+    let artifact = exact_artifact(
+        &state,
+        &request.session_id,
+        &request.artifact_id,
+        request.revision,
+        request.committed_position,
+    )?;
+    let workspace_id = artifact
+        .workspace_id
+        .as_deref()
+        .filter(|_| artifact.exportable)
+        .ok_or_else(|| "artifact_export_invalid".to_owned())?;
+    let bytes = workspaces
+        .read_committed_artifact(
+            &artifact.artifact_id,
+            artifact.revision,
+            workspace_id,
+            &artifact.display_name,
+            &artifact.content_digest,
+            window.label(),
+        )
+        .map_err(|_| "artifact_export_unavailable".to_owned())?
+        .into_bytes();
+    exports
+        .export(
+            &request.export_target_id,
+            window.label(),
+            &artifact.artifact_id,
+            artifact.revision,
+            &artifact.content_digest,
+            &bytes,
+        )
+        .map_err(|error| error.code().to_owned())
 }
 
 #[tauri::command]
@@ -414,6 +530,7 @@ fn main() {
             app.manage(state);
             app.manage(setup);
             app.manage(workspaces);
+            app.manage(garive_desktop::DesktopArtifactExportService::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -435,6 +552,8 @@ fn main() {
             get_session_workspaces,
             list_artifacts,
             get_artifact_preview,
+            prepare_artifact_export,
+            commit_artifact_export,
             restart_desktop,
             get_recent_sessions,
             get_session_timeline,
