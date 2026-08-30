@@ -132,6 +132,36 @@ neutral-reset title transitions. Strict all-target Clippy completed in 4.31
 seconds, and the release shipping binary plus `visual_demo_host` linked in
 15.27 seconds. The physical-window and admitted-PNG rows remain open.
 
+Merge revision `5e2502d0` closed the empty reduced-motion switch with one pure
+shared status-motion component. Typed Connecting, Reconnecting, and Following
+states select a calm single-cell pulse; a 160 ms Tokio interval uses
+`MissedTickBehavior::Skip`, holds every phase for two ticks, and is polled only
+while the current status has a visible animated variant. `--reduced-motion`
+uses the stable production renderer (`○ connecting` and plain `running`) and
+does not schedule motion ticks. Idle, suspended, failed, and disconnected
+states, linear screen-reader output, and semantic terminal titles remain
+nonanimated.
+
+The implementation was derived from direct local source inspection, not UI
+guesswork: Codex centralizes motion primitives and reduced-motion fallback in
+`codex-rs/tui/src/motion.rs`, and coalesces frame scheduling in
+`codex-rs/tui/src/tui/frame_requester.rs`; Grok Build bounds and deduplicates
+title animation in
+`crates/codegen/xai-grok-pager/src/notifications/title.rs`. Garive keeps its
+own frames, state semantics, and scheduler contract.
+
+The exact merged revision enumerated 116 test cases. On macOS, all six
+shipping-binary PTY cases passed in 41.50 seconds, the production
+Runtime/file-SQLite/PTTY case passed in 69.67 seconds, and the complete TUI
+package passed in 147.63 seconds. Strict all-target Clippy completed in 6.41
+seconds; the release shipping binary plus `visual_demo_host` linked in 18.83
+seconds. Dark, light, and monochrome reviewed snapshots cover the active frame;
+shipping PTY assertions distinguish animated `· connecting` from stable
+reduced-motion `○ connecting`, while the production transcript observes the
+pulse phases. These are executable semantic/PTY evidence, not physical-window
+screenshots. The physical Terminal/iTerm2-class and admitted-PNG rows remain
+open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
