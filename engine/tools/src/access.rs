@@ -282,12 +282,13 @@ fn canonical_origin(origin: &str) -> bool {
             return false;
         };
         let host = &authority[1..end];
-        if host
-            .parse::<Ipv6Addr>()
-            .map(|value| value.to_string())
-            .ok()
-            .as_deref()
-            != Some(host)
+        if host.contains('.')
+            || host
+                .parse::<Ipv6Addr>()
+                .map(|value| value.to_string())
+                .ok()
+                .as_deref()
+                != Some(host)
         {
             return false;
         }

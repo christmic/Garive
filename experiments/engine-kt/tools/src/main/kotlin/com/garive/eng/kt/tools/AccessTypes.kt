@@ -1,7 +1,5 @@
 package com.garive.eng.kt.tools
 
-import java.net.Inet6Address
-import java.net.InetAddress
 import kotlinx.serialization.json.JsonElement
 
 /** Pure trusted resolver from validated arguments to exact resources. */
@@ -224,14 +222,29 @@ private fun canonicalOrigin(origin: String): Boolean {
 
 private fun canonicalIpv6(value: String): Boolean {
     if (value.any { it !in "0123456789abcdefABCDEF:" }) return false
-    val address = runCatching { InetAddress.getByName(value) }.getOrNull() as? Inet6Address ?: return false
-    return renderIpv6(address.address) == value
+    val halves = value.split("::")
+    if (halves.size > 2) return false
+    fun groups(part: String): List<Int>? = if (part.isEmpty()) {
+        emptyList()
+    } else {
+        part.split(':').map { group ->
+            if (group.isEmpty() || group.length > 4) return null
+            group.toIntOrNull(16) ?: return null
+        }
+    }
+    val left = groups(halves[0]) ?: return false
+    val right = if (halves.size == 2) groups(halves[1]) ?: return false else emptyList()
+    val parsed = if (halves.size == 1) {
+        if (left.size != 8) return false
+        left
+    } else {
+        if (left.size + right.size >= 8) return false
+        left + List(8 - left.size - right.size) { 0 } + right
+    }
+    return renderIpv6(parsed) == value
 }
 
-private fun renderIpv6(bytes: ByteArray): String {
-    val groups = (0 until 8).map { index ->
-        ((bytes[index * 2].toInt() and 0xff) shl 8) or (bytes[index * 2 + 1].toInt() and 0xff)
-    }
+private fun renderIpv6(groups: List<Int>): String {
     var bestStart = -1
     var bestLength = 1
     var index = 0
