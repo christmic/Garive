@@ -437,6 +437,33 @@ fn prepared_rotation_binds_exact_current_revision_and_digest() {
 }
 
 #[test]
+fn legacy_v1_migrates_only_after_an_explicit_bound_commit() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("desktop-v1.json"),
+        include_bytes!("../../../spec/fixtures/host/desktop-system-config-v1.json"),
+    )
+    .unwrap();
+    let service =
+        DesktopSetupService::new(directory.path().to_owned(), RecordingCredentials::default());
+    let plan = service.prepare(input("legacy-migration")).unwrap();
+    assert_eq!(plan.expected_configuration_revision, None);
+    assert!(plan.expected_configuration_digest.is_some());
+    let before = std::fs::read(directory.path().join("desktop-v1.json")).unwrap();
+    assert_eq!(
+        DesktopSystemConfiguration::parse(&before, directory.path())
+            .unwrap()
+            .schema_version(),
+        1
+    );
+    service.commit(&plan.plan_digest, "new-secret").unwrap();
+    let after = std::fs::read(directory.path().join("desktop-v1.json")).unwrap();
+    let migrated = DesktopSystemConfiguration::parse(&after, directory.path()).unwrap();
+    assert_eq!(migrated.schema_version(), 2);
+    assert_eq!(migrated.configuration_revision(), Some(1));
+}
+
+#[test]
 fn replay_rejects_a_corrupt_committed_receipt() {
     let directory = tempfile::tempdir().unwrap();
     let service =
