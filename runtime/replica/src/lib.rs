@@ -25,6 +25,7 @@ mod observability_runtime;
 mod plan_recovery;
 mod plan_runtime;
 mod runtime_turn;
+mod sandbox_facts;
 mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
@@ -144,6 +145,9 @@ pub use runtime_turn::{
     RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
     RuntimeRecoverySnapshot, RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus,
     RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
+};
+pub use sandbox_facts::{
+    plan_f0_effect_admission, F0EffectAdmissionContext, PlannedF0EffectAdmission,
 };
 pub use sandbox_runtime::{
     preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SandboxBindingV1, SandboxPreflightError,

@@ -77,6 +77,22 @@ impl SafetyDecisionV1 {
     pub fn decision_id(&self) -> &str {
         &self.decision_id
     }
+
+    pub(crate) const fn invocation_id(&self) -> &ToolInvocationId {
+        &self.invocation_id
+    }
+
+    pub(crate) fn prepared_digest(&self) -> &str {
+        &self.prepared_digest
+    }
+
+    pub(crate) fn constraints_digest(&self) -> Option<&str> {
+        self.constraints_digest.as_deref()
+    }
+
+    pub(crate) fn policy_revision(&self) -> &str {
+        &self.policy_revision
+    }
 }
 
 /// Immutable selected executor, workspace, scope and enforcement proof.
@@ -130,6 +146,30 @@ impl SandboxBindingV1 {
     /// Returns the opaque workspace capability reference.
     pub fn workspace_capability_id(&self) -> &str {
         &self.workspace_capability_id
+    }
+
+    pub(crate) fn binding_id(&self) -> &str {
+        &self.binding_id
+    }
+
+    pub(crate) fn executor_id(&self) -> &str {
+        &self.executor_id
+    }
+
+    pub(crate) fn executor_revision(&self) -> &str {
+        &self.executor_revision
+    }
+
+    pub(crate) fn policy_revision(&self) -> &str {
+        &self.policy_revision
+    }
+
+    pub(crate) const fn access_scope(&self) -> &ToolAccessPolicyV1 {
+        &self.access_scope
+    }
+
+    pub(crate) const fn enforcement(&self) -> &SandboxRequirementsV1 {
+        &self.enforcement
     }
 }
 

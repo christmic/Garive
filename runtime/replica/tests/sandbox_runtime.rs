@@ -1,5 +1,7 @@
+use garive_ledger::{ExecutionId, TurnId};
 use garive_runtime::{
-    preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SandboxBindingV1, SandboxPreflightError,
+    plan_f0_effect_admission, preflight_sandbox, F0EffectAdmissionContext, SafetyDecisionV1,
+    SafetyDisposition, SandboxBindingV1, SandboxPreflightError,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
@@ -40,6 +42,46 @@ fn exact_allow_and_stricter_binding_prepare_without_dispatch() {
     assert_eq!(execution.executor_id, "executor");
     assert_eq!(execution.executor_revision, "executor-v1");
     assert_eq!(execution.dispatch_attempt_id, "dispatch-1");
+}
+
+#[test]
+fn allowed_v3_admission_plans_the_complete_durable_prestart_chain() {
+    let fixture = fixture("src", 4);
+    let planned = plan_f0_effect_admission(
+        &F0EffectAdmissionContext {
+            turn_id: TurnId::try_from("turn").unwrap(),
+            execution_id: ExecutionId::try_from("execution").unwrap(),
+            safety_request_id: "safety-request".into(),
+            actor_authority_reference: "actor-authority".into(),
+            goal_reference: Some("goal-1:2".into()),
+            plan_reference: Some("plan-1:1".into()),
+            preflight_id: "preflight".into(),
+            effective_limits_digest: "e".repeat(64),
+            recorded_at: "2026-08-31T00:00:00Z".into(),
+        },
+        &fixture.invocation,
+        &fixture.prepared,
+        &fixture.grant,
+        &fixture.decision,
+        &fixture.binding,
+        "dispatch-1",
+    )
+    .unwrap();
+    assert_eq!(
+        planned
+            .facts
+            .iter()
+            .map(|fact| (fact.kind.as_str(), fact.schema_version))
+            .collect::<Vec<_>>(),
+        [
+            ("effect.prepared", 3),
+            ("safety.decided", 1),
+            ("effect.authorized", 2),
+            ("sandbox.bound", 1),
+            ("sandbox.preflighted", 1),
+        ]
+    );
+    assert_eq!(planned.execution.dispatch_attempt_id, "dispatch-1");
 }
 
 #[test]
