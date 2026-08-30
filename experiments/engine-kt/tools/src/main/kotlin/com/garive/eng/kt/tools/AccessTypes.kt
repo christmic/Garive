@@ -114,11 +114,19 @@ public class ToolAccessPolicyV1 private constructor(
     public val maxAccesses: Int,
     public val maxResultBytes: Long,
 ) {
+    /** Canonical filesystem policy roots. */
+    public val filesystemRoots: List<AccessPolicyEntry> = filesystemRoots.toList()
+    /** Canonical process policy lanes. */
+    public val processLanes: List<AccessPolicyEntry> = processLanes.toList()
+    /** Canonical network policy origins. */
+    public val networkOrigins: List<AccessPolicyEntry> = networkOrigins.toList()
+    /** Canonical Runtime policy lanes. */
+    public val runtimeLanes: List<AccessPolicyEntry> = runtimeLanes.toList()
     private val entries: Map<AccessNamespace, List<AccessPolicyEntry>> = mapOf(
-        AccessNamespace.FILESYSTEM to filesystemRoots,
-        AccessNamespace.PROCESS to processLanes,
-        AccessNamespace.NETWORK to networkOrigins,
-        AccessNamespace.RUNTIME to runtimeLanes,
+        AccessNamespace.FILESYSTEM to this.filesystemRoots,
+        AccessNamespace.PROCESS to this.processLanes,
+        AccessNamespace.NETWORK to this.networkOrigins,
+        AccessNamespace.RUNTIME to this.runtimeLanes,
     )
 
     /** Returns whether every exact access is inside this ceiling. */

@@ -89,16 +89,45 @@ private fun definitionJson(value: AgentDefinition): JsonObject = JsonObject(
     ),
 )
 
-private fun toolJson(value: ToolDefinition): JsonObject = JsonObject(
-    mapOf(
+private fun toolJson(value: ToolDefinition): JsonObject {
+    val fields = linkedMapOf<String, JsonElement>(
         "name" to JsonPrimitive(value.name),
         "revision" to JsonPrimitive(value.revision),
         "description" to JsonPrimitive(value.description),
         "input_schema" to value.inputSchema,
         "requirements" to JsonObject(mapOf("capabilities" to stringArray(value.requirements.capabilities.map { it.wireName }), "max_duration_ms" to JsonPrimitive(value.requirements.maxDurationMs), "max_output_bytes" to JsonPrimitive(value.requirements.maxOutputBytes))),
         "replay_class" to JsonPrimitive(value.replayClass.wireName),
-    ),
-)
+    )
+    value.accessPolicy?.let { policy ->
+        fun entries(values: List<com.garive.eng.kt.tools.AccessPolicyEntry>): JsonArray = JsonArray(
+            values.map { entry ->
+                JsonObject(
+                    mapOf(
+                        "resource" to JsonPrimitive(entry.resource),
+                        "allowed_modes" to stringArray(entry.allowedModes.map { it.wireName }),
+                    ),
+                )
+            },
+        )
+        fields["access_contract"] = JsonObject(
+            mapOf(
+                "policy" to JsonObject(
+                    mapOf(
+                        "policy_revision" to JsonPrimitive(policy.policyRevision),
+                        "filesystem_roots" to entries(policy.filesystemRoots),
+                        "process_lanes" to entries(policy.processLanes),
+                        "network_origins" to entries(policy.networkOrigins),
+                        "runtime_lanes" to entries(policy.runtimeLanes),
+                        "max_accesses" to JsonPrimitive(policy.maxAccesses),
+                        "max_result_bytes" to JsonPrimitive(policy.maxResultBytes),
+                    ),
+                ),
+                "resolver_revision" to JsonPrimitive(value.accessResolverRevision!!),
+            ),
+        )
+    }
+    return JsonObject(fields)
+}
 
 private fun snapshotJson(value: EffectiveAgentSnapshot, includeDigest: Boolean): JsonObject {
     val fields = linkedMapOf<String, JsonElement>(
