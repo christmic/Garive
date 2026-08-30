@@ -5,7 +5,7 @@ import {
   attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace, continueAgentTurn,
   createWorkSession,
   getArtifactPreview, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
-  getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
+  getSessionWorkspaces, getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
   resolveTurnApproval, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
@@ -49,7 +49,7 @@ const visualCapabilities = {
   agent_definition_id: "garive-work",
   multi_turn: true,
   durable_navigation: visualTestMode !== "setup",
-  activity: false,
+  activity: visualTestMode !== "setup",
   setup: visualTestMode === "setup",
   workspaces: visualTestMode !== "setup",
   artifacts: visualTestMode === "artifact",
@@ -104,8 +104,11 @@ export function App() {
   const loadSession = useCallback(async (sessionId: string) => {
     const timeline = await getSessionTimeline(sessionId);
     dispatch({ type: "session_loaded", timeline });
-    const artifacts = await listArtifacts(sessionId);
+    const [artifacts, workspaces] = await Promise.all([
+      listArtifacts(sessionId), getSessionWorkspaces(sessionId),
+    ]);
     dispatch({ type: "artifacts_loaded", page: artifacts });
+    dispatch({ type: "workspaces_loaded", sessionId, workspaces });
   }, []);
 
   useEffect(() => {
@@ -117,9 +120,18 @@ export function App() {
           turn_id: "visual-turn", started_position: 3, latest_position: 12, state: "suspended",
           user_text: "Create a decision memo in the selected Workspace", content_truncated: false,
           suspension: { suspension_id: "visual-approval", session_version: 5,
-            kind: "approval_required" }, activities: [],
+            kind: "approval_required" }, activities: [{ api_version: "v1",
+              activity_id: "visual-effect", kind: "tool", label_key: "agent.activity.write_file",
+              state: "prepared", source_position: 10, terminal: false }, { api_version: "v1",
+              activity_id: "visual-approval", kind: "interaction", label_key: "agent.activity.approval",
+              state: "waiting_for_input", source_position: 12, terminal: false }],
         }],
       } });
+      if (visualTestMode === "approval") dispatch({ type: "workspaces_loaded",
+        sessionId: "visual-session", workspaces: [{ api_version: "v1",
+          session_id: "visual-session", workspace_id: "workspace-preview",
+          display_name: "Launch materials", grant_revision: 2, access: "read_write",
+          attached_position: 4 }] });
       if (visualTestMode === "artifact") {
         dispatch({ type: "session_loaded", timeline: visualArtifactTimeline });
         dispatch({ type: "artifacts_loaded", page: visualArtifactPage });
@@ -374,6 +386,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const needsInput = suspension?.kind === "partial_output" || suspension?.kind === "external_input_required";
   const blockedSuspension = Boolean(suspension && !needsInput);
   const needsApproval = suspension?.kind === "approval_required";
+  const approvalEffect = [...state.activities].reverse().find((activity) =>
+    activity.kind === "tool" && !activity.terminal);
+  const approvalWorkspace = state.workspaces.find((workspace) => workspace.access === "read_write")
+    ?? state.workspaces[0];
 
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
@@ -383,9 +399,12 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
-        {needsApproval && <div className="approval-card" role="group" aria-label="Workspace write approval">
-          <span className="approval-icon"><Icon name="shield" /></span><div><strong>Approve this local write?</strong>
-            <p>Garive will execute only the exact prepared operation. A changed request requires a new approval.</p></div>
+        {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label="Workspace write approval required">
+          <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
+            ? `${activityLabel(approvalEffect.label_key)} in ` : "Approve one local operation in "}<bdi>{approvalWorkspace?.display_name ?? "the attached Workspace"}</bdi>?</strong>
+            <div className="approval-facts"><span><b>Scope</b>{approvalWorkspace?.access === "read_write" ? "Create one new file" : "Exact prepared operation"}</span>
+              <span><b>Duration</b>Once · this prepared call only</span><span><b>Overwrite</b>Never</span></div>
+            <p>A changed request, Workspace grant, or destination requires a new approval.</p></div>
           <div className="approval-actions"><button type="button" autoFocus disabled={state.phase === "submitting"}
             onClick={() => void resolveApproval(false)}>Decline</button><button className="primary" type="button"
               disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>Approve once</button></div>

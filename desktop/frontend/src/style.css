@@ -130,6 +130,9 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .approval-icon svg { width: 16px; }
 .approval-card strong { display: block; font-size: 11.5px; }
 .approval-card p { margin: 2px 0 0; color: var(--muted); font-size: 9.5px; line-height: 1.35; }
+.approval-facts { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 5px 0 3px; color: var(--muted); font-size: 8.5px; }
+.approval-facts span { display: inline-flex; gap: 4px; }
+.approval-facts b { color: inherit; font-weight: 680; }
 .approval-actions { display: flex; gap: 6px; }
 .approval-actions button { min-height: 29px; padding: 0 10px; border: 1px solid rgba(80,58,25,.2); border-radius: 8px; color: #4c3718; background: #fffdf8; font-size: 10px; font-weight: 620; }
 .approval-actions .primary { border-color: var(--accent); color: white; background: var(--accent); }
