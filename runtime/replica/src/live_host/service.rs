@@ -20,8 +20,8 @@ use crate::{
 use super::{
     completion_text, project_fact, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
     HostClock, HostContinuationInput, HostEventPage, InstalledAgent, LiveHostError, LiveHostLimits,
-    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher, TurnTimelineItem,
-    TurnTimelinePage,
+    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -112,6 +112,16 @@ impl LiveHost {
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
         let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
+        for item in items.iter_mut().filter(|item| item.state == "suspended") {
+            let turn_id = identity::<TurnId>(&item.turn_id)?;
+            let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite_query)?;
+            let suspended = reconstruct_suspended_turn(&snapshot).map_err(map_runtime)?;
+            item.suspension = Some(TurnSuspensionView {
+                suspension_id: suspended.suspension_id,
+                session_version: suspended.session_version,
+                kind: suspension_kind(suspended.suspension_kind).into(),
+            });
+        }
         items.retain(|item| item.latest_position > after_position);
         let has_more = items.len() > limit;
         items.truncate(limit);
@@ -705,6 +715,7 @@ fn project_timeline(
                         state: "running".into(),
                         user_text: String::new(),
                         completion_text: None,
+                        suspension: None,
                         content_truncated: false,
                     });
                 } else {
@@ -712,6 +723,7 @@ fn project_timeline(
                     item.latest_position = fact.position;
                     item.state = "running".into();
                     item.completion_text = None;
+                    item.suspension = None;
                 }
             }
             "turn.input" => {
@@ -733,6 +745,9 @@ fn project_timeline(
                 let item = timeline_item(&mut items, turn_id)?;
                 item.latest_position = fact.position;
                 item.state = state.into();
+                if state != "suspended" {
+                    item.suspension = None;
+                }
             }
             "turn.completed" => {
                 let (text, truncated) = bounded_text(&completion_text(fact)?, max_text_bytes);
@@ -740,6 +755,7 @@ fn project_timeline(
                 item.latest_position = fact.position;
                 item.state = "completed".into();
                 item.completion_text = Some(text);
+                item.suspension = None;
                 item.content_truncated |= truncated;
             }
             _ => {}
@@ -773,6 +789,17 @@ fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
         .last()
         .unwrap_or(0);
     (value[..boundary].to_owned(), true)
+}
+
+fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {
+    match kind {
+        RuntimeSuspensionKind::ApprovalRequired => "approval_required",
+        RuntimeSuspensionKind::ExternalInputRequired => "external_input_required",
+        RuntimeSuspensionKind::OperatorReconciliation => "operator_reconciliation",
+        RuntimeSuspensionKind::ResourceUnavailable => "resource_unavailable",
+        RuntimeSuspensionKind::PartialOutput => "partial_output",
+        RuntimeSuspensionKind::DelegationPending => "delegation_pending",
+    }
 }
 
 struct ContinueReplay<'a> {

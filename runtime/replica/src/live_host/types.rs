@@ -178,8 +178,21 @@ pub struct TurnTimelineItem {
     pub user_text: String,
     /// Redacted committed response projection when completed.
     pub completion_text: Option<String>,
+    /// Restart-safe continuation coordinates when the Turn is suspended.
+    pub suspension: Option<TurnSuspensionView>,
     /// Whether bounded display content was truncated.
     pub content_truncated: bool,
+}
+
+/// Minimal restart-safe continuation coordinates for Desktop presentation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnSuspensionView {
+    /// Exact durable suspension identity.
+    pub suspension_id: String,
+    /// Optimistic Session version required by continuation.
+    pub session_version: u64,
+    /// Stable public suspension kind.
+    pub kind: String,
 }
 
 /// One ascending bounded page of complete durable Turn projections.
