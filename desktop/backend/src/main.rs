@@ -578,6 +578,90 @@ fn write_pending_command(
         .map_err(|error| error.code().to_owned())
 }
 
+#[tauri::command]
+fn get_agent_definitions(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+) -> Result<garive_desktop::DesktopDefinitionPage, String> {
+    state.definitions().map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn create_product_session(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    command_id: String,
+    definition_id: String,
+) -> Result<garive_desktop::DesktopCreateSessionReceipt, String> {
+    state
+        .create_session_command(&command_id, &definition_id)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+async fn start_product_turn(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    command_id: String,
+    session_id: String,
+    input: String,
+) -> Result<garive_desktop::DesktopTurnCommandReceipt, String> {
+    state
+        .start_turn_detached(command_id, session_id, input)
+        .await
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn cancel_product_turn(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    command_id: String,
+    session_id: String,
+    turn_id: String,
+    requested_through_position: u64,
+) -> Result<garive_desktop::DesktopTurnCommandReceipt, String> {
+    state
+        .cancel_turn_command(
+            &command_id,
+            &session_id,
+            &turn_id,
+            requested_through_position,
+        )
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn continue_product_turn(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    command_id: String,
+    session_id: String,
+    turn_id: String,
+    suspension_id: String,
+    session_version: u64,
+    input: String,
+) -> Result<garive_desktop::DesktopTurnCommandReceipt, String> {
+    state
+        .continue_turn_detached(
+            command_id,
+            session_id,
+            turn_id,
+            suspension_id,
+            session_version,
+            input,
+        )
+        .await
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn get_session_events(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    after_position: u64,
+) -> Result<garive_desktop::DesktopEventPage, String> {
+    state
+        .event_page(&session_id, after_position)
+        .map_err(|error| error.code().to_owned())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -684,6 +768,12 @@ fn main() {
             write_client_preferences,
             read_pending_command,
             write_pending_command,
+            get_agent_definitions,
+            create_product_session,
+            start_product_turn,
+            cancel_product_turn,
+            continue_product_turn,
+            get_session_events,
             continue_agent_turn,
             resolve_turn_approval,
             run_agent_turn_with_workspace_context,

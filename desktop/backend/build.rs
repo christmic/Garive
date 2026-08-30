@@ -35,6 +35,12 @@ fn main() {
             "write_client_preferences",
             "read_pending_command",
             "write_pending_command",
+            "get_agent_definitions",
+            "create_product_session",
+            "start_product_turn",
+            "cancel_product_turn",
+            "continue_product_turn",
+            "get_session_events",
         ]),
     ))
     .expect("failed to build Garive Desktop permissions")

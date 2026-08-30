@@ -38,6 +38,12 @@
     "allow-read-client-preferences",
     "allow-write-client-preferences",
     "allow-read-pending-command",
-    "allow-write-pending-command"
+    "allow-write-pending-command",
+    "allow-get-agent-definitions",
+    "allow-create-product-session",
+    "allow-start-product-turn",
+    "allow-cancel-product-turn",
+    "allow-continue-product-turn",
+    "allow-get-session-events"
   ]
 }
