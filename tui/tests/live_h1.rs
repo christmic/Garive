@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     io::{Read, Write},
@@ -309,6 +311,86 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
     let text = fs::read_to_string(transcript).unwrap();
     assert!(text.contains("hello wonderful"));
     assert!(text.contains("wonderfulX"));
+    assert!(text.contains("\x1b[?1049l"));
+}
+
+#[test]
+fn boundary_history_browsing_restores_the_draft_cursor_in_a_real_pty() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let state_dir = temporary.path().join("state");
+    fs::create_dir(&state_dir).unwrap();
+    #[cfg(unix)]
+    fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let history_path = state_dir.join("prompt-history.v1.jsonl");
+    fs::write(
+        &history_path,
+        concat!(
+            "{\"schema_version\":1,\"entry_id\":\"old\",\"session_id\":\"s\",\"submitted_text\":\"oldest prompt\",\"submitted_at\":\"2026-08-31T00:00:00Z\"}\n",
+            "{\"schema_version\":1,\"entry_id\":\"new\",\"session_id\":\"s\",\"submitted_text\":\"newest prompt\",\"submitted_at\":\"2026-08-31T00:00:01Z\"}\n"
+        ),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    fs::set_permissions(&history_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let transcript = temporary.path().join("composer-boundary-history.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", &state_dir)
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            send "work"
+            send "\033\[D\033\[D"
+            send "\033\[A"
+            expect {
+                -exact "newest" {}
+                timeout { exit 31 }
+            }
+            expect {
+                -exact "prompt" {}
+                timeout { exit 32 }
+            }
+            send "\033\[A"
+            expect {
+                -exact "old" {}
+                timeout { exit 33 }
+            }
+            send "\033\[B"
+            expect {
+                -exact "new" {}
+                timeout { exit 34 }
+            }
+            send "\033\[B"
+            expect {
+                -exact "work" {}
+                timeout { exit 35 }
+            }
+            send "X"
+            expect {
+                -exact "Xrk" {}
+                timeout { exit 36 }
+            }
+            send "\021"
+            expect "Garive?"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("newest"));
+    assert!(text.contains("old"));
+    assert!(text.contains("Xrk"));
     assert!(text.contains("\x1b[?1049l"));
 }
 

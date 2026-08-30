@@ -6,6 +6,7 @@ use crate::application::{
     ActionOverlayIntent, ActionOverlayKey, AppAction, ExecutionState, FocusTarget, Overlay,
     TerminalSize,
 };
+use crate::input::{HistoryDraft, HistoryRecall};
 
 mod actions;
 mod mouse;
@@ -37,6 +38,9 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
             } else {
                 let _ = state.model.composer.insert(&text);
             }
+            if previous != state.model.composer.text() {
+                state.model.prompt_history_browser.reset();
+            }
             sync_command_suggestions(state, &previous);
         }
         Event::Mouse(event) => mouse::handle(event, state),
@@ -48,6 +52,9 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
 fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     let previous = state.model.composer.text().to_owned();
     handle_key_inner(key, state);
+    if previous != state.model.composer.text() && !matches!(key.code, KeyCode::Up | KeyCode::Down) {
+        state.model.prompt_history_browser.reset();
+    }
     sync_command_suggestions(state, &previous);
 }
 
@@ -324,6 +331,13 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
             let direction = if key.code == KeyCode::Up { -1 } else { 1 };
             let (target, preferred) =
                 crate::view::composer_vertical_target(&state.model, direction);
+            if !key.modifiers.contains(KeyModifiers::SHIFT)
+                && !state.model.composer.has_selection()
+                && target == state.model.composer.cursor_grapheme()
+                && browse_prompt_history(state, direction)
+            {
+                return;
+            }
             state.model.composer.apply_visual_vertical_move(
                 target,
                 preferred,
@@ -345,6 +359,45 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Enter => submit(state),
         _ => {}
     }
+}
+
+fn browse_prompt_history(state: &mut RuntimeState, direction: i8) -> bool {
+    let recall = if direction < 0 {
+        let current = HistoryDraft {
+            text: state.model.composer.text().to_owned(),
+            cursor_grapheme: state.model.composer.cursor_grapheme(),
+        };
+        state
+            .model
+            .prompt_history_browser
+            .older(&state.model.prompt_history, current)
+    } else if state.model.prompt_history_browser.is_active() {
+        state
+            .model
+            .prompt_history_browser
+            .newer(&state.model.prompt_history)
+    } else {
+        None
+    };
+    let Some(recall) = recall else {
+        return false;
+    };
+    match recall {
+        HistoryRecall::Entry(text) => {
+            if state.model.composer.replace(&text).is_ok() {
+                state.model.composer.move_document_end(false);
+            }
+        }
+        HistoryRecall::Draft(draft) => {
+            if state.model.composer.replace(&draft.text).is_ok() {
+                state
+                    .model
+                    .composer
+                    .place_cursor(draft.cursor_grapheme, false);
+            }
+        }
+    }
+    true
 }
 
 fn handle_command_suggestion_key(key: KeyEvent, state: &mut RuntimeState) -> bool {

@@ -1,7 +1,9 @@
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::input::{command_matches, CommandContext, EditorState, COMMAND_PALETTE};
+use crate::input::{
+    command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -269,6 +271,7 @@ pub(crate) struct AppModel {
     pub(crate) sessions_loading: bool,
     pub(crate) session_filter: String,
     pub(crate) prompt_history: Vec<String>,
+    pub(crate) prompt_history_browser: PromptHistoryBrowser,
     pub(crate) history_filter: String,
     pub(crate) history_selection: usize,
     pub(crate) command_filter: String,

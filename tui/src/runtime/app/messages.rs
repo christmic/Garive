@@ -138,6 +138,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 }
             } else {
                 state.model.composer.clear();
+                state.model.prompt_history_browser.reset();
             }
             host::bootstrap(state.client.clone(), state.sender.clone());
         }
@@ -150,6 +151,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             state.finish_pending(&command_id, &submitted_text);
             if !submitted_text.is_empty() {
                 state.model.composer.clear();
+                state.model.prompt_history_browser.reset();
             }
             state.model.selected_turn = Some(response.turn_id);
             state.model.execution = ExecutionState::Following;

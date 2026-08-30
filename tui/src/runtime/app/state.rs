@@ -169,6 +169,7 @@ impl RuntimeState {
             .unwrap_or_default()
             .to_owned();
         let _ = self.model.composer.replace(&draft);
+        self.model.prompt_history_browser.reset();
         self.model.connection = ConnectionState::Connecting;
         self.snapshot_request = self.snapshot_request.saturating_add(1);
         host::load_snapshot(

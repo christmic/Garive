@@ -73,6 +73,7 @@ pub(super) fn submit(state: &mut RuntimeState) {
     match parse_command(&text) {
         CommandParse::Valid(command) => {
             state.model.composer.clear();
+            state.model.prompt_history_browser.reset();
             execute_command(command, state);
             return;
         }

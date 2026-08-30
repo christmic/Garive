@@ -140,6 +140,7 @@ pub(super) fn select_history(state: &mut RuntimeState) {
         .cloned()
     {
         let _ = state.model.composer.replace(&text);
+        state.model.prompt_history_browser.reset();
     }
     state.model.overlay = None;
 }
