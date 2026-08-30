@@ -203,15 +203,20 @@ After three repeated runs, the Spec is updated with observed distribution and
 an accepted regression margin. Completion requires those values to be Baseline
 or Gate, not Proposed. Correctness gates remain blocking regardless of speed.
 
-The macOS arm64 release first-frame metric is now a Gate at p95 `<150 ms`.
-Pinned outer-process evidence at Garive `54ae160b697147a00e7e1fc128cb3accdc19a18c`
-runs the shipping binary against production `LiveHost` plus file SQLite in a
-real PTY. Three independent 20-sample runs observed p95 `28.883 ms`,
-`26.503 ms`, and `27.068 ms`; the unsmoothed distributions, including the
-`356.375 ms` first-run maximum, are stored in
-`docs/evidence/tui-release-first-frame-2026-08-30.json`. This acceptance is
-specific to the named reference environment. Idle CPU and the exact resident
-memory workload remain Proposed and keep the complete performance program open.
+The macOS arm64 release first-frame, idle CPU, and resident-memory metrics are
+now Gates. Pinned evidence at Garive
+`d0cfc1c01da30d9389907fbb1bb4b61db1eee34b` runs the shipping binary against
+production `LiveHost` plus file SQLite in a real PTY. Three independent
+20-sample first-frame runs observed p95 `24.971 ms`, `26.098 ms`, and
+`25.113 ms`; the unsmoothed distributions retain the `527.282 ms` first-run
+maximum. Three 60-second online-idle runs recorded `<10 ms` CPU time each at
+the measurement backend's resolution, proving `<0.017%` of one logical core.
+Three isolated release children containing exactly 10 Sessions and 5,000
+loaded production timeline cells peaked at `4,128,768`, `4,210,688`, and
+`4,145,152` bytes. Raw reports are stored in
+`docs/evidence/tui-release-process-2026-08-30.json` and
+`docs/evidence/tui-release-memory-2026-08-30.json`. These acceptances are
+specific to the named reference environment.
 
 Stress tests also prove cancellation latency under a saturated Host channel and
 memory stability during 30 minutes of bounded event/reconnect churn. Duration
