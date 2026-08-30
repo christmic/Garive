@@ -7,9 +7,9 @@ use serde_json::Value;
 use tokio::time::{timeout, Duration};
 
 use crate::{
-    reduce_host_events, AgentDefinitionPage, ClientLimits, CreateSessionResponse, HostClientError,
-    HostClientErrorCode, HostEvent, HostView, SessionPage, SessionSummary, SessionView,
-    SuspensionView, TurnCommandResponse, TurnTimelinePage,
+    reduce_host_events, reducer::validate_activity, AgentDefinitionPage, ClientLimits,
+    CreateSessionResponse, HostClientError, HostClientErrorCode, HostEvent, HostView, SessionPage,
+    SessionSummary, SessionView, SuspensionView, TurnCommandResponse, TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -171,6 +171,15 @@ impl LiveHostClient {
                         .suspension
                         .as_ref()
                         .is_some_and(|value| !valid_suspension(value))
+                    || item
+                        .activities
+                        .iter()
+                        .any(|activity| validate_activity(activity, item.latest_position).is_err())
+                    || item.activities.iter().enumerate().any(|(index, activity)| {
+                        item.activities[..index]
+                            .iter()
+                            .any(|prior| prior.activity_id == activity.activity_id)
+                    })
             })
             || page
                 .items

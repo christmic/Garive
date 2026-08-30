@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use garive_host_client::{
-    reduce_host_events, ClientLimits, HostClientErrorCode, HostEvent, HostTerminal, HostView,
-    LiveHostClient, HOST_CLIENT_FAILURES,
+    reduce_host_events, ClientLimits, HostActivity, HostClientErrorCode, HostEvent, HostTerminal,
+    HostView, LiveHostClient, HOST_CLIENT_FAILURES,
 };
 use serde::Deserialize;
 use tokio::{
@@ -110,6 +110,47 @@ fn shared_fixture_reduces_gaps_unknown_events_and_reconnects() {
     )
     .expect("non-terminal prefix remains valid");
     assert_eq!(disconnected.terminal, None);
+}
+
+#[test]
+fn h3_activity_reducer_preserves_committed_progress_and_rejects_regression() {
+    let event = |position: u64, name: &str, state: &str, terminal: bool| HostEvent {
+        api_version: "v1".into(),
+        session_id: "session-client".into(),
+        position,
+        event: name.into(),
+        turn_id: "turn-client".into(),
+        execution_id: "execution-client".into(),
+        text: String::new(),
+        activity: Some(HostActivity {
+            api_version: "v1".into(),
+            activity_id: "activity-client".into(),
+            kind: "tool".into(),
+            label_key: "agent.activity.read".into(),
+            state: state.into(),
+            source_position: position,
+            terminal,
+            safe_code: None,
+        }),
+    };
+    let events = [
+        event(1, "agent.activity.prepared", "prepared", false),
+        event(2, "agent.activity.authorized", "authorized", false),
+        event(3, "agent.activity.started", "running", false),
+        event(4, "agent.activity.completed", "completed", true),
+    ];
+    let view = reduce_host_events("session-client", &events, HostView::default(), 10).unwrap();
+    assert_eq!(view.activities["activity-client"].state, "completed");
+    assert!(view.unknown_events.is_empty());
+
+    let error = reduce_host_events(
+        "session-client",
+        &[event(5, "agent.activity.started", "running", false)],
+        view,
+        10,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, HostClientErrorCode::EventOrderViolation);
 }
 
 #[test]

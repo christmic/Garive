@@ -35,6 +35,7 @@ pub struct HostEvent {
     /// Committed presentation text, empty when not applicable.
     pub text: String,
     /// Public Agent activity state when this is an H3 event.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub activity: Option<HostActivity>,
 }
 
@@ -83,6 +84,8 @@ pub struct HostView {
     pub text: String,
     /// Unknown event names retained for forward-compatible diagnostics.
     pub unknown_events: Vec<String>,
+    /// Latest committed state of each observed public activity.
+    pub activities: BTreeMap<String, HostActivity>,
     /// Applied event fingerprints used to verify duplicate positions.
     pub(crate) seen: BTreeMap<u64, HostEvent>,
 }
