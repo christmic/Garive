@@ -20,6 +20,26 @@ This lane must produce a resource-sealed ad-hoc signature with hardened runtime
 and a checksum-valid DMG. It proves a locally runnable package, not Gatekeeper,
 Developer ID, notarization, universal architecture, or update eligibility.
 
+Universal local evidence additionally requires both Rust macOS targets and a
+single consistent rustup toolchain. If Homebrew Rust precedes rustup, bind
+Tauri's subprocesses explicitly:
+
+```sh
+rustup target add x86_64-apple-darwin
+cd desktop/backend
+CARGO="$(rustup which cargo)" RUSTC="$(rustup which rustc)" \
+  APPLE_SIGNING_IDENTITY=- ../frontend/node_modules/.bin/tauri build \
+  --target universal-apple-darwin --bundles dmg
+cd ../..
+desktop/release/verify-macos-bundle.sh \
+  target/universal-apple-darwin/release/bundle/dmg/Garive_0.1.0_universal.dmg local
+```
+
+The verified local Universal DMG on 2026-08-30 contained `x86_64 arm64` and had
+SHA-256 `bfa68aed3ea5fdfe74d092402c80581baea1ce63eaa40f3602f3d2bcafae7f71`.
+This host's rustup `rust-objcopy` could not load its `libLLVM.dylib`, so strip
+warnings remain a release-CI failure even though bundle construction succeeded.
+
 ## Public release admission
 
 The release runner must start from an exact clean Git revision and supply a
@@ -38,6 +58,9 @@ The release audit requires all of the following:
 - Gatekeeper execution assessment;
 - a stapled notarization ticket;
 - the exact `com.garive.desktop` identifier and checksum-valid DMG.
+
+The build log must also be warning-free; failed stripping, missing architecture,
+skipped signing, or skipped notarization is a failed public-release run.
 
 Publication additionally requires the update manifest/signature, SBOM, license
 inventory, SHA-256 checksum publication, rollback instructions, and a clean-Mac
