@@ -63,7 +63,7 @@ contains one `plugins.updater` object that satisfies every rule below.
 
 | Field | Rule |
 |---|---|
-| `endpoints` | one or two public HTTPS URLs; no credentials, fragments, loopback, IP literals, or insecure transport |
+| `endpoints` | one or two distinct public HTTPS URLs, at most 2 KiB each; no credentials, fragments, loopback, IP literals, or insecure transport |
 | `pubkey` | non-empty Minisign public key, at most 16 KiB |
 | `dangerousInsecureTransportProtocol` | absent or `false` |
 | `dangerousAcceptInvalidCerts` | absent or `false` |

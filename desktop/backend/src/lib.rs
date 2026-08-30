@@ -21,6 +21,7 @@ mod product_store;
 mod setup;
 mod system_configuration;
 mod system_provider;
+mod update_configuration;
 mod workspace;
 mod workspace_bookmark;
 mod workspace_execution;
@@ -73,6 +74,7 @@ pub use system_provider::{
     SystemDesktopSecretResolver, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
     DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
+pub use update_configuration::desktop_updater_configured;
 pub use workspace::{
     DesktopArtifactContent, DesktopArtifactPreview, DesktopWorkspaceAuthorization,
     DesktopWorkspaceContextFile, DesktopWorkspaceEntry, DesktopWorkspaceEntryPage,
