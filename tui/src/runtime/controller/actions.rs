@@ -78,7 +78,7 @@ pub(super) fn submit(state: &mut RuntimeState) {
         }
         CommandParse::Invalid => {
             state.model.notice = Some("The slash command is invalid; nothing was sent.".into());
-            state.model.overlay = Some(Overlay::UnknownCommand);
+            state.model.overlay = Some(Overlay::ErrorDetails);
             return;
         }
         CommandParse::NotCommand => {}

@@ -65,18 +65,28 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         .env("GARIVE_TUI_STATE", temporary.path().join("state"))
         .args(["-c", r#"
             set timeout 5
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
-            expect "Garive. Connecting"
-            expect "Connection online"
+            must_expect "Garive. Connecting" 20
+            must_expect "Connection online" 22
+            send "/not-a-command\r"
+            must_expect "The slash command is invalid; nothing was sent." 24
+            send "\033"
+            after 100
             send "\020"
-            expect "Command palette."
-            expect "1. /new: Create session"
+            must_expect "Command palette." 26
+            must_expect "1. /new: Create session" 28
             send "\033"
             send "\021"
             send "\r"
-            expect "Terminal restored."
-            expect eof
+            must_expect "Terminal restored." 30
         "#])
         .status()
         .unwrap();
