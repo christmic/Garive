@@ -374,6 +374,17 @@ impl RuntimeState {
         );
     }
 
+    pub(super) fn load_more_sessions(&mut self) {
+        if self.model.sessions_loading {
+            return;
+        }
+        let Some(before) = self.model.sessions_next_before.clone() else {
+            return;
+        };
+        self.model.sessions_loading = true;
+        host::load_session_page(self.client.clone(), before, self.sender.clone());
+    }
+
     pub(super) fn persist_presentation(&mut self) {
         if let Some(session) = self.model.selected_session.as_deref() {
             self.preferences
@@ -560,9 +571,12 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
         HostMessage::Bootstrapped {
             definitions,
             sessions,
+            next_before,
         } => {
             state.model.definitions = definitions;
             state.model.sessions = sessions;
+            state.model.sessions_next_before = next_before;
+            state.model.sessions_loading = false;
             state.dispatch(AppAction::BootCompleted {
                 definition_count: state.model.definitions.len(),
                 session_count: state.model.sessions.len(),
@@ -582,6 +596,24 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             if let Some(id) = selected {
                 state.load(id);
             }
+        }
+        HostMessage::SessionPageLoaded {
+            sessions,
+            next_before,
+        } => {
+            for session in sessions {
+                if !state
+                    .model
+                    .sessions
+                    .iter()
+                    .any(|existing| existing.session_id == session.session_id)
+                {
+                    state.model.sessions.push(session);
+                }
+            }
+            state.model.sessions_next_before = next_before;
+            state.model.sessions_loading = false;
+            state.model.session_count = state.model.sessions.len();
         }
         HostMessage::SnapshotLoaded {
             request_id,
@@ -733,6 +765,11 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                     state.model.execution = ExecutionState::Failed;
                 }
                 HostOperation::Snapshot { request_id } if request_id != state.snapshot_request => {}
+                HostOperation::SessionPage => {
+                    state.model.sessions_loading = false;
+                    state.model.notice =
+                        Some(format!("Session page unavailable: {}.", code.wire_name()));
+                }
                 HostOperation::Snapshot { .. }
                     if matches!(
                         code,

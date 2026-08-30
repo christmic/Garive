@@ -340,7 +340,13 @@ fn session_picker_text(model: &AppModel) -> String {
         rows.push("  No matching Sessions".into());
     }
     rows.push(String::new());
-    rows.push("↑/↓ select   Enter open   Esc close".into());
+    rows.push(if model.sessions_loading {
+        "Loading older Sessions…".into()
+    } else if model.sessions_next_before.is_some() {
+        "↑/↓ select · ↓ at end loads more · Enter open · Esc close".into()
+    } else {
+        "↑/↓ select   Enter open   Esc close".into()
+    });
     rows.join("\n")
 }
 

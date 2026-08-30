@@ -76,8 +76,12 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                 state.model.session_selection = state.model.session_selection.saturating_sub(1)
             }
             KeyCode::Down if overlay == Overlay::SessionPicker => {
-                state.model.session_selection = (state.model.session_selection + 1)
-                    .min(matching_sessions(state).len().saturating_sub(1))
+                let last = matching_sessions(state).len().saturating_sub(1);
+                if state.model.session_selection >= last {
+                    state.load_more_sessions();
+                } else {
+                    state.model.session_selection += 1;
+                }
             }
             KeyCode::Enter if overlay == Overlay::SessionPicker => select_session(state),
             KeyCode::Up if overlay == Overlay::PromptHistory => {

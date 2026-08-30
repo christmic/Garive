@@ -26,6 +26,11 @@ pub(crate) enum HostMessage {
     Bootstrapped {
         definitions: Vec<AgentDefinitionSummary>,
         sessions: Vec<SessionSummary>,
+        next_before: Option<String>,
+    },
+    SessionPageLoaded {
+        sessions: Vec<SessionSummary>,
+        next_before: Option<String>,
     },
     SnapshotLoaded {
         request_id: u64,
@@ -63,6 +68,7 @@ pub(crate) enum HostMessage {
 pub(crate) enum HostOperation {
     Bootstrap,
     Snapshot { request_id: u64 },
+    SessionPage,
     Mutation { command_id: String },
 }
 
@@ -70,17 +76,38 @@ pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage
     tokio::spawn(async move {
         let result = async {
             let definitions = client.list_agent_definitions().await?.definitions;
-            let sessions = client.list_sessions(PAGE_LIMIT, None).await?.sessions;
-            Ok::<_, garive_host_client::HostClientError>((definitions, sessions))
+            let page = client.list_sessions(PAGE_LIMIT, None).await?;
+            Ok::<_, garive_host_client::HostClientError>((definitions, page))
         }
         .await;
         let message = match result {
-            Ok((definitions, sessions)) => HostMessage::Bootstrapped {
+            Ok((definitions, page)) => HostMessage::Bootstrapped {
                 definitions,
-                sessions,
+                sessions: page.sessions,
+                next_before: page.next_before,
             },
             Err(error) => HostMessage::Failed {
                 operation: HostOperation::Bootstrap,
+                error,
+            },
+        };
+        let _ = sender.send(message).await;
+    });
+}
+
+pub(crate) fn load_session_page(
+    client: LiveHostClient,
+    before: String,
+    sender: mpsc::Sender<HostMessage>,
+) {
+    tokio::spawn(async move {
+        let message = match client.list_sessions(PAGE_LIMIT, Some(&before)).await {
+            Ok(page) => HostMessage::SessionPageLoaded {
+                sessions: page.sessions,
+                next_before: page.next_before,
+            },
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::SessionPage,
                 error,
             },
         };
