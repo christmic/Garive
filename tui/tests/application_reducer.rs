@@ -48,6 +48,34 @@ fn unavailable_host_has_a_safe_public_code() {
 }
 
 #[test]
+fn switching_sessions_restores_a_bounded_independent_viewport() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        ..Default::default()
+    };
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some("a-anchor".into());
+    model.switch_viewport("session-b");
+    model.selected_session = Some("session-b".into());
+    assert!(model.viewport.follow_latest);
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some("b-anchor".into());
+
+    model.switch_viewport("session-a");
+    assert_eq!(model.viewport.anchor_key.as_deref(), Some("a-anchor"));
+    assert!(!model.viewport.follow_latest);
+
+    let mut bounded = AppModel::default();
+    for index in 0..80 {
+        let session = format!("session-{index}");
+        bounded.switch_viewport(&session);
+        bounded.selected_session = Some(session);
+    }
+    assert!(bounded.session_viewports.len() <= 64);
+    assert!(bounded.viewport_order.len() <= 64);
+}
+
+#[test]
 fn blocking_overlays_own_focus_and_quit_requires_confirmation() {
     let mut model = AppModel::default();
     reduce(

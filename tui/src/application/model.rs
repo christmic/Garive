@@ -1,4 +1,5 @@
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::input::EditorState;
 
@@ -144,6 +145,8 @@ pub(crate) struct AppModel {
     pub(crate) selected_turn: Option<String>,
     pub(crate) observed_position: u64,
     pub(crate) viewport: ViewportState,
+    pub(crate) session_viewports: BTreeMap<String, ViewportState>,
+    pub(crate) viewport_order: VecDeque<String>,
     pub(crate) suspension: Option<SuspensionView>,
     pub(crate) notice: Option<String>,
     pub(crate) timeline: Vec<TimelineItem>,
@@ -152,8 +155,33 @@ pub(crate) struct AppModel {
 }
 
 impl AppModel {
-    pub(crate) fn reset_viewport(&mut self) {
-        self.viewport = ViewportState::default();
+    pub(crate) fn switch_viewport(&mut self, session_id: &str) {
+        if self.selected_session.as_deref() == Some(session_id) {
+            return;
+        }
+        if let Some(previous) = self.selected_session.clone() {
+            self.session_viewports
+                .insert(previous.clone(), self.viewport.clone());
+            self.touch_viewport(previous);
+        }
+        self.viewport = self
+            .session_viewports
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default();
+        self.touch_viewport(session_id.to_owned());
+        while self.viewport_order.len() > 64 {
+            if let Some(evicted) = self.viewport_order.pop_front() {
+                if evicted != session_id {
+                    self.session_viewports.remove(&evicted);
+                }
+            }
+        }
+    }
+
+    fn touch_viewport(&mut self, session_id: String) {
+        self.viewport_order.retain(|value| value != &session_id);
+        self.viewport_order.push_back(session_id);
     }
 
     pub(crate) fn scroll_conversation_up(&mut self, cells: usize) {

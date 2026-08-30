@@ -401,7 +401,7 @@ impl RuntimeState {
         }
         self.persist_presentation();
         if switching_session {
-            self.model.reset_viewport();
+            self.model.switch_viewport(&session_id);
         }
         self.model.selected_session = Some(session_id.clone());
         self.preferences.selected_session_id = Some(session_id.clone());
