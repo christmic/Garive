@@ -191,6 +191,8 @@ fn admitted_method(method: &str) -> bool {
             | "Page.navigateToHistoryEntry"
             | "Input.dispatchKeyEvent"
             | "Input.dispatchMouseEvent"
+            | "DOM.scrollIntoViewIfNeeded"
+            | "DOM.getBoxModel"
     )
 }
 

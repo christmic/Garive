@@ -236,6 +236,44 @@ impl CdpClient {
         })
     }
 
+    /// Clicks one adapter-private backend node through its current rendered box.
+    pub async fn click_backend_node(
+        &mut self,
+        session_id: &str,
+        backend_dom_node_id: u64,
+    ) -> Result<(), CdpTransportError> {
+        validate_id(session_id)?;
+        if backend_dom_node_id == 0 {
+            return Err(protocol());
+        }
+        self.transport
+            .call(
+                "DOM.scrollIntoViewIfNeeded",
+                json!({"backendNodeId":backend_dom_node_id}),
+                Some(session_id.into()),
+            )
+            .await?;
+        let result = self
+            .transport
+            .call(
+                "DOM.getBoxModel",
+                json!({"backendNodeId":backend_dom_node_id}),
+                Some(session_id.into()),
+            )
+            .await?;
+        let (x, y) = content_center(&result)?;
+        for params in [
+            json!({"type":"mouseMoved","x":x,"y":y,"button":"none","buttons":0}),
+            json!({"type":"mousePressed","x":x,"y":y,"button":"left","buttons":1,"clickCount":1}),
+            json!({"type":"mouseReleased","x":x,"y":y,"button":"left","buttons":0,"clickCount":1}),
+        ] {
+            self.transport
+                .call("Input.dispatchMouseEvent", params, Some(session_id.into()))
+                .await?;
+        }
+        Ok(())
+    }
+
     /// Fetches and validates one full AX tree under explicit depth/node/text bounds.
     pub async fn full_ax_tree(
         &mut self,
@@ -452,6 +490,31 @@ fn validate_http_url(value: &str) -> Result<(), CdpTransportError> {
         Err(protocol())
     } else {
         Ok(())
+    }
+}
+
+fn content_center(result: &Value) -> Result<(f64, f64), CdpTransportError> {
+    let content = result
+        .get("model")
+        .and_then(|model| model.get("content"))
+        .and_then(Value::as_array)
+        .filter(|values| values.len() == 8)
+        .ok_or_else(protocol)?;
+    let coordinates = content
+        .iter()
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|value| value.is_finite() && value.abs() <= 10_000_000.0)
+                .ok_or_else(protocol)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let x = (coordinates[0] + coordinates[2] + coordinates[4] + coordinates[6]) / 4.0;
+    let y = (coordinates[1] + coordinates[3] + coordinates[5] + coordinates[7]) / 4.0;
+    if x.is_finite() && y.is_finite() {
+        Ok((x, y))
+    } else {
+        Err(protocol())
     }
 }
 

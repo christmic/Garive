@@ -68,6 +68,14 @@ references with the Runtime snapshot identity. Its non-configurable v1 baseline
 redacts secure/password roles and protected/password/secure properties before
 the observation can pass the common bounds validator.
 
+Runtime separately retains a private snapshot binding from each Garive node
+reference to the adapter backend node, frame and semantic action set. Click
+resolution requires exact target, snapshot ID, target revision, node reference,
+declared `click` support and a backend node. CDP scrolls that backend node into
+view, obtains its current box and emits one bounded move/press/release sequence;
+neither coordinates nor CDP/backend identities enter the Browser tool schema or
+Core observation.
+
 ## Acceptance
 
 - pure config/wire tests reject remote/discovered endpoints, invalid limits,

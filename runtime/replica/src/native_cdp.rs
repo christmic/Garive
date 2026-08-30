@@ -22,11 +22,81 @@ pub struct CdpObservationContext {
     pub bounds: NativeObservationBounds,
 }
 
+/// Observation plus the private adapter identity binding retained by Runtime.
+pub struct MappedCdpObservation {
+    /// Redacted bounded observation admissible to Core.
+    pub observation: NativeObservationV1,
+    /// Private snapshot-local CDP action binding.
+    pub binding: CdpSnapshotBindingV1,
+}
+
+/// Private binding from one committed snapshot to adapter node mechanics.
+pub struct CdpSnapshotBindingV1 {
+    target: NativeTarget,
+    snapshot_id: NativeSnapshotId,
+    target_revision: String,
+    nodes: BTreeMap<NativeNodeRef, CdpBoundNode>,
+}
+
+struct CdpBoundNode {
+    backend_dom_node_id: Option<u64>,
+    frame_id: Option<String>,
+    actions: BTreeSet<String>,
+}
+
+/// Exact adapter-private mechanics selected for one semantic click.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpClickTarget {
+    /// Current backend DOM node identity, never exposed to Core.
+    pub backend_dom_node_id: u64,
+    /// Optional owning frame identity.
+    pub frame_id: Option<String>,
+}
+
+impl CdpSnapshotBindingV1 {
+    /// Resolves one click only under exact target, snapshot, revision and action support.
+    pub fn resolve_click(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+        node_ref: &NativeNodeRef,
+    ) -> Result<CdpClickTarget, NativeProtocolError> {
+        if target != &self.target {
+            return Err(NativeProtocolError::TargetNotAdmitted);
+        }
+        if expected_snapshot_id != &self.snapshot_id || target_revision != self.target_revision {
+            return Err(NativeProtocolError::SnapshotStale);
+        }
+        let node = self
+            .nodes
+            .get(node_ref)
+            .ok_or(NativeProtocolError::NodeStale)?;
+        if !node.actions.contains("click") {
+            return Err(NativeProtocolError::ActionUnsupported);
+        }
+        Ok(CdpClickTarget {
+            backend_dom_node_id: node
+                .backend_dom_node_id
+                .ok_or(NativeProtocolError::ActionUnsupported)?,
+            frame_id: node.frame_id.clone(),
+        })
+    }
+}
+
 /// Maps raw adapter-private AX identities into a bounded redacted Runtime observation.
 pub fn map_cdp_ax_tree(
     context: CdpObservationContext,
     tree: &CdpAxTree,
 ) -> Result<NativeObservationV1, NativeProtocolError> {
+    Ok(map_cdp_ax_tree_with_binding(context, tree)?.observation)
+}
+
+/// Maps one AX tree and returns the separate private action binding.
+pub fn map_cdp_ax_tree_with_binding(
+    context: CdpObservationContext,
+    tree: &CdpAxTree,
+) -> Result<MappedCdpObservation, NativeProtocolError> {
     if !matches!(context.target, NativeTarget::Browser { .. })
         || tree.nodes.len() > context.bounds.max_nodes as usize
     {
@@ -114,6 +184,24 @@ pub fn map_cdp_ax_tree(
             })
         })
         .collect::<Result<Vec<_>, NativeProtocolError>>()?;
+    let binding = CdpSnapshotBindingV1 {
+        target: context.target.clone(),
+        snapshot_id: context.snapshot_id.clone(),
+        target_revision: context.target_revision.clone(),
+        nodes: visible
+            .iter()
+            .map(|node| {
+                Ok((
+                    references[node.node_id.as_str()].clone(),
+                    CdpBoundNode {
+                        backend_dom_node_id: node.backend_dom_node_id,
+                        frame_id: node.frame_id.clone(),
+                        actions: actions(node)?.into_iter().collect(),
+                    },
+                ))
+            })
+            .collect::<Result<_, NativeProtocolError>>()?,
+    };
     let observation = NativeObservationV1 {
         target: context.target,
         snapshot_id: context.snapshot_id,
@@ -125,7 +213,10 @@ pub fn map_cdp_ax_tree(
         bounds: context.bounds,
     };
     observation.validate()?;
-    Ok(observation)
+    Ok(MappedCdpObservation {
+        observation,
+        binding,
+    })
 }
 
 fn nearest_visible_parent<'a>(

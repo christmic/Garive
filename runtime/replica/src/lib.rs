@@ -145,7 +145,10 @@ pub use native_capability::{
     NativeObservationV1, NativeProtocolError, NativeSemanticNode, NativeSensitivity,
     NativeSnapshotId, NativeTarget, WindowId,
 };
-pub use native_cdp::{map_cdp_ax_tree, CdpObservationContext};
+pub use native_cdp::{
+    map_cdp_ax_tree, map_cdp_ax_tree_with_binding, CdpClickTarget, CdpObservationContext,
+    CdpSnapshotBindingV1, MappedCdpObservation,
+};
 pub use native_executor::{NativeCapabilityExecutor, T2_NATIVE_EXECUTOR_ID};
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,

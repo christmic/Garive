@@ -1,8 +1,8 @@
 use garive_browser_cdp::{CdpAxNode, CdpAxProperty, CdpAxTree};
 use garive_runtime::{
-    map_cdp_ax_tree, BrowserPageId, BrowserSessionId, CdpObservationContext,
-    NativeObservationBounds, NativeProtocolError, NativeSensitivity, NativeSnapshotId,
-    NativeTarget,
+    map_cdp_ax_tree, map_cdp_ax_tree_with_binding, BrowserPageId, BrowserSessionId,
+    CdpObservationContext, NativeNodeRef, NativeObservationBounds, NativeProtocolError,
+    NativeSensitivity, NativeSnapshotId, NativeTarget,
 };
 use serde_json::json;
 
@@ -102,5 +102,60 @@ fn mapping_rejects_missing_or_cyclic_parent_evidence() {
             }
         ),
         Err(NativeProtocolError::ReceiptInvalid)
+    );
+}
+
+#[test]
+fn private_binding_resolves_click_only_for_the_exact_snapshot_node_and_revision() {
+    let mut button = node("button-cdp", Some("root-cdp"), "button", false);
+    button.backend_dom_node_id = Some(42);
+    let mapped = map_cdp_ax_tree_with_binding(
+        context(),
+        &CdpAxTree {
+            nodes: vec![button, node("root-cdp", None, "RootWebArea", false)],
+        },
+    )
+    .expect("mapped observation");
+    let target = mapped.observation.target.clone();
+    let snapshot = mapped.observation.snapshot_id.clone();
+    let button_ref = mapped
+        .observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "button")
+        .expect("button")
+        .node_ref
+        .clone();
+    assert_eq!(
+        mapped
+            .binding
+            .resolve_click(&target, &snapshot, "revision-1", &button_ref)
+            .expect("click target")
+            .backend_dom_node_id,
+        42
+    );
+    assert_eq!(
+        mapped.binding.resolve_click(
+            &target,
+            &NativeSnapshotId::new("snapshot-old").expect("snapshot"),
+            "revision-1",
+            &button_ref,
+        ),
+        Err(NativeProtocolError::SnapshotStale)
+    );
+    assert_eq!(
+        mapped
+            .binding
+            .resolve_click(&target, &snapshot, "revision-old", &button_ref,),
+        Err(NativeProtocolError::SnapshotStale)
+    );
+    assert_eq!(
+        mapped.binding.resolve_click(
+            &target,
+            &snapshot,
+            "revision-1",
+            &NativeNodeRef::new("node-missing").expect("node"),
+        ),
+        Err(NativeProtocolError::NodeStale)
     );
 }
