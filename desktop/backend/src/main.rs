@@ -148,6 +148,30 @@ async fn reauthorize_workspace(
 }
 
 #[tauri::command]
+async fn authorize_workspace_writes(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    workspace_id: String,
+) -> Result<Option<garive_desktop::DesktopWorkspaceGrant>, String> {
+    let Some(selection) = app
+        .dialog()
+        .file()
+        .set_title("Allow Garive to create files in this Workspace")
+        .blocking_pick_folder()
+    else {
+        return Ok(None);
+    };
+    let path = selection
+        .into_path()
+        .map_err(|_| "workspace_unavailable".to_owned())?;
+    workspaces
+        .authorize_writes(&workspace_id, &path, window.label())
+        .map(Some)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn revoke_workspace(
     window: tauri::WebviewWindow,
     workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
@@ -303,7 +327,7 @@ fn main() {
             );
             let state = garive_desktop::DesktopState::default();
             let installed = state
-                .install_from(&provider)
+                .install_from_with_workspaces(&provider, workspaces.clone(), "main")
                 .map_err(|error| stable_setup_error(error.code()))?;
             setup
                 .recover(installed)
@@ -328,6 +352,7 @@ fn main() {
             get_workspace_recovery_status,
             list_workspace_authorizations,
             reauthorize_workspace,
+            authorize_workspace_writes,
             revoke_workspace,
             list_workspace_entries,
             create_work_session,

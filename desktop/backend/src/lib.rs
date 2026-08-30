@@ -488,6 +488,29 @@ impl DesktopState {
         Ok(true)
     }
 
+    /// Installs the configured Host with the shared Desktop Workspace authority.
+    pub fn install_from_with_workspaces(
+        &self,
+        provider: &dyn DesktopConfigurationProvider,
+        workspaces: DesktopWorkspaceService,
+        owner_window: &str,
+    ) -> Result<bool, DesktopConfigurationError> {
+        let Some(config) = provider.load()? else {
+            return Ok(false);
+        };
+        let factory = DesktopWorkspaceExecutionFactory::new(
+            config.database_path.clone(),
+            workspaces,
+            owner_window,
+        )
+        .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        let host = DesktopHost::new_governed(config, Arc::new(factory))
+            .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        self.install(host)
+            .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        Ok(true)
+    }
+
     /// Installs an explicitly constructed embedded Runtime once.
     pub fn install(&self, host: DesktopHost) -> Result<(), DesktopHostError> {
         let mut slot = self
