@@ -272,6 +272,18 @@ pub enum HostClientErrorCode {
     HostFailure,
     /// Host returned an unknown future failure.
     UnknownHostError,
+    /// The mobile access grant is absent, expired, invalid, or revoked.
+    AuthenticationRequired,
+    /// The authenticated mobile actor lacks authority for the resource.
+    ActorForbidden,
+    /// The device binding must be established again.
+    DeviceReauthRequired,
+    /// Gateway admission refused the request before routing it.
+    RateLimited,
+    /// The bound Runtime route is unavailable.
+    RuntimeUnavailable,
+    /// The one-time pairing ceremony was rejected.
+    PairingRejected,
     /// HTTP or stream transport failed.
     TransportFailure,
     /// The configured follow deadline elapsed.
@@ -289,6 +301,12 @@ impl HostClientErrorCode {
             Self::EventLimitExceeded => "event_limit_exceeded",
             Self::HostFailure => "host_failure",
             Self::UnknownHostError => "unknown_host_error",
+            Self::AuthenticationRequired => "authentication_required",
+            Self::ActorForbidden => "actor_forbidden",
+            Self::DeviceReauthRequired => "device_reauth_required",
+            Self::RateLimited => "rate_limited",
+            Self::RuntimeUnavailable => "runtime_unavailable",
+            Self::PairingRejected => "pairing_rejected",
             Self::TransportFailure => "transport_failure",
             Self::FollowDeadline => "follow_deadline",
         }
@@ -296,7 +314,7 @@ impl HostClientErrorCode {
 }
 
 /// Complete ordered A1 failure vocabulary.
-pub const HOST_CLIENT_FAILURES: [HostClientErrorCode; 9] = [
+pub const HOST_CLIENT_FAILURES: [HostClientErrorCode; 15] = [
     HostClientErrorCode::InvalidConfiguration,
     HostClientErrorCode::InvalidCommand,
     HostClientErrorCode::InvalidEvent,
@@ -304,6 +322,12 @@ pub const HOST_CLIENT_FAILURES: [HostClientErrorCode; 9] = [
     HostClientErrorCode::EventLimitExceeded,
     HostClientErrorCode::HostFailure,
     HostClientErrorCode::UnknownHostError,
+    HostClientErrorCode::AuthenticationRequired,
+    HostClientErrorCode::ActorForbidden,
+    HostClientErrorCode::DeviceReauthRequired,
+    HostClientErrorCode::RateLimited,
+    HostClientErrorCode::RuntimeUnavailable,
+    HostClientErrorCode::PairingRejected,
     HostClientErrorCode::TransportFailure,
     HostClientErrorCode::FollowDeadline,
 ];

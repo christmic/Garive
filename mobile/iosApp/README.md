@@ -8,13 +8,15 @@
 - **UI**: SwiftUI (iOS 17+)
 - **Async**: Swift Concurrency over Kotlin/Native completion handlers
 - **Min target**: iOS 17
-- **Build**: SwiftPM linked to the generated KMP XCFramework
+- **Build**: installable Xcode app plus SwiftPM contract tests
 
 ## Module Layout
 
 ```
 iosApp/
-├── Sources/GariveIOS/main.swift
+├── GariveIOS.xcodeproj
+├── Config/Info.plist
+├── Sources/GariveIOS/
 ├── Tests/GariveIOSTests/LiveHostTests.swift
 ├── Package.swift
 └── README.md
@@ -32,7 +34,7 @@ iosApp/
 
 ## Build
 
-The executable contract gate builds the shared framework before SwiftPM:
+Build the shared framework, contract tests, then the unsigned device app gate:
 
 ```text
 cd ../shared
@@ -40,13 +42,30 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain assembleGariveSharedDebugXCFramework
 cd ../iosApp
 swift test
+xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
+  -configuration Debug -sdk iphoneos CODE_SIGNING_ALLOWED=NO clean build
 ```
 
-SwiftPM links the XCFramework when it exists. A conditional local fallback
-keeps source-only editing possible, but it is not the acceptance path.
+The Xcode target produces `Garive.app`, registers expiring `garive://pair`
+handoffs, and links the static XCFramework. Distribution still requires the
+operator's Apple team, signing, and physical-device verification.
+
+## Private wake hints
+
+The app target enables remote notifications and uses development APNs
+entitlements in Debug and production entitlements in Release. A signed build
+must use a provisioning profile that authorizes the matching environment.
+Gateway owns `GARIVE_APNS_TEAM_ID`, `GARIVE_APNS_KEY_ID`,
+`GARIVE_APNS_TOPIC`, and `GARIVE_APNS_KEY_FILE`; the APNs provider private key
+must never enter the app bundle.
+
+After pairing, the app registers its APNs device token against that grant. It
+accepts only the exact content-free wake envelope, resolves the opaque route
+token through authenticated Gateway transport, refreshes Runtime truth, and
+only then opens the verified Session or Settings destination.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
-- Status: live-H1 SwiftUI shell with verified KMP framework and Swift tests.
+- Last reviewed: 2026-08-30
+- Status: installable remote-work app; physical remote release evidence pending.

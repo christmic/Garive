@@ -185,6 +185,34 @@ impl LiveHost {
         Ok(page)
     }
 
+    /// Projects content-free durable transition coordinates for the private Gateway monitor.
+    pub(crate) fn mobile_wake_page(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<super::MobileWakePage, LiveHostError> {
+        let page = self.list_sessions(limit, before)?;
+        let observations = page
+            .sessions
+            .iter()
+            .map(|session| super::MobileWakeObservation {
+                session_id: session.session_id.clone(),
+                latest_position: session.latest_position,
+                wake_category: match session.latest_turn_state.as_deref() {
+                    Some("suspended") => Some("attention"),
+                    Some("completed") => Some("completed"),
+                    Some("failed") => Some("failed"),
+                    _ => None,
+                },
+            })
+            .collect();
+        Ok(super::MobileWakePage {
+            api_version: "v1",
+            observations,
+            next_before: page.next_before,
+        })
+    }
+
     /// Reads a bounded page of complete Turns from one frozen Session prefix.
     pub fn get_timeline(
         &self,

@@ -48,6 +48,10 @@ The complete active increment is indexed by
 [`design/agent-product-increment-spec-set.md`](design/agent-product-increment-spec-set.md);
 its repository dependency order is also maintained in
 [`design/core-agent-plan.md`](design/core-agent-plan.md#next-accepted-increments).
+The native physical-device remote-work contract is
+[`design/mobile-remote-work-client.md`](design/mobile-remote-work-client.md),
+with its authenticated edge contract in
+[`design/mobile-gateway-v1.md`](design/mobile-gateway-v1.md).
 The complete terminal product is indexed by
 [`design/tui-product-spec-set.md`](design/tui-product-spec-set.md), including
 its source audit, architecture, interaction, communication/persistence, and

@@ -31,10 +31,12 @@ From this directory, with Android SDK 36 installed:
 
 ```text
 java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
-  org.gradle.wrapper.GradleWrapperMain app:assembleDebug
+  org.gradle.wrapper.GradleWrapperMain app:lintDebug app:assembleDebug \
+  app:lintRelease app:assembleRelease
 ```
 
-With an API 36 device or emulator attached, run the native UI gate:
+The checked-in Gradle memory limit is also required by the optimized Release
+pipeline. With an API 36 device or emulator attached, run the native UI gate:
 
 ```text
 java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
@@ -45,9 +47,28 @@ The app includes `../shared` as a Gradle project, accepts an explicit loopback
 Host URL and renders the terminal returned by `LiveHostClient`; it does not
 duplicate Host reduction in the UI tier.
 
+## Private wake hints
+
+Provide the public Firebase Android identifiers at build time when FCM wake
+delivery is required:
+
+```text
+GARIVE_FIREBASE_APP_ID=...
+GARIVE_FIREBASE_API_KEY=...
+GARIVE_FIREBASE_PROJECT_ID=...
+GARIVE_FIREBASE_SENDER_ID=...
+```
+
+These values identify the Firebase app; they are not server credentials. The
+FCM service-account key stays only on Gateway. Without all four values, the
+remote-work app remains usable while push registration is disabled. A
+configured build registers its current Firebase Installation ID against the
+paired Gateway grant, accepts only the exact content-free wake envelope, and
+resolves its opaque route token before opening a verified destination.
+
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-29
-- Status: live-H1 Compose shell, SDK 36 APK and API 36 instrumentation gate
-  verified.
+- Status: installable remote-work app with private FCM return path; physical
+  provider delivery evidence pending.

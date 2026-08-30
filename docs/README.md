@@ -1,5 +1,9 @@
 # docs/
 
+The accepted product architecture includes
+[`architecture/mobile-remote-work.md`](architecture/mobile-remote-work.md) for
+the native iOS/Android remote Agent control experience.
+
 `docs/` contains Garive's human-edited thinking. These are personal working
 documents: they may be rough, combine alternatives, or change in place. They
 are not archived merely because implementation has not started.

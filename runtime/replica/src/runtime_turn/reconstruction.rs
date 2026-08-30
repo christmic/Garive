@@ -1,6 +1,7 @@
 use garive_ledger::{CanonicalPayload, ExecutionId, TurnSnapshot};
 use garive_tools::validate_portable_value_schema;
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
 use super::types::{
     DelegationContinuation, EffectiveRuntimeLimits, InteractionContinuation, InteractionExpiry,
@@ -267,6 +268,10 @@ fn pending_interaction(
                     .ok_or(RuntimeCommandError::CorruptLedger)?,
                 interaction_id: interaction_id.to_owned(),
                 prepared_digest: text(&request, "prepared_digest")?.to_owned(),
+                prompt: serde_json::json!({
+                    "message": canonical_utf8(&request, "prompt")?,
+                    "schema_version": 1
+                }),
                 response_schema_digest: response_schema_digest.to_owned(),
                 response_schema,
                 expiry: InteractionExpiry::parse(text(&request, "expiry_code")?)?,
@@ -291,6 +296,19 @@ fn canonical_content(value: &Map<String, Value>, key: &str) -> Result<Value, Run
     )
     .map_err(|_| RuntimeCommandError::CorruptLedger)?;
     serde_json::from_str(canonical.as_json()).map_err(|_| RuntimeCommandError::CorruptLedger)
+}
+
+fn canonical_utf8(value: &Map<String, Value>, key: &str) -> Result<String, RuntimeCommandError> {
+    let binding = value
+        .get(key)
+        .and_then(Value::as_object)
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let inline = text(binding, "inline_utf8")?;
+    let expected = text(binding, "digest")?;
+    if format!("{:x}", Sha256::digest(inline.as_bytes())) != expected {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    Ok(inline.to_owned())
 }
 
 fn reconciliation_target(

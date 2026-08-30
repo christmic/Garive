@@ -1207,6 +1207,24 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     assert_eq!(timeline["items"][0]["user_text"], "hello");
     assert_eq!(timeline["items"][0]["state"], "running");
 
+    let wake_snapshot = client
+        .get(format!("{base}/internal/mobile/wake-snapshot?limit=20"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wake_snapshot.status(), reqwest::StatusCode::OK);
+    let wake_snapshot: Value =
+        serde_json::from_slice(&wake_snapshot.bytes().await.unwrap()).unwrap();
+    assert_eq!(wake_snapshot["api_version"], "v1");
+    assert_eq!(wake_snapshot["observations"][0]["session_id"], session_id);
+    assert_eq!(
+        wake_snapshot["observations"][0]["latest_position"],
+        timeline["observed_max_position"]
+    );
+    assert!(wake_snapshot["observations"][0]
+        .get("wake_category")
+        .is_none());
+
     let bad_timeline = client
         .get(format!(
             "{base}/v1/sessions/{session_id}/timeline?limit=20&unknown=1"
@@ -1215,6 +1233,15 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .await
         .unwrap();
     assert_eq!(bad_timeline.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let bad_wake = client
+        .get(format!(
+            "{base}/internal/mobile/wake-snapshot?limit=20&unknown=1"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad_wake.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let response = client
         .get(format!(
