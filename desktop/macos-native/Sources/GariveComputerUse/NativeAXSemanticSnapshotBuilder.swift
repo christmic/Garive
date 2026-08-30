@@ -12,7 +12,7 @@ enum NativeAXSemanticSnapshotBuilder {
         let pressSupported: Bool
         let valueSettable: Bool
         let frame: NativeAXSemanticNode.Frame?
-        let children: [Element]
+        var children: [Element]
 
         init(
             role: String,
@@ -59,7 +59,13 @@ enum NativeAXSemanticSnapshotBuilder {
             textBytes = next
         }
 
-        func append(_ element: Element, parentIndex: Int?) throws {
+        var pending: [(element: Element, parentIndex: Int?)] = [(root, nil)]
+        var visited: Set<ObjectIdentifier> = []
+        while let item = pending.popLast() {
+            let element = item.element
+            guard visited.insert(ObjectIdentifier(element)).inserted else {
+                throw NativeAXObservationFailure.invalidNativeData
+            }
             guard !element.role.isEmpty else {
                 throw NativeAXObservationFailure.invalidNativeData
             }
@@ -97,7 +103,7 @@ enum NativeAXSemanticSnapshotBuilder {
             if element.valueSettable, !secure { actions.append(.setValue) }
             nodes.append(NativeAXSemanticNode(
                 nodeIndex: nodeIndex,
-                parentIndex: parentIndex,
+                parentIndex: item.parentIndex,
                 role: element.role,
                 subrole: element.subrole,
                 label: element.label,
@@ -110,12 +116,10 @@ enum NativeAXSemanticSnapshotBuilder {
                 supportedActions: actions,
                 frame: element.frame
             ))
-            for child in element.children {
-                try append(child, parentIndex: nodeIndex)
+            for child in element.children.reversed() {
+                pending.append((child, nodeIndex))
             }
         }
-
-        try append(root, parentIndex: nil)
         return NativeAXSemanticSnapshot(
             nodes: nodes,
             focusedNodeIndex: focusedNodeIndex,

@@ -68,3 +68,16 @@ func enforcesAXSemanticBounds() throws {
         )
     }
 }
+
+@Test("semantic projection rejects cyclic native graphs")
+func rejectsCyclicAXSemanticGraph() throws {
+    let root = NativeAXSemanticSnapshotBuilder.Element(role: "AXWindow")
+    root.children.append(root)
+
+    #expect(throws: NativeAXObservationFailure.invalidNativeData) {
+        try NativeAXSemanticSnapshotBuilder.build(
+            root: root,
+            bounds: try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
+        )
+    }
+}
