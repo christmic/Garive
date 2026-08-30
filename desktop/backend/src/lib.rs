@@ -19,6 +19,8 @@ mod system_configuration;
 mod system_provider;
 mod workspace;
 
+/// Durable path-free Workspace attachment exposed to Desktop clients.
+pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
 /// Restart-safe durable Session summary exposed to Desktop clients.
 pub use garive_runtime::SessionSummary as DesktopSessionSummary;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
@@ -188,6 +190,44 @@ impl DesktopHost {
 
     fn supports_activity(&self) -> bool {
         self.host.limits().activity.is_some()
+    }
+
+    /// Creates one empty durable Session before attaching selected context.
+    pub fn create_session(&self, definition_id: &str) -> Result<String, DesktopHostError> {
+        let command_id = self.operations.command_id("create")?;
+        self.host
+            .create_session(&command_id, definition_id)
+            .map(|response| response.session_id)
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Commits one verified opaque Workspace attachment before a Turn starts.
+    pub fn attach_workspace(
+        &self,
+        session_id: &str,
+        workspace: &DesktopWorkspaceGrant,
+    ) -> Result<DesktopWorkspaceAttachment, DesktopHostError> {
+        let command_id = self.operations.command_id("attach-workspace")?;
+        self.host
+            .attach_workspace(
+                &command_id,
+                session_id,
+                &workspace.workspace_id,
+                &workspace.display_name,
+                workspace.grant_revision,
+                workspace.access,
+            )
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Restores the latest durable opaque Workspace attachments for one Session.
+    pub fn session_workspaces(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<DesktopWorkspaceAttachment>, DesktopHostError> {
+        self.host
+            .session_workspaces(session_id)
+            .map_err(|_| DesktopHostError::HostFailure)
     }
 
     /// Creates a Session and executes one Turn through the embedded durable loop.
@@ -368,6 +408,46 @@ impl DesktopState {
         }
         *slot = Some(Arc::new(host));
         Ok(())
+    }
+
+    /// Creates one durable empty Session for context attachment.
+    pub fn create_session(&self, definition_id: &str) -> Result<String, DesktopHostError> {
+        let host = self
+            .host
+            .lock()
+            .map_err(|_| DesktopHostError::InvalidConfiguration)?
+            .clone()
+            .ok_or(DesktopHostError::NotConfigured)?;
+        host.create_session(definition_id)
+    }
+
+    /// Attaches one already reverified opaque Workspace to a durable Session.
+    pub fn attach_workspace(
+        &self,
+        session_id: &str,
+        workspace: &DesktopWorkspaceGrant,
+    ) -> Result<DesktopWorkspaceAttachment, DesktopHostError> {
+        let host = self
+            .host
+            .lock()
+            .map_err(|_| DesktopHostError::InvalidConfiguration)?
+            .clone()
+            .ok_or(DesktopHostError::NotConfigured)?;
+        host.attach_workspace(session_id, workspace)
+    }
+
+    /// Restores durable path-free Workspace attachments for one Session.
+    pub fn session_workspaces(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<DesktopWorkspaceAttachment>, DesktopHostError> {
+        let host = self
+            .host
+            .lock()
+            .map_err(|_| DesktopHostError::InvalidConfiguration)?
+            .clone()
+            .ok_or(DesktopHostError::NotConfigured)?;
+        host.session_workspaces(session_id)
     }
 
     /// Runs one typed command or reports missing system configuration.

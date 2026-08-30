@@ -11,6 +11,7 @@ use garive_core::{
 };
 use garive_desktop::{
     DesktopHost, DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
+    DesktopWorkspaceGrant,
 };
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem,
@@ -275,4 +276,30 @@ async fn unconfigured_state_is_stable_and_secret_free() {
         .expect_err("configuration is required");
     assert_eq!(error.code(), "not_configured");
     assert!(!format!("{error:?}").contains("private input"));
+}
+
+#[test]
+fn workspace_attachment_survives_desktop_host_restart_without_paths() {
+    let directory = tempdir().expect("temp directory");
+    let database = directory.path().join("workspace.db");
+    let host = desktop_host(&database, Arc::new(CompletingModel));
+    let session_id = host.create_session("definition-main").unwrap();
+    let grant = DesktopWorkspaceGrant {
+        schema_version: 1,
+        workspace_id: "workspace-opaque".into(),
+        display_name: "Briefs".into(),
+        access: "enumerate",
+        grant_revision: 1,
+        state: "active",
+        expires_at: "2026-08-30T12:00:00Z".into(),
+    };
+    let attached = host.attach_workspace(&session_id, &grant).unwrap();
+    assert_eq!(attached.workspace_id, "workspace-opaque");
+
+    let restarted = desktop_host(&database, Arc::new(CompletingModel));
+    let restored = restarted.session_workspaces(&session_id).unwrap();
+    assert_eq!(restored, vec![attached]);
+    let public = serde_json::to_string(&restored).unwrap();
+    assert!(!public.contains(directory.path().to_string_lossy().as_ref()));
+    assert!(!public.contains("path"));
 }

@@ -97,7 +97,14 @@ export interface SetupReceipt {
 /** Opaque process-local Workspace selection; no filesystem path crosses IPC. */
 export interface WorkspaceGrant {
   readonly schema_version: 1; readonly workspace_id: string; readonly display_name: string;
-  readonly access: "enumerate"; readonly state: "active"; readonly expires_at: string;
+  readonly access: "enumerate"; readonly grant_revision: number;
+  readonly state: "active"; readonly expires_at: string;
+}
+
+export interface WorkspaceAttachment {
+  readonly api_version: "v1"; readonly session_id: string; readonly workspace_id: string;
+  readonly display_name: string; readonly grant_revision: number; readonly access: "enumerate";
+  readonly attached_position: number;
 }
 
 /** Loads the capability snapshot without exposing configuration values. */
@@ -178,6 +185,31 @@ export async function revokeWorkspace(
 ): Promise<void> {
   if (!workspaceId) throw new Error("workspace_capability_invalid");
   await invoke<void>("revoke_workspace", { workspaceId });
+}
+
+export async function createWorkSession(
+  definitionId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<string> {
+  if (!definitionId) throw new Error("invalid_command");
+  return invoke<string>("create_work_session", { definitionId });
+}
+
+export async function attachWorkspaceToSession(
+  sessionId: string,
+  workspaceId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceAttachment> {
+  if (!sessionId || !workspaceId) throw new Error("workspace_capability_invalid");
+  return invoke<WorkspaceAttachment>("attach_workspace_to_session", { sessionId, workspaceId });
+}
+
+export async function getSessionWorkspaces(
+  sessionId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<readonly WorkspaceAttachment[]> {
+  if (!sessionId) throw new Error("invalid_request");
+  return invoke<WorkspaceAttachment[]>("get_session_workspaces", { sessionId });
 }
 
 /** Invokes one typed Turn against the backend-owned embedded R1 composition. */

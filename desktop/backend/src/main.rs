@@ -86,6 +86,42 @@ fn revoke_workspace(
 }
 
 #[tauri::command]
+fn create_work_session(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    definition_id: String,
+) -> Result<String, String> {
+    state
+        .create_session(&definition_id)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn attach_workspace_to_session(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    session_id: String,
+    workspace_id: String,
+) -> Result<garive_desktop::DesktopWorkspaceAttachment, String> {
+    let workspace = workspaces
+        .verify(&workspace_id, window.label())
+        .map_err(|error| error.code().to_owned())?;
+    state
+        .attach_workspace(&session_id, &workspace)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn get_session_workspaces(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+) -> Result<Vec<garive_desktop::DesktopWorkspaceAttachment>, String> {
+    state
+        .session_workspaces(&session_id)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn get_setup_catalogue(
     setup: tauri::State<'_, SetupState>,
 ) -> garive_desktop::DesktopSetupCatalogue {
@@ -189,6 +225,9 @@ fn main() {
             choose_workspace,
             verify_workspace,
             revoke_workspace,
+            create_work_session,
+            attach_workspace_to_session,
+            get_session_workspaces,
             restart_desktop,
             get_recent_sessions,
             get_session_timeline,

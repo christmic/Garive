@@ -25,6 +25,8 @@ pub struct DesktopWorkspaceGrant {
     pub display_name: String,
     /// V1 selection admits enumeration posture only.
     pub access: &'static str,
+    /// Monotonic capability revision bound by Session attachment.
+    pub grant_revision: u64,
     /// Public lifecycle state.
     pub state: &'static str,
     /// Canonical UTC expiry instant.
@@ -114,6 +116,7 @@ impl DesktopWorkspaceService {
             workspace_id: format!("workspace-{}", Uuid::new_v4()),
             display_name,
             access: "enumerate",
+            grant_revision: 1,
             state: "active",
             expires_at,
         };

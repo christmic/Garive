@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
-  cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn, getSetupCatalogue, prepareSetup,
-  revokeWorkspace, verifyWorkspace,
+  attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
+  createWorkSession, getSessionWorkspaces, getSetupCatalogue, prepareSetup, revokeWorkspace,
+  verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -95,7 +96,8 @@ describe("desktop Host IPC", () => {
       calls.push({ command, args });
       if (command === "choose_workspace" || command === "verify_workspace") {
         return { schema_version: 1, workspace_id: "workspace-1", display_name: "Briefs",
-          access: "enumerate", state: "active", expires_at: "2026-08-30T12:00:00Z" } as T;
+          access: "enumerate", grant_revision: 1, state: "active",
+          expires_at: "2026-08-30T12:00:00Z" } as T;
       }
       return undefined as T;
     };
@@ -107,6 +109,22 @@ describe("desktop Host IPC", () => {
       { command: "choose_workspace", args: {} },
       { command: "verify_workspace", args: { workspaceId: "workspace-1" } },
       { command: "revoke_workspace", args: { workspaceId: "workspace-1" } },
+    ]);
+  });
+
+  it("durably attaches Workspace context before a Turn", async () => {
+    const calls: string[] = [];
+    const invoke = async <T>(command: string) => {
+      calls.push(command);
+      if (command === "create_work_session") return "session-1" as T;
+      return { session_id: "session-1", workspace_id: "workspace-1", attached_position: 2 } as T;
+    };
+    const session = await createWorkSession("definition-main", invoke);
+    const attachment = await attachWorkspaceToSession(session, "workspace-1", invoke);
+    await getSessionWorkspaces(session, invoke);
+    expect(attachment.attached_position).toBe(2);
+    expect(calls).toEqual([
+      "create_work_session", "attach_workspace_to_session", "get_session_workspaces",
     ]);
   });
 });
