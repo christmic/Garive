@@ -76,6 +76,68 @@ pub(super) fn validate_prepared_v2(value: &Map<String, Value>) -> Result<(), Led
     super::values::unsigned(value, "max_result_bytes", true)
 }
 
+pub(super) fn validate_prepared_v3(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "prepared_contract_version",
+            "prepared_digest",
+            "tool_name",
+            "tool_revision",
+            "replay_class",
+            "model_call_id",
+            "access_policy_revision",
+            "access_resolver_revision",
+            "invocation_accesses",
+            "max_result_bytes",
+            "sandbox_requirements",
+            "sandbox_requirements_digest",
+        ],
+        EMPTY,
+    )?;
+    if value
+        .get("prepared_contract_version")
+        .and_then(Value::as_u64)
+        != Some(3)
+    {
+        return Err(LedgerError::InvalidFact);
+    }
+    digest(value, "prepared_digest")?;
+    identities(
+        value,
+        &[
+            "tool_name",
+            "tool_revision",
+            "model_call_id",
+            "access_policy_revision",
+            "access_resolver_revision",
+        ],
+    )?;
+    enumeration(
+        value,
+        "replay_class",
+        &[
+            "read_only",
+            "idempotent",
+            "receipt_recoverable",
+            "never_replay",
+        ],
+    )?;
+    content(value, "invocation_accesses")?;
+    super::values::unsigned(value, "max_result_bytes", true)?;
+    content(value, "sandbox_requirements")?;
+    digest(value, "sandbox_requirements_digest")?;
+    if value
+        .get("sandbox_requirements")
+        .and_then(Value::as_object)
+        .and_then(|binding| binding.get("digest"))
+        != value.get("sandbox_requirements_digest")
+    {
+        return Err(LedgerError::InvalidFact);
+    }
+    Ok(())
+}
+
 fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,

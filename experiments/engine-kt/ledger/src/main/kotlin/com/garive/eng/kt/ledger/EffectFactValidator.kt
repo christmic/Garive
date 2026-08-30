@@ -1,6 +1,7 @@
 package com.garive.eng.kt.ledger
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 internal fun validateEffectFact(kind: String, value: JsonObject) {
     when (kind) {
@@ -39,6 +40,32 @@ internal fun validateEffectPreparedV2(value: JsonObject) {
     value.enum("replay_class", setOf("read_only", "idempotent", "receipt_recoverable", "never_replay"))
     value.content("invocation_accesses")
     value.ulong("max_result_bytes", nonzero = true)
+}
+
+internal fun validateEffectPreparedV3(value: JsonObject) {
+    value.exact(
+        setOf(
+            "prepared_contract_version", "prepared_digest", "tool_name", "tool_revision",
+            "replay_class", "model_call_id", "access_policy_revision",
+            "access_resolver_revision", "invocation_accesses", "max_result_bytes",
+            "sandbox_requirements", "sandbox_requirements_digest",
+        ),
+    )
+    require(value.ulong("prepared_contract_version") == 3uL)
+    value.digest("prepared_digest")
+    value.identities(
+        "tool_name", "tool_revision", "model_call_id", "access_policy_revision",
+        "access_resolver_revision",
+    )
+    value.enum("replay_class", setOf("read_only", "idempotent", "receipt_recoverable", "never_replay"))
+    value.content("invocation_accesses")
+    value.ulong("max_result_bytes", nonzero = true)
+    value.content("sandbox_requirements")
+    value.digest("sandbox_requirements_digest")
+    require(
+        value.getValue("sandbox_requirements").jsonObject.text("digest") ==
+            value.text("sandbox_requirements_digest"),
+    )
 }
 
 private fun JsonObject.interactionRequested() {

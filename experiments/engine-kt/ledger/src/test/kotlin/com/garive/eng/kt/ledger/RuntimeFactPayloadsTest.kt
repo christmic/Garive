@@ -24,14 +24,14 @@ class RuntimeFactPayloadsTest {
     @Test
     fun `every C6 payload fixture is applied at its declared version`() {
         val cases = document.getValue("valid_cases").jsonArray
-        assertEquals(100, cases.size)
+        assertEquals(104, cases.size)
         cases.forEach { case ->
             val value = case.jsonObject
             val schema = value["schema_version"]?.jsonPrimitive?.content?.toUInt() ?: 1u
-            val expected = if (value.optional("expected_disposition") == "applied_v2") {
-                RuntimeFactDisposition.APPLIED_V2
-            } else {
-                RuntimeFactDisposition.APPLIED_V1
+            val expected = when (value.optional("expected_disposition")) {
+                "applied_v2" -> RuntimeFactDisposition.APPLIED_V2
+                "applied_v3" -> RuntimeFactDisposition.APPLIED_V3
+                else -> RuntimeFactDisposition.APPLIED_V1
             }
             assertEquals(
                 LedgerResult.Success(expected),
@@ -81,7 +81,7 @@ class RuntimeFactPayloadsTest {
                 assertInvalid(fact(case, schema).withPayload(payload), case.text("kind"))
             }
         }
-        assertEquals(74, count)
+        assertEquals(78, count)
     }
 
     @Test

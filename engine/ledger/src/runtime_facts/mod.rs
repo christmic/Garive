@@ -3,6 +3,7 @@
 mod artifact;
 mod delegation;
 mod effect;
+mod f0;
 mod goal;
 mod knowledge;
 mod memory;
@@ -27,6 +28,8 @@ pub enum RuntimeFactDisposition {
     AppliedV1,
     /// Known additive C5b fact kind with a valid schema-v2 payload and envelope.
     AppliedV2,
+    /// Known additive F0 Prepared Call with valid schema-v3 payload and envelope.
+    AppliedV3,
     /// Unknown kind or newer schema retained only as an audit fact.
     Opaque,
 }
@@ -37,6 +40,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let execution_family = kind.starts_with("execution.");
     let model_family = kind.starts_with("model.");
     let effect_family = kind.starts_with("effect.") || kind.starts_with("interaction.");
+    let f0_family = kind.starts_with("safety.") || kind.starts_with("sandbox.");
     let skill_family = kind.starts_with("skill.");
     let memory_family = kind.starts_with("memory.");
     let knowledge_family = kind.starts_with("knowledge.");
@@ -66,6 +70,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !execution_family
         && !model_family
         && !effect_family
+        && !f0_family
         && !skill_family
         && !memory_family
         && !knowledge_family
@@ -80,7 +85,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         return Ok(RuntimeFactDisposition::Opaque);
     }
     let effect_prepared_v2 = kind == "effect.prepared" && fact.schema_version == 2;
-    if fact.schema_version != 1 && !effect_prepared_v2 {
+    let effect_prepared_v3 = kind == "effect.prepared" && fact.schema_version == 3;
+    if fact.schema_version != 1 && !effect_prepared_v2 && !effect_prepared_v3 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
     if fact.turn_id.is_some()
@@ -93,6 +99,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
             != (execution_family
                 || model_family
                 || effect_family
+                || f0_family
                 || skill_family
                 || rejection
                 || memory_family && !memory_session_scoped
@@ -100,7 +107,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
                 || delegation_family
                 || artifact_family)
         || fact.model_request_id.is_some() != (model_family || rejection)
-        || fact.tool_invocation_id.is_some() != (effect_family || artifact_family)
+        || fact.tool_invocation_id.is_some() != (effect_family || f0_family || artifact_family)
     {
         return Err(LedgerError::InvalidFact);
     }
@@ -116,6 +123,10 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         workspace::validate(kind, object(&payload)?)?;
     } else if effect_prepared_v2 {
         effect::validate_prepared_v2(object(&payload)?)?;
+    } else if effect_prepared_v3 {
+        effect::validate_prepared_v3(object(&payload)?)?;
+    } else if f0_family {
+        f0::validate(kind, object(&payload)?)?;
     } else if delegation_family {
         delegation::validate(kind, object(&payload)?)?;
     } else if scheduler_family {
@@ -135,6 +146,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     Ok(if effect_prepared_v2 {
         RuntimeFactDisposition::AppliedV2
+    } else if effect_prepared_v3 {
+        RuntimeFactDisposition::AppliedV3
     } else {
         RuntimeFactDisposition::AppliedV1
     })

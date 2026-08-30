@@ -43,13 +43,13 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 fn every_c6_payload_fixture_is_applied_at_its_declared_version() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 100);
+    assert_eq!(cases.len(), 104);
     for case in cases {
         let schema = case["schema_version"].as_u64().unwrap_or(1) as u32;
-        let expected = if case["expected_disposition"] == "applied_v2" {
-            RuntimeFactDisposition::AppliedV2
-        } else {
-            RuntimeFactDisposition::AppliedV1
+        let expected = match case["expected_disposition"].as_str() {
+            Some("applied_v2") => RuntimeFactDisposition::AppliedV2,
+            Some("applied_v3") => RuntimeFactDisposition::AppliedV3,
+            _ => RuntimeFactDisposition::AppliedV1,
         };
         assert_eq!(
             validate_runtime_fact(&fact(case, schema)),
@@ -130,7 +130,7 @@ fn malformed_digests_and_inline_content_mismatches_are_rejected() {
             );
         }
     }
-    assert_eq!(digest_cases, 74);
+    assert_eq!(digest_cases, 78);
 }
 
 #[test]

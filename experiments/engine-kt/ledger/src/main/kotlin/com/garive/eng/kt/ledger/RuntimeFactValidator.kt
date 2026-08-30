@@ -3,7 +3,7 @@ package com.garive.eng.kt.ledger
 import kotlinx.serialization.json.Json
 
 /** Classification returned after durable Runtime fact validation. */
-public enum class RuntimeFactDisposition { APPLIED_V1, APPLIED_V2, OPAQUE }
+public enum class RuntimeFactDisposition { APPLIED_V1, APPLIED_V2, APPLIED_V3, OPAQUE }
 
 /** Validates admitted C6 Turn/Execution payload-v1 semantics and envelope ownership. */
 public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposition> {
@@ -11,6 +11,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     val executionFamily = kind.startsWith("execution.")
     val modelFamily = kind.startsWith("model.")
     val effectFamily = kind.startsWith("effect.") || kind.startsWith("interaction.")
+    val f0Family = kind.startsWith("safety.") || kind.startsWith("sandbox.")
     val skillFamily = kind.startsWith("skill.")
     val memoryFamily = kind.startsWith("memory.")
     val knowledgeFamily = kind.startsWith("knowledge.")
@@ -25,17 +26,18 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
         "memory.erasure_requested", "memory.erasure_recorded",
     )
     val rejection = kind == "tool.preparation_rejected"
-    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !delegationFamily && !goalFamily && !planFamily && !rejection) {
+    if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !f0Family && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !delegationFamily && !goalFamily && !planFamily && !rejection) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     val effectPreparedV2 = kind == "effect.prepared" && fact.schemaVersion == 2u
-    if (fact.schemaVersion != 1u && !effectPreparedV2) {
+    val effectPreparedV3 = kind == "effect.prepared" && fact.schemaVersion == 3u
+    if (fact.schemaVersion != 1u && !effectPreparedV2 && !effectPreparedV3) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     if ((fact.turnId != null) != !(memorySessionScoped || schedulerFamily || goalFamily || planFamily) ||
-        (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || skillFamily || knowledgeFamily || delegationFamily || rejection || memoryFamily && !memorySessionScoped) ||
+        (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || f0Family || skillFamily || knowledgeFamily || delegationFamily || rejection || memoryFamily && !memorySessionScoped) ||
         (fact.modelRequestId != null) != (modelFamily || rejection) ||
-        (fact.toolInvocationId != null) != effectFamily
+        (fact.toolInvocationId != null) != (effectFamily || f0Family)
     ) {
         return LedgerResult.Failure(LedgerError.InvalidFact)
     }
@@ -43,6 +45,8 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
         val payload = Json.parseToJsonElement(fact.payload.json).asObject()
         when {
             effectPreparedV2 -> validateEffectPreparedV2(payload)
+            effectPreparedV3 -> validateEffectPreparedV3(payload)
+            f0Family -> validateF0Fact(kind, payload)
             goalFamily -> validateGoalFact(kind, payload)
             planFamily -> validatePlanFact(kind, payload)
             delegationFamily -> validateDelegationFact(kind, payload)
@@ -55,8 +59,11 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
             else -> validateTurnFact(kind, payload)
         }
         LedgerResult.Success(
-            if (effectPreparedV2) RuntimeFactDisposition.APPLIED_V2
-            else RuntimeFactDisposition.APPLIED_V1,
+            when {
+                effectPreparedV2 -> RuntimeFactDisposition.APPLIED_V2
+                effectPreparedV3 -> RuntimeFactDisposition.APPLIED_V3
+                else -> RuntimeFactDisposition.APPLIED_V1
+            },
         )
     } catch (_: IllegalArgumentException) {
         LedgerResult.Failure(LedgerError.InvalidFact)
