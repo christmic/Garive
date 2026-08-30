@@ -182,8 +182,9 @@ public class ToolAccessPolicyV1 private constructor(
 
 private fun validKey(namespace: AccessNamespace, key: String): Boolean = when (namespace) {
     AccessNamespace.FILESYSTEM ->
-        !key.startsWith('/') && '\u0000' !in key && '\\' !in key &&
-            key.split('/').all { it.isNotEmpty() && it != "." && it != ".." }
+        key == "." ||
+            (!key.startsWith('/') && '\u0000' !in key && '\\' !in key &&
+                key.split('/').all { it.isNotEmpty() && it != "." && it != ".." })
     AccessNamespace.NETWORK -> canonicalOrigin(key)
     AccessNamespace.PROCESS, AccessNamespace.RUNTIME ->
         key.isNotEmpty() && key.all { it.isLetterOrDigit() && it.code < 128 || it in "-_.:" }

@@ -171,7 +171,9 @@ or silently reallocates its Prepared identity.
 ## Filesystem enforcement
 
 Workspace filesystem keys remain non-empty relative slash-separated values
-without `.`, `..`, empty components, NUL, backslash or an absolute prefix.
+without embedded `.`, `..`, empty components, NUL, backslash or an absolute
+prefix. The exact key `.` is reserved for the workspace root and may be emitted
+only by a Tool resolver for an explicitly directory-valued argument.
 
 An enforcing executor resolves from an already opened Runtime capability. It
 must reject symlinks/reparse points and verify each component without a

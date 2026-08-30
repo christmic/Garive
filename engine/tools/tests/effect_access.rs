@@ -17,12 +17,24 @@ fn canonical_accesses_sort_and_preserve_exact_keys() {
 
 #[test]
 fn invalid_and_duplicate_exact_resources_fail_closed() {
+    assert_eq!(
+        ResourceAccess::new(AccessNamespace::Filesystem, ".", AccessMode::Read)
+            .unwrap()
+            .resource_key(),
+        "."
+    );
     assert!(
         ResourceAccess::new(AccessNamespace::Filesystem, "../secret", AccessMode::Read).is_err()
     );
     assert!(
         ResourceAccess::new(AccessNamespace::Filesystem, "src\\secret", AccessMode::Read).is_err()
     );
+    assert!(ResourceAccess::new(
+        AccessNamespace::Filesystem,
+        "src/./secret",
+        AccessMode::Read
+    )
+    .is_err());
     assert!(ResourceAccess::new(
         AccessNamespace::Network,
         "HTTPS://example.com:443",

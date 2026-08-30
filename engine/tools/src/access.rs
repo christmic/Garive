@@ -250,12 +250,13 @@ fn policy_entries(
 fn valid_key(namespace: AccessNamespace, key: &str) -> bool {
     match namespace {
         AccessNamespace::Filesystem => {
-            !key.starts_with('/')
-                && !key.contains('\0')
-                && !key.contains('\\')
-                && key
-                    .split('/')
-                    .all(|part| !part.is_empty() && part != "." && part != "..")
+            key == "."
+                || (!key.starts_with('/')
+                    && !key.contains('\0')
+                    && !key.contains('\\')
+                    && key
+                        .split('/')
+                        .all(|part| !part.is_empty() && part != "." && part != ".."))
         }
         AccessNamespace::Network => canonical_origin(key),
         AccessNamespace::Process | AccessNamespace::Runtime => {

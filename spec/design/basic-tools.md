@@ -27,10 +27,12 @@ and replay class. Any executable change creates a new revision.
 
 ## Common input rules
 
-Workspace paths are non-empty relative slash-separated UTF-8 values satisfying
-C5b filesystem-key rules. No absolute path, `.`, `..`, empty component,
-backslash, NUL, home expansion, environment expansion, glob expansion or
-implicit current directory is accepted.
+Workspace file paths are non-empty relative slash-separated UTF-8 values
+satisfying C5b filesystem-key rules. No absolute path, embedded `.` or `..`,
+empty component, backslash, NUL, home expansion, environment expansion, glob
+expansion or implicit current directory is accepted. The exact string `.` is
+the sole workspace-root identity and is admitted only by directory-valued
+arguments explicitly named below; it is never silently inserted.
 
 All schemas set `additionalProperties: false`. Counts and byte limits are
 positive interoperable integers bounded again by the Tool Definition and
@@ -70,7 +72,8 @@ an envelope compatibility assertion.
 
 ## `garive.workspace.list@1`
 
-Input requires `path`, `max_entries`, and `include_hidden`. The exact access is
+Input requires `path`, `max_entries`, and `include_hidden`; `path = "."`
+explicitly selects the workspace root. The exact access is
 one `Filesystem(path, Read)`. Requirements/replay/F0 profile equal read_text.
 
 The executor opens the exact directory capability, reads no entry target and
@@ -92,7 +95,8 @@ returns the first bounded prefix with `truncated: true`; omission is explicit.
 
 Input requires `path`, non-empty literal `query`, `case_sensitive`,
 `max_matches`, `max_file_bytes`. V1 has no regex or glob grammar. The access is
-one rooted `Filesystem(path, Read)` declaration. The executor recursively
+one rooted `Filesystem(path, Read)` declaration; `path = "."` explicitly
+selects the workspace root. The executor recursively
 walks only real directories beneath the opened capability, never follows
 links, and applies the per-file and total output bounds.
 
@@ -162,8 +166,8 @@ and `timeout_ms`:
 }
 ```
 
-For this tool only, `working_directory = "."` is the explicit workspace root
-sentinel; other values satisfy normal path rules. `lane` uses the C5b process
+`working_directory = "."` is the explicit workspace root identity; other
+values satisfy normal path rules. `lane` uses the C5b process
 key grammar. The access set is `Process(lane, Exclusive)` plus
 `Filesystem(working_directory, Read)`. V1 declares no network access.
 
