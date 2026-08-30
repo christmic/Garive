@@ -306,10 +306,17 @@ tables, and inline code. Raw HTML is rendered as text. Images become labeled
 links only when a future public URL contract admits them. No Markdown content
 can emit terminal escapes.
 
-Code blocks preserve indentation, use horizontal clipping with an explicit
-overflow marker, and optionally apply syntax color from an in-process static
-theme. Syntax failure falls back to plain code. Copy operates on source text,
-not wrapped cells or border glyphs.
+Nested strong, emphasis, strike, heading, and link styles compose as a stack;
+closing an inner span restores its enclosing style. Ordered lists preserve the
+declared starting index. Explicit links render as underlined semantic label
+plus a sanitized, 120-character-bounded destination when it differs from the
+label. They are visible text, not an active OSC 8 escape.
+
+Code blocks preserve indentation inside a semantic frame, show the first
+bounded fenced-language token, expand tabs to four display cells, and use
+grapheme-aware horizontal clipping with an explicit `…` overflow marker.
+Their theme-token presentation is deterministic; copy operates on source text,
+not clipped cells, language labels, or border glyphs.
 
 Long unbroken graphemes clip safely. Wide and combining characters use the
 same display-width implementation as editor cursor placement. Tabs expand to

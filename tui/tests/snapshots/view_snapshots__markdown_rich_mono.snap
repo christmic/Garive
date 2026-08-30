@@ -1,0 +1,12 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "markdown_style_preview(Theme::Mono)"
+---
+"# " <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | "Delivery" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE>
+"outer " <fg=Some(Reset) bg=None +BOLD -NONE> | "inner" <fg=Some(Reset) bg=None +BOLD | ITALIC -NONE> | " tail" <fg=Some(Reset) bg=None +BOLD -NONE>
+"3. " <fg=Some(Reset) bg=None +BOLD -NONE> | "inspect" <fg=Some(Reset) bg=None +NONE -NONE>
+"4. " <fg=Some(Reset) bg=None +BOLD -NONE> | "ship" <fg=Some(Reset) bg=None +NONE -NONE>
+"Guide" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | " (" <fg=Some(DarkGray) bg=None +NONE -NONE> | "https://garive.local/guide" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"╭─ CODE" <fg=Some(Reset) bg=None +BOLD -NONE> | " · " <fg=Some(DarkGray) bg=None +NONE -NONE> | "rust" <fg=Some(Reset) bg=None +BOLD -NONE>
+"│ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "fn main() {}" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"╰─" <fg=Some(DarkGray) bg=None +NONE -NONE>
