@@ -7,7 +7,8 @@ import { ProductRuntime } from "./ProductRuntime";
 export function useDesktopProduct(
   configuration: "configured" | "not_configured" | undefined,
   enabled = true,
-): { readonly view?: AppViewState; readonly dispatch: (intent: AppIntent) => void } {
+): { readonly view?: AppViewState; readonly dispatch: (intent: AppIntent) => void;
+  readonly current: () => AppViewState | undefined } {
   const runtime = useRef<ProductRuntime | undefined>(undefined);
   const [view, setView] = useState<AppViewState>();
 
@@ -21,5 +22,6 @@ export function useDesktopProduct(
   }, [configuration, enabled]);
 
   const dispatch = useCallback((intent: AppIntent) => runtime.current?.dispatch(intent), []);
-  return { view, dispatch };
+  const current = useCallback(() => runtime.current?.state, []);
+  return { view, dispatch, current };
 }

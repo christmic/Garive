@@ -108,7 +108,7 @@ export function App() {
   const approvalAction = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
   const pendingDraft = useRef("");
-  const submitAfterSession = useRef(false);
+  const [queuedSubmission, setQueuedSubmission] = useState<string>();
   const product = useDesktopProduct(state.capabilities
     ? state.capabilities.configured ? "configured" : "not_configured" : undefined, !visualTest);
 
@@ -154,28 +154,31 @@ export function App() {
   }, [loadSessionExtras, product.view?.selectedSessionId, product.view?.timelineSessionId]);
 
   useEffect(() => {
-    const sessionId = product.view?.selectedSessionId;
-    if (!sessionId || !pendingDraft.current) return;
-    const text = pendingDraft.current; pendingDraft.current = "";
-    product.dispatch({ type: "edit_draft", sessionId, text });
-    if (submitAfterSession.current) {
-      submitAfterSession.current = false;
-      void issueStartTurn(product.dispatch, sessionId, text);
+    const sessionId = product.current()?.selectedSessionId;
+    if (!sessionId) return;
+    if (pendingDraft.current) {
+      const text = pendingDraft.current; pendingDraft.current = "";
+      product.dispatch({ type: "edit_draft", sessionId, text });
     }
-  }, [product.dispatch, product.view?.selectedSessionId]);
+    if (queuedSubmission) {
+      setQueuedSubmission(undefined);
+      void issueStartTurn(product.dispatch, sessionId, queuedSubmission);
+    }
+  }, [product.current, product.dispatch, product.view, queuedSubmission]);
 
   const ensureProductSession = useCallback(async () => {
-    if (visualTest || product.view?.selectedSessionId || product.view?.pending.length) return;
-    const definitionId = product.view?.definitions[0]?.definitionId
+    const current = product.current();
+    if (visualTest || current?.selectedSessionId || current?.pending.length) return;
+    const definitionId = current?.definitions[0]?.definitionId
       ?? state.capabilities?.agent_definition_id;
     if (!definitionId) return;
     const commandId = commandIdentity("create");
     product.dispatch({ type: "create_session", definitionId, commandId,
       requestDigest: await semanticDigest({ kind: "create_session", definitionId }) });
-  }, [product.dispatch, product.view, state.capabilities?.agent_definition_id]);
+  }, [product.current, product.dispatch, state.capabilities?.agent_definition_id]);
 
   const beginNewWork = useCallback(() => {
-    dispatch({ type: "new_work" }); pendingDraft.current = "";
+    dispatch({ type: "new_work" }); pendingDraft.current = ""; setQueuedSubmission(undefined);
     setSelectedContext(undefined); setScreen("work");
     void ensureProductSession();
     requestAnimationFrame(() => composer.current?.focus());
@@ -183,14 +186,14 @@ export function App() {
 
   const workDispatch = useCallback<WorkDispatch>((event) => {
     if (!visualTest && event.type === "draft_changed") {
-      const sessionId = product.view?.selectedSessionId;
+      const sessionId = product.current()?.selectedSessionId;
       if (sessionId) product.dispatch({ type: "edit_draft", sessionId, text: event.value });
       else { pendingDraft.current = event.value; void ensureProductSession(); }
     } else if (!visualTest && event.type === "error_dismissed") {
       product.dispatch({ type: "dismiss_notice" });
     }
     dispatch(event);
-  }, [ensureProductSession, product.dispatch, product.view?.selectedSessionId]);
+  }, [ensureProductSession, product.current, product.dispatch]);
 
   useEffect(() => {
     if (visualTest) {
@@ -295,16 +298,17 @@ export function App() {
       return;
     }
     try {
-      const sessionId = product.view?.selectedSessionId;
+      const current = product.current();
+      const sessionId = current?.selectedSessionId;
       if (!sessionId) {
-        pendingDraft.current = input; submitAfterSession.current = true;
+        pendingDraft.current = input; setQueuedSubmission(input);
         await ensureProductSession(); return;
       }
-      const suspended = product.view.timeline.find((item) => item.state === "suspended")?.suspension;
+      const suspended = current.timeline.find((item) => item.state === "suspended")?.suspension;
       if (suspended) {
         const commandId = commandIdentity("continue");
         product.dispatch({ type: "continue_suspension", sessionId,
-          turnId: product.view.timeline.find((item) => item.suspension === suspended)!.turnId,
+          turnId: current.timeline.find((item) => item.suspension === suspended)!.turnId,
           input, commandId, requestDigest: await semanticDigest({ kind: "continue_turn",
             sessionId, suspensionId: suspended.suspensionId, input }) });
       } else if (selectedContext) {
@@ -324,13 +328,14 @@ export function App() {
   };
 
   const cancelTurn = async () => {
-    const sessionId = product.view?.selectedSessionId;
-    const turn = product.view?.timeline.find((item) => item.state === "running");
-    if (!sessionId || !turn || product.view?.pending.length) return;
+    const current = product.current();
+    const sessionId = current?.selectedSessionId;
+    const turn = current?.timeline.find((item) => item.state === "running");
+    if (!sessionId || !turn || current?.pending.length) return;
     const commandId = commandIdentity("cancel");
     product.dispatch({ type: "cancel_turn", sessionId, turnId: turn.turnId, commandId,
       requestDigest: await semanticDigest({ kind: "cancel_turn", sessionId, turnId: turn.turnId,
-        throughPosition: String(product.view.cursor) }) });
+        throughPosition: String(current.cursor) }) });
   };
 
   const retryPending = () => product.dispatch({ type: "retry_pending",
@@ -976,8 +981,10 @@ async function issueStartTurn(
   dispatch: (intent: AppIntent) => void, sessionId: string, input: string,
 ): Promise<void> {
   const commandId = commandIdentity("turn");
+  const requestDigest = await semanticDigest({ kind: "start_turn", sessionId, input });
+  dispatch({ type: "edit_draft", sessionId, text: input });
   dispatch({ type: "submit_draft", sessionId, commandId,
-    requestDigest: await semanticDigest({ kind: "start_turn", sessionId, input }) });
+    requestDigest });
 }
 
 function commandIdentity(purpose: string): string {
