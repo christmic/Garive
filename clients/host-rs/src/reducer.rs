@@ -1,6 +1,8 @@
 //! Deterministic reduction of durable H1 events.
 
-use crate::{HostClientError, HostClientErrorCode, HostEvent, HostTerminal, HostView};
+use crate::{
+    HostActivity, HostClientError, HostClientErrorCode, HostEvent, HostTerminal, HostView,
+};
 
 const KNOWN_EVENTS: [&str; 6] = [
     "session.created",
@@ -51,6 +53,22 @@ pub fn reduce_host_events(
         }
         view.cursor = event.position;
         view.seen.insert(event.position, event.clone());
+        if let Some(activity) = event.activity.as_ref() {
+            validate_activity(activity, event.position)?;
+            if view
+                .activities
+                .get(&activity.activity_id)
+                .is_some_and(|prior| {
+                    prior.source_position >= activity.source_position || prior.terminal
+                })
+            {
+                return Err(HostClientError::new(
+                    HostClientErrorCode::EventOrderViolation,
+                ));
+            }
+            view.activities
+                .insert(activity.activity_id.clone(), activity.clone());
+        }
         match event.event.as_str() {
             "turn.completed" => {
                 view.terminal = Some(HostTerminal::Completed);
@@ -69,4 +87,28 @@ pub fn reduce_host_events(
         }
     }
     Ok(view)
+}
+
+fn validate_activity(activity: &HostActivity, event_position: u64) -> Result<(), HostClientError> {
+    let expected_terminal = match activity.state.as_str() {
+        "input_received" | "completed" | "denied" | "failed" | "cancelled" => Some(true),
+        "prepared" | "waiting_for_input" | "authorized" | "running" | "attention_required" => {
+            Some(false)
+        }
+        _ => None,
+    };
+    let valid = activity.api_version == "v1"
+        && !activity.activity_id.is_empty()
+        && !activity.kind.is_empty()
+        && !activity.label_key.is_empty()
+        && activity.source_position > 0
+        && activity.source_position <= event_position
+        && activity.safe_code.as_deref() != Some("")
+        && expected_terminal.is_none_or(|terminal| terminal == activity.terminal)
+        && (expected_terminal.is_some() || !activity.terminal);
+    if valid {
+        Ok(())
+    } else {
+        Err(HostClientError::new(HostClientErrorCode::InvalidEvent))
+    }
 }
