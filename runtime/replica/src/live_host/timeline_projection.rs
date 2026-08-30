@@ -45,11 +45,10 @@ pub(super) fn project_timeline(
         || session_version == 0
         || session_version > MAX_SAFE_JSON_INTEGER
         || after_position > observed_max_position
-        || facts.len() as u64 != observed_max_position
     {
         return Err(LiveHostError::ReadBoundExceeded);
     }
-    verify_prefix(session_id, facts)?;
+    verify_prefix(session_id, observed_max_position, facts)?;
     let interactions = timeline_prompt::interactions(facts, limits)?;
     let mut turns = BTreeMap::<String, Turn>::new();
     for fact in facts.iter().skip(1) {
@@ -108,15 +107,25 @@ pub(super) fn project_timeline(
     })
 }
 
-fn verify_prefix(session_id: &SessionId, facts: &[DurableFact]) -> Result<(), LiveHostError> {
-    for (index, fact) in facts.iter().enumerate() {
+fn verify_prefix(
+    session_id: &SessionId,
+    observed_max_position: u64,
+    facts: &[DurableFact],
+) -> Result<(), LiveHostError> {
+    let mut previous = 0;
+    for fact in facts {
         fact.verify().map_err(|_| LiveHostError::CorruptState)?;
-        if &fact.session_id != session_id || fact.position != index as u64 + 1 {
+        if &fact.session_id != session_id || fact.position <= previous {
             return Err(LiveHostError::CorruptState);
         }
+        previous = fact.position;
     }
     let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
-    if opened.kind.as_str() != "session.opened" || opened.schema_version != 1 {
+    if opened.position != 1
+        || previous != observed_max_position
+        || opened.kind.as_str() != "session.opened"
+        || opened.schema_version != 1
+    {
         return Err(LiveHostError::CorruptState);
     }
     Ok(())
