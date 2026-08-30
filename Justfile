@@ -26,6 +26,9 @@ skill-boundaries:
 memory-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/memory/src experiments/engine-kt/memory/src/main; then echo 'M0 Engine must remain a pure memory value and reduction contract' >&2; exit 1; fi
 
+goal-boundaries:
+    @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/goal/src experiments/engine-kt/goal/src/main; then echo 'G1 Engine must remain a pure Goal value and reduction contract' >&2; exit 1; fi
+
 knowledge-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/knowledge/src experiments/engine-kt/knowledge/src/main; then echo 'K0 Engine must remain a pure retrieval value and reduction contract' >&2; exit 1; fi
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|reqwest|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/core_bridge/knowledge_*.rs; then echo 'K0 Runtime ports must receive connector configuration explicitly' >&2; exit 1; fi
@@ -54,9 +57,9 @@ creativity-publication-boundaries:
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries skill-boundaries memory-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries creativity-boundaries creativity-publication-boundaries
-    cargo test -p garive-config -p garive-core -p garive-eval -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
-    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :scheduler:test :skill:test :tools:test
+conformance: architecture config-boundaries skill-boundaries memory-boundaries goal-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries creativity-boundaries creativity-publication-boundaries
+    cargo test -p garive-config -p garive-core -p garive-eval -p garive-goal -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
+    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :goal:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :scheduler:test :skill:test :tools:test
 
 adapter-boundaries:
     @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not read process configuration' >&2; exit 1; fi
@@ -104,6 +107,9 @@ multiagent-runtime: multiagent-boundaries
 
 observability-runtime: observability-boundaries
     cargo test -p garive-runtime --test observability_runtime
+
+goal-runtime: goal-boundaries
+    cargo test -p garive-runtime --test goal_runtime
 
 kotlin-experiment:
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
@@ -182,7 +188,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance protocol-adapters runtime-host local-runtime host-client knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters runtime-host local-runtime host-client knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime goal-runtime kotlin-experiment apps rust
 
 bench:
     cargo test -p bench
