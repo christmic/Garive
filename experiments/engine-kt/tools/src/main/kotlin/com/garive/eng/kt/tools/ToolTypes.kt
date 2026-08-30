@@ -29,6 +29,8 @@ public enum class PreparationErrorCode(public val wireName: String) {
     UNSUPPORTED_SCHEMA_KEYWORD("unsupported_schema_keyword"),
     /** Value cannot satisfy RFC 8785 canonicalization. */
     NON_CANONICAL_VALUE("non_canonical_value"),
+    /** C5b access declaration, key, resolver result, or policy is invalid. */
+    EFFECT_ACCESS_INVALID("effect_access_invalid"),
 }
 
 /** Deterministic JSON Schema assertion failure. */
