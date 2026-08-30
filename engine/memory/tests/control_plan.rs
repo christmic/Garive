@@ -11,7 +11,7 @@ fn plans_all_variants_in_canonical_order_with_exact_counts() {
     let originals = [
         document("mem-a", "rev-a", "user_declared", "active", false, "old a"),
         document("mem-b", "rev-b", "agent_learned", "active", false, "old b"),
-        document("mem-c", "rev-c", "user_declared", "active", false, "old c"),
+        document("mem-c", "rev-c", "user_declared", "cold", false, "old c"),
         document("mem-d", "rev-d", "user_declared", "active", false, "old d"),
         document("mem-e", "rev-e", "user_declared", "active", false, "old e"),
     ];

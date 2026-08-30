@@ -134,6 +134,7 @@ private fun planExisting(
         }
         document.lifecycle != entry.lifecycle -> {
             if (document.lifecycle != HypothesisState.ARCHIVED ||
+                entry.lifecycle != HypothesisState.COLD ||
                 document.contentDigest != entry.contentDigest || document.authority != entry.authority ||
                 entry.authority == MemoryAuthority.ORGANISATION_PUBLISHED
             ) return MemoryControlError.FORBIDDEN_CHANGE

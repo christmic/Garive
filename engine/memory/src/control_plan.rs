@@ -205,6 +205,7 @@ fn plan_existing(
         });
     } else if document.lifecycle() != entry.lifecycle {
         if document.lifecycle() != HypothesisState::Archived
+            || entry.lifecycle != HypothesisState::Cold
             || document.content_digest() != entry.content_digest
             || document.authority() != entry.authority
             || entry.authority == MemoryAuthority::OrganisationPublished
