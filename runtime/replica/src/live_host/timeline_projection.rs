@@ -5,9 +5,10 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::{
-    projection,
+    activity_projection, projection,
     timeline_prompt::{self, Interaction},
-    HostReadLimits, LiveHostError, SuspensionViewV1, TurnTimelineItemV1, TurnTimelinePageV1,
+    HostActivityV1, HostReadLimits, LiveHostError, PublicToolActivityCatalogueV1, SuspensionViewV1,
+    TurnTimelineItemV1, TurnTimelinePageV1,
 };
 
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
@@ -20,6 +21,7 @@ pub(super) fn project_timeline(
     limit: usize,
     facts: &[DurableFact],
     limits: HostReadLimits,
+    catalogue: &PublicToolActivityCatalogueV1,
 ) -> Result<TurnTimelinePageV1, LiveHostError> {
     if limit == 0
         || limit > limits.max_timeline_items
@@ -35,6 +37,7 @@ pub(super) fn project_timeline(
     }
     verify_prefix(session_id, facts)?;
     let interactions = timeline_prompt::interactions(facts, limits)?;
+    let mut activities = activity_projection::project(facts, catalogue, limits)?.by_turn;
     let mut turns = BTreeMap::<String, Turn>::new();
     for fact in facts.iter().skip(1) {
         let Some(turn_id) = fact.turn_id.as_ref().map(|value| value.as_str()) else {
@@ -60,8 +63,26 @@ pub(super) fn project_timeline(
             _ => {}
         }
     }
+    if activities
+        .keys()
+        .any(|turn_id| !turns.contains_key(turn_id))
+    {
+        return Err(LiveHostError::CorruptState);
+    }
     let mut items = turns
-        .into_values()
+        .into_iter()
+        .map(|(turn_id, mut turn)| {
+            turn.activities = activities.remove(&turn_id).unwrap_or_default();
+            if let Some(position) = turn
+                .activities
+                .iter()
+                .map(|activity| activity.source_position)
+                .max()
+            {
+                turn.latest_position = turn.latest_position.max(position);
+            }
+            turn
+        })
         .map(Turn::finish)
         .collect::<Result<Vec<_>, _>>()?;
     items.retain(|item| item.latest_position > after_position);
@@ -284,6 +305,7 @@ struct Turn {
     completion_text: Option<String>,
     suspension: Option<SuspensionViewV1>,
     content_truncated: bool,
+    activities: Vec<HostActivityV1>,
 }
 
 impl Turn {
@@ -297,6 +319,7 @@ impl Turn {
             completion_text: None,
             suspension: None,
             content_truncated: false,
+            activities: Vec::new(),
         }
     }
 
@@ -311,7 +334,7 @@ impl Turn {
             completion_text: self.completion_text,
             suspension: self.suspension,
             content_truncated: self.content_truncated,
-            activities: Vec::new(),
+            activities: self.activities,
         })
     }
 }

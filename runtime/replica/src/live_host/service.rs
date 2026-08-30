@@ -262,6 +262,7 @@ impl LiveHost {
             limit,
             &facts,
             self.state.read_limits,
+            &self.state.activity_catalogue,
         )?;
         if serde_json::to_vec(&page)
             .map_err(|_| LiveHostError::CorruptState)?

@@ -1,3 +1,5 @@
+mod activity_projection;
+mod activity_transition;
 mod http;
 mod projection;
 mod read_cursor;
