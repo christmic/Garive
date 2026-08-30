@@ -52,6 +52,14 @@ pub struct HostReadLimits {
     pub max_prompt_bytes: usize,
     /// Maximum decoded or encoded Session cursor bytes.
     pub max_cursor_bytes: usize,
+    /// Maximum public activities projected for one Turn.
+    pub max_activities_per_turn: usize,
+    /// Maximum bytes in one opaque activity identity.
+    pub max_activity_id_bytes: usize,
+    /// Maximum bytes in one admitted localization key.
+    pub max_activity_label_bytes: usize,
+    /// Maximum encoded JSON bytes across activities in one response.
+    pub max_activity_bytes: usize,
 }
 
 impl HostReadLimits {
@@ -66,6 +74,10 @@ impl HostReadLimits {
         max_completion_bytes: 1_024 * 1_024,
         max_prompt_bytes: 64 * 1_024,
         max_cursor_bytes: 2_048,
+        max_activities_per_turn: 256,
+        max_activity_id_bytes: 256,
+        max_activity_label_bytes: 256,
+        max_activity_bytes: 512 * 1_024,
     };
 
     pub(crate) fn valid(self) -> bool {
@@ -78,7 +90,31 @@ impl HostReadLimits {
             && self.max_completion_bytes > 0
             && self.max_prompt_bytes > 0
             && self.max_cursor_bytes > 0
+            && self.max_activities_per_turn > 0
+            && self.max_activity_id_bytes > 0
+            && self.max_activity_label_bytes > 0
+            && self.max_activity_bytes > 0
     }
+}
+
+/// One installed immutable mapping from an internal Tool to a public label.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicToolActivityDescriptorV1 {
+    /// Exact internal Tool name used only inside Runtime projection.
+    pub tool_name: String,
+    /// Exact immutable Tool revision.
+    pub tool_revision: String,
+    /// Admitted public localization key.
+    pub label_key: String,
+}
+
+/// Turn-bound public Tool activity catalogue already included in its snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicToolActivityCatalogueV1 {
+    /// Exact non-empty immutable catalogue revision.
+    pub catalogue_revision: String,
+    /// Descriptors sorted by Tool name then revision.
+    pub descriptors: Vec<PublicToolActivityDescriptorV1>,
 }
 
 /// One installed Agent definition safe for client discovery.
@@ -427,6 +463,7 @@ pub(crate) struct LiveHostState {
     pub installed: InstalledAgent,
     pub limits: LiveHostLimits,
     pub read_limits: HostReadLimits,
+    pub activity_catalogue: PublicToolActivityCatalogueV1,
     pub clock: Arc<dyn HostClock>,
     pub dispatcher: Arc<dyn TurnDispatcher>,
 }

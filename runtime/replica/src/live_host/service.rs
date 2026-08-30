@@ -19,8 +19,9 @@ use crate::{
 use super::{
     project_fact, read_cursor, read_model, timeline_projection, AgentDefinitionPageV1,
     AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostClock, HostEventPage,
-    HostReadLimits, InstalledAgent, LiveHostError, LiveHostLimits, LiveHostState, SessionPageV1,
-    SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
+    HostReadLimits, InstalledAgent, LiveHostError, LiveHostLimits, LiveHostState,
+    PublicToolActivityCatalogueV1, SessionPageV1, SessionViewV1, TurnCommandResponse,
+    TurnDispatcher, TurnTimelinePageV1,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -57,8 +58,33 @@ impl LiveHost {
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
     ) -> Result<Self, LiveHostError> {
+        Self::new_with_activity_catalogue(
+            database_path,
+            installed,
+            limits,
+            read_limits,
+            PublicToolActivityCatalogueV1 {
+                catalogue_revision: "none".to_owned(),
+                descriptors: Vec::new(),
+            },
+            clock,
+            dispatcher,
+        )
+    }
+
+    /// Constructs a Host with an exact Turn-bound H3 public Tool catalogue.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_activity_catalogue(
+        database_path: impl AsRef<Path>,
+        installed: InstalledAgent,
+        limits: LiveHostLimits,
+        read_limits: HostReadLimits,
+        activity_catalogue: PublicToolActivityCatalogueV1,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+    ) -> Result<Self, LiveHostError> {
         validate_installed(&installed, limits)?;
-        if !read_limits.valid() {
+        if !read_limits.valid() || !valid_activity_catalogue(&activity_catalogue, read_limits) {
             return Err(LiveHostError::InvalidRequest);
         }
         SqliteLedger::open(database_path.as_ref()).map_err(map_sqlite)?;
@@ -68,6 +94,7 @@ impl LiveHost {
                 installed,
                 limits,
                 read_limits,
+                activity_catalogue,
                 clock,
                 dispatcher,
             }),
@@ -973,6 +1000,34 @@ fn validate_installed(
     } else {
         Ok(())
     }
+}
+
+fn valid_activity_catalogue(
+    catalogue: &PublicToolActivityCatalogueV1,
+    limits: HostReadLimits,
+) -> bool {
+    !catalogue.catalogue_revision.is_empty()
+        && catalogue.catalogue_revision.len() <= limits.max_activity_id_bytes
+        && catalogue.descriptors.len() <= limits.max_activities_per_turn
+        && catalogue.descriptors.iter().all(|value| {
+            !value.tool_name.is_empty()
+                && value.tool_name.len() <= limits.max_activity_id_bytes
+                && !value.tool_revision.is_empty()
+                && value.tool_revision.len() <= limits.max_activity_id_bytes
+                && !value.label_key.is_empty()
+                && value.label_key.len() <= limits.max_activity_label_bytes
+                && localization_key(&value.label_key)
+        })
+        && catalogue.descriptors.windows(2).all(|pair| {
+            (&pair[0].tool_name, &pair[0].tool_revision)
+                < (&pair[1].tool_name, &pair[1].tool_revision)
+        })
+}
+
+fn localization_key(value: &str) -> bool {
+    value.bytes().all(|byte| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+    }) && value.bytes().any(|byte| byte.is_ascii_lowercase())
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), LiveHostError> {
