@@ -8,7 +8,9 @@ struct GariveRootView: View {
     var body: some View {
         Group {
             if model.credentials == nil {
-                PairingView { model.pair(origin: $0, accessGrant: $1) }
+                PairingView(errorCode: model.errorCode, pairing: model.pairing) {
+                    model.pair(origin: $0, accessGrant: $1)
+                }
             } else if let state = model.state {
                 RemoteWorkspaceView(model: model, state: state)
             } else {

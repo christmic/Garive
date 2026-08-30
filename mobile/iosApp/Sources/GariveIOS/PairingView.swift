@@ -4,6 +4,8 @@ struct PairingView: View {
     @State private var origin = ""
     @State private var accessCode = ""
     @State private var showingCode = false
+    let errorCode: String?
+    let pairing: Bool
     let connect: (String, String) -> Void
 
     private var valid: Bool {
@@ -42,10 +44,17 @@ struct PairingView: View {
                 }
 
                 Button { connect(origin, accessCode) } label: {
-                    Label("Connect securely", systemImage: "lock.shield")
-                        .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 7)
+                    Group {
+                        if pairing { ProgressView() }
+                        else { Label("Connect securely", systemImage: "lock.shield") }
+                    }.font(.headline).frame(maxWidth: .infinity).padding(.vertical, 7)
                 }
-                .buttonStyle(.borderedProminent).controlSize(.large).disabled(!valid)
+                .buttonStyle(.borderedProminent).controlSize(.large).disabled(!valid || pairing)
+
+                if let errorCode {
+                    Label(errorCode.replacingOccurrences(of: "_", with: " "), systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(GarivePalette.amber)
+                }
 
                 Label("The access grant stays in this device’s Keychain. Garive never stores agent output in notifications.", systemImage: "checkmark.shield")
                     .font(.footnote).foregroundStyle(.secondary)

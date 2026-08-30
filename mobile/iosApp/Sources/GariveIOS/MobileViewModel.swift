@@ -6,11 +6,17 @@ final class UUIDIdentitySource: NSObject, CommandIdentitySource {
     func nextId() -> String { UUID().uuidString.lowercased() }
 }
 
+private final class UnsafeTransfer<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
+}
+
 @MainActor
 final class MobileViewModel: ObservableObject {
     @Published private(set) var state: MobileWorkState?
     @Published private(set) var credentials: ConnectionCredentials?
     @Published private(set) var errorCode: String?
+    @Published private(set) var pairing = false
     @Published var presentingNewTask = false
 
     private let store: ConnectionStore
@@ -23,11 +29,34 @@ final class MobileViewModel: ObservableObject {
     }
 
     func pair(origin: String, accessGrant: String) {
-        let value = ConnectionCredentials(
-            origin: origin.trimmingCharacters(in: .whitespacesAndNewlines),
-            accessGrant: accessGrant.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        connect(value, persist: true)
+        let service = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let client = try GatewayPairingClient(baseUrl: service, maxResponseBytes: 8_192)
+            let publicKey = try store.devicePublicKey()
+            pairing = true
+            errorCode = nil
+            client.exchange(
+                code: accessGrant,
+                deviceName: String(ProcessInfo.processInfo.hostName.prefix(100)),
+                platform: .ios,
+                devicePublicKey: publicKey
+            ) { [weak self] grant, error in
+                let transferredGrant = UnsafeTransfer(grant)
+                let failed = error != nil
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.pairing = false
+                    guard let grant = transferredGrant.value else {
+                        self.errorCode = failed ? "pairing_rejected" : "invalid_pairing_response"
+                        return
+                    }
+                    self.connect(ConnectionCredentials(origin: service, accessGrant: grant.accessGrant), persist: true)
+                }
+            }
+        } catch {
+            pairing = false
+            errorCode = "secure_connection_failed"
+        }
     }
 
     func refresh() { perform { callback in self.controller?.refresh(completionHandler: callback) } }
@@ -85,10 +114,12 @@ final class MobileViewModel: ObservableObject {
     ) {
         errorCode = nil
         operation { [weak self] value, error in
+            let transferredValue = UnsafeTransfer(value)
+            let failed = error != nil
             Task { @MainActor in
                 guard let self else { return }
-                if let value { self.state = value }
-                if error != nil {
+                if let value = transferredValue.value { self.state = value }
+                if failed {
                     self.errorCode = self.controller?.state().noticeCode ?? "remote_operation_failed"
                 }
             }

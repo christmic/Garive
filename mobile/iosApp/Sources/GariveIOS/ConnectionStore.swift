@@ -33,13 +33,59 @@ final class ConnectionStore {
 
     func clear() {
         SecItemDelete(baseQuery as CFDictionary)
+        SecItemDelete(deviceKeyQuery(returnReference: false) as CFDictionary)
         defaults.removeObject(forKey: originKey)
+    }
+
+    func devicePublicKey() throws -> String {
+        var value: CFTypeRef?
+        let privateKey: SecKey
+        if SecItemCopyMatching(deviceKeyQuery(returnReference: true) as CFDictionary, &value) == errSecSuccess,
+           let existing = value as! SecKey? {
+            privateKey = existing
+        } else {
+            var error: Unmanaged<CFError>?
+            let attributes: [String: Any] = [
+                kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+                kSecAttrKeySizeInBits as String: 256,
+                kSecPrivateKeyAttrs as String: [
+                    kSecAttrIsPermanent as String: true,
+                    kSecAttrApplicationTag as String: Data(deviceKeyTag.utf8),
+                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                ],
+            ]
+            guard let created = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
+                throw error?.takeRetainedValue() ?? ConnectionStoreError.deviceKey
+            }
+            privateKey = created
+        }
+        guard let publicKey = SecKeyCopyPublicKey(privateKey) else { throw ConnectionStoreError.deviceKey }
+        var exportError: Unmanaged<CFError>?
+        guard let bytes = SecKeyCopyExternalRepresentation(publicKey, &exportError) as Data? else {
+            throw exportError?.takeRetainedValue() ?? ConnectionStoreError.deviceKey
+        }
+        return bytes.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     private var baseQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
+    }
+
+    private var deviceKeyTag: String { "com.garive.mobile.remote.device.v1" }
+
+    private func deviceKeyQuery(returnReference: Bool) -> [String: Any] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassKey,
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrApplicationTag as String: Data(deviceKeyTag.utf8),
+        ]
+        if returnReference { query[kSecReturnRef as String] = true }
+        return query
     }
 
     private func readGrant() -> String? {
@@ -54,4 +100,4 @@ final class ConnectionStore {
     }
 }
 
-enum ConnectionStoreError: Error { case keychain(OSStatus) }
+enum ConnectionStoreError: Error { case keychain(OSStatus), deviceKey }
