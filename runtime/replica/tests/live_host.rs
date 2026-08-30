@@ -166,6 +166,61 @@ fn commands_are_durable_idempotent_and_dispatched_only_after_commit() {
 }
 
 #[test]
+fn installed_definitions_and_sessions_are_restart_safe_read_models() {
+    let harness = Harness::new(64);
+    let definitions = harness.host.agent_definitions();
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].api_version, "v1");
+    assert_eq!(definitions[0].definition_id, "definition-main");
+    assert_eq!(definitions[0].definition_revision, "revision-1");
+    assert!(definitions[0].capabilities.is_empty());
+
+    let first = harness
+        .host
+        .create_session("create-read-1", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-read-1", &first.session_id, "durable input")
+        .unwrap();
+    let second = harness
+        .host
+        .create_session("create-read-2", "definition-main")
+        .unwrap();
+
+    let restarted = LiveHost::new(
+        &harness.database,
+        installed(),
+        harness.host.limits(),
+        Arc::new(FixedClock),
+        harness.dispatcher,
+    )
+    .unwrap();
+    let sessions = restarted.list_sessions(2).unwrap();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions[0].session_id > sessions[1].session_id);
+    let active = sessions
+        .iter()
+        .find(|summary| summary.session_id == first.session_id)
+        .unwrap();
+    assert_eq!(
+        active.latest_turn_id.as_deref(),
+        Some(started.turn_id.as_str())
+    );
+    assert_eq!(active.latest_turn_state.as_deref(), Some("running"));
+    assert_eq!(active.turn_count, 1);
+    assert_eq!(active.latest_position, 4);
+    assert_eq!(active.opened_at, NOW);
+    assert!(sessions
+        .iter()
+        .any(|summary| summary.session_id == second.session_id));
+    assert_eq!(
+        restarted.list_sessions(0),
+        Err(LiveHostError::InvalidRequest)
+    );
+}
+
+#[test]
 fn event_projection_advances_over_gaps_and_replays_terminal_text() {
     let harness = Harness::new(1);
     let session = harness
