@@ -23,8 +23,9 @@ use super::{
     HostClock, HostContinuationInput, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
     LiveHostEvent, LiveHostLimits, LiveHostState, SessionPageV1, SessionSummary, SessionViewV1,
     TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    TurnTimelinePageV1,
 };
-use super::{read_cursor, read_model};
+use super::{read_cursor, read_model, timeline_projection};
 
 /// Durable local Host command service shared by in-process and HTTP clients.
 #[derive(Clone)]
@@ -181,6 +182,47 @@ impl LiveHost {
             next_before,
         };
         ensure_response_bound(&page, self.state.read_limits.max_response_bytes)?;
+        Ok(page)
+    }
+
+    /// Reads a bounded page of complete Turns from one frozen Session prefix.
+    pub fn get_timeline(
+        &self,
+        session: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<TurnTimelinePageV1, LiveHostError> {
+        if limit == 0 || limit > self.state.read_limits.max_timeline_items {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > self.state.read_limits.max_facts as u64 {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let page = timeline_projection::project_timeline(
+            &session_id,
+            watermark.max_position,
+            watermark.session_version,
+            after_position,
+            limit,
+            &facts,
+            self.state.read_limits,
+        )?;
+        if serde_json::to_vec(&page)
+            .map_err(|_| LiveHostError::CorruptState)?
+            .len()
+            > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
         Ok(page)
     }
 
