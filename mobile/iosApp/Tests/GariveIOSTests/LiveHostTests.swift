@@ -117,6 +117,7 @@ func pairingLinksRequireExactFreshFields() {
     ]
     model.acceptPairingURL(components.url!)
     #expect(model.pairingSuggestion?.serviceName == "Test service")
+    #expect(model.pairingSuggestion?.origin == "https://agent.example.test:443")
 
     components.queryItems?.append(URLQueryItem(name: "code", value: "duplicate"))
     model.acceptPairingURL(components.url!)
@@ -128,6 +129,16 @@ func pairingLinksRequireExactFreshFields() {
         URLQueryItem(name: "code", value: String(repeating: "c", count: 129)),
         URLQueryItem(name: "exp", value: String(expiry)),
         URLQueryItem(name: "name", value: ""),
+    ]
+    model.acceptPairingURL(components.url!)
+    #expect(model.pairingSuggestion == nil)
+    #expect(model.errorCode == "invalid_pairing_link")
+
+    components.queryItems = [
+        URLQueryItem(name: "origin", value: "http://agent.example.test/"),
+        URLQueryItem(name: "code", value: "one-time-code"),
+        URLQueryItem(name: "exp", value: String(expiry)),
+        URLQueryItem(name: "name", value: "Test service"),
     ]
     model.acceptPairingURL(components.url!)
     #expect(model.pairingSuggestion == nil)

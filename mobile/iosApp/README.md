@@ -59,6 +59,8 @@ server submit control, collapsed Activity, approve/decline and cancellation
 confirmation, safe diagnostics, notification entry, and confirmed unpair.
 The Settings journey additionally selects Light, Dark, and System and verifies
 the native segmented-control state after every change.
+Swift contract tests also require pairing links to pass the same shared remote
+HTTPS-origin validator before any service suggestion is presented.
 
 The Xcode target produces `Garive.app`, registers expiring `garive://pair`
 handoffs, and links the static XCFramework. Distribution still requires the

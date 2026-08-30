@@ -131,7 +131,9 @@ garive://pair?origin=https%3A%2F%2Fagent.example.com&code=...&exp=...&name=...
 ```
 
 用系统相机扫描即可交给 Garive 打开，应用本身不需要相机权限。链接必须包含且只包含
-`origin`、`code`、`exp`、`name`，并在生成后十分钟内过期。打开后仍应核对服务名称和域名。
+`origin`、`code`、`exp`、`name`，并在生成后十分钟内过期。Android 和 iOS 会在展示建议前
+使用同一共享边界拒绝 HTTP、IP、localhost、`.local`、用户名/密码、query、fragment 和非根路径，
+再显示规范化后的 HTTPS origin；打开后仍应核对服务名称和域名。
 
 一次性配对码成功使用后不能再次使用。如果另一台设备也要连接，管理员必须生成新配对码。
 
@@ -418,7 +420,7 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（14 条，含整应用 Work → Sessions → 新任务及 Light → Dark 切换）、Swift 测试（9 条）、
+界面流程（15 条，含严格配对链接、整应用 Work → Sessions → 新任务及 Light → Dark 切换）、Swift 测试（9 条）、
 iOS Simulator XCUITest（4 条，含 Light → Dark → System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、

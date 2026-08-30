@@ -124,7 +124,7 @@ final class MobileViewModel: ObservableObject {
         }
         guard url.scheme == "garive", url.host == "pair", Set(names).isSubset(of: allowed),
               names.count == Set(names).count,
-              let origin = one("origin"), let code = one("code"), let rawExpiry = one("exp"),
+              let rawOrigin = one("origin"), let code = one("code"), let rawExpiry = one("exp"),
               let expiry = TimeInterval(rawExpiry), let serviceName = one("name"),
               expiry > Date().timeIntervalSince1970, expiry <= Date().timeIntervalSince1970 + 600,
               (1...100).contains(serviceName.count), (6...128).contains(code.count) else {
@@ -132,7 +132,14 @@ final class MobileViewModel: ObservableObject {
             pairingSuggestion = nil
             return
         }
-        pairingSuggestion = PairingSuggestion(origin: origin, code: code, serviceName: serviceName)
+        do {
+            let origin = try LiveHostClientKt.validateRemoteHostOrigin(value: rawOrigin)
+            pairingSuggestion = PairingSuggestion(origin: origin, code: code, serviceName: serviceName)
+        } catch {
+            errorCode = "invalid_pairing_link"
+            pairingSuggestion = nil
+            return
+        }
         errorCode = nil
     }
 

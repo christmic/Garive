@@ -35,6 +35,7 @@ import com.garive.mobile.host.LiveHostClient
 import com.garive.mobile.host.MobilePlatform
 import com.garive.mobile.host.GatewayNotificationClient
 import com.garive.mobile.host.MobileWakeRoute
+import com.garive.mobile.host.validateRemoteHostOrigin
 import com.garive.mobile.preferences.Theme
 import kotlinx.coroutines.launch
 
@@ -187,13 +188,17 @@ private fun GariveRoot(
 
 internal data class PairingSuggestion(val origin: String, val code: String, val serviceName: String)
 
-private fun parsePairingLink(uri: Uri?): PairingSuggestion? {
+internal fun parsePairingLink(uri: Uri?): PairingSuggestion? {
     if (uri?.scheme != "garive" || uri.host != "pair") return null
     val allowed = setOf("origin", "code", "exp", "name")
     if (uri.queryParameterNames != allowed || allowed.any { uri.getQueryParameters(it).size != 1 }) return null
     val expiry = uri.getQueryParameter("exp")?.toLongOrNull() ?: return null
     val now = System.currentTimeMillis() / 1_000
-    val origin = uri.getQueryParameter("origin") ?: return null
+    val origin = try {
+        validateRemoteHostOrigin(uri.getQueryParameter("origin") ?: return null)
+    } catch (_: HostClientException) {
+        return null
+    }
     val code = uri.getQueryParameter("code") ?: return null
     val name = uri.getQueryParameter("name") ?: return null
     if (expiry <= now || expiry > now + 600 || code.length !in 6..128 || name.length !in 1..100) return null

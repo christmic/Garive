@@ -30,6 +30,21 @@ public class LiveHostClientTest {
     }
 
     @Test
+    public fun remoteOriginIsCanonicalBeforeNativePresentation(): Unit {
+        assertEquals("https://agent.example.test:443", validateRemoteHostOrigin("https://agent.example.test/"))
+        listOf(
+            "http://agent.example.test/",
+            "https://localhost/",
+            "https://192.0.2.1/",
+            "https://agent.example.test/path",
+            "https://agent.example.test/?query=yes",
+            "https://user@agent.example.test/",
+        ).forEach { value ->
+            assertFailsWith<HostClientException>(value) { validateRemoteHostOrigin(value) }
+        }
+    }
+
+    @Test
     public fun sharedFixtureCoversGapsReconnectUnknownAndFailures(): Unit {
         val session = fixture.text("session_id")
         val valid = fixture.getValue("valid_stream").jsonArray.map { it.jsonObject.toEvent() }

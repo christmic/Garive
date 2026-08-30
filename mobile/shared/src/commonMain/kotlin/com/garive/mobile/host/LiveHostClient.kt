@@ -318,11 +318,16 @@ internal fun validateBaseUrl(value: String, remote: Boolean): String {
         !url.host.endsWith(".local") && !url.host.all { it.isDigit() || it == '.' }
     if ((!remote && (url.protocol.name != "http" || !loopback)) ||
         (remote && (url.protocol.name != "https" || !validRemoteHost)) ||
-        url.encodedPath != "/" || url.parameters.entries().isNotEmpty() || url.fragment.isNotEmpty()
+        url.encodedPath != "/" || url.parameters.entries().isNotEmpty() || url.trailingQuery ||
+        url.fragment.isNotEmpty() || !url.user.isNullOrEmpty() || !url.password.isNullOrEmpty()
     ) fail(HostClientError.INVALID_CONFIGURATION)
     val renderedHost = if (":" in url.host) "[${url.host}]" else url.host
     return "${url.protocol.name}://$renderedHost:${url.port}"
 }
+
+/** Validates and canonicalizes one public HTTPS Gateway origin before native UI displays it. */
+@Throws(HostClientException::class)
+public fun validateRemoteHostOrigin(value: String): String = validateBaseUrl(value, remote = true)
 
 private class RemoteAuthorization(val header: String)
 

@@ -49,6 +49,9 @@ server submission are exercised together in addition to focused component and
 secure-storage tests.
 The full-shell journey also selects Light and Dark through the same Settings
 segmented control used by the shipping activity.
+An active-app `garive://pair` journey verifies singleTop delivery, exact query
+shape, shared HTTPS-origin canonicalization, visible service confirmation, and
+an enabled explicit connection action.
 
 The app includes `../shared` as a Gradle project, accepts an explicit loopback
 Host URL and renders the terminal returned by `LiveHostClient`; it does not
