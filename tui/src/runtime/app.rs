@@ -300,6 +300,7 @@ pub(super) struct RuntimeState {
     pub(super) pending: Option<PendingCommand>,
     pub(super) ephemeral_confirmed: bool,
     pub(super) queued_prompt: Option<String>,
+    pub(super) editing_suspension: Option<String>,
 }
 
 struct RestoredState {
@@ -346,6 +347,7 @@ impl RuntimeState {
             pending: restored.pending,
             ephemeral_confirmed: false,
             queued_prompt: None,
+            editing_suspension: None,
         }
     }
 
@@ -562,6 +564,16 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             follow_position,
         } if state.model.selected_session.as_deref() == Some(&session_id) => {
             install_timeline(&mut state.model, items);
+            match state.model.suspension.as_ref() {
+                Some(suspension)
+                    if state.editing_suspension.as_deref()
+                        == Some(suspension.suspension_id.as_str()) =>
+                {
+                    state.model.overlay = None;
+                }
+                Some(_) => state.editing_suspension = None,
+                None => state.editing_suspension = None,
+            }
             state.model.observed_position = follow_position;
             state.model.connection = ConnectionState::Online;
             state.model.session_count = state.model.sessions.len();

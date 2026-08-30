@@ -3,10 +3,13 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Command,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
-use garive_core::{AgentOutcome, ExecutionReport, UsageSummary};
+use garive_core::{AgentOutcome, ExecutionReport, SuspensionReason, UsageSummary};
 use garive_ledger::SessionId;
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
@@ -25,6 +28,7 @@ impl HostClock for Clock {
 
 struct CompletingDispatcher {
     database: PathBuf,
+    calls: AtomicUsize,
 }
 
 impl TurnDispatcher for CompletingDispatcher {
@@ -34,13 +38,31 @@ impl TurnDispatcher for CompletingDispatcher {
             output_tokens: TokenCount::Known(4),
             estimated: false,
         };
-        let report = ExecutionReport {
-            outcome: AgentOutcome::Completed {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let outcome = if call == 1 {
+            AgentOutcome::Suspended {
+                reason: SuspensionReason::PartialOutput,
+                partial_items: vec![ModelItem::Text {
+                    text: "partial answer".into(),
+                }],
+                last_durable_position: turn.committed_position,
+                governed_binding: None,
+            }
+        } else {
+            AgentOutcome::Completed {
                 response_items: vec![ModelItem::Text {
-                    text: "answer from production runtime".into(),
+                    text: if call == 0 {
+                        "answer from production runtime"
+                    } else {
+                        "answer after continuation"
+                    }
+                    .into(),
                 }],
                 usage,
-            },
+            }
+        };
+        let report = ExecutionReport {
+            outcome,
             completed_iterations: 1,
             usage,
         };
@@ -54,7 +76,9 @@ impl TurnDispatcher for CompletingDispatcher {
         )
         .map_err(|_| TurnDispatchError)?;
         SqliteLedger::open(&self.database)
-            .and_then(|mut ledger| ledger.commit(turn.session_id.clone(), 2, facts))
+            .and_then(|mut ledger| {
+                ledger.commit(turn.session_id.clone(), turn.session_version, facts)
+            })
             .map_err(|_| TurnDispatchError)?;
         Ok(())
     }
@@ -75,6 +99,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         Arc::new(Clock),
         Arc::new(CompletingDispatcher {
             database: database.clone(),
+            calls: AtomicUsize::new(0),
         }),
     )
     .unwrap();
@@ -107,6 +132,11 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         timeline.items[0].completion_text.as_deref(),
         Some("answer from production runtime")
     );
+    assert_eq!(timeline.items[1].user_text, "second question");
+    assert_eq!(
+        timeline.items[1].completion_text.as_deref(),
+        Some("answer after continuation")
+    );
 
     let restart_log = temporary.path().join("restart.log");
     assert!(run_expect(address, &state, &restart_log, true));
@@ -131,6 +161,8 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
             expect "You: hello durable tui"
             expect "Garive: answer from production runtime"
+            expect "You: second question"
+            expect "Garive: answer after continuation"
             send "\021"
             send "\r"
             expect eof
@@ -145,6 +177,12 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect "definition-m"
             send "hello durable tui\r"
             expect "answer from production runtime"
+            send "second question\r"
+            expect "Action required"
+            send "\r"
+            after 300
+            send "continue please\r"
+            expect "answer after continuation"
             send "\021"
             send "\r"
             expect eof

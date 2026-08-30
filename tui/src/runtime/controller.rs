@@ -97,6 +97,11 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             }
             KeyCode::Enter if overlay == Overlay::CommandPalette => select_command(state),
             KeyCode::Enter if overlay == Overlay::Suspension => {
+                state.editing_suspension = state
+                    .model
+                    .suspension
+                    .as_ref()
+                    .map(|value| value.suspension_id.clone());
                 state.model.overlay = None;
             }
             KeyCode::Enter if overlay == Overlay::EphemeralConfirmation => {
