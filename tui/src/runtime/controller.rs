@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 
-use super::{app::RuntimeState, host};
+use super::{app::RuntimeState, clipboard, host};
 
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
     match event {
@@ -434,13 +434,37 @@ fn execute_command(command: Command, state: &mut RuntimeState) {
             state.model.overlay = Some(Overlay::ErrorDetails);
         }
         Command::Retry => retry_pending(state),
-        Command::CopyLast | Command::CopySessionId => {
-            state.model.notice =
-                Some("Clipboard integration is unavailable in this terminal.".into());
-            state.model.overlay = Some(Overlay::ErrorDetails);
+        Command::CopyLast => {
+            let value = state
+                .model
+                .timeline
+                .iter()
+                .rev()
+                .find(|item| item.role == crate::application::TimelineRole::Agent)
+                .map(|item| item.text.clone());
+            copy_value(value, state);
+        }
+        Command::CopySessionId => {
+            copy_value(state.model.selected_session.clone(), state);
         }
         Command::Quit => state.dispatch(AppAction::QuitRequested),
     }
+}
+
+fn copy_value(value: Option<String>, state: &mut RuntimeState) {
+    let notice = if state.config.screen_reader {
+        "Clipboard requests are disabled in screen-reader mode."
+    } else if let Some(value) = value {
+        if clipboard::copy(&value).is_ok() {
+            "Copy request sent to the terminal."
+        } else {
+            "The terminal rejected the bounded copy request."
+        }
+    } else {
+        "There is no visible value to copy."
+    };
+    state.model.notice = Some(notice.into());
+    state.model.overlay = Some(Overlay::ErrorDetails);
 }
 
 fn cancel(state: &mut RuntimeState) {

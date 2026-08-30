@@ -1,4 +1,5 @@
 mod app;
+mod clipboard;
 mod controller;
 mod host;
 mod terminal;

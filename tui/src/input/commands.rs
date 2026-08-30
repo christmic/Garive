@@ -1,12 +1,16 @@
 use crate::args::{MouseMode, Theme};
 
-pub(crate) const COMMAND_PALETTE: [(&str, &str); 8] = [
+pub(crate) const COMMAND_PALETTE: &[(&str, &str)] = &[
     ("/new", "Create session"),
     ("/sessions", "Switch session"),
     ("/status", "Connection details"),
     ("/retry", "Retry unknown command"),
     ("/reconnect", "Resume event stream"),
     ("/cancel", "Cancel running turn"),
+    ("/theme system", "Follow terminal theme"),
+    ("/mouse off", "Disable mouse capture next launch"),
+    ("/copy last", "Copy last completion"),
+    ("/copy session-id", "Copy Session ID"),
     ("/help", "Keyboard guide"),
     ("/quit", "Exit safely"),
 ];
