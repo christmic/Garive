@@ -1,14 +1,15 @@
 use std::sync::{Arc, Mutex};
 
 use garive_core::{
-    derive_context, ContextPort, MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction,
-    TerminalRecoveryAction,
+    derive_context, CandidateKind, ContextPort, MissingUsagePolicy, ModelRecoveryPolicy,
+    OutputLimitAction, Retention, TerminalRecoveryAction,
 };
 use garive_llm::{ModelCapability, ModelOutputSettings, TextMode};
 use garive_runtime::{
-    reconstruct_local_start, CommittedTurn, EffectiveRuntimeLimits, HostClock, InstalledAgent,
-    LiveHost, LiveHostLimits, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalReconstructionError, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    reconstruct_local_start, CommittedTurn, EffectiveRuntimeLimits, HostClock,
+    HostWorkspaceContextEntry, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalReconstructionError, SqliteLedger, TurnDispatchError,
+    TurnDispatcher,
 };
 use tempfile::tempdir;
 
@@ -178,4 +179,82 @@ fn invalid_explicit_values_and_uncommitted_prefix_fail_before_model() {
             .expect("execution was not committed in prefix"),
         LocalReconstructionError::ReconstructionFailed
     );
+}
+
+#[test]
+fn reconstructs_selected_workspace_text_as_required_knowledge_before_user_input() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("workspace.db");
+    let capture = Arc::new(Capture::default());
+    let host = LiveHost::new(
+        &database,
+        InstalledAgent {
+            definition_id: "definition-main".into(),
+            definition_revision: "revision-1".into(),
+            snapshot_digest: "a".repeat(64),
+            agent_instance_namespace: "local-main".into(),
+            runtime_limits: EffectiveRuntimeLimits {
+                max_iterations: 2,
+                max_input_tokens: Some(20),
+                max_output_tokens: Some(10),
+                deadline_budget_ms: None,
+            },
+            public_activity_catalogue: None,
+        },
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 32,
+            event_poll_interval_ms: 10,
+            activity: None,
+        },
+        Arc::new(Clock),
+        capture.clone(),
+    )
+    .unwrap();
+    let session = host
+        .create_session("create-context", "definition-main")
+        .unwrap();
+    host.attach_workspace(
+        "attach-context",
+        &session.session_id,
+        "workspace-opaque",
+        "Briefs",
+        1,
+        "enumerate",
+    )
+    .unwrap();
+    host.start_turn_with_workspace_context(
+        "start-context",
+        &session.session_id,
+        "summarize this",
+        "workspace-opaque",
+        1,
+        &[HostWorkspaceContextEntry {
+            entry_id: "entry-opaque".into(),
+            display_name: "brief.md".into(),
+            kind: "text".into(),
+            content_digest: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+                .into(),
+            content_utf8: "hello".into(),
+        }],
+    )
+    .unwrap();
+    let committed = capture.0.lock().unwrap()[0].clone();
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let mut reconstructed =
+        reconstruct_local_start(&ledger, &committed, &policy(), &attempt()).unwrap();
+    let candidates = reconstructed
+        .context
+        .read_candidates(&reconstructed.request.context_request, 0)
+        .unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].kind, CandidateKind::Knowledge);
+    assert_eq!(candidates[0].retention, Retention::Required);
+    assert_eq!(candidates[0].fact_ref.position, 3);
+    assert_eq!(candidates[1].kind, CandidateKind::UserInput);
+    assert_eq!(candidates[1].fact_ref.position, 5);
+    let encoded = format!("{:?}", candidates[0].items);
+    assert!(encoded.contains("garive.workspace_file"));
+    assert!(encoded.contains("hello"));
+    assert!(!encoded.contains('/'));
 }
