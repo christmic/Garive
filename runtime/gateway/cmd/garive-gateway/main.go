@@ -26,12 +26,18 @@ func run() error {
 	if err != nil {
 		return errors.New("invalid runtime configuration")
 	}
+	pushSender, err := configuredPushSender()
+	if err != nil {
+		return err
+	}
 	handler, err := gateway.New(gateway.Config{
 		RuntimeOrigin: runtimeOrigin,
 		PairingCode:   os.Getenv("GARIVE_PAIRING_CODE"),
 		AdminToken:    os.Getenv("GARIVE_ADMIN_TOKEN"),
 		GrantTTL:      30 * 24 * time.Hour,
 		MaxBodyBytes:  64 * 1024,
+		PushSender:    pushSender,
+		WakeTTL:       10 * time.Minute,
 	})
 	if err != nil {
 		return err
@@ -66,6 +72,41 @@ func run() error {
 	return err
 }
 
+func configuredPushSender() (gateway.PushSender, error) {
+	var providers gateway.MultiplexPushSender
+	apnsKeyPath := os.Getenv("GARIVE_APNS_KEY_FILE")
+	apnsConfigured := apnsKeyPath != "" || os.Getenv("GARIVE_APNS_TEAM_ID") != "" ||
+		os.Getenv("GARIVE_APNS_KEY_ID") != "" || os.Getenv("GARIVE_APNS_TOPIC") != ""
+	if apnsConfigured {
+		key, err := os.ReadFile(apnsKeyPath)
+		if err != nil {
+			return nil, errors.New("invalid APNs configuration")
+		}
+		sandboxValue := os.Getenv("GARIVE_APNS_SANDBOX")
+		if sandboxValue != "" && sandboxValue != "true" && sandboxValue != "false" {
+			return nil, errors.New("invalid APNs configuration")
+		}
+		providers.APNS, err = gateway.NewAPNSSender(gateway.APNSConfig{
+			TeamID: os.Getenv("GARIVE_APNS_TEAM_ID"), KeyID: os.Getenv("GARIVE_APNS_KEY_ID"),
+			Topic: os.Getenv("GARIVE_APNS_TOPIC"), PrivateKey: key, Sandbox: sandboxValue == "true",
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if credentials := os.Getenv("GARIVE_FCM_CREDENTIALS"); credentials != "" {
+		var err error
+		providers.FCM, err = gateway.NewFCMSenderFromFile(credentials)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if providers.APNS == nil && providers.FCM == nil {
+		return nil, nil
+	}
+	return providers, nil
+}
+
 func environment(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
@@ -76,7 +117,8 @@ func environment(name, fallback string) string {
 func safeError(err error) string {
 	switch err.Error() {
 	case "runtime origin must be a bare loopback HTTP origin", "pairing code or admin token is outside bounds",
-		"TLS certificate configuration is required", "invalid runtime configuration":
+		"TLS certificate configuration is required", "invalid runtime configuration",
+		"invalid APNs configuration", "invalid FCM configuration":
 		return err.Error()
 	default:
 		return "service_failure"
