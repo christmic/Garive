@@ -1,9 +1,15 @@
 #if canImport(GariveShared)
 import SwiftUI
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
 @preconcurrency import GariveShared
 
 struct GariveRootView: View {
     @StateObject private var model = MobileViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -18,7 +24,9 @@ struct GariveRootView: View {
             }
         }
         .tint(GarivePalette.coral)
-        .preferredColorScheme(.dark)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, model.state != nil { model.refresh() }
+        }
     }
 }
 
@@ -84,9 +92,15 @@ private struct RemoteWorkspaceView: View {
 }
 
 enum GarivePalette {
-    static let ink = Color(red: 0.035, green: 0.043, blue: 0.055)
-    static let panel = Color(red: 0.075, green: 0.086, blue: 0.105)
-    static let raised = Color(red: 0.11, green: 0.125, blue: 0.15)
+#if os(iOS)
+    static let ink = Color(uiColor: .systemGroupedBackground)
+    static let panel = Color(uiColor: .secondarySystemGroupedBackground)
+    static let raised = Color(uiColor: .tertiarySystemGroupedBackground)
+#else
+    static let ink = Color(nsColor: .windowBackgroundColor)
+    static let panel = Color(nsColor: .controlBackgroundColor)
+    static let raised = Color(nsColor: .underPageBackgroundColor)
+#endif
     static let coral = Color(red: 1.0, green: 0.39, blue: 0.30)
     static let mint = Color(red: 0.31, green: 0.84, blue: 0.66)
     static let amber = Color(red: 1.0, green: 0.72, blue: 0.30)

@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.garive.mobile.application.MobileWorkController
 import com.garive.mobile.model.MobileAgentCard
 import com.garive.mobile.model.MobileDestination
@@ -53,6 +55,9 @@ internal fun GariveMobileApp(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(controller) { state = controller.boot() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (state.connection.name != "CONNECTING") scope.launch { state = controller.refresh() }
+    }
 
     if (state.destination == MobileDestination.CONVERSATION) {
         ConversationScreen(
