@@ -366,7 +366,7 @@ async fn prepare_artifact_export(
         request.committed_position,
     )?;
     if !artifact.exportable {
-        return Err("artifact_export_invalid".into());
+        return Err("artifact_export_stale".into());
     }
     let Some(selection) = app
         .dialog()
@@ -379,7 +379,7 @@ async fn prepare_artifact_export(
     };
     let path = selection
         .into_path()
-        .map_err(|_| "artifact_export_unavailable".to_owned())?;
+        .map_err(|_| "artifact_export_stale".to_owned())?;
     exports
         .admit_selected(&path, window.label())
         .map(Some)
@@ -405,7 +405,7 @@ fn commit_artifact_export(
         .workspace_id
         .as_deref()
         .filter(|_| artifact.exportable)
-        .ok_or_else(|| "artifact_export_invalid".to_owned())?;
+        .ok_or_else(|| "artifact_export_stale".to_owned())?;
     let bytes = workspaces
         .read_committed_artifact(
             &artifact.artifact_id,
@@ -415,7 +415,7 @@ fn commit_artifact_export(
             &artifact.content_digest,
             window.label(),
         )
-        .map_err(|_| "artifact_export_unavailable".to_owned())?
+        .map_err(|_| "artifact_export_stale".to_owned())?
         .into_bytes();
     exports
         .export(

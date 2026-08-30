@@ -519,7 +519,7 @@ function ResultDeliverables({ state }: { state: WorkState }) {
       setExportReceipts((current) => ({ ...current, [key]: receipt }));
       setExportStates((current) => ({ ...current, [key]: "exported" }));
     } catch (cause) {
-      const exists = String(cause).includes("artifact_export_target_exists");
+      const exists = String(cause).includes("artifact_overwrite_required");
       setExportStates((current) => ({ ...current, [key]: exists ? "exists" : "unavailable" }));
     }
   };

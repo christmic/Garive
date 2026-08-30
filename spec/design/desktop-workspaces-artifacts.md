@@ -99,7 +99,7 @@ list_artifacts(session_id, after_position?, limit) -> ArtifactPageV1
 get_artifact_preview(artifact_id, revision, preview_kind) -> ArtifactPreviewV1
 choose_artifact_export_target(artifact_id, revision) -> ExportTargetCapabilityV1 | Cancelled
 export_artifact(command_id, artifact_id, revision, target_capability_id,
-                overwrite_confirmation?) -> ArtifactExportReceiptV1
+                expected_content_digest) -> ArtifactExportReceiptV1
 reveal_artifact(artifact_id, revision) -> Revealed | NotRevealable
 ```
 
@@ -252,10 +252,14 @@ view:
 Remote URLs, `file://`, arbitrary `data:` values, scripts, active PDF content,
 macros, plugins, and web navigation are never trusted preview authority.
 
-Export uses a separate one-shot native target capability. Existing targets
-require an exact overwrite confirmation bound to target identity and artifact
-digest. Export writes atomically and returns a durable receipt. Reveal applies
-only to an artifact already backed by an active Workspace grant.
+Export uses a separate one-shot native target capability. V1 never overwrites:
+an existing target returns `artifact_overwrite_required` and the operator must
+choose a new filename. The capability binds the opened destination directory,
+final component, owner window, five-minute expiry, and exact Artifact
+coordinates; no path crosses React. Export rechecks the committed source digest,
+writes a same-directory temporary file, fsyncs, atomically creates the new
+target, fsyncs the directory, consumes the capability, and returns a receipt.
+Reveal applies only to an artifact already backed by an active Workspace grant.
 
 ## Product interaction
 
@@ -344,7 +348,7 @@ Targets on a supported warm Mac:
 | `artifact_not_found` | Exact artifact revision is absent. |
 | `artifact_preview_unavailable` | Safe preview cannot be produced. |
 | `artifact_export_stale` | Artifact or target capability changed before export. |
-| `artifact_overwrite_required` | Existing target requires exact confirmation. |
+| `artifact_overwrite_required` | V1 refuses the existing target; choose a new filename. |
 
 Failures never include paths, names, commands, file content, or OS error text.
 

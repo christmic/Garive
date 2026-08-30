@@ -67,10 +67,8 @@ impl DesktopArtifactExportError {
     /// Returns one stable frontend-safe error code.
     pub const fn code(self) -> &'static str {
         match self {
-            Self::Invalid => "artifact_export_invalid",
-            Self::Unavailable => "artifact_export_unavailable",
-            Self::TargetExists => "artifact_export_target_exists",
-            Self::BoundExceeded => "artifact_export_bound_exceeded",
+            Self::TargetExists => "artifact_overwrite_required",
+            Self::Invalid | Self::Unavailable | Self::BoundExceeded => "artifact_export_stale",
         }
     }
 }

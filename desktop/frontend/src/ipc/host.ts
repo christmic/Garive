@@ -255,7 +255,7 @@ export async function commitArtifactExport(
   exportTargetId: string,
   invoke: Invoke = tauriInvoke,
 ): Promise<ArtifactExportReceipt> {
-  if (!exportTargetId) throw new Error("artifact_export_invalid");
+  if (!exportTargetId) throw new Error("artifact_export_stale");
   return invoke<ArtifactExportReceipt>("commit_artifact_export", {
     request: { ...artifactCommand(sessionId, artifact), exportTargetId },
   });
