@@ -45,6 +45,24 @@ fact or a frozen policy binding. Missing authority/type/lifecycle is corruption,
 not a default. Referenced or restricted content remains non-visible unless the
 exact read grant is present.
 
+The initial M1 metadata is committed as a session-scoped fact in the same
+transaction as its source M0 revision:
+
+```text
+memory.revision_classified.v1 {
+  classification_id, namespace_id, record_id, revision_id
+  memory_type, authority, lifecycle: candidate | active
+  policy_revision
+  source_commit: DurableFactReference
+  authority_receipt_digest?: Digest
+}
+```
+
+`source_commit` binds the exact `memory.committed.v1` payload. User-declared
+and organisation-published authority require the receipt digest; Agent-learned
+authority forbids it. Later lifecycle changes use the existing exact
+`memory.lifecycle_transitioned.v1` facts.
+
 ## Transaction contract
 
 1. A Runtime command plans its normal M0/M1 fact batch and the corresponding

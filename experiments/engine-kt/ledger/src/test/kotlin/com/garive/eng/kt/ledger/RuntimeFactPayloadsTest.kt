@@ -24,7 +24,7 @@ class RuntimeFactPayloadsTest {
     @Test
     fun `every C6 payload fixture is applied at its declared version`() {
         val cases = document.getValue("valid_cases").jsonArray
-        assertEquals(77, cases.size)
+        assertEquals(78, cases.size)
         cases.forEach { case ->
             val value = case.jsonObject
             val schema = value["schema_version"]?.jsonPrimitive?.content?.toUInt() ?: 1u
@@ -81,7 +81,22 @@ class RuntimeFactPayloadsTest {
                 assertInvalid(fact(case, schema).withPayload(payload), case.text("kind"))
             }
         }
-        assertEquals(60, count)
+        assertEquals(61, count)
+    }
+
+    @Test
+    fun `memory revision classification binds authority receipt shape`() {
+        val case = document.getValue("valid_cases").jsonArray.map(JsonElement::jsonObject)
+            .first { it.text("kind") == "memory.revision_classified" }
+        val payload = case.getValue("payload").jsonObject
+        val receipt = "a".repeat(64)
+        assertInvalid(fact(case).withPayload(JsonObject(payload +
+            ("authority_receipt_digest" to JsonPrimitive(receipt)))), "agent receipt")
+        val user = JsonObject(payload + ("authority" to JsonPrimitive("user_declared")))
+        assertInvalid(fact(case).withPayload(user), "missing user receipt")
+        assertEquals(LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1),
+            validateRuntimeFact(fact(case).withPayload(JsonObject(user +
+                ("authority_receipt_digest" to JsonPrimitive(receipt))))))
     }
 
     @Test

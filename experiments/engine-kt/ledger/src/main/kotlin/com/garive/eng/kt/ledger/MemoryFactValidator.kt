@@ -17,6 +17,7 @@ internal fun validateMemoryFact(kind: String, value: JsonObject) {
     when (kind) {
         "memory.proposed" -> value.proposal()
         "memory.committed" -> value.committed()
+        "memory.revision_classified" -> value.revisionClassified()
         "memory.rejected" -> value.rejected()
         "memory.superseded" -> value.superseded()
         "memory.tombstoned" -> value.tombstoned()
@@ -35,6 +36,21 @@ internal fun validateMemoryFact(kind: String, value: JsonObject) {
         "memory.erasure_recorded" -> value.erasureReceipt()
         else -> throw IllegalArgumentException()
     }
+}
+
+private fun JsonObject.revisionClassified() {
+    exact(
+        setOf("classification_id", "namespace_id", "record_id", "revision_id", "memory_type",
+            "authority", "lifecycle", "policy_revision", "source_commit"),
+        setOf("authority_receipt_digest"),
+    )
+    listOf("classification_id", "namespace_id", "record_id", "revision_id", "policy_revision").forEach(::nonEmpty)
+    enum("memory_type", memoryTypes)
+    val authority = enum("authority", memoryAuthorities)
+    enum("lifecycle", setOf("candidate", "active"))
+    getValue("source_commit").jsonObject.factReference()
+    require((authority != "agent_learned") == ("authority_receipt_digest" in this))
+    if (authority != "agent_learned") digest("authority_receipt_digest")
 }
 
 private fun JsonObject.candidate() {

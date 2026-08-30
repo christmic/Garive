@@ -44,6 +44,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let memory_session_scoped = matches!(
         kind,
         "memory.tombstoned"
+            | "memory.revision_classified"
             | "memory.observation_recorded"
             | "memory.lifecycle_transitioned"
             | "memory.candidate_recorded"

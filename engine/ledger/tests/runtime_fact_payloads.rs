@@ -43,7 +43,7 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 fn every_c6_payload_fixture_is_applied_at_its_declared_version() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 77);
+    assert_eq!(cases.len(), 78);
     for case in cases {
         let schema = case["schema_version"].as_u64().unwrap_or(1) as u32;
         let expected = if case["expected_disposition"] == "applied_v2" {
@@ -130,7 +130,48 @@ fn malformed_digests_and_inline_content_mismatches_are_rejected() {
             );
         }
     }
-    assert_eq!(digest_cases, 60);
+    assert_eq!(digest_cases, 61);
+}
+
+#[test]
+fn memory_revision_classification_binds_authority_receipt_shape() {
+    let fixture = fixture();
+    let case = fixture["valid_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|value| value["kind"] == "memory.revision_classified")
+        .unwrap();
+    let original = fact(case, 1);
+    let mut agent_with_receipt = case["payload"].clone();
+    agent_with_receipt.as_object_mut().unwrap().insert(
+        "authority_receipt_digest".into(),
+        Value::String("a".repeat(64)),
+    );
+    assert_eq!(
+        validate_runtime_fact(&with_payload(original.clone(), agent_with_receipt)),
+        Err(LedgerError::InvalidFact)
+    );
+    let mut user_without_receipt = case["payload"].clone();
+    user_without_receipt
+        .as_object_mut()
+        .unwrap()
+        .insert("authority".into(), Value::String("user_declared".into()));
+    assert_eq!(
+        validate_runtime_fact(&with_payload(
+            original.clone(),
+            user_without_receipt.clone()
+        )),
+        Err(LedgerError::InvalidFact)
+    );
+    user_without_receipt.as_object_mut().unwrap().insert(
+        "authority_receipt_digest".into(),
+        Value::String("a".repeat(64)),
+    );
+    assert_eq!(
+        validate_runtime_fact(&with_payload(original, user_without_receipt)),
+        Ok(RuntimeFactDisposition::AppliedV1)
+    );
 }
 
 #[test]

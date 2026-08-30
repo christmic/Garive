@@ -17,7 +17,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     val schedulerFamily = kind.startsWith("schedule.")
     val delegationFamily = kind.startsWith("delegation.")
     val memorySessionScoped = kind in setOf(
-        "memory.tombstoned", "memory.observation_recorded", "memory.lifecycle_transitioned",
+        "memory.tombstoned", "memory.revision_classified", "memory.observation_recorded", "memory.lifecycle_transitioned",
         "memory.candidate_recorded", "memory.maintenance_decided", "memory.distillation_checkpointed",
         "memory.audit_recorded", "memory.promotion_requested", "memory.promotion_recorded",
         "memory.erasure_requested", "memory.erasure_recorded",

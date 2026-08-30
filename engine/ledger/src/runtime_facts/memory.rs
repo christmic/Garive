@@ -26,6 +26,7 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
     match kind {
         "memory.proposed" => proposal(value),
         "memory.committed" => committed(value),
+        "memory.revision_classified" => revision_classified(value),
         "memory.rejected" => rejected(value),
         "memory.superseded" => superseded(value),
         "memory.tombstoned" => tombstoned(value),
@@ -44,6 +45,47 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "memory.erasure_recorded" => erasure_receipt(value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn revision_classified(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "classification_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "memory_type",
+            "authority",
+            "lifecycle",
+            "policy_revision",
+            "source_commit",
+        ],
+        &["authority_receipt_digest"],
+    )?;
+    for key in [
+        "classification_id",
+        "namespace_id",
+        "record_id",
+        "revision_id",
+        "policy_revision",
+    ] {
+        non_empty(value, key)?;
+    }
+    enumeration(value, "memory_type", MEMORY_TYPES)?;
+    let authority = enumeration(value, "authority", AUTHORITIES)?;
+    enumeration(value, "lifecycle", &["candidate", "active"])?;
+    fact_reference(object(
+        value.get("source_commit").ok_or(LedgerError::InvalidFact)?,
+    )?)?;
+    let requires_receipt = authority != "agent_learned";
+    if requires_receipt != value.contains_key("authority_receipt_digest") {
+        return Err(LedgerError::InvalidFact);
+    }
+    if requires_receipt {
+        digest(value, "authority_receipt_digest")?;
+    }
+    Ok(())
 }
 
 fn candidate(value: &Map<String, Value>) -> Result<(), LedgerError> {
