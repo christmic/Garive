@@ -21,10 +21,15 @@ final class MobileViewModel: ObservableObject {
     @Published private(set) var pairingSuggestion: PairingSuggestion?
 
     private let store: ConnectionStore
+    private let workPersistence: MobileWorkPersistence
     private var controller: MobileWorkController?
 
-    init(store: ConnectionStore = ConnectionStore()) {
+    init(
+        store: ConnectionStore = ConnectionStore(),
+        workPersistence: MobileWorkPersistence = UserDefaultsMobileWorkPersistence()
+    ) {
         self.store = store
+        self.workPersistence = workPersistence
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--garive-walkthrough") {
             connectWalkthrough()
@@ -169,7 +174,8 @@ final class MobileViewModel: ObservableObject {
                 baseUrl: value.origin, bearerToken: value.accessGrant, limits: limits
             )
             let controller = MobileWorkController(
-                host: host, identities: UUIDIdentitySource(), pageLimit: 100, maxInputBytes: 16_384
+                host: host, identities: UUIDIdentitySource(), pageLimit: 100,
+                maxInputBytes: 16_384, persistence: workPersistence
             )
             self.controller = controller
             credentials = value
@@ -198,7 +204,8 @@ final class MobileViewModel: ObservableObject {
             )
             let host = try LiveHostClient(baseUrl: origin, limits: limits)
             let controller = MobileWorkController(
-                host: host, identities: UUIDIdentitySource(), pageLimit: 100, maxInputBytes: 16_384
+                host: host, identities: UUIDIdentitySource(), pageLimit: 100,
+                maxInputBytes: 16_384, persistence: EphemeralMobileWorkPersistence.shared
             )
             self.controller = controller
             credentials = ConnectionCredentials(origin: origin, accessGrant: "walkthrough")
@@ -258,7 +265,13 @@ final class MobileViewModel: ObservableObject {
             let failed = error != nil
             Task { @MainActor in
                 guard let self else { return }
-                if let value = transferredValue.value { self.state = value }
+                if let value = transferredValue.value {
+                    self.state = value
+                    if value.connection == .signedOut {
+                        self.signOut()
+                        return
+                    }
+                }
                 if failed {
                     self.errorCode = self.controller?.state().noticeCode ?? "remote_operation_failed"
                 }

@@ -44,6 +44,28 @@ func connectionStoreClearsGrantAndRotatesDeviceIdentity() throws {
 }
 
 @Test
+func pendingMutationStorageRoundTripsAndClears() throws {
+    let suite = "garive-pending-tests-\(UUID())"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    let persistence = UserDefaultsMobileWorkPersistence(
+        defaults: defaults,
+        recordKey: "record",
+        payloadKey: "payload"
+    )
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    persistence.writePendingPayload(value: "exact input")
+    persistence.writePendingRecord(value: "{\"schema_version\":1}")
+
+    #expect(persistence.readPendingPayload() == "exact input")
+    #expect(persistence.readPendingRecord() == "{\"schema_version\":1}")
+    persistence.writePendingRecord(value: nil)
+    persistence.writePendingPayload(value: nil)
+    #expect(persistence.readPendingRecord() == nil)
+    #expect(persistence.readPendingPayload() == nil)
+}
+
+@Test
 func commandIdentitiesAreUnique() {
 #if canImport(GariveShared)
     let source = UUIDIdentitySource()

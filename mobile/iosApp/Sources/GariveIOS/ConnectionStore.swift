@@ -112,3 +112,34 @@ final class ConnectionStore {
 }
 
 enum ConnectionStoreError: Error { case keychain(OSStatus), deviceKey }
+
+#if canImport(GariveShared)
+@preconcurrency import GariveShared
+
+final class UserDefaultsMobileWorkPersistence: NSObject, MobileWorkPersistence {
+    private let defaults: UserDefaults
+    private let recordKey: String
+    private let payloadKey: String
+
+    init(
+        defaults: UserDefaults = .standard,
+        recordKey: String = "mobile.pending.record.v1",
+        payloadKey: String = "mobile.pending.payload.v1"
+    ) {
+        self.defaults = defaults
+        self.recordKey = recordKey
+        self.payloadKey = payloadKey
+    }
+
+    func readPendingRecord() -> String? { defaults.string(forKey: recordKey) }
+    func writePendingRecord(value: String?) {
+        if let value { defaults.set(value, forKey: recordKey) }
+        else { defaults.removeObject(forKey: recordKey) }
+    }
+    func readPendingPayload() -> String? { defaults.string(forKey: payloadKey) }
+    func writePendingPayload(value: String?) {
+        if let value { defaults.set(value, forKey: payloadKey) }
+        else { defaults.removeObject(forKey: payloadKey) }
+    }
+}
+#endif
