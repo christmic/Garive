@@ -76,6 +76,15 @@ final class GariveIOSUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["Access grant protected by Keychain"].exists)
         let list = app.collectionViews.firstMatch
+        let light = app.buttons["Light"]
+        XCTAssertTrue(reveal(light, in: list))
+        light.tap()
+        XCTAssertTrue(light.isSelected)
+        let dark = app.buttons["Dark"]
+        dark.tap()
+        XCTAssertTrue(dark.isSelected)
+        app.buttons["System"].tap()
+        XCTAssertTrue(app.buttons["System"].isSelected)
         XCTAssertTrue(reveal(app.buttons["Open notification settings"], in: list))
         let diagnostics = app.buttons["Copy safe diagnostics"]
         XCTAssertTrue(reveal(diagnostics, in: list))

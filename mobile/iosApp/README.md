@@ -57,6 +57,8 @@ The four UI tests require `go run ./cmd/garive-mobile-demo-host` from
 pairing fields, the Remote drawer, Sessions, new-task starters and enabled
 server submit control, collapsed Activity, approve/decline and cancellation
 confirmation, safe diagnostics, notification entry, and confirmed unpair.
+The Settings journey additionally selects Light, Dark, and System and verifies
+the native segmented-control state after every change.
 
 The Xcode target produces `Garive.app`, registers expiring `garive://pair`
 handoffs, and links the static XCFramework. Distribution still requires the

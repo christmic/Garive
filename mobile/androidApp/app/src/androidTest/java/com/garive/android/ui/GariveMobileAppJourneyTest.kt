@@ -2,11 +2,17 @@ package com.garive.android.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.garive.host.v1.AgentDefinitionPageV1
 import com.garive.host.v1.AgentDefinitionSummaryV1
@@ -39,15 +45,16 @@ public class GariveMobileAppJourneyTest {
             persistence = EphemeralMobileWorkPersistence,
         )
         compose.setContent {
-            GariveTheme(Theme.LIGHT) {
+            var theme by remember { mutableStateOf(Theme.LIGHT) }
+            GariveTheme(theme) {
                 GariveMobileApp(
                     origin = "https://demo.garive.local/",
                     controller = controller,
                     wakeRoute = null,
                     onWakeConsumed = {},
                     onSignOut = {},
-                    theme = Theme.LIGHT,
-                    onTheme = {},
+                    theme = theme,
+                    onTheme = { theme = it },
                     openNotificationSettings = {},
                 )
             }
@@ -66,6 +73,12 @@ public class GariveMobileAppJourneyTest {
         compose.onNodeWithText("Start with a clear outcome").assertIsDisplayed()
         compose.onNodeWithText("Analyze").performClick()
         compose.onNodeWithText("Start on server").assertIsEnabled()
+
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Open navigation").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Light").performScrollTo().assertIsSelected()
+        compose.onNodeWithText("Dark").performClick().assertIsSelected()
     }
 }
 

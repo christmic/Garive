@@ -47,6 +47,8 @@ The gate includes the connected product shell itself: Work boot, drawer
 navigation, Sessions, the native new-task sheet, goal starters, and enabled
 server submission are exercised together in addition to focused component and
 secure-storage tests.
+The full-shell journey also selects Light and Dark through the same Settings
+segmented control used by the shipping activity.
 
 The app includes `../shared` as a Gradle project, accepts an explicit loopback
 Host URL and renders the terminal returned by `LiveHostClient`; it does not

@@ -146,6 +146,8 @@ garive://pair?origin=https%3A%2F%2Fagent.example.com&code=...&exp=...&name=...
 
 ![Android 深色 Remote 导航](assets/mobile/android-18-navigation-dark.png)
 
+![Android 浅色 Remote 导航](assets/mobile/android-21-navigation-light.png)
+
 ![iOS 深色 Remote 导航](assets/mobile/ios-13-navigation-dark.png)
 
 ![iOS 浅色 Remote 导航](assets/mobile/ios-14-navigation-light.png)
@@ -403,11 +405,11 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（14 条，含整应用 Work → Sessions → 新任务流程）、Swift 测试（9 条）、iOS Simulator
-XCUITest（4 条）与构建，以及断开/恢复 Host 的
+界面流程（14 条，含整应用 Work → Sessions → 新任务及 Light → Dark 切换）、Swift 测试（9 条）、
+iOS Simulator XCUITest（4 条，含 Light → Dark → System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 35 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 36 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
