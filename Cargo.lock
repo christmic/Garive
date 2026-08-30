@@ -1794,6 +1794,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

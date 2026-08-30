@@ -1,0 +1,282 @@
+use futures::{SinkExt, StreamExt};
+use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport};
+use garive_runtime::{
+    BrowserPageId, BrowserSessionId, CdpNativeAdapterPort, NativeActionCommandV1, NativeActionId,
+    NativeAdapterPort, NativeObservationBounds, NativeSnapshotId, NativeTarget,
+};
+use serde_json::{json, Value};
+use tokio::net::TcpListener;
+use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+async fn reply(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    result: Value,
+) -> Value {
+    let Message::Text(message) = socket.next().await.expect("command").expect("frame") else {
+        panic!("text command required")
+    };
+    let command: Value = serde_json::from_slice(message.as_bytes()).expect("command json");
+    socket
+        .send(Message::Text(
+            json!({"id":command["id"],"result":result,"sessionId":"cdp-session"})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("response");
+    command
+}
+
+fn target() -> NativeTarget {
+    NativeTarget::Browser {
+        session_id: BrowserSessionId::new("browser-1").expect("browser"),
+        page_id: BrowserPageId::new("page-1").expect("page"),
+    }
+}
+
+#[tokio::test]
+async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        assert_eq!(
+            reply(&mut socket, json!({})).await["method"],
+            "Accessibility.enable"
+        );
+        let tree = reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"button","ignored":false,"role":{"value":"button"},"name":{"value":"Submit"},"backendDOMNodeId":42,"parentId":"root"},
+                {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"name":{"value":"Account"},"backendDOMNodeId":43,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"},"name":{"value":"Fixture"},"childIds":["button","textbox"]}
+            ]}),
+        )
+        .await;
+        assert_eq!(tree["method"], "Accessibility.getFullAXTree");
+        assert_eq!(
+            reply(&mut socket, json!({})).await["method"],
+            "DOM.scrollIntoViewIfNeeded"
+        );
+        reply(
+            &mut socket,
+            json!({"model":{"content":[0,0,20,0,20,20,0,20]}}),
+        )
+        .await;
+        for expected in ["mouseMoved", "mousePressed", "mouseReleased"] {
+            let command = reply(&mut socket, json!({})).await;
+            assert_eq!(command["params"]["type"], expected);
+        }
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"name":{"value":"Account"},"backendDOMNodeId":43,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
+        let insert = reply(&mut socket, json!({})).await;
+        assert_eq!(insert["method"], "Input.insertText");
+        assert_eq!(insert["params"]["text"], "Garive 🦀");
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"name":{"value":"Account"},"value":{"value":"Garive 🦀"},"backendDOMNodeId":43,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
+        for _ in 0..3 {
+            assert_eq!(
+                reply(&mut socket, json!({})).await["method"],
+                "Input.dispatchKeyEvent"
+            );
+        }
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port =
+        CdpNativeAdapterPort::new(target(), "cdp-session", "revision-1", "run-1", 64, client)
+            .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let button = observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "button")
+        .expect("button");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-1").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id.clone(),
+        target_revision: observation.target_revision.clone(),
+        prepared_input: json!({"action":"click","node_ref":button.node_ref.as_str()}),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("receipt");
+    assert_eq!(receipt.prior_snapshot_id, observation.snapshot_id);
+    assert!(receipt.resulting_snapshot_id.is_none());
+    assert_eq!(receipt.terminal_classification, "completed");
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    assert_eq!(
+        port.observe(
+            &target(),
+            Some(&NativeSnapshotId::new("stale").expect("snapshot")),
+            observation.bounds,
+        )
+        .await,
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    let text_observation = port
+        .observe(
+            &target(),
+            Some(&observation.snapshot_id),
+            observation.bounds,
+        )
+        .await
+        .expect("text observation");
+    let textbox_ref = text_observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "textbox")
+        .expect("textbox")
+        .node_ref
+        .clone();
+    let type_command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-type").expect("action"),
+        target: target(),
+        expected_snapshot_id: text_observation.snapshot_id.clone(),
+        target_revision: text_observation.target_revision.clone(),
+        prepared_input: json!({
+            "action":"type_text",
+            "node_ref":textbox_ref.as_str(),
+            "text":"Garive 🦀"
+        }),
+    };
+    let type_binding = port
+        .preflight_action(&type_command)
+        .expect("type preflight");
+    port.dispatch_action(&type_command, &type_binding)
+        .await
+        .expect("type receipt");
+    let clear_observation = port
+        .observe(
+            &target(),
+            Some(&text_observation.snapshot_id),
+            text_observation.bounds,
+        )
+        .await
+        .expect("clear observation");
+    let clear_ref = clear_observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "textbox")
+        .expect("textbox")
+        .node_ref
+        .clone();
+    let clear_command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-clear").expect("action"),
+        target: target(),
+        expected_snapshot_id: clear_observation.snapshot_id,
+        target_revision: clear_observation.target_revision,
+        prepared_input: json!({"action":"clear","node_ref":clear_ref.as_str()}),
+    };
+    let clear_binding = port
+        .preflight_action(&clear_command)
+        .expect("clear preflight");
+    port.dispatch_action(&clear_command, &clear_binding)
+        .await
+        .expect("clear receipt");
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"button","ignored":false,"role":{"value":"button"},"backendDOMNodeId":42,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        let Message::Text(_) = socket.next().await.expect("dispatch").expect("frame") else {
+            panic!("text dispatch required")
+        };
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port =
+        CdpNativeAdapterPort::new(target(), "cdp-session", "revision-1", "run-2", 64, client)
+            .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let button_ref = observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "button")
+        .expect("button")
+        .node_ref
+        .clone();
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-2").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":button_ref.as_str()
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    assert_eq!(
+        port.dispatch_action(&command, &binding).await,
+        Err(garive_runtime::NativeProtocolError::ActionUncertain)
+    );
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}

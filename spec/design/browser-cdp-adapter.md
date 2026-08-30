@@ -84,8 +84,26 @@ then sends one bounded UTF-8 `Input.insertText`; it never reads or writes the
 clipboard. Clear focuses the same node, executes the closed `selectAll` editor
 command and dispatches one Backspace down/up pair. These typed adapter
 operations have separate exact target/snapshot/revision/node/action resolvers.
-They are not product-dispatchable until the concrete CDP `NativeAdapterPort`
-composition owns their binding lifetime and receipt path.
+The concrete CDP `NativeAdapterPort` owns their binding lifetime and receipt
+path.
+
+## Runtime composition
+
+`CdpNativeAdapterPort` owns one explicit Runtime Browser target, flat CDP
+session, target revision, Runtime-supplied snapshot namespace and connected
+client. It performs no target/session discovery. Observe enables Accessibility
+once, applies the requested bounds, maps the AX tree and retains only the
+current private snapshot binding.
+
+Preflight supports `click`, `type_text` and `clear` only. It resolves the exact
+semantic action and hashes canonical command, adapter and backend evidence into
+the frozen binding. Dispatch recomputes that binding, invalidates the old
+snapshot before crossing CDP, executes exactly once and returns a completed
+receipt with no invented resulting snapshot. Any CDP failure after dispatch is
+`native_action_uncertain`; the invalidated binding cannot be reused. A later
+observe, explicitly chained from the prior snapshot, creates the next
+observation. Navigate and the remaining action set stay unsupported until their
+redirect/final-origin and receipt contracts land.
 
 ## Acceptance
 
@@ -109,9 +127,10 @@ controls. It also clicks the form button through the typed adapter operation
 using an unexposed backend identity and observes the resulting AX-name change.
 The same gate inserts Unicode text and clears the textbox, observing both AX
 states. Runtime separately proves the exact click binding gate; text-action
-binding now passes the same exact gate. Concrete port composition remains open.
-This baseline does not satisfy the remaining frame/action/fault matrix by
-itself.
+binding now passes the same exact gate. The concrete port gate covers observe,
+click/type/clear and success/uncertain binding invalidation against a mock
+transport. This baseline does not satisfy the remaining frame/action/fault
+matrix by itself.
 
 ## Meta
 

@@ -25,6 +25,7 @@ mod memory_export_io;
 mod model_http_transport;
 mod native_capability;
 mod native_cdp;
+mod native_cdp_port;
 mod native_executor;
 mod observability_runtime;
 mod plan_carry_forward;
@@ -149,6 +150,7 @@ pub use native_cdp::{
     map_cdp_ax_tree, map_cdp_ax_tree_with_binding, CdpElementTarget, CdpObservationContext,
     CdpSnapshotBindingV1, MappedCdpObservation,
 };
+pub use native_cdp_port::CdpNativeAdapterPort;
 pub use native_executor::{NativeCapabilityExecutor, T2_NATIVE_EXECUTOR_ID};
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,

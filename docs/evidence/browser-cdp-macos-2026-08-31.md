@@ -37,12 +37,17 @@ passed 11 tests; strict all-target Clippy and Rustdoc passed.
 
 ## Open acceptance evidence
 
+The Runtime mock-transport gate additionally proves concrete-port observe,
+preflight, bound click/type/clear dispatch, receipt validation, post-success
+invalidation and post-dispatch connection-loss classification as uncertain
+with the old binding invalidated.
+
 The baseline now covers one navigation redirect, one form, open shadow DOM and
 actual click, Unicode text insertion and clear. Snapshot/node freshness is
 deliberately enforced by Runtime's exact target/snapshot/revision binding; it
 is not delegated to CDP backend-node lifetime. Click, type-text and clear
 binding cases pass in the Runtime unit gate. Concrete `NativeAdapterPort`
-composition, cross-origin frames, select/key/scroll/history actions, popups,
+navigation, cross-origin frames, select/key/scroll/history actions, popups,
 downloads, protected-field redaction in the real browser, attachment loss and
-Started/crash fault injection remain open. This is not a complete Browser Use
-claim.
+durable Started/crash fault injection remain open. This is not a complete
+Browser Use claim.
