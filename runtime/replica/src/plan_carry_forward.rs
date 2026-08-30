@@ -25,6 +25,19 @@ pub struct VerifiedPlanCarryForward {
     evidence: CanonicalPayload,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CarryForwardRecord {
+    pub step_id: PlanStepId,
+    pub step_digest: String,
+    pub result_digest: String,
+    pub dependency_results: BTreeMap<PlanStepId, String>,
+    pub step_evidence_digest: String,
+    pub criterion_evidence_digest: String,
+    pub terminal_fact_id: String,
+    pub terminal_position: u64,
+    pub terminal_commit_version: u64,
+}
+
 impl VerifiedPlanCarryForward {
     /// Returns completed steps admitted into the target revision.
     pub const fn carried_steps(&self) -> &BTreeSet<PlanStepId> {
@@ -320,11 +333,21 @@ fn completion_facts<'a>(
 pub(crate) fn decode_carried_steps(
     evidence: &str,
 ) -> Result<BTreeSet<PlanStepId>, PlanRuntimeError> {
+    Ok(decode_carry_forward_records(evidence)?
+        .into_iter()
+        .map(|record| record.step_id)
+        .collect())
+}
+
+pub(crate) fn decode_carry_forward_records(
+    evidence: &str,
+) -> Result<Vec<CarryForwardRecord>, PlanRuntimeError> {
     let records = serde_json::from_str::<Value>(evidence)
         .ok()
         .and_then(|value| value.as_array().cloned())
         .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
     let mut carried = BTreeSet::new();
+    let mut decoded = Vec::new();
     for record in records {
         let value = record
             .as_object()
@@ -384,11 +407,42 @@ pub(crate) fn decode_carried_steps(
         }
         let id = PlanStepId::new(text(value, "step_id")?)
             .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?;
-        if text(value, "terminal_fact_id")?.is_empty() || !carried.insert(id) {
+        if text(value, "terminal_fact_id")?.is_empty() || !carried.insert(id.clone()) {
             return Err(PlanRuntimeError::RecoveryCorrupt);
         }
+        let dependency_results = dependencies
+            .iter()
+            .map(|dependency| {
+                let dependency = dependency
+                    .as_object()
+                    .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+                Ok((
+                    PlanStepId::new(text(dependency, "step_id")?)
+                        .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?,
+                    text(dependency, "result_digest")?.to_owned(),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, PlanRuntimeError>>()?;
+        if dependency_results.len() != dependencies.len() {
+            return Err(PlanRuntimeError::RecoveryCorrupt);
+        }
+        decoded.push(CarryForwardRecord {
+            step_id: id,
+            step_digest: text(value, "step_digest")?.into(),
+            result_digest: text(value, "result_digest")?.into(),
+            dependency_results,
+            step_evidence_digest: text(value, "step_evidence_digest")?.into(),
+            criterion_evidence_digest: text(value, "criterion_evidence_digest")?.into(),
+            terminal_fact_id: text(value, "terminal_fact_id")?.into(),
+            terminal_position: value["terminal_position"]
+                .as_u64()
+                .ok_or(PlanRuntimeError::RecoveryCorrupt)?,
+            terminal_commit_version: value["terminal_commit_version"]
+                .as_u64()
+                .ok_or(PlanRuntimeError::RecoveryCorrupt)?,
+        });
     }
-    Ok(carried)
+    Ok(decoded)
 }
 
 fn valid_digest(value: &str) -> bool {

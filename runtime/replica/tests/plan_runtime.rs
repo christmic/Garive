@@ -642,6 +642,49 @@ fn replacement_atomically_supersedes_and_reconstructs_verified_carry_forward() {
         StepState::Completed
     );
     assert_eq!(new.snapshot.ready_steps(), vec![&step_id("deliver")]);
+
+    let stored: String = ledger
+        .connection_for_test()
+        .query_row(
+            "SELECT payload_json FROM ledger_facts WHERE fact_id = 'carry-replace-target'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut adoption: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    let mut evidence_json: serde_json::Value = serde_json::from_str(
+        adoption["carry_forward_evidence"]["inline_utf8"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    evidence_json[0]["terminal_position"] = json!(999);
+    let corrupted_evidence = CanonicalPayload::from_value(&evidence_json).unwrap();
+    adoption["carry_forward_evidence"] = json!({
+        "digest": corrupted_evidence.sha256(),
+        "inline_utf8": corrupted_evidence.as_json(),
+    });
+    let corrupted_adoption = CanonicalPayload::from_value(&adoption).unwrap();
+    ledger
+        .connection_for_test()
+        .execute(
+            "UPDATE ledger_facts SET payload_json = ?1, payload_sha256 = ?2 \
+             WHERE fact_id = 'carry-replace-target'",
+            rusqlite::params![corrupted_adoption.as_json(), corrupted_adoption.sha256()],
+        )
+        .unwrap();
+    assert_eq!(
+        reconstruct_plan(
+            &ledger,
+            &session,
+            "plan-1",
+            2,
+            &criteria(),
+            &BTreeSet::new(),
+            &capabilities(),
+        ),
+        Err(PlanRuntimeError::RecoveryCorrupt)
+    );
 }
 
 fn recover(ledger: &SqliteLedger, session: &SessionId) -> PlanRuntimeState {

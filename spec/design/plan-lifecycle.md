@@ -190,6 +190,11 @@ step digests. Initial adoption accepts only an empty document. Replacement
 adoption is one SQLite transaction ordered as old `plan.superseded` then new
 `plan.adopted`; both facts share one command and commit version. Recovery
 rejects a missing/mismatched counterpart, proposal digest or malformed record.
+It also re-derives both source and target step digests, preserves target
+declaration order, and resolves each terminal/evidence/dependency result back
+to exactly one source completion no later than the replacement commit. A
+changed content binding fails even when the enclosing Ledger payload remains
+canonical.
 
 ## Runtime facts
 

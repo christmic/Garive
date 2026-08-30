@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use garive_ledger::{DurableFact, SessionId};
+use garive_ledger::{CanonicalPayload, DurableFact, SessionId};
 use garive_plan::{
     PlanCapabilityReference, PlanDefinitionV1, PlanSnapshot, PlanStepId, PlanTransition,
 };
 use serde_json::{Map, Value};
 
-use crate::plan_carry_forward::decode_carried_steps;
+use crate::plan_carry_forward::{decode_carried_steps, decode_carry_forward_records};
 use crate::{ActivePlanClaim, PlanRuntimeError, PlanRuntimeState, SqliteLedger, SqliteLedgerError};
 
 /// Reconstructs one exact Plan revision from a verified fixed Session prefix.
@@ -105,7 +105,16 @@ fn apply(
         || (fact.kind.as_str() == "plan.adopted"
             && value.get("expected_prior_plan_revision").is_some())
     {
-        validate_replacement_binding(ledger, facts, fact, value)?;
+        validate_replacement_binding(
+            ledger,
+            facts,
+            fact,
+            value,
+            current,
+            required,
+            satisfied,
+            capabilities,
+        )?;
     }
     let transitions = transitions(current, fact.kind.as_str(), value)?;
     current.snapshot = transitions
@@ -236,11 +245,16 @@ fn transitions(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_replacement_binding(
     ledger: &SqliteLedger,
     facts: &[DurableFact],
     fact: &DurableFact,
     value: &Map<String, Value>,
+    current: &PlanRuntimeState,
+    required: &BTreeSet<String>,
+    satisfied: &BTreeSet<String>,
+    capabilities: &BTreeSet<PlanCapabilityReference>,
 ) -> Result<(), PlanRuntimeError> {
     let command = text(value, "command_id")?;
     let commit_version = ledger
@@ -300,6 +314,163 @@ fn validate_replacement_binding(
     };
     if text(source, "replacement_plan_digest")? != text(proposal, "plan_digest")? {
         return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    if fact.kind.as_str() == "plan.adopted" {
+        validate_carry_evidence(
+            ledger,
+            facts,
+            target,
+            source,
+            current,
+            commit_version,
+            required,
+            satisfied,
+            capabilities,
+        )?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_carry_evidence(
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
+    target: &Map<String, Value>,
+    source: &Map<String, Value>,
+    current: &PlanRuntimeState,
+    replacement_version: u64,
+    required: &BTreeSet<String>,
+    satisfied: &BTreeSet<String>,
+    capabilities: &BTreeSet<PlanCapabilityReference>,
+) -> Result<(), PlanRuntimeError> {
+    let records = decode_carry_forward_records(bound_inline(target, "carry_forward_evidence")?)?;
+    let source_id = text(source, "plan_id")?;
+    let source_revision = unsigned(source, "plan_revision")?;
+    let source_proposals = facts
+        .iter()
+        .filter(|candidate| candidate.kind.as_str() == "plan.proposed")
+        .filter_map(|candidate| {
+            let payload = serde_json::from_str::<Value>(candidate.payload.as_json()).ok()?;
+            let payload = payload.as_object()?;
+            (payload.get("plan_id")?.as_str()? == source_id
+                && payload.get("plan_revision")?.as_u64()? == source_revision)
+                .then_some(payload.clone())
+        })
+        .collect::<Vec<_>>();
+    let [source_proposal] = source_proposals.as_slice() else {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    };
+    let old = definition(source_proposal, required, satisfied, capabilities)?;
+    let new = current.snapshot.definition();
+    if old.goal_id() != new.goal_id()
+        || old.goal_revision() != new.goal_revision()
+        || old.goal_definition_digest() != new.goal_definition_digest()
+        || records
+            .iter()
+            .map(|record| &record.step_id)
+            .collect::<Vec<_>>()
+            != new
+                .steps()
+                .iter()
+                .filter(|step| {
+                    records
+                        .iter()
+                        .any(|record| &record.step_id == step.step_id())
+                })
+                .map(|step| step.step_id())
+                .collect::<Vec<_>>()
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    for record in records {
+        let step = new
+            .steps()
+            .iter()
+            .find(|step| step.step_id() == &record.step_id)
+            .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+        if new.step_digest(&record.step_id).map_err(corrupt)? != record.step_digest
+            || old.step_digest(&record.step_id).map_err(corrupt)? != record.step_digest
+            || step.depends_on()
+                != &record
+                    .dependency_results
+                    .keys()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+        {
+            return Err(PlanRuntimeError::RecoveryCorrupt);
+        }
+        validate_terminal_record(
+            ledger,
+            facts,
+            source_id,
+            source_revision,
+            &record,
+            replacement_version,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_terminal_record(
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
+    source_id: &str,
+    source_revision: u64,
+    record: &crate::plan_carry_forward::CarryForwardRecord,
+    replacement_version: u64,
+) -> Result<(), PlanRuntimeError> {
+    let terminals = facts
+        .iter()
+        .filter(|candidate| candidate.fact_id.as_str() == record.terminal_fact_id)
+        .collect::<Vec<_>>();
+    let [terminal] = terminals.as_slice() else {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    };
+    let value = serde_json::from_str::<Value>(terminal.payload.as_json())
+        .map_err(corrupt)?
+        .as_object()
+        .cloned()
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    if terminal.kind.as_str() != "plan.step.completed"
+        || terminal.position != record.terminal_position
+        || ledger
+            .fact_commit_version(&terminal.fact_id)
+            .map_err(map_ledger)?
+            != Some(record.terminal_commit_version)
+        || record.terminal_commit_version > replacement_version
+        || text(&value, "plan_id")? != source_id
+        || unsigned(&value, "plan_revision")? != source_revision
+        || text(&value, "step_id")? != record.step_id.as_str()
+        || text(&value, "result_digest")? != record.result_digest
+        || content_digest(&value, "step_evidence")? != record.step_evidence_digest
+        || content_digest(&value, "criterion_evidence")? != record.criterion_evidence_digest
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    for (dependency, result_digest) in &record.dependency_results {
+        let matches = facts
+            .iter()
+            .filter(|candidate| candidate.kind.as_str() == "plan.step.completed")
+            .filter_map(|candidate| {
+                let value = serde_json::from_str::<Value>(candidate.payload.as_json()).ok()?;
+                let value = value.as_object()?.clone();
+                (text(&value, "plan_id").ok() == Some(source_id)
+                    && unsigned(&value, "plan_revision").ok() == Some(source_revision)
+                    && text(&value, "step_id").ok() == Some(dependency.as_str()))
+                .then_some((candidate, value))
+            })
+            .collect::<Vec<_>>();
+        let [(dependency_fact, dependency_value)] = matches.as_slice() else {
+            return Err(PlanRuntimeError::RecoveryCorrupt);
+        };
+        if text(dependency_value, "result_digest")? != result_digest
+            || ledger
+                .fact_commit_version(&dependency_fact.fact_id)
+                .map_err(map_ledger)?
+                .is_none_or(|version| version > replacement_version)
+        {
+            return Err(PlanRuntimeError::RecoveryCorrupt);
+        }
     }
     Ok(())
 }
@@ -445,6 +616,33 @@ fn inline<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, PlanR
         .and_then(|binding| binding.get("inline_utf8"))
         .and_then(Value::as_str)
         .ok_or(PlanRuntimeError::RecoveryCorrupt)
+}
+
+fn bound_inline<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, PlanRuntimeError> {
+    let binding = value
+        .get(key)
+        .and_then(Value::as_object)
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    if binding.keys().map(String::as_str).collect::<BTreeSet<_>>()
+        != BTreeSet::from(["digest", "inline_utf8"])
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let json = text(binding, "inline_utf8")?;
+    CanonicalPayload::from_canonical_parts(json.to_owned(), text(binding, "digest")?.to_owned())
+        .map_err(corrupt)?;
+    Ok(json)
+}
+
+fn content_digest<'a>(
+    value: &'a Map<String, Value>,
+    key: &str,
+) -> Result<&'a str, PlanRuntimeError> {
+    value
+        .get(key)
+        .and_then(Value::as_object)
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)
+        .and_then(|binding| text(binding, "digest"))
 }
 
 fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, PlanRuntimeError> {
