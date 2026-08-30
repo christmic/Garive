@@ -166,7 +166,7 @@ fn activity_catalogue() -> InstalledActivityCatalogue {
         schema_version: 1,
         catalogue_revision: "activity-labels-1".into(),
         descriptors: vec![InstalledActivityDescriptor {
-            tool_name: "read_file".into(),
+            tool_name: "private_reader_v9".into(),
             tool_revision: "1".into(),
             label_key: "agent.activity.read_file".into(),
         }],
@@ -701,7 +701,7 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
         (
             "h3-prepared",
             "effect.prepared",
-            serde_json::json!({"prepared_digest":digest,"tool_name":"read_file","tool_revision":"1","replay_class":"read_only","model_call_id":"call-h3"}),
+            serde_json::json!({"prepared_digest":digest,"tool_name":"private_reader_v9","tool_revision":"1","replay_class":"read_only","model_call_id":"call-h3"}),
         ),
         (
             "h3-authorized",
@@ -711,22 +711,22 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
         (
             "h3-started",
             "effect.started",
-            serde_json::json!({"prepared_digest":digest,"grant_id":"grant-h3","executor_id":"local.read","executor_revision":"1","dispatch_attempt_id":"dispatch-h3"}),
+            serde_json::json!({"prepared_digest":digest,"grant_id":"grant-h3","executor_id":"executor-private","executor_revision":"1","dispatch_attempt_id":"dispatch-h3"}),
         ),
         (
             "h3-receipt",
             "effect.receipt",
-            serde_json::json!({"receipt_id":"receipt-h3","prepared_digest":digest,"grant_id":"grant-h3","executor_id":"local.read","executor_revision":"1","classification":"completed","result_or_evidence":binding(serde_json::json!({"ok":true}))}),
+            serde_json::json!({"receipt_id":"receipt-h3","prepared_digest":digest,"grant_id":"grant-h3","executor_id":"executor-private","executor_revision":"1","classification":"completed","result_or_evidence":binding(serde_json::json!({"secret":"secret-tool-result"}))}),
         ),
         (
             "h3-completed",
             "effect.completed",
-            serde_json::json!({"prepared_digest":digest,"receipt_id":"receipt-h3","result":binding(serde_json::json!({"ok":true}))}),
+            serde_json::json!({"prepared_digest":digest,"receipt_id":"receipt-h3","result":binding(serde_json::json!({"secret":"secret-tool-result"}))}),
         ),
         (
             "h3-observation",
             "effect.observation",
-            serde_json::json!({"prepared_digest":digest,"model_call_id":"call-h3","observation":binding(serde_json::json!({"ok":true}))}),
+            serde_json::json!({"prepared_digest":digest,"model_call_id":"call-h3","observation":binding(serde_json::json!({"secret":"secret-observation"}))}),
         ),
     ];
     let facts = values
@@ -793,12 +793,24 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
                 .events
         )
         .unwrap(),
-        serde_json::to_value(page.events).unwrap()
+        serde_json::to_value(&page.events).unwrap()
     );
     assert_eq!(
         serde_json::to_value(restarted.get_timeline(&session.session_id, 0, 8).unwrap()).unwrap(),
-        serde_json::to_value(timeline).unwrap()
+        serde_json::to_value(&timeline).unwrap()
     );
+    let public = serde_json::to_string(&(&page.events, &timeline)).unwrap();
+    for forbidden in [
+        "private_reader_v9",
+        "secret-tool-result",
+        "secret-observation",
+        "executor-private",
+        "grant-h3",
+        "receipt-h3",
+        "dispatch-h3",
+    ] {
+        assert!(!public.contains(forbidden), "leaked H3 canary: {forbidden}");
+    }
 }
 
 #[test]
