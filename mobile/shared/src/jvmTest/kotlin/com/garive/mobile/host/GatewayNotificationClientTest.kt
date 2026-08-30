@@ -23,7 +23,7 @@ public class GatewayNotificationClientTest {
             assertEquals("Bearer mobile-grant-at-least-twenty", request.headers[HttpHeaders.Authorization])
             val body = (request.body as TextContent).text
             assertEquals(
-                "{\"api_version\":\"v1\",\"transport\":\"fcm\",\"token\":\"provider-token-at-least-twenty\"}",
+                "{\"api_version\":\"v1\",\"transport\":\"fcm\",\"registration_id\":\"provider-token-at-least-twenty\"}",
                 body,
             )
             respond("", HttpStatusCode.NoContent)

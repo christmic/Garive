@@ -89,13 +89,17 @@ func NewAPNSSender(config APNSConfig) (PushSender, error) {
 }
 
 func (sender *apnsSender) Send(ctx context.Context, registration PushRegistration, hint MobileWakeHint) error {
-	if registration.Transport != "apns" || !isHexToken(registration.Token) {
+	if registration.Transport != "apns" || !isHexToken(registration.Address) {
 		return errors.New("invalid APNs registration")
 	}
 	payload, _ := json.Marshal(map[string]any{
-		"aps": map[string]int{"content-available": 1}, "garive": hint,
+		"aps": map[string]any{
+			"content-available": 1,
+			"alert": map[string]string{"title": "Garive update", "body": "Open Garive to refresh verified server state"},
+		},
+		"garive": hint,
 	})
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, sender.endpoint+"/3/device/"+registration.Token, bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, sender.endpoint+"/3/device/"+registration.Address, bytes.NewReader(payload))
 	if err != nil {
 		return errors.New("APNs request failed")
 	}
@@ -106,8 +110,12 @@ func (sender *apnsSender) Send(ctx context.Context, registration PushRegistratio
 	request.Header.Set("authorization", "bearer "+token)
 	request.Header.Set("content-type", "application/json")
 	request.Header.Set("apns-topic", sender.topic)
-	request.Header.Set("apns-push-type", "background")
-	request.Header.Set("apns-priority", "5")
+	request.Header.Set("apns-push-type", "alert")
+	priority := "5"
+	if hint.Category == "attention" || hint.Category == "connection_security" {
+		priority = "10"
+	}
+	request.Header.Set("apns-priority", priority)
 	request.Header.Set("apns-expiration", fmt.Sprint(sender.now().Add(10*time.Minute).Unix()))
 	request.Header.Set("apns-collapse-id", hint.CollapseKey)
 	response, err := sender.client.Do(request)
@@ -201,20 +209,24 @@ func NewFCMSender(config FCMConfig) (PushSender, error) {
 }
 
 func (sender *fcmSender) Send(ctx context.Context, registration PushRegistration, hint MobileWakeHint) error {
-	if registration.Transport != "fcm" || !validPushToken(registration.Token) {
+	if registration.Transport != "fcm" || !validPushToken(registration.Address) {
 		return errors.New("invalid FCM registration")
 	}
 	token, err := sender.oauthToken(ctx)
 	if err != nil {
 		return err
 	}
+	priority := "normal"
+	if hint.Category == "attention" || hint.Category == "connection_security" {
+		priority = "high"
+	}
 	body, _ := json.Marshal(map[string]any{"message": map[string]any{
-		"token": registration.Token,
+		"fid": registration.Address,
 		"data": map[string]string{
 			"schema_version": "1", "route_token": hint.RouteToken,
 			"category": hint.Category, "collapse_key": hint.CollapseKey,
 		},
-		"android": map[string]string{"priority": "normal", "collapse_key": hint.CollapseKey},
+		"android": map[string]string{"priority": priority, "collapse_key": hint.CollapseKey},
 	}})
 	endpoint := "https://fcm.googleapis.com/v1/projects/" + url.PathEscape(sender.projectID) + "/messages:send"
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))

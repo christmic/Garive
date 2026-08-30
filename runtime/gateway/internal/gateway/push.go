@@ -20,7 +20,7 @@ type PushSender interface {
 // PushRegistration contains the provider address needed for delivery and is never logged.
 type PushRegistration struct {
 	Transport string
-	Token     string
+	Address   string
 }
 
 // MobileWakeHint is the complete privacy-safe provider payload.
@@ -40,9 +40,9 @@ type wakeRoute struct {
 }
 
 type pushRegistrationRequest struct {
-	APIVersion string `json:"api_version"`
-	Transport  string `json:"transport"`
-	Token      string `json:"token"`
+	APIVersion     string `json:"api_version"`
+	Transport      string `json:"transport"`
+	RegistrationID string `json:"registration_id"`
 }
 
 func (s *Server) registerPush(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func (s *Server) registerPush(w http.ResponseWriter, r *http.Request) {
 	if !decodeStrict(w, r, s.maxBodyBytes, &request) {
 		return
 	}
-	if request.APIVersion != apiVersion || !validPushToken(request.Token) {
+	if request.APIVersion != apiVersion || !validPushToken(request.RegistrationID) {
 		writeError(w, http.StatusBadRequest, "invalid_push_registration")
 		return
 	}
@@ -71,7 +71,7 @@ func (s *Server) registerPush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_push_registration")
 		return
 	}
-	value.push = &PushRegistration{Transport: request.Transport, Token: request.Token}
+	value.push = &PushRegistration{Transport: request.Transport, Address: request.RegistrationID}
 	w.WriteHeader(http.StatusNoContent)
 }
 

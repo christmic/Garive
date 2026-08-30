@@ -136,7 +136,7 @@ func TestPushRegistrationDispatchAndSingleUseResolution(t *testing.T) {
 	push := &recordedPush{}
 	server := newPushServer(t, push)
 	grant, deviceID := pair(t, server)
-	registration := `{"api_version":"v1","transport":"apns","token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
+	registration := `{"api_version":"v1","transport":"apns","registration_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
 	if got := serve(server, http.MethodPost, "/v1/mobile/push/registrations", registration, grant); got.Code != http.StatusNoContent {
 		t.Fatalf("register status = %d body = %s", got.Code, got.Body.String())
 	}
@@ -159,9 +159,9 @@ func TestPushRegistrationDispatchAndSingleUseResolution(t *testing.T) {
 func TestPushRegistrationIsPlatformBoundAndUnregisters(t *testing.T) {
 	server := newPushServer(t, &recordedPush{})
 	grant, deviceID := pair(t, server)
-	fcm := `{"api_version":"v1","transport":"fcm","token":"long-enough-provider-token"}`
+	fcm := `{"api_version":"v1","transport":"fcm","registration_id":"long-enough-provider-token"}`
 	assertError(t, serve(server, http.MethodPost, "/v1/mobile/push/registrations", fcm, grant), http.StatusBadRequest, "invalid_push_registration")
-	apns := `{"api_version":"v1","transport":"apns","token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
+	apns := `{"api_version":"v1","transport":"apns","registration_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
 	if got := serve(server, http.MethodPost, "/v1/mobile/push/registrations", apns, grant); got.Code != http.StatusNoContent {
 		t.Fatalf("register status = %d", got.Code)
 	}
@@ -177,7 +177,7 @@ func TestWakeTokenIsDeviceBoundAndExpires(t *testing.T) {
 	push := &recordedPush{}
 	server := newPushServerAt(t, push, func() time.Time { return now })
 	grant, deviceID := pair(t, server)
-	register := `{"api_version":"v1","transport":"apns","token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
+	register := `{"api_version":"v1","transport":"apns","registration_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
 	serve(server, http.MethodPost, "/v1/mobile/push/registrations", register, grant)
 	dispatch := `{"api_version":"v1","device_id":"` + deviceID + `","destination":"session","session_id":"session_1","category":"completed"}`
 	serve(server, http.MethodPost, "/v1/mobile/wake-hints", dispatch, adminToken)

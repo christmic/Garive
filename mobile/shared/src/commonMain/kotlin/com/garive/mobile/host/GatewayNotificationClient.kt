@@ -48,15 +48,15 @@ public class GatewayNotificationClient internal constructor(
     }
 
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun register(accessGrant: String, transport: MobilePushTransport, token: String): Unit {
+    public suspend fun register(accessGrant: String, transport: MobilePushTransport, registrationId: String): Unit {
         validateGrant(accessGrant)
-        if (token.length !in 20..4_096 || token.any { it.code !in 0x21..0x7e }) {
+        if (registrationId.length !in 20..4_096 || registrationId.any { it.code !in 0x21..0x7e }) {
             fail(HostClientError.INVALID_COMMAND)
         }
         val body = buildJsonObject {
             put("api_version", API_VERSION)
             put("transport", transport.wireName)
-            put("token", token)
+            put("registration_id", registrationId)
         }.toString()
         val response = request {
             client.post {
