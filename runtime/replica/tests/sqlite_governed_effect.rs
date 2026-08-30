@@ -15,16 +15,17 @@ use garive_llm::{
 use garive_runtime::{
     derive_runtime_recovery, plan_core_terminal, plan_f0_safety_decision,
     plan_f0_sandbox_admission, plan_model_prepared, plan_model_started, plan_model_terminal,
-    reconstruct_suspended_turn, ActivityProjectionLimits, AuthorityDecision, AuthorityFuture,
-    AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    EffectRecoveryPosition, ExecutorDispatch, ExecutorFuture, ExecutorPort,
-    F0EffectAdmissionContext, F0GovernanceContext, F0SafetyDecisionContext, GovernedEffectConfig,
-    HostClock, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
-    InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits,
-    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
-    SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyPort,
-    SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
-    SqliteGovernedEffectPort, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    reconstruct_suspended_turn, recover_f0_prepared, ActivityProjectionLimits, AuthorityDecision,
+    AuthorityFuture, AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand,
+    CoreTerminalContext, EffectRecoveryPosition, ExecutorDispatch, ExecutorFuture, ExecutorPort,
+    F0EffectAdmissionContext, F0GovernanceContext, F0RecoveryContentPort, F0RecoveryError,
+    F0SafetyDecisionContext, GovernedEffectConfig, HostClock, HostReadLimits,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
+    InteractionInputRepresentation, LiveHost, LiveHostLimits, ModelLifecycleContext,
+    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SafetyDecisionV1, SafetyDisposition,
+    SafetyEvaluation, SafetyFuture, SafetyPort, SandboxAdmission, SandboxAdmissionPort,
+    SandboxAdmissionRequest, SandboxBindingV1, SqliteGovernedEffectPort, SqliteLedger,
+    TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
@@ -126,6 +127,14 @@ impl ToolAccessResolver for Resolver {
             arguments["path"].as_str().unwrap(),
             AccessMode::Read,
         )?])
+    }
+}
+
+struct NoReferencedContent;
+
+impl F0RecoveryContentPort for NoReferencedContent {
+    fn resolve(&mut self, _: &str) -> Result<String, F0RecoveryError> {
+        Err(F0RecoveryError::ContentUnavailable)
     }
 }
 
@@ -501,6 +510,39 @@ fn prepared_v3_commits_exact_f0_chain_before_dispatch() {
             "effect.completed",
             "effect.observation",
         ],
+    );
+    let snapshot = setup.ledger.load_turn(&setup.turn).unwrap();
+    let invocation = snapshot
+        .facts
+        .iter()
+        .find(|fact| fact.kind.as_str() == "effect.prepared")
+        .unwrap()
+        .tool_invocation_id
+        .as_ref()
+        .unwrap()
+        .as_str()
+        .to_owned();
+    let mut content = NoReferencedContent;
+    let recovered = recover_f0_prepared(
+        &snapshot,
+        &invocation,
+        &v3_catalog(),
+        &Resolver,
+        &mut content,
+        1_024,
+    )
+    .unwrap();
+    assert_eq!(recovered.prepared, prepared);
+    assert_eq!(
+        recover_f0_prepared(
+            &snapshot,
+            &invocation,
+            &v3_catalog(),
+            &Resolver,
+            &mut content,
+            1,
+        ),
+        Err(F0RecoveryError::ContentLimitExceeded)
     );
     drop(setup.ledger);
     let reopened = SqliteLedger::open(&setup.database).unwrap();
