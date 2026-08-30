@@ -21,6 +21,7 @@ struct Fixture {
     disconnect_before_terminal: Vec<HostEvent>,
     invalid_streams: Vec<InvalidStream>,
     host_errors: Vec<HostError>,
+    typed_continuation: TypedContinuation,
     failure_codes: Vec<String>,
 }
 
@@ -56,6 +57,13 @@ struct InvalidStream {
 struct HostError {
     status: u16,
     code: String,
+}
+
+#[derive(Deserialize)]
+struct TypedContinuation {
+    canonical_json: String,
+    non_canonical_json: String,
+    non_canonical_error: String,
 }
 
 fn fixture() -> Fixture {
@@ -231,11 +239,31 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     let response = r#"{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":12}"#;
     let requests = Arc::new(Mutex::new(Vec::new()));
     let (base_url, server) = serve(
-        vec![http_json(200, response), http_json(200, response)],
+        vec![
+            http_json(200, response),
+            http_json(200, response),
+            http_json(200, response),
+        ],
         Arc::clone(&requests),
     )
     .await;
     let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+    let invalid = client
+        .continue_turn_json(
+            "invalid-json",
+            "session-client",
+            "turn-client",
+            "suspension-client",
+            4,
+            &fixture.typed_continuation.non_canonical_json,
+        )
+        .await
+        .expect_err("non-canonical JSON");
+    assert_eq!(invalid.code, HostClientErrorCode::InvalidCommand);
+    assert_eq!(
+        invalid.code.wire_name(),
+        fixture.typed_continuation.non_canonical_error
+    );
     client
         .cancel_turn("cancel-stable", "session-client", "turn-client", 9)
         .await
@@ -251,6 +279,17 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
         )
         .await
         .expect("continue");
+    client
+        .continue_turn_json(
+            "continue-json-stable",
+            "session-client",
+            "turn-client",
+            "suspension-client",
+            4,
+            &fixture.typed_continuation.canonical_json,
+        )
+        .await
+        .expect("continue JSON");
     server.await.expect("server task");
     let requests = requests.lock().await;
     assert!(requests[0].starts_with("POST /v1/turns/turn-client:cancel HTTP/1.1\r\n"));
@@ -258,6 +297,8 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     assert!(requests[1].starts_with("POST /v1/turns/turn-client:continue HTTP/1.1\r\n"));
     assert!(requests[1].contains("\"expected_session_version\":4"));
     assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
+    assert!(requests[1].contains("\"input\":\"approved input\""));
+    assert!(requests[2].contains("\"input_json\":\"{\\\"approved\\\":true}\""));
 }
 
 fn http_json(status: u16, body: &str) -> Vec<u8> {

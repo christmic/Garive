@@ -394,6 +394,13 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
 
 #[test]
 fn interaction_continuation_validates_schema_and_representation_before_commit() {
+    let contract = fixture();
+    let json_value = contract["typed_continuation_cases"][1]["value"]
+        .as_str()
+        .unwrap();
+    let schema_mismatch = contract["invalid_typed_continuations"][3]["value"]
+        .as_str()
+        .unwrap();
     let harness = Harness::new(64);
     let session = harness
         .host
@@ -495,7 +502,7 @@ fn interaction_continuation_validates_schema_and_representation_before_commit() 
             &started.turn_id,
             "suspension-1",
             4,
-            HostContinuationInput::Json("\"yes\"")
+            HostContinuationInput::Json(schema_mismatch)
         ),
         Err(LiveHostError::InvalidRequest)
     );
@@ -524,7 +531,7 @@ fn interaction_continuation_validates_schema_and_representation_before_commit() 
             &started.turn_id,
             "suspension-1",
             4,
-            HostContinuationInput::Json("true"),
+            HostContinuationInput::Json(json_value),
         )
         .unwrap();
     assert_eq!(continued.committed_position, 12);
