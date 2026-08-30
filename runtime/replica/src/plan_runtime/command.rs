@@ -52,6 +52,18 @@ pub fn plan_plan_transition(
     context: &PlanCommandContext,
     request: PlanRuntimeTransition,
 ) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    if matches!(request, PlanRuntimeTransition::Start { .. }) {
+        return Err(PlanRuntimeError::TransitionInvalid);
+    }
+    plan_transition(current, expected_state_version, context, request)
+}
+
+fn plan_transition(
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    request: PlanRuntimeTransition,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
     validate_context(context)?;
     if current.state_version != expected_state_version {
         return Err(PlanRuntimeError::RevisionConflict);
@@ -364,7 +376,7 @@ pub fn plan_start_step_execution(
     {
         return Err(PlanRuntimeError::Invalid);
     }
-    let mut planned = plan_plan_transition(
+    let mut planned = plan_transition(
         current,
         expected_state_version,
         context,

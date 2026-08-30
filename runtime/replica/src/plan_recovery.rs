@@ -35,6 +35,8 @@ pub fn reconstruct_plan(
     {
         apply(
             &mut state,
+            ledger,
+            &facts,
             fact,
             required_goal_criteria,
             already_satisfied_criteria,
@@ -64,6 +66,8 @@ fn belongs(fact: &DurableFact, plan_id: &str, revision: u64) -> bool {
 
 fn apply(
     state: &mut Option<PlanRuntimeState>,
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
     fact: &DurableFact,
     required: &BTreeSet<String>,
     satisfied: &BTreeSet<String>,
@@ -93,6 +97,9 @@ fn apply(
     if previous != current.state_version || next != previous.checked_add(1).ok_or(corrupt(()))? {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
+    if fact.kind.as_str() == "plan.step.started" {
+        validate_execution_binding(ledger, facts, fact, value, current)?;
+    }
     let transitions = transitions(current, fact.kind.as_str(), value)?;
     current.snapshot = transitions
         .into_iter()
@@ -100,6 +107,72 @@ fn apply(
             snapshot.apply(transition).map_err(corrupt)
         })?;
     current.state_version = next;
+    Ok(())
+}
+
+fn validate_execution_binding(
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
+    plan_fact: &DurableFact,
+    value: &Map<String, Value>,
+    current: &PlanRuntimeState,
+) -> Result<(), PlanRuntimeError> {
+    let execution_id = text(value, "execution_id")?;
+    if text(value, "execution_snapshot_digest")?
+        != current.snapshot.definition().agent_snapshot_digest()
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let commit_version = ledger
+        .fact_commit_version(&plan_fact.fact_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    let executions = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "execution.started")
+        .filter(|fact| fact.execution_id.as_ref().map(|id| id.as_str()) == Some(execution_id))
+        .collect::<Vec<_>>();
+    if executions.len() != 1
+        || ledger
+            .fact_commit_version(&executions[0].fact_id)
+            .map_err(map_ledger)?
+            != Some(commit_version)
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let execution = executions[0];
+    let turn_id = execution
+        .turn_id
+        .as_ref()
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    let execution_payload: Value =
+        serde_json::from_str(execution.payload.as_json()).map_err(corrupt)?;
+    if execution_payload
+        .get("snapshot_digest")
+        .and_then(Value::as_str)
+        != Some(text(value, "execution_snapshot_digest")?)
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let command_id = text(value, "command_id")?;
+    let turn_starts = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "turn.started")
+        .filter(|fact| fact.turn_id.as_ref() == Some(turn_id))
+        .collect::<Vec<_>>();
+    if turn_starts.len() != 1
+        || ledger
+            .fact_commit_version(&turn_starts[0].fact_id)
+            .map_err(map_ledger)?
+            != Some(commit_version)
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let turn_payload: Value =
+        serde_json::from_str(turn_starts[0].payload.as_json()).map_err(corrupt)?;
+    if turn_payload.get("command_id").and_then(Value::as_str) != Some(command_id) {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
     Ok(())
 }
 

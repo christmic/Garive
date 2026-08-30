@@ -63,11 +63,10 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     state = recover(&ledger, &session);
     assert_eq!(state.state_version, 3);
     assert_eq!(
-        plan_plan_transition(
+        start_step(
             &state,
-            3,
-            &context("late-start"),
-            start_request("claim-1", 1, 20, "attempt-late", "execution-late"),
+            &session,
+            StepStartFixture::new("prepare", "claim-1", 1, 20, "attempt-late", "late-start",),
         ),
         Err(PlanRuntimeError::ClaimStale)
     );
@@ -108,11 +107,10 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     )
     .unwrap();
     state = recover(&ledger, &session);
-    let started = plan_plan_transition(
+    let started = start_step(
         &state,
-        state.state_version,
-        &context("start-prepare"),
-        start_request("claim-2", 2, 25, "attempt-1", "execution-1"),
+        &session,
+        StepStartFixture::new("prepare", "claim-2", 2, 25, "attempt-1", "start-prepare"),
     )
     .unwrap();
     commit_plan_command(
@@ -123,11 +121,12 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     )
     .unwrap();
     state = recover(&ledger, &session);
+    let prepare_execution = active_execution(&state, "prepare");
     let completed = complete_step(
         &state,
         "prepare",
         "attempt-1",
-        "execution-1",
+        &prepare_execution,
         "complete-prepare",
     );
     commit_plan_command(
@@ -149,22 +148,10 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     )
     .unwrap();
     state = recover(&ledger, &session);
-    let deliver_start = plan_plan_transition(
+    let deliver_start = start_step(
         &state,
-        state.state_version,
-        &context("start-deliver"),
-        PlanRuntimeTransition::Start {
-            step_id: step_id("deliver"),
-            claim_id: "claim-3".into(),
-            lease_epoch: 1,
-            clock_revision: "monotonic-v1".into(),
-            observed_at_tick: 35,
-            attempt_id: "attempt-2".into(),
-            execution_id: "execution-2".into(),
-            execution_snapshot_digest: digest('e'),
-            sandbox_profile_digest: digest('f'),
-            safety_decision_id: "safety-decision-2".into(),
-        },
+        &session,
+        StepStartFixture::new("deliver", "claim-3", 1, 35, "attempt-2", "start-deliver"),
     )
     .unwrap();
     commit_plan_command(
@@ -175,11 +162,12 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     )
     .unwrap();
     state = recover(&ledger, &session);
+    let deliver_execution = active_execution(&state, "deliver");
     let deliver_complete = complete_step(
         &state,
         "deliver",
         "attempt-2",
-        "execution-2",
+        &deliver_execution,
         "complete-deliver",
     );
     commit_plan_command(
@@ -287,16 +275,16 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     )
     .unwrap();
     state = recover(&ledger, &session);
-    let first_start = plan_plan_transition(
+    let first_start = start_step(
         &state,
-        state.state_version,
-        &context("retry-start-first"),
-        start_request(
+        &session,
+        StepStartFixture::new(
+            "prepare",
             "retry-claim-1",
             1,
             15,
             "retry-attempt-1",
-            "retry-execution-1",
+            "retry-start-first",
         ),
     )
     .unwrap();
@@ -308,10 +296,11 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     )
     .unwrap();
     state = recover(&ledger, &session);
+    let first_execution = active_execution(&state, "prepare");
     let first_failure = fail_step(
         &state,
         "retry-attempt-1",
-        "retry-execution-1",
+        &first_execution,
         "retry-fail-first",
     )
     .unwrap();
@@ -339,16 +328,16 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     )
     .unwrap();
     state = recover(&ledger, &session);
-    let second_start = plan_plan_transition(
+    let second_start = start_step(
         &state,
-        state.state_version,
-        &context("retry-start-second"),
-        start_request(
+        &session,
+        StepStartFixture::new(
+            "prepare",
             "retry-claim-2",
             2,
             25,
             "retry-attempt-2",
-            "retry-execution-2",
+            "retry-start-second",
         ),
     )
     .unwrap();
@@ -360,11 +349,12 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     )
     .unwrap();
     state = recover(&ledger, &session);
+    let second_execution = active_execution(&state, "prepare");
     assert_eq!(
         fail_step(
             &state,
             "retry-attempt-2",
-            "retry-execution-2",
+            &second_execution,
             "retry-fail-second",
         ),
         Err(PlanRuntimeError::BoundExceeded)
@@ -412,11 +402,31 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     let state = recover(&ledger, &session);
 
     let turn = plan_start_turn(
-        &start_turn(&session, "atomic-start", state.through_position),
+        &start_turn(&session, "atomic-start"),
         state.through_position,
     )
     .unwrap();
     let execution_id = turn.execution_id.clone().unwrap();
+    assert_eq!(
+        plan_plan_transition(
+            &state,
+            state.state_version,
+            &context("atomic-start"),
+            PlanRuntimeTransition::Start {
+                step_id: step_id("prepare"),
+                claim_id: "atomic-claim".into(),
+                lease_epoch: 1,
+                clock_revision: "monotonic-v1".into(),
+                observed_at_tick: 15,
+                attempt_id: "atomic-attempt".into(),
+                execution_id: execution_id.as_str().into(),
+                execution_snapshot_digest: digest('b'),
+                sandbox_profile_digest: digest('f'),
+                safety_decision_id: "safety-decision-atomic".into(),
+            },
+        ),
+        Err(PlanRuntimeError::TransitionInvalid)
+    );
     let started = plan_start_step_execution(
         &state,
         state.state_version,
@@ -526,25 +536,68 @@ fn claim_step(
     .unwrap()
 }
 
-fn start_request(
-    claim: &str,
+struct StepStartFixture<'a> {
+    step: &'a str,
+    claim: &'a str,
     epoch: u64,
     observed: u64,
-    attempt: &str,
-    execution: &str,
-) -> PlanRuntimeTransition {
-    PlanRuntimeTransition::Start {
-        step_id: step_id("prepare"),
-        claim_id: claim.into(),
-        lease_epoch: epoch,
-        clock_revision: "monotonic-v1".into(),
-        observed_at_tick: observed,
-        attempt_id: attempt.into(),
-        execution_id: execution.into(),
-        execution_snapshot_digest: digest('e'),
-        sandbox_profile_digest: digest('f'),
-        safety_decision_id: "safety-decision-1".into(),
+    attempt: &'a str,
+    command: &'a str,
+}
+
+impl<'a> StepStartFixture<'a> {
+    fn new(
+        step: &'a str,
+        claim: &'a str,
+        epoch: u64,
+        observed: u64,
+        attempt: &'a str,
+        command: &'a str,
+    ) -> Self {
+        Self {
+            step,
+            claim,
+            epoch,
+            observed,
+            attempt,
+            command,
+        }
     }
+}
+
+fn start_step(
+    state: &PlanRuntimeState,
+    session: &SessionId,
+    request: StepStartFixture<'_>,
+) -> Result<garive_runtime::PlannedPlanCommand, PlanRuntimeError> {
+    let turn = plan_start_turn(
+        &start_turn(session, request.command),
+        state.through_position,
+    )
+    .unwrap();
+    plan_start_step_execution(
+        state,
+        state.state_version,
+        &context(request.command),
+        PlanStepExecutionStart {
+            step_id: step_id(request.step),
+            claim_id: request.claim.into(),
+            lease_epoch: request.epoch,
+            clock_revision: "monotonic-v1".into(),
+            observed_at_tick: request.observed,
+            attempt_id: request.attempt.into(),
+            sandbox_profile_digest: digest('f'),
+            safety_decision_id: "safety-decision-1".into(),
+        },
+        &turn,
+    )
+}
+
+fn active_execution(state: &PlanRuntimeState, step: &str) -> String {
+    state.active_claims[&step_id(step)]
+        .execution_id
+        .clone()
+        .unwrap()
 }
 
 fn complete_step(
@@ -679,7 +732,7 @@ fn timestamp() -> &'static str {
     "2026-08-31T00:00:00Z"
 }
 
-fn start_turn(session: &SessionId, command: &str, _: u64) -> StartTurnCommand {
+fn start_turn(session: &SessionId, command: &str) -> StartTurnCommand {
     StartTurnCommand {
         command_id: RuntimeCommandId::new(command).unwrap(),
         session_id: session.clone(),
