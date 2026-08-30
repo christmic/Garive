@@ -6,6 +6,7 @@ use garive_plan::{
 };
 use serde_json::{Map, Value};
 
+use crate::plan_carry_forward::decode_carried_steps;
 use crate::{ActivePlanClaim, PlanRuntimeError, PlanRuntimeState, SqliteLedger, SqliteLedgerError};
 
 /// Reconstructs one exact Plan revision from a verified fixed Session prefix.
@@ -100,6 +101,12 @@ fn apply(
     if fact.kind.as_str() == "plan.step.started" {
         validate_execution_binding(ledger, facts, fact, value, current)?;
     }
+    if fact.kind.as_str() == "plan.superseded"
+        || (fact.kind.as_str() == "plan.adopted"
+            && value.get("expected_prior_plan_revision").is_some())
+    {
+        validate_replacement_binding(ledger, facts, fact, value)?;
+    }
     let transitions = transitions(current, fact.kind.as_str(), value)?;
     current.snapshot = transitions
         .into_iter()
@@ -188,7 +195,16 @@ fn transitions(
             {
                 return Err(PlanRuntimeError::RecoveryCorrupt);
             }
-            Ok(vec![PlanTransition::Adopt])
+            let evidence = inline(value, "carry_forward_evidence")?;
+            let carried = decode_carried_steps(evidence)?;
+            if value.get("expected_prior_plan_revision").is_none() && !carried.is_empty() {
+                return Err(PlanRuntimeError::RecoveryCorrupt);
+            }
+            Ok(vec![if carried.is_empty() {
+                PlanTransition::Adopt
+            } else {
+                PlanTransition::AdoptWithCarryForward(carried)
+            }])
         }
         "plan.rejected" => Ok(vec![PlanTransition::Reject]),
         "plan.superseded" => Ok(vec![PlanTransition::Supersede]),
@@ -218,6 +234,74 @@ fn transitions(
         "plan.step.resumed" => Ok(vec![PlanTransition::ResumeStep(step_id(value)?)]),
         _ => Err(PlanRuntimeError::RecoveryCorrupt),
     }
+}
+
+fn validate_replacement_binding(
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
+    fact: &DurableFact,
+    value: &Map<String, Value>,
+) -> Result<(), PlanRuntimeError> {
+    let command = text(value, "command_id")?;
+    let commit_version = ledger
+        .fact_commit_version(&fact.fact_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    let counterpart_kind = if fact.kind.as_str() == "plan.superseded" {
+        "plan.adopted"
+    } else {
+        "plan.superseded"
+    };
+    let counterparts = facts
+        .iter()
+        .filter(|candidate| candidate.kind.as_str() == counterpart_kind)
+        .filter_map(|candidate| {
+            let payload = serde_json::from_str::<Value>(candidate.payload.as_json()).ok()?;
+            let payload = payload.as_object()?;
+            (payload.get("command_id").and_then(Value::as_str) == Some(command))
+                .then_some((candidate, payload.clone()))
+        })
+        .collect::<Vec<_>>();
+    let [(counterpart, other)] = counterparts.as_slice() else {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    };
+    if ledger
+        .fact_commit_version(&counterpart.fact_id)
+        .map_err(map_ledger)?
+        != Some(commit_version)
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let (source, target) = if fact.kind.as_str() == "plan.superseded" {
+        (value, other)
+    } else {
+        (other, value)
+    };
+    if text(source, "replacement_plan_id")? != text(target, "plan_id")?
+        || unsigned(source, "replacement_plan_revision")? != unsigned(target, "plan_revision")?
+        || unsigned(target, "expected_prior_plan_revision")? != unsigned(source, "plan_revision")?
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let proposals = facts
+        .iter()
+        .filter(|candidate| candidate.kind.as_str() == "plan.proposed")
+        .filter_map(|candidate| {
+            let payload = serde_json::from_str::<Value>(candidate.payload.as_json()).ok()?;
+            let payload = payload.as_object()?;
+            (payload.get("plan_id").and_then(Value::as_str) == target.get("plan_id")?.as_str()
+                && payload.get("plan_revision").and_then(Value::as_u64)
+                    == target.get("plan_revision")?.as_u64())
+            .then_some(payload.clone())
+        })
+        .collect::<Vec<_>>();
+    let [proposal] = proposals.as_slice() else {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    };
+    if text(source, "replacement_plan_digest")? != text(proposal, "plan_digest")? {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    Ok(())
 }
 
 fn claim(

@@ -171,6 +171,26 @@ Claimed, Running, Suspended, Failed or uncertain work is never marked Completed
 by carry-forward. A started uncertain effect is reconciled under its original
 Plan/step/invocation even if a new Plan is adopted.
 
+Runtime derives, rather than accepts, the canonical carry-forward document at
+one fixed Session watermark. Records are in target step declaration order:
+
+```text
+CarryForwardRecordV1 {
+  step_id, step_digest, result_digest
+  dependency_results: ordered [{step_id, result_digest}]
+  step_evidence_digest, criterion_evidence_digest
+  terminal_fact_id, terminal_position, terminal_commit_version
+}
+```
+
+Every digest is re-read from the source revision's unique completed-step fact;
+the terminal commit version and position must be inside the verified watermark.
+The maximal admitted set is dependency-closed and includes only equal old/new
+step digests. Initial adoption accepts only an empty document. Replacement
+adoption is one SQLite transaction ordered as old `plan.superseded` then new
+`plan.adopted`; both facts share one command and commit version. Recovery
+rejects a missing/mismatched counterpart, proposal digest or malformed record.
+
 ## Runtime facts
 
 Plan revision is immutable definition identity. Runtime additionally maintains

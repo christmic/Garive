@@ -22,6 +22,7 @@ mod memory_export;
 mod memory_export_io;
 mod model_http_transport;
 mod observability_runtime;
+mod plan_carry_forward;
 mod plan_recovery;
 mod plan_runtime;
 mod runtime_turn;
@@ -130,6 +131,10 @@ pub use model_http_transport::{
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,
     ObservabilitySink, RedactionPolicy, ShutdownReport, SinkDisposition,
+};
+pub use plan_carry_forward::{
+    commit_plan_replacement, plan_plan_replacement, verify_plan_carry_forward,
+    PlannedPlanReplacement, VerifiedPlanCarryForward,
 };
 pub use plan_recovery::reconstruct_plan;
 pub use plan_runtime::{

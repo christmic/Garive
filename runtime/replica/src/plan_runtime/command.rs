@@ -81,7 +81,10 @@ fn plan_transition(
             carry_forward_evidence,
         } => {
             require_non_empty(&policy_reference)?;
-            if expected_goal_revision == 0 || expected_prior_plan_revision == Some(0) {
+            if expected_goal_revision == 0
+                || expected_prior_plan_revision.is_some()
+                || carry_forward_evidence.as_json() != "[]"
+            {
                 return Err(PlanRuntimeError::Invalid);
             }
             let mut value = mutation(context, definition, expected_state_version, next_version);

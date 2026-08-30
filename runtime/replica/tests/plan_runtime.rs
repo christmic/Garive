@@ -9,9 +9,10 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_plan_command, get_turn, plan_plan_transition, plan_propose_plan,
-    plan_start_step_execution, plan_start_turn, reconstruct_plan, EffectiveRuntimeLimits,
-    GetTurnQuery, PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    commit_plan_command, commit_plan_replacement, get_turn, plan_plan_replacement,
+    plan_plan_transition, plan_propose_plan, plan_start_step_execution, plan_start_turn,
+    reconstruct_plan, verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery,
+    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
     PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
     StartTurnCommand,
 };
@@ -486,12 +487,173 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     assert_eq!(turn.execution_id.as_ref(), Some(&execution_id));
 }
 
+#[test]
+fn replacement_atomically_supersedes_and_reconstructs_verified_carry_forward() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("carry-forward.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed = plan_propose_plan(&context("carry-propose-1"), definition_revision(1)).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let mut source = recover_revision(&ledger, &session, 1);
+    let adopted = plan_plan_transition(
+        &source,
+        source.state_version,
+        &context("carry-adopt-1"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &adopted,
+    )
+    .unwrap();
+    source = recover_revision(&ledger, &session, 1);
+    let claimed = claim(&source, "carry-claim", 1, 10, 20, "carry-claim-command");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &claimed,
+    )
+    .unwrap();
+    source = recover_revision(&ledger, &session, 1);
+    let started = start_step(
+        &source,
+        &session,
+        StepStartFixture::new(
+            "prepare",
+            "carry-claim",
+            1,
+            15,
+            "carry-attempt",
+            "carry-start",
+        ),
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &started,
+    )
+    .unwrap();
+    source = recover_revision(&ledger, &session, 1);
+    let completed = complete_step(
+        &source,
+        "prepare",
+        "carry-attempt",
+        &active_execution(&source, "prepare"),
+        "carry-complete",
+    );
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &completed,
+    )
+    .unwrap();
+    source = recover_revision(&ledger, &session, 1);
+    let target_proposal =
+        plan_propose_plan(&context("carry-propose-2"), definition_revision(2)).unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &target_proposal,
+    )
+    .unwrap();
+    source = recover_revision(&ledger, &session, 1);
+    let target = recover_revision(&ledger, &session, 2);
+    let verified = verify_plan_carry_forward(&ledger, &session, &source, &target).unwrap();
+    assert_eq!(
+        verified.carried_steps(),
+        &BTreeSet::from([step_id("prepare")])
+    );
+    assert_eq!(
+        plan_plan_transition(
+            &target,
+            target.state_version,
+            &context("carry-bypass"),
+            PlanRuntimeTransition::Adopt {
+                expected_goal_revision: 2,
+                expected_prior_plan_revision: Some(1),
+                policy_reference: "policy-v1".into(),
+                carry_forward_evidence: verified.evidence().clone(),
+            },
+        ),
+        Err(PlanRuntimeError::Invalid)
+    );
+    let replacement = plan_plan_replacement(
+        &source,
+        &target,
+        &verified,
+        &context("carry-replace"),
+        "policy-v1",
+    )
+    .unwrap();
+    let stale_replacement = plan_plan_replacement(
+        &source,
+        &target,
+        &verified,
+        &context("carry-replace-stale"),
+        "policy-v1",
+    )
+    .unwrap();
+    assert_eq!(
+        replacement
+            .facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["plan.superseded", "plan.adopted"]
+    );
+    commit_plan_replacement(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &replacement,
+    )
+    .unwrap();
+    let mut competing = SqliteLedger::open(&path).unwrap();
+    assert_eq!(
+        commit_plan_replacement(
+            &mut competing,
+            session.clone(),
+            source.session_version,
+            &stale_replacement,
+        ),
+        Err(PlanRuntimeError::RevisionConflict)
+    );
+    let old = recover_revision(&ledger, &session, 1);
+    let new = recover_revision(&ledger, &session, 2);
+    assert_eq!(old.snapshot.state(), PlanState::Superseded);
+    assert_eq!(new.snapshot.state(), PlanState::Running);
+    assert_eq!(
+        new.snapshot.step(&step_id("prepare")).unwrap().state(),
+        StepState::Completed
+    );
+    assert_eq!(new.snapshot.ready_steps(), vec![&step_id("deliver")]);
+}
+
 fn recover(ledger: &SqliteLedger, session: &SessionId) -> PlanRuntimeState {
+    recover_revision(ledger, session, 1)
+}
+
+fn recover_revision(ledger: &SqliteLedger, session: &SessionId, revision: u64) -> PlanRuntimeState {
     reconstruct_plan(
         ledger,
         session,
         "plan-1",
-        1,
+        revision,
         &criteria(),
         &BTreeSet::new(),
         &capabilities(),
@@ -645,6 +807,10 @@ fn fail_step(
 }
 
 fn definition() -> PlanDefinitionV1 {
+    definition_revision(1)
+}
+
+fn definition_revision(revision: u64) -> PlanDefinitionV1 {
     let capability = PlanCapabilityReference::new("tools", "catalogue-v1").unwrap();
     let steps = vec![
         PlanStepV1::new(
@@ -670,7 +836,7 @@ fn definition() -> PlanDefinitionV1 {
     ];
     PlanDefinitionV1::new(
         PlanId::new("plan-1").unwrap(),
-        1,
+        revision,
         "goal-1",
         2,
         digest('a'),
