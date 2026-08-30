@@ -2,7 +2,7 @@ use std::{
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Barrier, Mutex},
 };
 
 use futures::StreamExt;
@@ -168,6 +168,54 @@ fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
         fact_bound.host.get_session(&session.session_id),
         Err(LiveHostError::ReadBoundExceeded)
     );
+}
+
+#[test]
+fn h2_timeline_is_one_consistent_prefix_during_concurrent_commit() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-concurrent-read", "definition-main")
+        .unwrap();
+    harness
+        .host
+        .start_turn("start-before-read", &session.session_id, "first")
+        .unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let writer_host = harness.host.clone();
+    let writer_session = session.session_id.clone();
+    let writer_barrier = barrier.clone();
+    let writer = std::thread::spawn(move || {
+        writer_barrier.wait();
+        writer_host
+            .start_turn("start-during-read", &writer_session, "second")
+            .unwrap()
+    });
+    barrier.wait();
+    let concurrent = harness
+        .host
+        .get_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    writer.join().unwrap();
+    assert!(matches!(concurrent.observed_max_position, 4 | 7));
+    assert!(concurrent
+        .items
+        .iter()
+        .all(|item| item.latest_position <= concurrent.observed_max_position));
+    assert_eq!(
+        concurrent.items.len(),
+        if concurrent.observed_max_position == 4 {
+            1
+        } else {
+            2
+        }
+    );
+    let final_view = harness
+        .host
+        .get_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    assert_eq!(final_view.observed_max_position, 7);
+    assert_eq!(final_view.items.len(), 2);
 }
 
 #[test]
