@@ -9,13 +9,14 @@ use std::{
     },
 };
 
-use garive_core::{AgentEvent, ClockPort, EventSink, PortFailure};
+use garive_core::{AgentEvent, AgentToolCapabilities, ClockPort, EventSink, PortFailure};
 use garive_llm::{ModelCancellation, ModelPort};
 
 use crate::{
-    execute_durable_model_only, reconstruct_local_start, CommittedTurn, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalReconstructionError, SqliteLedger, TerminalPublicationError,
-    TerminalPublisher, TurnDispatchError, TurnDispatcher,
+    execute_durable_agent, execute_durable_model_only, reconstruct_local_start, AuthorityPort,
+    CommittedTurn, ExecutorPort, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalReconstructionError, SqliteLedger, TerminalPublicationError, TerminalPublisher,
+    TurnDispatchError, TurnDispatcher,
 };
 
 /// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
@@ -117,7 +118,26 @@ pub struct LocalExecutionWorker {
     database_path: PathBuf,
     policy: LocalExecutionPolicy,
     model: Arc<dyn ModelPort>,
+    governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
 }
+
+/// Frozen capabilities and governed ports created for one local Execution.
+pub struct LocalGovernedExecution {
+    /// Exact Tool definitions admitted to this Execution.
+    pub capabilities: AgentToolCapabilities,
+    /// Runtime-neutral authority implementation for prepared calls.
+    pub authority: Box<dyn AuthorityPort>,
+    /// Two-phase executor implementation for authorized calls.
+    pub executor: Box<dyn ExecutorPort>,
+}
+
+/// Constructs isolated governed ports for one committed local Execution.
+pub trait LocalGovernedExecutionFactory: Send + Sync {
+    /// Freezes capabilities and ports before model dispatch begins.
+    fn create(&self, committed: &CommittedTurn)
+        -> Result<LocalGovernedExecution, LocalWorkerError>;
+}
+
 impl LocalExecutionWorker {
     /// Constructs a worker without reading environment or configuration files.
     pub fn new(
@@ -132,7 +152,20 @@ impl LocalExecutionWorker {
             database_path: database_path.as_ref().to_owned(),
             policy,
             model,
+            governed: None,
         })
+    }
+
+    /// Constructs a tool-capable worker with explicit governed port creation.
+    pub fn new_governed(
+        database_path: impl AsRef<Path>,
+        policy: LocalExecutionPolicy,
+        model: Arc<dyn ModelPort>,
+        governed: Arc<dyn LocalGovernedExecutionFactory>,
+    ) -> Result<Self, LocalWorkerError> {
+        let mut worker = Self::new(database_path, policy, model)?;
+        worker.governed = Some(governed);
+        Ok(worker)
     }
 
     /// Reconstructs and executes one already committed start transaction.
@@ -155,18 +188,40 @@ impl LocalExecutionWorker {
         let clock = FixedClock(attempt.now_ms);
         let mut events = DiscardEvents;
         let mut publisher = DurableOnlyPublisher;
-        let result = execute_durable_model_only(
-            &mut ledger,
-            &reconstructed.durable,
-            &reconstructed.request,
-            &mut reconstructed.context,
-            self.model.as_ref(),
-            &mut events,
-            &cancellation,
-            &clock,
-            &mut publisher,
-        )
-        .await
+        let result = if let Some(factory) = &self.governed {
+            let mut governed = factory.create(committed)?;
+            if governed.capabilities.definitions.is_empty() {
+                return Err(LocalWorkerError::InvalidComposition);
+            }
+            execute_durable_agent(
+                &mut ledger,
+                &reconstructed.durable,
+                &reconstructed.request,
+                &governed.capabilities,
+                &mut reconstructed.context,
+                self.model.as_ref(),
+                governed.authority.as_mut(),
+                governed.executor.as_mut(),
+                &mut events,
+                &cancellation,
+                &clock,
+                &mut publisher,
+            )
+            .await
+        } else {
+            execute_durable_model_only(
+                &mut ledger,
+                &reconstructed.durable,
+                &reconstructed.request,
+                &mut reconstructed.context,
+                self.model.as_ref(),
+                &mut events,
+                &cancellation,
+                &clock,
+                &mut publisher,
+            )
+            .await
+        }
         .map_err(|_| LocalWorkerError::ExecutionFailed)?;
         Ok(LocalWorkerDisposition::TerminalCommitted {
             positions: result.terminal_commit.positions,

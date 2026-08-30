@@ -6,7 +6,7 @@ use std::sync::{
 use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
-use garive_ledger::{ExecutionId, SessionId, TurnId};
+use garive_ledger::{CanonicalPayload, ExecutionId, SessionId, TurnId};
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
     ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage, TextMode,
@@ -15,9 +15,19 @@ use garive_llm::{
 use garive_runtime::{
     local_dispatch_queue, recover_local_dispatches, CommittedTurn, EffectiveRuntimeLimits,
     HostClock, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, LocalWorkerError,
-    SqliteLedger, TurnDispatcher,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecution,
+    LocalGovernedExecutionFactory, LocalWorkerDisposition, LocalWorkerError, SqliteLedger,
+    TurnDispatcher,
 };
+use garive_runtime::{
+    AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
+    ExecutorFuture, ExecutorPort, PreparedExecution,
+};
+use garive_tools::{
+    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
+    ReplayClass, TerminalClassification, ToolDefinition,
+};
+use serde_json::json;
 use tempfile::tempdir;
 
 struct Clock;
@@ -51,6 +61,123 @@ impl ModelPort for CompletingModel {
                 },
                 stop_reason: ModelStopReason::EndTurn,
             })
+        })
+    }
+}
+
+struct ToolThenTextModel(AtomicUsize);
+impl ModelPort for ToolThenTextModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let tool = self.0.fetch_add(1, Ordering::SeqCst) == 0;
+            Ok(InvokeOutcome::Completed {
+                items: if tool {
+                    vec![ModelItem::ToolIntent {
+                        model_call_id: "call-write".into(),
+                        tool_name: "write_file".into(),
+                        arguments_json: r#"{"path":"result.md"}"#.into(),
+                    }]
+                } else {
+                    vec![ModelItem::Text {
+                        text: "artifact committed".into(),
+                    }]
+                },
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(2),
+                    output_tokens: TokenCount::Known(3),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::ProviderReported,
+                },
+                stop_reason: if tool {
+                    ModelStopReason::ToolUse
+                } else {
+                    ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
+struct Approve;
+impl AuthorityPort for Approve {
+    fn authorize<'a>(&'a mut self, request: AuthorityRequest<'a>) -> AuthorityFuture<'a> {
+        Box::pin(async move {
+            Ok(AuthorityDecision::Approve {
+                granted_requirements: request.prepared.requirements().clone(),
+                constraints_digest: "b".repeat(64),
+                authority_revision: "desktop-test-1".into(),
+            })
+        })
+    }
+}
+
+struct CompleteEffect;
+impl ExecutorPort for CompleteEffect {
+    fn prepare(
+        &mut self,
+        _: &garive_tools::ToolInvocationId,
+        _: &garive_tools::PreparedToolCall,
+        _: &garive_tools::InvocationGrant,
+    ) -> Result<PreparedExecution, String> {
+        Ok(PreparedExecution {
+            executor_id: "desktop.workspace".into(),
+            executor_revision: "1".into(),
+            dispatch_attempt_id: "dispatch-write-1".into(),
+        })
+    }
+
+    fn dispatch<'a>(&'a mut self, command: ExecutorDispatch<'a>) -> ExecutorFuture<'a> {
+        Box::pin(async move {
+            let content = json!({"artifact_id":"artifact-1"});
+            Ok(ExecutionFact::Completed {
+                receipt: Some(EffectReceipt {
+                    receipt_id: ReceiptId::new(command.receipt_id).unwrap(),
+                    invocation_id: command.invocation_id.clone(),
+                    prepared_digest: command.prepared.input_digest().into(),
+                    grant_id: command.grant.grant_id.clone(),
+                    executor_id: command.execution.executor_id.clone(),
+                    executor_revision: command.execution.executor_revision.clone(),
+                    terminal_classification: TerminalClassification::Completed,
+                    result_digest: CanonicalPayload::from_value(&content)
+                        .unwrap()
+                        .sha256()
+                        .into(),
+                }),
+                content,
+                truncated: false,
+            })
+        })
+    }
+}
+
+struct GovernedFactory;
+impl LocalGovernedExecutionFactory for GovernedFactory {
+    fn create(&self, _: &CommittedTurn) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        Ok(LocalGovernedExecution {
+            capabilities: garive_core::AgentToolCapabilities {
+                definitions: vec![ToolDefinition::new(
+                    "write_file",
+                    "1",
+                    "Write one governed Workspace artifact.",
+                    json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+                    ExecutionRequirements::new(
+                        [ExecutionCapability::FilesystemWrite],
+                        1_000,
+                        4_096,
+                    )
+                    .unwrap(),
+                    ReplayClass::NeverReplay,
+                )
+                .unwrap()],
+            },
+            authority: Box::new(Approve),
+            executor: Box::new(CompleteEffect),
         })
     }
 }
@@ -171,6 +298,87 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
     assert_eq!(
         queue.try_run_next(&worker, &attempt()).await,
         Err(LocalWorkerError::QueueEmpty)
+    );
+}
+
+#[tokio::test]
+async fn explicit_governed_factory_runs_the_complete_effect_fact_chain() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("governed.db");
+    let (dispatcher, mut queue) = local_dispatch_queue(1).expect("queue");
+    let host = LiveHost::new(
+        &database,
+        InstalledAgent {
+            definition_id: "definition-main".into(),
+            definition_revision: "revision-1".into(),
+            snapshot_digest: "a".repeat(64),
+            agent_instance_namespace: "local-main".into(),
+            runtime_limits: EffectiveRuntimeLimits {
+                max_iterations: 2,
+                max_input_tokens: Some(20),
+                max_output_tokens: Some(10),
+                deadline_budget_ms: Some(1_000),
+            },
+            public_activity_catalogue: None,
+        },
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+            activity: None,
+        },
+        Arc::new(Clock),
+        dispatcher,
+    )
+    .expect("host");
+    let session = host
+        .create_session("create-governed", "definition-main")
+        .expect("session");
+    let turn = host
+        .start_turn("start-governed", &session.session_id, "create artifact")
+        .expect("turn");
+    let mut governed_policy = policy();
+    governed_policy.required_capabilities = vec![ModelCapability::Text, ModelCapability::Tools];
+    let model = Arc::new(ToolThenTextModel(AtomicUsize::new(0)));
+    let worker = LocalExecutionWorker::new_governed(
+        &database,
+        governed_policy,
+        model.clone(),
+        Arc::new(GovernedFactory),
+    )
+    .expect("governed worker");
+    assert!(matches!(
+        queue.try_run_next(&worker, &attempt()).await,
+        Ok(LocalWorkerDisposition::TerminalCommitted { .. })
+    ));
+    assert_eq!(model.0.load(Ordering::SeqCst), 2);
+    let snapshot = SqliteLedger::open(&database)
+        .unwrap()
+        .load_turn(&TurnId::try_from(turn.turn_id.as_str()).unwrap())
+        .unwrap();
+    let kinds = snapshot
+        .facts
+        .iter()
+        .map(|fact| fact.kind.as_str())
+        .collect::<Vec<_>>();
+    let effect_start = kinds
+        .iter()
+        .position(|kind| *kind == "effect.prepared")
+        .expect("effect prepared");
+    assert_eq!(
+        &kinds[effect_start..effect_start + 6],
+        [
+            "effect.prepared",
+            "effect.authorized",
+            "effect.started",
+            "effect.receipt",
+            "effect.completed",
+            "effect.observation",
+        ]
+    );
+    assert_eq!(
+        &kinds[kinds.len() - 2..],
+        ["execution.completed", "turn.completed"]
     );
 }
 

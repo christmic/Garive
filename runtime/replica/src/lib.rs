@@ -68,8 +68,9 @@ pub use local_composition::{
 };
 pub use local_recovery::{recover_local_dispatches, LocalRecoveryError};
 pub use local_worker::{
-    local_dispatch_queue, LocalDispatchQueue, LocalExecutionWorker, LocalTurnDispatcher,
-    LocalWorkerDisposition, LocalWorkerError, LocalWorkerShutdownReport,
+    local_dispatch_queue, LocalDispatchQueue, LocalExecutionWorker, LocalGovernedExecution,
+    LocalGovernedExecutionFactory, LocalTurnDispatcher, LocalWorkerDisposition, LocalWorkerError,
+    LocalWorkerShutdownReport,
 };
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
