@@ -156,7 +156,8 @@ garive://pair?origin=https%3A%2F%2Fagent.example.com&code=...&exp=...&name=...
 
 ![iOS 深色模式与辅助功能超大字体 Work](assets/mobile/ios-08-a11y-dark-work.png)
 
-横屏手机与 iPad 会根据可用空间调整导航，但保持相同的任务优先级和入口：
+横屏手机会压缩工作区但保留抽屉入口；iPad 常规宽度使用常驻 Remote 侧栏与右侧工作区，
+避免把手机单栏机械拉宽。两种布局保持相同的任务优先级、状态语义和入口：
 
 ![Android 横屏 Work](assets/mobile/android-17-landscape-work.png)
 
@@ -209,8 +210,9 @@ Work 按处理优先级分组：
 ![iOS Sessions](assets/mobile/ios-03-sessions.png)
 
 Sessions 提供本地搜索，以及 **All**、**Working**、**Needs you** 和 **Done** 状态筛选。搜索只
-匹配当前已加载的公开 Agent 名称和 Session 标识，不把查询发送给服务端。列表来自服务端持久化
-投影；重新打开任务不会复制 Session，也不会丢失已有 Turn。
+匹配当前已加载的公开 Agent 名称和内部 Session 标识，不把查询发送给服务端；内部标识仅作为
+协议坐标和本地匹配键，默认列表、无障碍标签和截图均不展示。列表来自服务端持久化投影；重新
+打开任务不会复制 Session，也不会丢失已有 Turn。
 
 ![Android Agents](assets/mobile/android-04-agents.png)
 
@@ -396,7 +398,7 @@ xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkt
 walkthrough Host；Release 构建无法进入该模式。审批、新建、刷新、取消及状态回读均通过真实
 客户端协议执行。深色模式证据同时使用 Android `font_scale=2.0` 和 iOS
 `accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
-Settings 语义标签。
+Settings 语义标签；iPad 常规宽度则使用常驻侧栏和独立工作区。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
 界面流程（13 条）、Swift 测试（9 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的

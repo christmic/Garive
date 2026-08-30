@@ -156,7 +156,9 @@ the selected timeline before resuming follow. SSE never supplies initial truth.
 
 UI values contain public names, localized keys, stable state, safe error codes,
 durable positions, and bounded display text. Internal Host IDs are retained for
-command correlation but exposed only in a copyable details sheet.
+command correlation and local matching, but are absent from ordinary rows,
+accessibility labels, telemetry, and screenshots. Only Agent definition IDs and
+revisions have an explicit copyable details sheet.
 
 Known presentation states are:
 
@@ -246,6 +248,9 @@ does not retain the local credential.
 - A leading navigation drawer adapts the desktop sidebar: Work, Sessions,
   Agents, Settings, and bounded recent Sessions. The conversation canvas does
   not lose vertical space to a permanent four-item bottom bar.
+- Compact-width phones use the drawer as an overlay. Regular-width iPad uses a
+  persistent approximately 300-point Remote sidebar and an independent detail
+  navigation stack instead of stretching the phone column.
 - `Needs you` rows come first with one clear action and safe context.
 - Running and recent Sessions use flat text-first rows, compact metadata, and
   a redundant status label/mark. Cards are reserved for decisions, composer,
@@ -254,8 +259,9 @@ does not retain the local credential.
 
 ### Sessions
 
-- Search is local over loaded public labels/text only until an admitted server
-  search contract exists.
+- Search is local over loaded public labels/text and internal Session IDs only
+  until an admitted server search contract exists. A matched internal ID is not
+  rendered in the result row or exposed through accessibility semantics.
 - Filter chips are `All`, `Working`, `Needs you`, and `Done`.
 - Rows expose Agent label, state, safe time decoration, and latest public text
   preview when admitted; swipe does not delete because deletion is absent.
