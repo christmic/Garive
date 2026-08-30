@@ -13,10 +13,14 @@ import (
 )
 
 const (
-	promptJSON     = `{"message":"Approve the release after verified mobile checks?","schema_version":1}`
-	promptDigest   = "ab6f115afb7bc38d321ecfa221ad15736e1c057c7265ac10ce75d32ece4a4dff"
-	responseJSON   = `{"type":"boolean"}`
-	responseDigest = "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553"
+	approvalPromptJSON     = `{"message":"Approve the release after verified mobile checks?","schema_version":1}`
+	approvalPromptDigest   = "ab6f115afb7bc38d321ecfa221ad15736e1c057c7265ac10ce75d32ece4a4dff"
+	approvalResponseJSON   = `{"type":"boolean"}`
+	approvalResponseDigest = "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553"
+	inputPromptJSON        = `{"message":"Which audience should receive the handoff?","schema_version":1}`
+	inputPromptDigest      = "d80f7c636d9d5060fe3863ecb58fae11d4efece0d479347e4afbed7698be652b"
+	inputResponseJSON      = `{"type":"string","maxLength":16384}`
+	inputResponseDigest    = "194fa31a328180198253b70187424d9ada203b9fee669c2e14e3a1c7abd78b6a"
 )
 
 type session struct {
@@ -29,6 +33,21 @@ type session struct {
 	UserText   string
 	Completion string
 	History    []turnSnapshot
+	Suspension *suspensionFixture
+}
+
+type suspensionFixture struct {
+	Kind, PromptJSON, PromptDigest, ResponseJSON, ResponseDigest string
+}
+
+var approvalSuspension = &suspensionFixture{
+	Kind: "approval_required", PromptJSON: approvalPromptJSON, PromptDigest: approvalPromptDigest,
+	ResponseJSON: approvalResponseJSON, ResponseDigest: approvalResponseDigest,
+}
+
+var inputSuspension = &suspensionFixture{
+	Kind: "input_required", PromptJSON: inputPromptJSON, PromptDigest: inputPromptDigest,
+	ResponseJSON: inputResponseJSON, ResponseDigest: inputResponseDigest,
 }
 
 type turnSnapshot struct {
@@ -57,8 +76,9 @@ func main() {
 
 func newDemoHost() *demoHost {
 	return &demoHost{next: 4, sessions: []*session{
-		{ID: "release-approval", Definition: "mobile-orchestrator", State: "suspended", Position: 12, TurnID: "turn-approval", Turns: 3, UserText: "Finish the mobile release and verify every platform."},
-		{ID: "release-decline", Definition: "mobile-orchestrator", State: "suspended", Position: 10, TurnID: "turn-decline", Turns: 2, UserText: "Run the protected release action only if the mobile checks are approved."},
+		{ID: "release-approval", Definition: "mobile-orchestrator", State: "suspended", Position: 12, TurnID: "turn-approval", Turns: 3, UserText: "Finish the mobile release and verify every platform.", Suspension: approvalSuspension},
+		{ID: "release-decline", Definition: "mobile-orchestrator", State: "suspended", Position: 10, TurnID: "turn-decline", Turns: 2, UserText: "Run the protected release action only if the mobile checks are approved.", Suspension: approvalSuspension},
+		{ID: "clarification-input", Definition: "product-reviewer", State: "suspended", Position: 14, TurnID: "turn-clarification", Turns: 3, UserText: "Prepare the incident handoff for the right audience.", Suspension: inputSuspension},
 		{ID: "runtime-monitor", Definition: "incident-responder", State: "running", Position: 8, TurnID: "turn-running", Turns: 2, UserText: "Monitor the production rollout and report anomalies."},
 		{ID: "design-review", Definition: "product-reviewer", State: "completed", Position: 16, TurnID: "turn-complete", Turns: 4, UserText: "Review the mobile interaction design.", Completion: "Review complete: navigation, typography, accessibility, and remote controls meet the accepted mobile specification.\n\n```swift\nlet releaseStatus = \"ready\"\nlet nextStep = \"ship after physical-device admission\"\n```"},
 	}}
@@ -146,17 +166,25 @@ func (d *demoHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		var body struct {
 			InputJSON string `json:"input_json"`
+			Input     string `json:"input"`
 		}
-		if json.NewDecoder(r.Body).Decode(&body) != nil || (body.InputJSON != "true" && body.InputJSON != "false") {
+		if json.NewDecoder(r.Body).Decode(&body) != nil || item.Suspension == nil {
 			d.error(w, http.StatusBadRequest, "invalid_suspension_response")
 			return
 		}
-		item.State = "completed"
-		if body.InputJSON == "true" {
-			item.Completion = "Approved. The agent resumed on the server and completed the release checks."
+		completion := ""
+		if item.Suspension.Kind == "input_required" && body.Input != "" && len(body.Input) <= 16_384 {
+			completion = fmt.Sprintf("Response committed for %s. The agent resumed the handoff.", body.Input)
+		} else if item.Suspension.Kind == "approval_required" && body.InputJSON == "true" {
+			completion = "Approved. The agent resumed on the server and completed the release checks."
+		} else if item.Suspension.Kind == "approval_required" && body.InputJSON == "false" {
+			completion = "Declined. The protected action was skipped and the decision was committed."
 		} else {
-			item.Completion = "Declined. The protected action was skipped and the decision was committed."
+			d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+			return
 		}
+		item.State, item.Completion = "completed", completion
+		item.Suspension = nil
 		item.Position++
 		d.turnResponse(w, item)
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/turns/") && strings.HasSuffix(path, ":cancel"):
@@ -201,12 +229,14 @@ func summary(item *session) map[string]any {
 func (d *demoHost) timeline(w http.ResponseWriter, item *session) {
 	items := []any{}
 	for _, turn := range item.History {
-		items = append(items, timelineTurn(turn.ID, turn.State, turn.Position, turn.UserText, turn.Completion, false))
+		items = append(items, timelineTurn(turn.ID, turn.State, turn.Position, turn.UserText, turn.Completion))
 	}
 	if item.TurnID != "" {
-		items = append(items, timelineTurn(
-			item.TurnID, item.State, item.Position, item.UserText, item.Completion, item.State == "suspended",
-		))
+		turn := timelineTurn(item.TurnID, item.State, item.Position, item.UserText, item.Completion)
+		if item.State == "suspended" && item.Suspension != nil {
+			turn["suspension"] = suspensionView(item.Suspension)
+		}
+		items = append(items, turn)
 	}
 	d.write(w, map[string]any{"api_version": "v1", "session_id": item.ID, "items": items, "scanned_through_position": item.Position, "observed_max_position": item.Position, "has_more": false})
 }
@@ -221,7 +251,7 @@ func (item *session) archiveCurrent() {
 	})
 }
 
-func timelineTurn(id, state string, position int, userText, completion string, suspended bool) map[string]any {
+func timelineTurn(id, state string, position int, userText, completion string) map[string]any {
 	activityState, terminal := "running", false
 	switch state {
 	case "completed":
@@ -233,10 +263,11 @@ func timelineTurn(id, state string, position int, userText, completion string, s
 	if completion != "" {
 		turn["completion_text"] = completion
 	}
-	if suspended {
-		turn["suspension"] = map[string]any{"suspension_id": "suspension-release", "session_version": 3, "kind": "approval_required", "prompt_schema": "garive.public-suspension-prompt.v1", "prompt_json": promptJSON, "prompt_digest": promptDigest, "response_schema_json": responseJSON, "response_schema_digest": responseDigest}
-	}
 	return turn
+}
+
+func suspensionView(value *suspensionFixture) map[string]any {
+	return map[string]any{"suspension_id": "suspension-" + value.Kind, "session_version": 3, "kind": value.Kind, "prompt_schema": "garive.public-suspension-prompt.v1", "prompt_json": value.PromptJSON, "prompt_digest": value.PromptDigest, "response_schema_json": value.ResponseJSON, "response_schema_digest": value.ResponseDigest}
 }
 
 func (d *demoHost) find(id string) *session {

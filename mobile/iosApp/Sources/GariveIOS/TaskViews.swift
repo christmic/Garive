@@ -304,26 +304,38 @@ private struct DecisionCard: View {
     let enabled: Bool
     let submit: (String) -> Void
 
+    private var approval: Bool { decision.kind.lowercased().contains("approval") }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
-            Label("Approval needed", systemImage: "hand.raised.fill").font(.headline).foregroundStyle(GarivePalette.amber)
+            Label(decision.title, systemImage: approval ? "hand.raised.fill" : "text.bubble.fill")
+                .font(.headline).foregroundStyle(GarivePalette.amber)
             Text(decision.prompt.isEmpty ? decision.title : decision.prompt).font(.body)
             Text("This Turn only · one response · committed history stays")
                 .font(.caption.weight(.medium)).foregroundStyle(GarivePalette.amber)
-            if !decision.kind.lowercased().contains("approval") {
-                TextField("Your response", text: $response).textFieldStyle(.roundedBorder)
+            if !approval {
+                HStack(spacing: 10) {
+                    TextField("Your response", text: $response)
+                        .textFieldStyle(.roundedBorder)
+                        .submitLabel(.send)
+                        .onSubmit { if canSubmitResponse { submit(response) } }
+                    Button(decision.actionLabel) { submit(response) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canSubmitResponse)
+                }
             }
-            if decision.kind.lowercased().contains("approval") {
+            if approval {
                 HStack {
                     Button("Decline") { submit("false") }.buttonStyle(.bordered).frame(maxWidth: .infinity)
                     Button("Approve once") { submit("true") }.buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
                 }.disabled(!enabled)
-            } else {
-                Button(decision.actionLabel) { submit(response) }.buttonStyle(.borderedProminent)
-                    .disabled(!enabled || response.utf8.count > mobileMaxInputBytes || response.isEmpty)
             }
         }.padding(17).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(GarivePalette.amber.opacity(0.35)))
+    }
+
+    private var canSubmitResponse: Bool {
+        enabled && !response.isEmpty && response.utf8.count <= mobileMaxInputBytes
     }
 }
 

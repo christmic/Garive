@@ -103,6 +103,25 @@ public class LiveHostJourneyTest {
     }
 
     @Test
+    public fun answersATextSuspensionThroughTheLiveHost(): Unit {
+        requireLiveHost()
+        val context = cleanContext()
+        ActivityScenario.launch<MainActivity>(walkthroughIntent(context, "clarification-input")).use {
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText("Which audience should receive the handoff?")
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Your response").performTextInput("Release managers")
+            compose.onNode(hasText("Respond") and hasClickAction()).performClick()
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText(
+                    "Response committed for Release managers. The agent resumed the handoff.",
+                ).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+    }
+
+    @Test
     public fun opensTheNativeShareChooserFromAConversation(): Unit {
         requireLiveHost()
         val context = cleanContext()

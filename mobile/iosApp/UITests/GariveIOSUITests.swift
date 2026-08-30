@@ -84,6 +84,27 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testConversationAnswersTextSuspensionThroughTheLiveHost() throws {
+        let app = walkthroughApp(
+            "--garive-walkthrough-conversation",
+            "--garive-walkthrough-session", "clarification-input"
+        )
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Input needed"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Which audience should receive the handoff?"].exists)
+        let response = app.textFields["Your response"]
+        XCTAssertTrue(response.exists)
+        response.tap()
+        response.typeText("Release managers")
+        app.buttons["Respond"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Response committed for Release managers. The agent resumed the handoff."]
+                .waitForExistence(timeout: 8)
+        )
+    }
+
+    @MainActor
     func testPairingRequiresSecureExplicitFields() throws {
         let app = XCUIApplication()
         app.launch()
