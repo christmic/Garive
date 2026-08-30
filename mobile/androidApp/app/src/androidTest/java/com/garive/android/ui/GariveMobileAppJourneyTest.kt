@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,6 +84,18 @@ public class GariveMobileAppJourneyTest {
         }
         compose.onNodeWithText("Find the key patterns and recommend next steps").assertIsDisplayed()
 
+        compose.onNodeWithContentDescription("Request cancellation").performClick()
+        compose.onNodeWithText("Request cancel").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Cancellation recorded. Committed work remains available.")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Give the Agent direction").performTextInput("Prepare the final mobile handoff")
+        compose.onNodeWithContentDescription("Send to Agent").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Prepare the final mobile handoff").fetchSemanticsNodes().isNotEmpty()
+        }
+
         compose.onNodeWithContentDescription("Back to Work").performClick()
         compose.onNodeWithContentDescription("Open navigation").performClick()
         compose.onNodeWithText("Settings").performClick()
@@ -93,8 +106,14 @@ public class GariveMobileAppJourneyTest {
 
 private object JourneyHost : MobileHost {
     private var created: Boolean = false
+    private var position: Long = 1
+    private val turns: MutableList<TurnTimelineItemV1> = mutableListOf()
 
-    fun reset(): Unit { created = false }
+    fun reset(): Unit {
+        created = false
+        position = 1
+        turns.clear()
+    }
 
     override suspend fun agentDefinitions(): AgentDefinitionPageV1 = AgentDefinitionPageV1(
         api_version = "v1",
@@ -116,7 +135,7 @@ private object JourneyHost : MobileHost {
     override suspend fun session(sessionId: String): SessionViewV1 = SessionViewV1(
         api_version = "v1",
         session = summary(),
-        observed_max_position = 2,
+        observed_max_position = position,
     )
 
     override suspend fun timeline(
@@ -126,17 +145,9 @@ private object JourneyHost : MobileHost {
     ): TurnTimelinePageV1 = TurnTimelinePageV1(
         api_version = "v1",
         session_id = sessionId,
-        items = if (created) listOf(
-            TurnTimelineItemV1(
-                turn_id = "turn-new",
-                started_position = 2,
-                latest_position = 2,
-                state = "running",
-                user_text = "Find the key patterns and recommend next steps",
-            ),
-        ) else emptyList(),
-        scanned_through_position = 2,
-        observed_max_position = 2,
+        items = turns.toList(),
+        scanned_through_position = position,
+        observed_max_position = position,
         has_more = false,
     )
 
@@ -145,15 +156,34 @@ private object JourneyHost : MobileHost {
         return CreateSessionResponseV1("session-new", "agent-1", 1)
     }
 
-    override suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 =
-        TurnCommandResponseV1(sessionId, "turn-new", "execution-new", 2)
+    override suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
+        position += 2
+        val turnId = "turn-${turns.size + 1}"
+        turns += TurnTimelineItemV1(
+            turn_id = turnId,
+            started_position = position - 1,
+            latest_position = position,
+            state = "running",
+            user_text = text,
+        )
+        return TurnCommandResponseV1(sessionId, turnId, "execution-${turns.size}", position)
+    }
 
     override suspend fun cancelTurn(
         commandId: String,
         sessionId: String,
         turnId: String,
         requestedThroughPosition: Long,
-    ): TurnCommandResponseV1 = unsupported()
+    ): TurnCommandResponseV1 {
+        position++
+        val latest = turns.last()
+        turns[turns.lastIndex] = latest.copy(
+            latest_position = position,
+            state = "stopped",
+            completion_text = "Cancellation recorded. Committed work remains available.",
+        )
+        return TurnCommandResponseV1(sessionId, turnId, "execution-${turns.size}", position)
+    }
 
     override suspend fun continueTurn(
         commandId: String,
@@ -174,11 +204,11 @@ private object JourneyHost : MobileHost {
         definition_id = "mobile-orchestrator",
         definition_revision = "revision-1",
         opened_at = "2026-08-31T00:00:00Z",
-        latest_position = 2,
-        latest_turn_id = "turn-new",
-        latest_turn_state = "running",
-        turn_count = 1,
+        latest_position = position,
+        latest_turn_id = turns.lastOrNull()?.turn_id,
+        latest_turn_state = turns.lastOrNull()?.state,
+        turn_count = turns.size.toLong(),
     )
 
-    private fun <T> unsupported(): T = error("This read-only UI journey must not mutate the Host")
+    private fun <T> unsupported(): T = error("This UI journey does not exercise this Host action")
 }

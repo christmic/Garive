@@ -330,7 +330,8 @@ private struct Composer: View {
                 Button(action: send) {
                     Image(systemName: "arrow.up").font(.headline).frame(width: 42, height: 42)
                         .background(GarivePalette.coral, in: Circle()).foregroundStyle(.white)
-                }.buttonStyle(.plain).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                }.buttonStyle(.plain).accessibilityLabel("Send to Agent")
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                     text.utf8.count > mobileMaxInputBytes || sending || !enabled)
             }
             .padding(7).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))

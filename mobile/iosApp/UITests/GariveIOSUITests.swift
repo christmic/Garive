@@ -34,6 +34,16 @@ final class GariveIOSUITests: XCTestCase {
         app.buttons["Start on server"].tap()
         XCTAssertTrue(app.navigationBars["Mobile Orchestrator"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["Turn notes into a clear decision memo"].exists)
+
+        app.buttons["Stop current work"].tap()
+        app.buttons["Stop turn"].tap()
+        XCTAssertTrue(app.staticTexts["Cancellation recorded. Committed work remains available."].waitForExistence(timeout: 8))
+        let composer = app.textFields["Give the Agent direction"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 3))
+        composer.tap()
+        composer.typeText("Prepare the final mobile handoff")
+        app.buttons["Send to Agent"].tap()
+        XCTAssertTrue(app.staticTexts["Prepare the final mobile handoff"].waitForExistence(timeout: 8))
     }
 
     @MainActor
