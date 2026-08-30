@@ -356,6 +356,9 @@ made from `vite build` or `cargo check` alone.
 7. A packaged clean-machine test verifies launch, menu, shortcuts, permissions,
    notifications, sleep/wake, offline recovery, quit/reopen, signature,
    notarization, update refusal, and uninstall/data-retention behavior.
+8. A-DESKTOP-VE provides the full-function screenshot manifest, journey-based
+   visual review, and a versioned user manual whose procedures are replayed on
+   the exact candidate package.
 
 ## Non-goals
 
