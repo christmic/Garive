@@ -248,6 +248,34 @@ async fn live_client_round_trips_real_http_and_sse() {
 }
 
 #[tokio::test]
+async fn incremental_follow_applies_backpressure_and_reports_eof_as_unknown() {
+    let fixture = fixture();
+    let (base_url, server) = serve(
+        vec![http_sse(&fixture.valid_stream)],
+        Arc::new(Mutex::new(Vec::new())),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).unwrap();
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let task = tokio::spawn(async move {
+        client
+            .follow_events("session-client", 0, sender)
+            .await
+            .unwrap_err()
+    });
+    let mut positions = Vec::new();
+    while let Some(event) = receiver.recv().await {
+        positions.push(event.position);
+    }
+    assert_eq!(positions, [1, 2, 5, 9]);
+    assert_eq!(
+        task.await.unwrap().code,
+        HostClientErrorCode::TransportFailure
+    );
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn h2_reads_use_exact_paths_and_validate_durable_views() {
     let fixture = fixture();
     let requests = Arc::new(Mutex::new(Vec::new()));

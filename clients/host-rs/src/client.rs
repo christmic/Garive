@@ -24,6 +24,7 @@ const KNOWN_HOST_ERRORS: [&str; 8] = [
 ];
 
 /// Explicit loopback implementation of the A1 Host client boundary.
+#[derive(Clone)]
 pub struct LiveHostClient {
     base_url: Url,
     limits: ClientLimits,
@@ -333,6 +334,116 @@ impl LiveHostClient {
     ) -> Result<HostView, HostClientError> {
         self.follow_until_terminal_with(session_id, after_position, |_| {})
             .await
+    }
+
+    /// Follows validated semantic events into a bounded asynchronous sink.
+    pub async fn follow_events(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        sink: tokio::sync::mpsc::Sender<HostEvent>,
+    ) -> Result<(), HostClientError> {
+        if session_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let operation = self.follow_events_inner(session_id, after_position, sink);
+        timeout(
+            Duration::from_millis(self.limits.follow_deadline_ms),
+            operation,
+        )
+        .await
+        .map_err(|_| HostClientError::new(HostClientErrorCode::FollowDeadline))?
+    }
+
+    async fn follow_events_inner(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        sink: tokio::sync::mpsc::Sender<HostEvent>,
+    ) -> Result<(), HostClientError> {
+        let path = format!(
+            "v1/sessions/{}/events?after_position={after_position}",
+            encode_segment(session_id)
+        );
+        let response = self
+            .http
+            .get(self.join(&path)?)
+            .send()
+            .await
+            .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+        let status = response.status();
+        if status.is_redirection() {
+            return Err(HostClientError::new(HostClientErrorCode::TransportFailure));
+        }
+        if !status.is_success() {
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+            return Err(classify_host_error(status, &bytes));
+        }
+        if !response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/event-stream"))
+        {
+            return Err(HostClientError::new(HostClientErrorCode::TransportFailure));
+        }
+        let mut stream = response.bytes_stream();
+        let mut pending = Vec::new();
+        let mut count = 0usize;
+        let mut cursor = after_position;
+        while let Some(chunk) = stream.next().await {
+            let chunk =
+                chunk.map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+            pending.extend_from_slice(&chunk);
+            if pending.len() > self.limits.max_event_bytes.saturating_mul(2) {
+                return Err(HostClientError::new(
+                    HostClientErrorCode::EventLimitExceeded,
+                ));
+            }
+            while let Some(boundary) = find_sse_boundary(&pending) {
+                let block: Vec<u8> = pending.drain(..boundary).collect();
+                let separator = if pending.starts_with(b"\r\n\r\n") {
+                    4
+                } else {
+                    2
+                };
+                pending.drain(..separator);
+                let Some(data) = sse_data(&block, self.limits.max_event_bytes)? else {
+                    continue;
+                };
+                count += 1;
+                if count > self.limits.max_events {
+                    return Err(HostClientError::new(
+                        HostClientErrorCode::EventLimitExceeded,
+                    ));
+                }
+                let event: HostEvent = serde_json::from_slice(&data)
+                    .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))?;
+                if event.api_version != "v1"
+                    || event.session_id != session_id
+                    || event.position <= cursor
+                    || match (&event.activity, event.event.starts_with("agent.activity.")) {
+                        (Some(activity), true) => {
+                            validate_activity(activity, event.position).is_err()
+                        }
+                        (None, false) => false,
+                        _ => true,
+                    }
+                {
+                    return Err(HostClientError::new(
+                        HostClientErrorCode::EventOrderViolation,
+                    ));
+                }
+                cursor = event.position;
+                sink.send(event)
+                    .await
+                    .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+            }
+        }
+        Err(HostClientError::new(HostClientErrorCode::TransportFailure))
     }
 
     /// Follows until terminal and observes each newly applied durable event.
