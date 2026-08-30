@@ -69,6 +69,14 @@ verified `sandbox_requirements_digest` to the v3 digest preimage. A v3
 definition cannot be prepared through a v1/v2 entry point; unknown or missing
 profiles fail before authorization.
 
+The durable `effect.prepared.v3` payload additionally binds canonical tool
+arguments through the standard `ContentBinding`. Runtime may use bounded
+`inline_utf8` or a verified opaque content reference; Host/UI projections must
+never expose either. This is recovery state, not audit display data: after a
+crash Runtime resolves it, re-prepares against the exact installed definition
+and resolver revisions, and accepts it only when the Prepared digest and exact
+access set are unchanged.
+
 ## Safety request and decision
 
 Runtime constructs this request from authenticated and committed state:

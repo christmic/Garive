@@ -46,13 +46,14 @@ internal fun validateEffectPreparedV3(value: JsonObject) {
     value.exact(
         setOf(
             "prepared_contract_version", "prepared_digest", "tool_name", "tool_revision",
-            "replay_class", "model_call_id", "access_policy_revision",
+            "replay_class", "model_call_id", "arguments", "access_policy_revision",
             "access_resolver_revision", "invocation_accesses", "max_result_bytes",
             "sandbox_requirements", "sandbox_requirements_digest",
         ),
     )
     require(value.ulong("prepared_contract_version") == 3uL)
     value.digest("prepared_digest")
+    value.content("arguments")
     value.identities(
         "tool_name", "tool_revision", "model_call_id", "access_policy_revision",
         "access_resolver_revision",

@@ -357,6 +357,7 @@ effect.prepared.v3 {
   replay_class: "read_only" | "idempotent" |
                 "receipt_recoverable" | "never_replay"
   model_call_id: non-empty string
+  arguments: ContentBinding
   access_policy_revision: non-empty string
   access_resolver_revision: non-empty string
   invocation_accesses: ContentBinding

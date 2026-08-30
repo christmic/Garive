@@ -86,6 +86,7 @@ pub(super) fn validate_prepared_v3(value: &Map<String, Value>) -> Result<(), Led
             "tool_revision",
             "replay_class",
             "model_call_id",
+            "arguments",
             "access_policy_revision",
             "access_resolver_revision",
             "invocation_accesses",
@@ -103,6 +104,7 @@ pub(super) fn validate_prepared_v3(value: &Map<String, Value>) -> Result<(), Led
         return Err(LedgerError::InvalidFact);
     }
     digest(value, "prepared_digest")?;
+    content(value, "arguments")?;
     identities(
         value,
         &[

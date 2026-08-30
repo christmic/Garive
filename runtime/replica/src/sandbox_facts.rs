@@ -65,6 +65,9 @@ pub fn plan_f0_safety_decision(
         .ok_or(SandboxPreflightError::InvalidBinding)?;
     let access = content(accesses)?;
     let sandbox = content(requirements)?;
+    let arguments: Value = serde_json::from_str(prepared.normalized_arguments())
+        .map_err(|_| SandboxPreflightError::InvalidBinding)?;
+    let arguments = content(&arguments)?;
     if access["digest"] != request.exact_access_digest()
         || sandbox["digest"] != request.sandbox_requirements_digest()
     {
@@ -111,6 +114,7 @@ pub fn plan_f0_safety_decision(
                 "prepared_contract_version":3,"prepared_digest":prepared.input_digest(),
                 "tool_name":prepared.tool_name(),"tool_revision":prepared.tool_revision(),
                 "replay_class":replay_class(prepared.replay_class()),"model_call_id":prepared.model_call_id(),
+                "arguments":arguments,
                 "access_policy_revision":prepared.access_policy_revision().ok_or(SandboxPreflightError::InvalidBinding)?,
                 "access_resolver_revision":prepared.access_resolver_revision().ok_or(SandboxPreflightError::InvalidBinding)?,
                 "invocation_accesses":access,"max_result_bytes":prepared.max_result_bytes().ok_or(SandboxPreflightError::InvalidBinding)?,

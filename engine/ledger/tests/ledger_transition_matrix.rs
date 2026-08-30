@@ -729,6 +729,7 @@ fn f0_fact(id: &str, kind: &str) -> FactDraft {
         "effect.prepared" => serde_json::json!({
             "prepared_contract_version":3,"prepared_digest":empty,"tool_name":"tool",
             "tool_revision":"revision-v3","replay_class":"read_only","model_call_id":"call",
+            "arguments":{"digest":empty,"inline_utf8":""},
             "access_policy_revision":"access-v1","access_resolver_revision":"resolver-v1",
             "invocation_accesses":{"digest":empty,"inline_utf8":""},"max_result_bytes":512,
             "sandbox_requirements":{"digest":empty,"inline_utf8":""},
