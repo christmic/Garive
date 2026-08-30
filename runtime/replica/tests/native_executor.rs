@@ -8,12 +8,13 @@ use garive_runtime::{
 use garive_tools::{
     BrowserPageScope, BuiltinT2BrowserCatalogue, BuiltinT2ComputerCatalogue, ComputerTargetScope,
     ExecutionFact, GrantId, InvocationGrant, PreparedToolCall, ToolIntent, ToolInvocationId,
-    T2_BROWSER_OBSERVE, T2_COMPUTER_ACT,
+    T2_BROWSER_ACT, T2_BROWSER_OBSERVE, T2_COMPUTER_ACT,
 };
 use serde_json::json;
 
 struct FakeAdapter {
     uncertain: bool,
+    failure_code: Option<String>,
 }
 
 impl NativeAdapterPort for FakeAdapter {
@@ -53,11 +54,17 @@ impl NativeAdapterPort for FakeAdapter {
             if self.uncertain {
                 return Err(NativeProtocolError::ActionUncertain);
             }
+            let failure_code = self.failure_code.clone();
             Ok(NativeActionReceiptV1 {
                 action_id: command.action_id.clone(),
                 prior_snapshot_id: command.expected_snapshot_id.clone(),
                 binding: binding.clone(),
-                terminal_classification: "completed".into(),
+                terminal_classification: if failure_code.is_some() {
+                    "failed".into()
+                } else {
+                    "completed".into()
+                },
+                failure_code,
                 native_evidence_digest: "b".repeat(64),
                 resulting_snapshot_id: Some(NativeSnapshotId::new("snapshot-after")?),
             })
@@ -74,6 +81,13 @@ fn binding() -> NativeAdapterBindingV1 {
 }
 
 fn executor(uncertain: bool) -> NativeCapabilityExecutor<FakeAdapter> {
+    configured_executor(uncertain, None)
+}
+
+fn configured_executor(
+    uncertain: bool,
+    failure_code: Option<&str>,
+) -> NativeCapabilityExecutor<FakeAdapter> {
     NativeCapabilityExecutor::new(
         "native-test-1",
         BuiltinT2BrowserCatalogue::new(
@@ -87,7 +101,10 @@ fn executor(uncertain: bool) -> NativeCapabilityExecutor<FakeAdapter> {
             [ComputerTargetScope::new("desktop-1", "app-1", "window-1").expect("target")],
         )
         .expect("computer catalogue"),
-        FakeAdapter { uncertain },
+        FakeAdapter {
+            uncertain,
+            failure_code: failure_code.map(str::to_owned),
+        },
     )
     .expect("executor")
 }
@@ -180,5 +197,45 @@ async fn uncertain_native_action_never_becomes_a_terminal_failure() {
             })
             .await,
         Err(ExecutorDispatchError::StartedWithoutReceipt)
+    );
+}
+
+#[tokio::test]
+async fn trustworthy_failed_receipt_preserves_the_stable_native_failure_code() {
+    let mut executor = configured_executor(false, Some("browser_origin_denied"));
+    let prepared = BuiltinT2BrowserCatalogue::new(
+        "policy-1",
+        [BrowserPageScope::new("browser-1", "page-1").expect("page")],
+        ["https://example.test:443"],
+    )
+    .expect("catalogue")
+    .prepare(&ToolIntent::new(
+        "call-3",
+        T2_BROWSER_ACT,
+        json!({"session_id":"browser-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"revision-1","action":"click","node_ref":"node-1","allowed_navigation_origins":[]}).to_string(),
+    ))
+    .expect("prepared");
+    let invocation = ToolInvocationId::new("invocation-3").expect("invocation");
+    let grant = grant(&invocation, &prepared);
+    let execution = executor
+        .prepare(&invocation, &prepared, &grant)
+        .expect("preflight");
+    let fact = executor
+        .dispatch(ExecutorDispatch {
+            invocation_id: &invocation,
+            prepared: &prepared,
+            grant: &grant,
+            execution: &execution,
+            receipt_id: "receipt-3",
+        })
+        .await
+        .expect("failed receipt");
+    let ExecutionFact::Failed { code, partial, .. } = fact else {
+        panic!("expected trustworthy failure")
+    };
+    assert_eq!(code, "browser_origin_denied");
+    assert_eq!(
+        partial.expect("receipt")["failure_code"],
+        "browser_origin_denied"
     );
 }

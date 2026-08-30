@@ -150,12 +150,16 @@ impl<A: NativeAdapterPort> ExecutorPort for NativeCapabilityExecutor<A> {
                                 return Err(ExecutorDispatchError::ReceiptInvalid);
                             }
                             let classification = receipt.terminal_classification.clone();
-                            let content = serde_json::to_value(receipt)
+                            let content = serde_json::to_value(&receipt)
                                 .map_err(|_| ExecutorDispatchError::ReceiptInvalid)?;
                             if classification == "completed" {
                                 bounded_completion(&command, content)
                             } else {
-                                failed(&command, "native_action_failed", Some(content))
+                                let code = receipt
+                                    .failure_code
+                                    .as_deref()
+                                    .ok_or(ExecutorDispatchError::ReceiptInvalid)?;
+                                failed(&command, code, Some(content))
                             }
                         }
                         Err(error) => native_failure(&command, error),

@@ -280,3 +280,208 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
     );
     server.await.expect("server");
 }
+
+#[tokio::test]
+async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
+        )
+        .await;
+        assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.enable");
+        let Message::Text(message) = socket.next().await.expect("navigate").expect("frame") else {
+            panic!("text navigation required")
+        };
+        let navigate: Value = serde_json::from_slice(message.as_bytes()).expect("navigation json");
+        assert_eq!(navigate["method"], "Page.navigate");
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.frameNavigated","params":{"frame":{"id":"frame-main","url":"https://example.com:443/final"}},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("frame event");
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.loadEventFired","params":{"timestamp":1},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("load event");
+        socket
+            .send(Message::Text(
+                json!({"id":navigate["id"],"result":{"frameId":"frame-main","loaderId":"loader-2"},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("navigate response");
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"new-root","ignored":false,"role":{"value":"RootWebArea"},"name":{"value":"Final"}}]}),
+        )
+        .await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port =
+        CdpNativeAdapterPort::new(target(), "cdp-session", "revision-1", "run-nav", 64, client)
+            .expect("port");
+    let before = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("before navigation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-nav").expect("action"),
+        target: target(),
+        expected_snapshot_id: before.snapshot_id.clone(),
+        target_revision: before.target_revision.clone(),
+        prepared_input: json!({
+            "destination_url":"https://example.com:443/start",
+            "destination_origin":"https://example.com:443",
+            "wait_until":"load",
+            "timeout_ms":1_000,
+            "max_nodes":16,
+            "max_text_bytes":4_096
+        }),
+    };
+    let binding = port
+        .preflight_action(&command)
+        .expect("navigation preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("navigation receipt");
+    assert_eq!(receipt.terminal_classification, "completed");
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    let after = port
+        .observe(&target(), Some(&before.snapshot_id), before.bounds)
+        .await
+        .expect("after navigation");
+    assert_ne!(after.target_revision, before.target_revision);
+    assert_eq!(after.nodes[0].name.as_deref(), Some("Final"));
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn cross_origin_redirect_returns_a_failed_receipt_and_invalidates_snapshot() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
+        )
+        .await;
+        reply(&mut socket, json!({})).await;
+        let Message::Text(message) = socket.next().await.expect("navigate").expect("frame") else {
+            panic!("text navigation required")
+        };
+        let navigate: Value = serde_json::from_slice(message.as_bytes()).expect("navigation json");
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.frameNavigated","params":{"frame":{"id":"frame-main","url":"https://denied.test:443/final"}},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("frame event");
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.loadEventFired","params":{},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("load event");
+        socket
+            .send(Message::Text(
+                json!({"id":navigate["id"],"result":{"frameId":"frame-main","loaderId":"loader-denied"},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("navigate response");
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-denied",
+        64,
+        client,
+    )
+    .expect("port");
+    let before = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("before navigation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-denied").expect("action"),
+        target: target(),
+        expected_snapshot_id: before.snapshot_id,
+        target_revision: before.target_revision,
+        prepared_input: json!({
+            "destination_url":"https://example.com:443/start",
+            "destination_origin":"https://example.com:443",
+            "wait_until":"load",
+            "timeout_ms":1_000,
+            "max_nodes":16,
+            "max_text_bytes":4_096
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("failed receipt");
+    assert_eq!(receipt.terminal_classification, "failed");
+    assert_eq!(
+        receipt.failure_code.as_deref(),
+        Some("browser_origin_denied")
+    );
+    receipt.validate().expect("valid failed receipt");
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}

@@ -1,6 +1,11 @@
 //! Concrete Runtime-owned T2 port for one explicitly attached CDP page.
 
-use garive_browser_cdp::{CdpClient, CdpTransportError, CDP_ADAPTER_REVISION};
+use std::time::Duration;
+
+use garive_browser_cdp::{
+    CdpClient, CdpNavigationResult, CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
+};
+use garive_tools::canonical_http_origin;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -147,6 +152,90 @@ impl CdpNativeAdapterPort {
             preflight_evidence_digest: digest,
         })
     }
+
+    fn resolve_navigation(
+        &self,
+        command: &NativeActionCommandV1,
+    ) -> Result<ResolvedNavigation, NativeProtocolError> {
+        if command.target != self.target {
+            return Err(NativeProtocolError::TargetNotAdmitted);
+        }
+        if self.current_binding.is_none()
+            || self.last_snapshot_id.as_ref() != Some(&command.expected_snapshot_id)
+            || command.target_revision != self.target_revision
+        {
+            return Err(NativeProtocolError::SnapshotStale);
+        }
+        let text = |field| {
+            command
+                .prepared_input
+                .get(field)
+                .and_then(serde_json::Value::as_str)
+                .ok_or(NativeProtocolError::InvalidBinding)
+        };
+        let destination_url = text("destination_url")?.to_owned();
+        let destination_origin = text("destination_origin")?.to_owned();
+        if canonical_http_origin(&destination_url).as_deref() != Some(&destination_origin)
+            || canonical_http_origin(&destination_origin).as_deref()
+                != Some(destination_origin.as_str())
+        {
+            return Err(NativeProtocolError::BrowserOriginDenied);
+        }
+        let wait_until = match text("wait_until")? {
+            "dom_content_loaded" => CdpWaitUntil::DomContentLoaded,
+            "load" => CdpWaitUntil::Load,
+            "network_idle" => CdpWaitUntil::NetworkIdle,
+            _ => return Err(NativeProtocolError::InvalidBinding),
+        };
+        let number = |field| {
+            command
+                .prepared_input
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .ok_or(NativeProtocolError::InvalidBinding)
+        };
+        let timeout_ms = number("timeout_ms")?;
+        let max_nodes = number("max_nodes")?;
+        let max_text_bytes = number("max_text_bytes")?;
+        if !(1..=120_000).contains(&timeout_ms)
+            || !(1..=10_000).contains(&max_nodes)
+            || !(1..=1_048_576).contains(&max_text_bytes)
+        {
+            return Err(NativeProtocolError::InvalidBinding);
+        }
+        Ok(ResolvedNavigation {
+            destination_url,
+            destination_origin,
+            wait_until,
+            timeout_ms,
+            max_nodes,
+            max_text_bytes,
+        })
+    }
+
+    fn navigation_binding_for(
+        &self,
+        command: &NativeActionCommandV1,
+        navigation: &ResolvedNavigation,
+    ) -> Result<NativeAdapterBindingV1, NativeProtocolError> {
+        Ok(NativeAdapterBindingV1 {
+            adapter_id: ADAPTER_ID.into(),
+            adapter_revision: CDP_ADAPTER_REVISION.into(),
+            preflight_evidence_digest: canonical_digest(&json!({
+                "adapter_revision": CDP_ADAPTER_REVISION,
+                "action_id": command.action_id.as_str(),
+                "target": command.target,
+                "snapshot_id": command.expected_snapshot_id.as_str(),
+                "target_revision": command.target_revision,
+                "destination_url": navigation.destination_url,
+                "destination_origin": navigation.destination_origin,
+                "wait_until": wait_name(navigation.wait_until),
+                "timeout_ms": navigation.timeout_ms,
+                "max_nodes": navigation.max_nodes,
+                "max_text_bytes": navigation.max_text_bytes,
+            }))?,
+        })
+    }
 }
 
 impl NativeAdapterPort for CdpNativeAdapterPort {
@@ -216,6 +305,10 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
         &mut self,
         command: &NativeActionCommandV1,
     ) -> Result<NativeAdapterBindingV1, NativeProtocolError> {
+        if command.prepared_input.get("destination_url").is_some() {
+            let navigation = self.resolve_navigation(command)?;
+            return self.navigation_binding_for(command, &navigation);
+        }
         let resolved = self.resolve_action(command)?;
         self.binding_for(command, &resolved)
     }
@@ -226,6 +319,57 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
         binding: &'a NativeAdapterBindingV1,
     ) -> NativeActionFuture<'a> {
         Box::pin(async move {
+            if command.prepared_input.get("destination_url").is_some() {
+                let navigation = self.resolve_navigation(command)?;
+                if &self.navigation_binding_for(command, &navigation)? != binding {
+                    return Err(NativeProtocolError::InvalidBinding);
+                }
+                self.current_binding = None;
+                let result = tokio::time::timeout(
+                    Duration::from_millis(navigation.timeout_ms),
+                    self.client.navigate(
+                        &self.cdp_session_id,
+                        &navigation.destination_url,
+                        navigation.wait_until,
+                    ),
+                )
+                .await
+                .map_err(|_| NativeProtocolError::ActionUncertain)?
+                .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                self.target_revision = navigation_revision(&self.target_revision, &result);
+                let final_origin = canonical_http_origin(&result.final_url);
+                let failure_code =
+                    if final_origin.as_deref() != Some(navigation.destination_origin.as_str()) {
+                        Some(NativeProtocolError::BrowserOriginDenied.code().to_owned())
+                    } else if result.is_download {
+                        Some(NativeProtocolError::ActionUnsupported.code().to_owned())
+                    } else {
+                        None
+                    };
+                let terminal_classification = if failure_code.is_some() {
+                    "failed"
+                } else {
+                    "completed"
+                };
+                let native_evidence_digest = canonical_digest(&json!({
+                    "action_id": command.action_id.as_str(),
+                    "preflight_evidence_digest": binding.preflight_evidence_digest,
+                    "terminal_classification": terminal_classification,
+                    "failure_code": failure_code,
+                    "final_origin": final_origin,
+                    "target_revision": self.target_revision,
+                }))
+                .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                return Ok(NativeActionReceiptV1 {
+                    action_id: command.action_id.clone(),
+                    prior_snapshot_id: command.expected_snapshot_id.clone(),
+                    binding: binding.clone(),
+                    terminal_classification: terminal_classification.into(),
+                    failure_code,
+                    native_evidence_digest,
+                    resulting_snapshot_id: None,
+                });
+            }
             let resolved = self.resolve_action(command)?;
             if &self.binding_for(command, &resolved)? != binding {
                 return Err(NativeProtocolError::InvalidBinding);
@@ -272,6 +416,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 prior_snapshot_id: command.expected_snapshot_id.clone(),
                 binding: binding.clone(),
                 terminal_classification: "completed".into(),
+                failure_code: None,
                 native_evidence_digest: receipt_evidence_digest,
                 resulting_snapshot_id: None,
             })
@@ -283,6 +428,38 @@ struct ResolvedAction {
     action: String,
     target: CdpElementTarget,
     text: Option<String>,
+}
+
+struct ResolvedNavigation {
+    destination_url: String,
+    destination_origin: String,
+    wait_until: CdpWaitUntil,
+    timeout_ms: u64,
+    max_nodes: u64,
+    max_text_bytes: u64,
+}
+
+fn wait_name(value: CdpWaitUntil) -> &'static str {
+    match value {
+        CdpWaitUntil::DomContentLoaded => "dom_content_loaded",
+        CdpWaitUntil::Load => "load",
+        CdpWaitUntil::NetworkIdle => "network_idle",
+    }
+}
+
+fn navigation_revision(previous: &str, result: &CdpNavigationResult) -> String {
+    format!(
+        "revision-{:x}",
+        Sha256::digest(
+            format!(
+                "{previous}\0{}\0{}\0{}",
+                result.frame_id,
+                result.loader_id.as_deref().unwrap_or_default(),
+                result.final_url
+            )
+            .as_bytes()
+        )
+    )
 }
 
 fn canonical_digest(value: &serde_json::Value) -> Result<String, NativeProtocolError> {

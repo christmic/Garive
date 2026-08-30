@@ -239,6 +239,8 @@ pub struct NativeActionReceiptV1 {
     pub binding: NativeAdapterBindingV1,
     /// Stable terminal classification.
     pub terminal_classification: String,
+    /// Stable failure code when the adapter returned a trustworthy failed receipt.
+    pub failure_code: Option<String>,
     /// Digest of bounded native evidence.
     pub native_evidence_digest: String,
     /// Optional resulting observation identity.
@@ -249,11 +251,15 @@ impl NativeActionReceiptV1 {
     /// Validates adapter evidence and the closed terminal classification.
     pub fn validate(&self) -> Result<(), NativeProtocolError> {
         self.binding.validate()?;
-        if !matches!(
-            self.terminal_classification.as_str(),
-            "completed" | "failed"
-        ) || !sha256_digest(&self.native_evidence_digest)
-        {
+        let terminal_valid = match self.terminal_classification.as_str() {
+            "completed" => self.failure_code.is_none(),
+            "failed" => self
+                .failure_code
+                .as_deref()
+                .is_some_and(stable_failure_code),
+            _ => false,
+        };
+        if !terminal_valid || !sha256_digest(&self.native_evidence_digest) {
             Err(NativeProtocolError::ReceiptInvalid)
         } else {
             Ok(())
@@ -372,4 +378,24 @@ fn optional_len(value: &Option<String>) -> usize {
 
 fn sha256_digest(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn stable_failure_code(value: &str) -> bool {
+    matches!(
+        value,
+        "native_capability_unavailable"
+            | "native_permission_required"
+            | "native_permission_revoked"
+            | "native_target_not_admitted"
+            | "native_snapshot_stale"
+            | "native_node_stale"
+            | "native_action_unsupported"
+            | "native_focus_changed"
+            | "browser_origin_denied"
+            | "browser_frame_opaque"
+            | "browser_attachment_lost"
+            | "native_sensitive_action_required"
+            | "native_result_bound_exceeded"
+            | "native_receipt_invalid"
+    )
 }

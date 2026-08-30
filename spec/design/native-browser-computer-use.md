@@ -115,10 +115,16 @@ ActionReceipt {
   adapter_id, adapter_revision
   prior_snapshot_id
   terminal_classification
+  failure_code?
   native_evidence_digest
   resulting_snapshot_id?
 }
 ```
+
+`completed` receipts carry no `failure_code`; trustworthy `failed` receipts
+carry exactly one frozen native failure code. A post-dispatch failure with
+known native evidence remains a receipt-backed failure. Missing trustworthy
+terminal evidence is `native_action_uncertain` and has no fabricated receipt.
 
 Semantic trees are bounded, provider-neutral JSON with stable field names and
 snapshot-local node references. Text/value fields carry sensitivity labels and

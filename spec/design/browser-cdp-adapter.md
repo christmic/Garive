@@ -100,15 +100,19 @@ client. It performs no target/session discovery. Observe enables Accessibility
 once, applies the requested bounds, maps the AX tree and retains only the
 current private snapshot binding.
 
-Preflight supports `click`, `type_text` and `clear` only. It resolves the exact
-semantic action and hashes canonical command, adapter and backend evidence into
-the frozen binding. Dispatch recomputes that binding, invalidates the old
-snapshot before crossing CDP, executes exactly once and returns a completed
-receipt with no invented resulting snapshot. Any CDP failure after dispatch is
-`native_action_uncertain`; the invalidated binding cannot be reused. A later
-observe, explicitly chained from the prior snapshot, creates the next
-observation. Navigate and the remaining action set stay unsupported until their
-redirect/final-origin and receipt contracts land.
+Preflight supports navigate plus `click`, `type_text` and `clear`. It resolves
+the exact semantic operation and hashes canonical command, adapter and backend
+evidence into the frozen binding. Dispatch recomputes that binding, invalidates
+the old snapshot before crossing CDP, executes exactly once and returns a
+receipt with no invented resulting snapshot. Navigation applies the prepared
+whole-operation timeout, waits for the requested completion event, revalidates
+the committed final origin and rotates the opaque target revision. A
+cross-origin redirect returns a trustworthy failed receipt carrying
+`browser_origin_denied`; an allowed commit returns completed. Any CDP failure
+without trustworthy terminal evidence after dispatch is
+`native_action_uncertain`. A later observe, explicitly chained from the prior
+snapshot, creates the next observation. The remaining action set stays
+unsupported until its bindings land.
 
 ## Acceptance
 
