@@ -108,36 +108,8 @@ private fun patchAccesses(arguments: JsonElement): InvocationAccessSet {
 }
 
 private fun patchTargets(patch: String): Set<String> {
-    val prefix = "*** Begin Patch\n"
-    val suffix = "\n*** End Patch"
-    val normalized = patch.removeSuffix("\n")
-    if (!normalized.startsWith(prefix) || !normalized.endsWith(suffix)) throw ContractFailure(accessError())
-    val targets = sortedSetOf<String>()
-    var current: String? = null
-    var hasHunk = false
-    var hasChange = false
-    normalized.removePrefix(prefix).removeSuffix(suffix).lineSequence().forEach { line ->
-        when {
-            line.startsWith("*** Update File: ") -> {
-                if (current != null && (!hasHunk || !hasChange)) throw ContractFailure(accessError())
-                val path = line.removePrefix("*** Update File: ")
-                if (path.isEmpty() || path == "." || !targets.add(path)) throw ContractFailure(accessError())
-                ResourceAccess.create(AccessNamespace.FILESYSTEM, path, AccessMode.WRITE).required()
-                current = path
-                hasHunk = false
-                hasChange = false
-            }
-            line.startsWith("@@") -> {
-                if (current == null) throw ContractFailure(accessError())
-                hasHunk = true
-            }
-            (line.startsWith('+') || line.startsWith('-')) && current != null && hasHunk -> hasChange = true
-            line.startsWith("*** ") || current == null || !hasHunk ||
-                !(line.startsWith(' ') || line == "\\ No newline at end of file") ->
-                throw ContractFailure(accessError())
-        }
-    }
-    if (targets.isEmpty() || !hasHunk || !hasChange) throw ContractFailure(accessError())
+    val targets = t1PatchTargets(patch) ?: throw ContractFailure(accessError())
+    targets.forEach { ResourceAccess.create(AccessNamespace.FILESYSTEM, it, AccessMode.WRITE).required() }
     return targets
 }
 
