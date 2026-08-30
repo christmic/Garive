@@ -53,7 +53,7 @@ public class LiveHostClient private constructor(
     private val authorization: RemoteAuthorization?,
     private val limits: HostClientLimits,
     private val client: HttpClient,
-) {
+) : MobileHost {
     /** Creates a production client with fixed no-redirect CIO transport policy. */
     @Throws(HostClientException::class)
     public constructor(baseUrl: String, limits: HostClientLimits) :
@@ -84,19 +84,19 @@ public class LiveHostClient private constructor(
 
     /** Loads installed Agent definitions available for new Sessions. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun agentDefinitions(): AgentDefinitionPageV1 =
+    override suspend fun agentDefinitions(): AgentDefinitionPageV1 =
         decodeAgentDefinitionPage(read("/v1/agent-definitions"))
 
     /** Loads one bounded reverse-opened Session page. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun sessions(limit: Int): SessionPageV1 {
+    override suspend fun sessions(limit: Int): SessionPageV1 {
         if (limit <= 0 || limit > limits.maxEvents) fail(HostClientError.INVALID_COMMAND)
         return decodeSessionPage(read("/v1/sessions?limit=$limit"))
     }
 
     /** Loads one exact durable Session summary. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun session(sessionId: String): SessionViewV1 {
+    override suspend fun session(sessionId: String): SessionViewV1 {
         if (sessionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         val value = decodeSessionView(read("/v1/sessions/${sessionId.encodeURLPathPart()}"))
         if (value.session?.session_id != sessionId) fail(HostClientError.INVALID_EVENT)
@@ -105,7 +105,7 @@ public class LiveHostClient private constructor(
 
     /** Loads complete durable Turns changed after the supplied watermark. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun timeline(sessionId: String, afterPosition: Long, limit: Int): TurnTimelinePageV1 {
+    override suspend fun timeline(sessionId: String, afterPosition: Long, limit: Int): TurnTimelinePageV1 {
         if (sessionId.isEmpty() || afterPosition < 0 || limit <= 0 || limit > limits.maxEvents) {
             fail(HostClientError.INVALID_COMMAND)
         }
@@ -121,7 +121,7 @@ public class LiveHostClient private constructor(
 
     /** Creates a Session with a caller-owned stable command identity. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun createSession(commandId: String, definitionId: String): CreateSessionResponseV1 {
+    override suspend fun createSession(commandId: String, definitionId: String): CreateSessionResponseV1 {
         if (definitionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         val value = post("/v1/sessions", commandId, buildJsonObject { put("agent_definition_id", definitionId) })
         return CreateSessionResponseV1(
@@ -133,7 +133,7 @@ public class LiveHostClient private constructor(
 
     /** Starts one Turn with a caller-owned stable command identity. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
+    override suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
         return postTurn(
             "/v1/sessions/${sessionId.encodeURLPathPart()}/turns", commandId, sessionId, null,
@@ -143,7 +143,7 @@ public class LiveHostClient private constructor(
 
     /** Requests cancellation through one observed durable position. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun cancelTurn(
+    override suspend fun cancelTurn(
         commandId: String, sessionId: String, turnId: String, requestedThroughPosition: Long,
     ): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || turnId.isEmpty() || requestedThroughPosition <= 0) {
@@ -159,7 +159,7 @@ public class LiveHostClient private constructor(
 
     /** Continues one exact durable suspension. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun continueTurn(
+    override suspend fun continueTurn(
         commandId: String,
         sessionId: String,
         turnId: String,
@@ -181,7 +181,7 @@ public class LiveHostClient private constructor(
 
     /** Follows committed events until an explicit durable terminal. */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun followUntilTerminal(sessionId: String, afterPosition: Long = 0): HostView {
+    override suspend fun followUntilTerminal(sessionId: String, afterPosition: Long): HostView {
         if (sessionId.isEmpty() || afterPosition < 0) fail(HostClientError.INVALID_COMMAND)
         try {
             return withTimeout(limits.followDeadlineMs) {
