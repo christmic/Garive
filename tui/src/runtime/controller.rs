@@ -31,12 +31,11 @@ fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_offset = state.model.scroll_offset.saturating_sub(3)
+            state.model.scroll_conversation_up(3)
         }
         MouseEventKind::ScrollDown => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_offset =
-                (state.model.scroll_offset + 3).min(state.model.timeline.len().saturating_sub(1))
+            state.model.scroll_conversation_down(3)
         }
         MouseEventKind::Down(MouseButton::Left)
             if state.model.terminal_size.width >= 100
@@ -186,13 +185,20 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             .composer
             .move_line_end(key.modifiers.contains(KeyModifiers::SHIFT)),
         KeyCode::Enter => submit(state),
-        KeyCode::PageUp => state.model.scroll_offset = state.model.scroll_offset.saturating_sub(5),
-        KeyCode::PageDown | KeyCode::End => {
-            state.model.scroll_offset = state.model.timeline.len().saturating_sub(1)
-        }
+        KeyCode::PageUp => state
+            .model
+            .scroll_conversation_up(conversation_page_cells(state)),
+        KeyCode::PageDown => state
+            .model
+            .scroll_conversation_down(conversation_page_cells(state)),
+        KeyCode::End => state.model.follow_latest(),
         KeyCode::Esc if state.model.execution == ExecutionState::Following => cancel(state),
         _ => {}
     }
+}
+
+fn conversation_page_cells(state: &RuntimeState) -> usize {
+    usize::from(state.model.terminal_size.height.saturating_sub(8) / 3).max(1)
 }
 
 fn select_command(state: &mut RuntimeState) {

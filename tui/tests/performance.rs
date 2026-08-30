@@ -21,7 +21,7 @@ fn representative_render_and_editor_latency_stay_interactive() {
         boot: BootState::Ready,
         ..Default::default()
     };
-    for position in 1..=200 {
+    for position in 1..=10_000 {
         model.timeline.push(TimelineItem {
             stable_key: format!("item-{position}"),
             position,
@@ -37,7 +37,6 @@ fn representative_render_and_editor_latency_stay_interactive() {
             ),
         });
     }
-    model.scroll_offset = 180;
     let area = Rect::new(0, 0, 120, 40);
     let mut samples = Vec::new();
     for _ in 0..110 {
@@ -61,7 +60,7 @@ fn representative_render_and_editor_latency_stay_interactive() {
     editor_samples.sort_unstable();
     let editor_p95 = editor_samples[94];
     eprintln!(
-        "TUI_BASELINE render_p50_us={render_p50} render_p95_us={render_p95} editor_p95_us={editor_p95} timeline_items=200 frame=120x40 profile=debug"
+        "TUI_BASELINE render_p50_us={render_p50} render_p95_us={render_p95} editor_p95_us={editor_p95} timeline_items=10000 frame=120x40 profile=debug"
     );
 
     assert!(render_p95 < 50_000, "render p95 was {render_p95} µs");

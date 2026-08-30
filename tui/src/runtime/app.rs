@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{self, Write},
 };
 
@@ -353,7 +353,8 @@ impl RuntimeState {
     }
 
     pub(super) fn load(&mut self, session_id: String) {
-        if self.model.selected_session.as_deref() != Some(&session_id) {
+        let switching_session = self.model.selected_session.as_deref() != Some(&session_id);
+        if switching_session {
             if matches!(
                 self.model.execution,
                 ExecutionState::Following | ExecutionState::Suspended
@@ -382,6 +383,9 @@ impl RuntimeState {
             }
         }
         self.persist_presentation();
+        if switching_session {
+            self.model.reset_viewport();
+        }
         self.model.selected_session = Some(session_id.clone());
         self.preferences.selected_session_id = Some(session_id.clone());
         let draft = self
@@ -1041,6 +1045,24 @@ fn apply_background_event(event: HostEvent, state: &mut RuntimeState) {
 }
 
 fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimelineItem>) {
+    let old_keys = model
+        .timeline
+        .iter()
+        .map(|item| item.stable_key.clone())
+        .collect::<BTreeSet<_>>();
+    let old_max_position = model
+        .timeline
+        .iter()
+        .map(|item| item.position)
+        .max()
+        .unwrap_or(0);
+    let old_anchor = model.viewport.anchor_key.clone();
+    let old_anchor_index = old_anchor.as_deref().and_then(|key| {
+        model
+            .timeline
+            .iter()
+            .position(|item| item.stable_key == key)
+    });
     turns.sort_by_key(|turn| turn.started_position);
     model.timeline.clear();
     model.suspension = None;
@@ -1081,7 +1103,28 @@ fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimelineItem>) {
             model.overlay = Some(Overlay::Suspension);
         }
     }
-    model.scroll_offset = model.timeline.len().saturating_sub(10);
+    if model.viewport.follow_latest {
+        model.follow_latest();
+        return;
+    }
+    let replacement_anchor = old_anchor
+        .filter(|key| model.timeline.iter().any(|item| item.stable_key == *key))
+        .or_else(|| {
+            old_anchor_index.and_then(|index| {
+                model
+                    .timeline
+                    .get(index.min(model.timeline.len().saturating_sub(1)))
+                    .map(|item| item.stable_key.clone())
+            })
+        });
+    model.viewport.anchor_key = replacement_anchor;
+    model.viewport.newer_updates = model.viewport.newer_updates.saturating_add(
+        model
+            .timeline
+            .iter()
+            .filter(|item| item.position > old_max_position && !old_keys.contains(&item.stable_key))
+            .count(),
+    );
 }
 
 fn map_terminal_error(error: TerminalError) -> TuiError {
@@ -1101,5 +1144,44 @@ fn state_error_name(error: StateError) -> &'static str {
         StateError::UnsafePermissions => "unsafe_permissions",
         StateError::InvalidData => "invalid_data",
         StateError::Conflict => "conflict",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_refresh_preserves_manual_anchor_and_counts_new_cells() {
+        let mut model = AppModel::default();
+        install_timeline(&mut model, vec![turn("one", 1), turn("two", 4)]);
+        model.scroll_conversation_up(1);
+        let anchor = model.viewport.anchor_key.clone();
+
+        install_timeline(
+            &mut model,
+            vec![turn("one", 1), turn("two", 4), turn("three", 7)],
+        );
+
+        assert_eq!(model.viewport.anchor_key, anchor);
+        assert!(!model.viewport.follow_latest);
+        assert_eq!(model.viewport.newer_updates, 2);
+        model.follow_latest();
+        assert!(model.viewport.follow_latest);
+        assert_eq!(model.viewport.newer_updates, 0);
+    }
+
+    fn turn(id: &str, position: u64) -> TurnTimelineItem {
+        TurnTimelineItem {
+            turn_id: id.into(),
+            started_position: position,
+            latest_position: position + 1,
+            state: "completed".into(),
+            user_text: format!("question {id}"),
+            completion_text: Some(format!("answer {id}")),
+            suspension: None,
+            content_truncated: false,
+            activities: Vec::new(),
+        }
     }
 }

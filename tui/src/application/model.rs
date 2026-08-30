@@ -97,6 +97,25 @@ pub(crate) struct TimelineItem {
     pub(crate) text: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ViewportState {
+    pub(crate) follow_latest: bool,
+    pub(crate) anchor_key: Option<String>,
+    pub(crate) source_line: usize,
+    pub(crate) newer_updates: usize,
+}
+
+impl Default for ViewportState {
+    fn default() -> Self {
+        Self {
+            follow_latest: true,
+            anchor_key: None,
+            source_line: 0,
+            newer_updates: 0,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct AppModel {
     pub(crate) boot: BootState,
@@ -122,10 +141,55 @@ pub(crate) struct AppModel {
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,
     pub(crate) observed_position: u64,
-    pub(crate) scroll_offset: usize,
+    pub(crate) viewport: ViewportState,
     pub(crate) suspension: Option<SuspensionView>,
     pub(crate) notice: Option<String>,
     pub(crate) timeline: Vec<TimelineItem>,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,
+}
+
+impl AppModel {
+    pub(crate) fn reset_viewport(&mut self) {
+        self.viewport = ViewportState::default();
+    }
+
+    pub(crate) fn scroll_conversation_up(&mut self, cells: usize) {
+        if self.timeline.is_empty() || cells == 0 {
+            return;
+        }
+        let current = self
+            .viewport
+            .anchor_key
+            .as_deref()
+            .and_then(|key| self.timeline.iter().position(|item| item.stable_key == key))
+            .unwrap_or(self.timeline.len() - 1);
+        let target = current.saturating_sub(cells);
+        self.viewport.follow_latest = false;
+        self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
+        self.viewport.source_line = 0;
+    }
+
+    pub(crate) fn scroll_conversation_down(&mut self, cells: usize) {
+        if self.timeline.is_empty() || cells == 0 {
+            return;
+        }
+        let current = self
+            .viewport
+            .anchor_key
+            .as_deref()
+            .and_then(|key| self.timeline.iter().position(|item| item.stable_key == key))
+            .unwrap_or(self.timeline.len() - 1);
+        let target = current.saturating_add(cells);
+        if target >= self.timeline.len() - 1 {
+            self.follow_latest();
+        } else {
+            self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
+            self.viewport.source_line = 0;
+        }
+    }
+
+    pub(crate) fn follow_latest(&mut self) {
+        self.viewport = ViewportState::default();
+    }
 }

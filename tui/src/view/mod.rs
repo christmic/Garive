@@ -5,6 +5,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap},
 };
+use std::collections::VecDeque;
 
 use crate::{
     application::{
@@ -172,51 +173,147 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
 fn render_conversation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     let colors = palette(theme);
     let block = Block::default()
-        .title(Line::styled(" Conversation ", colors.title))
         .borders(Borders::BOTTOM)
         .border_style(colors.border)
-        .padding(Padding::horizontal(2));
+        .padding(Padding::new(2, 2, 1, 0));
     let inner = block.inner(area);
+    let window = (!model.timeline.is_empty())
+        .then(|| conversation_window(model, theme, inner.width, inner.height));
+    let title = if model.viewport.newer_updates > 0 {
+        format!(
+            " Conversation · {} newer updates ",
+            model.viewport.newer_updates
+        )
+    } else if window.as_ref().is_some_and(|value| value.has_earlier) {
+        " Conversation · ↑ earlier ".to_owned()
+    } else {
+        " Conversation ".to_owned()
+    };
+    let block = block.title(Line::styled(title, colors.title));
     block.render(area, buffer);
     let mut lines = Vec::new();
+    let mut scroll = 0;
     if model.timeline.is_empty() {
         lines.push(Line::default());
         lines.push(Line::styled(empty_title(model.boot), colors.empty_title));
         lines.push(Line::styled(empty_detail(model.boot), colors.muted));
-    }
-    for item in model.timeline.iter().skip(model.scroll_offset) {
-        match item.role {
-            TimelineRole::User => {
-                lines.push(Line::from(vec![
-                    Span::styled("╭─ YOU ", colors.user),
-                    Span::styled(format!("#{}", item.position), colors.muted),
-                ]));
-                push_content(&mut lines, &item.text, "│  ", colors.normal);
-                lines.push(Line::styled("╰─", colors.user));
-            }
-            TimelineRole::Agent => {
-                lines.push(Line::from(vec![
-                    Span::styled("◆  GARIVE ", colors.agent),
-                    Span::styled(format!("#{}", item.position), colors.muted),
-                ]));
-                lines.extend(render_markdown(
-                    &item.text,
-                    "   ",
-                    colors.normal,
-                    colors.agent,
-                    colors.muted,
-                ));
-            }
-            TimelineRole::Status => lines.push(Line::from(vec![
-                Span::styled("  ◌  ", colors.activity),
-                Span::styled(safe_text(&item.text), colors.muted),
-            ])),
-        }
-        lines.push(Line::default());
+    } else if let Some(window) = window {
+        lines = window.lines;
+        scroll = window.scroll;
     }
     Paragraph::new(Text::from(lines))
         .wrap(Wrap { trim: false })
+        .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .render(inner, buffer);
+}
+
+struct ConversationWindow {
+    lines: Vec<Line<'static>>,
+    scroll: usize,
+    has_earlier: bool,
+    #[cfg_attr(not(test), allow(dead_code))]
+    laid_out: usize,
+}
+
+fn conversation_window(
+    model: &AppModel,
+    theme: Theme,
+    width: u16,
+    height: u16,
+) -> ConversationWindow {
+    let target_height = usize::from(height).saturating_add(4);
+    let mut cells = VecDeque::new();
+    let mut laid_out = 0;
+    let mut measured_height: usize = 0;
+    if model.viewport.follow_latest {
+        for item in model.timeline.iter().rev() {
+            let cell = render_timeline_item(item, theme);
+            measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
+            cells.push_front(cell);
+            laid_out += 1;
+            if measured_height >= target_height {
+                break;
+            }
+        }
+    } else {
+        let start = model
+            .viewport
+            .anchor_key
+            .as_deref()
+            .and_then(|key| {
+                model
+                    .timeline
+                    .iter()
+                    .position(|item| item.stable_key == key)
+            })
+            .unwrap_or(0);
+        for item in model.timeline.iter().skip(start) {
+            let cell = render_timeline_item(item, theme);
+            measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
+            cells.push_back(cell);
+            laid_out += 1;
+            if measured_height >= target_height.saturating_add(model.viewport.source_line) {
+                break;
+            }
+        }
+    }
+    let lines = cells.into_iter().flatten().collect::<Vec<_>>();
+    let scroll = if model.viewport.follow_latest {
+        wrapped_height(&lines, width).saturating_sub(usize::from(height))
+    } else {
+        model.viewport.source_line
+    };
+    ConversationWindow {
+        lines,
+        scroll,
+        has_earlier: laid_out < model.timeline.len() || scroll > 0,
+        laid_out,
+    }
+}
+
+fn render_timeline_item(
+    item: &crate::application::TimelineItem,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    let colors = palette(theme);
+    let mut lines = Vec::new();
+    match item.role {
+        TimelineRole::User => {
+            lines.push(Line::from(vec![
+                Span::styled("╭─ YOU ", colors.user),
+                Span::styled(format!("#{}", item.position), colors.muted),
+            ]));
+            push_content(&mut lines, &item.text, "│  ", colors.normal);
+            lines.push(Line::styled("╰─", colors.user));
+        }
+        TimelineRole::Agent => {
+            lines.push(Line::from(vec![
+                Span::styled("◆  GARIVE ", colors.agent),
+                Span::styled(format!("#{}", item.position), colors.muted),
+            ]));
+            lines.extend(render_markdown(
+                &item.text,
+                "   ",
+                colors.normal,
+                colors.agent,
+                colors.muted,
+            ));
+        }
+        TimelineRole::Status => lines.push(Line::from(vec![
+            Span::styled("  ◌  ", colors.activity),
+            Span::styled(safe_text(&item.text), colors.muted),
+        ])),
+    }
+    lines.push(Line::default());
+    lines
+}
+
+fn wrapped_height(lines: &[Line<'static>], width: u16) -> usize {
+    let width = usize::from(width.max(1));
+    lines
+        .iter()
+        .map(|line| line.width().max(1).div_ceil(width))
+        .sum()
 }
 
 fn push_content(lines: &mut Vec<Line<'static>>, text: &str, prefix: &str, style: Style) {
@@ -574,3 +671,26 @@ fn palette(theme: Theme) -> Palette {
     }
 }
 mod markdown;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::{TimelineItem, TimelineRole};
+
+    #[test]
+    fn latest_window_layout_is_independent_of_history_length() {
+        let mut model = AppModel::default();
+        for position in 1..=10_000 {
+            model.timeline.push(TimelineItem {
+                stable_key: format!("item-{position}"),
+                position,
+                role: TimelineRole::Agent,
+                text: "A short bounded response.".into(),
+            });
+        }
+
+        let window = conversation_window(&model, Theme::Dark, 90, 30);
+
+        assert!(window.laid_out < 30);
+    }
+}

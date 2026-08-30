@@ -4,10 +4,10 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
   GARIVE                      ● running
 
- Conversation
-  ╭─ YOU #2
-  │  Summarize the release plan.
-  ╰─
+ Conversation · ↑ earlier
+     • Verify the Runtime
+     • Ship with evidence
+     cargo test passes.
 
 ────────────────────────────────────────
 ╭ Message ─────────────────────────────╮
