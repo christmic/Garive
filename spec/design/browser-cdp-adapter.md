@@ -39,6 +39,12 @@ before JSON parsing; mixed result/error responses, empty session IDs and
 unmatched correlations fail closed. Unknown event methods may be retained only
 inside the bounded event queue and cannot grant an action.
 
+The typed observation client performs `Browser.getVersion`, flat
+`Target.attachToTarget`, `Accessibility.enable`, then bounded
+`Accessibility.getFullAXTree`. Browser protocol/build evidence and raw AX
+values remain adapter types. It accepts explicit target/session/frame inputs;
+it does not enumerate or select ambient pages.
+
 ## Semantic observation
 
 The adapter enables Accessibility and requests `getFullAXTree` with an explicit
