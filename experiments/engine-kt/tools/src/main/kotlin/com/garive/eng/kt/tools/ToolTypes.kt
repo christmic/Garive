@@ -31,6 +31,8 @@ public enum class PreparationErrorCode(public val wireName: String) {
     NON_CANONICAL_VALUE("non_canonical_value"),
     /** C5b access declaration, key, resolver result, or policy is invalid. */
     EFFECT_ACCESS_INVALID("effect_access_invalid"),
+    /** F0 portable sandbox requirement is malformed or incomplete. */
+    SANDBOX_REQUIREMENT_INVALID("sandbox_requirement_invalid"),
 }
 
 /** Deterministic JSON Schema assertion failure. */
