@@ -215,6 +215,9 @@ current resolved bindings rather than a static list.
 Typing a printable character outside an overlay explicitly transfers focus to
 the composer before inserting it. Editing and deletion keys never mutate a
 draft while the Session rail or conversation owns focus.
+The Session rail derives painting, keyboard visibility, and mouse hit-testing
+from one visible-window calculation. A pointer event outside an actually
+rendered Session row cannot activate a hidden Session.
 
 ## Slash commands
 

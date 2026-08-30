@@ -4,6 +4,7 @@ use crossterm::event::{
 use std::time::Duration;
 
 use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize};
+use crate::view::navigation_hit_test;
 
 use super::app::RuntimeState;
 
@@ -49,18 +50,11 @@ fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             state.model.scroll_conversation_down(3)
         }
-        MouseEventKind::Down(MouseButton::Left)
-            if state.model.terminal_size.width >= 100
-                && mouse.column
-                    < if state.model.terminal_size.width >= 160 {
-                        34
-                    } else {
-                        28
-                    }
-                && mouse.row >= 3 =>
-        {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let Some(index) = navigation_hit_test(&state.model, mouse.column, mouse.row) else {
+                return;
+            };
             state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
-            let index = ((mouse.row - 3) / 3) as usize;
             if let Some(session) = state.model.sessions.get(index) {
                 state.model.session_selection = index;
                 state.model.navigation_selection = Some(session.session_id.clone());
