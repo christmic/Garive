@@ -4,7 +4,8 @@ import {
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
   authorizeWorkspaceWrites, getWorkspaceRecoveryStatus, listWorkspaceAuthorizations,
-  getArtifactPreview, listArtifacts, reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
+  commitArtifactExport, getArtifactPreview, listArtifacts, prepareArtifactExport,
+  reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
   runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
@@ -82,6 +83,35 @@ describe("desktop Host IPC", () => {
       { command: "list_artifacts", args: { sessionId: "session-1", afterPosition: 7, limit: 12 } },
       { command: "get_artifact_preview", args: { sessionId: "session-1",
         artifactId: "artifact-1", revision: 2, committedPosition: 17 } },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("/Users/");
+  });
+
+  it("exports through one path-free native destination capability", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const artifact = { api_version: "v1" as const, artifact_id: "artifact-1", revision: 2,
+      session_id: "session-1", turn_id: "turn-1", display_name: "brief.md", kind: "text",
+      mime_type: "text/markdown", byte_size: 8, content_digest: "b".repeat(64),
+      committed_position: 17, verification: "not_run", preview: "text",
+      workspace_id: "workspace-1", revealable: true, exportable: true };
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push({ command, args });
+      return (command === "prepare_artifact_export"
+        ? { schema_version: 1, export_target_id: "target-1", display_name: "copy.md",
+          state: "ready", expires_at: "2026-08-30T16:00:00Z" }
+        : { schema_version: 1, artifact_id: "artifact-1", revision: 2, display_name: "copy.md",
+          byte_size: 8, content_digest: "b".repeat(64), state: "exported" }) as T;
+    };
+    const target = await prepareArtifactExport("session-1", artifact, invoke);
+    const receipt = await commitArtifactExport("session-1", artifact, target!.export_target_id, invoke);
+    expect(receipt.state).toBe("exported");
+    const coordinates = { sessionId: "session-1", artifactId: "artifact-1", revision: 2,
+      committedPosition: 17 };
+    expect(calls).toEqual([
+      { command: "prepare_artifact_export", args: { request: coordinates } },
+      { command: "commit_artifact_export", args: { request: {
+        ...coordinates, exportTargetId: "target-1",
+      } } },
     ]);
     expect(JSON.stringify(calls)).not.toContain("/Users/");
   });

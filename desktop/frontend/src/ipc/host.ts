@@ -82,6 +82,19 @@ export interface ArtifactPreview {
   readonly kind: "text"; readonly content_utf8: string; readonly truncated: boolean;
 }
 
+/** One path-free, expiring native save-panel destination capability. */
+export interface ArtifactExportTarget {
+  readonly schema_version: 1; readonly export_target_id: string; readonly display_name: string;
+  readonly state: "ready"; readonly expires_at: string;
+}
+
+/** Terminal receipt for an exact digest-verified Artifact export. */
+export interface ArtifactExportReceipt {
+  readonly schema_version: 1; readonly artifact_id: string; readonly revision: number;
+  readonly display_name: string; readonly byte_size: number; readonly content_digest: string;
+  readonly state: "exported";
+}
+
 export interface SetupProfile {
   readonly profile_id: string; readonly display_name_key: string;
   readonly endpoint_mode: "fixed" | "optional_override";
@@ -214,6 +227,37 @@ export async function getArtifactPreview(
   return invoke<ArtifactPreview>("get_artifact_preview", {
     sessionId, artifactId: artifact.artifact_id, revision: artifact.revision,
     committedPosition: artifact.committed_position,
+  });
+}
+
+function artifactCommand(sessionId: string, artifact: HostArtifact) {
+  if (!sessionId || !artifact.artifact_id || artifact.revision < 1
+      || artifact.committed_position < 1) throw new Error("artifact_not_found");
+  return { sessionId, artifactId: artifact.artifact_id, revision: artifact.revision,
+    committedPosition: artifact.committed_position };
+}
+
+/** Opens the native save panel and returns no destination path to React. */
+export async function prepareArtifactExport(
+  sessionId: string,
+  artifact: HostArtifact,
+  invoke: Invoke = tauriInvoke,
+): Promise<ArtifactExportTarget | null> {
+  return invoke<ArtifactExportTarget | null>("prepare_artifact_export", {
+    request: artifactCommand(sessionId, artifact),
+  });
+}
+
+/** Consumes one exact native destination capability to create a new local copy. */
+export async function commitArtifactExport(
+  sessionId: string,
+  artifact: HostArtifact,
+  exportTargetId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<ArtifactExportReceipt> {
+  if (!exportTargetId) throw new Error("artifact_export_invalid");
+  return invoke<ArtifactExportReceipt>("commit_artifact_export", {
+    request: { ...artifactCommand(sessionId, artifact), exportTargetId },
   });
 }
 
