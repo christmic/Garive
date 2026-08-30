@@ -13,10 +13,12 @@ use garive_llm::{
     ModelStopReason, ModelTargetId, ModelUsage, TextMode, TokenCount, ToolDescriptor, UsageSource,
 };
 use garive_runtime::{
-    plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
+    derive_runtime_recovery, plan_core_terminal, plan_f0_safety_decision,
+    plan_f0_sandbox_admission, plan_model_prepared, plan_model_started, plan_model_terminal,
     reconstruct_suspended_turn, ActivityProjectionLimits, AuthorityDecision, AuthorityFuture,
     AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    ExecutorDispatch, ExecutorFuture, ExecutorPort, F0GovernanceContext, GovernedEffectConfig,
+    EffectRecoveryPosition, ExecutorDispatch, ExecutorFuture, ExecutorPort,
+    F0EffectAdmissionContext, F0GovernanceContext, F0SafetyDecisionContext, GovernedEffectConfig,
     HostClock, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
     InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits,
     ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
@@ -26,10 +28,10 @@ use garive_runtime::{
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
-    ExecutionFact, ExecutionRequirements, InteractionKind, InvocationAccessSet, PreparationError,
-    ReceiptId, ReplayClass, ResourceAccess, SandboxControl, SandboxRequirementsV1,
-    TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog, ToolDefinition,
-    ToolIntent,
+    ExecutionFact, ExecutionRequirements, GrantId, InteractionKind, InvocationAccessSet,
+    InvocationGrant, PreparationError, ReceiptId, ReplayClass, ResourceAccess, SandboxControl,
+    SandboxRequirementsV1, TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver,
+    ToolCatalog, ToolDefinition, ToolIntent,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -505,6 +507,107 @@ fn prepared_v3_commits_exact_f0_chain_before_dispatch() {
     let facts = reopened.load_turn(&setup.turn).unwrap().facts;
     assert_eq!(facts[facts.len() - 9].schema_version, 3);
     assert_eq!(facts[facts.len() - 7].schema_version, 2);
+}
+
+#[test]
+fn restart_classifies_every_prestarted_f0_cut() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("ledger.sqlite3"));
+    let prepared = v3_catalog()
+        .prepare_v3(
+            &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+            &Resolver,
+        )
+        .unwrap();
+    let invocation = garive_tools::ToolInvocationId::new("f0-recovery").unwrap();
+    let request = garive_runtime::SafetyRequestV1::new(
+        "safety-request",
+        invocation.clone(),
+        &prepared,
+        "actor",
+        None,
+        None,
+        "policy-1",
+    )
+    .unwrap();
+    let decision = SafetyDecisionV1::new(
+        "safety-decision",
+        SafetyDisposition::Allow,
+        invocation.clone(),
+        prepared.input_digest(),
+        Some("a".repeat(64)),
+        "policy-1",
+        None,
+    )
+    .unwrap();
+    let grant = InvocationGrant::new(
+        GrantId::new("grant").unwrap(),
+        invocation,
+        prepared.input_digest(),
+        prepared.tool_name(),
+        prepared.tool_revision(),
+        prepared.requirements().clone(),
+        "a".repeat(64),
+        "policy-1",
+    )
+    .unwrap();
+    let mut facts = plan_f0_safety_decision(
+        &F0SafetyDecisionContext {
+            turn_id: setup.turn.clone(),
+            execution_id: setup.execution.clone(),
+            recorded_at: timestamp().into(),
+        },
+        &request,
+        &prepared,
+        &decision,
+    )
+    .unwrap();
+    facts.extend(
+        plan_f0_sandbox_admission(
+            &F0EffectAdmissionContext {
+                turn_id: setup.turn.clone(),
+                execution_id: setup.execution.clone(),
+                preflight_id: "preflight".into(),
+                effective_limits_digest: "e".repeat(64),
+                recorded_at: timestamp().into(),
+            },
+            &request,
+            &prepared,
+            &grant,
+            &decision,
+            &SandboxBindingV1::new(
+                "binding",
+                "workspace",
+                "local.read",
+                "1",
+                "policy-1",
+                access_policy(),
+                sandbox_requirements(),
+            )
+            .unwrap(),
+            "dispatch-1",
+        )
+        .unwrap()
+        .facts,
+    );
+    let expected = [
+        EffectRecoveryPosition::F0SafetyPending,
+        EffectRecoveryPosition::F0Decision,
+        EffectRecoveryPosition::F0Authorized,
+        EffectRecoveryPosition::F0SandboxBound,
+        EffectRecoveryPosition::F0Preflighted,
+    ];
+    let mut version = setup.version;
+    for (fact, expected) in facts.into_iter().zip(expected) {
+        version = setup
+            .ledger
+            .commit(setup.session.clone(), version, vec![fact])
+            .unwrap()
+            .session_version;
+        let recovered =
+            derive_runtime_recovery(&setup.ledger.load_turn(&setup.turn).unwrap(), 3).unwrap();
+        assert_eq!(recovered.effect, expected);
+    }
 }
 
 #[test]

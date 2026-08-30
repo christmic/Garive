@@ -59,6 +59,11 @@ pub fn plan_recovery_action_facts(
         RuntimeRecoveryAction::FailRecoveryBound => recovery_bound_terminal(snapshot, recorded_at),
         RuntimeRecoveryAction::AwaitContinuation
         | RuntimeRecoveryAction::ReturnCommittedTerminal => Ok(vec![]),
+        RuntimeRecoveryAction::ReevaluateEffectSafety
+        | RuntimeRecoveryAction::ResumeEffectAdmission
+        | RuntimeRecoveryAction::RevalidateAndDispatchEffect => {
+            Err(RuntimeCommandError::InvalidCommand)
+        }
         RuntimeRecoveryAction::AbandonAndRestart => Err(RuntimeCommandError::InvalidCommand),
         RuntimeRecoveryAction::FailCorruptLedger => Err(RuntimeCommandError::CorruptLedger),
     }

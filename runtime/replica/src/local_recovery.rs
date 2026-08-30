@@ -18,6 +18,8 @@ pub enum LocalRecoveryError {
     DurabilityUnavailable,
     /// Durable positions cannot form an accepted recovery action.
     CorruptRecoveryState,
+    /// Prepared-v3 recovery requires configured Safety and Sandbox brokers.
+    F0GovernanceRequired,
 }
 impl LocalRecoveryError {
     /// Returns the stable operational code.
@@ -26,6 +28,7 @@ impl LocalRecoveryError {
             Self::InvalidConfiguration => "invalid_composition",
             Self::DurabilityUnavailable => "durability_unavailable",
             Self::CorruptRecoveryState => "reconstruction_failed",
+            Self::F0GovernanceRequired => "f0_governance_required",
         }
     }
 }
@@ -88,6 +91,11 @@ pub fn recover_local_dispatches(
                     }
                     RuntimeRecoveryAction::AwaitContinuation
                     | RuntimeRecoveryAction::ReturnCommittedTerminal => break,
+                    RuntimeRecoveryAction::ReevaluateEffectSafety
+                    | RuntimeRecoveryAction::ResumeEffectAdmission
+                    | RuntimeRecoveryAction::RevalidateAndDispatchEffect => {
+                        return Err(LocalRecoveryError::F0GovernanceRequired)
+                    }
                     RuntimeRecoveryAction::FailCorruptLedger => {
                         return Err(LocalRecoveryError::CorruptRecoveryState)
                     }

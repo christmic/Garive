@@ -31,6 +31,16 @@ pub enum EffectRecoveryPosition {
     None,
     /// Effect is durable but dispatch was not crossed.
     Prepared,
+    /// Prepared-v3 is durable but no Safety decision exists.
+    F0SafetyPending,
+    /// A Safety decision is durable but admission is not yet preflighted.
+    F0Decision,
+    /// Prepared-v3 grant is durable but no concrete Sandbox binding exists.
+    F0Authorized,
+    /// Concrete Sandbox binding exists but preflight is not durable.
+    F0SandboxBound,
+    /// Exact Sandbox preflight is durable but Started is absent.
+    F0Preflighted,
     /// Executor dispatch was crossed without receipt.
     Started,
     /// Trustworthy receipt exists but explicit result is missing.
@@ -65,6 +75,12 @@ pub struct RuntimeRecoverySnapshot {
 pub enum RuntimeRecoveryAction {
     /// Abandon the lost invocation and start a fresh Execution.
     AbandonAndRestart,
+    /// Re-evaluate current Safety policy for the same Prepared-v3 invocation.
+    ReevaluateEffectSafety,
+    /// Resume grant/binding admission from an already durable F0 decision.
+    ResumeEffectAdmission,
+    /// Revalidate revisions and dispatch the same preflighted invocation.
+    RevalidateAndDispatchEffect,
     /// Append `model.uncertain`; never fabricate a model terminal.
     ClassifyModelUncertain,
     /// Append `effect.uncertain`; never blindly replay the effect.
@@ -209,7 +225,12 @@ fn effect_position(
         .filter(|fact| fact.execution_id.as_ref() == Some(execution))
     {
         if let Some(tool) = &fact.tool_invocation_id {
-            if fact.kind.as_str().starts_with("effect.") {
+            if fact.kind.as_str().starts_with("effect.")
+                || matches!(
+                    fact.kind.as_str(),
+                    "safety.decided" | "sandbox.bound" | "sandbox.preflighted"
+                )
+            {
                 tools.insert(tool.as_str().to_owned(), fact);
             }
         }
@@ -233,7 +254,17 @@ fn effect_position(
     }
     positions(
         tools.values().map(|fact| match fact.kind.as_str() {
-            "effect.prepared" | "effect.authorized" => Ok(EffectRecoveryPosition::Prepared),
+            "effect.prepared" if fact.schema_version == 3 => {
+                Ok(EffectRecoveryPosition::F0SafetyPending)
+            }
+            "effect.prepared" => Ok(EffectRecoveryPosition::Prepared),
+            "safety.decided" => Ok(EffectRecoveryPosition::F0Decision),
+            "effect.authorized" if is_f0_tool(turn, fact) => {
+                Ok(EffectRecoveryPosition::F0Authorized)
+            }
+            "effect.authorized" => Ok(EffectRecoveryPosition::Prepared),
+            "sandbox.bound" => Ok(EffectRecoveryPosition::F0SandboxBound),
+            "sandbox.preflighted" => Ok(EffectRecoveryPosition::F0Preflighted),
             "effect.started" => Ok(EffectRecoveryPosition::Started),
             "effect.receipt" => Ok(EffectRecoveryPosition::Receipt),
             "effect.uncertain" => Ok(EffectRecoveryPosition::Uncertain),
@@ -256,6 +287,16 @@ fn effect_position(
         EffectRecoveryPosition::None,
         EffectRecoveryPosition::Terminal,
     )
+}
+
+fn is_f0_tool(turn: &TurnSnapshot, fact: &DurableFact) -> bool {
+    fact.tool_invocation_id.as_ref().is_some_and(|tool| {
+        turn.facts.iter().any(|candidate| {
+            candidate.tool_invocation_id.as_ref() == Some(tool)
+                && candidate.kind.as_str() == "effect.prepared"
+                && candidate.schema_version == 3
+        })
+    })
 }
 
 fn positions<T: Copy + Eq>(
@@ -312,6 +353,13 @@ pub fn select_runtime_recovery(snapshot: RuntimeRecoverySnapshot) -> RuntimeReco
         (Execution::Active, Model::Started, _) => Action::ClassifyModelUncertain,
         (Execution::Active, _, Effect::Started) => Action::ClassifyEffectUncertain,
         (Execution::Active, _, Effect::Receipt) => Action::RecoverReceiptTerminal,
+        (Execution::Active, _, Effect::F0SafetyPending) => Action::ReevaluateEffectSafety,
+        (Execution::Active, _, Effect::F0Decision | Effect::F0Authorized) => {
+            Action::ResumeEffectAdmission
+        }
+        (Execution::Active, _, Effect::F0SandboxBound | Effect::F0Preflighted) => {
+            Action::RevalidateAndDispatchEffect
+        }
         (
             Execution::Active,
             Model::None | Model::Prepared | Model::Terminal,

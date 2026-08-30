@@ -556,6 +556,44 @@ fn recovery_reducer_consumes_every_frozen_restart_case() {
 }
 
 #[test]
+fn f0_recovery_positions_never_blindly_replay_or_abandon() {
+    let cases = [
+        (
+            EffectRecoveryPosition::F0SafetyPending,
+            RuntimeRecoveryAction::ReevaluateEffectSafety,
+        ),
+        (
+            EffectRecoveryPosition::F0Decision,
+            RuntimeRecoveryAction::ResumeEffectAdmission,
+        ),
+        (
+            EffectRecoveryPosition::F0Authorized,
+            RuntimeRecoveryAction::ResumeEffectAdmission,
+        ),
+        (
+            EffectRecoveryPosition::F0SandboxBound,
+            RuntimeRecoveryAction::RevalidateAndDispatchEffect,
+        ),
+        (
+            EffectRecoveryPosition::F0Preflighted,
+            RuntimeRecoveryAction::RevalidateAndDispatchEffect,
+        ),
+    ];
+    for (effect, expected) in cases {
+        assert_eq!(
+            select_runtime_recovery(RuntimeRecoverySnapshot {
+                execution: ExecutionRecoveryPosition::Active,
+                model: ModelRecoveryPosition::Terminal,
+                effect,
+                recovery_ordinal: 0,
+                max_recoveries: 3,
+            }),
+            expected
+        );
+    }
+}
+
+#[test]
 fn restart_atomically_abandons_the_lost_execution_and_starts_one_replacement() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("recovery.sqlite3");
