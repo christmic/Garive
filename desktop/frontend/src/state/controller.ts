@@ -4,6 +4,7 @@ export type ShellState = "booting" | "not_configured" | "loading_navigation" | "
 export type ExecutionState = "idle" | "submitting" | "following" | "cancelling" |
   "disconnected" | "reconnecting" | "suspended" | "continuing";
 export type PendingStatus = "pending" | "unknown";
+export type ContinuationValueKind = "string" | "json_boolean";
 
 export interface AppError { readonly kind: AppErrorKind; readonly code: string }
 export interface Draft { readonly sessionId: string; readonly text: string }
@@ -46,7 +47,7 @@ export interface AppEffect {
   readonly sessionId?: string; readonly commandId?: string; readonly requestDigest?: string;
   readonly afterPosition?: number; readonly definitionId?: string; readonly text?: string;
   readonly turnId?: string; readonly suspensionId?: string; readonly sessionVersion?: number;
-  readonly responseSchemaDigest?: string;
+  readonly responseSchemaDigest?: string; readonly continuationValueKind?: ContinuationValueKind;
 }
 export interface AppViewState {
   readonly configuration: "configured" | "not_configured";
@@ -165,13 +166,17 @@ export function reduceApp(
       if (!suspension?.suspensionId || !suspension.sessionVersion || !suspension.responseSchemaDigest || !intent.input) {
         return notice(state, "validation", "suspension_not_actionable");
       }
+      const continuationValueKind = suspension.kind === "approval_required" ? "json_boolean" : "string";
+      if (continuationValueKind === "json_boolean" && intent.input !== "true" && intent.input !== "false") {
+        return notice(state, "validation", "invalid_suspension_response");
+      }
       return beginCommand({ ...state, execution: "continuing" }, {
         kind: "continue_turn", commandId: intent.commandId, requestDigest: intent.requestDigest,
         generation: state.generation, sessionId: intent.sessionId, turnId: intent.turnId, status: "pending",
       }, { kind: "continue_turn", sessionId: intent.sessionId, turnId: intent.turnId,
         commandId: intent.commandId, requestDigest: intent.requestDigest, text: intent.input,
         suspensionId: suspension.suspensionId, sessionVersion: suspension.sessionVersion,
-        responseSchemaDigest: suspension.responseSchemaDigest });
+        responseSchemaDigest: suspension.responseSchemaDigest, continuationValueKind });
     }
     case "reconnect":
       if (state.execution !== "disconnected" || state.selectedSessionId !== intent.sessionId) return unchanged(state);

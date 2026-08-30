@@ -8,8 +8,8 @@ import {
   detachWorkspaceFromSession,
   getArtifactPreview, getDesktopCapabilities, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
   listWorkspaceAuthorizations, reauthorizeWorkspace,
-  resolveTurnApproval, revokeWorkspace, runAgentTurnWithWorkspaceContext,
-  setDesktopMenuLocale, commitArtifactExport,
+  revokeWorkspace, runAgentTurnWithWorkspaceContext, setDesktopMenuLocale,
+  commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostTimelinePage,
   type WorkspaceAuthorization,
@@ -379,10 +379,13 @@ export function App() {
         } });
         return;
       }
-      const result = await resolveTurnApproval(
-        state.sessionId, message.id, message.suspension, approved,
-      );
-      product.dispatch({ type: "select_session", sessionId: result.session_id });
+      const input = approved ? "true" : "false";
+      const commandId = commandIdentity("continue");
+      product.dispatch({ type: "continue_suspension", sessionId: state.sessionId,
+        turnId: message.id, input, commandId,
+        requestDigest: await semanticDigest({ kind: "continue_turn", sessionId: state.sessionId,
+          turnId: message.id, suspensionId: message.suspension.suspension_id,
+          sessionVersion: String(message.suspension.session_version), input }) });
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
     }

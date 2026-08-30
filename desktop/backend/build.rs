@@ -42,6 +42,7 @@ fn main() {
             "start_product_turn",
             "cancel_product_turn",
             "continue_product_turn",
+            "continue_product_approval",
             "get_session_events",
         ]),
     ))

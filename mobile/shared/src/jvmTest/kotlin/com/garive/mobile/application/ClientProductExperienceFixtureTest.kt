@@ -27,6 +27,20 @@ public class ClientProductExperienceFixtureTest {
     }
 
     @Test
+    public fun admitsApprovalResponsesOnlyAsTypedJsonBooleans(): Unit {
+        val state = AppViewState(AppConfiguration.CONFIGURED, sessions = listOf(SessionItem("session-a")), timeline = listOf(
+            TimelineItem("turn-a", "suspended", 3, suspension = SuspensionItem(
+                "suspension-a", 4, "approval_required", responseSchemaDigest = "a".repeat(64),
+            )),
+        ))
+        fun intent(input: String): AppIntent = AppIntent.ContinueSuspension(
+            "session-a", "turn-a", input, "command-a", "b".repeat(64),
+        )
+        assertEquals("invalid_suspension_response", reduceApp(state, intent("yes")).state.notice?.code)
+        assertEquals(ContinuationValueKind.JSON_BOOLEAN, reduceApp(state, intent("true")).effects.single().continuationValueKind)
+    }
+
+    @Test
     public fun strictlyResetsEveryInvalidPreferenceDocument(): Unit = runBlocking {
         fixture.array("preference_cases").forEach { raw ->
             val test = raw.jsonObject
@@ -105,6 +119,7 @@ public class ClientProductExperienceFixtureTest {
             assertEquals(binding.text("suspension_id"), effect.suspensionId)
             assertEquals(binding.long("session_version"), effect.sessionVersion)
             assertEquals(binding.text("response_schema_digest"), effect.responseSchemaDigest)
+            assertEquals(binding.text("continuation_value_kind"), effect.continuationValueKind?.name?.lowercase())
         }
         test.optionalLong("expected_cancel_after_position")?.let { expected ->
             assertEquals(expected, emitted.first { it.kind == EffectKind.CANCEL_TURN }.afterPosition)

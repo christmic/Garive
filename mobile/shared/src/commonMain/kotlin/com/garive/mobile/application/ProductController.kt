@@ -154,6 +154,10 @@ private fun continueSuspension(state: AppViewState, intent: AppIntent.ContinueSu
     if (suspension?.suspensionId == null || suspension.sessionVersion <= 0 || suspension.responseSchemaDigest == null || intent.input.isEmpty()) {
         return notice(state, AppErrorKind.VALIDATION, "suspension_not_actionable")
     }
+    val valueKind = if (suspension.kind == "approval_required") ContinuationValueKind.JSON_BOOLEAN else ContinuationValueKind.STRING
+    if (valueKind == ContinuationValueKind.JSON_BOOLEAN && intent.input !in setOf("true", "false")) {
+        return notice(state, AppErrorKind.VALIDATION, "invalid_suspension_response")
+    }
     return beginCommand(
         state.copy(execution = ExecutionState.CONTINUING),
         PendingCommand(CommandKind.CONTINUE_TURN, intent.commandId, intent.requestDigest, state.generation,
@@ -161,7 +165,7 @@ private fun continueSuspension(state: AppViewState, intent: AppIntent.ContinueSu
         EffectDraft(EffectKind.CONTINUE_TURN, sessionId = intent.sessionId, turnId = intent.turnId,
             commandId = intent.commandId, requestDigest = intent.requestDigest, text = intent.input,
             suspensionId = suspension.suspensionId, sessionVersion = suspension.sessionVersion,
-            responseSchemaDigest = suspension.responseSchemaDigest),
+            responseSchemaDigest = suspension.responseSchemaDigest, continuationValueKind = valueKind),
     )
 }
 
@@ -311,6 +315,7 @@ private data class EffectDraft(
     val requestDigest: String? = null, val afterPosition: Long? = null, val definitionId: String? = null,
     val text: String? = null, val turnId: String? = null, val suspensionId: String? = null,
     val sessionVersion: Long? = null, val responseSchemaDigest: String? = null,
+    val continuationValueKind: ContinuationValueKind? = null,
 )
 
 private fun issueMany(state: AppViewState, drafts: List<EffectDraft>): Reduction {
@@ -318,7 +323,7 @@ private fun issueMany(state: AppViewState, drafts: List<EffectDraft>): Reduction
     val effects = drafts.map { draft ->
         AppEffect("effect-${next++}", draft.kind, state.generation, draft.sessionId, draft.commandId,
             draft.requestDigest, draft.afterPosition, draft.definitionId, draft.text, draft.turnId,
-            draft.suspensionId, draft.sessionVersion, draft.responseSchemaDigest)
+            draft.suspensionId, draft.sessionVersion, draft.responseSchemaDigest, draft.continuationValueKind)
     }
     return Reduction(state.copy(nextEffect = next, outstanding = state.outstanding + effects), effects)
 }

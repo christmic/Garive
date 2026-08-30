@@ -596,18 +596,39 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
     let approval = timeline.items[0].suspension.as_ref().unwrap();
     assert_eq!(approval.kind, "approval_required");
 
-    let completed = state
-        .continue_approval_isolated(
+    let continued = state
+        .continue_approval_detached(
+            "client-approval-1".into(),
             session_id.clone(),
-            suspended.turn_id,
+            suspended.turn_id.clone(),
             approval.suspension_id.clone(),
             approval.session_version,
             true,
         )
         .await
         .unwrap();
-    assert_eq!(completed.terminal, DesktopTerminal::Completed);
-    assert_eq!(completed.text, "artifact committed");
+    assert_eq!(continued.session_id, session_id);
+    assert_eq!(continued.turn_id, suspended.turn_id);
+    let mut completed = false;
+    for _ in 0..100 {
+        let timeline = match state.session_timeline(&session_id, 0, 8) {
+            Ok(timeline) => timeline,
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                continue;
+            }
+        };
+        if timeline.items[0].state == "completed" {
+            assert_eq!(
+                timeline.items[0].completion_text.as_deref(),
+                Some("artifact committed")
+            );
+            completed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    }
+    assert!(completed, "approval continuation did not complete");
     assert_eq!(
         std::fs::read_to_string(workspace_path.join("result.md")).unwrap(),
         "durable artifact"

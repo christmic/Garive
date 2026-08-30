@@ -675,6 +675,30 @@ async fn continue_product_turn(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn continue_product_approval(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    command_id: String,
+    session_id: String,
+    turn_id: String,
+    suspension_id: String,
+    session_version: u64,
+    approved: bool,
+) -> Result<garive_desktop::DesktopTurnCommandReceipt, String> {
+    state
+        .continue_approval_detached(
+            command_id,
+            session_id,
+            turn_id,
+            suspension_id,
+            session_version,
+            approved,
+        )
+        .await
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn get_session_events(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     session_id: String,
@@ -798,6 +822,7 @@ fn main() {
             start_product_turn,
             cancel_product_turn,
             continue_product_turn,
+            continue_product_approval,
             get_session_events,
             continue_agent_turn,
             resolve_turn_approval,

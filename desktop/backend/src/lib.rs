@@ -370,6 +370,28 @@ impl DesktopHost {
             .map_err(|_| DesktopHostError::HostFailure)
     }
 
+    /// Continues or exactly replays one approval with a typed JSON boolean.
+    pub fn continue_approval_command(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        session_version: u64,
+        approved: bool,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.host
+            .continue_turn(
+                command_id,
+                session_id,
+                turn_id,
+                suspension_id,
+                session_version,
+                HostContinuationInput::Json(if approved { "true" } else { "false" }),
+            )
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
     /// Reads one bounded event page after an exact durable cursor.
     pub fn event_page(
         &self,
@@ -795,6 +817,44 @@ impl DesktopState {
                 &suspension_id,
                 session_version,
                 &input,
+            );
+            let committed = result.is_ok();
+            let _ = sender.send(result);
+            if committed {
+                if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    let _ = runtime.block_on(host.drive_next());
+                }
+            }
+        });
+        receiver
+            .await
+            .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Continues one caller-addressed approval and drives its fresh execution.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn continue_approval_detached(
+        &self,
+        command_id: String,
+        session_id: String,
+        turn_id: String,
+        suspension_id: String,
+        session_version: u64,
+        approved: bool,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        let host = self.installed_host()?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let result = host.continue_approval_command(
+                &command_id,
+                &session_id,
+                &turn_id,
+                &suspension_id,
+                session_version,
+                approved,
             );
             let committed = result.is_ok();
             let _ = sender.send(result);

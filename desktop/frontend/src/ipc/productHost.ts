@@ -81,6 +81,15 @@ export async function continueProductTurn(
     suspensionId, sessionVersion: safePositivePosition(sessionVersion), input }), sessionId, turnId);
 }
 
+export async function continueProductApproval(
+  commandId: string, sessionId: string, turnId: string, suspensionId: string,
+  sessionVersion: number, approved: boolean, invoke: Invoke = tauriInvoke,
+): Promise<TurnCommandReceipt> {
+  [commandId, sessionId, turnId, suspensionId].forEach(required);
+  return turnReceipt(await invoke<unknown>("continue_product_approval", { commandId, sessionId, turnId,
+    suspensionId, sessionVersion: safePositivePosition(sessionVersion), approved }), sessionId, turnId);
+}
+
 function createReceipt(raw: unknown): CreateSessionReceipt {
   const value = object(raw); return { session_id: required(value.session_id),
     agent_instance_id: required(value.agent_instance_id),

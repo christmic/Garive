@@ -1,7 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { Invoke } from "../ipc/host";
 import {
-  cancelProductTurn, continueProductTurn, createProductSession, getProductDefinitions,
+  cancelProductTurn, continueProductApproval, continueProductTurn, createProductSession, getProductDefinitions,
   getProductEvents, getProductSessions, getProductTimeline, startProductTurn,
   type TurnCommandReceipt,
 } from "../ipc/productHost";
@@ -78,9 +78,13 @@ export class DesktopProductEffectPort implements ProductEffectPort {
         }
         case "continue_turn": {
           const pending = await this.#persist(effect, snapshot);
-          const receipt = await continueProductTurn(required(effect.commandId), required(effect.sessionId),
-            required(effect.turnId), required(effect.suspensionId), positivePosition(effect.sessionVersion),
-            required(effect.text), this.invoke);
+          const common = [required(effect.commandId), required(effect.sessionId), required(effect.turnId),
+            required(effect.suspensionId), positivePosition(effect.sessionVersion)] as const;
+          const receipt = effect.continuationValueKind === "json_boolean"
+            ? await continueProductApproval(...common, booleanText(effect.text), this.invoke)
+            : effect.continuationValueKind === "string"
+              ? await continueProductTurn(...common, required(effect.text), this.invoke)
+              : protocol();
           await this.#clear(pending); yield commandResult(receipt); return;
         }
       }
@@ -145,6 +149,11 @@ function commandResult(receipt: TurnCommandReceipt): AppEffectPayload {
     committedPosition: receipt.committed_position };
 }
 function required(value: string | undefined): string { if (!value) protocol(); return value; }
+function booleanText(value: string | undefined): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return protocol();
+}
 function position(value: number | undefined): number {
   if (!Number.isSafeInteger(value) || Number(value) < 0) protocol(); return Number(value);
 }

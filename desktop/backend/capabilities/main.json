@@ -46,6 +46,7 @@
     "allow-start-product-turn",
     "allow-cancel-product-turn",
     "allow-continue-product-turn",
+    "allow-continue-product-approval",
     "allow-get-session-events"
   ]
 }

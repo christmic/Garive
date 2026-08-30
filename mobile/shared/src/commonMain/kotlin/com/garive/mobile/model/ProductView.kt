@@ -96,6 +96,9 @@ public enum class CommandKind(public val wireName: String) {
 /** Known or uncertain mutation state. */
 public enum class PendingStatus(public val wireName: String) { PENDING("pending"), UNKNOWN("unknown") }
 
+/** Wire value category required by the suspension response schema. */
+public enum class ContinuationValueKind { STRING, JSON_BOOLEAN }
+
 /** Crash-safe, content-minimal command correlation. */
 public data class PendingCommand(
     public val kind: CommandKind,
@@ -130,6 +133,7 @@ public data class AppEffect(
     public val suspensionId: String? = null,
     public val sessionVersion: Long? = null,
     public val responseSchemaDigest: String? = null,
+    public val continuationValueKind: ContinuationValueKind? = null,
 )
 
 /** Complete immutable product controller state; durable truth remains in Host. */

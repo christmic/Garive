@@ -47,6 +47,20 @@ describe("A-UX1 shared controller", () => {
       "transport", "protocol", "local_preference"]);
   });
 
+  it("admits approval responses only as typed JSON booleans", () => {
+    const base = initialAppViewState();
+    const state: AppViewState = { ...base, sessions: [{ sessionId: "session-a" }], timeline: [{
+      turnId: "turn-a", state: "suspended", latestPosition: 3, suspension: {
+        suspensionId: "suspension-a", sessionVersion: 4, kind: "approval_required",
+        responseSchemaDigest: "a".repeat(64),
+      },
+    }] };
+    const intent = (input: string): AppIntent => ({ type: "continue_suspension", sessionId: "session-a",
+      turnId: "turn-a", input, commandId: "command-a", requestDigest: "b".repeat(64) });
+    expect(reduceApp(state, intent("yes")).state.notice?.code).toBe("invalid_suspension_response");
+    expect(reduceApp(state, intent("true")).effects[0]?.continuationValueKind).toBe("json_boolean");
+  });
+
   it("rejects fixture root, case, duplicate, and omission drift", () => {
     expect(() => validateFixture({ ...FIXTURE, unknown: true })).toThrow();
     const unknownCase = structuredClone(FIXTURE);
@@ -101,7 +115,8 @@ function runControllerCase(test: Record<string, unknown>): void {
     const effect = emitted.find((item) => item.kind === "continue_turn");
     const binding = object(test.expected_effect_binding);
     expect({ suspension_id: effect?.suspensionId, session_version: effect?.sessionVersion,
-      response_schema_digest: effect?.responseSchemaDigest }).toEqual(binding);
+      response_schema_digest: effect?.responseSchemaDigest,
+      continuation_value_kind: effect?.continuationValueKind }).toEqual(binding);
   }
   if (test.expected_cancel_after_position !== undefined) {
     const effect = emitted.find((item) => item.kind === "cancel_turn");

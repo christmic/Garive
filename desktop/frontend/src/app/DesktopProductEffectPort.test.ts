@@ -58,6 +58,26 @@ describe("DesktopProductEffectPort", () => {
     controller.abort();
     expect((await iterator.next()).done).toBe(true);
   });
+
+  it("routes approval effects only through the typed boolean command", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push({ command, args });
+      return { session_id: "session-1", turn_id: "turn-1", execution_id: "execution-1",
+        committed_position: 9 } as T;
+    };
+    const pending = { kind: "continue_turn" as const, commandId: "command-1", requestDigest: DIGEST,
+      generation: 1, sessionId: "session-1", turnId: "turn-1", status: "pending" as const };
+    const port = new DesktopProductEffectPort(invoke, new MemoryPreferences());
+    await first(port, { ...effect("continue_turn"), sessionId: "session-1", turnId: "turn-1",
+      suspensionId: "suspension-1", sessionVersion: 8, continuationValueKind: "json_boolean",
+      text: "false", commandId: "command-1", requestDigest: DIGEST }, {
+      ...initialAppViewState(), pending: [pending],
+    });
+    expect(calls).toEqual([{ command: "continue_product_approval", args: { commandId: "command-1",
+      sessionId: "session-1", turnId: "turn-1", suspensionId: "suspension-1",
+      sessionVersion: 8, approved: false } }]);
+  });
 });
 
 async function first(port: DesktopProductEffectPort, value: AppEffect, state: AppViewState) {

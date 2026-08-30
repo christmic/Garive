@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cancelProductTurn, createProductSession, getProductDefinitions, getProductEvents,
-  getProductSessions, getProductTimeline, startProductTurn,
+  getProductSessions, getProductTimeline, startProductTurn, continueProductApproval,
 } from "./productHost";
 
 describe("product Host IPC", () => {
@@ -32,11 +32,14 @@ describe("product Host IPC", () => {
     await createProductSession("command-create", "definition-1", invoke);
     await startProductTurn("command-start", "session-1", "hello", invoke);
     await cancelProductTurn("command-cancel", "session-1", "turn-1", 6, invoke);
+    await continueProductApproval("command-approval", "session-1", "turn-1", "suspension-1", 7, true, invoke);
     expect(calls).toEqual([
       { command: "create_product_session", args: { commandId: "command-create", definitionId: "definition-1" } },
       { command: "start_product_turn", args: { commandId: "command-start", sessionId: "session-1", input: "hello" } },
       { command: "cancel_product_turn", args: { commandId: "command-cancel", sessionId: "session-1",
         turnId: "turn-1", requestedThroughPosition: 6 } },
+      { command: "continue_product_approval", args: { commandId: "command-approval", sessionId: "session-1",
+        turnId: "turn-1", suspensionId: "suspension-1", sessionVersion: 7, approved: true } },
     ]);
   });
 
