@@ -242,4 +242,4 @@ cannot close remote mobile delivery.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: accepted for implementation
+- Status: implemented locally; physical remote release evidence pending

@@ -43,7 +43,8 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
 cd ../iosApp
 swift test
 xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
-  -configuration Debug -sdk iphoneos CODE_SIGNING_ALLOWED=NO clean build
+  -configuration Debug -sdk iphoneos ARCHS=arm64 \
+  CODE_SIGNING_ALLOWED=NO clean build
 ```
 
 The Xcode target produces `Garive.app`, registers expiring `garive://pair`
