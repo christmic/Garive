@@ -7,9 +7,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use garive_llm::ModelPort;
 use garive_runtime::{
-    local_dispatch_queue, HostClock, HostContinuationInput, InstalledAgent, LiveHost,
-    LiveHostLimits, LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalExecutionWorker, TurnCommandResponse,
+    local_dispatch_queue, HostClock, HostContinuationInput, HostWorkspaceContextEntry,
+    InstalledAgent, LiveHost, LiveHostLimits, LocalDispatchQueue, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, TurnCommandResponse,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -266,6 +266,48 @@ impl DesktopHost {
         self.finish_turn(session_id, turn).await
     }
 
+    /// Starts one existing-Session Turn with backend-only selected Workspace text.
+    pub async fn run_turn_with_context(
+        &self,
+        definition_id: &str,
+        session_id: &str,
+        input: &str,
+        context: &[DesktopWorkspaceContextFile],
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        if definition_id != self.definition_id || context.is_empty() {
+            return Err(DesktopHostError::HostFailure);
+        }
+        let first = context.first().ok_or(DesktopHostError::HostFailure)?;
+        if context.iter().any(|file| {
+            file.workspace_id != first.workspace_id || file.grant_revision != first.grant_revision
+        }) {
+            return Err(DesktopHostError::HostFailure);
+        }
+        let entries = context
+            .iter()
+            .map(|file| HostWorkspaceContextEntry {
+                entry_id: file.entry_id.clone(),
+                display_name: file.display_name.clone(),
+                kind: file.kind.into(),
+                content_digest: file.content_digest.clone(),
+                content_utf8: file.content_utf8.clone(),
+            })
+            .collect::<Vec<_>>();
+        let command_id = self.operations.command_id("turn-with-context")?;
+        let turn = self
+            .host
+            .start_turn_with_workspace_context(
+                &command_id,
+                session_id,
+                input,
+                &first.workspace_id,
+                first.grant_revision,
+                &entries,
+            )
+            .map_err(|_| DesktopHostError::HostFailure)?;
+        self.finish_turn(session_id.to_owned(), turn).await
+    }
+
     /// Continues one exact restart-safe text suspension and executes its fresh attempt.
     pub async fn continue_turn(
         &self,
@@ -500,6 +542,31 @@ impl DesktopState {
                 &definition_id,
                 session_id.as_deref(),
                 &input,
+            ))
+        })
+        .await
+        .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Runs selected Workspace context through the isolated embedded executor.
+    pub async fn run_turn_with_context_isolated(
+        &self,
+        definition_id: String,
+        session_id: String,
+        input: String,
+        context: Vec<DesktopWorkspaceContextFile>,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        let host = self.installed_host()?;
+        tokio::task::spawn_blocking(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+            runtime.block_on(host.run_turn_with_context(
+                &definition_id,
+                &session_id,
+                &input,
+                &context,
             ))
         })
         .await

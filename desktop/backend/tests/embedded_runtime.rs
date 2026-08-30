@@ -11,7 +11,7 @@ use garive_core::{
 };
 use garive_desktop::{
     DesktopHost, DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
-    DesktopWorkspaceGrant,
+    DesktopWorkspaceContextFile, DesktopWorkspaceGrant,
 };
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem,
@@ -302,4 +302,47 @@ fn workspace_attachment_survives_desktop_host_restart_without_paths() {
     let public = serde_json::to_string(&restored).unwrap();
     assert!(!public.contains(directory.path().to_string_lossy().as_ref()));
     assert!(!public.contains("path"));
+}
+
+#[tokio::test]
+async fn selected_workspace_text_reaches_the_embedded_runtime_without_frontend_content() {
+    let directory = tempdir().unwrap();
+    let state = DesktopState::default();
+    state
+        .install(desktop_host(
+            &directory.path().join("context.db"),
+            Arc::new(CompletingModel),
+        ))
+        .unwrap();
+    let session_id = state.create_session("definition-main").unwrap();
+    let grant = DesktopWorkspaceGrant {
+        schema_version: 1,
+        workspace_id: "workspace-opaque".into(),
+        display_name: "Briefs".into(),
+        access: "enumerate",
+        grant_revision: 1,
+        state: "active",
+        expires_at: "2026-08-30T12:00:00Z".into(),
+    };
+    state.attach_workspace(&session_id, &grant).unwrap();
+    let result = state
+        .run_turn_with_context_isolated(
+            "definition-main".into(),
+            session_id.clone(),
+            "summarize".into(),
+            vec![DesktopWorkspaceContextFile {
+                workspace_id: grant.workspace_id,
+                grant_revision: 1,
+                entry_id: "entry-opaque".into(),
+                display_name: "brief.md".into(),
+                kind: "text",
+                content_digest: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+                    .into(),
+                content_utf8: "hello".into(),
+            }],
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.terminal, DesktopTerminal::Completed);
+    assert_eq!(result.session_id, session_id);
 }
