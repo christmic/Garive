@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { getDesktopCapabilities, runAgentTurn } from "./host";
+import {
+  getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+} from "./host";
 
 describe("desktop Host IPC", () => {
   it("returns one typed embedded Runtime terminal", async () => {
@@ -28,5 +30,20 @@ describe("desktop Host IPC", () => {
       return expected as T;
     });
     expect(result).toEqual(expected);
+  });
+
+  it("loads durable navigation through bounded typed commands", async () => {
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      if (command === "get_recent_sessions") {
+        expect(args).toEqual({ limit: 12 });
+        return [{ session_id: "session-1" }] as T;
+      }
+      expect({ command, args }).toEqual({ command: "get_session_timeline", args: {
+        sessionId: "session-1", afterPosition: 0, limit: 32,
+      } });
+      return { api_version: "v1", session_id: "session-1", items: [] } as T;
+    };
+    expect(await getRecentSessions(12, invoke)).toEqual([{ session_id: "session-1" }]);
+    expect((await getSessionTimeline("session-1", 0, 32, invoke)).session_id).toBe("session-1");
   });
 });
