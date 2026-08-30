@@ -83,6 +83,7 @@
         {"resolve":{"effect_kind":"follow_events","result":{"type":"host_event","event":"turn.stopped","position":7,"turn_id":"turn-a"}}}
       ],
       "expected_effects": ["cancel_turn","follow_events"],
+      "expected_cancel_after_position": 5,
       "expected_state": {"configuration":"configured","shell":"ready","generation":5,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"stopped","latest_position":7}],"cursor":7,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null}
     }
   ],

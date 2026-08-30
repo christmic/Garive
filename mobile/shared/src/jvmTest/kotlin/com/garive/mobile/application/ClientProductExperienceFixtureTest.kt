@@ -106,6 +106,9 @@ public class ClientProductExperienceFixtureTest {
             assertEquals(binding.long("session_version"), effect.sessionVersion)
             assertEquals(binding.text("response_schema_digest"), effect.responseSchemaDigest)
         }
+        test.optionalLong("expected_cancel_after_position")?.let { expected ->
+            assertEquals(expected, emitted.first { it.kind == EffectKind.CANCEL_TURN }.afterPosition)
+        }
     }
 
     private fun decodeState(raw: JsonObject): AppViewState = initialAppViewState(configuration(raw.text("configuration"))).copy(
@@ -204,7 +207,7 @@ public class ClientProductExperienceFixtureTest {
                     setOf("document", "expected_draft_count", "expected_reset", "name")
                 } else setOf("expected_effects", "expected_state", "initial_state", "name", "steps")
                 val allowed = when (family) {
-                    "command_cases" -> required + setOf("expected_retried_command_id", "expected_retried_request_digest")
+                    "command_cases" -> required + setOf("expected_retried_command_id", "expected_retried_request_digest", "expected_cancel_after_position")
                     "suspension_cases" -> required + "expected_effect_binding"
                     "failure_cases" -> required + setOf("error", "expected_public_kind")
                     else -> required

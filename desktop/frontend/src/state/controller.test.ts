@@ -103,6 +103,10 @@ function runControllerCase(test: Record<string, unknown>): void {
     expect({ suspension_id: effect?.suspensionId, session_version: effect?.sessionVersion,
       response_schema_digest: effect?.responseSchemaDigest }).toEqual(binding);
   }
+  if (test.expected_cancel_after_position !== undefined) {
+    const effect = emitted.find((item) => item.kind === "cancel_turn");
+    expect(effect?.afterPosition).toBe(test.expected_cancel_after_position);
+  }
 }
 
 function decodeState(raw: Record<string, unknown>): AppViewState {
@@ -204,7 +208,7 @@ function validateFixture(value: Record<string, unknown> = FIXTURE): void {
       const required = family === "preference_cases"
         ? ["document", "expected_draft_count", "expected_reset", "name"]
         : ["expected_effects", "expected_state", "initial_state", "name", "steps"];
-      const allowed = family === "command_cases" ? [...required, "expected_retried_command_id", "expected_retried_request_digest"]
+      const allowed = family === "command_cases" ? [...required, "expected_retried_command_id", "expected_retried_request_digest", "expected_cancel_after_position"]
         : family === "suspension_cases" ? [...required, "expected_effect_binding"]
           : family === "failure_cases" ? [...required, "error", "expected_public_kind"] : required;
       for (const key of required) expect(keys, `${family}.${text(item.name)} missing ${key}`).toContain(key);

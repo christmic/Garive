@@ -84,7 +84,7 @@ public fun reduceApp(
             PendingCommand(CommandKind.CANCEL_TURN, intent.commandId, intent.requestDigest, state.generation,
                 intent.sessionId, intent.turnId, PendingStatus.PENDING),
             EffectDraft(EffectKind.CANCEL_TURN, sessionId = intent.sessionId, turnId = intent.turnId,
-                commandId = intent.commandId, requestDigest = intent.requestDigest),
+                commandId = intent.commandId, requestDigest = intent.requestDigest, afterPosition = state.cursor),
         )
         is AppIntent.ContinueSuspension -> continueSuspension(state, intent)
         is AppIntent.Reconnect -> reconnect(state, intent)

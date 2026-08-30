@@ -157,7 +157,8 @@ export function reduceApp(
         kind: "cancel_turn", commandId: intent.commandId, requestDigest: intent.requestDigest,
         generation: state.generation, sessionId: intent.sessionId, turnId: intent.turnId, status: "pending",
       }, { kind: "cancel_turn", sessionId: intent.sessionId, turnId: intent.turnId,
-        commandId: intent.commandId, requestDigest: intent.requestDigest });
+        commandId: intent.commandId, requestDigest: intent.requestDigest,
+        afterPosition: state.cursor });
     case "continue_suspension": {
       const suspension = state.timeline.find((item) => item.turnId === intent.turnId)?.suspension;
       if (!suspension?.suspensionId || !suspension.sessionVersion || !suspension.responseSchemaDigest || !intent.input) {
