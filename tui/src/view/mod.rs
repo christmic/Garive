@@ -12,6 +12,7 @@ use ratatui::{
 mod conversation;
 mod footer;
 mod linear;
+mod markdown_table;
 mod motion;
 mod overlay;
 pub(crate) mod presentation;
