@@ -57,7 +57,7 @@ pub fn reconstruct_memory_repository(
     ]);
     let mut commits = BTreeMap::new();
     let mut classifications = BTreeMap::new();
-    let mut transition_count = 0u64;
+    let mut change_batches = BTreeSet::new();
     for prefix in prefixes {
         for fact in ledger
             .read_facts(&prefix.session_id, 0, prefix.through_position, Some(&kinds))
@@ -72,19 +72,23 @@ pub fn reconstruct_memory_repository(
                 fact.kind.as_str(),
                 "memory.tombstoned" | "memory.lifecycle_transitioned"
             ) {
-                transition_count = transition_count
-                    .checked_add(1)
-                    .ok_or(MemoryErrorCode::CorruptMemoryState)?;
+                record_change_batch(ledger, &fact, &mut change_batches)?;
                 continue;
             }
             let key = (text(&value, "record_id")?, text(&value, "revision_id")?);
-            let target = match fact.kind.as_str() {
-                "memory.committed" => &mut commits,
-                "memory.revision_classified" => &mut classifications,
+            match fact.kind.as_str() {
+                "memory.committed" => {
+                    if commits.insert(key, (fact, value)).is_some() {
+                        return Err(MemoryErrorCode::CorruptMemoryState);
+                    }
+                }
+                "memory.revision_classified" => {
+                    record_change_batch(ledger, &fact, &mut change_batches)?;
+                    if classifications.insert(key, (fact, value)).is_some() {
+                        return Err(MemoryErrorCode::CorruptMemoryState);
+                    }
+                }
                 _ => return Err(MemoryErrorCode::CorruptMemoryState),
-            };
-            if target.insert(key, (fact, value)).is_some() {
-                return Err(MemoryErrorCode::CorruptMemoryState);
             }
         }
     }
@@ -166,13 +170,30 @@ pub fn reconstruct_memory_repository(
     Ok(RecoveredMemoryRepository {
         projection: MemoryControlProjection {
             namespace_id: namespace_id.into(),
-            repository_revision: (classifications.len() as u64)
-                .checked_add(transition_count)
+            repository_revision: u64::try_from(change_batches.len())
+                .ok()
+                .filter(|value| *value != 0)
                 .ok_or(MemoryErrorCode::CorruptMemoryState)?,
             documents,
         },
         lifecycles,
     })
+}
+
+fn record_change_batch(
+    ledger: &SqliteLedger,
+    fact: &DurableFact,
+    batches: &mut BTreeSet<(String, u64)>,
+) -> Result<(), MemoryErrorCode> {
+    let version = ledger
+        .fact_commit_version(&fact.fact_id)
+        .map_err(|_| MemoryErrorCode::CorruptMemoryState)?
+        .ok_or(MemoryErrorCode::CorruptMemoryState)?;
+    if version == 0 {
+        return Err(MemoryErrorCode::CorruptMemoryState);
+    }
+    batches.insert((fact.session_id.as_str().into(), version));
+    Ok(())
 }
 
 fn verify_source(fact: &DurableFact, classification: &Value) -> Result<(), MemoryErrorCode> {

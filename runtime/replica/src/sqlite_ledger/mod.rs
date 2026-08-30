@@ -1,10 +1,12 @@
 use std::{error::Error, fmt, path::Path, time::Duration};
 
 use garive_ledger::{
-    CommitDisposition, CommitResult, DurableFact, FactDraft, FactKind, LedgerError, ModelRequestId,
-    SessionId, ToolInvocationId, TurnId, TurnSnapshot,
+    CommitDisposition, CommitResult, DurableFact, FactDraft, FactId, FactKind, LedgerError,
+    ModelRequestId, SessionId, ToolInvocationId, TurnId, TurnSnapshot,
 };
-use rusqlite::{params, Connection, OpenFlags, Transaction, TransactionBehavior};
+use rusqlite::{
+    params, Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior,
+};
 
 mod lease;
 mod memory_control;
@@ -78,6 +80,28 @@ impl SqliteLedger {
         connection.pragma_update(None, "synchronous", "FULL")?;
         migrations::migrate(&mut connection)?;
         Ok(Self { connection })
+    }
+
+    pub(crate) fn fact_commit_version(
+        &self,
+        fact_id: &FactId,
+    ) -> Result<Option<u64>, SqliteLedgerError> {
+        let value = self
+            .connection
+            .query_row(
+                "SELECT commit_version FROM ledger_facts WHERE fact_id=?1",
+                [fact_id.as_str()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?;
+        value
+            .map(|bytes| {
+                bytes
+                    .try_into()
+                    .map(u64::from_be_bytes)
+                    .map_err(|_| SqliteLedgerError::InvalidStoredValue("commit_version"))
+            })
+            .transpose()
     }
 
     /// Initializes one M2 namespace projection from an exact existing Memory snapshot.
