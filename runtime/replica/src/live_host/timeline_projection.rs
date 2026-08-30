@@ -163,12 +163,14 @@ fn start_or_continue(
                         .as_ref()
                         .map(|value| value.suspension_id.as_str())
                 || payload.expected_session_version.is_none()
+                || turn.pending_continuation.as_deref() != payload.prior_suspension_id.as_deref()
             {
                 return Err(LiveHostError::CorruptState);
             }
             turn.state = "running";
             turn.latest_position = fact.position;
             turn.suspension = None;
+            turn.pending_continuation = None;
         }
         _ => return Err(LiveHostError::CorruptState),
     }
@@ -186,13 +188,25 @@ fn admit_input(
     let turn = turns.get_mut(turn_id).ok_or(LiveHostError::CorruptState)?;
     verify_text(&payload.content)?;
     if payload.input_kind == "trusted_user" {
-        if turn.user_text.is_some() || payload.suspension_id.is_some() {
+        if turn.state != "running" || turn.user_text.is_some() || payload.suspension_id.is_some() {
             return Err(LiveHostError::CorruptState);
         }
         let (text, truncated) = truncate(payload.content.inline_utf8, limits.max_user_text_bytes);
         turn.user_text = Some(text);
         turn.content_truncated |= truncated;
-    } else if payload.input_kind != "trusted_system" && payload.suspension_id.is_none() {
+    } else if payload.suspension_id.is_some() {
+        if turn.state != "suspended"
+            || turn.pending_continuation.is_some()
+            || payload.suspension_id.as_deref()
+                != turn
+                    .suspension
+                    .as_ref()
+                    .map(|value| value.suspension_id.as_str())
+        {
+            return Err(LiveHostError::CorruptState);
+        }
+        turn.pending_continuation = payload.suspension_id;
+    } else if payload.input_kind != "trusted_system" || turn.user_text.is_some() {
         return Err(LiveHostError::CorruptState);
     }
     turn.latest_position = fact.position;
@@ -315,6 +329,7 @@ struct Turn {
     completion_text: Option<String>,
     suspension: Option<SuspensionViewV1>,
     content_truncated: bool,
+    pending_continuation: Option<String>,
 }
 
 impl Turn {
@@ -328,6 +343,7 @@ impl Turn {
             completion_text: None,
             suspension: None,
             content_truncated: false,
+            pending_continuation: None,
         }
     }
 
@@ -336,6 +352,9 @@ impl Turn {
         activities: Vec<HostActivity>,
     ) -> Result<TurnTimelineItemV1, LiveHostError> {
         let user = self.user_text.take().ok_or(LiveHostError::CorruptState)?;
+        if self.pending_continuation.is_some() {
+            return Err(LiveHostError::CorruptState);
+        }
         if let Some(position) = activities.iter().map(|value| value.source_position).max() {
             self.latest_position = self.latest_position.max(position);
         }
