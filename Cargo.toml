@@ -48,6 +48,12 @@ edition = "2021"
 license = "MIT"
 rust-version = "1.98.0"
 
+# Cargo 1.98 may defer `strip = "none"` into `-C strip=debuginfo` when no
+# package requests debuginfo. Keep the documented default explicit so macOS
+# release builds do not depend on a runnable llvm-tools `rust-objcopy`.
+[profile.release]
+strip = "none"
+
 [workspace.dependencies]
 axum = "0.7.9"
 base64 = "0.23.1"

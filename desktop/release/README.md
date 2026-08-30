@@ -35,10 +35,10 @@ desktop/release/verify-macos-bundle.sh \
   target/universal-apple-darwin/release/bundle/dmg/Garive_0.1.0_universal.dmg local
 ```
 
-The verified local Universal DMG on 2026-08-30 contained `x86_64 arm64` and had
-SHA-256 `bfa68aed3ea5fdfe74d092402c80581baea1ce63eaa40f3602f3d2bcafae7f71`.
-This host's rustup `rust-objcopy` could not load its `libLLVM.dylib`, so strip
-warnings remain a release-CI failure even though bundle construction succeeded.
+The workspace pins Cargo's documented `strip = "none"` release default. This
+avoids Cargo 1.98's deferred `rust-objcopy` optimization becoming an undeclared
+host dependency; release symbols remain available for crash diagnosis. The
+local verifier reports the exact architectures and SHA-256 for every candidate.
 
 ## Public release admission
 
