@@ -1285,6 +1285,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-macos-bookmark"
+version = "0.1.0"
+dependencies = [
+ "objc2",
+ "objc2-foundation",
+ "tempfile",
+]
+
+[[package]]
 name = "garive-memory"
 version = "0.1.0"
 dependencies = [

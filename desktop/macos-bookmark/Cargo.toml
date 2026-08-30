@@ -1,0 +1,15 @@
+[package]
+name = "garive-macos-bookmark"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+objc2 = "0.6.3"
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSError", "NSString", "NSURL"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
