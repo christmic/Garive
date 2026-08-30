@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod decode;
 mod lifecycle;
 mod topology;
 

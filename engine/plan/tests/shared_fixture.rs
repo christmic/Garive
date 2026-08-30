@@ -25,6 +25,16 @@ fn shared_fixture_matches_canonical_definition_and_lifecycle() {
         definition.digest().unwrap(),
         fixture["definition"]["digest"].as_str().unwrap()
     );
+    let capabilities =
+        BTreeSet::from([PlanCapabilityReference::new("tools", "catalogue-v1").unwrap()]);
+    let decoded = PlanDefinitionV1::from_canonical_json(
+        fixture["definition"]["canonical_json"].as_str().unwrap(),
+        &set(["accepted", "artifact"]),
+        &BTreeSet::new(),
+        &capabilities,
+    )
+    .unwrap();
+    assert_eq!(decoded, definition);
 
     let mut snapshot = PlanSnapshot::new(definition);
     let steps = fixture["valid_lifecycle"].as_array().unwrap();
