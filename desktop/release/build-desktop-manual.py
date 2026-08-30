@@ -300,9 +300,13 @@ def semantic_html(lines: list[str]) -> str:
         elif re.match(r"^\d+\. ", line):
             items = []
             while index < len(lines) and re.match(r"^\d+\. ", lines[index]):
-                items.append(re.sub(r"^\d+\. ", "", lines[index]))
+                number, item = lines[index].split(". ", 1)
+                items.append((number, item))
                 index += 1
-            content.append("<ol>" + "".join(f"<li>{semantic_inline(item)}</li>" for item in items) + "</ol>")
+            content.extend(
+                f'<p class="ordered">{number}. {semantic_inline(item)}</p>'
+                for number, item in items
+            )
             continue
         elif line.startswith("- "):
             items = []
@@ -339,6 +343,7 @@ def semantic_html(lines: list[str]) -> str:
       h2 { color: #176b63; font-size: 18pt; margin: 8mm 0 3mm; page-break-after: avoid; }
       h3 { font-size: 13pt; margin: 5mm 0 2mm; page-break-after: avoid; }
       p, li { margin: 0 0 2mm; } code { color: #176b63; }
+      .ordered { margin-left: 7mm; }
       blockquote { background: #eaf5f2; border: 1pt solid #176b63; padding: 4mm; margin: 4mm 0; }
       table { border-collapse: collapse; width: 100%; margin: 4mm 0; }
       th { background: #eaf5f2; } th, td { border: .5pt solid #d7e0e3; padding: 2mm; text-align: left; }

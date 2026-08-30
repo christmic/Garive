@@ -303,6 +303,22 @@ About/version 必须与签名 bundle、manifest 和本手册首页一致。更�
 无效或降级包必须安全拒绝并保持当前版本可用。睡眠、唤醒或网络中断后，同一 Session 从
 持久 cursor 继续。
 
+在公开签名版本中，打开 **Settings → Update**：
+
+1. 先核对 **Current version**，再选择 **Check for updates**。检查失败只影响本次检查，
+   不会替换当前应用；网络恢复后可手动重试。
+2. 出现更高的稳定版本时核对 **Target version**，选择 **Download update**。下载进度不会
+   把“已下载”冒充“已验证”；签名失败会停止在拒绝状态。
+3. 只有状态明确为已验证时才选择 **Install verified update**。正在提交 Session 时重启
+   操作保持禁用，先等待提交得到持久结果或显式取消。
+4. 安装完成后选择 **Restart Garive**。重启后 Current version 必须等于先前显示的 Target
+   version，且已有 Session、Workspace 授权状态与 Artifact 仍可恢复。
+5. 若安装开始后结果无法证明，界面显示 **Outcome unknown**。不要重复下载或安装；先重启
+   Garive，让应用用持久 pending record 对照实际版本。仍无法对账时保留当前数据并联系支持。
+
+相同版本、旧版本和预发布版本一律不会进入下载；本地无通道构建会明确显示 Update
+Unavailable，也不会发起更新网络请求。
+
 将 Garive.app 移到废纸篓只移除应用本身，不等同于删除本地 Runtime 数据、配置或 Keychain
 授权。先在 Settings 撤销 Workspace access；如需完全移除数据，请仅按照与该发布版本一起
 验证的卸载步骤操作。不要手工删除不明 Keychain 条目或整个 Application Support 目录。
@@ -323,6 +339,7 @@ bookmark bytes、数据库、Keychain 导出、原始 Runtime facts 或带私人
 
 ## 当前能力边界
 
-本手册最终版只能描述候选包真实安装的能力。当前发布仍未通过 Developer ID、公证、更新、
-SBOM、clean-Mac、VoiceOver、原生 200% 和 M01–M85 全矩阵门禁；因此本草案不可作为公开
-发布说明。路线图能力不得以灰色可点击控件或“即将完成”的方式伪装成已可用功能。
+本手册最终版只能描述候选包真实安装的能力。当前本地候选已实现更新状态机并生成 SBOM，
+但仍未通过 Developer ID、公证、真实签名更新/降级、clean-Mac、VoiceOver、原生 200% 和
+M01–M85 全矩阵门禁；因此本草案不可作为公开发布说明。路线图能力不得以灰色可点击控件或
+“即将完成”的方式伪装成已可用功能。
