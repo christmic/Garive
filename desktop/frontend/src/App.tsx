@@ -19,6 +19,10 @@ import { Icon, type IconName } from "./ui/Icon";
 import { SetupFlow } from "./setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
+import {
+  readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
+  type DesktopPreferences, type DesktopTheme,
+} from "./preferences";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -91,8 +95,20 @@ export function App() {
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [preparedSessionId, setPreparedSessionId] = useState<string>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
+  const [preferences, setPreferences] = useState(readDesktopPreferences);
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const changed = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => { try { writeDesktopPreferences(preferences); } catch { /* optional */ } },
+    [preferences]);
 
   const refreshRecents = useCallback(async () => {
     const sessions = await getRecentSessions();
@@ -344,7 +360,9 @@ export function App() {
     }
   };
 
-  return <>
+  const effectiveTheme = preferences.theme === "system"
+    ? systemDark ? "dark" : "light" : preferences.theme;
+  return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
     <div className="app-shell" inert={Boolean(pickerGrant)} aria-hidden={Boolean(pickerGrant)}>
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="titlebar-drag" data-tauri-drag-region />
@@ -408,7 +426,8 @@ export function App() {
           approvalAction={approvalAction} />
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
-            : <SettingsScreen capabilities={state.capabilities} />}
+            : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
+              setPreferences={setPreferences} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
     </div>
@@ -418,7 +437,7 @@ export function App() {
         setSelectedContext({ grant: pickerGrant, entries }); setPickerGrant(undefined);
         requestAnimationFrame(() => composer.current?.focus());
       }} />}
-  </>;
+  </div>;
 }
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
@@ -702,7 +721,11 @@ function SearchScreen({ recents, titles, onOpen }: {
 
 function SetupRequired() { return <StatusCard icon="shield" title="Connect the local Runtime" body="Garive found no Desktop configuration. The secure guided setup is not installed in this build yet; add desktop-v1.json and its credential to the macOS Keychain, then restart." action="View setup status" />; }
 function AgentsScreen({ definition }: { definition?: string }) { return <section className="content-page"><p className="eyebrow">INSTALLED LOCALLY</p><h1>Your Agents</h1><p>Agents define the stable behavior and capabilities available to new work.</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? "No Agent configured"}</h2><p>{definition ? "Ready for local text work" : "Complete Desktop configuration to install an Agent."}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{definition ? "Ready" : "Unavailable"}</span></div></section>; }
-function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabilities"] }) {
+function SettingsScreen({ capabilities, preferences, setPreferences }: {
+  capabilities?: WorkState["capabilities"];
+  preferences: DesktopPreferences;
+  setPreferences: React.Dispatch<React.SetStateAction<DesktopPreferences>>;
+}) {
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
   const [authorizations, setAuthorizations] = useState<readonly WorkspaceAuthorization[]>([]);
   const [restoring, setRestoring] = useState<string>();
@@ -779,13 +802,42 @@ function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabiliti
   };
   const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const;
   const recoveryReady = workspaceRecovery?.state === "ready";
-  return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1><div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div>
+  return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1>
+    <div className="settings-card"><h2>Appearance</h2><p>Match macOS automatically or keep an explicit theme and information density.</p>
+      <div className="setting-row"><span>Theme</span><ThemeOptions value={preferences.theme} onChange={(theme) => setPreferences((current) => ({ ...current, theme }))} /></div>
+      <div className="setting-row"><span>Density</span><DensityOptions value={preferences.density} onChange={(density) => setPreferences((current) => ({ ...current, density }))} /></div>
+    </div>
+    <div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div>
     {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>Workspace access</h2><p>Folder access is restored from read-only bookmarks stored in macOS Keychain. No filesystem path enters this interface.</p><div className="setting-row"><span>Authorization recovery</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} restored` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} needs access` : "Index unavailable" : "Checking…"}</span></div>
       {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `Read-only access · revision ${workspace.grant_revision}` : "Access expired · choose the original folder"}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">Active</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />Opening…</> : "Restore access"}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label="Remove Workspace access" disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />Removing…</> : confirmingRevocation === workspace.workspace_id ? "Confirm remove" : "Remove access"}</button></span></div>)}
       {recoveryNotice && <div className="workspace-recovery-notice" role="status"><Icon name="shield" /><span>{recoveryNotice}</span></div>}
       {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{recoveryError}</span></div>}
     </div>}
     <div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, bookmark data, or raw Runtime fact.</p></div></section>;
+}
+
+function ThemeOptions({ value, onChange }: {
+  value: DesktopTheme; onChange: (value: DesktopTheme) => void;
+}) {
+  return <span className="preference-options" role="radiogroup" aria-label="Color theme">
+    {(["system", "light", "dark"] as const).map((theme) => <label className={value === theme ? "selected" : ""} key={theme}>
+      <input className="sr-only" type="radio" name="desktop-theme" value={theme}
+        checked={value === theme} onChange={() => onChange(theme)} />
+      {theme === "system" ? "System" : theme === "light" ? "Light" : "Dark"}
+    </label>)}
+  </span>;
+}
+
+function DensityOptions({ value, onChange }: {
+  value: DesktopDensity; onChange: (value: DesktopDensity) => void;
+}) {
+  return <span className="preference-options" role="radiogroup" aria-label="Interface density">
+    {(["comfortable", "compact"] as const).map((density) => <label className={value === density ? "selected" : ""} key={density}>
+      <input className="sr-only" type="radio" name="desktop-density" value={density}
+        checked={value === density} onChange={() => onChange(density)} />
+      {density === "comfortable" ? "Comfortable" : "Compact"}
+    </label>)}
+  </span>;
 }
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
 function NavItem({ icon, label, selected, disabled, hint, onClick }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>Soon</small>}</button>; }
