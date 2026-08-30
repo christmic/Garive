@@ -35,3 +35,31 @@ inside rendering; Runtime/PTY latency is covered separately by
 Re-record this document only after reading the emitted `TUI_BASELINE` line and
 reviewing any workload, dependency, or hardware change. Release-profile and
 other-platform numbers remain external compatibility evidence.
+
+## Release outer-process first frame
+
+The release gate launches 60 independent shipping `garive-tui` processes under
+a real `expect` PTY: three runs of 20 samples. Every process connects to the
+production `LiveHost` backed by a fresh file SQLite database. Time begins before
+process spawn and ends after terminal negotiation and the first interactive
+`GARIVE` frame. Each process then takes the normal confirmed quit path.
+
+```sh
+cargo build --release -p garive-tui --bin garive-tui \
+  --example visual_demo_host --example release_process_baseline
+cargo run --release -p garive-tui --example release_process_baseline
+```
+
+Pinned evidence: [`tui-release-first-frame-2026-08-30.json`](tui-release-first-frame-2026-08-30.json),
+Garive `54ae160b697147a00e7e1fc128cb3accdc19a18c`.
+
+| Run | p50 | p95 | p99 | max | Gate |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 26.338 ms | 28.883 ms | 28.883 ms | 356.375 ms | p95 < 150 ms |
+| 2 | 25.778 ms | 26.503 ms | 26.503 ms | 27.081 ms | p95 < 150 ms |
+| 3 | 25.869 ms | 27.068 ms | 27.068 ms | 27.198 ms | p95 < 150 ms |
+
+All three p95 values pass. The first run's unsmoothed maximum is retained; the
+gate is percentile-based and no outlier was deleted. This closes the first-frame
+metric on the pinned macOS reference only. Idle CPU, the exact
+10-Session/5,000-cell peak-RSS workload, and other native platforms remain open.

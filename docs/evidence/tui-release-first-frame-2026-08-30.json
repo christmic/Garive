@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "candidate-outer-process",
+  "build_profile": "release",
+  "metric": "process start to first interactive frame",
+  "environment": {
+    "os": "Darwin 25.6.0 Darwin Kernel Version 25.6.0: Sat Jul 11 15:26:21 PDT 2026; root:xnu-12377.161.13~4/RELEASE_ARM64_T6000 arm64 arm",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18) (Homebrew)",
+    "garive_commit": "54ae160b697147a00e7e1fc128cb3accdc19a18c",
+    "terminal_backend": "shipping binary under expect PTY",
+    "host_backend": "production LiveHost with file SQLite",
+    "samples_per_run": 20
+  },
+  "runs": [
+    { "p50_us": 26338, "p95_us": 28883, "p99_us": 28883, "max_us": 356375 },
+    { "p50_us": 25778, "p95_us": 26503, "p99_us": 26503, "max_us": 27081 },
+    { "p50_us": 25869, "p95_us": 27068, "p99_us": 27068, "max_us": 27198 }
+  ]
+}

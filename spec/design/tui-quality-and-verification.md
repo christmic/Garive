@@ -203,6 +203,16 @@ After three repeated runs, the Spec is updated with observed distribution and
 an accepted regression margin. Completion requires those values to be Baseline
 or Gate, not Proposed. Correctness gates remain blocking regardless of speed.
 
+The macOS arm64 release first-frame metric is now a Gate at p95 `<150 ms`.
+Pinned outer-process evidence at Garive `54ae160b697147a00e7e1fc128cb3accdc19a18c`
+runs the shipping binary against production `LiveHost` plus file SQLite in a
+real PTY. Three independent 20-sample runs observed p95 `28.883 ms`,
+`26.503 ms`, and `27.068 ms`; the unsmoothed distributions, including the
+`356.375 ms` first-run maximum, are stored in
+`docs/evidence/tui-release-first-frame-2026-08-30.json`. This acceptance is
+specific to the named reference environment. Idle CPU and the exact resident
+memory workload remain Proposed and keep the complete performance program open.
+
 Stress tests also prove cancellation latency under a saturated Host channel and
 memory stability during 30 minutes of bounded event/reconnect churn. Duration
 is a scheduled/release gate after the shorter deterministic harness passes.
