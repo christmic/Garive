@@ -11,8 +11,8 @@ use garive_ledger::SessionId;
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
     plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger,
-    TurnDispatchError, TurnDispatcher,
+    HostReadLimits, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer,
+    SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -160,6 +160,49 @@ fn commands_are_durable_idempotent_and_dispatched_only_after_commit() {
             .unwrap()
             .max_position,
         4
+    );
+}
+
+#[test]
+fn installed_definition_read_is_exact_bounded_and_side_effect_free() {
+    let harness = Harness::new(64);
+    let before = SqliteLedger::open(&harness.database)
+        .unwrap()
+        .list_sessions()
+        .unwrap();
+    let page = harness.host.list_agent_definitions().unwrap();
+    assert_eq!(page.api_version, "v1");
+    assert_eq!(page.definitions.len(), 1);
+    assert_eq!(page.definitions[0].definition_id, "definition-main");
+    assert_eq!(page.definitions[0].definition_revision, "revision-1");
+    assert!(page.definitions[0].capabilities.is_empty());
+    assert_eq!(
+        SqliteLedger::open(&harness.database)
+            .unwrap()
+            .list_sessions()
+            .unwrap(),
+        before
+    );
+}
+
+#[test]
+fn installed_definition_read_fails_closed_at_response_bound() {
+    let harness = Harness::new(64);
+    let host = LiveHost::new_with_read_limits(
+        &harness.database,
+        installed(),
+        harness.host.limits(),
+        HostReadLimits {
+            max_response_bytes: 1,
+            ..HostReadLimits::PRODUCT_DEFAULT
+        },
+        Arc::new(FixedClock),
+        harness.dispatcher,
+    )
+    .unwrap();
+    assert_eq!(
+        host.list_agent_definitions().unwrap_err(),
+        LiveHostError::ReadBoundExceeded
     );
 }
 
@@ -407,6 +450,19 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     }));
     let client = reqwest::Client::new();
     let base = format!("http://{address}");
+
+    let definitions = client
+        .get(format!("{base}/v1/agent-definitions"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(definitions.status(), reqwest::StatusCode::OK);
+    let definitions: Value = serde_json::from_slice(&definitions.bytes().await.unwrap()).unwrap();
+    assert_eq!(definitions["api_version"], "v1");
+    assert_eq!(
+        definitions["definitions"][0]["definition_id"],
+        "definition-main"
+    );
 
     let missing = client
         .post(format!("{base}/v1/sessions"))

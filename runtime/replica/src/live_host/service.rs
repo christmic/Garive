@@ -17,8 +17,9 @@ use crate::{
 };
 
 use super::{
-    project_fact, CommittedTurn, CreateSessionResponse, HostClock, HostEventPage, InstalledAgent,
-    LiveHostError, LiveHostLimits, LiveHostState, TurnCommandResponse, TurnDispatcher,
+    project_fact, AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn,
+    CreateSessionResponse, HostClock, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
+    LiveHostLimits, LiveHostState, TurnCommandResponse, TurnDispatcher,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -36,17 +37,62 @@ impl LiveHost {
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
     ) -> Result<Self, LiveHostError> {
+        Self::new_with_read_limits(
+            database_path,
+            installed,
+            limits,
+            HostReadLimits::PRODUCT_DEFAULT,
+            clock,
+            dispatcher,
+        )
+    }
+
+    /// Constructs a Host with explicit independent H2 projection bounds.
+    pub fn new_with_read_limits(
+        database_path: impl AsRef<Path>,
+        installed: InstalledAgent,
+        limits: LiveHostLimits,
+        read_limits: HostReadLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+    ) -> Result<Self, LiveHostError> {
         validate_installed(&installed, limits)?;
+        if !read_limits.valid() {
+            return Err(LiveHostError::InvalidRequest);
+        }
         SqliteLedger::open(database_path.as_ref()).map_err(map_sqlite)?;
         Ok(Self {
             state: Arc::new(LiveHostState {
                 database_path: database_path.as_ref().to_owned(),
                 installed,
                 limits,
+                read_limits,
                 clock,
                 dispatcher,
             }),
         })
+    }
+
+    /// Lists installed Agent definitions without exposing Runtime configuration.
+    pub fn list_agent_definitions(&self) -> Result<AgentDefinitionPageV1, LiveHostError> {
+        let page = AgentDefinitionPageV1 {
+            api_version: "v1",
+            definitions: vec![AgentDefinitionSummaryV1 {
+                api_version: "v1",
+                definition_id: self.state.installed.definition_id.clone(),
+                definition_revision: self.state.installed.definition_revision.clone(),
+                capabilities: Vec::new(),
+            }],
+        };
+        if page.definitions.len() > self.state.read_limits.max_definitions
+            || serde_json::to_vec(&page)
+                .map_err(|_| LiveHostError::CorruptState)?
+                .len()
+                > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        Ok(page)
     }
 
     /// Returns explicit Host bounds used by HTTP parsing and event follow mode.

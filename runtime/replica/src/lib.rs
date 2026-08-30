@@ -55,9 +55,10 @@ pub use delegation_runtime::{
     plan_delegation_request, DelegationChildStartCommand, DelegationRuntimeError,
 };
 pub use live_host::{
-    CommittedTurn, CreateSessionResponse, HostClock, HostEventPage, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,
-    TurnCommandResponse, TurnDispatchError, TurnDispatcher,
+    AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
+    HostClock, HostEventPage, HostReadLimits, InstalledAgent, LiveHost, LiveHostError,
+    LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError, TurnCommandResponse,
+    TurnDispatchError, TurnDispatcher,
 };
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
