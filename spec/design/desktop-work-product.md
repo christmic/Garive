@@ -191,6 +191,16 @@ attention badge, and relative time. Search is local over H2 public titles/text
 only; no hidden context is indexed. Keyboard navigation, contextual menus, pin,
 rename, archive, and deletion appear only when their Host mutations exist.
 
+The rail orders Needs input before Active, Failed, Ready, and Completed work,
+then by latest public update, while preserving the exact durable lifecycle in
+details. `Command-K` opens a focus-contained task control center with New work,
+Search all work, Activity, and Settings plus the same bounded priority queue.
+Each row combines text and a semantic indicator, so color is never the only
+signal. `Command-F` opens full search with All, Needs input, Active, and
+Completed filters. A selected suspended Session opens its decision card; a
+failed Session opens its stable failure and retry contract; a disconnected
+Session exposes explicit Reconnect without implying that execution stopped.
+
 Workspace rows contain an opaque ID and backend-approved display label, never
 a filesystem path. Choosing a folder happens in a native picker. Revoking a
 Workspace stops new access and does not falsify existing receipts.

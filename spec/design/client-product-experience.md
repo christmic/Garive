@@ -120,6 +120,24 @@ model deployment, and database fields never appear in the normal conversation
 surface. A developer Web composition may show its explicit Host URL in a
 separate connection screen.
 
+### Task control and command center
+
+Desktop and Web derive task labels only from the H2 lifecycle projection. The
+presentation groups suspended work as Needs input, running work as Active,
+failed work as Failed, completed/stopped work as Completed, and every other
+admitted state as Ready. Attention sorts before active, failed, ready, and
+completed work; recency breaks ties. Presentation priority never invents
+Runtime scheduling, background concurrency, or completion.
+
+`Command-K` opens one modal command center over the current route. It combines
+new work, full search, inspector, and settings actions with a bounded list of
+priority durable Sessions. Typing filters only H2 public titles and definition
+labels. Arrow keys and Tab reach actions, focus remains inside the dialog,
+Escape closes it, and focus returns to the invoking control. Search offers All,
+Needs input, Active, and Completed lifecycle filters without a separate index.
+At narrow widths the same actions and state vocabulary reflow rather than
+disappearing.
+
 ## Application state machine
 
 ```text
