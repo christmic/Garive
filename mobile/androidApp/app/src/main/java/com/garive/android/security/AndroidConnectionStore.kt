@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
+import java.security.KeyPairGenerator
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -48,6 +49,25 @@ internal class AndroidConnectionStore(context: Context) {
         preferences.edit().clear().commit()
         val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         if (store.containsAlias(KEY_ALIAS)) store.deleteEntry(KEY_ALIAS)
+        if (store.containsAlias(DEVICE_KEY_ALIAS)) store.deleteEntry(DEVICE_KEY_ALIAS)
+    }
+
+    /** Stable device public key retained by Android Keystore for pairing identity. */
+    fun devicePublicKey(): String {
+        val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
+        val existing = store.getCertificate(DEVICE_KEY_ALIAS)?.publicKey
+        val key = existing ?: KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, KEYSTORE).run {
+            initialize(
+                KeyGenParameterSpec.Builder(
+                    DEVICE_KEY_ALIAS,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+                )
+                    .setDigests(KeyProperties.DIGEST_SHA256)
+                    .build(),
+            )
+            generateKeyPair().public
+        }
+        return Base64.encodeToString(key.encoded, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
     }
 
     private fun key(): SecretKey {
@@ -77,6 +97,7 @@ internal class AndroidConnectionStore(context: Context) {
         const val CIPHERTEXT = "ciphertext"
         const val KEYSTORE = "AndroidKeyStore"
         const val KEY_ALIAS = "garive.mobile.remote.access.v1"
+        const val DEVICE_KEY_ALIAS = "garive.mobile.remote.device.v1"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
     }
 }

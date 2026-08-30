@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun PairingScreen(
     errorCode: String?,
+    pairing: Boolean,
     onConnect: (String, String) -> Unit,
 ) {
     var origin by remember { mutableStateOf("") }
@@ -92,14 +94,15 @@ internal fun PairingScreen(
             }
             Button(
                 onClick = { onConnect(origin.trim(), code) },
-                enabled = origin.isNotBlank() && code.isNotBlank(),
+                enabled = origin.isNotBlank() && code.isNotBlank() && !pairing,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             ) {
-                Text("Connect securely")
+                if (pairing) CircularProgressIndicator(strokeWidth = 2.dp)
+                else Text("Connect securely")
             }
             Text(
                 "Remote connections require HTTPS. Garive never stores the access code in preferences or logs.",
