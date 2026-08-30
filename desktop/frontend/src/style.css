@@ -1,6 +1,51 @@
-:root { color: #eee; background: #111; font: 16px system-ui, sans-serif; }
-body { margin: 0; }
-main { margin: 4rem; }
-button { padding: .6rem 1rem; }
-output { display: block; margin-top: 1rem; color: #9fe; }
-[role="alert"] { color: #ff9b9b; }
+:root {
+  color: #22231f; background: #f3f1eb; font: 16px/1.5 system-ui, -apple-system, sans-serif;
+  color-scheme: light dark; --paper: #fffefb; --ink: #22231f; --muted: #62655f;
+  --line: #d9d8d1; --accent: #285bc3; --danger: #9c2f2a;
+}
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; min-width: 320px; height: 100%; margin: 0; }
+body { background: radial-gradient(circle at 12% 8%, #e5ebfa, transparent 34%), #f3f1eb; }
+button, input, select { font: inherit; }
+button { min-height: 44px; padding: .65rem 1rem; border: 1px solid var(--line); border-radius: .7rem; color: var(--ink); background: var(--paper); cursor: pointer; }
+button:hover:not(:disabled) { border-color: #9aabd0; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #6d94e3; outline-offset: 2px; }
+.primary { color: white; border-color: #285bc3; background: #285bc3; }
+.status-shell, .setup-shell { display: grid; min-height: 100%; place-items: center; padding: clamp(1rem, 5vw, 4rem); }
+.status-card, .setup-card { width: min(46rem, 100%); padding: clamp(1.3rem, 4vw, 2.5rem); border: 1px solid var(--line); border-radius: 1.35rem; background: color-mix(in srgb, var(--paper) 92%, transparent); box-shadow: 0 1.5rem 5rem #1d25321a; }
+.status-card h1, .setup-card h1 { margin: .1rem 0 .5rem; font-size: clamp(1.8rem, 5vw, 2.55rem); letter-spacing: -.035em; }
+.status-card > p, .setup-lede { color: var(--muted); }
+.status-card details { margin: 1rem 0; }
+.status-card code { display: block; margin-top: .5rem; overflow-wrap: anywhere; }
+.eyebrow { margin: 0; color: var(--accent); font-size: .75rem; font-weight: 750; letter-spacing: .12em; }
+.setup-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; margin: 1.7rem 0; padding: 0; list-style: none; }
+.setup-progress li { padding: .55rem .7rem; border-bottom: 3px solid var(--line); color: var(--muted); font-size: .8rem; }
+.setup-progress li[aria-current="step"] { border-color: var(--accent); color: var(--ink); font-weight: 700; }
+.setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.field { display: grid; gap: .4rem; color: var(--muted); font-size: .82rem; font-weight: 650; }
+.field input, .field select { width: 100%; min-height: 44px; padding: .65rem .75rem; border: 1px solid var(--line); border-radius: .65rem; color: var(--ink); background: var(--paper); }
+.disclosure { margin-top: 1rem; padding-inline: 0; border: 0; color: var(--accent); background: transparent; }
+.setup-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: 1.5rem; }
+.setup-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; overflow: hidden; margin: 0 0 1.3rem; border: 1px solid var(--line); border-radius: .8rem; background: var(--line); }
+.setup-summary div { padding: .8rem; background: var(--paper); }
+.setup-summary dt { color: var(--muted); font-size: .75rem; }
+.setup-summary dd { margin: .2rem 0 0; overflow-wrap: anywhere; font-weight: 650; }
+.field-note { margin: .35rem 0 0; color: var(--muted); font-size: .78rem; }
+.setup-ready { padding: .5rem 0; }
+.setup-error, [role="alert"] { color: var(--danger); }
+.setup-error { margin-top: 1rem; padding: .7rem; border: 1px solid #d9aaa6; border-radius: .6rem; background: #fff3f2; }
+@media (max-width: 36rem) {
+  .status-shell, .setup-shell { align-items: start; padding: .75rem; }
+  .status-card, .setup-card { border-radius: 1rem; }
+  .setup-grid, .setup-summary { grid-template-columns: 1fr; }
+  .setup-actions { flex-direction: column-reverse; }
+  .setup-actions button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #20211f; --ink: #f2f1ec; --muted: #b6b8b1; --line: #484a46; --accent: #8eb1ff; --danger: #ffaaa4; }
+  body { background: radial-gradient(circle at 12% 8%, #26314a, transparent 34%), #171816; }
+  .primary { color: #101620; border-color: #8eb1ff; background: #8eb1ff; }
+  .setup-error { border-color: #814b48; background: #382321; }
+}
