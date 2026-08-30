@@ -23,6 +23,7 @@ mod memory_control;
 mod memory_export;
 mod memory_export_io;
 mod model_http_transport;
+mod native_capability;
 mod observability_runtime;
 mod plan_carry_forward;
 mod plan_recovery;
@@ -134,6 +135,13 @@ pub use memory_export_io::export_memory_snapshot;
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
     RUNTIME_MODEL_HTTP_TRANSPORT_REVISION,
+};
+pub use native_capability::{
+    ApplicationId, BrowserPageId, BrowserSessionId, DesktopSessionId, NativeActionCommandV1,
+    NativeActionFuture, NativeActionId, NativeActionReceiptV1, NativeAdapterBindingV1,
+    NativeAdapterPort, NativeNodeRef, NativeObservationBounds, NativeObservationFuture,
+    NativeObservationV1, NativeProtocolError, NativeSemanticNode, NativeSensitivity,
+    NativeSnapshotId, NativeTarget, WindowId,
 };
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,

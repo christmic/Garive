@@ -332,6 +332,14 @@ to node references. It commits `native.action.prepared`, safety/grant and
 adapter binding before dispatch, `native.action.started` immediately before
 the native boundary, then a trustworthy receipt and resulting observation.
 
+The Runtime-facing adapter contract is `NativeAdapterPort`. Its platform-neutral
+v1 values use distinct typed target/snapshot/node/action identities, a bounded
+flat parent-before-child semantic tree, snapshot-scoped focus, a non-dispatching
+`preflight_action`, and a single post-Started `dispatch_action`. Adapter
+implementations must return only the frozen stable failures below. The port is
+not an alternate authority or ledger boundary and does not make a platform
+implementation claim by itself.
+
 Browser/desktop mutations are `NeverReplay` by default. If Started has no
 receipt, Runtime observes current native state and may satisfy an exact declared
 postcondition only as reconciliation evidence; it never repeats the action
