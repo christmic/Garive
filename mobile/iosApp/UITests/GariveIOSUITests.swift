@@ -64,6 +64,22 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testConversationCommitsDeclineThroughTheLiveHost() throws {
+        let app = walkthroughApp(
+            "--garive-walkthrough-conversation",
+            "--garive-walkthrough-session", "release-decline"
+        )
+        app.launch()
+
+        XCTAssertTrue(app.buttons["Decline"].waitForExistence(timeout: 8))
+        app.buttons["Decline"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Declined. The protected action was skipped and the decision was committed."]
+                .waitForExistence(timeout: 8)
+        )
+    }
+
+    @MainActor
     func testPairingRequiresSecureExplicitFields() throws {
         let app = XCUIApplication()
         app.launch()

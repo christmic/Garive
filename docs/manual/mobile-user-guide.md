@@ -256,9 +256,12 @@ Execution 不接受绕过协议的即时文本注入。
 4. 等待状态变为服务端确认的 `Completed`、继续运行或新的等待状态。
 
 拒绝和批准走同一个带精确 suspension/version/schema 坐标的继续协议，但提交的布尔响应不同；
-客户端不把“关闭页面”冒充拒绝。下面是从 Android 原生 UI 点击批准后，由演示 Host 提交并回读的结果：
+客户端不把“关闭页面”冒充拒绝。下面分别是从 Android 原生 UI 点击批准、从 iOS 原生 UI 点击
+拒绝后，由演示 Host 提交并回读的结果：
 
 ![Android 批准后服务端提交结果](assets/mobile/android-19-approved.png)
+
+![iOS 拒绝后服务端提交结果](assets/mobile/ios-16-declined.png)
 
 应用不会根据通知文本直接审批。通知只带一次性 opaque route token；打开通知后，应用先向
 Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片。
@@ -375,10 +378,12 @@ adb reverse tcp:4318 tcp:4318
 adb shell am start -n com.garive.android/.MainActivity --ez garive_walkthrough true
 adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true --es garive_walkthrough_session release-approval
+adb shell am start -n com.garive.android/.MainActivity \
+  --ez garive_walkthrough true --es garive_walkthrough_session release-decline
 ```
 
 也可以用一条门禁命令自动完成 Host 启停、ADB 端口转发，以及真实网络上的
-`create/start → cancel → 第二轮 append`，随后提交一次性审批并回读完成结果：
+`create/start → cancel → 第二轮 append`，随后分别提交一次性批准和拒绝并回读完成结果：
 
 ```text
 just mobile-android-live-ui \
@@ -395,6 +400,8 @@ iOS Simulator 可直接打开首页、导航抽屉或审批 Session：
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-sidebar
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-conversation
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough \
+  --garive-walkthrough-conversation --garive-walkthrough-session release-decline
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-new-task
 ```
 
@@ -432,13 +439,13 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（15 条加 2 条 opt-in 真实 Host journeys，含严格配对链接、整应用 Work → Sessions →
-create/start → cancel → append → approve 及
-Light → Dark 切换）、Swift 测试（9 条）、iOS Simulator XCUITest（4 条，含真实 loopback
-create/start → cancel → append、一次性审批提交与 Light → Dark → System 切换）与构建，以及断开/恢复 Host 的
+界面流程（15 条加 3 条 opt-in 真实 Host journeys，含严格配对链接、整应用 Work → Sessions →
+create/start → cancel → append → approve/decline 及
+Light → Dark 切换）、Swift 测试（9 条）、iOS Simulator XCUITest（5 条，含真实 loopback
+create/start → cancel → append、批准/拒绝提交与 Light → Dark → System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 36 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 37 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图

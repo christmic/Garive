@@ -276,11 +276,19 @@ final class MobileViewModel: ObservableObject {
             } else {
                 nil
             }
+            let requestedSessionID: String? = if let index = arguments.firstIndex(of: "--garive-walkthrough-session"),
+                                                 arguments.indices.contains(index + 1) {
+                arguments[index + 1]
+            } else if arguments.contains("--garive-walkthrough-conversation") {
+                "release-approval"
+            } else {
+                nil
+            }
             bootWalkthrough(
                 controller,
                 destination: destination,
                 presentNewTask: arguments.contains("--garive-walkthrough-new-task"),
-                openConversation: arguments.contains("--garive-walkthrough-conversation")
+                openSessionID: requestedSessionID
             )
         } catch {
             errorCode = "walkthrough_connection_failed"
@@ -291,10 +299,11 @@ final class MobileViewModel: ObservableObject {
         _ controller: MobileWorkController,
         destination: MobileDestination?,
         presentNewTask: Bool,
-        openConversation: Bool
+        openSessionID: String?
     ) {
         let transferredController = UnsafeTransfer(controller)
         let transferredDestination = UnsafeTransfer(destination)
+        let transferredSessionID = UnsafeTransfer(openSessionID)
         controller.boot { [weak self] value, error in
             let transferredValue = UnsafeTransfer(value)
             let failed = error != nil
@@ -310,7 +319,7 @@ final class MobileViewModel: ObservableObject {
                     self.state = transferredController.value.selectDestination(destination: destination)
                 }
                 self.presentingNewTask = presentNewTask
-                if openConversation { self.open("release-approval") }
+                if let sessionID = transferredSessionID.value { self.open(sessionID) }
             }
         }
     }

@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestWalkthroughSeedsIndependentApprovalDecisions(t *testing.T) {
+	host := newDemoHost()
+	approve := host.find("release-approval")
+	decline := host.find("release-decline")
+
+	if approve == nil || decline == nil {
+		t.Fatalf("approval sessions = %#v", host.sessions)
+	}
+	if approve.State != "suspended" || decline.State != "suspended" || approve.TurnID == decline.TurnID {
+		t.Fatalf("approve = %#v, decline = %#v", approve, decline)
+	}
+}
+
 func TestApprovalWalkthroughCommitsBothDecisions(t *testing.T) {
 	tests := []struct {
 		input string

@@ -31,8 +31,8 @@ def verify(artifacts: bool) -> None:
             f"mobile screenshot drift; missing={sorted(references - files)}, "
             f"unreferenced={sorted(files - references)}"
         )
-    if len(files) != 36 or "当前手册包含 36 张实际运行截图" not in text:
-        raise ValueError(f"manual must contain and declare exactly 36 screenshots, found {len(files)}")
+    if len(files) != 37 or "当前手册包含 37 张实际运行截图" not in text:
+        raise ValueError(f"manual must contain and declare exactly 37 screenshots, found {len(files)}")
 
     required = {
         "android-18-navigation-dark.png",
@@ -58,7 +58,7 @@ def verify(artifacts: bool) -> None:
             raise ValueError(f"missing mobile delivery source: {path.relative_to(ROOT)}")
 
     status = (ROOT / "spec/STATUS.md").read_text()
-    if "complete 36-screenshot user guide" not in status:
+    if "complete 37-screenshot user guide" not in status:
         raise ValueError("spec/STATUS.md does not match the checked-in mobile evidence")
 
     if artifacts:

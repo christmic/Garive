@@ -77,6 +77,26 @@ public class LiveHostJourneyTest {
         }
     }
 
+    @Test
+    public fun commitsDeclineThroughTheLiveHost(): Unit {
+        requireLiveHost()
+        val context = cleanContext()
+        ActivityScenario.launch<MainActivity>(walkthroughIntent(context, "release-decline")).use {
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText("Decline").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNode(hasText("Decline") and hasClickAction()).performClick()
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText("Completed · server work continues").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText(
+                    "Declined. The protected action was skipped and the decision was committed.",
+                ).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+    }
+
     private fun requireLiveHost(): Unit = assumeTrue(
         "Run through `just mobile-android-live-ui` so the loopback Host and adb reverse are explicit.",
         InstrumentationRegistry.getArguments().getString("gariveLiveHost") == "true",

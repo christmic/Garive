@@ -46,17 +46,22 @@ type demoHost struct {
 }
 
 func main() {
-	host := &demoHost{next: 4, sessions: []*session{
-		{ID: "release-approval", Definition: "mobile-orchestrator", State: "suspended", Position: 12, TurnID: "turn-approval", Turns: 3, UserText: "Finish the mobile release and verify every platform."},
-		{ID: "runtime-monitor", Definition: "incident-responder", State: "running", Position: 8, TurnID: "turn-running", Turns: 2, UserText: "Monitor the production rollout and report anomalies."},
-		{ID: "design-review", Definition: "product-reviewer", State: "completed", Position: 16, TurnID: "turn-complete", Turns: 4, UserText: "Review the mobile interaction design.", Completion: "Review complete: navigation, typography, accessibility, and remote controls meet the accepted mobile specification."},
-	}}
+	host := newDemoHost()
 	address := os.Getenv("GARIVE_DEMO_HOST_LISTEN")
 	if address == "" {
 		address = "127.0.0.1:4318"
 	}
 	log.Printf("Garive mobile demo Host ready on %s", address)
 	log.Fatal(http.ListenAndServe(address, host))
+}
+
+func newDemoHost() *demoHost {
+	return &demoHost{next: 4, sessions: []*session{
+		{ID: "release-approval", Definition: "mobile-orchestrator", State: "suspended", Position: 12, TurnID: "turn-approval", Turns: 3, UserText: "Finish the mobile release and verify every platform."},
+		{ID: "release-decline", Definition: "mobile-orchestrator", State: "suspended", Position: 10, TurnID: "turn-decline", Turns: 2, UserText: "Run the protected release action only if the mobile checks are approved."},
+		{ID: "runtime-monitor", Definition: "incident-responder", State: "running", Position: 8, TurnID: "turn-running", Turns: 2, UserText: "Monitor the production rollout and report anomalies."},
+		{ID: "design-review", Definition: "product-reviewer", State: "completed", Position: 16, TurnID: "turn-complete", Turns: 4, UserText: "Review the mobile interaction design.", Completion: "Review complete: navigation, typography, accessibility, and remote controls meet the accepted mobile specification."},
+	}}
 }
 
 func (d *demoHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
