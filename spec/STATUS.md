@@ -78,8 +78,8 @@ planned without reopening a narrower completed row.
 | Slice | Design | Spec | API | Code | Tests | State | Admission dependency |
 |---|---|---|---|---|---|---|---|
 | Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds/revision/capability-admission fixtures, exact L0 payloads, Runtime authority, atomic writes, and SQLite commit-before-C2/restart evidence green. |
-| Memory M1 | accepted | accepted | partial | partial | partial | active | M1-A through M1-G remain verified; complete M1-H exact recall/application membership, attributable outcome chain and content-free quality evidence after the latest deep design reconciliation. |
-| Memory M1-H | accepted | accepted | missing | missing | missing | active | Add recall-fact-bound obligations, fixed-prefix membership/ownership checks, Rust/Kotlin fixtures, restart corruption cases and exact chain-quality reduction. |
+| Memory M1 | accepted | accepted | documented | implemented | verified | done | Keep M1-A through M1-H green: shared Rust/Kotlin lifecycle/maintenance/recall/feedback semantics, exact L0 facts, SQLite membership/restart checks, committed C2 admission and pinned quality reductions. |
+| Memory M1-H | accepted | accepted | documented | implemented | verified | done | Keep recall-fact-bound obligations, fixed-prefix owner/selection/membership validation, restart forgery refusal and exact content-free Rust/Kotlin feedback ratios green. |
 | Memory M2 | accepted | accepted | partial | partial | partial | active | M2-A through M2-C are complete; implement M2-D opaque-capability Desktop review, confirmation and receipt workflow. |
 | Memory M2-A/B | accepted | accepted | documented | implemented | verified | done | Keep exact-identity documents, canonical manifest/layout validation, authority-safe ordered plans and shared Rust/Kotlin digests green. |
 | Memory M2-C | accepted | accepted | documented | implemented | verified | done | Keep exact grants, namespace projection/journal transactions, canonical receipts, content-scrubbing erasure, fsynced directory export and import/export crash/replay/corruption matrices green. |

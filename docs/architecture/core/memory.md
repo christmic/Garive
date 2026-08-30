@@ -1796,6 +1796,6 @@ configuration, durable commit, recovery, erasure and Knowledge receipts.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: **mixed maturity** — M0 and M1-A through M1-G are verified; M1-H and
-  M2 remain accepted and active. Knowledge-graph structure, representative longitudinal
+- Status: **mixed maturity** — M0 and M1-A through M1-H are verified; M2
+  remains accepted and active. Knowledge-graph structure, representative longitudinal
   quality, and unpromoted numeric/mechanism proposals remain research.

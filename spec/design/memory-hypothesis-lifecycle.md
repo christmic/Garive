@@ -432,7 +432,9 @@ Stable additions are `unknown_memory_type`, `authority_receipt_required`,
 4. M1-D obligation/observation and scope narrowing;
 5. M1-E Runtime facts, SQLite projection, restart and isolation;
 6. M1-F distillation, audit, promotion and erasure receipts;
-7. M1-G derive integration and pinned recall-quality evaluation.
+7. M1-G derive integration and pinned recall-quality evaluation;
+8. M1-H recall-bound application membership, restart validation and exact
+   attributable feedback-quality reduction.
 
 Portable slices require strict Rust evidence plus Kotlin semantic conformance.
 Runtime claims require real SQLite restart/process-kill tests. Quality/latency
@@ -450,6 +452,14 @@ The admitted v1 synthetic suite contains four selector-linked cases. Its pinned
 aggregate is recall `6/7`, precision `6/8`, zero forbidden admissions and zero
 ordered replay mismatches. These unreduced fractions are regression evidence,
 not a production quality target.
+
+M1-H adds `memory-recall-feedback-v1.json`. Rust and Kotlin independently
+reduce the same content-free chain rows into exact exposure, application,
+censored, pending, verified, falsified and neutral counts plus unreduced
+application and verified-outcome ratios. Runtime planning verifies recall and
+application fact identity, namespace, Turn/Execution owner, selection identity
+and exact revision membership. SQLite reconstruction repeats those checks and
+fails closed on a forged selection after restart.
 
 ## Meta
 
