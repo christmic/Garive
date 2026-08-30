@@ -303,6 +303,19 @@ Only the portable `press` and non-secure `set_value` capabilities are exposed;
 unknown native actions remain unavailable. Secure text values are never read,
 their value capability is withheld, and the result records native redaction.
 
+The native observation result retains a broker-private, positionally exact
+mapping from every snapshot node index to the AX object read for that node.
+Before `press` or `set_value`, native preflight rechecks permission, process and
+window identity, rebuilds the bounded semantic projection and requires exact
+snapshot equality, then requires CoreFoundation equality for the selected node.
+An observation binding is atomically consumed immediately before native
+dispatch and can dispatch at most once. Permission loss, changed semantic
+state, replaced nodes and protected values fail before dispatch. After dispatch,
+the adapter obtains a new observation; loss of trustworthy post-dispatch
+evidence is uncertain and the consumed action is never repeated. `set_value`
+accepts at most 32,768 Unicode scalar values and 131,072 UTF-8 bytes at this
+native boundary, matching the stricter Runtime tool-schema character bound.
+
 ### Computer Use tools
 
 ```text

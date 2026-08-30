@@ -135,7 +135,9 @@ public final class SystemNativeAXObserver {
             nodeIndex = index
             requiredAction = .press
         case let .setValue(index, value):
-            guard value.count <= 32_768, value.utf8.count <= 131_072 else {
+            guard value.unicodeScalars.count <= 32_768,
+                  value.utf8.count <= 131_072
+            else {
                 throw NativeAXActionFailure.invalidAction
             }
             nodeIndex = index

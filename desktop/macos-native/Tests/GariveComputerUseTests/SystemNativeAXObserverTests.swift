@@ -252,6 +252,41 @@ func consumesAXObservationOnce() throws {
     #expect(access.pressedElements.count == 1)
 }
 
+@Test("AX set-value enforces the Runtime scalar bound before reinspection")
+func rejectsOversizedAXSetValue() throws {
+    let window = AXUIElementCreateApplication(7_014)
+    let field = AXUIElementCreateApplication(7_015)
+    let access = NativeAXAccessProbe(
+        windowElements: [window],
+        semanticRoot: .init(
+            role: "AXWindow",
+            children: [.init(role: "AXTextField", valueSettable: true)]
+        ),
+        semanticElements: [window, field]
+    )
+    let observer = makeGrantedAXObserver(access: access)
+    let windowBinding = try #require(
+        observer.bindWindows(applicationIdentity: makeAXApplicationIdentity()).first
+    )
+    let observation = try observer.observe(
+        window: windowBinding,
+        bounds: try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
+    )
+    let semanticCallsBeforeAction = access.semanticCallCount
+
+    #expect(throws: NativeAXActionFailure.invalidAction) {
+        try observer.perform(
+            action: .setValue(
+                nodeIndex: 1,
+                value: String(repeating: "a", count: 32_769)
+            ),
+            observation: observation
+        )
+    }
+    #expect(access.semanticCallCount == semanticCallsBeforeAction)
+    #expect(access.setValues.isEmpty)
+}
+
 private func makeGrantedAXObserver(
     access: NativeAXAccessProbe
 ) -> SystemNativeAXObserver {
