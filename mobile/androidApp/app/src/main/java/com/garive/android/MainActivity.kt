@@ -43,17 +43,22 @@ public class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val walkthrough = BuildConfig.DEBUG && intent.getBooleanExtra(WALKTHROUGH_EXTRA, false)
         pairingSuggestion.value = parsePairingLink(intent?.data)
         val store = AndroidConnectionStore(this)
         wakeToken.value = intent?.takeIf { it.action == WAKE_ACTION }?.getStringExtra(WAKE_TOKEN)
-        if (store.load() != null) requestNotificationPermission()
+        if (!walkthrough && store.load() != null) requestNotificationPermission()
         setContent {
             GariveTheme {
-                GariveRoot(
-                    store, pairingSuggestion.value, wakeToken.value,
-                    onWakeConsumed = { wakeToken.value = null },
-                    requestNotifications = ::requestNotificationPermission,
-                )
+                if (walkthrough) {
+                    GariveWalkthroughRoot()
+                } else {
+                    GariveRoot(
+                        store, pairingSuggestion.value, wakeToken.value,
+                        onWakeConsumed = { wakeToken.value = null },
+                        requestNotifications = ::requestNotificationPermission,
+                    )
+                }
             }
         }
     }
@@ -70,7 +75,22 @@ public class MainActivity : ComponentActivity() {
         }
     }
 
-    private companion object { const val NOTIFICATION_PERMISSION_REQUEST = 41 }
+    private companion object {
+        const val NOTIFICATION_PERMISSION_REQUEST = 41
+        const val WALKTHROUGH_EXTRA = "garive_walkthrough"
+    }
+}
+
+@Composable
+private fun GariveWalkthroughRoot() {
+    val origin = "http://127.0.0.1:4318/"
+    val controller = remember {
+        MobileWorkController(
+            host = LiveHostClient(origin, limits()),
+            identities = CommandIdentitySource { UUID.randomUUID().toString() },
+        )
+    }
+    GariveMobileApp(origin, controller, null, {}, {})
 }
 
 @Composable

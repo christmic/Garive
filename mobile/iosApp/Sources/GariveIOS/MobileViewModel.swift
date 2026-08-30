@@ -25,6 +25,12 @@ final class MobileViewModel: ObservableObject {
 
     init(store: ConnectionStore = ConnectionStore()) {
         self.store = store
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--garive-walkthrough") {
+            connectWalkthrough()
+            return
+        }
+#endif
         credentials = store.load()
 #if os(iOS)
         MobilePushInbox.shared.attach(
@@ -181,6 +187,27 @@ final class MobileViewModel: ObservableObject {
             if persist { store.clear(); credentials = nil }
         }
     }
+
+#if DEBUG
+    private func connectWalkthrough() {
+        let origin = "http://127.0.0.1:4318/"
+        do {
+            let limits = HostClientLimits(
+                maxCommandBytes: 16_384, maxEventBytes: 65_536,
+                maxEvents: 1_024, followDeadlineMs: 120_000
+            )
+            let host = try LiveHostClient(baseUrl: origin, limits: limits)
+            let controller = MobileWorkController(
+                host: host, identities: UUIDIdentitySource(), pageLimit: 100, maxInputBytes: 16_384
+            )
+            self.controller = controller
+            credentials = ConnectionCredentials(origin: origin, accessGrant: "walkthrough")
+            perform { callback in controller.boot(completionHandler: callback) }
+        } catch {
+            errorCode = "walkthrough_connection_failed"
+        }
+    }
+#endif
 
     private func perform(
         _ operation: (@escaping @Sendable (MobileWorkState?, Error?) -> Void) -> Void
