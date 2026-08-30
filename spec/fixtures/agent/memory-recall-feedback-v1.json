@@ -1,0 +1,17 @@
+{
+  "schema_version":1,
+  "contract":"memory-recall-feedback-v1",
+  "policy_revision":"score-sum-v1",
+  "candidate_port_revision":"ports-v1",
+  "attribution_policy_revision":"attribution-v1",
+  "verifier_revision":"verifier-v1",
+  "corpus_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rows":[
+    {"exposure_id":"e1","selection_id":"s1","record_id":"r1","revision_id":"v1","applied":false},
+    {"exposure_id":"e2","selection_id":"s1","record_id":"r2","revision_id":"v2","applied":true},
+    {"exposure_id":"e3","selection_id":"s2","record_id":"r1","revision_id":"v1","applied":true,"outcome":"verified"},
+    {"exposure_id":"e4","selection_id":"s2","record_id":"r2","revision_id":"v2","applied":true,"outcome":"falsified"},
+    {"exposure_id":"e5","selection_id":"s3","record_id":"r3","revision_id":"v3","applied":true,"outcome":"neutral"}
+  ],
+  "expected":{"exposures":5,"applications":4,"censored":1,"pending":1,"verified":1,"falsified":1,"neutral":1,"application_ratio":[4,5],"verified_outcome_ratio":[1,2]}
+}
