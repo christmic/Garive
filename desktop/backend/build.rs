@@ -36,6 +36,8 @@ fn main() {
             "read_pending_command",
             "write_pending_command",
             "get_agent_definitions",
+            "get_product_sessions",
+            "get_product_timeline",
             "create_product_session",
             "start_product_turn",
             "cancel_product_turn",

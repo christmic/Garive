@@ -45,12 +45,16 @@ pub use garive_runtime::HostArtifactPage as DesktopArtifactPage;
 pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
 /// Durable path-free Workspace detachment receipt exposed to Desktop clients.
 pub use garive_runtime::HostWorkspaceDetachment as DesktopWorkspaceDetachment;
+/// Bounded H2 Session page exposed to product clients.
+pub use garive_runtime::SessionPageV1 as DesktopSessionPage;
 /// Restart-safe durable Session summary exposed to Desktop clients.
 pub use garive_runtime::SessionSummary as DesktopSessionSummary;
 /// Exact durable Turn mutation receipt exposed to Desktop clients.
 pub use garive_runtime::TurnCommandResponse as DesktopTurnCommandReceipt;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
+/// Bounded H2/H3 timeline page exposed to product clients.
+pub use garive_runtime::TurnTimelinePageV1 as DesktopProductTimelinePage;
 pub use product_store::{DesktopProductStore, DesktopProductStoreError, MAX_PRODUCT_STORE_BYTES};
 pub use setup::{
     authorize_setup_window, DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError,
@@ -282,6 +286,29 @@ impl DesktopHost {
     pub fn definitions(&self) -> Result<DesktopDefinitionPage, DesktopHostError> {
         self.host
             .list_agent_definitions()
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    /// Lists one reverse-opened bounded page of verified Sessions.
+    pub fn sessions(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<DesktopSessionPage, DesktopHostError> {
+        self.host
+            .list_sessions(limit, before)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    /// Reads one bounded H2/H3 timeline page at a frozen watermark.
+    pub fn product_timeline(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<DesktopProductTimelinePage, DesktopHostError> {
+        self.host
+            .get_timeline(session_id, after_position, limit)
             .map_err(|_| DesktopHostError::ProjectionFailure)
     }
 
@@ -672,6 +699,26 @@ impl DesktopState {
     /// Returns the installed immutable Agent definitions.
     pub fn definitions(&self) -> Result<DesktopDefinitionPage, DesktopHostError> {
         self.installed_host()?.definitions()
+    }
+
+    /// Lists one bounded page of durable Sessions.
+    pub fn sessions(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<DesktopSessionPage, DesktopHostError> {
+        self.installed_host()?.sessions(limit, before)
+    }
+
+    /// Reads one bounded H2/H3 product timeline page.
+    pub fn product_timeline(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<DesktopProductTimelinePage, DesktopHostError> {
+        self.installed_host()?
+            .product_timeline(session_id, after_position, limit)
     }
 
     /// Creates or exactly replays one caller-addressed Session command.

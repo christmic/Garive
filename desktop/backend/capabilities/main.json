@@ -40,6 +40,8 @@
     "allow-read-pending-command",
     "allow-write-pending-command",
     "allow-get-agent-definitions",
+    "allow-get-product-sessions",
+    "allow-get-product-timeline",
     "allow-create-product-session",
     "allow-start-product-turn",
     "allow-cancel-product-turn",

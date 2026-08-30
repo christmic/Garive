@@ -586,6 +586,29 @@ fn get_agent_definitions(
 }
 
 #[tauri::command]
+fn get_product_sessions(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    limit: usize,
+    before: Option<String>,
+) -> Result<garive_desktop::DesktopSessionPage, String> {
+    state
+        .sessions(limit, before.as_deref())
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn get_product_timeline(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    after_position: u64,
+    limit: usize,
+) -> Result<garive_desktop::DesktopProductTimelinePage, String> {
+    state
+        .product_timeline(&session_id, after_position, limit)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn create_product_session(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     command_id: String,
@@ -769,6 +792,8 @@ fn main() {
             read_pending_command,
             write_pending_command,
             get_agent_definitions,
+            get_product_sessions,
+            get_product_timeline,
             create_product_session,
             start_product_turn,
             cancel_product_turn,
