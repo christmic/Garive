@@ -265,4 +265,31 @@ class DefinitionSnapshotTest {
             assertTrue(first.limits.maxIterations <= definition.limits.maxIterations)
         }
     }
+
+    @Test
+    fun snapshotV2BindsOneCompleteSortedPublicToolCatalogue() {
+        val base = definition()
+        val definition = (rebuild(
+            base,
+            contracts = base.contractVersions + ("effective_snapshot" to 2L),
+        ) as DefinitionResult.Success).value
+        val catalogue = PublicToolActivityCatalogue(
+            1,
+            "activity-labels-1",
+            listOf(PublicToolActivityDescriptor("read_file", "1", "agent.activity.read_file")),
+        )
+        val registry = registry().copy(publicToolActivityCatalogue = catalogue)
+        val policy = productPolicy().copy(
+            admittedContractVersions = productPolicy().admittedContractVersions +
+                ("effective_snapshot" to setOf(1L, 2L)),
+        )
+        val snapshot = (resolveDefinition(definition, registry, policy) as DefinitionResult.Success).value
+        assertEquals(catalogue, snapshot.publicToolActivityCatalogue)
+        assertTrue(snapshot.snapshotDigest != (resolveDefinition(base, registry(), productPolicy()) as DefinitionResult.Success).value.snapshotDigest)
+
+        val invalid = registry.copy(publicToolActivityCatalogue = catalogue.copy(descriptors = emptyList()))
+        val failure = resolveDefinition(definition, invalid, policy) as DefinitionResult.Failure
+        assertEquals(ResolutionErrorCode.INVALID_DEFINITION, failure.error.code)
+        assertEquals("/public_tool_activity_catalogue", failure.error.path)
+    }
 }
