@@ -9,10 +9,12 @@ use url::{Host, Url};
 pub struct CdpLimits {
     /// Maximum one-frame UTF-8 payload size.
     pub max_frame_bytes: usize,
-    /// Maximum commands awaiting a response.
+    /// Maximum commands awaiting a response; v1 requires exactly one.
     pub max_in_flight: usize,
     /// Maximum queued unsolicited events.
     pub max_queued_events: usize,
+    /// Maximum wall-clock duration of connect or one command exchange.
+    pub operation_timeout_ms: u64,
 }
 
 impl CdpLimits {
@@ -21,18 +23,21 @@ impl CdpLimits {
         max_frame_bytes: usize,
         max_in_flight: usize,
         max_queued_events: usize,
+        operation_timeout_ms: u64,
     ) -> Result<Self, CdpAdapterConfigError> {
         let value = Self {
             max_frame_bytes,
             max_in_flight,
             max_queued_events,
+            operation_timeout_ms,
         };
         if max_frame_bytes == 0
             || max_frame_bytes > 16_777_216
-            || max_in_flight == 0
-            || max_in_flight > 1_024
+            || max_in_flight != 1
             || max_queued_events == 0
             || max_queued_events > 10_000
+            || operation_timeout_ms == 0
+            || operation_timeout_ms > 120_000
         {
             Err(CdpAdapterConfigError::InvalidLimits)
         } else {

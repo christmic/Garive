@@ -4,9 +4,11 @@
 #![deny(missing_docs)]
 
 mod config;
+mod transport;
 mod wire;
 
 pub use config::{CdpAdapterConfig, CdpAdapterConfigError, CdpLimits};
+pub use transport::{CdpTransport, CdpTransportError};
 pub use wire::{parse_incoming, CdpCommand, CdpError, CdpIncoming, CdpProtocolError};
 
 /// Frozen adapter implementation revision.

@@ -1431,8 +1431,10 @@ dependencies = [
 name = "garive-adapter-browser-cdp"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "serde",
  "serde_json",
+ "tokio",
  "tokio-tungstenite",
  "url",
 ]

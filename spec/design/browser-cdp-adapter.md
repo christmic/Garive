@@ -25,8 +25,10 @@ add a constrained typed builder, but v1 does not expose `Runtime.evaluate`,
 ## Construction and scope
 
 `CdpAdapterConfig` is constructed with one exact `ws://` loopback browser
-endpoint and explicit frame, in-flight and event-queue limits. It performs no
-environment, profile, port or browser discovery. Credentials, query strings,
+endpoint and explicit frame, in-flight, event-queue and operation-time limits.
+V1 requires exactly one in-flight command, and the time limit covers both
+handshake and each command/response exchange. It performs no environment,
+profile, port or browser discovery. Credentials, query strings,
 fragments, non-loopback hosts and TLS/remote endpoints are rejected. Managed
 browsers use a dedicated Garive profile; attached personal tabs require the
 separate verified extension/native-messaging contract.
