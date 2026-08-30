@@ -55,6 +55,7 @@ struct ConversationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var composer = ""
     @State private var confirmingCancel = false
+    @State private var confirmingAbandonRetry = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,7 +63,12 @@ struct ConversationView: View {
                 ScrollView {
                     LazyVStack(spacing: 18) {
                         if let notice = state.noticeCode {
-                            RetryNotice(code: notice, pending: state.pendingCommand != nil, retry: model.retryExact)
+                            RetryNotice(
+                                code: notice,
+                                pending: state.pendingCommand != nil,
+                                retry: model.retryExact,
+                                abandon: { confirmingAbandonRetry = true }
+                            )
                         }
                         ForEach(state.timeline, id: \.turnId) { turn in
                             TurnView(turn: turn, respond: { model.continueDecision($0) })
@@ -96,6 +102,12 @@ struct ConversationView: View {
         .confirmationDialog("Stop this agent’s current turn?", isPresented: $confirmingCancel, titleVisibility: .visible) {
             Button("Stop turn", role: .destructive) { model.cancel() }
         } message: { Text("Committed work remains in the timeline.") }
+        .confirmationDialog("Forget exact retry?", isPresented: $confirmingAbandonRetry, titleVisibility: .visible) {
+            Button("Forget retry", role: .destructive) { model.abandonPending() }
+            Button("Keep retry", role: .cancel) {}
+        } message: {
+            Text("The server may already have accepted this command. Refresh history before starting replacement work.")
+        }
     }
 
     private var title: String {
@@ -193,12 +205,18 @@ private struct RetryNotice: View {
     let code: String
     let pending: Bool
     let retry: () -> Void
+    let abandon: () -> Void
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
             Text(code.replacingOccurrences(of: "_", with: " ")).font(.subheadline)
             Spacer()
-            if pending { Button("Retry exact command", action: retry).font(.caption.bold()) }
+            if pending {
+                VStack(alignment: .trailing) {
+                    Button("Retry exact command", action: retry).font(.caption.bold())
+                    Button("Forget retry", role: .destructive, action: abandon).font(.caption)
+                }
+            }
         }.padding(13).background(GarivePalette.amber.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
     }
 }
