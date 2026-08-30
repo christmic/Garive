@@ -116,7 +116,7 @@ public class LiveHostClientTest {
     public fun rejectsNonLoopbackAndRedactsKnownHostFailure(): Unit = runBlocking {
         assertEquals(
             HostClientError.INVALID_CONFIGURATION,
-            assertFailsWith<HostClientException> { LiveHostClient("https://example.com/", limits()) }.code,
+            assertFailsWith<HostClientException> { LiveHostClient("http://example.com/", limits()) }.code,
         )
         val engine = MockEngine {
             respondJson("""{"code":"not_found","secret":"must-not-leak"}""", HttpStatusCode.NotFound)
@@ -128,6 +128,43 @@ public class LiveHostClientTest {
         assertEquals(HostClientError.HOST_FAILURE, error.code)
         assertEquals(404, error.status)
         assertTrue("must-not-leak" !in error.toString())
+    }
+
+    @Test
+    public fun remoteHttpsSendsBearerWithoutLeakingIt(): Unit = runBlocking {
+        var authorization: String? = null
+        val engine = MockEngine { request ->
+            authorization = request.headers[HttpHeaders.Authorization]
+            respondJson(
+                """{"session_id":"session-client","agent_instance_id":"agent-1","committed_position":1}""",
+            )
+        }
+        val client = LiveHostClient("https://agent.example.test/", "mobile-secret", limits(), HttpClient(engine))
+        client.createSession("create-stable", "definition-main")
+        assertEquals("Bearer mobile-secret", authorization)
+        assertTrue("mobile-secret" !in client.toString())
+    }
+
+    @Test
+    public fun remoteConfigurationFailsBeforeTransport(): Unit {
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> {
+                LiveHostClient("https://127.0.0.1/", "token", limits())
+            }.code,
+        )
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> {
+                LiveHostClient("https://agent.example.test/path", "token", limits())
+            }.code,
+        )
+        assertEquals(
+            HostClientError.INVALID_CONFIGURATION,
+            assertFailsWith<HostClientException> {
+                LiveHostClient("https://agent.example.test/", "", limits())
+            }.code,
+        )
     }
 
     @Test

@@ -43,16 +43,33 @@ public data class HostClientLimits(
 )
 
 /** Bounded loopback H1 HTTP/SSE client shared by Android and iOS. */
-public class LiveHostClient internal constructor(
+public class LiveHostClient private constructor(
     baseUrl: String,
+    private val authorization: RemoteAuthorization?,
     private val limits: HostClientLimits,
     private val client: HttpClient,
 ) {
     /** Creates a production client with fixed no-redirect CIO transport policy. */
     @Throws(HostClientException::class)
     public constructor(baseUrl: String, limits: HostClientLimits) :
-        this(baseUrl, limits, defaultHostHttpClient())
-    private val origin: String = validateBaseUrl(baseUrl)
+        this(baseUrl, null, limits, defaultHostHttpClient())
+
+    /** Creates an authenticated remote client that accepts only a public HTTPS DNS origin. */
+    @Throws(HostClientException::class)
+    public constructor(baseUrl: String, bearerToken: String, limits: HostClientLimits) :
+        this(baseUrl, bearerAuthorization(bearerToken), limits, defaultHostHttpClient())
+
+    internal constructor(baseUrl: String, limits: HostClientLimits, client: HttpClient) :
+        this(baseUrl, null, limits, client)
+
+    internal constructor(
+        baseUrl: String,
+        bearerToken: String,
+        limits: HostClientLimits,
+        client: HttpClient,
+    ) : this(baseUrl, bearerAuthorization(bearerToken), limits, client)
+
+    private val origin: String = validateBaseUrl(baseUrl, authorization != null)
 
     init {
         if (limits.maxCommandBytes <= 0 || limits.maxEventBytes <= 0 ||
@@ -130,7 +147,10 @@ public class LiveHostClient internal constructor(
                 var count = 0
                 client.serverSentEvents(
                     urlString = "$origin/v1/sessions/${sessionId.encodeURLPathPart()}/events?after_position=$afterPosition",
-                    request = { accept(ContentType.Text.EventStream) },
+                    request = {
+                        accept(ContentType.Text.EventStream)
+                        authorization?.let { header(HttpHeaders.Authorization, it.header) }
+                    },
                 ) {
                     incoming.first { wire ->
                         val data = wire.data ?: return@first false
@@ -187,7 +207,9 @@ public class LiveHostClient internal constructor(
         if (encoded.encodeToByteArray().size > limits.maxCommandBytes) fail(HostClientError.INVALID_COMMAND)
         val response = try {
             client.post { url(origin + path); contentType(ContentType.Application.Json)
-                header(IDEMPOTENCY_KEY, commandId); setBody(encoded) }
+                header(IDEMPOTENCY_KEY, commandId)
+                authorization?.let { header(HttpHeaders.Authorization, it.header) }
+                setBody(encoded) }
         } catch (_: Throwable) { fail(HostClientError.TRANSPORT_FAILURE) }
         return decodeResponse(response)
     }
@@ -220,13 +242,26 @@ private val KNOWN_HOST_ERRORS: Set<String> = setOf(
     "precondition_failed", "durability_unavailable", "corrupt_state",
 )
 
-private fun validateBaseUrl(value: String): String {
+private fun validateBaseUrl(value: String, remote: Boolean): String {
     val url = runCatching { Url(value) }.getOrElse { fail(HostClientError.INVALID_CONFIGURATION) }
-    if (url.protocol.name != "http" || url.host !in setOf("localhost", "127.0.0.1", "::1") ||
+    val loopback = url.host in setOf("localhost", "127.0.0.1", "::1")
+    val validRemoteHost = url.host.isNotEmpty() && !loopback && ':' !in url.host &&
+        !url.host.endsWith(".local") && !url.host.all { it.isDigit() || it == '.' }
+    if ((!remote && (url.protocol.name != "http" || !loopback)) ||
+        (remote && (url.protocol.name != "https" || !validRemoteHost)) ||
         url.encodedPath != "/" || url.parameters.entries().isNotEmpty() || url.fragment.isNotEmpty()
     ) fail(HostClientError.INVALID_CONFIGURATION)
     val renderedHost = if (":" in url.host) "[${url.host}]" else url.host
-    return "http://$renderedHost:${url.port}"
+    return "${url.protocol.name}://$renderedHost:${url.port}"
+}
+
+private class RemoteAuthorization(val header: String)
+
+private fun bearerAuthorization(token: String): RemoteAuthorization {
+    if (token.isEmpty() || token.length > 4_096 || token.any { it.code !in 0x21..0x7e }) {
+        fail(HostClientError.INVALID_CONFIGURATION)
+    }
+    return RemoteAuthorization("Bearer $token")
 }
 
 private fun validCommandId(value: String): Boolean =
