@@ -26,7 +26,10 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
             state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }))
         }
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
-        Event::FocusLost => state.dispatch(AppAction::TerminalFocusChanged(false)),
+        Event::FocusLost => {
+            state.composer_mouse_selecting = false;
+            state.dispatch(AppAction::TerminalFocusChanged(false));
+        }
         Event::Paste(text) => {
             let previous = state.model.composer.text().to_owned();
             if state.composer_is_frozen() {

@@ -39,6 +39,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) retry_after_refresh: Option<String>,
     pub(in crate::runtime) render_cache: view::RenderCache,
     pub(in crate::runtime) bell_requested: bool,
+    pub(in crate::runtime) composer_mouse_selecting: bool,
 }
 
 pub(super) struct BackgroundFollow {
@@ -110,6 +111,7 @@ impl RuntimeState {
             retry_after_refresh: None,
             render_cache: view::RenderCache::default(),
             bell_requested: false,
+            composer_mouse_selecting: false,
         }
     }
 

@@ -60,6 +60,20 @@ fn selection_can_be_cleared_without_mutating_the_draft() {
 }
 
 #[test]
+fn pointer_placement_extends_selection_from_the_original_anchor() {
+    let mut editor = EditorState::new(128);
+    editor.insert("a界e\u{301}z").unwrap();
+    editor.place_cursor(1, false);
+    editor.place_cursor(3, true);
+
+    let (start, end) = editor.selected_byte_range().unwrap();
+    assert_eq!(&editor.text()[start..end], "界e\u{301}");
+    editor.place_cursor(2, true);
+    let (start, end) = editor.selected_byte_range().unwrap();
+    assert_eq!(&editor.text()[start..end], "界");
+}
+
+#[test]
 fn selected_byte_range_follows_extended_grapheme_boundaries() {
     let mut editor = EditorState::new(128);
     editor.insert("a界e\u{301}z").unwrap();

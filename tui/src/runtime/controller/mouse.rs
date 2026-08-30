@@ -2,7 +2,10 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::{
     application::{AppAction, AppModel, FocusTarget, Overlay},
-    view::{command_suggestion_hit_test, navigation_hit_test, overlay_contains, overlay_hit_test},
+    view::{
+        command_suggestion_hit_test, composer_hit_test, navigation_hit_test, overlay_contains,
+        overlay_hit_test,
+    },
 };
 
 use super::{
@@ -19,9 +22,27 @@ enum MouseAction {
     OverlayActivate(usize),
     SuggestionMove { backwards: bool },
     SuggestionActivate(usize),
+    ComposerPlace(usize),
 }
 
 pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
+    if state.composer_mouse_selecting {
+        match mouse.kind {
+            MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left) => {
+                if let Some(grapheme) =
+                    composer_hit_test(&state.model, mouse.column, mouse.row, true)
+                {
+                    state.model.composer.place_cursor(grapheme, true);
+                }
+                if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
+                    state.composer_mouse_selecting = false;
+                }
+                return;
+            }
+            MouseEventKind::Down(_) => state.composer_mouse_selecting = false,
+            _ => {}
+        }
+    }
     let Some(action) = route(&state.model, mouse) else {
         return;
     };
@@ -52,6 +73,11 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
         MouseAction::SuggestionActivate(index) => {
             state.model.command_suggestion_selection = index;
             accept_command_suggestion(state);
+        }
+        MouseAction::ComposerPlace(grapheme) => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Composer));
+            state.model.composer.place_cursor(grapheme, false);
+            state.composer_mouse_selecting = true;
         }
     }
 }
@@ -85,7 +111,12 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
         MouseEventKind::ScrollUp => Some(MouseAction::ConversationScroll { backwards: true }),
         MouseEventKind::ScrollDown => Some(MouseAction::ConversationScroll { backwards: false }),
         MouseEventKind::Down(MouseButton::Left) => {
-            navigation_hit_test(model, mouse.column, mouse.row).map(MouseAction::SessionActivate)
+            composer_hit_test(model, mouse.column, mouse.row, false)
+                .map(MouseAction::ComposerPlace)
+                .or_else(|| {
+                    navigation_hit_test(model, mouse.column, mouse.row)
+                        .map(MouseAction::SessionActivate)
+                })
         }
         _ => None,
     }
@@ -210,6 +241,26 @@ mod tests {
                 mouse(MouseEventKind::Down(MouseButton::Left), 50, 6)
             ),
             Some(MouseAction::OverlayActivate(11))
+        );
+    }
+
+    #[test]
+    fn composer_click_routes_through_component_geometry() {
+        let mut model = AppModel {
+            terminal_size: TerminalSize {
+                width: 100,
+                height: 24,
+            },
+            ..Default::default()
+        };
+        model.composer.replace("a界b").unwrap();
+
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 31, 21)
+            ),
+            Some(MouseAction::ComposerPlace(1))
         );
     }
 }

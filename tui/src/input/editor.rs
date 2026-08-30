@@ -76,6 +76,12 @@ impl EditorState {
         self.cursor_grapheme
     }
 
+    pub(crate) fn place_cursor(&mut self, grapheme: usize, selecting: bool) {
+        self.prepare_selection(selecting);
+        self.cursor_grapheme = grapheme.min(self.grapheme_len());
+        self.preferred_display_column = None;
+    }
+
     pub(crate) fn line_count(&self) -> usize {
         self.text.bytes().filter(|byte| *byte == b'\n').count() + 1
     }

@@ -62,6 +62,33 @@ pub(super) fn cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
     Some((area.x + 2 + column, area.y + 1 + row.saturating_sub(scroll)))
 }
 
+pub(super) fn selection_at(
+    model: &AppModel,
+    area: Rect,
+    column: u16,
+    row: u16,
+    clamp: bool,
+) -> Option<usize> {
+    let inner = Rect::new(
+        area.x.saturating_add(2),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(4),
+        area.height.saturating_sub(2),
+    );
+    if inner.is_empty() || (!clamp && !inner.contains((column, row).into())) {
+        return None;
+    }
+    let column = column
+        .saturating_sub(inner.x)
+        .min(inner.width.saturating_sub(1));
+    let visible_row = row
+        .saturating_sub(inner.y)
+        .min(inner.height.saturating_sub(1));
+    let layout = EditorLayout::new(&model.composer, inner.width);
+    let (_, scroll) = layout.visible_cursor(inner.height);
+    Some(layout.grapheme_at(column, visible_row.saturating_add(scroll)))
+}
+
 #[derive(Clone)]
 struct LayoutToken {
     grapheme: usize,
@@ -173,6 +200,24 @@ impl EditorLayout {
         }
         let scroll = position.1.saturating_sub(height.saturating_sub(1));
         (position, scroll)
+    }
+
+    fn grapheme_at(&self, column: u16, row: u16) -> usize {
+        let Some(line) = self.rows.get(usize::from(row)) else {
+            return self.rows.last().map_or(0, |line| line.end);
+        };
+        let mut used = 0;
+        for token in &line.tokens {
+            let next = used + token.width;
+            if column < next {
+                if token.width > 1 && (column - used) * 2 >= token.width {
+                    return token.grapheme + 1;
+                }
+                return token.grapheme;
+            }
+            used = next;
+        }
+        line.end
     }
 }
 
@@ -290,5 +335,19 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(lines, ["one", "two ", "three"]);
         assert_eq!(layout.visible_cursor(2), ((5, 2), 1));
+    }
+
+    #[test]
+    fn pointer_hit_testing_uses_wrapped_grapheme_boundaries() {
+        let mut editor = EditorState::new(128);
+        editor.replace("ab 界e\u{301} cd").unwrap();
+        let layout = EditorLayout::new(&editor, 5);
+
+        assert_eq!(layout.grapheme_at(0, 0), 0);
+        assert_eq!(layout.grapheme_at(4, 0), 3);
+        assert_eq!(layout.grapheme_at(0, 1), 3);
+        assert_eq!(layout.grapheme_at(1, 1), 4);
+        assert_eq!(layout.grapheme_at(4, 1), 6);
+        assert_eq!(layout.grapheme_at(0, 9), 8);
     }
 }

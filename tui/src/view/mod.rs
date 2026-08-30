@@ -157,6 +157,17 @@ pub(crate) fn command_suggestion_hit_test(
     command_suggestions::selection_at(model, composer, column, row)
 }
 
+pub(crate) fn composer_hit_test(
+    model: &AppModel,
+    column: u16,
+    row: u16,
+    clamp: bool,
+) -> Option<usize> {
+    let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let composer = content_rows(model, main_content_area(full))[1];
+    composer::selection_at(model, composer, column, row, clamp)
+}
+
 fn render_header(
     model: &AppModel,
     theme: Theme,
