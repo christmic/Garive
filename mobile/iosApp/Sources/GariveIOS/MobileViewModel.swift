@@ -127,7 +127,7 @@ final class MobileViewModel: ObservableObject {
               let origin = one("origin"), let code = one("code"), let rawExpiry = one("exp"),
               let expiry = TimeInterval(rawExpiry), let serviceName = one("name"),
               expiry > Date().timeIntervalSince1970, expiry <= Date().timeIntervalSince1970 + 600,
-              serviceName.count <= 100, code.count >= 6 else {
+              (1...100).contains(serviceName.count), (6...128).contains(code.count) else {
             errorCode = "invalid_pairing_link"
             pairingSuggestion = nil
             return
