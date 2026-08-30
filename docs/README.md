@@ -10,6 +10,9 @@ are not archived merely because implementation has not started.
 
 ## Start here
 
+- [`manual/mobile-user-guide.md`](manual/mobile-user-guide.md): complete Chinese
+  setup, pairing, remote-control, recovery and screenshot guide for iOS and
+  Android.
 - [`manual/tui-user-guide.md`](manual/tui-user-guide.md): complete operator and
   end-user guide for the resident terminal client.
 - [`architecture/README.md`](architecture/README.md): current architecture
