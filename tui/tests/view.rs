@@ -203,10 +203,61 @@ fn searchable_overlays_show_only_matching_rows() {
 }
 
 #[test]
+fn inline_command_suggestions_are_prefix_scoped_and_dismissible() {
+    let mut model = AppModel {
+        focus: FocusTarget::Composer,
+        terminal_size: application::TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        ..Default::default()
+    };
+    model.composer.replace("/theme ").unwrap();
+    let matches = model.matching_command_suggestion_indices();
+    assert_eq!(matches.len(), 4);
+    assert!(matches
+        .iter()
+        .all(|index| input::COMMAND_PALETTE[*index].input.starts_with("/theme ")));
+    assert!(model.command_suggestions_active());
+
+    model.command_suggestion_dismissed = Some("/theme ".into());
+    assert!(!model.command_suggestions_active());
+    model.composer.replace("/theme d").unwrap();
+    assert!(model.command_suggestions_active());
+
+    model.composer.replace("explain /theme").unwrap();
+    assert!(!model.command_suggestions_active());
+    model.composer.replace("/new agent-id").unwrap();
+    assert!(!model.command_suggestions_active());
+}
+
+#[test]
+fn inline_command_suggestions_render_above_composer_without_a_modal_backdrop() {
+    let mut model = AppModel {
+        focus: FocusTarget::Composer,
+        terminal_size: application::TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        ..Default::default()
+    };
+    model.composer.replace("/theme ").unwrap();
+    let rendered = frame(&model, 100, 24);
+    assert!(rendered.contains("Commands"));
+    assert!(rendered.contains("/theme dark"));
+    assert!(rendered.contains("/theme light"));
+    assert!(!rendered.contains("Search"));
+}
+
+#[test]
 fn compact_list_overlays_keep_their_selection_visible() {
+    let quit = input::COMMAND_PALETTE
+        .iter()
+        .position(|command| command.input == "/quit")
+        .unwrap();
     let mut model = AppModel {
         overlay: Some(Overlay::CommandPalette),
-        command_selection: 11,
+        command_selection: quit,
         ..Default::default()
     };
     let palette = frame(&model, 100, 12);

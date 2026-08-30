@@ -1,8 +1,8 @@
 use crate::args::{MouseMode, Theme};
 
 pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
-    CommandSpec::new("/new", "Create session", CommandRequirement::InstalledAgent),
-    CommandSpec::new("/sessions", "Switch session", CommandRequirement::Always),
+    CommandSpec::with_args("/new", "Create session", CommandRequirement::InstalledAgent),
+    CommandSpec::with_args("/sessions", "Switch session", CommandRequirement::Always),
     CommandSpec::new("/status", "Connection details", CommandRequirement::Always),
     CommandSpec::new(
         "/retry",
@@ -22,6 +22,18 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     CommandSpec::new(
         "/theme system",
         "Follow terminal theme",
+        CommandRequirement::Always,
+    ),
+    CommandSpec::new("/theme dark", "Use dark theme", CommandRequirement::Always),
+    CommandSpec::new(
+        "/theme light",
+        "Use light theme",
+        CommandRequirement::Always,
+    ),
+    CommandSpec::new("/theme mono", "Use mono theme", CommandRequirement::Always),
+    CommandSpec::new(
+        "/mouse on",
+        "Enable mouse capture next launch",
         CommandRequirement::Always,
     ),
     CommandSpec::new(
@@ -56,6 +68,7 @@ pub(crate) struct CommandContext {
 pub(crate) struct CommandSpec {
     pub(crate) input: &'static str,
     pub(crate) help: &'static str,
+    pub(crate) accepts_args: bool,
     requirement: CommandRequirement,
 }
 
@@ -64,6 +77,20 @@ impl CommandSpec {
         Self {
             input,
             help,
+            accepts_args: false,
+            requirement,
+        }
+    }
+
+    const fn with_args(
+        input: &'static str,
+        help: &'static str,
+        requirement: CommandRequirement,
+    ) -> Self {
+        Self {
+            input,
+            help,
+            accepts_args: true,
             requirement,
         }
     }

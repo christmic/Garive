@@ -1,0 +1,28 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "command_suggestion_frame(Theme::Mono)"
+---
+  GARIVE  research-age  /  Session session-alph                                 ● online  ·  ready
+
+ Sessions 2                │ Conversation · 3 turns
+                           │  ╭─ YOU #2
+ ▌ research-age · 123456   │  │  Summarize the release plan.
+   ✓ completed  ·  3 turns │  ╰─
+                           │
+   research-age · 987654   │    ✓  Agent action · completed
+   ● running  ·  1 turn    │
+                           │  ◆  GARIVE #6
+                           │     ## Release plan
+                           │     • Verify the Runtime
+                           │     • Ship with evidence
+                           │     cargo test passes.
+                           │╭ Commands ────────────────────────────────────────────────────────────╮
+                           ││  /theme system  Follow terminal theme                                │
+                           ││› /theme dark  Use dark theme                                         │
+                           ││  /theme light  Use light theme                                       │
+                           ││  /theme mono  Use mono theme                                         │
+                           │╰──────────────────────────────────────────────────────────────────────╯
+                           │╔ Compose ═════════════════════════════════════════════════════════════╗
+                           │║ /theme                                                               ║
+  Ctrl+N new · Ctrl+S list │╚══════════════════════════════════════════════════════════════════════╝
+                           │  Enter send   Ctrl+J newline   Ctrl+P commands   ? help     7 / 4096 B

@@ -5,28 +5,28 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
   GARIVE  research-age  /  Session session-alph                                                                                           ● online  ·  running
 
  Sessions 2                      │       Conversation · ● live
-                                 │        ╭─ YOU #2
- ▌ research-age · 123456         │        │╭ Command palette ───────────────────────────────────────────────────────╮
-   ✓ completed  ·  3 turns       │        ╰│                                                                        │
-                                 │         │  Search  type to search                                                │
-   research-age · 987654         │         │  › /new         Create session                                         │
-   ● running  ·  1 turn          │         │    /sessions    Switch session                                         │
-                                 │        ◆│    /status      Connection details                                     │
-                                 │         │    /retry       Retry unknown command  · no pending command            │
+                                 │        ╭╭ Command palette ───────────────────────────────────────────────────────╮
+ ▌ research-age · 123456         │        ││                                                                        │
+   ✓ completed  ·  3 turns       │        ╰│  Search  type to search                                                │
+                                 │         │  › /new         Create session                                         │
+   research-age · 987654         │         │    /sessions    Switch session                                         │
+   ● running  ·  1 turn          │         │    /status      Connection details                                     │
+                                 │        ◆│    /retry       Retry unknown command  · no pending command            │
                                  │         │    /reconnect   Resume event stream                                    │
                                  │         │    /cancel      Cancel running turn                                    │
                                  │         │    /theme system Follow terminal theme                                 │
+                                 │         │    /theme dark  Use dark theme                                         │
+                                 │         │    /theme light Use light theme                                        │
+                                 │         │    /theme mono  Use mono theme                                         │
+                                 │         │    /mouse on    Enable mouse capture next launch                       │
                                  │         │    /mouse off   Disable mouse capture next launch                      │
                                  │         │    /copy last   Copy last completion                                   │
                                  │         │    /copy session-id Copy Session ID                                    │
                                  │         │    /help        Keyboard guide                                         │
-                                 │         │    /quit        Exit safely                                            │
                                  │         │                                                                        │
                                  │         │    ↑/↓ select   Enter run   Esc close                                  │
-                                 │         │                                                                        │
-                                 │         ╰────────────────────────────────────────────────────────────────────────╯
-                                 │      ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 │      ╔ Compose ═══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+                                 │      ───│                                                                        │─────────────────────────────────────
+                                 │      ╔ C╰────────────────────────────────────────────────────────────────────────╯════════════════════════════════════╗
                                  │      ║ Ask a follow-up…                                                                                               ║
   Ctrl+N new · Ctrl+S list       │      ╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
                                  │        Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help                                             18 / 4096 B

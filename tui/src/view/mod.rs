@@ -9,6 +9,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Padding, Paragraph, Widget, Wrap},
 };
 
+mod command_suggestions;
 mod conversation;
 mod footer;
 mod linear;
@@ -99,21 +100,60 @@ fn render_content(
     buffer: &mut Buffer,
     cache: &mut RenderCache,
 ) -> Rect {
+    let rows = content_rows(model, area);
+    render_conversation(model, theme, rows[0], buffer, cache);
+    render_composer(model, theme, rows[1], buffer);
+    render_footer(model, theme, rows[2], buffer);
+    command_suggestions::render(model, rows[1], palette(theme), buffer);
+    rows[1]
+}
+
+fn content_rows(model: &AppModel, area: Rect) -> std::rc::Rc<[Rect]> {
     let composer_height = if area.height < 12 {
         3
     } else {
         (model.composer.line_count() as u16 + 2).clamp(3, 7)
     };
-    let rows = Layout::vertical([
+    Layout::vertical([
         Constraint::Min(1),
         Constraint::Length(composer_height),
         Constraint::Length(1),
     ])
-    .split(area);
-    render_conversation(model, theme, rows[0], buffer, cache);
-    render_composer(model, theme, rows[1], buffer);
-    render_footer(model, theme, rows[2], buffer);
-    rows[1]
+    .split(area)
+}
+
+fn main_content_area(area: Rect) -> Rect {
+    let body = Rect::new(
+        area.x,
+        area.y.saturating_add(2),
+        area.width,
+        area.height.saturating_sub(2),
+    );
+    if area.width < 100 {
+        return body;
+    }
+    let rail_width = if area.width >= 160 { 34 } else { 28 };
+    let workspace = Rect::new(
+        body.x.saturating_add(rail_width),
+        body.y,
+        body.width.saturating_sub(rail_width),
+        body.height,
+    );
+    if area.width >= 160 {
+        centered_column(workspace, 114)
+    } else {
+        workspace
+    }
+}
+
+pub(crate) fn command_suggestion_hit_test(
+    model: &AppModel,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let composer = content_rows(model, main_content_area(full))[1];
+    command_suggestions::selection_at(model, composer, column, row)
 }
 
 fn render_header(

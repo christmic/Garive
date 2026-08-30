@@ -38,6 +38,18 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     insta::assert_snapshot!("markdown_rich_light", markdown_style_preview(Theme::Light));
     insta::assert_snapshot!("markdown_rich_mono", markdown_style_preview(Theme::Mono));
     insta::assert_snapshot!(
+        "command_suggestions_dark_100x24",
+        command_suggestion_frame(Theme::Dark)
+    );
+    insta::assert_snapshot!(
+        "command_suggestions_light_100x24",
+        command_suggestion_frame(Theme::Light)
+    );
+    insta::assert_snapshot!(
+        "command_suggestions_mono_100x24",
+        command_suggestion_frame(Theme::Mono)
+    );
+    insta::assert_snapshot!(
         "markdown_table_narrow_dark",
         markdown_table_narrow_preview(Theme::Dark)
     );
@@ -185,6 +197,18 @@ fn product_model() -> AppModel {
     ];
     model.composer.replace("Ask a follow-up…").unwrap();
     model
+}
+
+fn command_suggestion_frame(theme: Theme) -> String {
+    let mut model = product_model();
+    model.execution = ExecutionState::Idle;
+    model.terminal_size = application::TerminalSize {
+        width: 100,
+        height: 24,
+    };
+    model.composer.replace("/theme ").unwrap();
+    model.command_suggestion_selection = 1;
+    frame(&model, theme, 100, 24)
 }
 
 fn session(id: &str, state: &str, turns: u64) -> SessionSummary {

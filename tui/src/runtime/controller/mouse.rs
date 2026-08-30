@@ -2,10 +2,11 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::{
     application::{AppAction, AppModel, FocusTarget, Overlay},
-    view::{navigation_hit_test, overlay_contains, overlay_hit_test},
+    view::{command_suggestion_hit_test, navigation_hit_test, overlay_contains, overlay_hit_test},
 };
 
 use super::{
+    accept_command_suggestion,
     navigation::{select_command, select_history, select_session},
     RuntimeState,
 };
@@ -16,6 +17,8 @@ enum MouseAction {
     SessionActivate(usize),
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
+    SuggestionMove { backwards: bool },
+    SuggestionActivate(usize),
 }
 
 pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
@@ -41,6 +44,15 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
         }
         MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
         MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),
+        MouseAction::SuggestionMove { backwards } => {
+            let count = state.model.matching_command_suggestion_indices().len();
+            state.model.command_suggestion_selection =
+                moved_selection_wrapped(state.model.command_suggestion_selection, count, backwards);
+        }
+        MouseAction::SuggestionActivate(index) => {
+            state.model.command_suggestion_selection = index;
+            accept_command_suggestion(state);
+        }
     }
 }
 
@@ -58,6 +70,17 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
             _ => None,
         };
     }
+    let suggestion = command_suggestion_hit_test(model, mouse.column, mouse.row);
+    if suggestion.is_some() {
+        return match mouse.kind {
+            MouseEventKind::ScrollUp => Some(MouseAction::SuggestionMove { backwards: true }),
+            MouseEventKind::ScrollDown => Some(MouseAction::SuggestionMove { backwards: false }),
+            MouseEventKind::Down(MouseButton::Left) => {
+                suggestion.map(MouseAction::SuggestionActivate)
+            }
+            _ => None,
+        };
+    }
     match mouse.kind {
         MouseEventKind::ScrollUp => Some(MouseAction::ConversationScroll { backwards: true }),
         MouseEventKind::ScrollDown => Some(MouseAction::ConversationScroll { backwards: false }),
@@ -65,6 +88,17 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
             navigation_hit_test(model, mouse.column, mouse.row).map(MouseAction::SessionActivate)
         }
         _ => None,
+    }
+}
+
+fn moved_selection_wrapped(current: usize, count: usize, backwards: bool) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    if backwards {
+        current.checked_sub(1).unwrap_or(count - 1)
+    } else {
+        (current + 1) % count
     }
 }
 

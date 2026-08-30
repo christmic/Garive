@@ -28,11 +28,13 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
         Event::FocusLost => state.dispatch(AppAction::TerminalFocusChanged(false)),
         Event::Paste(text) => {
+            let previous = state.model.composer.text().to_owned();
             if state.composer_is_frozen() {
                 state.explain_frozen_composer();
             } else {
                 let _ = state.model.composer.insert(&text);
             }
+            sync_command_suggestions(state, &previous);
         }
         Event::Mouse(event) => mouse::handle(event, state),
         Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(key, state),
@@ -41,6 +43,12 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
 }
 
 fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
+    let previous = state.model.composer.text().to_owned();
+    handle_key_inner(key, state);
+    sync_command_suggestions(state, &previous);
+}
+
+fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
         state.dispatch(AppAction::QuitRequested);
         return;
@@ -194,6 +202,9 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         }
         return;
     }
+    if handle_command_suggestion_key(key, state) {
+        return;
+    }
     if key.code == KeyCode::Char('?')
         && (state.model.composer.text().is_empty() || state.composer_is_frozen())
     {
@@ -328,6 +339,74 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Enter => submit(state),
         _ => {}
     }
+}
+
+fn handle_command_suggestion_key(key: KeyEvent, state: &mut RuntimeState) -> bool {
+    if state.config.screen_reader || !state.model.command_suggestions_active() {
+        return false;
+    }
+    let count = state.model.matching_command_suggestion_indices().len();
+    match key.code {
+        KeyCode::Up | KeyCode::BackTab => {
+            state.model.command_suggestion_selection = state
+                .model
+                .command_suggestion_selection
+                .checked_sub(1)
+                .unwrap_or(count - 1);
+            true
+        }
+        KeyCode::Down => {
+            state.model.command_suggestion_selection =
+                (state.model.command_suggestion_selection + 1) % count;
+            true
+        }
+        KeyCode::Tab | KeyCode::Enter => {
+            accept_command_suggestion(state);
+            true
+        }
+        KeyCode::Esc => {
+            state.model.command_suggestion_dismissed = Some(state.model.composer.text().to_owned());
+            true
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn accept_command_suggestion(state: &mut RuntimeState) {
+    let matches = state.model.matching_command_suggestion_indices();
+    let Some(index) = matches
+        .get(state.model.command_suggestion_selection)
+        .copied()
+    else {
+        return;
+    };
+    let command = crate::input::COMMAND_PALETTE[index];
+    if let Some(reason) = command.unavailable_reason(state.model.command_context()) {
+        state.model.notice = Some(format!("Command unavailable: {reason}."));
+        return;
+    }
+    let completion = if command.accepts_args {
+        format!("{} ", command.input)
+    } else {
+        command.input.to_owned()
+    };
+    let _ = state.model.composer.replace(&completion);
+    state.model.command_suggestion_dismissed = Some(completion);
+}
+
+fn sync_command_suggestions(state: &mut RuntimeState, previous: &str) {
+    let current = state.model.composer.text();
+    if previous != current {
+        if state.model.command_suggestion_dismissed.as_deref() != Some(current) {
+            state.model.command_suggestion_dismissed = None;
+        }
+        state.model.command_suggestion_selection = 0;
+    }
+    let count = state.model.matching_command_suggestion_indices().len();
+    state.model.command_suggestion_selection = state
+        .model
+        .command_suggestion_selection
+        .min(count.saturating_sub(1));
 }
 
 fn action_overlay_key(key: KeyCode) -> Option<ActionOverlayKey> {

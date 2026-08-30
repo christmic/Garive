@@ -58,6 +58,30 @@ fn palette_search_matches_all_terms_across_name_and_help() {
 }
 
 #[test]
+fn every_catalog_entry_is_parseable_and_parser_variants_are_discoverable() {
+    for command in COMMAND_PALETTE {
+        assert!(
+            matches!(parse_command(command.input), CommandParse::Valid(_)),
+            "catalog entry must parse: {}",
+            command.input
+        );
+    }
+    for command in [
+        "/theme system",
+        "/theme dark",
+        "/theme light",
+        "/theme mono",
+        "/mouse on",
+        "/mouse off",
+    ] {
+        assert!(
+            COMMAND_PALETTE.iter().any(|entry| entry.input == command),
+            "parser variant must be discoverable: {command}"
+        );
+    }
+}
+
+#[test]
 fn palette_requirements_explain_every_contextual_command() {
     let empty = CommandContext::default();
     let cases = [

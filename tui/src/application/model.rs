@@ -273,6 +273,8 @@ pub(crate) struct AppModel {
     pub(crate) history_selection: usize,
     pub(crate) command_filter: String,
     pub(crate) command_selection: usize,
+    pub(crate) command_suggestion_selection: usize,
+    pub(crate) command_suggestion_dismissed: Option<String>,
     pub(crate) has_pending_command: bool,
     pub(crate) session_selection: usize,
     pub(crate) navigation_selection: Option<String>,
@@ -315,6 +317,39 @@ impl AppModel {
             })
             .map(|(index, _)| index)
             .collect()
+    }
+
+    pub(crate) fn command_suggestion_draft(&self) -> Option<&str> {
+        let draft = self.composer.text();
+        (self.overlay.is_none()
+            && self.focus == FocusTarget::Composer
+            && self.terminal_size.width >= 30
+            && self.terminal_size.height >= 12
+            && draft.starts_with('/')
+            && !draft.contains('\n')
+            && draft.len() <= 128)
+            .then_some(draft)
+    }
+
+    pub(crate) fn matching_command_suggestion_indices(&self) -> Vec<usize> {
+        let Some(draft) = self.command_suggestion_draft() else {
+            return Vec::new();
+        };
+        let folded = draft.to_lowercase();
+        COMMAND_PALETTE
+            .iter()
+            .enumerate()
+            .filter(|(_, command)| command.input.starts_with(&folded))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    pub(crate) fn command_suggestions_active(&self) -> bool {
+        let Some(draft) = self.command_suggestion_draft() else {
+            return false;
+        };
+        self.command_suggestion_dismissed.as_deref() != Some(draft)
+            && !self.matching_command_suggestion_indices().is_empty()
     }
 
     pub(crate) fn command_context(&self) -> CommandContext {
