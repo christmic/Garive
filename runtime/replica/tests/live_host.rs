@@ -6,13 +6,15 @@ use std::{
 };
 
 use futures::StreamExt;
-use garive_core::{AgentOutcome, ExecutionReport, SuspensionReason, UsageSummary};
-use garive_ledger::SessionId;
+use garive_core::{
+    AgentOutcome, ExecutionReport, GovernedSuspensionBinding, SuspensionReason, UsageSummary,
+};
+use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
     plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger,
-    TurnDispatchError, TurnDispatcher,
+    HostContinuationInput, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer,
+    SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -349,7 +351,7 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
             &started.turn_id,
             &state.suspension_id,
             3,
-            "more",
+            HostContinuationInput::String("more"),
         )
         .unwrap();
     assert_eq!(continued.committed_position, 9);
@@ -370,7 +372,7 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
                 &started.turn_id,
                 &state.suspension_id,
                 3,
-                "more",
+                HostContinuationInput::String("more"),
             )
             .unwrap(),
         continued
@@ -383,10 +385,159 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
                 &started.turn_id,
                 &state.suspension_id,
                 4,
-                "more",
+                HostContinuationInput::String("more"),
             )
             .unwrap_err(),
         LiveHostError::CommandConflict
+    );
+}
+
+#[test]
+fn interaction_continuation_validates_schema_and_representation_before_commit() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-interaction", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-interaction", &session.session_id, "hello")
+        .unwrap();
+    let session_id = SessionId::try_from(session.session_id.as_str()).unwrap();
+    let turn_id = garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap();
+    let execution_id = garive_ledger::ExecutionId::try_from(started.execution_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&harness.database).unwrap();
+    ledger
+        .commit(
+            session_id.clone(),
+            2,
+            vec![
+                FactDraft {
+                    fact_id: FactId::try_from("effect-prepared").unwrap(),
+                    turn_id: Some(turn_id.clone()),
+                    execution_id: Some(execution_id.clone()),
+                    model_request_id: None,
+                    tool_invocation_id: Some(ToolInvocationId::try_from("tool-1").unwrap()),
+                    kind: FactKind::new("effect.prepared").unwrap(),
+                    schema_version: 1,
+                    payload: CanonicalPayload::from_value(&serde_json::json!({
+                        "prepared_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                        "tool_name":"tool",
+                        "tool_revision":"revision",
+                        "replay_class":"never_replay",
+                        "model_call_id":"call-1"
+                    }))
+                    .unwrap(),
+                    recorded_at: NOW.into(),
+                },
+                FactDraft {
+                fact_id: FactId::try_from("interaction-requested").unwrap(),
+                turn_id: Some(turn_id.clone()),
+                execution_id: Some(execution_id.clone()),
+                model_request_id: None,
+                tool_invocation_id: Some(ToolInvocationId::try_from("tool-1").unwrap()),
+                kind: FactKind::new("interaction.requested").unwrap(),
+                schema_version: 1,
+                payload: CanonicalPayload::from_value(&serde_json::json!({
+                    "interaction_id":"interaction-1",
+                    "suspension_id":"suspension-1",
+                    "prepared_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "kind":"approval",
+                    "prompt":{"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""},
+                    "response_schema":{"digest":"7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553","inline_utf8":"{\"type\":\"boolean\"}"},
+                    "response_schema_digest":"7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+                    "expiry_code":"none"
+                }))
+                .unwrap(),
+                recorded_at: NOW.into(),
+                },
+            ],
+        )
+        .unwrap();
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id.clone(),
+            execution_id,
+            recorded_at: NOW.into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Suspended {
+                reason: SuspensionReason::ApprovalRequired,
+                partial_items: vec![],
+                last_durable_position: 6,
+                governed_binding: Some(GovernedSuspensionBinding::Interaction {
+                    suspension_id: "suspension-1".into(),
+                    interaction_id: "interaction-1".into(),
+                    invocation_id: "tool-1".into(),
+                    prepared_digest:
+                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+                }),
+            },
+            completed_iterations: 1,
+            usage: UsageSummary {
+                input_tokens: TokenCount::Known(1),
+                output_tokens: TokenCount::Known(1),
+                estimated: false,
+            },
+        },
+    )
+    .unwrap();
+    ledger.commit(session_id, 3, terminal).unwrap();
+    let before = ledger
+        .session_watermark(&SessionId::try_from(session.session_id.as_str()).unwrap())
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        harness.host.continue_turn(
+            "invalid-interaction",
+            &session.session_id,
+            &started.turn_id,
+            "suspension-1",
+            4,
+            HostContinuationInput::Json("\"yes\"")
+        ),
+        Err(LiveHostError::InvalidRequest)
+    );
+    let after_invalid = ledger
+        .session_watermark(&SessionId::try_from(session.session_id.as_str()).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(before, after_invalid);
+    assert_eq!(
+        harness.host.continue_turn(
+            "noncanonical-interaction",
+            &session.session_id,
+            &started.turn_id,
+            "suspension-1",
+            4,
+            HostContinuationInput::Json(" true")
+        ),
+        Err(LiveHostError::InvalidRequest)
+    );
+
+    let continued = harness
+        .host
+        .continue_turn(
+            "continue-interaction",
+            &session.session_id,
+            &started.turn_id,
+            "suspension-1",
+            4,
+            HostContinuationInput::Json("true"),
+        )
+        .unwrap();
+    assert_eq!(continued.committed_position, 12);
+    assert_eq!(
+        harness.host.continue_turn(
+            "continue-interaction",
+            &session.session_id,
+            &started.turn_id,
+            "suspension-1",
+            4,
+            HostContinuationInput::String("true")
+        ),
+        Err(LiveHostError::CommandConflict)
     );
 }
 
@@ -417,6 +568,27 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     assert_eq!(missing.status(), reqwest::StatusCode::BAD_REQUEST);
     let missing: Value = serde_json::from_slice(&missing.bytes().await.unwrap()).unwrap();
     assert_eq!(missing["code"], "invalid_request");
+
+    for (key, body) in [
+        (
+            "continue-absent",
+            r#"{"session_id":"session-x","suspension_id":"suspension-x","expected_session_version":1}"#,
+        ),
+        (
+            "continue-dual",
+            r#"{"session_id":"session-x","suspension_id":"suspension-x","expected_session_version":1,"input":"yes","input_json":"true"}"#,
+        ),
+    ] {
+        let response = client
+            .post(format!("{base}/v1/turns/turn-x:continue"))
+            .header("idempotency-key", key)
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    }
 
     let created = client
         .post(format!("{base}/v1/sessions"))
