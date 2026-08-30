@@ -47,3 +47,20 @@ func pairingLinksRequireExactFreshFields() {
     #expect(model.pairingSuggestion == nil)
     #expect(model.errorCode == "invalid_pairing_link")
 }
+
+@Test
+func wakeHintsAreContentFreeAndExact() {
+    let token = String(repeating: "r", count: 43)
+    let valid: [AnyHashable: Any] = ["garive": [
+        "schema_version": 1, "route_token": token,
+        "category": "attention", "collapse_key": "attention",
+    ]]
+    #expect(WakeEnvelope.routeToken(from: valid) == token)
+
+    let leaking: [AnyHashable: Any] = ["garive": [
+        "schema_version": 1, "route_token": token,
+        "category": "attention", "collapse_key": "attention",
+        "session_id": "must-not-appear",
+    ]]
+    #expect(WakeEnvelope.routeToken(from: leaking) == nil)
+}

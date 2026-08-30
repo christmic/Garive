@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct GariveIOSApp: App {
+#if os(iOS)
+    @UIApplicationDelegateAdaptor(GariveAppDelegate.self) private var appDelegate
+#endif
+
     var body: some Scene {
         WindowGroup {
 #if canImport(GariveShared)

@@ -26,6 +26,12 @@ final class MobileViewModel: ObservableObject {
     init(store: ConnectionStore = ConnectionStore()) {
         self.store = store
         credentials = store.load()
+#if os(iOS)
+        MobilePushInbox.shared.attach(
+            registration: { [weak self] in self?.registerPush($0) },
+            wake: { [weak self] in self?.resolveWake($0) }
+        )
+#endif
         if let credentials { connect(credentials, persist: false) }
     }
 
@@ -109,10 +115,43 @@ final class MobileViewModel: ObservableObject {
         controller = nil
         credentials = nil
         errorCode = nil
-        if let previous, let client = try? GatewayPairingClient(baseUrl: previous.origin, maxResponseBytes: 8_192) {
-            client.revoke(accessGrant: previous.accessGrant) { _ in }
+        if let previous {
+            if let notifications = try? GatewayNotificationClient(baseUrl: previous.origin, maxResponseBytes: 8_192) {
+                notifications.unregister(accessGrant: previous.accessGrant) { _ in }
+            }
+            if let client = try? GatewayPairingClient(baseUrl: previous.origin, maxResponseBytes: 8_192) {
+                client.revoke(accessGrant: previous.accessGrant) { _ in }
+            }
         }
     }
+
+#if os(iOS)
+    private func registerPush(_ registrationID: String) {
+        guard let credentials,
+              let client = try? GatewayNotificationClient(baseUrl: credentials.origin, maxResponseBytes: 8_192) else { return }
+        client.register(
+            accessGrant: credentials.accessGrant, transport: .apns,
+            registrationId: registrationID
+        ) { _ in }
+    }
+
+    private func resolveWake(_ token: String) {
+        guard let credentials,
+              let client = try? GatewayNotificationClient(baseUrl: credentials.origin, maxResponseBytes: 8_192) else { return }
+        client.resolve(accessGrant: credentials.accessGrant, routeToken: token) { [weak self] route, _ in
+            let transferred = UnsafeTransfer(route)
+            Task { @MainActor in
+                guard let self, let route = transferred.value else { return }
+                if route.destination == "session", let sessionID = route.sessionId {
+                    self.open(sessionID)
+                } else {
+                    self.select(.settings)
+                    self.refresh()
+                }
+            }
+        }
+    }
+#endif
 
     private func connect(_ value: ConnectionCredentials, persist: Bool) {
         do {
