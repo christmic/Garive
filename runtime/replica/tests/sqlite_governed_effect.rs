@@ -35,6 +35,7 @@ use garive_tools::{
     ToolCatalog, ToolDefinition, ToolIntent,
 };
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 enum Decision {
@@ -63,7 +64,7 @@ struct Authority {
     decision: Decision,
 }
 
-struct AllowSafety;
+struct AllowSafety(&'static str);
 
 struct UnavailableSafety;
 
@@ -75,6 +76,7 @@ impl SafetyPort for UnavailableSafety {
 
 impl SafetyPort for AllowSafety {
     fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        let constraint = self.0;
         Box::pin(async move {
             Ok(SafetyEvaluation {
                 decision: SafetyDecisionV1::new(
@@ -82,7 +84,7 @@ impl SafetyPort for AllowSafety {
                     SafetyDisposition::Allow,
                     request.invocation_id().clone(),
                     request.prepared_digest(),
-                    Some("a".repeat(64)),
+                    Some(constraint.repeat(64)),
                     request.effective_policy_revision(),
                     None,
                 )
@@ -97,7 +99,7 @@ impl SafetyPort for AllowSafety {
     }
 }
 
-struct LocalSandbox;
+struct LocalSandbox(&'static str);
 
 impl SandboxAdmissionPort for LocalSandbox {
     fn admit(
@@ -109,7 +111,7 @@ impl SandboxAdmissionPort for LocalSandbox {
                 "binding",
                 "workspace",
                 "local.read",
-                "1",
+                self.0,
                 "policy-1",
                 access_policy(),
                 sandbox_requirements(),
@@ -482,8 +484,8 @@ fn prepared_v3_commits_exact_f0_chain_before_dispatch() {
         prepares: 0,
         dispatches: 0,
     };
-    let mut safety = AllowSafety;
-    let mut sandbox = LocalSandbox;
+    let mut safety = AllowSafety("a");
+    let mut sandbox = LocalSandbox("1");
     let request_id = setup.request_id.clone();
     let prepared = setup.prepared.clone();
     let mut port = port(&mut setup, &mut authority, &mut executor)
@@ -578,7 +580,7 @@ fn prepared_v3_is_durable_before_safety_dependency_returns() {
         dispatches: 0,
     };
     let mut safety = UnavailableSafety;
-    let mut sandbox = LocalSandbox;
+    let mut sandbox = LocalSandbox("1");
     let request_id = setup.request_id.clone();
     let prepared = setup.prepared.clone();
     let mut port = port(&mut setup, &mut authority, &mut executor)
@@ -612,77 +614,7 @@ fn restart_classifies_every_prestarted_f0_cut() {
             &Resolver,
         )
         .unwrap();
-    let invocation = garive_tools::ToolInvocationId::new("f0-recovery").unwrap();
-    let request = garive_runtime::SafetyRequestV1::new(
-        "safety-request",
-        invocation.clone(),
-        &prepared,
-        "actor",
-        None,
-        None,
-        "policy-1",
-    )
-    .unwrap();
-    let decision = SafetyDecisionV1::new(
-        "safety-decision",
-        SafetyDisposition::Allow,
-        invocation.clone(),
-        prepared.input_digest(),
-        Some("a".repeat(64)),
-        "policy-1",
-        None,
-    )
-    .unwrap();
-    let grant = InvocationGrant::new(
-        GrantId::new("grant").unwrap(),
-        invocation,
-        prepared.input_digest(),
-        prepared.tool_name(),
-        prepared.tool_revision(),
-        prepared.requirements().clone(),
-        "a".repeat(64),
-        "policy-1",
-    )
-    .unwrap();
-    let mut facts = plan_f0_safety_decision(
-        &F0SafetyDecisionContext {
-            turn_id: setup.turn.clone(),
-            execution_id: setup.execution.clone(),
-            recorded_at: timestamp().into(),
-        },
-        &request,
-        &prepared,
-        &decision,
-    )
-    .unwrap();
-    facts.extend(
-        plan_f0_sandbox_admission(
-            &F0EffectAdmissionContext {
-                turn_id: setup.turn.clone(),
-                execution_id: setup.execution.clone(),
-                preflight_id: "preflight".into(),
-                effective_limits_digest: "e".repeat(64),
-                recorded_at: timestamp().into(),
-            },
-            &request,
-            &prepared,
-            &grant,
-            &decision,
-            &SandboxBindingV1::new(
-                "binding",
-                "workspace",
-                "local.read",
-                "1",
-                "policy-1",
-                access_policy(),
-                sandbox_requirements(),
-            )
-            .unwrap(),
-            "dispatch-1",
-        )
-        .unwrap()
-        .facts,
-    );
+    let facts = f0_recovery_facts(&setup, &prepared);
     let expected = [
         EffectRecoveryPosition::F0SafetyPending,
         EffectRecoveryPosition::F0Decision,
@@ -701,6 +633,237 @@ fn restart_classifies_every_prestarted_f0_cut() {
             derive_runtime_recovery(&setup.ledger.load_turn(&setup.turn).unwrap(), 3).unwrap();
         assert_eq!(recovered.effect, expected);
     }
+}
+
+#[test]
+fn configured_brokers_resume_every_prestarted_f0_cut_without_duplicate_facts() {
+    for cut in 1..=5 {
+        let directory = tempdir().unwrap();
+        let mut setup = setup(&directory.path().join(format!("resume-{cut}.sqlite3")));
+        let prepared = v3_catalog()
+            .prepare_v3(
+                &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+                &Resolver,
+            )
+            .unwrap();
+        let facts = f0_recovery_facts(&setup, &prepared);
+        let committed = setup
+            .ledger
+            .commit(setup.session.clone(), setup.version, facts[..cut].to_vec())
+            .unwrap();
+        setup.version = committed.session_version;
+        setup.position = *committed.positions.last().unwrap();
+        let snapshot = setup.ledger.load_turn(&setup.turn).unwrap();
+        let mut content = NoReferencedContent;
+        let recovered = recover_f0_prepared(
+            &snapshot,
+            "f0-recovery",
+            &v3_catalog(),
+            &Resolver,
+            &mut content,
+            1_024,
+        )
+        .unwrap();
+        let mut authority = Authority {
+            decision: Decision::Approve,
+        };
+        let mut executor = Executor {
+            mode: ExecutionMode::Success,
+            prepares: 0,
+            dispatches: 0,
+        };
+        let mut safety = AllowSafety("a");
+        let mut sandbox = LocalSandbox("1");
+        let mut port = port(&mut setup, &mut authority, &mut executor)
+            .with_f0_governance(
+                &mut safety,
+                &mut sandbox,
+                F0GovernanceContext {
+                    actor_authority_reference: "actor".into(),
+                    goal_reference: None,
+                    plan_reference: None,
+                    effective_policy_revision: "policy-1".into(),
+                },
+            )
+            .unwrap();
+        let result = block_on(port.resume_f0(&snapshot, recovered)).unwrap();
+        assert!(matches!(
+            result.result,
+            garive_tools::GovernedToolResult::Observation(_)
+        ));
+        drop(port);
+        assert_eq!((executor.prepares, executor.dispatches), (0, 1));
+        let facts = setup.ledger.load_turn(&setup.turn).unwrap().facts;
+        for kind in [
+            "effect.prepared",
+            "safety.decided",
+            "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
+            "effect.started",
+        ] {
+            assert_eq!(
+                facts
+                    .iter()
+                    .filter(|fact| fact.kind.as_str() == kind)
+                    .count(),
+                1,
+                "cut {cut} duplicated {kind}"
+            );
+        }
+    }
+}
+
+#[test]
+fn changed_safety_or_sandbox_binding_never_dispatches_during_f0_resume() {
+    for (cut, constraint, executor_revision) in [(2, "b", "1"), (5, "a", "2")] {
+        let directory = tempdir().unwrap();
+        let mut setup = setup(&directory.path().join(format!("changed-{cut}.sqlite3")));
+        let prepared = v3_catalog()
+            .prepare_v3(
+                &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+                &Resolver,
+            )
+            .unwrap();
+        let committed = setup
+            .ledger
+            .commit(
+                setup.session.clone(),
+                setup.version,
+                f0_recovery_facts(&setup, &prepared)[..cut].to_vec(),
+            )
+            .unwrap();
+        setup.version = committed.session_version;
+        setup.position = *committed.positions.last().unwrap();
+        let snapshot = setup.ledger.load_turn(&setup.turn).unwrap();
+        let before = snapshot.facts.len();
+        let mut content = NoReferencedContent;
+        let recovered = recover_f0_prepared(
+            &snapshot,
+            "f0-recovery",
+            &v3_catalog(),
+            &Resolver,
+            &mut content,
+            1_024,
+        )
+        .unwrap();
+        let mut authority = Authority {
+            decision: Decision::Approve,
+        };
+        let mut executor = Executor {
+            mode: ExecutionMode::Success,
+            prepares: 0,
+            dispatches: 0,
+        };
+        let mut safety = AllowSafety(constraint);
+        let mut sandbox = LocalSandbox(executor_revision);
+        let mut port = port(&mut setup, &mut authority, &mut executor)
+            .with_f0_governance(
+                &mut safety,
+                &mut sandbox,
+                F0GovernanceContext {
+                    actor_authority_reference: "actor".into(),
+                    goal_reference: None,
+                    plan_reference: None,
+                    effective_policy_revision: "policy-1".into(),
+                },
+            )
+            .unwrap();
+        assert!(block_on(port.resume_f0(&snapshot, recovered)).is_err());
+        drop(port);
+        assert_eq!((executor.prepares, executor.dispatches), (0, 0));
+        assert_eq!(
+            setup.ledger.load_turn(&setup.turn).unwrap().facts.len(),
+            before
+        );
+    }
+}
+
+fn f0_recovery_facts(
+    Setup {
+        turn, execution, ..
+    }: &Setup,
+    prepared: &garive_tools::PreparedToolCall,
+) -> Vec<FactDraft> {
+    let invocation = garive_tools::ToolInvocationId::new("f0-recovery").unwrap();
+    let request = garive_runtime::SafetyRequestV1::new(
+        child_id(&invocation, "safety-request"),
+        invocation.clone(),
+        prepared,
+        "actor",
+        None,
+        None,
+        "policy-1",
+    )
+    .unwrap();
+    let decision = SafetyDecisionV1::new(
+        "safety-decision",
+        SafetyDisposition::Allow,
+        invocation.clone(),
+        prepared.input_digest(),
+        Some("a".repeat(64)),
+        "policy-1",
+        None,
+    )
+    .unwrap();
+    let grant = InvocationGrant::new(
+        GrantId::new(child_id(&invocation, "grant")).unwrap(),
+        invocation.clone(),
+        prepared.input_digest(),
+        prepared.tool_name(),
+        prepared.tool_revision(),
+        prepared.requirements().clone(),
+        "a".repeat(64),
+        "policy-1",
+    )
+    .unwrap();
+    let mut facts = plan_f0_safety_decision(
+        &F0SafetyDecisionContext {
+            turn_id: turn.clone(),
+            execution_id: execution.clone(),
+            recorded_at: timestamp().into(),
+        },
+        &request,
+        prepared,
+        &decision,
+    )
+    .unwrap();
+    facts.extend(
+        plan_f0_sandbox_admission(
+            &F0EffectAdmissionContext {
+                turn_id: turn.clone(),
+                execution_id: execution.clone(),
+                preflight_id: "preflight".into(),
+                effective_limits_digest: "e".repeat(64),
+                recorded_at: timestamp().into(),
+            },
+            &request,
+            prepared,
+            &grant,
+            &decision,
+            &SandboxBindingV1::new(
+                "binding",
+                "workspace",
+                "local.read",
+                "1",
+                "policy-1",
+                access_policy(),
+                sandbox_requirements(),
+            )
+            .unwrap(),
+            "dispatch-1",
+        )
+        .unwrap()
+        .facts,
+    );
+    facts
+}
+
+fn child_id(invocation: &garive_tools::ToolInvocationId, kind: &str) -> String {
+    format!(
+        "{kind}-{:x}",
+        Sha256::digest(format!("{}:{kind}", invocation.as_str()).as_bytes())
+    )
 }
 
 #[test]

@@ -5,7 +5,8 @@ use garive_core::{
     PortFailure,
 };
 use garive_ledger::{
-    CanonicalPayload, FactDraft, FactId, FactKind, ModelRequestId, ToolInvocationId as LedgerToolId,
+    CanonicalPayload, DurableFact, FactDraft, FactId, FactKind, ModelRequestId,
+    ToolInvocationId as LedgerToolId, TurnSnapshot,
 };
 use garive_tools::{
     reduce_preparation_failure, AuthorizationVerdict, DispatchAttemptId, EffectReceipt,
@@ -18,7 +19,7 @@ use serde_json::{json, Map, Value};
 
 use crate::{
     plan_f0_prepared, plan_f0_safety_decision, plan_f0_sandbox_admission, F0EffectAdmissionContext,
-    F0SafetyDecisionContext, SafetyDisposition, SafetyRequestV1, SqliteLedger,
+    F0SafetyDecisionContext, RecoveredF0Prepared, SafetyDisposition, SafetyRequestV1, SqliteLedger,
 };
 
 use super::encoding::digest;
@@ -413,6 +414,202 @@ impl<'a> SqliteGovernedEffectPort<'a> {
                 self.dispatch(
                     invocation_id,
                     prepared,
+                    reducer,
+                    grant,
+                    Some(planned.execution),
+                )
+                .await
+            }
+        }
+    }
+
+    /// Continues one reconstructed Prepared-v3 invocation through configured brokers.
+    pub async fn resume_f0(
+        &mut self,
+        turn: &TurnSnapshot,
+        recovered: RecoveredF0Prepared,
+    ) -> Result<CommittedGovernedResult, GovernedRuntimePortError> {
+        if turn.session_version != self.config.expected_session_version
+            || turn.through_position != self.config.initial_through_position
+            || self.current_position()? != turn.through_position
+        {
+            return Err(GovernedRuntimePortError::InvalidBinding);
+        }
+        let invocation_id = ToolInvocationId::new(recovered.invocation_id)
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        let prepared = recovered.prepared;
+        let context = self
+            .f0_context
+            .clone()
+            .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+        let request = SafetyRequestV1::new(
+            self.child_id(&invocation_id, "safety-request"),
+            invocation_id.clone(),
+            &prepared,
+            context.actor_authority_reference,
+            context.goal_reference,
+            context.plan_reference,
+            context.effective_policy_revision,
+        )
+        .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        let safety_context = F0SafetyDecisionContext {
+            turn_id: self.config.turn_id.clone(),
+            execution_id: self.config.execution_id.clone(),
+            recorded_at: self.config.recorded_at.clone(),
+        };
+        let prepared_fact = plan_f0_prepared(&safety_context, &request, &prepared)
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        require_existing_fact(turn, &invocation_id, &prepared_fact)?;
+        reject_crossed_f0_boundary(turn, &invocation_id)?;
+        let evaluation = self
+            .safety
+            .as_deref_mut()
+            .ok_or(GovernedRuntimePortError::InvalidBinding)?
+            .decide(&request)
+            .await?;
+        let decision_facts =
+            plan_f0_safety_decision(&safety_context, &request, &prepared, &evaluation.decision)
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        let safety_fact = decision_facts
+            .get(1)
+            .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+        let safety_exists = optional_existing_fact(turn, &invocation_id, safety_fact)?;
+        if !safety_exists {
+            if has_any_stage(
+                turn,
+                &invocation_id,
+                &["effect.authorized", "sandbox.bound", "sandbox.preflighted"],
+            ) {
+                return Err(GovernedRuntimePortError::InvalidBinding);
+            }
+            self.commit(vec![safety_fact.clone()])?;
+        }
+        let (mut reducer, _) = GovernedEffect::new(invocation_id.clone(), prepared.clone());
+        match evaluation.decision.disposition() {
+            SafetyDisposition::Deny => {
+                if evaluation.granted_requirements.is_some() || evaluation.interaction.is_some() {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                let action = reducer.apply_authorization(AuthorizationVerdict::Deny {
+                    code: "safety_denied".into(),
+                    details: None,
+                });
+                self.commit(vec![self.fact_for_tool(
+                    &invocation_id,
+                    "effect.denied",
+                    json!({"prepared_digest":prepared.input_digest(),"code":"safety_denied"}),
+                )?])?;
+                let GovernedAction::Observation(observation) = action else {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                };
+                self.commit_observation(&invocation_id, &observation)?;
+                Ok(CommittedGovernedResult {
+                    result: GovernedToolResult::Observation(ToolFeedback::Governed(observation)),
+                    through_position: self.current_position()?,
+                    suspension_binding: None,
+                })
+            }
+            SafetyDisposition::InteractionRequired => {
+                let interaction = evaluation
+                    .interaction
+                    .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+                if evaluation.granted_requirements.is_some() {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                let (verdict, fact) = self.authority_fact(
+                    &invocation_id,
+                    &prepared,
+                    AuthorityDecision::InteractionRequired {
+                        kind: interaction.kind,
+                        prompt: interaction.prompt,
+                        response_schema: interaction.response_schema,
+                        expiry_code: interaction.expiry_code,
+                    },
+                )?;
+                let action = reducer.apply_authorization(verdict);
+                let position = self.commit(vec![fact])?;
+                let GovernedAction::Suspend(requirement) = action else {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                };
+                let binding =
+                    interaction_binding(&requirement, self.child_id(&invocation_id, "suspension"))?;
+                Ok(CommittedGovernedResult {
+                    result: GovernedToolResult::Suspend(requirement),
+                    through_position: position,
+                    suspension_binding: Some(binding),
+                })
+            }
+            SafetyDisposition::Allow => {
+                if evaluation.interaction.is_some() {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                let requirements = evaluation
+                    .granted_requirements
+                    .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+                let grant = InvocationGrant::new(
+                    GrantId::new(self.child_id(&invocation_id, "grant"))
+                        .map_err(|_| GovernedRuntimePortError::InvalidBinding)?,
+                    invocation_id.clone(),
+                    prepared.input_digest(),
+                    prepared.tool_name(),
+                    prepared.tool_revision(),
+                    requirements,
+                    evaluation
+                        .decision
+                        .constraints_digest()
+                        .ok_or(GovernedRuntimePortError::InvalidBinding)?,
+                    evaluation.decision.policy_revision(),
+                )
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+                let admission = self
+                    .sandbox
+                    .as_deref_mut()
+                    .ok_or(GovernedRuntimePortError::InvalidBinding)?
+                    .admit(SandboxAdmissionRequest {
+                        safety_request: &request,
+                        decision: &evaluation.decision,
+                        grant: &grant,
+                    })?;
+                let planned = plan_f0_sandbox_admission(
+                    &F0EffectAdmissionContext {
+                        turn_id: self.config.turn_id.clone(),
+                        execution_id: self.config.execution_id.clone(),
+                        preflight_id: admission.preflight_id,
+                        effective_limits_digest: admission.effective_limits_digest,
+                        recorded_at: self.config.recorded_at.clone(),
+                    },
+                    &request,
+                    &prepared,
+                    &grant,
+                    &evaluation.decision,
+                    &admission.binding,
+                    &admission.dispatch_attempt_id,
+                )
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+                let mut missing = false;
+                let mut append = Vec::new();
+                for fact in &planned.facts {
+                    if optional_existing_fact(turn, &invocation_id, fact)? {
+                        if missing {
+                            return Err(GovernedRuntimePortError::InvalidBinding);
+                        }
+                    } else {
+                        missing = true;
+                        append.push(fact.clone());
+                    }
+                }
+                if !append.is_empty() {
+                    self.commit(append)?;
+                }
+                if !matches!(
+                    reducer.apply_authorization(AuthorizationVerdict::Approve(grant.clone())),
+                    GovernedAction::Dispatch(_)
+                ) {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                self.dispatch(
+                    invocation_id,
+                    &prepared,
                     reducer,
                     grant,
                     Some(planned.execution),
@@ -825,6 +1022,85 @@ impl<'a> SqliteGovernedEffectPort<'a> {
     fn current_position(&self) -> Result<u64, GovernedRuntimePortError> {
         self.writer.position()
     }
+}
+
+fn require_existing_fact(
+    turn: &TurnSnapshot,
+    invocation_id: &ToolInvocationId,
+    expected: &FactDraft,
+) -> Result<(), GovernedRuntimePortError> {
+    if optional_existing_fact(turn, invocation_id, expected)? {
+        Ok(())
+    } else {
+        Err(GovernedRuntimePortError::InvalidBinding)
+    }
+}
+
+fn optional_existing_fact(
+    turn: &TurnSnapshot,
+    invocation_id: &ToolInvocationId,
+    expected: &FactDraft,
+) -> Result<bool, GovernedRuntimePortError> {
+    let matches = turn
+        .facts
+        .iter()
+        .filter(|fact| fact.kind == expected.kind)
+        .filter(|fact| {
+            fact.tool_invocation_id
+                .as_ref()
+                .is_some_and(|id| id.as_str() == invocation_id.as_str())
+        })
+        .collect::<Vec<_>>();
+    let Some(existing) = matches.first() else {
+        return Ok(false);
+    };
+    if matches.len() != 1 || !fact_matches(existing, expected) {
+        return Err(GovernedRuntimePortError::InvalidBinding);
+    }
+    Ok(true)
+}
+
+fn fact_matches(existing: &DurableFact, expected: &FactDraft) -> bool {
+    existing.fact_id == expected.fact_id
+        && existing.turn_id == expected.turn_id
+        && existing.execution_id == expected.execution_id
+        && existing.model_request_id == expected.model_request_id
+        && existing.tool_invocation_id == expected.tool_invocation_id
+        && existing.kind == expected.kind
+        && existing.schema_version == expected.schema_version
+        && existing.payload == expected.payload
+}
+
+fn reject_crossed_f0_boundary(
+    turn: &TurnSnapshot,
+    invocation_id: &ToolInvocationId,
+) -> Result<(), GovernedRuntimePortError> {
+    let allowed = [
+        "effect.prepared",
+        "safety.decided",
+        "effect.authorized",
+        "sandbox.bound",
+        "sandbox.preflighted",
+    ];
+    if turn.facts.iter().any(|fact| {
+        fact.tool_invocation_id
+            .as_ref()
+            .is_some_and(|id| id.as_str() == invocation_id.as_str())
+            && !allowed.contains(&fact.kind.as_str())
+    }) {
+        Err(GovernedRuntimePortError::InvalidBinding)
+    } else {
+        Ok(())
+    }
+}
+
+fn has_any_stage(turn: &TurnSnapshot, invocation_id: &ToolInvocationId, kinds: &[&str]) -> bool {
+    turn.facts.iter().any(|fact| {
+        fact.tool_invocation_id
+            .as_ref()
+            .is_some_and(|id| id.as_str() == invocation_id.as_str())
+            && kinds.contains(&fact.kind.as_str())
+    })
 }
 
 trait EffectLedgerWriter: Send {

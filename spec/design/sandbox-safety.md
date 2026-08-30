@@ -242,6 +242,13 @@ Diagnostic strings are neither compatibility keys nor model-visible content.
 | receipt, no result | Reconstruct from verified receipt/content reference. |
 | terminal result | Return idempotently. |
 
+Configured recovery reconstructs the same Prepared-v3 invocation and calls the
+current Safety and Sandbox brokers. Already durable decision, grant, binding
+and preflight facts must equal the newly derived candidates exactly; Runtime
+appends only the missing ordered suffix. A changed policy constraint, executor
+revision, workspace binding, effective limit or dispatch-attempt identity
+fails before `effect.started` and never allocates a replacement invocation.
+
 Policy or binding changes after Started never authorize a new replay under the
 old invocation.
 
