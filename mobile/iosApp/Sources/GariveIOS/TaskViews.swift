@@ -153,7 +153,7 @@ private struct DecisionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             Label("Your decision is needed", systemImage: "hand.raised.fill").font(.headline).foregroundStyle(GarivePalette.amber)
-            Text(decision.title).font(.body)
+            Text(decision.prompt.isEmpty ? decision.title : decision.prompt).font(.body)
             if !decision.kind.lowercased().contains("approval") {
                 TextField("Your response", text: $response).textFieldStyle(.roundedBorder)
             }

@@ -116,6 +116,8 @@ internal fun ConversationScreen(
         if (decision != null) {
             DecisionComposer(
                 title = decision.title,
+                prompt = decision.prompt,
+                approval = decision.kind == "approval_required",
                 action = decision.actionLabel,
                 draft = state.draft,
                 onDraft = onDraft,
@@ -245,6 +247,8 @@ private fun MessageComposer(
 @Composable
 private fun DecisionComposer(
     title: String,
+    prompt: String,
+    approval: Boolean,
     action: String,
     draft: String,
     onDraft: (String) -> Unit,
@@ -261,19 +265,25 @@ private fun DecisionComposer(
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                "Review the public request before continuing this exact suspended Turn.",
+                prompt.ifBlank { "Review the public request before continuing this exact suspended Turn." },
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraft,
+            if (!approval) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = onDraft,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Your response") },
+                    enabled = !busy,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(16.dp),
+                )
+            }
+            Button(
+                onClick = onContinue,
+                enabled = !busy && (approval || draft.isNotBlank()),
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Optional response") },
-                enabled = !busy,
-                maxLines = 4,
-                shape = RoundedCornerShape(16.dp),
-            )
-            Button(onClick = onContinue, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            ) {
                 Text(action)
             }
         }
