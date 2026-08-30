@@ -61,6 +61,24 @@ with `tauri build --config target/release-config/updater.json`; the protected
 runner supplies `TAURI_SIGNING_PRIVATE_KEY` and its password without writing
 them to the overlay, source tree, logs, or evidence.
 
+After Tauri emits the signed Universal `.app.tar.gz` and adjacent `.sig`, bind
+both macOS updater targets to that exact archive from the same clean revision:
+
+```sh
+python3 desktop/release/build-update-manifest.py \
+  --archive target/universal-apple-darwin/release/bundle/macos/Garive.app.tar.gz \
+  --signature target/universal-apple-darwin/release/bundle/macos/Garive.app.tar.gz.sig \
+  --archive-url 'https://releases.example.com/garive/Garive.app.tar.gz' \
+  --notes 'Garive 0.1.0' \
+  --output target/desktop-release/latest.json
+```
+
+The static manifest uses the configured stable version and commit timestamp,
+embeds the Tauri-required base64 form of the exact Minisign document, and maps
+`darwin-aarch64` and `darwin-x86_64` to the same Universal archive. The
+generator rejects dirty Git state, malformed or non-adjacent signatures,
+non-public/mismatched URLs, symlinks, files outside `target/`, and overwrites.
+
 ```sh
 desktop/release/verify-macos-bundle.sh path/to/Garive.dmg release
 ```
@@ -96,8 +114,9 @@ Publication additionally requires the update manifest/signature, SBOM, license
 inventory, SHA-256 checksum publication, rollback instructions, and a clean-Mac
 install/update/downgrade test. Until those artifacts and a real Apple identity
 exist, `spec/STATUS.md` remains active and no signed-release claim is valid.
-Garive Desktop does not yet implement an updater; generated materials record
-that boundary and never substitute for update or downgrade evidence.
+Garive Desktop implements a signed, no-downgrade updater lifecycle, but local
+builds intentionally contain no channel or public key. Generated materials do
+not substitute for a protected signing run or update/downgrade evidence.
 
 ## Screenshot and manual evidence
 
