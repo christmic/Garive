@@ -111,28 +111,43 @@ impl StateStore {
         })
     }
 
-    pub(crate) fn load_any_pending(&self) -> Result<Option<PendingCommand>, StateError> {
+    pub(crate) fn load_pending(&self) -> Result<(Vec<PendingCommand>, usize), StateError> {
         let Some(root) = &self.root else {
-            return Ok(None);
+            return Ok((Vec::new(), 0));
         };
-        let mut entries = fs::read_dir(root.join("pending"))
-            .map_err(|_| StateError::Unavailable)?
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".v1.json"))
-            .collect::<Vec<_>>();
-        entries.sort_by_key(|entry| entry.file_name());
-        if entries.len() > 1 {
-            return Err(StateError::Conflict);
-        }
-        let Some(entry) = entries.first() else {
-            return Ok(None);
-        };
-        validate_private_file_if_present(&entry.path())?;
-        let bytes = fs::read(entry.path()).map_err(|_| StateError::Unavailable)?;
-        let value: PendingCommand =
-            serde_json::from_slice(&bytes).map_err(|_| StateError::InvalidData)?;
-        value.validate()?;
-        Ok(Some(value))
+        with_lock(root, "pending.lock", || {
+            let mut entries = fs::read_dir(root.join("pending"))
+                .map_err(|_| StateError::Unavailable)?
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().ends_with(".v1.json"))
+                .collect::<Vec<_>>();
+            entries.sort_by_key(|entry| entry.file_name());
+            let mut commands = Vec::with_capacity(entries.len());
+            let mut quarantined = 0;
+            for entry in entries {
+                validate_private_file_if_present(&entry.path())?;
+                let bytes = fs::read(entry.path()).map_err(|_| StateError::Unavailable)?;
+                let decoded = if bytes.len() as u64 > MAX_FILE_BYTES {
+                    Err(StateError::InvalidData)
+                } else {
+                    serde_json::from_slice::<PendingCommand>(&bytes)
+                        .map_err(|_| StateError::InvalidData)
+                        .and_then(|value| {
+                            value.validate()?;
+                            Ok(value)
+                        })
+                };
+                match decoded {
+                    Ok(value) => commands.push(value),
+                    Err(StateError::InvalidData) => {
+                        quarantine(root, &entry.path(), "pending")?;
+                        quarantined += 1;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            Ok((commands, quarantined))
+        })
     }
 
     pub(crate) fn remove_pending(&self, session_id: Option<&str>) -> Result<(), StateError> {

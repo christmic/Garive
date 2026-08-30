@@ -49,9 +49,31 @@ fn pending_digest_is_exact_and_conflicts_are_refused() {
     let pending = command("one", "hello");
     store.save_pending(&pending).unwrap();
     store.save_pending(&pending).unwrap();
+    store
+        .save_pending(&command_for("session-2", "two", "independent"))
+        .unwrap();
+    let (loaded, quarantined) = store.load_pending().unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(quarantined, 0);
     let conflict = command("two", "different");
     assert_eq!(store.save_pending(&conflict), Err(StateError::Conflict));
     store.remove_pending(Some("session-1")).unwrap();
+}
+
+#[test]
+fn corrupt_pending_is_quarantined_without_hiding_valid_sessions() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let store = StateStore::open(Some(root.clone()), false).unwrap();
+    store.save_pending(&command("one", "hello")).unwrap();
+    let corrupt = root.join("pending/corrupt.v1.json");
+    fs::write(&corrupt, b"{broken}").unwrap();
+    fs::set_permissions(&corrupt, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let (loaded, quarantined) = store.load_pending().unwrap();
+    assert_eq!(loaded, vec![command("one", "hello")]);
+    assert_eq!(quarantined, 1);
+    assert_eq!(fs::read_dir(root.join("quarantine")).unwrap().count(), 1);
 }
 
 #[test]
@@ -117,11 +139,15 @@ fn history_compacts_duplicates_ignores_torn_tail_and_quarantines_corruption() {
 }
 
 fn command(id: &str, text: &str) -> PendingCommand {
+    command_for("session-1", id, text)
+}
+
+fn command_for(session: &str, id: &str, text: &str) -> PendingCommand {
     PendingCommand {
         schema_version: 1,
         command_id: id.into(),
         kind: PendingKind::StartTurn,
-        session_id: Some("session-1".into()),
+        session_id: Some(session.into()),
         turn_id: None,
         suspension_id: None,
         expected_session_version: None,

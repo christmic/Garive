@@ -535,7 +535,7 @@ fn admit(
 }
 
 fn retry_pending(state: &mut RuntimeState) {
-    let Some(pending) = state.pending.clone() else {
+    let Some(pending) = state.pending_for_context().cloned() else {
         state.model.notice = Some("No recoverable pending command is loaded.".into());
         state.model.overlay = Some(Overlay::ErrorDetails);
         return;

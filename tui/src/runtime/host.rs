@@ -34,8 +34,12 @@ pub(crate) enum HostMessage {
         items: Vec<TurnTimelineItem>,
         follow_position: u64,
     },
-    SessionCreated(CreateSessionResponse),
+    SessionCreated {
+        command_id: String,
+        response: CreateSessionResponse,
+    },
     TurnAccepted {
+        command_id: String,
         session_id: String,
         submitted_text: String,
         response: TurnCommandResponse,
@@ -59,7 +63,7 @@ pub(crate) enum HostMessage {
 pub(crate) enum HostOperation {
     Bootstrap,
     Snapshot { request_id: u64 },
-    Mutation,
+    Mutation { command_id: String },
 }
 
 pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage>) {
@@ -142,12 +146,13 @@ pub(crate) fn cancel_turn(
             .await
         {
             Ok(response) => HostMessage::TurnAccepted {
+                command_id: command_id.clone(),
                 session_id,
                 submitted_text: String::new(),
                 response,
             },
             Err(error) => HostMessage::Failed {
-                operation: HostOperation::Mutation,
+                operation: HostOperation::Mutation { command_id },
                 error,
             },
         };
@@ -193,12 +198,15 @@ pub(crate) fn continue_turn(
         };
         let message = match result {
             Ok(response) => HostMessage::TurnAccepted {
+                command_id: request.command_id.clone(),
                 session_id: request.session_id,
                 submitted_text,
                 response,
             },
             Err(error) => HostMessage::Failed {
-                operation: HostOperation::Mutation,
+                operation: HostOperation::Mutation {
+                    command_id: request.command_id,
+                },
                 error,
             },
         };
@@ -214,9 +222,12 @@ pub(crate) fn create_session(
 ) {
     tokio::spawn(async move {
         let message = match client.create_session(&command_id, &definition_id).await {
-            Ok(value) => HostMessage::SessionCreated(value),
+            Ok(response) => HostMessage::SessionCreated {
+                command_id: command_id.clone(),
+                response,
+            },
             Err(error) => HostMessage::Failed {
-                operation: HostOperation::Mutation,
+                operation: HostOperation::Mutation { command_id },
                 error,
             },
         };
@@ -234,12 +245,13 @@ pub(crate) fn start_turn(
     tokio::spawn(async move {
         let message = match client.start_turn(&command_id, &session_id, &text).await {
             Ok(response) => HostMessage::TurnAccepted {
+                command_id: command_id.clone(),
                 session_id,
                 submitted_text: text,
                 response,
             },
             Err(error) => HostMessage::Failed {
-                operation: HostOperation::Mutation,
+                operation: HostOperation::Mutation { command_id },
                 error,
             },
         };

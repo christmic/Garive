@@ -38,7 +38,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let store =
         StateStore::open(config.state_dir.clone(), config.ephemeral).map_err(map_state_error)?;
     let preferences = store.load_preferences().map_err(map_state_error)?;
-    let pending = store.load_any_pending().map_err(map_state_error)?;
+    let (pending, pending_quarantined) = store.load_pending().map_err(map_state_error)?;
     let (history, history_error) = if config.no_prompt_history {
         (Vec::new(), false)
     } else {
@@ -58,17 +58,16 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         config.reduced_motion = preferences.reduced_motion;
     }
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
+    let restored = RestoredState {
+        store,
+        preferences,
+        pending,
+        pending_quarantined,
+        history,
+        history_error,
+    };
     if config.screen_reader {
-        return run_screen_reader(
-            config,
-            client,
-            store,
-            preferences,
-            pending,
-            history,
-            history_error,
-        )
-        .await;
+        return run_screen_reader(config, client, restored).await;
     }
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -83,18 +82,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     terminal.clear().map_err(|_| TuiError::TerminalIo)?;
 
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(
-        config,
-        client,
-        sender,
-        RestoredState {
-            store,
-            preferences,
-            pending,
-            history,
-            history_error,
-        },
-    );
+    let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
     let shutdown = shutdown_signal();
@@ -134,11 +122,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
 async fn run_screen_reader(
     config: LaunchConfig,
     client: LiveHostClient,
-    store: StateStore,
-    preferences: Preferences,
-    pending: Option<PendingCommand>,
-    history: Vec<PromptHistoryEntry>,
-    history_error: bool,
+    restored: RestoredState,
 ) -> Result<(), TuiError> {
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -149,18 +133,7 @@ async fn run_screen_reader(
     )
     .map_err(map_terminal_error)?;
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(
-        config,
-        client,
-        sender,
-        RestoredState {
-            store,
-            preferences,
-            pending,
-            history,
-            history_error,
-        },
-    );
+    let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
     let shutdown = shutdown_signal();
@@ -297,7 +270,7 @@ pub(super) struct RuntimeState {
     reconnect_attempt: u32,
     pub(super) store: StateStore,
     pub(super) preferences: Preferences,
-    pub(super) pending: Option<PendingCommand>,
+    pub(super) pending: Vec<PendingCommand>,
     pub(super) ephemeral_confirmed: bool,
     pub(super) queued_prompt: Option<String>,
     pub(super) editing_suspension: Option<String>,
@@ -307,7 +280,8 @@ pub(super) struct RuntimeState {
 struct RestoredState {
     store: StateStore,
     preferences: Preferences,
-    pending: Option<PendingCommand>,
+    pending: Vec<PendingCommand>,
+    pending_quarantined: usize,
     history: Vec<PromptHistoryEntry>,
     history_error: bool,
 }
@@ -330,11 +304,16 @@ impl RuntimeState {
         if restored.history_error {
             model.notice = Some("Corrupt prompt history was quarantined.".into());
         }
-        if restored.pending.is_some() {
+        if !restored.pending.is_empty() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             model.overlay = Some(Overlay::UnknownCommand);
+        } else if restored.pending_quarantined != 0 {
+            model.notice = Some(format!(
+                "Quarantined {} corrupt pending command file(s).",
+                restored.pending_quarantined
+            ));
         }
-        model.has_pending_command = restored.pending.is_some();
+        model.has_pending_command = !restored.pending.is_empty();
         Self {
             config,
             client,
@@ -411,9 +390,14 @@ impl RuntimeState {
             self.model.overlay = Some(Overlay::EphemeralConfirmation);
             return false;
         }
-        if self.pending.is_some() {
-            self.model.notice =
-                Some("Another command has an unknown durable outcome. Use /retry first.".into());
+        if self
+            .pending
+            .iter()
+            .any(|value| value.session_id == pending.session_id)
+        {
+            self.model.notice = Some(
+                "This Session already has an unknown command outcome. Use /retry first.".into(),
+            );
             self.model.overlay = Some(Overlay::UnknownCommand);
             return false;
         }
@@ -425,34 +409,57 @@ impl RuntimeState {
             self.local_state_failure("pending_write_failed");
             return false;
         }
-        self.pending = Some(pending);
+        self.pending.push(pending);
         self.model.has_pending_command = true;
         true
     }
 
+    pub(super) fn pending_for_context(&self) -> Option<&PendingCommand> {
+        let selected = self.model.selected_session.as_deref();
+        self.pending
+            .iter()
+            .find(|value| value.session_id.as_deref() == selected)
+            .or_else(|| self.pending.first())
+    }
+
     pub(super) fn abandon_pending(&mut self) {
-        if let Some(pending) = self.pending.take() {
-            if self
-                .store
-                .remove_pending(pending.session_id.as_deref())
-                .is_err()
-            {
-                self.pending = Some(pending);
-                self.local_state_failure("pending_abandon_failed");
-                return;
-            }
+        let Some(command_id) = self
+            .pending_for_context()
+            .map(|value| value.command_id.clone())
+        else {
+            self.model.overlay = None;
+            return;
+        };
+        let index = self
+            .pending
+            .iter()
+            .position(|value| value.command_id == command_id)
+            .expect("pending command remains present");
+        if self
+            .store
+            .remove_pending(self.pending[index].session_id.as_deref())
+            .is_err()
+        {
+            self.local_state_failure("pending_abandon_failed");
+            return;
         }
-        self.model.has_pending_command = false;
+        self.pending.remove(index);
+        self.model.has_pending_command = !self.pending.is_empty();
         self.model.overlay = None;
         if let Some(session) = self.model.selected_session.clone() {
             self.load(session);
         }
     }
 
-    fn finish_pending(&mut self, submitted_text: &str) {
-        let Some(pending) = self.pending.clone() else {
+    fn finish_pending(&mut self, command_id: &str, submitted_text: &str) {
+        let Some(index) = self
+            .pending
+            .iter()
+            .position(|value| value.command_id == command_id)
+        else {
             return;
         };
+        let pending = self.pending[index].clone();
         if self
             .store
             .remove_pending(pending.session_id.as_deref())
@@ -487,20 +494,25 @@ impl RuntimeState {
                 }
             }
         }
-        self.pending = None;
-        self.model.has_pending_command = false;
+        self.pending.remove(index);
+        self.model.has_pending_command = !self.pending.is_empty();
     }
 
-    fn reject_pending(&mut self, code: HostClientErrorCode) {
+    fn reject_pending(&mut self, command_id: &str, code: HostClientErrorCode) {
+        let pending_index = self
+            .pending
+            .iter()
+            .position(|value| value.command_id == command_id);
         if matches!(
             code,
             HostClientErrorCode::HostFailure | HostClientErrorCode::InvalidCommand
         ) {
-            if let Some(pending) = self.pending.take() {
+            if let Some(index) = pending_index {
+                let pending = self.pending.remove(index);
                 let _ = self.store.remove_pending(pending.session_id.as_deref());
             }
-            self.model.has_pending_command = false;
-        } else if self.pending.is_some() {
+            self.model.has_pending_command = !self.pending.is_empty();
+        } else if pending_index.is_some() {
             self.model.notice =
                 Some("The command outcome is unknown. Review /status or use exact /retry.".into());
             self.model.overlay = Some(Overlay::UnknownCommand);
@@ -604,8 +616,11 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             ));
         }
         HostMessage::SnapshotLoaded { .. } => {}
-        HostMessage::SessionCreated(response) => {
-            state.finish_pending("");
+        HostMessage::SessionCreated {
+            command_id,
+            response,
+        } => {
+            state.finish_pending(&command_id, "");
             let session_id = response.session_id;
             state.load(session_id.clone());
             if let Some(text) = state.queued_prompt.take() {
@@ -638,11 +653,12 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             host::bootstrap(state.client.clone(), state.sender.clone());
         }
         HostMessage::TurnAccepted {
+            command_id,
             session_id,
             submitted_text,
             response,
         } => {
-            state.finish_pending(&submitted_text);
+            state.finish_pending(&command_id, &submitted_text);
             if !submitted_text.is_empty() {
                 state.model.composer.clear();
             }
@@ -703,7 +719,6 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
         HostMessage::ReconnectDue { .. } => {}
         HostMessage::Failed { operation, error } => {
             let code = error.code;
-            state.reject_pending(code);
             match operation {
                 HostOperation::Bootstrap => {
                     state.dispatch(AppAction::HostUnavailable {
@@ -736,7 +751,8 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                         attempt: state.reconnect_attempt,
                     };
                 }
-                HostOperation::Mutation if error.status.is_some() => {
+                HostOperation::Mutation { command_id } if error.status.is_some() => {
+                    state.reject_pending(&command_id, code);
                     state.model.connection = ConnectionState::Online;
                     state.model.notice =
                         Some(format!("Host rejected the command: {}.", code.wire_name()));
@@ -744,7 +760,8 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                         state.model.overlay = Some(Overlay::ErrorDetails);
                     }
                 }
-                HostOperation::Mutation => {
+                HostOperation::Mutation { command_id } => {
+                    state.reject_pending(&command_id, code);
                     state.model.connection = ConnectionState::Disconnected {
                         attempt: state.reconnect_attempt,
                     };
