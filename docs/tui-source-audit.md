@@ -27,6 +27,7 @@ the focused TUI Specs linked below.
 | Garive | `0439eb80741bdcbc3c84da44a6affb9a5faaa62c` | Local and remote `master` at audit start | MIT; normative local baseline |
 | Grok Build | Git `bc7f02eddd3d84085849dc19ed216f11c23b0571`; `SOURCE_REV` `d5a0335a47221e8c9519936cb693e9b6450227ec`; pager `1.0.12` | Official public source cloned from `xai-org/grok-build` on 2026-08-30 | Apache-2.0; implementation evidence |
 | OpenAI Codex | Git `16fbfe557446a1af94da81e1144029ccc1311ad0` | Local official public source from `openai/codex` | Apache-2.0; implementation evidence |
+| Pi coding agent | Git `11b5403fade10cfda22d31f80a1ed276458b1fbe` | Local official public source from `badlogic/pi-mono` | MIT; independent implementation evidence |
 | Claude Code | Official repository Git `681a8be245e7759a405e276b16ae69ea6b75076f`, tag `v2.1.228`; installed binary `2.1.231` | Official repository does not contain the shipping TUI implementation | Product and public-interface evidence only |
 | Claude Code unpacked study | Git `3da94d5e5f2b99c9d82b0d8f09448b04775cd41f`, package claim `2.1.88` | Third-party extraction; README declares 108 missing modules and non-commercial restrictions | Corroboration only; no code or distinctive text may be copied |
 | Microsoft Win32 security/file APIs | Microsoft Learn pages retrieved 2026-08-30 | Official platform contract | Primary evidence for the Windows persistence boundary |
@@ -135,6 +136,22 @@ short public descriptions, explicit empty states, and grouped summaries.
 Garive adopts that separation for public activity/status presentation, but not
 Grok-specific task, workflow, usage, or Agent data.
 
+### Prompt-adjacent command discovery
+
+`views/prompt_widget/mod.rs:1068-1307` makes `refresh_slash` the sole update
+path for a typed slash snapshot, keeps the registry/controller separate from
+the immutable view state, wraps keyboard movement, clamps wheel movement, and
+accepts completion by replacing the controller-owned text range. Tests at
+`views/prompt_widget/tests.rs:1423-1764` cover bare-slash activation, ordinary
+prose, live registry changes, availability gates, argument separators,
+embedded paste elements, completion ranges, and selection invalidation.
+`app/agent_view/mod.rs:1241` and `views/slash_dropdown.rs:122+` make the
+rendered prompt-anchored row geometry the source of mouse hit testing.
+
+Garive adopts the component and ownership pattern, not Grok's commands,
+previews, MRU ranking, or ACP/tool registry. Garive's smaller catalog is
+static, exact-prefix filtered, and bounded to five visible rows.
+
 ## Codex findings
 
 ### Event and terminal ownership
@@ -153,7 +170,7 @@ Garive adopts typed terminal events, explicit ownership of stdin, redraw
 coalescing, and terminal restoration. External-editor and subprocess stdin
 handoff remain outside the first admitted contract.
 
-### Input model
+### Input model and slash discovery
 
 `codex-rs/tui/src/bottom_pane/chat_composer.rs` and
 `bottom_pane/paste_burst.rs` document independent composer and paste state
@@ -162,10 +179,33 @@ to stay synchronized. Snapshot coverage under `bottom_pane/snapshots/` includes
 empty, narrow, multiline, paste, history, command, footer, and permission
 states.
 
+`bottom_pane/command_popup.rs:36-202` owns filtered rows, selected index,
+scroll window, and bounded wrapped height. `chat_composer/slash_input.rs:171-312`
+limits the popup to the first command token and owns completion/cancel keys.
+`chat_composer.rs:3830-3941` refreshes after edits, suppresses conflicting
+popups, and keeps an explicitly dismissed token closed until that token
+changes. Its tests at `chat_composer.rs:12000+` prove bare slash, valid prefix,
+space/invalid-prefix closure, and history isolation.
+
 Garive adopts grapheme-aware cursor movement, bracketed paste as one edit,
 multiline drafts, bounded history, mode-specific key ownership, and snapshot
-coverage. Garive does not adopt Codex slash commands, attachments, shell mode,
-model selection, or approval shapes without corresponding Host authority.
+coverage. It also adopts prompt-adjacent prefix discovery with explicit
+dismissal, while retaining a separate searchable command palette. Garive does
+not adopt Codex's command set, attachments, shell mode, model selection, or
+approval shapes without corresponding Host authority.
+
+### Pi corroboration
+
+At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`
+owns autocomplete state, list, provider, cancellation, and a configurable
+three-to-twenty-row bound with five rows by default. Lines 519-710 render the
+list adjacent to the editor and give it first keyboard ownership; lines
+1102-1126 trigger `/` only at a line start and refresh on continued typing.
+`packages/tui/src/autocomplete.ts:272-427` composes slash and path providers
+while keeping slash-context matching explicit. Pi additionally suppresses
+autocomplete mutation during paste at `editor.ts:1194`; Garive instead
+re-evaluates an atomic paste after insertion because its catalog is synchronous
+and bounded. This is corroboration, not a copied implementation.
 
 ### Footer and visual hierarchy
 

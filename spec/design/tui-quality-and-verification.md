@@ -290,6 +290,18 @@ record both content and semantic Ratatui style, rather than text symbols alone.
 The complete package, six shipping PTYs, production Runtime/file-SQLite/PTTY,
 strict Clippy, and release timings are pinned in the evidence document.
 
+TUI merge revision `351cca79` covers the prompt-adjacent command-discovery
+component and all 151 listed all-feature TUI cases. The typed catalog now
+enumerates every admitted parser variant; model prefix/dismissal state, pure
+anchored rendering and mouse geometry, and controller key completion have
+separate owners. Dark, light, and mono snapshots cover selection and composer
+alignment without a modal backdrop. A shipping macOS PTY types `/theme d`,
+observes the bounded menu, completes with Tab, executes on the next Enter, and
+proves terminal restoration. All eight all-feature shipping PTYs and strict
+all-target/all-feature Clippy pass. Screen-reader input remains on the shared
+linear `Ctrl+P` catalog. Physical Terminal/iTerm2-class screenshots remain an
+open native gate.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

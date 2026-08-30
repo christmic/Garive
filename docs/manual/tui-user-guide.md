@@ -142,6 +142,20 @@ Garive does not invent or persist provider/model choices in the TUI.
 | `Ctrl+Z` / `Ctrl+Y` | Undo or redo. |
 | `Ctrl+C` | Clear a selection, then a nonempty draft, then ask to quit on a second empty press. |
 
+Typing `/` at the first column of a focused, single-line composer opens a
+compact command menu above it. Continue typing to narrow by command prefix.
+Use Up/Down (or Shift+Tab) to move, Tab or Enter to complete, and Escape to
+dismiss without changing the draft. Completion is deliberately separate from
+execution: press Enter again to run the completed command. `/new` and
+`/sessions` complete with a trailing space for their optional argument.
+
+The menu shows at most five rows, names why an action is unavailable, and does
+not move the conversation or composer. A mouse wheel moves its visible
+selection and a left click completes the hit row. It is hidden for multiline
+or argument text, small terminals below `30x12`, modal overlays, and
+screen-reader mode. Use `Ctrl+P` for help-text search or complete linear
+screen-reader discovery.
+
 The composer accepts bracketed multiline paste as one edit, normalizes CRLF,
 expands tabs to spaces, rejects unsafe controls, and enforces the Host's 4,096
 UTF-8-byte command limit. Cursor movement follows Unicode grapheme boundaries,
@@ -182,6 +196,11 @@ Modal input never scrolls the conversation or opens a Session behind the
 overlay.
 
 ## Slash commands
+
+The inline menu and `Ctrl+P` palette are generated from the same catalog used
+for availability. The catalog lists every admitted theme and mouse variant;
+an entry shown as unavailable cannot be completed or activated until its named
+condition is true.
 
 | Command | Result |
 |---|---|

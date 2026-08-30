@@ -210,6 +210,30 @@ Desktop commits did not change TUI sources, and the repository was clean at
 `5fb523d5`. Physical Terminal/iTerm screenshots remain open and are not
 substituted with ANSI captures.
 
+TUI merge revision `351cca79` adds the componentized composer-adjacent command
+menu. Direct source inspection at the pinned Codex, Grok Build, and Pi
+revisions established the separate registry/state/view/controller ownership,
+bounded visible window, prefix synchronization, explicit dismissal, and
+geometry-derived pointer patterns. Garive keeps its own smaller catalog and a
+separate `Ctrl+P` search surface. The catalog now exposes every admitted theme
+and mouse parser variant, and a test requires every catalog row to parse.
+
+On native macOS arm64, the exact merged source listed 151 all-feature TUI test
+cases and the complete all-feature package passed. Eight shipping-binary PTY
+cases passed, including an Expect-driven `100x24` flow that typed `/theme d`,
+observed the anchored `Use dark theme` result, completed `/theme dark` with
+Tab, executed it with the subsequent Enter, and restored the alternate screen.
+Strict all-target/all-feature Clippy passed with warnings denied. Pure tests
+bind prefix/dismissal state and geometry-derived row hit testing; reviewed
+dark, light, and mono snapshots bind the five-row menu, selected marker,
+semantic styles, composer alignment, and no modal backdrop. Screen-reader PTY
+coverage retained its linear `Ctrl+P` flow and the controller explicitly
+refuses to give it invisible suggestion-key ownership.
+
+These are executable buffer and macOS PTY results, not physical-window images.
+The login session remains locked, so Apple Terminal/iTerm2-class review and the
+admitted PNG gallery remain open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

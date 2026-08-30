@@ -31,6 +31,7 @@ not depend on the terminal default being light or dark.
 | `FocusFrame` | double composer border or accent region border; never moves focus on Host events |
 | `CenteredColumn` | caps readable main content at 114 cells without changing model state |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
+| `AnchoredMenu` | clears only its bounded area, attaches above its owner, preserves page context and owner cursor |
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
@@ -56,6 +57,7 @@ sequences or schedule their own redraw loops.
 | Composer | idle/focused/frozen/action response; placeholder/draft/over-limit |
 | Context footer | idle/running/notice/recovery; tiny/full width collapse |
 | Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
+| Command suggestions | prefix/selected/disabled/dismissed; composer-anchored, nonmodal, at most five rows |
 | Confirmation | safe consequence, primary action, escape action; no implicit acceptance |
 
 Session and activity state glyphs are closed semantic vocabulary: `✓`
@@ -85,6 +87,12 @@ Bounded lists keep the selected item inside their visible window. The visual
 filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
+An anchored command menu is not a modal. It uses the overlay border and shared
+selection row, clears only its own rectangle, aligns its left edge with the
+composer, caps width at 76 cells, and grows upward by two border rows plus at
+most five result rows. It never shifts conversation, composer, or cursor
+geometry. It is suppressed below `30x12`, for multiline/argument drafts, when
+the composer is not focused, and whenever a modal owns input.
 The linear screen-reader component uses that same filtered order and marks the
 selected numbered row explicitly; it cannot maintain a separate list model.
 Command rows also consume the registry's shared availability result. A
@@ -129,7 +137,9 @@ assigned display width.
 ## Conformance
 
 Every new component or variant requires: a semantic buffer test, dark/light/mono snapshot coverage at its responsive boundary, keyboard ownership tests,
-and a real macOS PTY review when it changes terminal behavior. Reviews reject
+and a real macOS PTY review when it changes terminal behavior. Anchored menus
+also require geometry-derived mouse hit tests and proof that modal and
+screen-reader paths retain higher ownership. Reviews reject
 raw colors outside the palette, duplicated key-hint formatting, color-only
 state, content-dependent layout identity, and screenshots without executable
 snapshot or PTY evidence.

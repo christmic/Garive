@@ -197,10 +197,13 @@ frozen behind the pending command and cannot be edited into a different retry.
 
 | Chord | Context | Action |
 |---|---|---|
-| `Enter` | composer | submit when valid; accept selected overlay item otherwise |
+| `Enter` | visible command suggestions | complete selected catalog row; the next Enter submits the completed command |
+| `Tab` / `Shift+Tab`, `Up` / `Down` | visible command suggestions | complete, move backward, or move with wrapping |
+| `Esc` | visible command suggestions | dismiss for the unchanged draft without deleting text |
+| `Enter` | composer | submit when valid; accept selected modal item otherwise |
 | `Ctrl+J` | composer | insert newline |
 | `Shift+Enter` | composer, when distinguishable | insert newline |
-| `Tab` / `Shift+Tab` | no blocking overlay | move focus forward/backward |
+| `Tab` / `Shift+Tab` | no suggestion or blocking overlay | move focus forward/backward |
 | `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
 | `Up` / `Down`, `PageUp` / `PageDown`, `Home` / `End` | focused conversation | scroll one cell, scroll one viewport, jump oldest, or follow latest |
 | `Ctrl+P` | any ready view | open command palette |
@@ -230,6 +233,13 @@ rendered Session row cannot activate a hidden Session.
 Every selectable overlay derives rendering, highlight position, and activation
 from one filtered result set and a terminal-height-aware visible window. Moving
 selection cannot leave the active row clipped below the popup.
+
+The prompt-adjacent command component owns only navigation, completion, and
+dismissal keys while it is visible. Modal ownership remains higher. Printable
+editing, deletion, undo/redo, cursor movement, and paste stay composer-owned;
+each resulting draft synchronously recomputes the bounded prefix result set.
+The screen-reader event loop never gives keys to this visual-only component;
+`Ctrl+P` remains its complete linear discovery path.
 
 ## Slash commands
 
@@ -263,6 +273,23 @@ availability requirements. Visual rendering, screen-reader output, and Enter
 activation derive the same safe unavailable reason from the current model;
 they cannot maintain separate predicates. Disabled commands remain
 discoverable with that reason.
+
+When a focused, single-line composer draft begins literally with `/`, is at
+most 128 bytes, and is an exact case-folded prefix of a catalog input, a
+nonmodal command menu appears directly above the composer. Leading whitespace
+continues to parse on submit for compatibility but does not trigger discovery.
+The inline menu searches command input only; `Ctrl+P` separately searches both
+input and help text. Arguments and unmatched prose close the inline menu.
+
+The menu exposes at most five rows from catalog order and keeps its selected
+row visible. `Up`, `Down`, and `Shift+Tab` wrap. `Tab`, `Enter`, or a left click
+copies the selected canonical input into the composer; `/new` and `/sessions`
+also receive one trailing argument separator. Completion does not execute:
+the menu dismisses for that exact draft, and a subsequent Enter traverses the
+normal parser and availability path. Escape preserves the draft and dismisses
+only until the draft changes. Wheel/click hit testing derives from the same
+rendered window; modal, unfocused, multiline, smaller-than-`30x12`, and linear
+screen-reader states expose no inline menu.
 
 ## Session navigation
 
@@ -440,15 +467,15 @@ client-side imitation.
   multiline paste, selection, undo/redo, and every byte-bound edge;
 - key-routing matrices prove one owner per chord in every focus/overlay/state;
 - command parser tests cover every command, quoting, Unicode, malformed input,
-  availability, and no Host fallback;
+  availability, catalog/parser coverage, and no Host fallback;
 - snapshots cover all responsive widths, minimum heights, themes, terminal
   capability sets, lifecycle states, overlays, Markdown blocks, and hostile
   control strings;
 - scroll/reflow properties preserve stable anchors and bounded visible work;
 - screen-reader tests assert semantic line order and absence of animation,
   cursor addressing, mouse, and alternate-screen control;
-- PTY tests cover typing, paste, resize, Session picker, help, cancellation,
-  reconnect notice, and clean exit.
+- PTY tests cover typing, inline slash discovery/completion, paste, resize,
+  Session picker, help, cancellation, reconnect notice, and clean exit.
 - syntax presentation stress-renders 64 labeled blocks / 384 code lines at
   100 cells with debug p95 below 150 ms; the parser bundle remains lazy until a
   recognized labeled fence is rendered.

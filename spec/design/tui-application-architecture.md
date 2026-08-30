@@ -74,6 +74,7 @@ tui/src/
     signals.rs           shutdown/resize signals
   view/
     mod.rs               root layout
+    command_suggestions.rs pure anchored-menu rendering and pointer geometry
     conversation.rs      timeline and scroll model
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
@@ -90,6 +91,16 @@ tui/src/
 
 No production module exceeds 500 non-test lines. `lib.rs` exports only launch
 configuration, launch outcome, and stable launch error types.
+
+Command discovery has four explicit owners. `input/commands.rs` is the catalog,
+parser, help, argument-completion flag, and availability source;
+`application/model.rs` derives prefix matches and stores only selection plus
+the dismissed draft; `view/command_suggestions.rs` owns bounded layout,
+painting, visible-window math, and hit testing; `runtime/controller.rs` owns
+key priority and completion edits. Mouse routing consumes view geometry and
+cannot reproduce row coordinates. The modal command palette and visual-only
+anchored menu share the catalog but remain separate components because their
+search grammar, focus, accessibility, and backdrop contracts differ.
 
 The title presenter is pure and returns only bounded product labels derived
 from typed connection/execution state plus a loaded Session ordinal. The
