@@ -3,7 +3,7 @@ use serde::Deserialize;
 
 use super::{LiveHostError, LiveHostEvent};
 
-const API_VERSION: &str = "garive.host.v1";
+const API_VERSION: &str = "v1";
 
 pub(crate) fn project_fact(fact: &DurableFact) -> Result<Option<LiveHostEvent>, LiveHostError> {
     fact.verify().map_err(|_| LiveHostError::CorruptState)?;
