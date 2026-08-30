@@ -8,8 +8,8 @@ use garive_config::{
     resolve_definition, AgentDefinition, CapabilityKind, CapabilityReference,
     ContextPolicyCandidate, ContextPolicyReference, DefaultLimits, GovernancePolicy,
     GovernancePolicyCandidate, InstructionReference, InstructionResource, InteractionMode,
-    ModelRoleCandidate, ModelRoleRequirement, ProductPolicy, ResolutionErrorCode,
-    ResolutionRegistry,
+    ModelRoleCandidate, ModelRoleRequirement, ProductPolicy, PublicToolActivityCatalogue,
+    PublicToolActivityDescriptor, ResolutionErrorCode, ResolutionRegistry,
 };
 use garive_tools::{ExecutionCapability, ExecutionRequirements, ReplayClass, ToolDefinition};
 use serde_json::Value;
@@ -237,6 +237,7 @@ fn registry(fixture: &Value) -> ResolutionRegistry {
                 descriptor_digest: item["descriptor_digest"].as_str().unwrap().to_owned(),
             })
             .collect(),
+        public_tool_activity_catalogue: None,
     }
 }
 
@@ -422,4 +423,50 @@ fn continuation_and_limit_properties_hold() {
         assert_eq!(first, second);
         assert!(first.limits().max_iterations <= definition.limits().max_iterations);
     }
+}
+
+#[test]
+fn snapshot_v2_binds_one_complete_sorted_public_tool_catalogue() {
+    let fixture = fixture();
+    let v1 = definition(&fixture);
+    let mut contracts = v1.contract_versions().clone();
+    contracts.insert("effective_snapshot".into(), 2);
+    let definition = rebuild(&v1, v1.instruction_sources().to_vec(), contracts).unwrap();
+    let mut candidates = registry(&fixture);
+    candidates.public_tool_activity_catalogue = Some(PublicToolActivityCatalogue {
+        schema_version: 1,
+        catalogue_revision: "activity-labels-1".into(),
+        descriptors: vec![PublicToolActivityDescriptor {
+            tool_name: "read_file".into(),
+            tool_revision: "1".into(),
+            label_key: "agent.activity.read_file".into(),
+        }],
+    });
+    let mut policy = product_policy(&fixture);
+    policy
+        .admitted_contract_versions
+        .get_mut("effective_snapshot")
+        .unwrap()
+        .insert(2);
+    let snapshot = resolve_definition(&definition, &candidates, &policy).unwrap();
+    assert_eq!(
+        snapshot.public_tool_activity_catalogue().unwrap(),
+        candidates.public_tool_activity_catalogue.as_ref().unwrap()
+    );
+    assert_ne!(
+        snapshot.snapshot_digest(),
+        resolve_definition(&v1, &registry(&fixture), &product_policy(&fixture))
+            .unwrap()
+            .snapshot_digest()
+    );
+
+    candidates
+        .public_tool_activity_catalogue
+        .as_mut()
+        .unwrap()
+        .descriptors
+        .clear();
+    let error = resolve_definition(&definition, &candidates, &policy).unwrap_err();
+    assert_eq!(error.code(), ResolutionErrorCode::InvalidDefinition);
+    assert_eq!(error.path(), "/public_tool_activity_catalogue");
 }
