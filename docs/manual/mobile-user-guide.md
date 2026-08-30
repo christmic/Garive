@@ -190,7 +190,8 @@ Work 按处理优先级分组：
 
 ![iOS Sessions](assets/mobile/ios-03-sessions.png)
 
-Sessions 提供 **All**、**Working**、**Needs you** 和 **Done** 状态筛选。列表来自服务端持久化
+Sessions 提供本地搜索，以及 **All**、**Working**、**Needs you** 和 **Done** 状态筛选。搜索只
+匹配当前已加载的公开 Agent 名称和 Session 标识，不把查询发送给服务端。列表来自服务端持久化
 投影；重新打开任务不会复制 Session，也不会丢失已有 Turn。
 
 ![Android Agents](assets/mobile/android-04-agents.png)
@@ -324,7 +325,7 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Work、Sessions、Agents、Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（6 条）、Swift 测试（6 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+界面流程（7 条）、Swift 测试（6 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
 输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 29 张实际运行截图。
