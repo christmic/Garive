@@ -289,10 +289,13 @@ last selected public Session, and dismissed education. It must not contain
 credentials, configuration values, paths, raw facts, hidden context, authority
 grants, artifact bytes, or invented durable state.
 
-The current appearance record is a maximum 256-byte, schema-versioned document
-with exactly `schema_version`, `theme`, and `density`. Unknown keys, versions,
-values, malformed JSON, or oversized records fail closed to `system` and
-`comfortable`; the client never partially admits a record.
+The current preference record is a maximum 256-byte, schema-versioned document
+with exactly `schema_version`, `theme`, `density`, and `locale`. Version 2
+admits only `system`, `en`, `zh-Hans`, or the QA-only `en-XA` locale. An exact
+version 1 appearance record migrates in memory with `locale=system`; no other
+legacy or widened shape migrates. Unknown keys, versions, values, malformed
+JSON, or oversized records fail closed to `system`, `comfortable`, and
+`locale=system`; the client never partially admits a record.
 
 ## Security and privacy
 
@@ -321,6 +324,22 @@ reduced transparency, and full keyboard access.
 UI copy is localized by stable keys with parameter bounds. Dates, numbers,
 pluralization, and shortcuts use locale/platform formatting. Pseudolocalization
 and CJK composition are release gates.
+
+`locale=system` resolves live macOS preferences to Simplified Chinese for any
+`zh` language tag and otherwise to English. Explicit locale selection takes
+effect without restart, updates the document language exposed to assistive
+technology, and never changes user-authored prompts, model output, filenames,
+Workspace display names, Agent identifiers, receipt content, or other durable
+facts. Missing catalogue entries fail visibly during tests; production must
+never render a raw localization key.
+
+English and Simplified Chinese are user-facing release locales. `en-XA` is an
+expanded, accented pseudolocale available only in development/evidence modes or
+when already selected by an admitted QA preference. It may test layout but may
+not substitute for the required M75 Chinese journey. Every release candidate
+exercises Setup, Work, Search, Activity, approval, Workspace picker/recovery,
+Artifact preview/export, Agents, Settings, menus, errors and empty states in
+both user-facing locales, including CJK IME composition and 200% zoom.
 
 ## Performance and operations
 

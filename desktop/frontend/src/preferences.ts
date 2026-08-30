@@ -1,14 +1,16 @@
 export type DesktopTheme = "system" | "light" | "dark";
 export type DesktopDensity = "comfortable" | "compact";
+export type DesktopLocalePreference = "system" | "en" | "zh-Hans" | "en-XA";
 
 export interface DesktopPreferences {
-  readonly schema_version: 1;
+  readonly schema_version: 2;
   readonly theme: DesktopTheme;
   readonly density: DesktopDensity;
+  readonly locale: DesktopLocalePreference;
 }
 
 export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
-  schema_version: 1, theme: "system", density: "comfortable",
+  schema_version: 2, theme: "system", density: "comfortable", locale: "system",
 };
 
 const STORAGE_KEY = "garive.desktop.preferences.v1";
@@ -21,12 +23,16 @@ export function readDesktopPreferences(
     const encoded = storage.getItem(STORAGE_KEY);
     if (!encoded || encoded.length > 256) return DEFAULT_DESKTOP_PREFERENCES;
     const value = JSON.parse(encoded) as Record<string, unknown>;
-    if (Object.keys(value).sort().join(",") !== "density,schema_version,theme"
-        || value.schema_version !== 1
-        || !matchesTheme(value.theme) || !matchesDensity(value.density)) {
-      return DEFAULT_DESKTOP_PREFERENCES;
+    const keys = Object.keys(value).sort().join(",");
+    if (keys === "density,schema_version,theme" && value.schema_version === 1
+        && matchesTheme(value.theme) && matchesDensity(value.density)) {
+      return { schema_version: 2, theme: value.theme, density: value.density, locale: "system" };
     }
-    return { schema_version: 1, theme: value.theme, density: value.density };
+    if (keys !== "density,locale,schema_version,theme" || value.schema_version !== 2
+        || !matchesTheme(value.theme) || !matchesDensity(value.density)
+        || !matchesLocale(value.locale)) return DEFAULT_DESKTOP_PREFERENCES;
+    return { schema_version: 2, theme: value.theme, density: value.density,
+      locale: value.locale };
   } catch { return DEFAULT_DESKTOP_PREFERENCES; }
 }
 
@@ -44,4 +50,8 @@ function matchesTheme(value: unknown): value is DesktopTheme {
 
 function matchesDensity(value: unknown): value is DesktopDensity {
   return value === "comfortable" || value === "compact";
+}
+
+function matchesLocale(value: unknown): value is DesktopLocalePreference {
+  return value === "system" || value === "en" || value === "zh-Hans" || value === "en-XA";
 }
