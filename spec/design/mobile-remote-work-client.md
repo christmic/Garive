@@ -205,12 +205,23 @@ MobilePreferencesV1 {
 
 PendingMobileCommandV1 {
   schema_version: 1
-  kind, command_id, semantic_digest
-  session_id?, turn_id?, suspension_id?
-  observed_position?, observed_session_version?
-  created_at
+  kind: create | start | cancel | continue
+  semantic_digest, created_at_epoch_ms
+  command_id?                         // single-stage mutation
+  create_command_id?, start_command_id? // create + first Turn workflow
+  definition_id?, session_id?, turn_id?
+  position?, suspension_id?, session_version?, input_json?
 }
 ```
+
+The exact bounded input for an ambiguous start/continue is stored separately
+as the matching local draft payload. The record digest binds its byte digest,
+the current command identity, both create/start identities when applicable,
+and every durable coordinate. Storage writes payload before record and clears
+record before payload, so a torn write cannot produce an admitted retry.
+Relaunch rejects unknown keys, invalid shapes, over-bound payloads, modified
+identities or payload/digest mismatches and clears only these disposable local
+values.
 
 Preferences and pending records contain no access token, endpoint, account
 name, Agent output, activity details, or response body. Unknown keys/versions,
@@ -318,7 +329,7 @@ the verified Session or Settings destination only after authenticated refresh.
 | validation | Inline accessible explanation; no effect emitted. |
 | authentication | Sign-in/pairing gate; retain no secret in error state. |
 | authorization | Close inaccessible detail and refresh scoped navigation. |
-| command_unknown | Preserve pending identity and offer exact retry. |
+| command_unknown | Preserve pending identity across restart; keep exact retry or explicit warned abandonment visible even after reads reconnect. |
 | host | Show stable localized code; refresh durable state when appropriate. |
 | transport | Retain verified snapshot/cursor; bounded reconnect. |
 | protocol | Stop applying response, show security-safe error, require refresh. |

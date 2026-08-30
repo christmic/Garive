@@ -169,7 +169,12 @@ Work 按处理优先级分组：
 5. 看到新 Session 和第一条 Turn 的服务端确认后，才表示任务已可靠提交。
 
 创建 Session 与启动第一条 Turn 是两个具有稳定命令身份的操作。若网络在提交期间断开，应用
-不会偷偷创建第二个任务，而会在刷新服务端事实后提供同一命令的精确重试路径。
+不会偷偷创建第二个任务，而会把有界 pending record 和精确输入保存在应用私有存储中。即使
+应用进程被系统终止，重新打开后仍会先刷新服务端事实，再提供同一 command identity 的
+**Retry exact**。
+
+如果用户明确选择 **Forget retry**，应用会再次警告该命令可能已经被服务端接受。确认只会删除
+本机的精确重试身份，不会撤销、停止或删除任何服务端工作；原输入仍保留，便于用户先核对历史。
 
 当前移动端输入以文字为主；附件、相机、录音、本地文件和手机端 Runtime 不属于此版本。
 
@@ -237,6 +242,16 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 - `runtime_unavailable` 表示 Gateway 暂时无法连接 loopback Runtime；读取可稍后重试，写操作
   必须保留原命令身份。
 
+![Android 结果未知时的精确重试](assets/mobile/android-15-exact-retry.png)
+
+只要仍有结果未知的写操作，**Retry exact** 和 **Forget retry** 就会保持可见，即使后续读取已经
+恢复在线。输入框会暂时锁定，避免用户在处理旧命令前发出一个看似相同、身份却不同的新命令。
+
+![Android 放弃精确重试确认](assets/mobile/android-16-forget-retry-confirmation.png)
+
+选择 **Forget retry** 前会明确说明服务端可能已经接受原命令。若不确定，选择 **Keep retry**，
+先刷新并核对 Session 历史；放弃本地身份不代表撤销服务端工作。
+
 ![Android 离线但保留已验证历史](assets/mobile/android-12-offline.png)
 
 实际离线验证中，停止 Host 后刷新会显示 **Offline · verified history**，并继续保留最后一次已验证
@@ -303,9 +318,10 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Work、Sessions、Agents、Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（4 条）、Swift 测试（5 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+界面流程（5 条）、Swift 测试（6 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
-本机设备身份密钥会轮换。当前手册包含 25 张实际运行截图。
+本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 27 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
