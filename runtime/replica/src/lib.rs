@@ -129,9 +129,9 @@ pub use observability_runtime::{
 };
 pub use plan_recovery::reconstruct_plan;
 pub use plan_runtime::{
-    commit_plan_command, plan_plan_transition, plan_propose_plan, ActivePlanClaim,
-    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlannedPlanCommand,
+    commit_plan_command, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
+    ActivePlanClaim, PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepExecutionStart, PlannedPlanCommand,
 };
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,

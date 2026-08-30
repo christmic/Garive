@@ -6,9 +6,9 @@ use serde_json::{json, Map, Value};
 
 use super::{
     ActivePlanClaim, PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
-    PlannedPlanCommand,
+    PlanStepExecutionStart, PlannedPlanCommand,
 };
-use crate::{SqliteLedger, SqliteLedgerError};
+use crate::{PlannedTurn, SqliteLedger, SqliteLedgerError};
 
 /// Plans `plan.proposed` state version 1 without mutating durable state.
 pub fn plan_propose_plan(
@@ -305,6 +305,86 @@ pub fn plan_plan_transition(
             through_position: current.through_position,
         },
     })
+}
+
+/// Atomically binds a claimed Plan step to one already planned C6 start batch.
+pub fn plan_start_step_execution(
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    request: PlanStepExecutionStart,
+    turn: &PlannedTurn,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    let execution_id = turn
+        .execution_id
+        .as_ref()
+        .ok_or(PlanRuntimeError::Invalid)?;
+    let execution_facts = turn
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "execution.started")
+        .collect::<Vec<_>>();
+    let turn_starts = turn
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "turn.started")
+        .collect::<Vec<_>>();
+    if execution_facts.len() != 1
+        || turn_starts.len() != 1
+        || turn
+            .facts
+            .iter()
+            .any(|fact| fact.recorded_at != context.recorded_at || fact.schema_version != 1)
+    {
+        return Err(PlanRuntimeError::Invalid);
+    }
+    let turn_start: Value = serde_json::from_str(turn_starts[0].payload.as_json())
+        .map_err(|_| PlanRuntimeError::Invalid)?;
+    if turn_start.get("command_id").and_then(Value::as_str) != Some(context.command_id.as_str()) {
+        return Err(PlanRuntimeError::Invalid);
+    }
+    let execution_fact = execution_facts[0];
+    if execution_fact.execution_id.as_ref() != Some(execution_id)
+        || execution_fact.turn_id.as_ref() != Some(&turn.turn_id)
+    {
+        return Err(PlanRuntimeError::Invalid);
+    }
+    let payload: Value = serde_json::from_str(execution_fact.payload.as_json())
+        .map_err(|_| PlanRuntimeError::Invalid)?;
+    let snapshot_digest = payload
+        .get("snapshot_digest")
+        .and_then(Value::as_str)
+        .ok_or(PlanRuntimeError::Invalid)?;
+    let through_position = payload
+        .get("through_position")
+        .and_then(Value::as_u64)
+        .ok_or(PlanRuntimeError::Invalid)?;
+    if snapshot_digest != current.snapshot.definition().agent_snapshot_digest()
+        || through_position != current.through_position
+    {
+        return Err(PlanRuntimeError::Invalid);
+    }
+    let mut planned = plan_plan_transition(
+        current,
+        expected_state_version,
+        context,
+        PlanRuntimeTransition::Start {
+            step_id: request.step_id,
+            claim_id: request.claim_id,
+            lease_epoch: request.lease_epoch,
+            clock_revision: request.clock_revision,
+            observed_at_tick: request.observed_at_tick,
+            attempt_id: request.attempt_id,
+            execution_id: execution_id.as_str().into(),
+            execution_snapshot_digest: snapshot_digest.into(),
+            sandbox_profile_digest: request.sandbox_profile_digest,
+            safety_decision_id: request.safety_decision_id,
+        },
+    )?;
+    let mut facts = turn.facts.clone();
+    facts.append(&mut planned.facts);
+    planned.facts = facts;
+    Ok(planned)
 }
 
 /// Commits one validated Plan command under Session optimistic concurrency.

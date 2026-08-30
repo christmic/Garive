@@ -5,7 +5,9 @@ use garive_plan::{PlanSnapshot, PlanStepId};
 
 mod command;
 
-pub use command::{commit_plan_command, plan_plan_transition, plan_propose_plan};
+pub use command::{
+    commit_plan_command, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
+};
 
 /// Authenticated metadata bound to one idempotent Plan command.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,6 +67,27 @@ pub enum PlanRetryPosture {
     Replan,
     /// Leave the step failed for explicit Plan terminalization.
     Fail,
+}
+
+/// Plan-owned claim and F0 posture used to bind one real C6 Execution start.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanStepExecutionStart {
+    /// Claimed step.
+    pub step_id: PlanStepId,
+    /// Exact claim identity.
+    pub claim_id: String,
+    /// Exact fencing epoch.
+    pub lease_epoch: u64,
+    /// Exact monotonic clock revision.
+    pub clock_revision: String,
+    /// Tick proving start preceded expiry.
+    pub observed_at_tick: u64,
+    /// Stable attempt identity.
+    pub attempt_id: String,
+    /// Prepared-v3 Sandbox profile digest frozen for the Execution posture.
+    pub sandbox_profile_digest: String,
+    /// Fresh Runtime Safety decision identity.
+    pub safety_decision_id: String,
 }
 
 impl PlanRetryPosture {

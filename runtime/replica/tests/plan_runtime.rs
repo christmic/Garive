@@ -1,14 +1,19 @@
 use std::collections::BTreeSet;
 
-use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId};
+use garive_ledger::{
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
+    FactId, FactKind, SessionId,
+};
 use garive_plan::{
     PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanState, PlanStepId,
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_plan_command, plan_plan_transition, plan_propose_plan, reconstruct_plan,
-    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, SqliteLedger,
+    commit_plan_command, get_turn, plan_plan_transition, plan_propose_plan,
+    plan_start_step_execution, plan_start_turn, reconstruct_plan, EffectiveRuntimeLimits,
+    GetTurnQuery, PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand,
 };
 use serde_json::json;
 use tempfile::tempdir;
@@ -366,6 +371,111 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     );
 }
 
+#[test]
+fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("atomic-start.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed = plan_propose_plan(&context("atomic-propose"), definition()).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let draft = recover(&ledger, &session);
+    let adopted = plan_plan_transition(
+        &draft,
+        draft.state_version,
+        &context("atomic-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        draft.session_version,
+        &adopted,
+    )
+    .unwrap();
+    let state = recover(&ledger, &session);
+    let claimed = claim(&state, "atomic-claim", 1, 10, 20, "atomic-claim-command");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &claimed,
+    )
+    .unwrap();
+    let state = recover(&ledger, &session);
+
+    let turn = plan_start_turn(
+        &start_turn(&session, "atomic-start", state.through_position),
+        state.through_position,
+    )
+    .unwrap();
+    let execution_id = turn.execution_id.clone().unwrap();
+    let started = plan_start_step_execution(
+        &state,
+        state.state_version,
+        &context("atomic-start"),
+        PlanStepExecutionStart {
+            step_id: step_id("prepare"),
+            claim_id: "atomic-claim".into(),
+            lease_epoch: 1,
+            clock_revision: "monotonic-v1".into(),
+            observed_at_tick: 15,
+            attempt_id: "atomic-attempt".into(),
+            sandbox_profile_digest: digest('f'),
+            safety_decision_id: "safety-decision-atomic".into(),
+        },
+        &turn,
+    )
+    .unwrap();
+    assert_eq!(
+        started
+            .facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "turn.started",
+            "turn.input",
+            "execution.started",
+            "plan.step.started"
+        ]
+    );
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &started,
+    )
+    .unwrap();
+    drop(ledger);
+
+    let ledger = SqliteLedger::open(&path).unwrap();
+    let recovered = recover(&ledger, &session);
+    assert_eq!(
+        recovered.active_claims[&step_id("prepare")]
+            .execution_id
+            .as_deref(),
+        Some(execution_id.as_str())
+    );
+    let turn = get_turn(
+        &ledger,
+        &GetTurnQuery {
+            session_id: session,
+            turn_id: turn.turn_id,
+            through_position: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(turn.execution_id.as_ref(), Some(&execution_id));
+}
+
 fn recover(ledger: &SqliteLedger, session: &SessionId) -> PlanRuntimeState {
     reconstruct_plan(
         ledger,
@@ -567,4 +677,23 @@ fn digest(character: char) -> String {
 }
 fn timestamp() -> &'static str {
     "2026-08-31T00:00:00Z"
+}
+
+fn start_turn(session: &SessionId, command: &str, _: u64) -> StartTurnCommand {
+    StartTurnCommand {
+        command_id: RuntimeCommandId::new(command).unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: AgentInstanceId::try_from("agent-instance-1").unwrap(),
+        definition_id: AgentDefinitionId::try_from("agent-definition-1").unwrap(),
+        definition_revision: AgentDefinitionRevision::try_from("revision-1").unwrap(),
+        snapshot_digest: digest('b'),
+        trusted_input: "Execute the claimed Plan step".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 4,
+            max_input_tokens: Some(4_096),
+            max_output_tokens: Some(2_048),
+            deadline_budget_ms: Some(30_000),
+        },
+        recorded_at: timestamp().into(),
+    }
 }
