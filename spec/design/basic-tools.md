@@ -43,6 +43,27 @@ Results use valid bounded I-JSON. Ordering below is semantic and deterministic.
 Absolute paths, environment values, credentials and raw executor diagnostics
 never appear.
 
+The exact revision-1 ceilings are frozen with the catalogue:
+
+| Surface | Ceiling |
+|---|---:|
+| file or search input file | 1,048,576 bytes |
+| buffered result | 1,048,576 bytes |
+| path | 4,096 Unicode scalars |
+| literal query | 4,096 Unicode scalars |
+| list entries or search matches | 4,096 |
+| patch text | 1,048,576 Unicode scalars |
+| patch targets | 128 |
+| process argv entries | 256 |
+| one argv entry | 32,768 Unicode scalars |
+| process duration | 300,000 ms |
+| sandbox open files | 64 |
+| sandbox processes | 16 |
+
+Read and list definitions use a 5,000 ms execution ceiling; search and patch
+use 30,000 ms. Runtime may narrow any caller value or definition ceiling but
+cannot widen it without a new Tool revision.
+
 ## `garive.workspace.read_text@1`
 
 Input:
@@ -131,6 +152,10 @@ The pure resolver parses the patch, rejects paths not byte-equal to
 `expected_files`, and returns one `Filesystem(path, Write)` per affected file
 in canonical order. Rename, delete, binary patch, mode change, absolute path,
 symlink target, undeclared file and overlapping hunk are unsupported in v1.
+Target extraction admits only `*** Begin Patch`, `*** Update File:`, one or
+more `@@` hunk markers, changed/context lines and `*** End Patch`. Every target
+must contain a hunk and at least one added or removed line. Each
+`before_digest` is exactly 64 lowercase hexadecimal SHA-256 characters.
 
 Requirements are `FilesystemRead + FilesystemWrite`; replay is
 `ReceiptRecoverable`. F0 adds filesystem scope, symlink containment and
