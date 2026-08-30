@@ -21,6 +21,7 @@ import com.garive.android.push.AndroidPushCoordinator
 import com.garive.android.push.WAKE_ACTION
 import com.garive.android.push.WAKE_TOKEN
 import com.garive.android.security.AndroidConnectionStore
+import com.garive.android.security.AndroidMobileWorkPersistence
 import com.garive.android.security.StoredConnection
 import com.garive.android.ui.GariveMobileApp
 import com.garive.android.ui.GariveTheme
@@ -110,11 +111,13 @@ private fun GariveWalkthroughRoot(
     onTheme: (Theme) -> Unit,
     openNotificationSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
     val origin = "http://127.0.0.1:4318/"
     val controller = remember {
         MobileWorkController(
             host = LiveHostClient(origin, limits()),
             identities = CommandIdentitySource { UUID.randomUUID().toString() },
+            persistence = AndroidMobileWorkPersistence(context),
         )
     }
     GariveMobileApp(origin, controller, null, {}, {}, theme, onTheme, openNotificationSettings)
@@ -197,10 +200,12 @@ private fun ConnectedRoot(
     openNotificationSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
+    val context = LocalContext.current
     val controller = remember(connection) {
         MobileWorkController(
             host = LiveHostClient(connection.origin, connection.accessGrant, limits()),
             identities = CommandIdentitySource { UUID.randomUUID().toString() },
+            persistence = AndroidMobileWorkPersistence(context),
         )
     }
     var wakeRoute by remember { mutableStateOf<MobileWakeRoute?>(null) }

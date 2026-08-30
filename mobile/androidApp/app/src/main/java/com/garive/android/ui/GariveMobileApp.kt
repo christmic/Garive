@@ -44,6 +44,7 @@ import com.garive.mobile.application.MobileWorkController
 import com.garive.mobile.host.MobileWakeRoute
 import com.garive.mobile.model.MobileAgentCard
 import com.garive.mobile.model.MobileDestination
+import com.garive.mobile.model.MobileConnectionState
 import com.garive.mobile.model.MobileWorkState
 import com.garive.mobile.preferences.Theme
 import kotlinx.coroutines.launch
@@ -81,6 +82,12 @@ internal fun GariveMobileApp(
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         if (state.connection.name != "CONNECTING") scope.launch { state = controller.refresh() }
+    }
+    LaunchedEffect(state.connection) {
+        if (state.connection == MobileConnectionState.SIGNED_OUT) {
+            controller.signOut()
+            onSignOut()
+        }
     }
 
     if (state.destination == MobileDestination.CONVERSATION) {

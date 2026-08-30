@@ -43,4 +43,19 @@ public class AndroidConnectionStoreTest {
         assertNull(store.load())
         assertNotEquals(firstDeviceKey, store.devicePublicKey())
     }
+
+    @Test
+    public fun pendingMutationRoundTripsAndClearsIndependently(): Unit {
+        val pending = AndroidMobileWorkPersistence(context)
+
+        pending.writePendingPayload("exact input")
+        pending.writePendingRecord("{\"schema_version\":1}")
+
+        assertEquals("exact input", pending.readPendingPayload())
+        assertEquals("{\"schema_version\":1}", pending.readPendingRecord())
+        pending.writePendingRecord(null)
+        pending.writePendingPayload(null)
+        assertNull(pending.readPendingRecord())
+        assertNull(pending.readPendingPayload())
+    }
 }
