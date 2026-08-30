@@ -66,6 +66,16 @@ build/test admission; the performance distributions and tmux transcript below
 remain pinned to their own named revisions. The physical-window and PNG rows
 remain open because the login session is still locked.
 
+Revision `882e158c` then added modal-safe pointer routing and shared overlay
+geometry. `cargo test -p garive-tui -- --list` enumerated 93 cases. The complete
+package passed, including six shipping-binary PTY cases in 41.20 seconds and a
+new twice-repeated SGR-mouse workflow that clicked the visibly rendered
+`/help` command, opened Help, exited cleanly, and proved mouse-capture restore.
+The production Runtime/file-SQLite/PTTY flow passed in 69.34 seconds. Strict
+all-target Clippy passed in 8.64 seconds and the release binary plus demo Host
+linked in 9.13 seconds. This exact rerun still does not substitute for a
+physical Terminal/iTerm-class window or admitted PNGs.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
