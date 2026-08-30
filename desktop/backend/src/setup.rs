@@ -3,9 +3,11 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
-    sync::Mutex,
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -21,6 +23,8 @@ const MAX_TEXT_BYTES: usize = 256;
 const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_SECRET_BYTES: usize = 16_384;
 const MAX_RECOVERY_BYTES: usize = 32_768;
+const MAX_PREPARED_PLANS: usize = 16;
+const PLAN_LIFETIME_SECONDS: i64 = 900;
 const RECOVERY_FILE: &str = "desktop-setup-recovery.json";
 const RECEIPT_FILE: &str = "desktop-setup-receipt.json";
 const RECOVERY_TEMP_FILE: &str = ".desktop-setup-recovery.tmp";
@@ -111,6 +115,8 @@ pub struct DesktopSetupPlan {
     pub catalogue_revision: &'static str,
     /// Digest of the complete private effective configuration.
     pub effective_configuration_digest: String,
+    /// Canonical UTC instant after which this plan cannot commit.
+    pub expires_at: String,
     /// Redacted normalized review value.
     pub summary: DesktopSetupSummary,
     /// Canonical digest of this public plan with this field omitted.
@@ -144,6 +150,8 @@ pub enum DesktopSetupError {
     InputInvalid,
     /// The requested plan is missing or no longer current.
     PlanStale,
+    /// A caller nonce was reused with different normalized choices.
+    PlanConflict,
     /// Credential storage rejected the bounded secret.
     CredentialRejected,
     /// Configuration could not be committed durably.
@@ -158,10 +166,41 @@ impl DesktopSetupError {
         match self {
             Self::InputInvalid => "setup_input_invalid",
             Self::PlanStale => "setup_plan_stale",
+            Self::PlanConflict => "setup_plan_conflict",
             Self::CredentialRejected => "setup_credential_rejected",
             Self::PersistenceFailed => "setup_persistence_failed",
             Self::RecoveryFailed => "setup_recovery_failed",
         }
+    }
+}
+
+/// Public result of cancelling one prepared setup plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopSetupCancellation {
+    /// The prepared plan was removed before it touched the credential store.
+    Cancelled,
+    /// The exact plan already committed and cannot be cancelled.
+    AlreadyCommitted,
+}
+
+/// Backend-owned clock used to freeze and validate setup expiry.
+pub trait SetupClock: Send + Sync {
+    /// Returns whole UTC seconds since the Unix epoch.
+    fn unix_seconds(&self) -> Result<i64, DesktopSetupError>;
+}
+
+/// Shipping setup clock backed by the operating system wall clock.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemSetupClock;
+
+impl SetupClock for SystemSetupClock {
+    fn unix_seconds(&self) -> Result<i64, DesktopSetupError> {
+        let seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| DesktopSetupError::PersistenceFailed)?
+            .as_secs();
+        i64::try_from(seconds).map_err(|_| DesktopSetupError::PersistenceFailed)
     }
 }
 
@@ -224,22 +263,37 @@ struct PreparedSetup {
     public: DesktopSetupPlan,
     configuration: Value,
     credential_ref: String,
+    input_digest: String,
+    expires_at_unix: i64,
+}
+
+#[derive(Default)]
+struct PreparedPlans {
+    by_digest: BTreeMap<String, PreparedSetup>,
+    by_nonce: BTreeMap<String, String>,
 }
 
 /// Backend-owned write-only setup planner and committer.
 pub struct DesktopSetupService<S> {
     directory: PathBuf,
     credentials: S,
-    plans: Mutex<BTreeMap<String, PreparedSetup>>,
+    clock: Arc<dyn SetupClock>,
+    plans: Mutex<PreparedPlans>,
 }
 
 impl<S: SetupCredentialStore> DesktopSetupService<S> {
     /// Constructs setup around one explicit app configuration directory.
     pub fn new(directory: PathBuf, credentials: S) -> Self {
+        Self::with_clock(directory, credentials, Arc::new(SystemSetupClock))
+    }
+
+    /// Constructs setup with an explicit clock for deterministic expiry checks.
+    pub fn with_clock(directory: PathBuf, credentials: S, clock: Arc<dyn SetupClock>) -> Self {
         Self {
             directory,
             credentials,
-            plans: Mutex::new(BTreeMap::new()),
+            clock,
+            plans: Mutex::new(PreparedPlans::default()),
         }
     }
 
@@ -271,6 +325,35 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
     /// Validates choices and returns a redacted immutable review plan.
     pub fn prepare(&self, input: DesktopSetupInput) -> Result<DesktopSetupPlan, DesktopSetupError> {
         validate_input(&input)?;
+        let now = self.clock.unix_seconds()?;
+        let input_digest = digest_value(
+            &serde_json::to_value(&input).map_err(|_| DesktopSetupError::InputInvalid)?,
+        )?;
+        let mut plans = self
+            .plans
+            .lock()
+            .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+        plans
+            .by_digest
+            .retain(|_, plan| plan.expires_at_unix >= now);
+        let live_digests = plans.by_digest.keys().cloned().collect::<Vec<_>>();
+        plans
+            .by_nonce
+            .retain(|_, digest| live_digests.binary_search(digest).is_ok());
+        if let Some(digest) = plans.by_nonce.get(&input.caller_nonce) {
+            let prepared = plans
+                .by_digest
+                .get(digest)
+                .ok_or(DesktopSetupError::PersistenceFailed)?;
+            return if prepared.input_digest == input_digest {
+                Ok(prepared.public.clone())
+            } else {
+                Err(DesktopSetupError::PlanConflict)
+            };
+        }
+        if plans.by_digest.len() >= MAX_PREPARED_PLANS {
+            return Err(DesktopSetupError::InputInvalid);
+        }
         let setup_id = format!("setup-{}", Uuid::new_v4());
         let credential_ref = format!("credential-{}", Uuid::new_v4());
         let revision = current_revision(&self.directory)?
@@ -278,6 +361,12 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             .ok_or(DesktopSetupError::PlanStale)?;
         let configuration = configuration(&input, &setup_id, &credential_ref, revision);
         let effective_configuration_digest = digest_value(&configuration)?;
+        let expires_at_unix = now
+            .checked_add(PLAN_LIFETIME_SECONDS)
+            .ok_or(DesktopSetupError::PersistenceFailed)?;
+        let expires_at = DateTime::<Utc>::from_timestamp(expires_at_unix, 0)
+            .ok_or(DesktopSetupError::PersistenceFailed)?
+            .to_rfc3339_opts(SecondsFormat::Secs, true);
         let summary = DesktopSetupSummary {
             profile_id: input.profile_id.clone(),
             endpoint_mode: if input.endpoint_override.is_some() {
@@ -291,7 +380,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             deployment_id: input.deployment_id.clone(),
             definition_id: input.definition_id.clone(),
         };
-        let public_value = json!({"schema_version":1,"setup_id":setup_id,"caller_nonce":input.caller_nonce,"catalogue_revision":CATALOGUE_REVISION,"effective_configuration_digest":effective_configuration_digest,"summary":summary});
+        let public_value = json!({"schema_version":1,"setup_id":setup_id,"caller_nonce":input.caller_nonce,"catalogue_revision":CATALOGUE_REVISION,"effective_configuration_digest":effective_configuration_digest,"expires_at":expires_at,"summary":summary});
         let plan_digest = digest_value(&public_value)?;
         let public = DesktopSetupPlan {
             schema_version: 1,
@@ -299,20 +388,23 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             caller_nonce: input.caller_nonce,
             catalogue_revision: CATALOGUE_REVISION,
             effective_configuration_digest,
+            expires_at,
             summary,
             plan_digest: plan_digest.clone(),
         };
-        self.plans
-            .lock()
-            .map_err(|_| DesktopSetupError::PersistenceFailed)?
-            .insert(
-                plan_digest,
-                PreparedSetup {
-                    public: public.clone(),
-                    configuration,
-                    credential_ref,
-                },
-            );
+        plans
+            .by_nonce
+            .insert(public.caller_nonce.clone(), plan_digest.clone());
+        plans.by_digest.insert(
+            plan_digest,
+            PreparedSetup {
+                public: public.clone(),
+                configuration,
+                credential_ref,
+                input_digest,
+                expires_at_unix,
+            },
+        );
         Ok(public)
     }
 
@@ -325,13 +417,24 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         if plan_digest.len() != 64 || credential.is_empty() || credential.len() > MAX_SECRET_BYTES {
             return Err(DesktopSetupError::CredentialRejected);
         }
-        let prepared = self
+        if let Some(receipt) = committed_receipt(&self.directory, plan_digest)? {
+            return Ok(receipt);
+        }
+        let now = self.clock.unix_seconds()?;
+        let mut plans = self
             .plans
             .lock()
-            .map_err(|_| DesktopSetupError::PersistenceFailed)?
+            .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+        let prepared = plans
+            .by_digest
             .get(plan_digest)
-            .cloned()
             .ok_or(DesktopSetupError::PlanStale)?;
+        if prepared.expires_at_unix < now {
+            let nonce = prepared.public.caller_nonce.clone();
+            plans.by_digest.remove(plan_digest);
+            plans.by_nonce.remove(&nonce);
+            return Err(DesktopSetupError::PlanStale);
+        }
         if prepared.public.plan_digest != plan_digest
             || digest_value(&prepared.configuration)?
                 != prepared.public.effective_configuration_digest
@@ -380,10 +483,9 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         )?;
         journal.stage = RecoveryStage::ReceiptCommitted;
         write_journal(&self.directory, &journal)?;
-        self.plans
-            .lock()
-            .map_err(|_| DesktopSetupError::PersistenceFailed)?
-            .remove(plan_digest);
+        let nonce = prepared.public.caller_nonce.clone();
+        plans.by_digest.remove(plan_digest);
+        plans.by_nonce.remove(&nonce);
         if journal.old_credential_ref.is_some() {
             journal.stage = RecoveryStage::CleanupPending;
             write_journal(&self.directory, &journal)?;
@@ -391,6 +493,27 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             remove_recovery(&self.directory)?;
         }
         Ok(receipt)
+    }
+
+    /// Cancels one unexpired plan without touching credentials or configuration.
+    pub fn cancel(&self, plan_digest: &str) -> Result<DesktopSetupCancellation, DesktopSetupError> {
+        if committed_receipt(&self.directory, plan_digest)?.is_some() {
+            return Ok(DesktopSetupCancellation::AlreadyCommitted);
+        }
+        let now = self.clock.unix_seconds()?;
+        let mut plans = self
+            .plans
+            .lock()
+            .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+        let prepared = plans
+            .by_digest
+            .remove(plan_digest)
+            .ok_or(DesktopSetupError::PlanStale)?;
+        plans.by_nonce.remove(&prepared.public.caller_nonce);
+        if prepared.expires_at_unix < now {
+            return Err(DesktopSetupError::PlanStale);
+        }
+        Ok(DesktopSetupCancellation::Cancelled)
     }
 
     /// Repairs or rolls back one staged setup before Desktop admits Agent IPC.
@@ -594,6 +717,24 @@ fn receipt_matches(
     let actual: DesktopSetupReceipt =
         serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::RecoveryFailed)?;
     Ok(&actual == expected)
+}
+
+fn committed_receipt(
+    directory: &std::path::Path,
+    plan_digest: &str,
+) -> Result<Option<DesktopSetupReceipt>, DesktopSetupError> {
+    let bytes = match fs::read(directory.join(RECEIPT_FILE)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(DesktopSetupError::PersistenceFailed),
+    };
+    let receipt: DesktopSetupReceipt =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    if receipt.plan_digest == plan_digest {
+        Ok(Some(receipt))
+    } else {
+        Ok(None)
+    }
 }
 
 fn remove_known_temporary(directory: &std::path::Path, setup_id: Option<&str>) {

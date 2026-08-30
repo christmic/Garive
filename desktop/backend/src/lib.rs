@@ -23,9 +23,10 @@ pub use garive_runtime::SessionSummary as DesktopSessionSummary;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
 pub use setup::{
-    DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput, DesktopSetupPlan,
-    DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService, DesktopSetupSummary,
-    SetupCredentialStore, SystemSetupCredentialStore,
+    DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput,
+    DesktopSetupPlan, DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService,
+    DesktopSetupSummary, SetupClock, SetupCredentialStore, SystemSetupClock,
+    SystemSetupCredentialStore,
 };
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,

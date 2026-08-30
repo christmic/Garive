@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  commitSetup, getSetupCatalogue, prepareSetup, restartDesktop,
+  cancelSetup, commitSetup, getSetupCatalogue, prepareSetup, restartDesktop,
   type SetupCatalogue, type SetupInput, type SetupPlan,
 } from "../ipc/host";
 import { Icon } from "../ui/Icon";
@@ -10,6 +10,7 @@ type Stage = "details" | "review" | "ready";
 const setupErrors: Record<string, string> = {
   setup_input_invalid: "Review the connection details and try again.",
   setup_plan_stale: "This setup plan expired. Review your choices again.",
+  setup_plan_conflict: "This setup attempt conflicts with an existing review. Start again.",
   setup_credential_rejected: "The credential could not be saved to macOS Keychain.",
   setup_persistence_failed: "Garive could not commit its local configuration.",
 };
@@ -66,6 +67,7 @@ export function SetupFlow({ preview = false }: { preview?: boolean }) {
       setPlan(preview ? {
         schema_version: 1, setup_id: "preview", caller_nonce: input.caller_nonce,
         catalogue_revision: input.catalogue_revision, effective_configuration_digest: "preview",
+        expires_at: "2099-01-01T00:00:00Z",
         summary: { profile_id: input.profile_id, endpoint_mode: input.endpoint_override ? "override" : "fixed",
           endpoint_override: input.endpoint_override, model_target_id: input.model_target_id,
           model_id: input.model_id, deployment_id: input.deployment_id, definition_id: input.definition_id },
@@ -87,6 +89,18 @@ export function SetupFlow({ preview = false }: { preview?: boolean }) {
     } catch (cause) {
       setCredential("");
       setError(typeof cause === "string" ? cause : "setup_persistence_failed");
+    } finally { setBusy(false); }
+  };
+
+  const back = async () => {
+    if (!plan) return;
+    setBusy(true); setCredential(""); setError(undefined);
+    try {
+      if (!preview) await cancelSetup(plan.plan_digest);
+      setPlan(undefined);
+      setStage("details");
+    } catch (cause) {
+      setError(typeof cause === "string" ? cause : "setup_plan_stale");
     } finally { setBusy(false); }
   };
 
@@ -143,7 +157,7 @@ export function SetupFlow({ preview = false }: { preview?: boolean }) {
 
       {error && <div className="setup-error" role="alert"><Icon name="warning" />{setupErrors[error] ?? "Setup could not continue."}</div>}
       <footer className="setup-actions">
-        {stage === "review" && <button className="secondary-button" type="button" disabled={busy} onClick={() => { setCredential(""); setStage("details"); }}>Back</button>}
+        {stage === "review" && <button className="secondary-button" type="button" disabled={busy} onClick={() => void back()}>Back</button>}
         {stage === "details" && <button className="primary-button" type="button" disabled={!valid || busy} onClick={() => void review()}>{busy ? "Preparing…" : "Review setup"}<Icon name="chevron" /></button>}
         {stage === "review" && <button className="primary-button" type="button" disabled={!credential || busy} onClick={() => void commit()}>{busy ? "Saving securely…" : "Save to Keychain"}<Icon name="shield" /></button>}
         {stage === "ready" && <button className="primary-button" type="button" onClick={() => { if (!preview) void restartDesktop(); }}>Restart Garive<Icon name="chevron" /></button>}
