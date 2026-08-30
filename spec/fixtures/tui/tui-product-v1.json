@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "redaction_canaries": [
+    "secret-token-canary",
+    "\u001b]0;terminal-title-canary\u0007",
+    "bidi-\u202e-canary",
+    "private-tool-provider-canary",
+    "/private/user/path-canary"
+  ],
+  "bootstrap_cases": [
+    {
+      "name": "bootstrap_ready_after_public_reads",
+      "initial": {"state":"loading","position":0,"draft":""},
+      "steps": [
+        {"action":"install_bootstrap","position":1,"expected":{"state":"idle","effect":"follow_events","position":1,"draft":""}}
+      ]
+    }
+  ],
+  "navigation_cases": [
+    {
+      "name": "switch_preserves_background_turn",
+      "initial": {"state":"running","session_id":"session-a","turn_id":"turn-a","position":4,"draft":"draft a"},
+      "steps": [
+        {"action":"select_session","session_id":"session-b","expected":{"state":"idle","effect":"load_timeline","position":0,"draft":""}}
+      ]
+    }
+  ],
+  "conversation_cases": [
+    {
+      "name": "committed_start_installs_user_cell",
+      "initial": {"state":"submitting","session_id":"session-a","position":1,"draft":"hello"},
+      "steps": [
+        {"action":"accept_start","position":3,"expected":{"state":"running","effect":"follow_events","position":3,"draft":""}}
+      ]
+    }
+  ],
+  "command_cases": [
+    {
+      "name": "unknown_command_retries_exact_identity",
+      "initial": {"state":"command_unknown","session_id":"session-a","turn_id":"turn-a","position":3,"draft":"","pending_command_id":"command-retry-1"},
+      "steps": [
+        {"action":"retry_exact_command","expected":{"state":"submitting","effect":"retry_pending_command","position":3,"draft":""}}
+      ]
+    }
+  ],
+  "follow_cases": [
+    {
+      "name": "legal_position_gap_advances_cursor",
+      "initial": {"state":"running","session_id":"session-a","turn_id":"turn-a","position":3,"draft":""},
+      "steps": [
+        {"action":"install_event","position":7,"expected":{"state":"running","effect":"none","position":7,"draft":""}}
+      ]
+    }
+  ],
+  "suspension_cases": [
+    {
+      "name": "typed_answer_continues_same_turn",
+      "initial": {"state":"suspended","session_id":"session-a","turn_id":"turn-a","position":8,"draft":"true"},
+      "steps": [
+        {"action":"answer_suspension","expected":{"state":"continuing","effect":"continue_turn_json","position":8,"draft":"true"}}
+      ]
+    }
+  ],
+  "activity_cases": [
+    {
+      "name": "public_activity_reaches_terminal",
+      "initial": {"state":"running","session_id":"session-a","turn_id":"turn-a","position":9,"draft":""},
+      "steps": [
+        {"action":"install_activity","position":10,"expected":{"state":"running","effect":"none","position":10,"notice_code":"activity_completed","draft":""}}
+      ]
+    }
+  ],
+  "editor_cases": [
+    {
+      "name": "unicode_paste_is_atomic",
+      "initial": {"state":"idle","position":0,"draft":""},
+      "steps": [
+        {"action":"paste","input":"你好 👨‍👩‍👧‍👦","expected":{"state":"idle","effect":"none","position":0,"draft":"你好 👨‍👩‍👧‍👦"}}
+      ]
+    }
+  ],
+  "persistence_cases": [
+    {
+      "name": "restart_loads_pending_identity",
+      "initial": {"state":"loading","session_id":"session-a","position":3,"draft":"","pending_command_id":"command-retry-1"},
+      "steps": [
+        {"action":"load_pending_command","expected":{"state":"command_unknown","effect":"none","position":3,"draft":""}}
+      ]
+    }
+  ],
+  "failure_cases": [
+    {
+      "name": "stream_eof_never_infers_terminal",
+      "initial": {"state":"running","session_id":"session-a","turn_id":"turn-a","position":7,"draft":"work"},
+      "steps": [
+        {"action":"stream_ended","expected":{"state":"disconnected","effect":"delay_reconnect","position":7,"notice_code":"transport_failure","draft":"work"}}
+      ]
+    }
+  ]
+}
