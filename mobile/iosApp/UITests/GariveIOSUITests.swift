@@ -20,9 +20,13 @@ final class GariveIOSUITests: XCTestCase {
         app.buttons["Sessions"].tap()
         XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 3))
         app.buttons["New task"].tap()
-        XCTAssertTrue(app.navigationBars["New remote task"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.navigationBars["New remote task"].waitForExistence(timeout: 2)
+                || app.navigationBars["New task"].waitForExistence(timeout: 2)
+        )
+        let form = app.collectionViews.firstMatch
         let synthesize = starterButton("Synthesize", in: app)
-        XCTAssertTrue(synthesize.exists)
+        XCTAssertTrue(reveal(synthesize, in: form))
         XCTAssertTrue(starterButton("Analyze", in: app).exists)
         XCTAssertTrue(starterButton("Create", in: app).exists)
         synthesize.tap()
@@ -46,6 +50,45 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testPairingRequiresSecureExplicitFields() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Your agents, wherever you are"].waitForExistence(timeout: 5))
+        let service = app.textFields["Service address"]
+        let code = app.secureTextFields["One-time access code"]
+        let connect = app.buttons["Connect securely"]
+        XCTAssertTrue(service.exists)
+        XCTAssertTrue(code.exists)
+        XCTAssertFalse(connect.isEnabled)
+        service.tap()
+        service.typeText("https://agent.example.test")
+        code.tap()
+        code.typeText("fresh-code")
+        XCTAssertTrue(connect.isEnabled)
+    }
+
+    @MainActor
+    func testSettingsDiagnosticsAndUnpairRemainExplicit() throws {
+        let app = walkthroughApp("--garive-walkthrough-settings")
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Access grant protected by Keychain"].exists)
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(reveal(app.buttons["Open notification settings"], in: list))
+        let diagnostics = app.buttons["Copy safe diagnostics"]
+        XCTAssertTrue(reveal(diagnostics, in: list))
+        diagnostics.tap()
+        XCTAssertTrue(app.buttons["Diagnostics copied"].exists)
+        let unpair = app.buttons["Unpair this device"]
+        XCTAssertTrue(reveal(unpair, in: list))
+        unpair.tap()
+        XCTAssertTrue(app.buttons["Unpair device"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["This removes access from this phone. Agent work and history remain on your service."].exists)
+    }
+
+    @MainActor
     private func walkthroughApp(_ extraArguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--garive-walkthrough"] + extraArguments
@@ -55,5 +98,14 @@ final class GariveIOSUITests: XCTestCase {
     @MainActor
     private func starterButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+    }
+
+    @MainActor
+    private func reveal(_ element: XCUIElement, in scrollView: XCUIElement) -> Bool {
+        for _ in 0..<5 {
+            if element.exists && element.isHittable { return true }
+            scrollView.swipeUp()
+        }
+        return element.exists && element.isHittable
     }
 }

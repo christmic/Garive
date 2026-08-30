@@ -52,10 +52,11 @@ xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
   CODE_SIGNING_ALLOWED=NO clean build
 ```
 
-The two UI tests require `go run ./cmd/garive-mobile-demo-host` from
-`runtime/gateway/`. They launch the Debug-only walkthrough and exercise the
-Remote drawer, Sessions, new-task starters and enabled server submit control,
-plus collapsed Activity, approve/decline and cancellation confirmation.
+The four UI tests require `go run ./cmd/garive-mobile-demo-host` from
+`runtime/gateway/` for the three connected journeys. They exercise secure
+pairing fields, the Remote drawer, Sessions, new-task starters and enabled
+server submit control, collapsed Activity, approve/decline and cancellation
+confirmation, safe diagnostics, notification entry, and confirmed unpair.
 
 The Xcode target produces `Garive.app`, registers expiring `garive://pair`
 handoffs, and links the static XCFramework. Distribution still requires the
