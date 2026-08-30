@@ -540,6 +540,44 @@ fn set_desktop_menu_locale(app: tauri::AppHandle, locale: String) -> Result<(), 
         .map_err(|_| "menu_unavailable".to_owned())
 }
 
+#[tauri::command]
+fn read_client_preferences(
+    store: tauri::State<'_, garive_desktop::DesktopProductStore>,
+) -> Result<Option<Vec<u8>>, String> {
+    store
+        .read_preferences()
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn write_client_preferences(
+    store: tauri::State<'_, garive_desktop::DesktopProductStore>,
+    value: Vec<u8>,
+) -> Result<(), String> {
+    store
+        .write_preferences(&value)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn read_pending_command(
+    store: tauri::State<'_, garive_desktop::DesktopProductStore>,
+) -> Result<Option<Vec<u8>>, String> {
+    store
+        .read_pending()
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn write_pending_command(
+    store: tauri::State<'_, garive_desktop::DesktopProductStore>,
+    value: Option<Vec<u8>>,
+) -> Result<(), String> {
+    store
+        .write_pending(value.as_deref())
+        .map_err(|error| error.code().to_owned())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -564,6 +602,13 @@ fn main() {
                 directory.clone(),
                 garive_desktop::SystemSetupCredentialStore,
             );
+            let product_store = garive_desktop::DesktopProductStore::new(
+                app.path()
+                    .app_data_dir()
+                    .map_err(|_| stable_setup_error("data_directory"))?
+                    .join("product"),
+            )
+            .map_err(|error| stable_setup_error(error.code()))?;
             let workspaces = garive_desktop::DesktopWorkspaceService::durable(
                 directory.join(garive_desktop::DESKTOP_WORKSPACE_MANIFEST_FILE),
                 std::sync::Arc::new(garive_desktop::SystemDesktopWorkspaceBookmarkStore),
@@ -599,6 +644,7 @@ fn main() {
             app.manage(state);
             app.manage(setup);
             app.manage(workspaces);
+            app.manage(product_store);
             app.manage(
                 garive_desktop::DesktopArtifactExportService::durable(
                     directory.join(garive_desktop::DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE),
@@ -634,6 +680,10 @@ fn main() {
             restart_desktop,
             get_recent_sessions,
             get_session_timeline,
+            read_client_preferences,
+            write_client_preferences,
+            read_pending_command,
+            write_pending_command,
             continue_agent_turn,
             resolve_turn_approval,
             run_agent_turn_with_workspace_context,

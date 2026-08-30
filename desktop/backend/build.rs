@@ -31,6 +31,10 @@ fn main() {
             "resolve_turn_approval",
             "run_agent_turn_with_workspace_context",
             "run_agent_turn",
+            "read_client_preferences",
+            "write_client_preferences",
+            "read_pending_command",
+            "write_pending_command",
         ]),
     ))
     .expect("failed to build Garive Desktop permissions")

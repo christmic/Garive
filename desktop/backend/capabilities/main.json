@@ -34,6 +34,10 @@
     "allow-resolve-turn-approval",
     "allow-run-agent-turn-with-workspace-context",
     "allow-run-agent-turn",
-    "core:webview:allow-set-webview-zoom"
+    "core:webview:allow-set-webview-zoom",
+    "allow-read-client-preferences",
+    "allow-write-client-preferences",
+    "allow-read-pending-command",
+    "allow-write-pending-command"
   ]
 }
