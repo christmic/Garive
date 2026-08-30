@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use crate::{
-    application::{AppModel, ExecutionState, Overlay},
+    application::{AppModel, Overlay},
     input::COMMAND_PALETTE,
     Theme,
 };
@@ -227,28 +227,20 @@ fn palette_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
             .iter()
             .enumerate()
             .map(|(offset, index)| {
-                let (name, help) = COMMAND_PALETTE[*index];
+                let command = COMMAND_PALETTE[*index];
                 let marker = if start + offset == model.command_selection {
                     "›"
                 } else {
                     " "
                 };
-                let disabled = match name {
-                    "/new" if model.definitions.is_empty() => "  · no Agent installed",
-                    "/retry" if !model.has_pending_command => "  · no pending command",
-                    "/cancel" if model.execution != ExecutionState::Following => {
-                        "  · no Turn running"
-                    }
-                    "/copy session-id" if model.selected_session.is_none() => {
-                        "  · no Session selected"
-                    }
-                    _ => "",
-                };
+                let disabled = command
+                    .unavailable_reason(model.command_context())
+                    .map_or_else(String::new, |reason| format!("  · {reason}"));
                 Line::from(vec![
                     Span::styled(format!("{marker} "), colors.selected),
-                    Span::styled(format!("{name:<12} "), colors.accent),
-                    Span::styled(help.to_owned(), colors.normal),
-                    Span::styled(disabled.to_owned(), colors.muted),
+                    Span::styled(format!("{:<12} ", command.input), colors.accent),
+                    Span::styled(command.help.to_owned(), colors.normal),
+                    Span::styled(disabled, colors.muted),
                 ])
             })
             .collect::<Vec<_>>(),

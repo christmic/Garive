@@ -6,7 +6,9 @@ pub use args::{MouseMode, Theme};
 #[path = "../src/input/commands.rs"]
 mod commands;
 
-use commands::{command_matches, parse_command, Command, CommandParse};
+use commands::{
+    command_matches, parse_command, Command, CommandContext, CommandParse, COMMAND_PALETTE,
+};
 
 #[test]
 fn non_commands_remain_host_text_and_known_commands_are_exact() {
@@ -53,4 +55,34 @@ fn palette_search_matches_all_terms_across_name_and_help() {
         "Copy Session ID",
         "completion"
     ));
+}
+
+#[test]
+fn palette_requirements_explain_every_contextual_command() {
+    let empty = CommandContext::default();
+    let cases = [
+        ("/new", "no Agent is installed"),
+        ("/retry", "no pending command"),
+        ("/cancel", "no Turn is running"),
+        ("/copy last", "no completion is visible"),
+        ("/copy session-id", "no Session is selected"),
+    ];
+    for (input, expected) in cases {
+        let command = COMMAND_PALETTE
+            .iter()
+            .find(|command| command.input == input)
+            .unwrap();
+        assert_eq!(command.unavailable_reason(empty), Some(expected), "{input}");
+    }
+
+    let ready = CommandContext {
+        has_installed_agent: true,
+        has_pending_command: true,
+        has_running_turn: true,
+        has_visible_completion: true,
+        has_selected_session: true,
+    };
+    assert!(COMMAND_PALETTE
+        .iter()
+        .all(|command| command.unavailable_reason(ready).is_none()));
 }
