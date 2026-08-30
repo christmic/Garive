@@ -302,6 +302,8 @@ pub(crate) struct MemoryImportJournalEvent<'a> {
 pub enum MemoryControlRuntimeError {
     /// Exact namespace, action, or scope authority was absent.
     Unauthorized,
+    /// The capability destination is unsafe, occupied, or incomplete.
+    ExportTargetInvalid,
     /// Snapshot, command, or persisted canonical value was invalid.
     InvalidSnapshot,
     /// A declared control-plane bound was exceeded.
@@ -321,6 +323,7 @@ impl MemoryControlRuntimeError {
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Unauthorized => "memory_control_unauthorized",
+            Self::ExportTargetInvalid => "memory_export_target_invalid",
             Self::InvalidSnapshot => "memory_snapshot_invalid",
             Self::BoundExceeded => "memory_control_bound_exceeded",
             Self::ForbiddenChange => "memory_import_forbidden_change",
