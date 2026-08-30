@@ -9,6 +9,7 @@ mod live_host;
 mod local_composition;
 mod local_recovery;
 mod local_worker;
+mod memory_control;
 mod model_http_transport;
 mod observability_runtime;
 mod runtime_turn;
@@ -67,6 +68,10 @@ pub use local_recovery::{recover_local_dispatches, LocalRecoveryError};
 pub use local_worker::{
     local_dispatch_queue, LocalDispatchQueue, LocalExecutionWorker, LocalTurnDispatcher,
     LocalWorkerDisposition, LocalWorkerError, LocalWorkerShutdownReport,
+};
+pub use memory_control::{
+    MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,
+    MemoryImportCommand, MemoryImportReceipt,
 };
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,

@@ -7,6 +7,9 @@ use garive_ledger::{
 use rusqlite::{params, Connection, OpenFlags, Transaction, TransactionBehavior};
 
 mod lease;
+mod memory_control;
+mod memory_control_integrity;
+mod memory_control_operations;
 mod migrations;
 mod schedule_lease;
 mod storage;
@@ -64,6 +67,57 @@ impl SqliteLedger {
         connection.pragma_update(None, "synchronous", "FULL")?;
         migrations::migrate(&mut connection)?;
         Ok(Self { connection })
+    }
+
+    /// Initializes one M2 namespace projection from an exact existing Memory snapshot.
+    pub fn initialize_memory_control_namespace(
+        &mut self,
+        grant: &crate::MemoryControlGrant,
+        namespace_id: &str,
+        repository_revision: u64,
+        documents: &[garive_memory::MemoryControlDocument],
+    ) -> Result<(), crate::MemoryControlRuntimeError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)?;
+        memory_control::initialize(
+            &transaction,
+            grant,
+            namespace_id,
+            repository_revision,
+            documents,
+        )?;
+        transaction
+            .commit()
+            .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)
+    }
+
+    /// Atomically commits or exactly replays one authorized M2 import command.
+    pub fn commit_memory_import(
+        &mut self,
+        grant: &crate::MemoryControlGrant,
+        command: &crate::MemoryImportCommand,
+    ) -> Result<crate::MemoryImportReceipt, crate::MemoryControlRuntimeError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)?;
+        let receipt = memory_control::commit_import(&transaction, grant, command)?;
+        transaction
+            .commit()
+            .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)?;
+        Ok(receipt)
+    }
+
+    /// Reads and verifies one authorized fixed-revision M2 namespace projection.
+    pub fn read_memory_control_projection(
+        &self,
+        grant: &crate::MemoryControlGrant,
+        namespace_id: &str,
+        limits: garive_memory::MemoryDocumentLimits,
+    ) -> Result<crate::MemoryControlProjection, crate::MemoryControlRuntimeError> {
+        memory_control::read_projection(&self.connection, grant, namespace_id, limits)
     }
 
     /// Lists verified durable Session identities in lexical order.
