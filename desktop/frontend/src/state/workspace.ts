@@ -1,4 +1,5 @@
 import type { DesktopCapabilities, HostActivity, HostArtifact, HostArtifactPage, HostResult, HostSuspension, HostTimelinePage, WorkspaceAttachment } from "../ipc/host";
+import type { AppViewState } from "./controller";
 
 export type BootState = "loading" | "ready" | "unavailable";
 export type WorkPhase = "idle" | "submitting";
@@ -35,6 +36,7 @@ export type WorkEvent =
   | { readonly type: "submission_succeeded"; readonly input: string; readonly result: HostResult }
   | { readonly type: "submission_failed"; readonly code: string }
   | { readonly type: "session_loaded"; readonly timeline: HostTimelinePage }
+  | { readonly type: "product_projected"; readonly view: AppViewState }
   | { readonly type: "artifacts_loaded"; readonly page: HostArtifactPage }
   | { readonly type: "workspaces_loaded"; readonly sessionId: string;
     readonly workspaces: readonly WorkspaceAttachment[] }
@@ -100,6 +102,8 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
         draft: "",
         error: undefined,
       };
+    case "product_projected":
+      return projectProduct(state, event.view);
     case "artifacts_loaded":
       return event.page.session_id === state.sessionId
         ? { ...state, artifacts: event.page.items }
@@ -121,6 +125,39 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
     case "error_dismissed":
       return { ...state, error: undefined };
   }
+}
+
+function projectProduct(state: WorkState, view: AppViewState): WorkState {
+  const sessionId = view.selectedSessionId;
+  const sameSession = sessionId !== undefined && sessionId === state.sessionId;
+  const draft = sessionId
+    ? view.drafts.find((item) => item.sessionId === sessionId)?.text ?? ""
+    : state.draft;
+  return { ...state,
+    boot: view.shell === "booting" || view.shell === "loading_navigation" ? "loading"
+      : view.shell === "unavailable" ? "unavailable" : "ready",
+    phase: ["submitting", "following", "cancelling", "reconnecting", "continuing"]
+      .includes(view.execution) ? "submitting" : "idle",
+    sessionId, draft, messages: productMessages(view),
+    activities: view.activities.map((activity) => ({ api_version: "v1",
+      activity_id: activity.activityId, kind: activity.kind, label_key: activity.labelKey ?? "agent.activity.updated",
+      state: activity.state, source_position: activity.position, terminal: activity.terminal ?? false,
+      safe_code: activity.safeCode })),
+    artifacts: sameSession ? state.artifacts : [], workspaces: sameSession ? state.workspaces : [],
+    error: view.notice?.code };
+}
+
+function productMessages(view: AppViewState): readonly WorkMessage[] {
+  return view.timeline.flatMap((item) => {
+    const user: WorkMessage = { id: `user-${item.turnId}`, role: "user", text: item.userText ?? "" };
+    if (item.state === "running") return [user];
+    const suspension = item.suspension && { suspension_id: item.suspension.suspensionId,
+      session_version: item.suspension.sessionVersion, kind: item.suspension.kind,
+      prompt_digest: item.suspension.promptDigest,
+      response_schema_digest: item.suspension.responseSchemaDigest };
+    return [user, { id: item.turnId, role: "assistant", text: item.completionText ?? "",
+      terminal: item.state as HostResult["terminal"], suspension } satisfies WorkMessage];
+  });
 }
 
 function timelineMessages(timeline: HostTimelinePage): readonly WorkMessage[] {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canSubmit, initialWorkState, reduceWork } from "./workspace";
+import { initialAppViewState } from "./controller";
 
 const capabilities = {
   configured: true, agent_definition_id: "definition-main", multi_turn: true, durable_navigation: false,
@@ -111,5 +112,20 @@ describe("Desktop work state", () => {
     const current = reduceWork(loaded, { type: "workspaces_loaded", sessionId: "session-1",
       workspaces: [attachment] });
     expect(current.workspaces).toEqual([attachment]);
+  });
+
+  it("renders durable conversation state only from the product controller projection", () => {
+    const view = { ...initialAppViewState(), shell: "ready" as const,
+      selectedSessionId: "session-1", timelineSessionId: "session-1", execution: "following" as const,
+      drafts: [{ sessionId: "session-1", text: "next" }], timeline: [{ turnId: "turn-1",
+        state: "running", latestPosition: 4, userText: "hello", activities: [] }],
+      activities: [{ activityId: "activity-1", kind: "tool", labelKey: "agent.activity.read_file",
+        state: "running", turnId: "turn-1", position: 4, neutral: false }] };
+    const state = reduceWork({ ...initialWorkState, capabilities }, { type: "product_projected", view });
+    expect(state.sessionId).toBe("session-1");
+    expect(state.phase).toBe("submitting");
+    expect(state.draft).toBe("next");
+    expect(state.messages).toEqual([{ id: "user-turn-1", role: "user", text: "hello" }]);
+    expect(state.activities[0]?.activity_id).toBe("activity-1");
   });
 });
