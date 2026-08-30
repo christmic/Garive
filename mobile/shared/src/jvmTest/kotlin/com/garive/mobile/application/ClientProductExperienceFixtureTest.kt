@@ -96,7 +96,7 @@ public class ClientProductExperienceFixtureTest {
 
     private fun decodeState(raw: JsonObject): AppViewState = initialAppViewState(configuration(raw.text("configuration"))).copy(
         shell = shell(raw.text("shell")), generation = raw.long("generation"),
-        definitionIds = raw.array("definition_ids").map { it.jsonPrimitive.content },
+        definitions = raw.array("definition_ids").map { DefinitionItem(it.jsonPrimitive.content, "fixture-revision", emptyList()) },
         sessions = raw.array("session_ids").map { SessionItem(it.jsonPrimitive.content) },
         selectedSessionId = raw.nullableText("selected_session_id"),
         timelineSessionId = raw.nullableText("selected_session_id"),
@@ -123,7 +123,9 @@ public class ClientProductExperienceFixtureTest {
     private fun decodeResult(raw: JsonObject): AppEffectPayload = when (raw.text("type")) {
         "preferences_loaded" -> AppEffectPayload.PreferencesLoaded(raw.nullableText("selected_session_id"),
             raw.array("drafts").map { Draft(it.jsonObject.text("session_id"), it.jsonObject.text("text")) })
-        "definitions_loaded" -> AppEffectPayload.DefinitionsLoaded(raw.array("definition_ids").map { it.jsonPrimitive.content })
+        "definitions_loaded" -> AppEffectPayload.DefinitionsLoaded(raw.array("definition_ids").map {
+            DefinitionItem(it.jsonPrimitive.content, "fixture-revision", emptyList())
+        })
         "session_page_loaded" -> AppEffectPayload.SessionPageLoaded(raw.array("sessions").map { SessionItem(it.jsonObject.text("session_id")) })
         "timeline_loaded" -> AppEffectPayload.TimelineLoaded(raw.array("items").map { decodeTimeline(it.jsonObject) },
             raw.long("cursor"), raw.array("activities").map { decodeActivity(it.jsonObject) })
@@ -137,13 +139,13 @@ public class ClientProductExperienceFixtureTest {
 
     private fun project(state: AppViewState): JsonObject = buildJsonObject {
         put("configuration", state.configuration.wireName); put("shell", state.shell.wireName); put("generation", state.generation)
-        putJsonArray("definition_ids") { state.definitionIds.forEach { add(it) } }
+        putJsonArray("definition_ids") { state.definitions.forEach { add(it.definitionId) } }
         putJsonArray("session_ids") { state.sessions.forEach { add(it.sessionId) } }
         putNullable("selected_session_id", state.selectedSessionId)
         putJsonArray("timeline") { state.timeline.forEach { item -> addJsonObject {
             put("turn_id", item.turnId); put("state", item.state); put("latest_position", item.latestPosition)
-            item.suspensionId?.let { put("suspension_id", it); put("session_version", item.sessionVersion!!)
-                put("response_schema_digest", item.responseSchemaDigest!!) }
+            item.suspension?.let { put("suspension_id", it.suspensionId); put("session_version", it.sessionVersion)
+                put("response_schema_digest", it.responseSchemaDigest!!) }
         } } }
         put("cursor", state.cursor)
         putJsonArray("drafts") { state.drafts.forEach { addJsonObject { put("session_id", it.sessionId); put("text", it.text) } } }
@@ -160,9 +162,12 @@ public class ClientProductExperienceFixtureTest {
             ?: put("notice", JsonNull)
     }
 
-    private fun decodeTimeline(raw: JsonObject): TimelineItem = TimelineItem(raw.text("turn_id"), raw.text("state"),
-        raw.long("latest_position"), raw.optionalText("suspension_id"), raw.optionalLong("session_version"),
-        raw.optionalText("response_schema_digest"))
+    private fun decodeTimeline(raw: JsonObject): TimelineItem = TimelineItem(
+        turnId = raw.text("turn_id"), state = raw.text("state"), latestPosition = raw.long("latest_position"),
+        suspension = raw.optionalText("suspension_id")?.let { SuspensionItem(
+            it, raw.long("session_version"), "fixture", responseSchemaDigest = raw.optionalText("response_schema_digest"),
+        ) },
+    )
     private fun decodeActivity(raw: JsonObject): ActivityItem = ActivityItem(raw.text("activity_id"), raw.text("kind"),
         raw.text("state"), raw.optionalText("turn_id"), raw.long("position"), raw["neutral"]?.jsonPrimitive?.booleanOrNull ?: false)
     private fun decodePending(raw: JsonObject): PendingCommand = PendingCommand(commandKind(raw.text("kind")),

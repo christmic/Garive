@@ -7,14 +7,31 @@ export type PendingStatus = "pending" | "unknown";
 
 export interface AppError { readonly kind: AppErrorKind; readonly code: string }
 export interface Draft { readonly sessionId: string; readonly text: string }
-export interface SessionItem { readonly sessionId: string; readonly state?: string }
+export interface DefinitionItem {
+  readonly definitionId: string; readonly definitionRevision: string;
+  readonly capabilities: readonly string[];
+}
+export interface SessionItem {
+  readonly sessionId: string; readonly agentInstanceId?: string; readonly definitionId?: string;
+  readonly definitionRevision?: string; readonly openedAt?: string; readonly latestPosition?: number;
+  readonly latestTurnId?: string; readonly state?: string; readonly turnCount?: number;
+}
+export interface SuspensionItem {
+  readonly suspensionId: string; readonly sessionVersion: number; readonly kind: string;
+  readonly titleKey?: string; readonly messageText?: string; readonly actionLabelKey?: string;
+  readonly cancelLabelKey?: string; readonly promptDigest?: string;
+  readonly responseSchemaDigest?: string;
+}
 export interface TimelineItem {
-  readonly turnId: string; readonly state: string; readonly latestPosition: number;
-  readonly suspensionId?: string; readonly sessionVersion?: number; readonly responseSchemaDigest?: string;
+  readonly turnId: string; readonly startedPosition?: number; readonly state: string;
+  readonly latestPosition: number; readonly userText?: string; readonly completionText?: string;
+  readonly suspension?: SuspensionItem; readonly contentTruncated?: boolean;
+  readonly activities?: readonly ActivityItem[];
 }
 export interface ActivityItem {
-  readonly activityId: string; readonly kind: string; readonly state: string;
-  readonly turnId?: string; readonly position: number; readonly neutral: boolean;
+  readonly activityId: string; readonly kind: string; readonly labelKey?: string;
+  readonly state: string; readonly turnId?: string; readonly position: number;
+  readonly terminal?: boolean; readonly safeCode?: string; readonly neutral: boolean;
 }
 export interface PendingCommand {
   readonly kind: "create_session" | "start_turn" | "cancel_turn" | "continue_turn";
@@ -34,7 +51,7 @@ export interface AppEffect {
 export interface AppViewState {
   readonly configuration: "configured" | "not_configured";
   readonly shell: ShellState; readonly generation: number; readonly nextEffect: number;
-  readonly definitionIds: readonly string[]; readonly sessions: readonly SessionItem[];
+  readonly definitions: readonly DefinitionItem[]; readonly sessions: readonly SessionItem[];
   readonly selectedSessionId?: string; readonly timelineSessionId?: string;
   readonly timeline: readonly TimelineItem[]; readonly cursor: number;
   readonly drafts: readonly Draft[]; readonly execution: ExecutionState;
@@ -58,7 +75,7 @@ export type AppIntent =
 export type AppEffectPayload =
   | { readonly type: "preferences_loaded"; readonly selectedSessionId?: string; readonly drafts: readonly Draft[] }
   | { readonly type: "preferences_saved" }
-  | { readonly type: "definitions_loaded"; readonly definitionIds: readonly string[] }
+  | { readonly type: "definitions_loaded"; readonly definitions: readonly DefinitionItem[] }
   | { readonly type: "session_page_loaded"; readonly sessions: readonly SessionItem[] }
   | { readonly type: "timeline_loaded"; readonly items: readonly TimelineItem[]; readonly cursor: number; readonly activities: readonly ActivityItem[] }
   | { readonly type: "host_event"; readonly event: string; readonly position: number; readonly turnId?: string; readonly activity?: Omit<ActivityItem, "neutral"> }
@@ -74,7 +91,7 @@ export function initialAppViewState(
   configuration: "configured" | "not_configured" = "configured",
 ): AppViewState {
   return { configuration, shell: "booting", generation: 0, nextEffect: 1,
-    definitionIds: [], sessions: [], timeline: [], cursor: 0, drafts: [], execution: "idle",
+    definitions: [], sessions: [], timeline: [], cursor: 0, drafts: [], execution: "idle",
     pending: [], activities: [], outstanding: [] };
 }
 
@@ -133,8 +150,8 @@ export function reduceApp(
       }, { kind: "cancel_turn", sessionId: intent.sessionId, turnId: intent.turnId,
         commandId: intent.commandId, requestDigest: intent.requestDigest });
     case "continue_suspension": {
-      const turn = state.timeline.find((item) => item.turnId === intent.turnId);
-      if (!turn?.suspensionId || !turn.sessionVersion || !turn.responseSchemaDigest || !intent.input) {
+      const suspension = state.timeline.find((item) => item.turnId === intent.turnId)?.suspension;
+      if (!suspension?.suspensionId || !suspension.sessionVersion || !suspension.responseSchemaDigest || !intent.input) {
         return notice(state, "validation", "suspension_not_actionable");
       }
       return beginCommand({ ...state, execution: "continuing" }, {
@@ -142,8 +159,8 @@ export function reduceApp(
         generation: state.generation, sessionId: intent.sessionId, turnId: intent.turnId, status: "pending",
       }, { kind: "continue_turn", sessionId: intent.sessionId, turnId: intent.turnId,
         commandId: intent.commandId, requestDigest: intent.requestDigest, text: intent.input,
-        suspensionId: turn.suspensionId, sessionVersion: turn.sessionVersion,
-        responseSchemaDigest: turn.responseSchemaDigest });
+        suspensionId: suspension.suspensionId, sessionVersion: suspension.sessionVersion,
+        responseSchemaDigest: suspension.responseSchemaDigest });
     }
     case "reconnect":
       if (state.execution !== "disconnected" || state.selectedSessionId !== intent.sessionId) return unchanged(state);
@@ -168,7 +185,7 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
       selectedSessionId: intent.result.selectedSessionId ?? next.selectedSessionId });
     case "preferences_saved": return changed(next);
     case "definitions_loaded":
-      return issueMany({ ...next, definitionIds: intent.result.definitionIds }, [{ kind: "load_session_page" }]);
+      return issueMany({ ...next, definitions: intent.result.definitions }, [{ kind: "load_session_page" }]);
     case "session_page_loaded": {
       const selected = next.selectedSessionId && intent.result.sessions.some((item) => item.sessionId === next.selectedSessionId)
         ? next.selectedSessionId : intent.result.sessions[0]?.sessionId;

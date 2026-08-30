@@ -29,17 +29,50 @@ public data class AppError(public val kind: AppErrorKind, public val code: Strin
 /** Disposable local composer content. */
 public data class Draft(public val sessionId: String, public val text: String)
 
+/** Complete installed immutable Agent definition projection. */
+public data class DefinitionItem(
+    public val definitionId: String,
+    public val definitionRevision: String,
+    public val capabilities: List<String>,
+)
+
 /** Bounded H2 Session summary needed by the application controller. */
-public data class SessionItem(public val sessionId: String, public val state: String? = null)
+public data class SessionItem(
+    public val sessionId: String,
+    public val agentInstanceId: String? = null,
+    public val definitionId: String? = null,
+    public val definitionRevision: String? = null,
+    public val openedAt: String? = null,
+    public val latestPosition: Long? = null,
+    public val latestTurnId: String? = null,
+    public val state: String? = null,
+    public val turnCount: Long? = null,
+)
+
+/** Parsed redacted public suspension prompt and exact continuation binding. */
+public data class SuspensionItem(
+    public val suspensionId: String,
+    public val sessionVersion: Long,
+    public val kind: String,
+    public val titleKey: String? = null,
+    public val messageText: String? = null,
+    public val actionLabelKey: String? = null,
+    public val cancelLabelKey: String? = null,
+    public val promptDigest: String? = null,
+    public val responseSchemaDigest: String? = null,
+)
 
 /** Bounded H2 Turn projection with optional actionable suspension coordinates. */
 public data class TimelineItem(
     public val turnId: String,
     public val state: String,
     public val latestPosition: Long,
-    public val suspensionId: String? = null,
-    public val sessionVersion: Long? = null,
-    public val responseSchemaDigest: String? = null,
+    public val startedPosition: Long? = null,
+    public val userText: String? = null,
+    public val completionText: String? = null,
+    public val suspension: SuspensionItem? = null,
+    public val contentTruncated: Boolean = false,
+    public val activities: List<ActivityItem> = emptyList(),
 )
 
 /** Public H3 activity item or neutral unknown-event marker. */
@@ -50,6 +83,9 @@ public data class ActivityItem(
     public val turnId: String? = null,
     public val position: Long,
     public val neutral: Boolean,
+    public val labelKey: String? = null,
+    public val terminal: Boolean? = null,
+    public val safeCode: String? = null,
 )
 
 /** External mutation kind. */
@@ -102,7 +138,7 @@ public data class AppViewState(
     public val shell: ShellState = ShellState.BOOTING,
     public val generation: Long = 0,
     public val nextEffect: Long = 1,
-    public val definitionIds: List<String> = emptyList(),
+    public val definitions: List<DefinitionItem> = emptyList(),
     public val sessions: List<SessionItem> = emptyList(),
     public val selectedSessionId: String? = null,
     public val timelineSessionId: String? = null,

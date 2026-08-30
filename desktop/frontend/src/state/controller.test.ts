@@ -95,7 +95,8 @@ function runControllerCase(test: Record<string, unknown>): void {
 function decodeState(raw: Record<string, unknown>): AppViewState {
   const base = initialAppViewState(text(raw.configuration) as AppViewState["configuration"]);
   return { ...base, shell: text(raw.shell) as AppViewState["shell"], generation: number(raw.generation),
-    definitionIds: array(raw.definition_ids).map(text), sessions: array(raw.session_ids).map((id) => ({ sessionId: text(id) })),
+    definitions: array(raw.definition_ids).map((id) => ({ definitionId: text(id), definitionRevision: "fixture-revision", capabilities: [] })),
+    sessions: array(raw.session_ids).map((id) => ({ sessionId: text(id) })),
     selectedSessionId: nullableText(raw.selected_session_id), timelineSessionId: nullableText(raw.selected_session_id),
     timeline: array(raw.timeline).map(decodeTimeline), cursor: number(raw.cursor),
     drafts: array(raw.drafts).map((value) => { const item = object(value); return { sessionId: text(item.session_id), text: text(item.text) }; }),
@@ -125,7 +126,9 @@ function decodeResult(raw: Record<string, unknown>): AppEffectPayload {
     case "preferences_loaded": return { type, selectedSessionId: nullableText(raw.selected_session_id), drafts: array(raw.drafts).map((value) => {
       const item = object(value); return { sessionId: text(item.session_id), text: text(item.text) };
     }) };
-    case "definitions_loaded": return { type, definitionIds: array(raw.definition_ids).map(text) };
+    case "definitions_loaded": return { type, definitions: array(raw.definition_ids).map((id) => ({
+      definitionId: text(id), definitionRevision: "fixture-revision", capabilities: [],
+    })) };
     case "session_page_loaded": return { type, sessions: array(raw.sessions).map((value) => {
       const item = object(value); return { sessionId: text(item.session_id) };
     }) };
@@ -142,11 +145,11 @@ function decodeResult(raw: Record<string, unknown>): AppEffectPayload {
 
 function project(state: AppViewState): unknown {
   return { configuration: state.configuration, shell: state.shell, generation: state.generation,
-    definition_ids: state.definitionIds, session_ids: state.sessions.map((item) => item.sessionId),
+    definition_ids: state.definitions.map((item) => item.definitionId), session_ids: state.sessions.map((item) => item.sessionId),
     selected_session_id: state.selectedSessionId ?? null,
     timeline: state.timeline.map((item) => ({ turn_id: item.turnId, state: item.state,
-      latest_position: item.latestPosition, ...(item.suspensionId ? { suspension_id: item.suspensionId,
-        session_version: item.sessionVersion, response_schema_digest: item.responseSchemaDigest } : {}) })),
+      latest_position: item.latestPosition, ...(item.suspension ? { suspension_id: item.suspension.suspensionId,
+        session_version: item.suspension.sessionVersion, response_schema_digest: item.suspension.responseSchemaDigest } : {}) })),
     cursor: state.cursor, drafts: state.drafts.map((item) => ({ session_id: item.sessionId, text: item.text })),
     execution: state.execution, pending: state.pending.map((item) => ({ kind: item.kind,
       command_id: item.commandId, request_digest: item.requestDigest, session_id: item.sessionId ?? null,
@@ -158,8 +161,10 @@ function project(state: AppViewState): unknown {
 
 function decodeTimeline(value: unknown): TimelineItem { const item = object(value); return {
   turnId: text(item.turn_id), state: text(item.state), latestPosition: number(item.latest_position),
-  suspensionId: optionalText(item.suspension_id), sessionVersion: optionalNumber(item.session_version),
-  responseSchemaDigest: optionalText(item.response_schema_digest),
+  suspension: item.suspension_id === undefined ? undefined : {
+    suspensionId: text(item.suspension_id), sessionVersion: number(item.session_version), kind: "fixture",
+    responseSchemaDigest: optionalText(item.response_schema_digest),
+  },
 }; }
 function decodeActivity(value: unknown): ActivityItem { const item = object(value); return {
   activityId: text(item.activity_id), kind: text(item.kind), state: text(item.state), turnId: optionalText(item.turn_id),

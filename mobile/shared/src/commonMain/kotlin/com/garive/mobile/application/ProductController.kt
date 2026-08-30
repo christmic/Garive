@@ -41,7 +41,7 @@ public sealed interface AppIntent {
 public sealed interface AppEffectPayload {
     public data class PreferencesLoaded(public val selectedSessionId: String?, public val drafts: List<Draft>) : AppEffectPayload
     public data object PreferencesSaved : AppEffectPayload
-    public data class DefinitionsLoaded(public val definitionIds: List<String>) : AppEffectPayload
+    public data class DefinitionsLoaded(public val definitions: List<DefinitionItem>) : AppEffectPayload
     public data class SessionPageLoaded(public val sessions: List<SessionItem>) : AppEffectPayload
     public data class TimelineLoaded(
         public val items: List<TimelineItem>, public val cursor: Long, public val activities: List<ActivityItem>,
@@ -143,8 +143,8 @@ private fun retryPending(state: AppViewState, intent: AppIntent.RetryPending): R
 }
 
 private fun continueSuspension(state: AppViewState, intent: AppIntent.ContinueSuspension): Reduction {
-    val turn = state.timeline.firstOrNull { it.turnId == intent.turnId }
-    if (turn?.suspensionId == null || turn.sessionVersion == null || turn.responseSchemaDigest == null || intent.input.isEmpty()) {
+    val suspension = state.timeline.firstOrNull { it.turnId == intent.turnId }?.suspension
+    if (suspension?.suspensionId == null || suspension.sessionVersion <= 0 || suspension.responseSchemaDigest == null || intent.input.isEmpty()) {
         return notice(state, AppErrorKind.VALIDATION, "suspension_not_actionable")
     }
     return beginCommand(
@@ -153,8 +153,8 @@ private fun continueSuspension(state: AppViewState, intent: AppIntent.ContinueSu
             intent.sessionId, intent.turnId, PendingStatus.PENDING),
         EffectDraft(EffectKind.CONTINUE_TURN, sessionId = intent.sessionId, turnId = intent.turnId,
             commandId = intent.commandId, requestDigest = intent.requestDigest, text = intent.input,
-            suspensionId = turn.suspensionId, sessionVersion = turn.sessionVersion,
-            responseSchemaDigest = turn.responseSchemaDigest),
+            suspensionId = suspension.suspensionId, sessionVersion = suspension.sessionVersion,
+            responseSchemaDigest = suspension.responseSchemaDigest),
     )
 }
 
@@ -178,7 +178,7 @@ private fun applyResult(state: AppViewState, intent: AppIntent.EffectResult, lim
         is AppEffectPayload.PreferencesLoaded -> Reduction(next.copy(drafts = result.drafts,
             selectedSessionId = result.selectedSessionId ?: next.selectedSessionId))
         AppEffectPayload.PreferencesSaved -> Reduction(next)
-        is AppEffectPayload.DefinitionsLoaded -> issueMany(next.copy(definitionIds = result.definitionIds), listOf(EffectDraft(EffectKind.LOAD_SESSION_PAGE)))
+        is AppEffectPayload.DefinitionsLoaded -> issueMany(next.copy(definitions = result.definitions), listOf(EffectDraft(EffectKind.LOAD_SESSION_PAGE)))
         is AppEffectPayload.SessionPageLoaded -> sessionPageLoaded(next, result)
         is AppEffectPayload.TimelineLoaded -> timelineLoaded(next, effect, result)
         is AppEffectPayload.CommandSucceeded -> commandSucceeded(next, effect, result)
