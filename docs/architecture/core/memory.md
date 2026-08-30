@@ -1389,6 +1389,192 @@ under-engineered. The pillars are the **checklist** for the
 memory layer's design correctness — not a suggestion, a
 **contract**.
 
+## End-to-end flow — three swimlanes + three feedback loops
+
+The whole memory system is **sourced from the ledger**.
+Every entry in `memory.db` traces back to a `source_session`
++ `source_seq`. The pipeline runs **three swimlanes** that
+share **three feedback loops**. The conversation hot path
+contains **only one sync action** — the recall lookup.
+
+### The swimlanes
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SWIMLANE 1 — Generation lane (low frequency, async)                │
+│  Driven by four triggers that feed the candidate pool:                │
+│                                                                         │
+│   ┌─────────────┐   ┌───────────────┐   ┌────────────────┐             │
+│   │ exit_summary│   │ session-end   │   │ user "记住 X" │             │
+│   │ hot-capture │   │ light extract │   │ direct write   │             │
+│   │ (lessons)   │   │ (episodes)    │   │ (user_declared)│             │
+│   └─────┬───────┘   └───────┬───────┘   └───────┬────────┘             │
+│         └─────────────────┬┴───────────────────┘                       │
+│                           │                                          │
+│                           ▼                                          │
+│              ┌──────────────────────────────┐                        │
+│              │  Four-decision pipeline        │                        │
+│              │  ADD / UPDATE / DELETE / NOOP  │                        │
+│              │  (Mem0 four-decision model)     │                        │
+│              └──────────────┬───────────────┘                        │
+│                             │                                          │
+│              candidate → evidence-bound (E=0 rejected)            │
+│              confidence seeded (Beta(1,1))                       │
+│              scope, source_session, source_seq attached             │
+│                             │                                          │
+└─────────────────────────────┼────────────────────────────────────────┘
+                              │
+                              ▼
+                    ┌──────────────────────────────────┐
+                    │           MEMORY BANK              │
+                    │  ┌─────────────┐                │
+                    │  │ candidate    │ (verified →    │
+                    │  │              │  active)        │
+                    │  │ active       │ (use-feedback)  │
+                    │  │ cold         │ (decayed)       │
+                    │  │ archived     │ (retired)       │
+                    │  │ graduated    │ → knowledge     │
+                    │  └─────────────┘                │
+                    └──────────────┬──────────────────┘
+                              │
+                              │  recall (turn-start)
+                              │  push: menu (every turn)
+                              │  pull: detail on demand
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SWIMLANE 2 — Conversation lane (hot path, ≤1 sync action)           │
+│                                                                         │
+│   ┌──────────┐    ┌──────────┐    ┌──────────────┐    ┌─────────────┐ │
+│   │ user.msg │ -> │  derive  │ -> │  4-factor    │ -> │ assemble +  │ │
+│   │          │    │ (surface │    │  conf + RRF  │    │ model.invoke │ │
+│   │          │    │  cache)  │    │  5 gates     │    │             │ │
+│   └──────────┘    └──────────┘    └──────────────┘    └─────────────┘ │
+│         │            │             │                  │            │
+│         └────────────┴─────────────┘                  │            │
+│                           ▼                           │            │
+│                  ┌────────────────┐                   │            │
+│                  │  surface       │  <──  menu push every turn │
+│                  │  (model sees) │                  │            │
+│                  └────────────────┘                   │            │
+│                                                       │            │
+│   recall.menu.inject ──────► model sees [mem:abc] ──────────┘            │
+│                            cites in reply ──────► model.usage.append │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                              │
+                              │ real-world results
+                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SWIMLANE 3 — Observation lane (async, side-channel)                 │
+│                                                                         │
+│   tool.result / error signature / test pass / fail / verdict / etc.     │
+│                              │                                         │
+│                              ▼                                         │
+│                  ┌─────────────────────────┐                          │
+│                  │  OutcomeObserver        │                          │
+│                  │  (β-update + outcome)    │                          │
+│                  └────────────┬─────────────┘                          │
+│                               │                                       │
+│         ┌─────────────────────┼──────────────────────┐                │
+│         ▼                     ▼                      ▼                │
+│   Success → α+1           Failure → β+1          Uncertain            │
+│   → active (verified)    → falsify / narrow       → censored           │
+│                                                  (no update)         │
+│                                                                         │
+│   ┌────────────────────────────────────────────────────────────────┐ │
+│   │  Per-entry → recall.outcome row →  β update →  conf recompute    │ │
+│   │  Per-ranker → weekly regression →  ranker weights              │ │
+│   └────────────────────────────────────────────────────────────────┘ │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### The three feedback loops
+
+```
+     ┌─── verify-loop (per use, async) ─────────────────────┐
+     │                                                       │
+     │                                                       ▼
+   recall.outcome ─────> β-update ─────> conf recompute
+                                          │
+                                          ▼
+                                       recall ranking
+                                          │
+                                          └──> next recall uses new conf
+     
+     ┌─── distillation-loop (hour/daily, async) ────────────┐
+     │                                                       │
+     │  dream watermark ─────> episode distil ─────> facts/lessons │
+     │                              │                            │
+     │                              └──> episode down-weight      │
+     │                              └──> quota eviction          │
+     │                              └──> audit report            │
+     └────────────────────────────────────────────────────────┘
+
+     ┌─── calibration-loop (weekly, async) ──────────────────┐
+     │                                                       │
+     │  outcome log ─────> Platt / isotonic regression      │
+     │                              │                            │
+     │                              ▼                            │
+     │  conf = empirical success rate, R → Beta mean,        │
+     │  B-weights → regressed vs chain density                  │
+     └────────────────────────────────────────────────────────┘
+```
+
+### The conversation hot path contains **only one sync action**
+
+- The model sees the memory menu injected into the surface
+  every turn. **This is the entire sync cost.**
+- Detail pull (when the agent decides to recall a specific
+  entry) is part of `memory_search` tool — also **tool
+  call**, not a separate sync channel.
+- `verify`, `distillation`, `calibration`, `promotion` —
+  **all** async, all off the hot path.
+
+The conversation is **never** waiting for memory. The
+memory system is what makes this possible — recall happens,
+but the *update* of memory doesn't gate the model.
+
+### Coupling between swimlanes
+
+| From | To | What flows | When |
+|------|----|-----------|------|
+| **Swimlane 1** (generation) | Memory bank | New entries → candidate pool | On trigger |
+| Memory bank | **Swimlane 2** (conversation) | recall menu → surface | Every turn |
+| **Swimlane 2** | **Swimlane 3** (observation) | `[mem:abc]` citation → outcome link | Per use |
+| **Swimlane 3** | Memory bank | β update + state transition | Per outcome |
+| **Swimlane 1** | Memory bank → knowledge base | graduation | When verified |
+
+All three coupling points exist — **no others**. The rest
+is fully decoupled.
+
+### What each piece of the diagram protects
+
+- **Generation lane** — `exit_summary` and `dream`
+  produce the raw material; the four-decision pipeline
+  enforces admission discipline.
+- **Conversation lane** — recall + gate + inject; the menu
+  carries provenance; the model decides what to cite.
+- **Observation lane** — outcome judgement; **no user
+  required**; the three-way observability chain is the unit
+  of evidence.
+- **Memory bank** — the four-state machine (`candidate` /
+  `active` / `cold` / `archived`) plus the `graduated` /
+  `superseded` / `retired` edges + the per-type quota +
+  distillation tower.
+
+### What this is **not**
+
+- **Not** a CRDT or consensus algorithm — the bank is
+  per-agent, single-writer; the ledger is the source of
+  truth; the bank is a derived view.
+- **Not** an event-sourced architecture — the bank is **not**
+  a log; the ledger is. The bank caches the **distilled
+  result**; the ledger keeps the raw material.
+- **Not** a vector store with metadata — the bank is
+  metadata-first; vectors are an **index** for recall, not the
+  store. The store is row-shaped.
+
 ## Cross-references
 
 - `loop.md` "Two protocols" — recall is one of the
