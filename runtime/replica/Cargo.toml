@@ -15,6 +15,7 @@ garive-llm = { path = "../../engine/llm" }
 garive-memory = { path = "../../engine/memory" }
 garive-multiagent = { path = "../../engine/multiagent" }
 garive-observability = { path = "../../engine/observability" }
+garive-plan = { path = "../../engine/plan" }
 garive-scheduler = { path = "../../engine/scheduler" }
 garive-skill = { path = "../../engine/skill" }
 garive-tools = { path = "../../engine/tools" }

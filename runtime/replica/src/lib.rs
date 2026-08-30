@@ -22,6 +22,7 @@ mod memory_export;
 mod memory_export_io;
 mod model_http_transport;
 mod observability_runtime;
+mod plan_runtime;
 mod runtime_turn;
 mod sandbox_runtime;
 mod scheduler_runtime;
@@ -124,6 +125,10 @@ pub use model_http_transport::{
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,
     ObservabilitySink, RedactionPolicy, ShutdownReport, SinkDisposition,
+};
+pub use plan_runtime::{
+    ActivePlanClaim, PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
+    PlannedPlanCommand,
 };
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,

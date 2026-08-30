@@ -150,6 +150,11 @@ impl PlanSnapshot {
         self.state
     }
 
+    /// Returns the immutable definition revision behind this projection.
+    pub const fn definition(&self) -> &PlanDefinitionV1 {
+        &self.definition
+    }
+
     /// Returns total started attempts across all steps.
     pub const fn total_attempts(&self) -> u32 {
         self.total_attempts

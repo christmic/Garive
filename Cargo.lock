@@ -1702,6 +1702,7 @@ dependencies = [
  "garive-memory",
  "garive-multiagent",
  "garive-observability",
+ "garive-plan",
  "garive-provider-anthropic",
  "garive-provider-compatible",
  "garive-provider-openai",

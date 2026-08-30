@@ -101,6 +101,16 @@ impl PlanCapabilityReference {
             Ok(value)
         }
     }
+
+    /// Returns the stable capability name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the exact capability revision.
+    pub fn exact_revision(&self) -> &str {
+        &self.exact_revision
+    }
 }
 
 /// Explicit non-zero hard bounds for one Plan revision.
@@ -332,6 +342,46 @@ impl PlanDefinitionV1 {
     /// Returns steps in semantic declaration/tie-break order.
     pub fn steps(&self) -> &[PlanStepV1] {
         &self.steps
+    }
+
+    /// Returns the stable Plan identity.
+    pub const fn plan_id(&self) -> &PlanId {
+        &self.plan_id
+    }
+
+    /// Returns the immutable Plan definition revision.
+    pub const fn plan_revision(&self) -> u64 {
+        self.plan_revision
+    }
+
+    /// Returns the bound Goal identity.
+    pub fn goal_id(&self) -> &str {
+        &self.goal_id
+    }
+
+    /// Returns the exact bound Goal state revision.
+    pub const fn goal_revision(&self) -> u64 {
+        self.goal_revision
+    }
+
+    /// Returns the exact bound Goal definition digest.
+    pub fn goal_definition_digest(&self) -> &str {
+        &self.goal_definition_digest
+    }
+
+    /// Returns the frozen Agent snapshot digest.
+    pub fn agent_snapshot_digest(&self) -> &str {
+        &self.agent_snapshot_digest
+    }
+
+    /// Returns the frozen Tool catalogue digest.
+    pub fn tool_catalogue_digest(&self) -> &str {
+        &self.tool_catalogue_digest
+    }
+
+    /// Returns the frozen Safety policy revision.
+    pub fn safety_policy_revision(&self) -> &str {
+        &self.safety_policy_revision
     }
 
     /// Returns immutable revision bounds.
