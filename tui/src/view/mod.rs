@@ -12,6 +12,7 @@ use ratatui::{
 mod conversation;
 mod footer;
 mod linear;
+mod motion;
 mod overlay;
 pub(crate) mod presentation;
 mod primitives;
@@ -23,17 +24,28 @@ use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use footer::render_footer;
 pub(crate) use linear::{overlay_text as linear_overlay, safe as linear_safe};
+use motion::status_motion;
+pub(crate) use motion::{status_motion_enabled, MotionFrame};
 use overlay::render_overlay;
 use primitives::{centered_column, status_chip};
 use session::{rail_lines, rail_window};
-use style::{
-    connection_icon, connection_name, connection_style, execution_name, execution_style, palette,
-};
+use style::{connection_name, connection_style, execution_style, palette};
 pub(crate) use title::terminal_title;
 
 pub(crate) fn render_cached(
     model: &AppModel,
     theme: Theme,
+    area: Rect,
+    buffer: &mut Buffer,
+    cache: &mut RenderCache,
+) -> Option<(u16, u16)> {
+    render_cached_with_motion(model, theme, MotionFrame::reduced(), area, buffer, cache)
+}
+
+pub(crate) fn render_cached_with_motion(
+    model: &AppModel,
+    theme: Theme,
+    motion: MotionFrame,
     area: Rect,
     buffer: &mut Buffer,
     cache: &mut RenderCache,
@@ -53,7 +65,7 @@ pub(crate) fn render_cached(
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(area);
-    render_header(model, theme, frame[0], buffer);
+    render_header(model, theme, motion, frame[0], buffer);
     let composer = if area.width >= 100 {
         let rail_width = if area.width >= 160 { 34 } else { 28 };
         let workspace = Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)])
@@ -102,8 +114,15 @@ fn render_content(
     rows[1]
 }
 
-fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+fn render_header(
+    model: &AppModel,
+    theme: Theme,
+    motion: MotionFrame,
+    area: Rect,
+    buffer: &mut Buffer,
+) {
     let colors = palette(theme);
+    let motion = status_motion(model, motion);
     Block::default()
         .style(colors.header_background)
         .render(area, buffer);
@@ -133,12 +152,12 @@ fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer
     let status = if compact {
         vec![
             status_chip(
-                connection_icon(model.connection),
+                motion.connection_icon,
                 connection_style(model.connection, colors),
             ),
             Span::styled(" · ", colors.header_text),
             status_chip(
-                execution_name(model.execution),
+                &motion.execution_label,
                 execution_style(model.execution, colors),
             ),
         ]
@@ -147,14 +166,14 @@ fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer
             status_chip(
                 &format!(
                     "{} {}",
-                    connection_icon(model.connection),
+                    motion.connection_icon,
                     connection_name(model.connection)
                 ),
                 connection_style(model.connection, colors),
             ),
             Span::styled(" · ", colors.header_text),
             status_chip(
-                execution_name(model.execution),
+                &motion.execution_label,
                 execution_style(model.execution, colors),
             ),
             Span::styled(" ", colors.header_text),

@@ -183,6 +183,22 @@ chips, modal background dimming, and reverse-video monochrome selection. Those
 choices are Garive-authored against its Host contracts; they are not copied
 product decoration.
 
+### Motion ownership
+
+`codex-rs/tui/src/motion.rs` centralizes time-varying indicators and requires
+an explicit reduced-motion fallback. Its source-level test rejects direct
+spinner or shimmer calls outside that boundary. `tui/frame_requester.rs`
+coalesces requested frames behind a rate limiter instead of allowing widgets
+to redraw independently. Grok's `notifications/title.rs` separately advances a
+bounded frame index at a divisor of the event-loop tick and suppresses
+unchanged terminal-title writes.
+
+Garive adopts centralized pure motion presentation, explicit static fallbacks,
+and active-state-only redraw scheduling. It does not copy either product's
+frames, shimmer, title contents, or task semantics; Garive's calm pulse is
+derived only from its typed connection and execution states, while terminal
+titles remain semantic and nonanimated.
+
 ### Session resume and protocol boundary
 
 Codex routes session list/read/resume through its app-server session boundary;

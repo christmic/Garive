@@ -51,7 +51,7 @@ Use `garive-tui --help` to inspect the executable's current CLI contract.
 | `--theme system\|dark\|light\|mono` | Override the saved color preference for this process. |
 | `--mouse auto\|on\|off` | Override the saved mouse-capture preference. |
 | `--screen-reader` | Use ordered linear output without alternate-screen addressing. |
-| `--reduced-motion` | Suppress nonessential motion. |
+| `--reduced-motion` | Replace active status pulses with stable glyphs and stop their redraw timer. |
 | `--no-prompt-history` | Disable prompt-history reads and writes without deleting the file. |
 | `--ephemeral` | Disable all local state and diagnostics writes. |
 

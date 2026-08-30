@@ -380,7 +380,10 @@ theme overrides it.
   color-coded status sentence.
 - The footer is contextual: notices and cancellation outrank editing hints;
   hints collapse by width and render keys separately from their descriptions.
-- Reduced motion disables spinners and transition frames.
+- Reduced motion disables spinners and transition frames. Active
+  connection/execution pulses are composed by the shared motion component;
+  `--reduced-motion` replaces them with stable semantic glyph/text, and idle or
+  linear screen-reader presentation schedules no motion ticks.
 - Screen-reader mode prints semantic blocks once and converts overlays to
   numbered prompts. Those prompts use the same filtered result ordering,
   bounded selection-following window, and activation index as the visual

@@ -8,7 +8,7 @@ use std::{
 
 #[test]
 fn shipping_tui_boots_and_restores_a_real_pty() {
-    for _ in 0..2 {
+    for reduced_motion in [false, true] {
         let (address, server) = empty_host();
 
         let temporary = tempfile::tempdir().unwrap();
@@ -18,13 +18,21 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", &transcript)
+        .env(
+            "GARIVE_TUI_MOTION",
+            if reduced_motion {
+                "--reduced-motion"
+            } else {
+                ""
+            },
+        )
         .env("GARIVE_TUI_STATE", temporary.path().join("state"))
         .args([
             "-c",
             r#"
                 set timeout 5
                 log_file -noappend $env(GARIVE_TUI_LOG)
-                spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+                spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono $GARIVE_TUI_MOTION}
                 expect -exact "\033\[6n"
                 send "\033\[1;1R"
                 expect { "Garive" {} timeout { exit 2 } }
@@ -45,6 +53,18 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         assert!(text.contains("Garive"));
         assert!(text.contains("Press Ctrl+C"));
         assert!(text.contains("Garive?"));
+        if reduced_motion {
+            assert!(
+                text.contains("○ connecting"),
+                "stable connecting glyph rendered"
+            );
+            assert!(
+                !text.contains("· connecting"),
+                "motion pulse stayed disabled"
+            );
+        } else {
+            assert!(text.contains("· connecting"), "first motion frame rendered");
+        }
         assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
         assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
         assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");

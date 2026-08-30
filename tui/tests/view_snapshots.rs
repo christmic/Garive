@@ -22,6 +22,18 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let model = product_model();
     insta::assert_snapshot!("compact_40x12", frame(&model, Theme::Mono, 40, 12));
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
+    insta::assert_snapshot!(
+        "motion_running_dark_100x24",
+        motion_frame(&model, Theme::Dark, 4, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "motion_running_light_100x24",
+        motion_frame(&model, Theme::Light, 4, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "motion_running_mono_100x24",
+        motion_frame(&model, Theme::Mono, 4, 100, 24)
+    );
 
     let mut wide = model;
     wide.overlay = Some(Overlay::CommandPalette);
@@ -191,6 +203,29 @@ fn frame(model: &AppModel, theme: Theme, width: u16, height: u16) -> String {
     let _ = view::render_cached(
         model,
         theme,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn motion_frame(model: &AppModel, theme: Theme, tick: u64, width: u16, height: u16) -> String {
+    let area = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(area);
+    let _ = view::render_cached_with_motion(
+        model,
+        theme,
+        view::MotionFrame::animated(tick),
         area,
         &mut buffer,
         &mut view::RenderCache::default(),
