@@ -77,7 +77,9 @@ row. `Enter` activates the visible primary action; `Esc` closes, defers, or
 requests cancellation only as admitted by the current state. Footer hints are
 derived from that same routing decision.
 Bounded lists keep the selected item inside their visible window. The visual
-filter and the activation result set are the same ordered collection.
+filter and the activation result set are the same ordered collection. Pointer
+hit boxes come from the rendered component geometry and never penetrate a
+modal backdrop.
 
 ## Conformance
 

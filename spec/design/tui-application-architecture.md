@@ -69,6 +69,7 @@ tui/src/
   persistence.rs         preference and pending-command ports/adapters
   runtime/
     mod.rs               event loop and task supervision
+    controller/mouse.rs  modal-safe pointer routing
     terminal.rs          idempotent terminal guard
     signals.rs           shutdown/resize signals
   view/
@@ -79,6 +80,7 @@ tui/src/
     composer.rs          editor and validation
     navigation.rs        Session/Agent navigation
     overlay.rs           help, command, Session, error, suspension overlays
+    overlay/geometry.rs  popup, visible-window, and pointer geometry
     status.rs            connection/execution/status footer
     theme.rs             semantic theme tokens
     text.rs              wrapping, markdown subset, safe control filtering

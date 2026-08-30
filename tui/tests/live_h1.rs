@@ -52,6 +52,45 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
 }
 
 #[test]
+fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
+    for _ in 0..2 {
+        let (address, server) = empty_host();
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join("mouse-overlay.log");
+        let status = Command::new("expect")
+            .env("TERM", "xterm-256color")
+            .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+            .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+            .env("GARIVE_TUI_LOG", &transcript)
+            .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+            .args(["-c", r#"
+                set timeout 5
+                log_file -noappend $env(GARIVE_TUI_LOG)
+                spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
+                expect -exact "\033\[6n"
+                send "\033\[1;1R"
+                expect "Garive"
+                send "\020"
+                expect "/help"
+                send "\033\[<0;21;16M"
+                expect "Keyboard guide"
+                send "\033"
+                send "\021"
+                send "\r"
+                expect eof
+            "#])
+            .status()
+            .unwrap();
+        server.join().unwrap();
+        assert!(status.success());
+        let text = fs::read_to_string(transcript).unwrap();
+        assert!(text.contains("\x1b[?1000h"), "mouse capture entered");
+        assert!(text.contains("Keyboard") && text.contains("guide"));
+        assert!(text.contains("\x1b[?1000l"), "mouse capture restored");
+    }
+}
+
+#[test]
 fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
     for _ in 0..2 {
         let (address, server) = empty_host();
