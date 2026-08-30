@@ -34,6 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -106,13 +107,16 @@ internal fun WorkScreen(
 @Composable
 internal fun SessionsScreen(state: MobileWorkState, onOpen: (String) -> Unit, onRefresh: () -> Unit) {
     var filter by remember { mutableStateOf("All") }
+    var search by remember { mutableStateOf("") }
     val visible = state.sessions.filter { session ->
-        when (filter) {
+        val matchesFilter = when (filter) {
             "Working" -> session.status == MobileWorkStatus.WORKING
             "Needs you" -> session.status == MobileWorkStatus.NEEDS_INPUT
             "Done" -> session.status in setOf(MobileWorkStatus.COMPLETED, MobileWorkStatus.STOPPED)
             else -> true
         }
+        matchesFilter && (search.isBlank() || session.agentName.contains(search, ignoreCase = true) ||
+            session.sessionId.contains(search, ignoreCase = true))
     }
     LazyColumn(
         modifier = Modifier.padding(horizontal = 20.dp),
@@ -120,6 +124,14 @@ internal fun SessionsScreen(state: MobileWorkState, onOpen: (String) -> Unit, on
     ) {
         item {
             DestinationHeader("Sessions", "Durable work, ready anywhere", state.connection, onRefresh)
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                label = { Text("Search Agent or Session") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(listOf("All", "Working", "Needs you", "Done")) { label ->
                     AssistChip(onClick = { filter = label }, label = { Text(label) })

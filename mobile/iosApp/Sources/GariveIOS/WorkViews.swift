@@ -37,18 +37,33 @@ struct SessionsView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
     @State private var search = ""
+    @State private var filter = "All"
 
     private var matches: [MobileSessionCard] {
-        guard !search.isEmpty else { return state.sessions }
         return state.sessions.filter {
-            $0.agentName.localizedCaseInsensitiveContains(search) || $0.sessionId.localizedCaseInsensitiveContains(search)
+            let matchesSearch = search.isEmpty || $0.agentName.localizedCaseInsensitiveContains(search)
+                || $0.sessionId.localizedCaseInsensitiveContains(search)
+            let matchesFilter = switch filter {
+            case "Working": $0.status == .working
+            case "Needs you": $0.status == .needsInput
+            case "Done": $0.status == .completed || $0.status == .stopped
+            default: true
+            }
+            return matchesSearch && matchesFilter
         }
     }
 
     var body: some View {
-        List(matches, id: \.sessionId) { session in
-            SessionRow(session: session) { model.open(session.sessionId) }
-                .listRowBackground(GarivePalette.panel)
+        List {
+            Picker("Status", selection: $filter) {
+                ForEach(["All", "Working", "Needs you", "Done"], id: \.self) { Text($0) }
+            }
+            .pickerStyle(.segmented)
+            .listRowBackground(GarivePalette.ink)
+            ForEach(matches, id: \.sessionId) { session in
+                SessionRow(session: session) { model.open(session.sessionId) }
+                    .listRowBackground(GarivePalette.panel)
+            }
         }
         .scrollContentBackground(.hidden).background(GarivePalette.ink)
         .navigationTitle("Sessions").searchable(text: $search, prompt: "Agent or session")
