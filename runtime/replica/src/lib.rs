@@ -58,7 +58,7 @@ pub use live_host::{
     AgentDefinitionSummary, CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput,
     HostEventPage, InstalledAgent, LiveHost, LiveHostError, LiveHostEvent, LiveHostLimits,
     LiveHostServer, LiveHostServerError, SessionSummary, TurnCommandResponse, TurnDispatchError,
-    TurnDispatcher,
+    TurnDispatcher, TurnTimelineItem, TurnTimelinePage,
 };
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
