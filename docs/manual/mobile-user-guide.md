@@ -209,6 +209,9 @@ Execution 不接受绕过协议的即时文本注入。
 
 ![Android 在原 Session 中追加方向](assets/mobile/android-09-steering.png)
 
+会话右上角的系统分享入口只导出当前界面已经渲染的 **You / Agent** 文本，并由系统分享面板要求
+用户明确选择接收方；不会附带授权、服务地址、设备或 Session ID、内部活动坐标及未展示的事件。
+
 ## 9. 审批与输入
 
 ![Android 审批](assets/mobile/android-06-approval.png)
@@ -279,7 +282,8 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 
 Settings 显示当前配对服务、已验证 host、设备与构建诊断、通知入口和外观主题。主题可选择
 **System / Light / Dark**，会在本机持久化；通知按钮进入系统级通知设置，不在应用内伪造授权
-状态。诊断信息不包含授权、Session ID、私有路径或请求正文。
+状态。**Copy safe diagnostics** 只复制应用版本、系统版本和当前连接状态，并在界面显示复制完成；
+不会复制授权、服务地址、Session ID、私有路径、提示词或请求正文。
 
 选择 **Unpair this device** 时：
 
@@ -325,7 +329,7 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Work、Sessions、Agents、Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（7 条）、Swift 测试（6 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+界面流程（9 条）、Swift 测试（6 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
 输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 29 张实际运行截图。
