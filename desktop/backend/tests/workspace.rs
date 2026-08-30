@@ -156,6 +156,16 @@ fn missing_private_bookmark_is_reported_without_blocking_other_recovery() {
     assert_eq!(status.state, "attention_required");
     assert_eq!(status.restored_count, 0);
     assert_eq!(status.needs_reauthorization_count, 1);
+    let authorization = restored.authorizations().unwrap()[0].clone();
+    let receipt = restored
+        .revoke(
+            &authorization.workspace_id,
+            authorization.grant_revision,
+            "main",
+        )
+        .unwrap();
+    assert_eq!(receipt.outcome, "revoked");
+    assert!(restored.authorizations().unwrap().is_empty());
 }
 
 #[cfg(target_os = "macos")]

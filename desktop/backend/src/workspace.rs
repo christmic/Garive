@@ -976,20 +976,24 @@ impl DesktopWorkspaceService {
                 cleanup_pending,
             });
         }
-        let removed = active
-            .remove(workspace_id)
-            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
-        if removed.owner_window != owner_window
-            || removed.public.grant_revision != expected_grant_revision
-        {
-            active.insert(workspace_id.to_owned(), removed);
+        let removed = active.remove(workspace_id);
+        if let Some(workspace) = &removed {
+            if workspace.owner_window != owner_window
+                || workspace.public.grant_revision != expected_grant_revision
+            {
+                active.insert(workspace_id.to_owned(), removed.expect("checked present"));
+                return Err(DesktopWorkspaceError::CapabilityInvalid);
+            }
+        } else if existing_record.is_none() || owner_window.is_empty() || owner_window.len() > 128 {
             return Err(DesktopWorkspaceError::CapabilityInvalid);
         }
         if let Some(record) = records.get_mut(workspace_id) {
             record.revoked = true;
             record.cleanup_pending = true;
             if let Err(error) = self.persist_records_locked(&records) {
-                active.insert(workspace_id.to_owned(), removed);
+                if let Some(workspace) = removed {
+                    active.insert(workspace_id.to_owned(), workspace);
+                }
                 if let Some(record) = existing_record {
                     records.insert(workspace_id.to_owned(), record);
                 }
