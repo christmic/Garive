@@ -378,7 +378,7 @@ fn commit_transaction(
     expected_session_version: u64,
     drafts: Vec<FactDraft>,
 ) -> Result<CommitResult, SqliteLedgerError> {
-    let mut state = storage::load_state(transaction)?;
+    let mut state = storage::load_state_in_transaction(transaction)?;
     let result = state.commit(session_id.clone(), expected_session_version, drafts.clone())?;
     if result.disposition == CommitDisposition::Replayed {
         return Ok(result);

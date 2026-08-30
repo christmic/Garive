@@ -3,7 +3,7 @@ use std::mem;
 use garive_ledger::{
     CanonicalPayload, CommitDisposition, FactDraft, FactId, FactKind, LedgerState, SessionId,
 };
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
 
 use super::SqliteLedgerError;
 
@@ -24,6 +24,19 @@ struct StoredFact {
 }
 
 pub(super) fn load_state(connection: &Connection) -> Result<LedgerState, SqliteLedgerError> {
+    let transaction = connection.unchecked_transaction()?;
+    let state = load_state_snapshot(&transaction)?;
+    transaction.commit()?;
+    Ok(state)
+}
+
+pub(super) fn load_state_in_transaction(
+    transaction: &Transaction<'_>,
+) -> Result<LedgerState, SqliteLedgerError> {
+    load_state_snapshot(transaction)
+}
+
+fn load_state_snapshot(connection: &Connection) -> Result<LedgerState, SqliteLedgerError> {
     let mut statement = connection.prepare(
         "SELECT session_id, position, commit_version, fact_id, turn_id, execution_id, \
          model_request_id, tool_invocation_id, kind, schema_version, payload_json, \
