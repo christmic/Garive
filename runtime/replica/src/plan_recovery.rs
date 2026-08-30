@@ -93,17 +93,21 @@ fn apply(
     if previous != current.state_version || next != previous.checked_add(1).ok_or(corrupt(()))? {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
-    let transition = transition(current, fact.kind.as_str(), value)?;
-    current.snapshot = current.snapshot.apply(transition).map_err(corrupt)?;
+    let transitions = transitions(current, fact.kind.as_str(), value)?;
+    current.snapshot = transitions
+        .into_iter()
+        .try_fold(current.snapshot.clone(), |snapshot, transition| {
+            snapshot.apply(transition).map_err(corrupt)
+        })?;
     current.state_version = next;
     Ok(())
 }
 
-fn transition(
+fn transitions(
     current: &mut PlanRuntimeState,
     kind: &str,
     value: &Map<String, Value>,
-) -> Result<PlanTransition, PlanRuntimeError> {
+) -> Result<Vec<PlanTransition>, PlanRuntimeError> {
     match kind {
         "plan.adopted" => {
             if unsigned(value, "expected_goal_revision")?
@@ -111,23 +115,34 @@ fn transition(
             {
                 return Err(PlanRuntimeError::RecoveryCorrupt);
             }
-            Ok(PlanTransition::Adopt)
+            Ok(vec![PlanTransition::Adopt])
         }
-        "plan.rejected" => Ok(PlanTransition::Reject),
-        "plan.superseded" => Ok(PlanTransition::Supersede),
-        "plan.suspended" => Ok(PlanTransition::Suspend),
-        "plan.resumed" => Ok(PlanTransition::Resume),
-        "plan.completed" => Ok(PlanTransition::Complete {
+        "plan.rejected" => Ok(vec![PlanTransition::Reject]),
+        "plan.superseded" => Ok(vec![PlanTransition::Supersede]),
+        "plan.suspended" => Ok(vec![PlanTransition::Suspend]),
+        "plan.resumed" => Ok(vec![PlanTransition::Resume]),
+        "plan.completed" => Ok(vec![PlanTransition::Complete {
             criteria_complete: true,
-        }),
-        "plan.failed" => Ok(PlanTransition::Fail),
-        "plan.step.claimed" => claim(current, value),
-        "plan.step.claim_expired" => expire_claim(current, value),
-        "plan.step.started" => start(current, value),
-        "plan.step.completed" => terminal_step(current, value, StepTerminal::Complete),
-        "plan.step.failed" => terminal_step(current, value, StepTerminal::Fail),
-        "plan.step.suspended" => terminal_step(current, value, StepTerminal::Suspend),
-        "plan.step.resumed" => Ok(PlanTransition::ResumeStep(step_id(value)?)),
+        }]),
+        "plan.failed" => Ok(vec![PlanTransition::Fail]),
+        "plan.step.claimed" => claim(current, value).map(|value| vec![value]),
+        "plan.step.claim_expired" => expire_claim(current, value).map(|value| vec![value]),
+        "plan.step.started" => start(current, value).map(|value| vec![value]),
+        "plan.step.completed" => {
+            terminal_step(current, value, StepTerminal::Complete).map(|value| vec![value])
+        }
+        "plan.step.failed" => {
+            let failed = terminal_step(current, value, StepTerminal::Fail)?;
+            let mut result = vec![failed];
+            if text(value, "retry_posture")? == "retry" {
+                result.push(PlanTransition::RetryStep(step_id(value)?));
+            }
+            Ok(result)
+        }
+        "plan.step.suspended" => {
+            terminal_step(current, value, StepTerminal::Suspend).map(|value| vec![value])
+        }
+        "plan.step.resumed" => Ok(vec![PlanTransition::ResumeStep(step_id(value)?)]),
         _ => Err(PlanRuntimeError::RecoveryCorrupt),
     }
 }

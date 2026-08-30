@@ -61,7 +61,7 @@ pub fn plan_plan_transition(
         .ok_or(PlanRuntimeError::Invalid)?;
     let definition = current.snapshot.definition();
     let mut claims = current.active_claims.clone();
-    let (kind, payload, transition) = match request {
+    let (kind, payload, transitions) = match request {
         PlanRuntimeTransition::Adopt {
             expected_goal_revision,
             expected_prior_plan_revision,
@@ -86,7 +86,11 @@ pub fn plan_plan_transition(
                 "carry_forward_evidence".into(),
                 content(&carry_forward_evidence),
             );
-            ("plan.adopted", Value::Object(value), PlanTransition::Adopt)
+            (
+                "plan.adopted",
+                Value::Object(value),
+                vec![PlanTransition::Adopt],
+            )
         }
         PlanRuntimeTransition::Claim {
             step_id,
@@ -134,7 +138,7 @@ pub fn plan_plan_transition(
             (
                 "plan.step.claimed",
                 Value::Object(value),
-                PlanTransition::Claim(step_id),
+                vec![PlanTransition::Claim(step_id)],
             )
         }
         PlanRuntimeTransition::ExpireClaim {
@@ -158,7 +162,7 @@ pub fn plan_plan_transition(
             (
                 "plan.step.claim_expired",
                 Value::Object(value),
-                PlanTransition::ExpireClaim(step_id),
+                vec![PlanTransition::ExpireClaim(step_id)],
             )
         }
         PlanRuntimeTransition::Start {
@@ -211,7 +215,7 @@ pub fn plan_plan_transition(
             (
                 "plan.step.started",
                 Value::Object(value),
-                PlanTransition::Start(step_id),
+                vec![PlanTransition::Start(step_id)],
             )
         }
         PlanRuntimeTransition::CompleteStep {
@@ -240,8 +244,39 @@ pub fn plan_plan_transition(
             (
                 "plan.step.completed",
                 Value::Object(value),
-                PlanTransition::CompleteStep(step_id),
+                vec![PlanTransition::CompleteStep(step_id)],
             )
+        }
+        PlanRuntimeTransition::FailStep {
+            step_id,
+            attempt_id,
+            execution_id,
+            reason,
+            evidence,
+            retry_posture,
+        } => {
+            require_non_empty(&reason)?;
+            let claim = claims.get(&step_id).ok_or(PlanRuntimeError::ClaimStale)?;
+            if claim.attempt_id.as_deref() != Some(&attempt_id)
+                || claim.execution_id.as_deref() != Some(&execution_id)
+            {
+                return Err(PlanRuntimeError::ClaimStale);
+            }
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert("step_id".into(), json!(step_id.as_str()));
+            value.insert("attempt_id".into(), json!(attempt_id));
+            value.insert("execution_id".into(), json!(execution_id));
+            value.insert("reason".into(), json!(reason));
+            value.insert("retry_posture".into(), json!(retry_posture.as_str()));
+            if let Some(evidence) = evidence {
+                value.insert("evidence".into(), content(&evidence));
+            }
+            claims.remove(&step_id);
+            let mut transitions = vec![PlanTransition::FailStep(step_id.clone())];
+            if retry_posture == super::PlanRetryPosture::Retry {
+                transitions.push(PlanTransition::RetryStep(step_id));
+            }
+            ("plan.step.failed", Value::Object(value), transitions)
         }
         PlanRuntimeTransition::CompletePlan { reduction_evidence } => {
             let mut value = mutation(context, definition, expected_state_version, next_version);
@@ -249,13 +284,17 @@ pub fn plan_plan_transition(
             (
                 "plan.completed",
                 Value::Object(value),
-                PlanTransition::Complete {
+                vec![PlanTransition::Complete {
                     criteria_complete: true,
-                },
+                }],
             )
         }
     };
-    let snapshot = current.snapshot.apply(transition).map_err(map_plan)?;
+    let snapshot = transitions
+        .into_iter()
+        .try_fold(current.snapshot.clone(), |snapshot, transition| {
+            snapshot.apply(transition).map_err(map_plan)
+        })?;
     Ok(PlannedPlanCommand {
         facts: vec![fact(context, kind, payload)?],
         next: PlanRuntimeState {

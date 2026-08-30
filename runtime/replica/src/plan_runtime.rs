@@ -54,6 +54,30 @@ pub struct PlanRuntimeState {
     pub through_position: u64,
 }
 
+/// Closed policy posture recorded when one step attempt fails.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlanRetryPosture {
+    /// Atomically return the failed step to Ready when bounds allow.
+    Retry,
+    /// Leave the step failed for an explicit suspension command.
+    Suspend,
+    /// Leave the step failed while Runtime proposes a replacement revision.
+    Replan,
+    /// Leave the step failed for explicit Plan terminalization.
+    Fail,
+}
+
+impl PlanRetryPosture {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Retry => "retry",
+            Self::Suspend => "suspend",
+            Self::Replan => "replan",
+            Self::Fail => "fail",
+        }
+    }
+}
+
 /// Runtime metadata for the admitted normal Plan execution path.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PlanRuntimeTransition {
@@ -135,6 +159,21 @@ pub enum PlanRuntimeTransition {
         step_evidence: CanonicalPayload,
         /// Canonical Goal-criterion evidence list.
         criterion_evidence: CanonicalPayload,
+    },
+    /// Fail one started attempt and freeze the admitted follow-up posture.
+    FailStep {
+        /// Running step.
+        step_id: PlanStepId,
+        /// Exact attempt identity.
+        attempt_id: String,
+        /// Exact C6 Execution identity.
+        execution_id: String,
+        /// Stable safe failure reason.
+        reason: String,
+        /// Optional canonical failure evidence.
+        evidence: Option<CanonicalPayload>,
+        /// Closed policy result; Retry is applied in this same transition.
+        retry_posture: PlanRetryPosture,
     },
     /// Terminalize only after every step and Goal criterion is verified.
     CompletePlan {

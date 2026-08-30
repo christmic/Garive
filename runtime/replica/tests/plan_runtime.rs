@@ -7,7 +7,8 @@ use garive_plan::{
 };
 use garive_runtime::{
     commit_plan_command, plan_plan_transition, plan_propose_plan, reconstruct_plan,
-    PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, SqliteLedger,
+    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, SqliteLedger,
 };
 use serde_json::json;
 use tempfile::tempdir;
@@ -241,6 +242,130 @@ fn competing_sqlite_claims_have_one_winner_and_exact_command_replay() {
     assert!(commit_plan_command(&mut first, session, 0, &winner).is_ok());
 }
 
+#[test]
+fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("retry.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed = plan_propose_plan(&context("retry-propose"), definition()).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let draft = recover(&ledger, &session);
+    let adopted = plan_plan_transition(
+        &draft,
+        draft.state_version,
+        &context("retry-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        draft.session_version,
+        &adopted,
+    )
+    .unwrap();
+
+    let mut state = recover(&ledger, &session);
+    let first_claim = claim(&state, "retry-claim-1", 1, 10, 20, "retry-claim-first");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &first_claim,
+    )
+    .unwrap();
+    state = recover(&ledger, &session);
+    let first_start = plan_plan_transition(
+        &state,
+        state.state_version,
+        &context("retry-start-first"),
+        start_request(
+            "retry-claim-1",
+            1,
+            15,
+            "retry-attempt-1",
+            "retry-execution-1",
+        ),
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &first_start,
+    )
+    .unwrap();
+    state = recover(&ledger, &session);
+    let first_failure = fail_step(
+        &state,
+        "retry-attempt-1",
+        "retry-execution-1",
+        "retry-fail-first",
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &first_failure,
+    )
+    .unwrap();
+    drop(ledger);
+
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    state = recover(&ledger, &session);
+    assert_eq!(
+        state.snapshot.step(&step_id("prepare")).unwrap().state(),
+        StepState::Ready
+    );
+    let second_claim = claim(&state, "retry-claim-2", 2, 21, 30, "retry-claim-second");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &second_claim,
+    )
+    .unwrap();
+    state = recover(&ledger, &session);
+    let second_start = plan_plan_transition(
+        &state,
+        state.state_version,
+        &context("retry-start-second"),
+        start_request(
+            "retry-claim-2",
+            2,
+            25,
+            "retry-attempt-2",
+            "retry-execution-2",
+        ),
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &second_start,
+    )
+    .unwrap();
+    state = recover(&ledger, &session);
+    assert_eq!(
+        fail_step(
+            &state,
+            "retry-attempt-2",
+            "retry-execution-2",
+            "retry-fail-second",
+        ),
+        Err(PlanRuntimeError::BoundExceeded)
+    );
+}
+
 fn recover(ledger: &SqliteLedger, session: &SessionId) -> PlanRuntimeState {
     reconstruct_plan(
         ledger,
@@ -333,6 +458,27 @@ fn complete_step(
         },
     )
     .unwrap()
+}
+
+fn fail_step(
+    state: &PlanRuntimeState,
+    attempt: &str,
+    execution: &str,
+    command: &str,
+) -> Result<garive_runtime::PlannedPlanCommand, PlanRuntimeError> {
+    plan_plan_transition(
+        state,
+        state.state_version,
+        &context(command),
+        PlanRuntimeTransition::FailStep {
+            step_id: step_id("prepare"),
+            attempt_id: attempt.into(),
+            execution_id: execution.into(),
+            reason: "verification_failed".into(),
+            evidence: Some(evidence()),
+            retry_posture: PlanRetryPosture::Retry,
+        },
+    )
 }
 
 fn definition() -> PlanDefinitionV1 {
