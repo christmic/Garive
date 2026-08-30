@@ -49,14 +49,13 @@ pub struct PlannedF0EffectAdmission {
     pub facts: Vec<FactDraft>,
 }
 
-/// Plans Prepared-v3 and the exact allowed Safety decision before grant creation.
-pub fn plan_f0_safety_decision(
+/// Plans Prepared-v3 as its own durable pre-policy crash boundary.
+pub fn plan_f0_prepared(
     context: &F0SafetyDecisionContext,
     request: &SafetyRequestV1,
     prepared: &PreparedToolCall,
-    decision: &SafetyDecisionV1,
-) -> Result<Vec<FactDraft>, SandboxPreflightError> {
-    validate_request(&context.recorded_at, request, prepared, decision)?;
+) -> Result<FactDraft, SandboxPreflightError> {
+    validate_prepared_request(&context.recorded_at, request, prepared)?;
     let accesses = prepared
         .invocation_accesses()
         .ok_or(SandboxPreflightError::InvalidBinding)?;
@@ -73,14 +72,43 @@ pub fn plan_f0_safety_decision(
     {
         return Err(SandboxPreflightError::InvalidBinding);
     }
+    fact(
+        &context.turn_id,
+        &context.execution_id,
+        &context.recorded_at,
+        &ledger_tool(request)?,
+        "prepared",
+        "effect.prepared",
+        3,
+        json!({
+            "prepared_contract_version":3,"prepared_digest":prepared.input_digest(),
+            "tool_name":prepared.tool_name(),"tool_revision":prepared.tool_revision(),
+            "replay_class":replay_class(prepared.replay_class()),"model_call_id":prepared.model_call_id(),
+            "arguments":arguments,
+            "access_policy_revision":prepared.access_policy_revision().ok_or(SandboxPreflightError::InvalidBinding)?,
+            "access_resolver_revision":prepared.access_resolver_revision().ok_or(SandboxPreflightError::InvalidBinding)?,
+            "invocation_accesses":access,"max_result_bytes":prepared.max_result_bytes().ok_or(SandboxPreflightError::InvalidBinding)?,
+            "sandbox_requirements":sandbox,"sandbox_requirements_digest":prepared.sandbox_requirements_digest().ok_or(SandboxPreflightError::InvalidBinding)?,
+        }),
+    )
+}
+
+/// Plans Prepared-v3 and the exact allowed Safety decision before grant creation.
+pub fn plan_f0_safety_decision(
+    context: &F0SafetyDecisionContext,
+    request: &SafetyRequestV1,
+    prepared: &PreparedToolCall,
+    decision: &SafetyDecisionV1,
+) -> Result<Vec<FactDraft>, SandboxPreflightError> {
+    validate_request(&context.recorded_at, request, prepared, decision)?;
     let tool = ledger_tool(request)?;
     let mut safety = json!({
         "request_id":request.request_id(),"decision_id":decision.decision_id(),
         "disposition":safety_disposition(decision.disposition()),"prepared_digest":prepared.input_digest(),
         "tool_name":prepared.tool_name(),"tool_revision":prepared.tool_revision(),
         "actor_authority_reference":request.actor_authority_reference(),
-        "exact_access_digest":access["digest"],
-        "sandbox_requirements_digest":sandbox["digest"],
+        "exact_access_digest":request.exact_access_digest(),
+        "sandbox_requirements_digest":request.sandbox_requirements_digest(),
         "policy_revision":decision.policy_revision(),
     });
     match decision.disposition() {
@@ -102,25 +130,7 @@ pub fn plan_f0_safety_decision(
         safety["plan_reference"] = json!(value);
     }
     Ok(vec![
-        fact(
-            &context.turn_id,
-            &context.execution_id,
-            &context.recorded_at,
-            &tool,
-            "prepared",
-            "effect.prepared",
-            3,
-            json!({
-                "prepared_contract_version":3,"prepared_digest":prepared.input_digest(),
-                "tool_name":prepared.tool_name(),"tool_revision":prepared.tool_revision(),
-                "replay_class":replay_class(prepared.replay_class()),"model_call_id":prepared.model_call_id(),
-                "arguments":arguments,
-                "access_policy_revision":prepared.access_policy_revision().ok_or(SandboxPreflightError::InvalidBinding)?,
-                "access_resolver_revision":prepared.access_resolver_revision().ok_or(SandboxPreflightError::InvalidBinding)?,
-                "invocation_accesses":access,"max_result_bytes":prepared.max_result_bytes().ok_or(SandboxPreflightError::InvalidBinding)?,
-                "sandbox_requirements":sandbox,"sandbox_requirements_digest":prepared.sandbox_requirements_digest().ok_or(SandboxPreflightError::InvalidBinding)?,
-            }),
-        )?,
+        plan_f0_prepared(context, request, prepared)?,
         fact(
             &context.turn_id,
             &context.execution_id,
@@ -256,9 +266,23 @@ fn validate_request(
     prepared: &PreparedToolCall,
     decision: &SafetyDecisionV1,
 ) -> Result<(), SandboxPreflightError> {
-    if chrono::DateTime::parse_from_rfc3339(recorded_at).is_err()
-        || decision.invocation_id() != request.invocation_id()
+    validate_prepared_request(recorded_at, request, prepared)?;
+    if decision.invocation_id() != request.invocation_id()
         || decision.prepared_digest() != prepared.input_digest()
+        || request.effective_policy_revision() != decision.policy_revision()
+    {
+        Err(SandboxPreflightError::InvalidBinding)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_prepared_request(
+    recorded_at: &str,
+    request: &SafetyRequestV1,
+    prepared: &PreparedToolCall,
+) -> Result<(), SandboxPreflightError> {
+    if chrono::DateTime::parse_from_rfc3339(recorded_at).is_err()
         || request.prepared_digest() != prepared.input_digest()
         || request.tool_name() != prepared.tool_name()
         || request.tool_revision() != prepared.tool_revision()
@@ -266,7 +290,6 @@ fn validate_request(
             != prepared
                 .sandbox_requirements_digest()
                 .ok_or(SandboxPreflightError::InvalidBinding)?
-        || request.effective_policy_revision() != decision.policy_revision()
     {
         Err(SandboxPreflightError::InvalidBinding)
     } else {

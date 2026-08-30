@@ -17,7 +17,7 @@ use garive_tools::{
 use serde_json::{json, Map, Value};
 
 use crate::{
-    plan_f0_safety_decision, plan_f0_sandbox_admission, F0EffectAdmissionContext,
+    plan_f0_prepared, plan_f0_safety_decision, plan_f0_sandbox_admission, F0EffectAdmissionContext,
     F0SafetyDecisionContext, SafetyDisposition, SafetyRequestV1, SqliteLedger,
 };
 
@@ -284,24 +284,23 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             context.effective_policy_revision,
         )
         .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        let safety_context = F0SafetyDecisionContext {
+            turn_id: self.config.turn_id.clone(),
+            execution_id: self.config.execution_id.clone(),
+            recorded_at: self.config.recorded_at.clone(),
+        };
+        self.commit(vec![plan_f0_prepared(&safety_context, &request, prepared)
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)?])?;
         let evaluation = self
             .safety
             .as_deref_mut()
             .ok_or(GovernedRuntimePortError::InvalidBinding)?
             .decide(&request)
             .await?;
-        let decision_facts = plan_f0_safety_decision(
-            &F0SafetyDecisionContext {
-                turn_id: self.config.turn_id.clone(),
-                execution_id: self.config.execution_id.clone(),
-                recorded_at: self.config.recorded_at.clone(),
-            },
-            &request,
-            prepared,
-            &evaluation.decision,
-        )
-        .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
-        self.commit(decision_facts)?;
+        let decision_facts =
+            plan_f0_safety_decision(&safety_context, &request, prepared, &evaluation.decision)
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        self.commit(decision_facts.into_iter().skip(1).collect())?;
         let (mut reducer, _) = GovernedEffect::new(invocation_id.clone(), prepared.clone());
         match evaluation.decision.disposition() {
             SafetyDisposition::Deny => {

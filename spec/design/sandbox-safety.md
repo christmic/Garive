@@ -163,6 +163,11 @@ decision, workspace, executor, grant or dispatch attempt after restart. Deny
 and InteractionRequired never admit `sandbox.bound`; they continue through the
 existing governed observation or typed interaction path.
 
+`effect.prepared.v3` is committed before Runtime calls the Safety broker;
+`safety.decided` is a later commit. Broker unavailability therefore leaves the
+same invocation at the explicit Safety-pending recovery cut and never erases
+or silently reallocates its Prepared identity.
+
 ## Filesystem enforcement
 
 Workspace filesystem keys remain non-empty relative slash-separated values

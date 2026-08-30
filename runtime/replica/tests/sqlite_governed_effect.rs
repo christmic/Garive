@@ -65,6 +65,14 @@ struct Authority {
 
 struct AllowSafety;
 
+struct UnavailableSafety;
+
+impl SafetyPort for UnavailableSafety {
+    fn decide<'a>(&'a mut self, _: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        Box::pin(async { Err(garive_runtime::GovernedRuntimePortError::AuthorityUnavailable) })
+    }
+}
+
 impl SafetyPort for AllowSafety {
     fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
         Box::pin(async move {
@@ -549,6 +557,49 @@ fn prepared_v3_commits_exact_f0_chain_before_dispatch() {
     let facts = reopened.load_turn(&setup.turn).unwrap().facts;
     assert_eq!(facts[facts.len() - 9].schema_version, 3);
     assert_eq!(facts[facts.len() - 7].schema_version, 2);
+}
+
+#[test]
+fn prepared_v3_is_durable_before_safety_dependency_returns() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("ledger.sqlite3"));
+    setup.prepared = v3_catalog()
+        .prepare_v3(
+            &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+            &Resolver,
+        )
+        .unwrap();
+    let mut authority = Authority {
+        decision: Decision::Approve,
+    };
+    let mut executor = Executor {
+        mode: ExecutionMode::Success,
+        prepares: 0,
+        dispatches: 0,
+    };
+    let mut safety = UnavailableSafety;
+    let mut sandbox = LocalSandbox;
+    let request_id = setup.request_id.clone();
+    let prepared = setup.prepared.clone();
+    let mut port = port(&mut setup, &mut authority, &mut executor)
+        .with_f0_governance(
+            &mut safety,
+            &mut sandbox,
+            F0GovernanceContext {
+                actor_authority_reference: "actor".into(),
+                goal_reference: None,
+                plan_reference: None,
+                effective_policy_revision: "policy-1".into(),
+            },
+        )
+        .unwrap();
+    assert!(block_on(port.invoke(&request_id, &prepared)).is_err());
+    drop(port);
+    assert_eq!((executor.prepares, executor.dispatches), (0, 0));
+    assert_tail(&setup, &["effect.prepared"]);
+    let recovery =
+        derive_runtime_recovery(&setup.ledger.load_turn(&setup.turn).unwrap(), 3).unwrap();
+    assert_eq!(recovery.effect, EffectRecoveryPosition::F0SafetyPending);
 }
 
 #[test]
