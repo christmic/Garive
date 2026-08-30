@@ -19,6 +19,28 @@ message HostEventV1 {
   string execution_id = 6;
   // Optional text carried by output events.
   string text = 7;
+  // Committed redacted Agent activity state when this is an H3 event.
+  HostActivityV1 activity = 8;
+}
+
+// One bounded redacted state in a committed Agent activity lifecycle.
+message HostActivityV1 {
+  // Exact Host API version used to encode the activity.
+  string api_version = 1;
+  // Opaque activity identity scoped to its Session.
+  string activity_id = 2;
+  // Stable activity class; unknown future values remain decodable.
+  string kind = 3;
+  // Installed localization key; never a raw tool name.
+  string label_key = 4;
+  // Stable lifecycle state; unknown future values remain decodable.
+  string state = 5;
+  // Exact committed fact position producing this public state.
+  uint64 source_position = 6;
+  // Authoritative terminal marker for this public state.
+  bool terminal = 7;
+  // Optional admitted stable failure or decision code.
+  optional string safe_code = 8;
 }
 
 // Creates one durable Session for an installed Agent definition.
@@ -187,6 +209,8 @@ message TurnTimelineItemV1 {
   SuspensionViewV1 suspension = 7;
   // Whether bounded user or completion display content was truncated.
   bool content_truncated = 8;
+  // Latest committed public state of each activity owned by this Turn.
+  repeated HostActivityV1 activities = 9;
 }
 
 // Ascending bounded complete-Turn projection page.

@@ -1,7 +1,7 @@
 use garive_proto::com::garive::host::v1::{
     AgentDefinitionPageV1, AgentDefinitionSummaryV1, ContinueTurnRequestV1, CreateSessionRequestV1,
-    HostEventV1, SessionPageV1, SessionSummaryV1, SuspensionViewV1, TurnCommandResponseV1,
-    TurnTimelineItemV1, TurnTimelinePageV1,
+    HostActivityV1, HostEventV1, SessionPageV1, SessionSummaryV1, SuspensionViewV1,
+    TurnCommandResponseV1, TurnTimelineItemV1, TurnTimelinePageV1,
 };
 use prost::Message;
 
@@ -22,6 +22,16 @@ fn generated_host_v1_round_trips_live_commands_events_and_responses() {
         turn_id: String::new(),
         execution_id: String::new(),
         text: String::new(),
+        activity: Some(HostActivityV1 {
+            api_version: "v1".into(),
+            activity_id: "activity-1".into(),
+            kind: "future_kind".into(),
+            label_key: "agent.activity.unknown".into(),
+            state: "future_state".into(),
+            source_position: u64::MAX,
+            terminal: false,
+            safe_code: Some("future_code".into()),
+        }),
     };
     assert_eq!(
         HostEventV1::decode(event.encode_to_vec().as_slice()).unwrap(),
@@ -110,6 +120,16 @@ fn generated_host_v1_round_trips_read_model_presence_and_max_positions() {
                 response_schema_digest: Some("schema-digest".into()),
             }),
             content_truncated: false,
+            activities: vec![HostActivityV1 {
+                api_version: "v1".into(),
+                activity_id: "activity-1".into(),
+                kind: "tool".into(),
+                label_key: "agent.activity.write_file".into(),
+                state: "attention_required".into(),
+                source_position: u64::MAX - 1,
+                terminal: false,
+                safe_code: Some("receipt_missing".into()),
+            }],
         }],
         scanned_through_position: u64::MAX,
         observed_max_position: u64::MAX,
