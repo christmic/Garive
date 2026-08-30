@@ -188,6 +188,37 @@ fn compact_list_overlays_keep_their_selection_visible() {
 }
 
 #[test]
+fn linear_overlays_share_filtered_results_and_selection_windows() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::CommandPalette),
+        command_filter: "copy completion".into(),
+        ..Default::default()
+    };
+    let commands = view::linear_overlay(&model);
+    assert!(commands.contains("> 1. /copy last: Copy last completion"));
+    assert!(!commands.contains("/status"));
+
+    model.overlay = Some(Overlay::PromptHistory);
+    model.history_filter.clear();
+    model.prompt_history = (0..20).map(|index| format!("prompt {index:02}")).collect();
+    model.history_selection = 19;
+    let history = view::linear_overlay(&model);
+    assert!(history.contains("> 20. prompt 19"));
+    assert!(!history.contains("prompt 00"));
+
+    model.overlay = Some(Overlay::SessionPicker);
+    model.session_filter = "needle-agent".into();
+    model.sessions = vec![
+        session("session-hidden-000000", "other-agent"),
+        session("session-visible-000001", "needle-agent"),
+    ];
+    model.session_selection = 0;
+    let sessions = view::linear_overlay(&model);
+    assert!(sessions.contains("> 1. needle-agent Session ending 000001"));
+    assert!(!sessions.contains("other-agent"));
+}
+
+#[test]
 fn session_picker_filter_and_selection_share_one_visible_result_set() {
     let mut model = AppModel {
         overlay: Some(Overlay::SessionPicker),

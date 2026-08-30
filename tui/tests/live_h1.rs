@@ -121,11 +121,15 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             after 100
             send "\020"
             must_expect "Command palette." 26
-            must_expect "1. /new: Create session" 28
+            send "keyboard"
+            must_expect "Filter: keyboard." 27
+            must_expect "> 1. /help: Keyboard guide" 28
+            send "\r"
+            must_expect "No function keys are required." 29
             send "\033"
             send "\021"
             send "\r"
-            must_expect "Terminal restored." 30
+            must_expect "Terminal restored." 31
         "#])
         .status()
         .unwrap();
@@ -135,6 +139,8 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         let text = String::from_utf8_lossy(&output);
         assert!(text.contains("Connection online"));
         assert!(text.contains("Command palette."));
+        assert!(text.contains("Filter: keyboard."));
+        assert!(text.contains("No function keys are required."));
         assert!(!text.contains("\x1b[6n"));
         assert!(!text.contains("\x1b[2J"));
         assert!(!text.contains("\x1b[?1049h"));

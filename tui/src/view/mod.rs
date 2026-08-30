@@ -11,6 +11,7 @@ use ratatui::{
 
 mod conversation;
 mod footer;
+mod linear;
 mod overlay;
 pub(crate) mod presentation;
 mod primitives;
@@ -20,6 +21,7 @@ mod style;
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use footer::render_footer;
+pub(crate) use linear::{overlay_text as linear_overlay, safe as linear_safe};
 use overlay::render_overlay;
 use primitives::{centered_column, status_chip};
 use session::{rail_lines, rail_window};

@@ -6,7 +6,7 @@ use garive_host_client::LiveHostClient;
 use tokio::sync::mpsc;
 
 use crate::{
-    application::{AppModel, ConnectionState, ExecutionState, Overlay, TimelineRole},
+    application::{ConnectionState, ExecutionState, TimelineRole},
     persistence::DiagnosticEvent,
     LaunchConfig, TuiError,
 };
@@ -97,10 +97,10 @@ fn emit_linear_changes(
             TimelineRole::Agent => "Garive",
             TimelineRole::Status => "Activity",
         };
-        write_linear(&format!("{role}: {}", linear_safe(&item.text)))?;
+        write_linear(&format!("{role}: {}", crate::view::linear_safe(&item.text)))?;
     }
     *emitted = state.model.timeline.len();
-    let overlay = linear_overlay(&state.model);
+    let overlay = crate::view::linear_overlay(&state.model);
     if *last_overlay != overlay {
         if !overlay.is_empty() {
             write_linear(&overlay)?;
@@ -108,77 +108,6 @@ fn emit_linear_changes(
         *last_overlay = overlay;
     }
     Ok(())
-}
-
-fn linear_overlay(model: &AppModel) -> String {
-    let Some(overlay) = model.overlay else {
-        return String::new();
-    };
-    let value = match overlay {
-        Overlay::CommandPalette => {
-            let rows = crate::input::COMMAND_PALETTE
-                .iter()
-                .enumerate()
-                .map(|(index, (name, help))| format!("{}. {name}: {help}", index + 1))
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!("Command palette.\n{rows}\nUse arrows and Enter, or Escape to close.")
-        }
-        Overlay::Help => "Keyboard guide. Enter sends. Control J inserts a newline. Control S opens Sessions. Control P opens commands. Control C cancels a running Turn. Control Q asks to quit. Escape closes a nonblocking prompt.".into(),
-        Overlay::SessionPicker => {
-            let rows = model
-                .sessions
-                .iter()
-                .enumerate()
-                .map(|(index, session)| {
-                    format!(
-                        "{}. Session ending {}, {}.",
-                        index + 1,
-                        session
-                            .session_id
-                            .get(session.session_id.len().saturating_sub(6)..)
-                            .unwrap_or(&session.session_id),
-                        session.latest_turn_state.as_deref().unwrap_or("new")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!("Switch Session.\n{rows}\nUse arrows and Enter, or Escape to close.")
-        }
-        Overlay::PromptHistory => {
-            let rows = model
-                .prompt_history
-                .iter()
-                .take(10)
-                .enumerate()
-                .map(|(index, text)| {
-                    format!(
-                        "{}. {}",
-                        index + 1,
-                        text.lines().next().unwrap_or_default()
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            format!("Prompt history.\n{rows}\nUse arrows and Enter, or Escape to close.")
-        }
-        Overlay::Suspension => {
-            let copy = crate::view::presentation::suspension_copy(model.suspension.as_ref());
-            let message = copy.message.unwrap_or_default();
-            format!(
-                "{}. {} {}\n{}\nPress Enter to respond now.",
-                copy.title, copy.context, message, copy.guidance
-            )
-        }
-        Overlay::UnknownCommand => "Command result unknown. Press Enter for exact retry, or A to abandon the local recovery record.".into(),
-        Overlay::ErrorDetails => format!(
-            "Status details. {} Press Escape to close.",
-            model.notice.as_deref().unwrap_or("No safe details available.")
-        ),
-        Overlay::EphemeralConfirmation => "Ephemeral mode cannot recover a lost mutation response. Press Enter to accept for this run, or Escape to cancel.".into(),
-        Overlay::QuitConfirmation => "Quit Garive? Press Enter to quit, or Escape to keep working.".into(),
-    };
-    linear_safe(&value)
 }
 
 fn write_linear(value: &str) -> Result<(), TuiError> {
@@ -194,22 +123,6 @@ fn write_linear_bell() -> Result<(), TuiError> {
         .write_all(b"\x07")
         .and_then(|_| stderr.flush())
         .map_err(|_| TuiError::TerminalIo)
-}
-
-fn linear_safe(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| match character {
-            '\n' | '\t' => character,
-            value
-                if value.is_control()
-                    || matches!(value, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') =>
-            {
-                '�'
-            }
-            value => value,
-        })
-        .collect()
 }
 
 fn linear_connection(value: ConnectionState) -> &'static str {
