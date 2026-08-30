@@ -268,6 +268,18 @@ exact revisions in the same evidence record cover the automatic
 those rows are not relabeled as a later rerun. The locked login session
 prevented real-window screenshot admission.
 
+Merge revision `5e2502d0` covers the centralized status-motion contract and all
+116 listed TUI test cases. One pure component maps typed active state to a calm
+single-cell pulse, while the normal static renderer is the real
+`--reduced-motion` path. Its 160 ms skip-on-miss scheduler is selected only for
+Connecting, Reconnecting, or Following; each phase is held for two ticks, and
+idle, terminal, screen-reader, reduced-motion, and semantic-title paths do not
+animate. Dark, light, and monochrome snapshots review the same component, and
+shipping PTY coverage asserts the animated and reduced paths separately. The
+exact macOS package, Runtime/file-SQLite/PTTY, Clippy, release, and six-PTY
+timings are pinned in the evidence document. Physical Terminal/iTerm2-class
+screenshots remain an open native gate.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the
