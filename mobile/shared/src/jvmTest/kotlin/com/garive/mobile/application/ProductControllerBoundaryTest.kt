@@ -45,7 +45,7 @@ public class ProductControllerBoundaryTest {
     }
 
     @Test
-    public fun oneMutationPerSessionAndUtf8BytesAreEnforced(): Unit {
+    public fun oneCrashSafeMutationGloballyAndUtf8BytesAreEnforced(): Unit {
         val limits = ControllerLimits(3, 2)
         var state = ready(listOf("session-a"), "session-a")
         state = reduceApp(state, AppIntent.EditDraft("session-a", "ok"), limits).state
@@ -57,6 +57,21 @@ public class ProductControllerBoundaryTest {
         val fixtureSized = reduceApp(ready(listOf("session-a"), "session-a"),
             AppIntent.EditDraft("session-a", "this draft is deliberately over thirty-two bytes"), ControllerLimits(32, 3))
         assertEquals("draft_too_large", fixtureSized.state.notice?.code)
+    }
+
+    @Test
+    public fun crashInterruptedMutationRestoresAsUnknownWithExactIdentity(): Unit {
+        val booted = reduceApp(initialAppViewState(), AppIntent.Boot)
+        val effect = booted.effects.first { it.kind == EffectKind.LOAD_PREFERENCES }
+        val pending = PendingCommand(CommandKind.START_TURN, "command-a", digest, 3,
+            "session-a", status = PendingStatus.PENDING)
+        val restored = reduceApp(booted.state, AppIntent.EffectResult(effect.effectId,
+            effect.generation, result = AppEffectPayload.PreferencesLoaded(null, emptyList(), pending)))
+        assertEquals("command-a", restored.state.pending.single().commandId)
+        assertEquals(PendingStatus.UNKNOWN, restored.state.pending.single().status)
+        val retried = reduceApp(restored.state, AppIntent.RetryPending("session-a"))
+        assertEquals("command-a", retried.effects.single().commandId)
+        assertEquals(digest, retried.effects.single().requestDigest)
     }
 
     @Test

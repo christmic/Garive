@@ -73,7 +73,8 @@ export type AppIntent =
   | { readonly type: "effect_result"; readonly effectId: string; readonly generation: number; readonly sessionId?: string; readonly requestDigest?: string; readonly result: AppEffectPayload };
 
 export type AppEffectPayload =
-  | { readonly type: "preferences_loaded"; readonly selectedSessionId?: string; readonly drafts: readonly Draft[] }
+  | { readonly type: "preferences_loaded"; readonly selectedSessionId?: string; readonly drafts: readonly Draft[];
+      readonly pending?: PendingCommand }
   | { readonly type: "preferences_saved" }
   | { readonly type: "definitions_loaded"; readonly definitions: readonly DefinitionItem[] }
   | { readonly type: "session_page_loaded"; readonly sessions: readonly SessionItem[] }
@@ -195,7 +196,8 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
   let next = intent.result.type === "host_event" ? state : removeEffect(state, effect.effectId);
   switch (intent.result.type) {
     case "preferences_loaded": return changed({ ...next, drafts: intent.result.drafts,
-      selectedSessionId: intent.result.selectedSessionId ?? next.selectedSessionId });
+      selectedSessionId: intent.result.selectedSessionId ?? next.selectedSessionId,
+      pending: intent.result.pending ? [{ ...intent.result.pending, status: "unknown" }] : next.pending });
     case "preferences_saved": return next.preferenceDirty ? savePreferences(next) : changed(next);
     case "definitions_loaded":
       return issueMany({ ...next, definitions: intent.result.definitions }, [{ kind: "load_session_page" }]);
@@ -289,7 +291,7 @@ function failedResult(state: AppViewState, effect: AppEffect, error: AppError): 
 
 function beginCommand(state: AppViewState, pending: PendingCommand, effect: Partial<AppEffect> & { kind: EffectKind }): Reduction {
   if (!validIdentity(pending.commandId) || !/^[0-9a-f]{64}$/.test(pending.requestDigest) ||
-      state.pending.some((item) => item.sessionId === pending.sessionId)) return notice(state, "validation", "command_not_admitted");
+      state.pending.length > 0) return notice(state, "validation", "command_not_admitted");
   return issueMany({ ...state, pending: [...state.pending, pending], notice: undefined }, [effect]);
 }
 function issueMany(state: AppViewState, raw: readonly (Partial<AppEffect> & { kind: EffectKind })[]): Reduction {

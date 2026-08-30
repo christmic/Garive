@@ -43,7 +43,7 @@ describe("A-UX1 controller boundaries", () => {
     expect(rejected.state.pending).toEqual([expect.objectContaining({ commandId: "command-a", status: "unknown" })]);
   });
 
-  it("admits at most one mutation per Session and counts UTF-8 bytes", () => {
+  it("admits at most one crash-safe mutation globally and counts UTF-8 bytes", () => {
     let state = ready(["session-a"], "session-a");
     state = reduceApp(state, { type: "edit_draft", sessionId: "session-a", text: "ok" },
       { maxDraftBytes: 3, maxActivities: 2 }).state;
@@ -55,6 +55,20 @@ describe("A-UX1 controller boundaries", () => {
     const oversized = reduceApp(second.state, { type: "edit_draft", sessionId: "session-a", text: "🦀" },
       { maxDraftBytes: 3, maxActivities: 2 });
     expect(oversized.state.notice?.code).toBe("draft_too_large");
+  });
+
+  it("restores a crash-interrupted mutation as unknown with its exact identity", () => {
+    const booted = reduceApp(initialAppViewState(), { type: "boot" });
+    const effect = booted.effects.find((item) => item.kind === "load_preferences")!;
+    const restored = reduceApp(booted.state, { type: "effect_result", effectId: effect.effectId,
+      generation: effect.generation, result: { type: "preferences_loaded", drafts: [], pending: {
+        kind: "start_turn", commandId: "command-a", requestDigest: DIGEST, generation: 3,
+        sessionId: "session-a", status: "pending",
+      } } });
+    expect(restored.state.pending).toEqual([expect.objectContaining({ commandId: "command-a", status: "unknown" })]);
+    const retried = reduceApp(restored.state, { type: "retry_pending", sessionId: "session-a" });
+    expect(retried.effects[0]).toEqual(expect.objectContaining({ kind: "start_turn",
+      commandId: "command-a", requestDigest: DIGEST }));
   });
 
   it("coalesces preference writes while preserving the latest state", () => {

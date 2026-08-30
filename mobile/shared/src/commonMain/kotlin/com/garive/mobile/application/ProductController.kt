@@ -39,7 +39,9 @@ public sealed interface AppIntent {
 
 /** Typed values returned by composition-owned Host and preference ports. */
 public sealed interface AppEffectPayload {
-    public data class PreferencesLoaded(public val selectedSessionId: String?, public val drafts: List<Draft>) : AppEffectPayload
+    public data class PreferencesLoaded(
+        public val selectedSessionId: String?, public val drafts: List<Draft>, public val pending: PendingCommand? = null,
+    ) : AppEffectPayload
     public data object PreferencesSaved : AppEffectPayload
     public data class DefinitionsLoaded(public val definitions: List<DefinitionItem>) : AppEffectPayload
     public data class SessionPageLoaded(public val sessions: List<SessionItem>) : AppEffectPayload
@@ -184,7 +186,8 @@ private fun applyResult(state: AppViewState, intent: AppIntent.EffectResult, lim
     val next = if (intent.result is AppEffectPayload.HostEvent) state else removeEffect(state, effect.effectId)
     return when (val result = intent.result) {
         is AppEffectPayload.PreferencesLoaded -> Reduction(next.copy(drafts = result.drafts,
-            selectedSessionId = result.selectedSessionId ?: next.selectedSessionId))
+            selectedSessionId = result.selectedSessionId ?: next.selectedSessionId,
+            pending = result.pending?.let { listOf(it.copy(status = PendingStatus.UNKNOWN)) } ?: next.pending))
         AppEffectPayload.PreferencesSaved -> if (next.preferenceDirty) savePreferences(next) else Reduction(next)
         is AppEffectPayload.DefinitionsLoaded -> issueMany(next.copy(definitions = result.definitions), listOf(EffectDraft(EffectKind.LOAD_SESSION_PAGE)))
         is AppEffectPayload.SessionPageLoaded -> sessionPageLoaded(next, result)
@@ -298,7 +301,7 @@ private fun failedResult(state: AppViewState, effect: AppEffect, error: AppError
 
 private fun beginCommand(state: AppViewState, pending: PendingCommand, effect: EffectDraft): Reduction {
     if (!validIdentity(pending.commandId) || !HEX_DIGEST.matches(pending.requestDigest) ||
-        state.pending.any { it.sessionId == pending.sessionId }
+        state.pending.isNotEmpty()
     ) return notice(state, AppErrorKind.VALIDATION, "command_not_admitted")
     return issueMany(state.copy(pending = state.pending + pending, notice = null), listOf(effect))
 }
