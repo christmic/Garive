@@ -27,6 +27,12 @@ pub(crate) struct EditorState {
     max_bytes: usize,
 }
 
+#[derive(Clone, Copy)]
+enum SelectionEdge {
+    Start,
+    End,
+}
+
 impl Default for EditorState {
     fn default() -> Self {
         Self::new(4_096)
@@ -120,12 +126,18 @@ impl EditorState {
     }
 
     pub(crate) fn move_left(&mut self, selecting: bool) {
+        if !selecting && self.collapse_selection(SelectionEdge::Start) {
+            return;
+        }
         self.prepare_selection(selecting);
         self.cursor_grapheme = self.cursor_grapheme.saturating_sub(1);
         self.preferred_display_column = None;
     }
 
     pub(crate) fn move_right(&mut self, selecting: bool) {
+        if !selecting && self.collapse_selection(SelectionEdge::End) {
+            return;
+        }
         self.prepare_selection(selecting);
         self.cursor_grapheme = (self.cursor_grapheme + 1).min(self.grapheme_len());
         self.preferred_display_column = None;
@@ -140,6 +152,9 @@ impl EditorState {
     }
 
     pub(crate) fn move_line_start(&mut self, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(SelectionEdge::Start);
+        }
         self.prepare_selection(selecting);
         let byte = grapheme_byte(&self.text, self.cursor_grapheme);
         let start = self.text[..byte].rfind('\n').map_or(0, |value| value + 1);
@@ -148,6 +163,9 @@ impl EditorState {
     }
 
     pub(crate) fn move_line_end(&mut self, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(SelectionEdge::End);
+        }
         self.prepare_selection(selecting);
         let byte = grapheme_byte(&self.text, self.cursor_grapheme);
         let end = self.text[byte..]
@@ -158,6 +176,9 @@ impl EditorState {
     }
 
     pub(crate) fn move_word_left(&mut self, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(SelectionEdge::Start);
+        }
         self.prepare_selection(selecting);
         let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
         let mut cursor = self.cursor_grapheme;
@@ -172,6 +193,9 @@ impl EditorState {
     }
 
     pub(crate) fn move_word_right(&mut self, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(SelectionEdge::End);
+        }
         self.prepare_selection(selecting);
         let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
         let mut cursor = self.cursor_grapheme;
@@ -206,12 +230,18 @@ impl EditorState {
     }
 
     pub(crate) fn move_document_start(&mut self, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(SelectionEdge::Start);
+        }
         self.prepare_selection(selecting);
         self.cursor_grapheme = 0;
         self.preferred_display_column = None;
     }
 
     pub(crate) fn move_document_end(&mut self, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(SelectionEdge::End);
+        }
         self.prepare_selection(selecting);
         self.cursor_grapheme = self.grapheme_len();
         self.preferred_display_column = None;
@@ -311,7 +341,30 @@ impl EditorState {
         }
     }
 
+    fn collapse_selection(&mut self, edge: SelectionEdge) -> bool {
+        let Some(anchor) = self
+            .selection_anchor
+            .filter(|anchor| *anchor != self.cursor_grapheme)
+        else {
+            return false;
+        };
+        self.cursor_grapheme = match edge {
+            SelectionEdge::Start => anchor.min(self.cursor_grapheme),
+            SelectionEdge::End => anchor.max(self.cursor_grapheme),
+        };
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+        true
+    }
+
     fn move_vertical(&mut self, direction: i8, selecting: bool) {
+        if !selecting {
+            self.collapse_selection(if direction < 0 {
+                SelectionEdge::Start
+            } else {
+                SelectionEdge::End
+            });
+        }
         let current_line = self.cursor_line();
         let line_count = self.line_count();
         let target_line = if direction < 0 {

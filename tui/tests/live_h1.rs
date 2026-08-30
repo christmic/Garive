@@ -217,6 +217,9 @@ fn shift_selection_is_visible_in_a_real_mono_pty() {
             after 100
             send "\033\[1;2D\033\[1;2D"
             after 100
+            send "\033\[D"
+            send "X"
+            expect "aX界b"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -228,6 +231,7 @@ fn shift_selection_is_visible_in_a_real_mono_pty() {
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
     assert!(text.contains("\x1b[7m界"));
+    assert!(text.contains("X界"));
     assert!(text.contains("\x1b[?1049l"));
 }
 

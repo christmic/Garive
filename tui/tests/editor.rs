@@ -71,6 +71,43 @@ fn selected_byte_range_follows_extended_grapheme_boundaries() {
 }
 
 #[test]
+fn plain_arrows_collapse_selection_to_edges_without_extra_movement() {
+    let mut editor = EditorState::new(128);
+    editor.insert("a界bc").unwrap();
+    editor.move_left(true);
+    editor.move_left(true);
+    editor.move_left(false);
+    editor.insert("L").unwrap();
+    assert_eq!(editor.text(), "a界Lbc");
+
+    editor.undo();
+    editor.move_document_end(false);
+    editor.move_left(true);
+    editor.move_left(true);
+    editor.move_right(false);
+    editor.insert("R").unwrap();
+    assert_eq!(editor.text(), "a界bcR");
+}
+
+#[test]
+fn word_and_vertical_moves_continue_from_the_directional_selection_edge() {
+    let mut editor = EditorState::new(128);
+    editor.insert("one two\nthree four").unwrap();
+    editor.move_document_start(false);
+    editor.move_word_right(true);
+    editor.move_word_right(false);
+    assert_eq!(editor.cursor_line(), 1);
+    assert_eq!(editor.display_column(), 0);
+    assert!(!editor.has_selection());
+
+    editor.move_document_start(false);
+    editor.move_down(true);
+    editor.move_up(false);
+    assert_eq!(editor.cursor_line(), 0);
+    assert!(!editor.has_selection());
+}
+
+#[test]
 fn terminal_controls_and_bidi_overrides_never_enter_the_model() {
     let mut editor = EditorState::new(128);
     for value in ["secret\u{1b}[31m", "left\u{202e}right"] {
