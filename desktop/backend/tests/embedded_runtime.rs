@@ -135,11 +135,13 @@ fn desktop_host(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHost {
                 max_output_tokens: Some(16),
                 deadline_budget_ms: Some(2_000),
             },
+            public_activity_catalogue: None,
         },
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
             event_poll_interval_ms: 10,
+            activity: None,
         },
         execution_policy: LocalExecutionPolicy {
             model_target_id: "desktop-target".into(),

@@ -81,11 +81,13 @@ async fn loopback_host_to_protocol_flow_commits_terminal() {
                 max_output_tokens: Some(10),
                 deadline_budget_ms: Some(5_000),
             },
+            public_activity_catalogue: None,
         },
         LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
             event_poll_interval_ms: 10,
+            activity: None,
         },
         Arc::new(Clock),
         dispatcher,

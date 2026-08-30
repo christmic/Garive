@@ -48,6 +48,7 @@ pub(crate) fn project_fact(fact: &DurableFact) -> Result<Option<LiveHostEvent>, 
             .map_or_else(String::new, |value| value.as_str().to_owned()),
         execution_id,
         text,
+        activity: None,
     }))
 }
 
