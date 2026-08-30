@@ -78,8 +78,9 @@ pub use effect_batch_runtime::{
 };
 pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
 pub use live_host::{
-    ActivityProjectionLimits, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
-    HostActivity, HostClock, HostContinuationInput, HostEventPage, InstalledActivityCatalogue,
+    ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
+    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostActivity, HostClock,
+    HostContinuationInput, HostEventPage, HostReadLimits, InstalledActivityCatalogue,
     InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostEvent,
     LiveHostLimits, LiveHostServer, LiveHostServerError, SessionSummary, TurnCommandResponse,
     TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,

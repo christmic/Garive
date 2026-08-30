@@ -72,6 +72,78 @@ pub struct LiveHostLimits {
     pub activity: Option<ActivityProjectionLimits>,
 }
 
+/// Independent bounds for client-safe Host read projections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HostReadLimits {
+    /// Maximum installed definitions in one response.
+    pub max_definitions: usize,
+    /// Maximum Sessions in one page.
+    pub max_sessions: usize,
+    /// Maximum complete Turns in one timeline page.
+    pub max_timeline_items: usize,
+    /// Maximum durable facts scanned for one projection.
+    pub max_facts: usize,
+    /// Maximum encoded JSON response bytes.
+    pub max_response_bytes: usize,
+    /// Maximum projected user input bytes per Turn.
+    pub max_user_text_bytes: usize,
+    /// Maximum projected completion bytes per Turn.
+    pub max_completion_bytes: usize,
+    /// Maximum public suspension prompt or schema bytes.
+    pub max_prompt_bytes: usize,
+    /// Maximum decoded or encoded Session cursor bytes.
+    pub max_cursor_bytes: usize,
+}
+
+impl HostReadLimits {
+    /// Product-safe local defaults used by compatibility construction.
+    pub const PRODUCT_DEFAULT: Self = Self {
+        max_definitions: 64,
+        max_sessions: 100,
+        max_timeline_items: 100,
+        max_facts: 8_192,
+        max_response_bytes: 2 * 1_024 * 1_024,
+        max_user_text_bytes: 64 * 1_024,
+        max_completion_bytes: 1_024 * 1_024,
+        max_prompt_bytes: 64 * 1_024,
+        max_cursor_bytes: 2_048,
+    };
+
+    pub(crate) fn valid(self) -> bool {
+        self.max_definitions > 0
+            && self.max_sessions > 0
+            && self.max_timeline_items > 0
+            && self.max_facts > 0
+            && self.max_response_bytes > 0
+            && self.max_user_text_bytes > 0
+            && self.max_completion_bytes > 0
+            && self.max_prompt_bytes > 0
+            && self.max_cursor_bytes > 0
+    }
+}
+
+/// One installed Agent definition safe for client discovery.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionSummaryV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Immutable Agent definition identity.
+    pub definition_id: String,
+    /// Immutable Agent definition revision.
+    pub definition_revision: String,
+    /// Sorted stable public capability names.
+    pub capabilities: Vec<String>,
+}
+
+/// Bounded installed Agent definition result.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionPageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Installed definitions in stable identity order.
+    pub definitions: Vec<AgentDefinitionSummaryV1>,
+}
+
 /// Explicit Runtime clock used to stamp durable Host commands.
 pub trait HostClock: Send + Sync {
     /// Returns one RFC 3339 observation time.
@@ -295,6 +367,8 @@ pub enum LiveHostError {
     PreconditionFailed,
     /// SQLite could not complete a required durable operation.
     DurabilityUnavailable,
+    /// A verified read projection cannot fit configured public bounds.
+    ReadBoundExceeded,
     /// Persisted content failed integrity or exact Host schema validation.
     CorruptState,
 }
@@ -309,6 +383,7 @@ impl LiveHostError {
             Self::ConcurrentModification => "concurrent_modification",
             Self::PreconditionFailed => "precondition_failed",
             Self::DurabilityUnavailable => "durability_unavailable",
+            Self::ReadBoundExceeded => "read_bound_exceeded",
             Self::CorruptState => "corrupt_state",
         }
     }
@@ -322,6 +397,7 @@ impl LiveHostError {
             Self::ConcurrentModification => "the durable Session changed concurrently",
             Self::PreconditionFailed => "the durable lifecycle does not admit this command",
             Self::DurabilityUnavailable => "the durable store is unavailable",
+            Self::ReadBoundExceeded => "the Host read result exceeds configured bounds",
             Self::CorruptState => "the durable Host state failed validation",
         }
     }
@@ -376,6 +452,7 @@ pub(crate) struct LiveHostState {
     pub database_path: PathBuf,
     pub installed: InstalledAgent,
     pub limits: LiveHostLimits,
+    pub read_limits: HostReadLimits,
     pub clock: Arc<dyn HostClock>,
     pub dispatcher: Arc<dyn TurnDispatcher>,
 }

@@ -40,6 +40,7 @@ impl LiveHostServer {
             .map_err(LiveHostServerError::Io)?;
         let local_addr = listener.local_addr().map_err(LiveHostServerError::Io)?;
         let app = Router::new()
+            .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
             .route("/v1/turns/:operation", post(mutate_turn))
@@ -68,6 +69,10 @@ impl LiveHostServer {
             .await
             .map_err(LiveHostServerError::Io)
     }
+}
+
+async fn agent_definitions(State(host): State<LiveHost>) -> Response {
+    command_response(host.list_agent_definitions())
 }
 
 /// Failure while constructing or serving the local Host listener.
@@ -291,6 +296,7 @@ fn error_response(error: LiveHostError) -> Response {
         }
         LiveHostError::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
         LiveHostError::DurabilityUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        LiveHostError::ReadBoundExceeded => StatusCode::PAYLOAD_TOO_LARGE,
         LiveHostError::CorruptState => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (
