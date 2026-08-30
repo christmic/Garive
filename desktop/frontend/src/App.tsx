@@ -6,7 +6,8 @@ import {
   createWorkSession,
   getArtifactPreview, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
   getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
-  resolveTurnApproval, runAgentTurn, runAgentTurnWithWorkspaceContext, type ArtifactPreview,
+  resolveTurnApproval, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
+  prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
   type WorkspaceAuthorization,
   type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
@@ -460,6 +461,10 @@ function ResultDeliverables({ state }: { state: WorkState }) {
   const [selected, setSelected] = useState<HostArtifact>();
   const [preview, setPreview] = useState<ArtifactPreview>();
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
+  const [exportStates, setExportStates] = useState<Readonly<Record<string,
+    "exporting" | "exported" | "exists" | "unavailable">>>({});
+  const [exportReceipts, setExportReceipts] = useState<Readonly<Record<string,
+    ArtifactExportReceipt>>>({});
   const results = state.messages.filter((message) => message.role === "assistant" && message.text);
   const openPreview = async (artifact: HostArtifact) => {
     setSelected(artifact); setPreview(undefined); setPreviewState("loading");
@@ -469,17 +474,54 @@ function ResultDeliverables({ state }: { state: WorkState }) {
       setPreview(content); setPreviewState("idle");
     } catch { setPreviewState("unavailable"); }
   };
+  const exportCopy = async (artifact: HostArtifact) => {
+    const key = `${artifact.artifact_id}-${artifact.revision}`;
+    setExportStates((current) => ({ ...current, [key]: "exporting" }));
+    try {
+      if (visualTest) {
+        const receipt = { schema_version: 1, artifact_id: artifact.artifact_id,
+          revision: artifact.revision, display_name: "launch-decision-copy.md",
+          byte_size: artifact.byte_size, content_digest: artifact.content_digest,
+          state: "exported" } satisfies ArtifactExportReceipt;
+        setExportReceipts((current) => ({ ...current, [key]: receipt }));
+        setExportStates((current) => ({ ...current, [key]: "exported" }));
+        return;
+      }
+      const target = await prepareArtifactExport(state.sessionId ?? "", artifact);
+      if (!target) {
+        setExportStates((current) => {
+          const next = { ...current }; delete next[key]; return next;
+        });
+        return;
+      }
+      const receipt = await commitArtifactExport(
+        state.sessionId ?? "", artifact, target.export_target_id,
+      );
+      setExportReceipts((current) => ({ ...current, [key]: receipt }));
+      setExportStates((current) => ({ ...current, [key]: "exported" }));
+    } catch (cause) {
+      const exists = String(cause).includes("artifact_export_target_exists");
+      setExportStates((current) => ({ ...current, [key]: exists ? "exists" : "unavailable" }));
+    }
+  };
   if (!results.length && !state.artifacts.length) return <div className="inspector-empty"><Icon name="file" /><h2>No deliverables yet</h2><p>Committed results and created files will appear here.</p></div>;
   return <div className="deliverable-list"><div className="activity-intro"><h2>Deliverables</h2><p>Immutable results committed by the local Runtime.</p></div>
-    {state.artifacts.map((artifact) => <article className="artifact-card" key={`${artifact.artifact_id}-${artifact.revision}`}>
+    {state.artifacts.map((artifact) => { const key = `${artifact.artifact_id}-${artifact.revision}`;
+      const exportState = exportStates[key]; const receipt = exportReceipts[key];
+      return <article className="artifact-card" key={key}>
       <span className="deliverable-icon"><Icon name="file" /></span><div className="artifact-card-body">
         <div className="artifact-title"><strong dir="auto">{artifact.display_name}</strong><span>v{artifact.revision}</span></div>
         <p>{formatBytes(artifact.byte_size)} · {artifact.mime_type} · Committed</p>
-        <div className="artifact-actions"><button type="button" disabled={artifact.preview !== "text"}
-          onClick={() => void openPreview(artifact)}>Preview verified content</button>
+        <div className="artifact-actions"><div><button type="button" disabled={artifact.preview !== "text"}
+          onClick={() => void openPreview(artifact)}>Preview</button><button type="button"
+            disabled={!artifact.exportable || exportState === "exporting"}
+            onClick={() => void exportCopy(artifact)}>{exportState === "exporting" ? "Choosing…" : "Export copy…"}</button></div>
           {artifact.workspace_id && <span><Icon name="shield" />Authorized Workspace</span>}</div>
+        {exportState === "exported" && receipt && <p className="artifact-export-state success" role="status"><Icon name="check" />Exported as {receipt.display_name}</p>}
+        {exportState === "exists" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />Choose a new file name; Garive never overwrites.</p>}
+        {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />Export unavailable. Check Workspace access and try again.</p>}
       </div>
-    </article>)}
+    </article>; })}
     {selected && <section className="artifact-preview" aria-live="polite"><header><div><span>VERIFIED PREVIEW</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label="Close Artifact preview"
       onClick={() => { setSelected(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
       {previewState === "loading" ? <div className="preview-state"><span className="spinner" />Verifying committed bytes…</div>

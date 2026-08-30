@@ -207,10 +207,15 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .artifact-title > span { flex: 0 0 auto; padding: 1px 5px; border-radius: 999px; color: var(--muted); background: rgba(45,43,35,.06); font-size: 8px; }
 .artifact-card p { margin: 4px 0 8px; color: var(--muted); font-size: 9.5px; }
 .artifact-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.artifact-actions > div { display: flex; align-items: center; gap: 10px; }
 .artifact-actions button { padding: 0; border: 0; color: var(--accent); background: transparent; font-size: 10px; }
 .artifact-actions button:disabled { color: var(--subtle); }
 .artifact-actions span { display: inline-flex; align-items: center; gap: 3px; color: var(--green); font-size: 8.5px; white-space: nowrap; }
 .artifact-actions svg { width: 11px; }
+.artifact-export-state { display: flex; align-items: flex-start; gap: 4px; margin: 9px 0 0 !important; padding: 6px 8px; border-radius: 7px; font-size: 9px !important; }
+.artifact-export-state svg { width: 11px; height: 11px; margin-top: 1px; }
+.artifact-export-state.success { color: var(--green); background: rgba(39,130,90,.08); }
+.artifact-export-state.error { color: var(--red); background: rgba(183,71,62,.08); }
 .artifact-preview { margin: 14px 0 7px; overflow: hidden; border: 1px solid rgba(49,95,207,.19); border-radius: 12px; background: rgba(255,255,255,.62); box-shadow: 0 8px 28px rgba(42,39,28,.05); }
 .artifact-preview > header { display: flex; justify-content: space-between; align-items: center; min-height: 51px; padding: 8px 9px 8px 12px; border-bottom: 1px solid var(--line); }
 .artifact-preview > header span, .artifact-preview > header strong { display: block; }
@@ -429,4 +434,6 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
   .artifact-preview { background: #232522; }
   .artifact-preview pre { background: #1d2228; }
   .artifact-actions span, .artifact-preview > footer { color: #7ed0a8; }
+  .artifact-export-state.success { color: #7ed0a8; }
+  .artifact-export-state.error { color: #f0aaa4; }
 }
