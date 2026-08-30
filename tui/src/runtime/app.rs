@@ -6,6 +6,7 @@ use garive_host_client::{
     ClientLimits, HostClientErrorCode, HostEvent, LiveHostClient, TurnTimelineItem,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use serde_json::json;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
@@ -264,6 +265,7 @@ pub(super) struct RuntimeState {
     pub(super) preferences: Preferences,
     pub(super) pending: Option<PendingCommand>,
     pub(super) ephemeral_confirmed: bool,
+    pub(super) queued_prompt: Option<String>,
 }
 
 struct RestoredState {
@@ -309,6 +311,7 @@ impl RuntimeState {
             preferences: restored.preferences,
             pending: restored.pending,
             ephemeral_confirmed: false,
+            queued_prompt: None,
         }
     }
 
@@ -546,8 +549,35 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
         HostMessage::SnapshotLoaded { .. } => {}
         HostMessage::SessionCreated(response) => {
             state.finish_pending("");
-            state.model.composer.clear();
-            state.load(response.session_id);
+            let session_id = response.session_id;
+            state.load(session_id.clone());
+            if let Some(text) = state.queued_prompt.take() {
+                let command_id = state.command_id("turn");
+                let pending = PendingCommand {
+                    schema_version: 1,
+                    command_id: command_id.clone(),
+                    kind: PendingKind::StartTurn,
+                    session_id: Some(session_id.clone()),
+                    turn_id: None,
+                    suspension_id: None,
+                    expected_session_version: None,
+                    requested_through_position: None,
+                    request_payload: json!({"text": text}),
+                    request_digest: String::new(),
+                    created_at: now(),
+                };
+                if state.admit_pending(pending) {
+                    host::start_turn(
+                        state.client.clone(),
+                        command_id,
+                        session_id,
+                        text,
+                        state.sender.clone(),
+                    );
+                }
+            } else {
+                state.model.composer.clear();
+            }
             host::bootstrap(state.client.clone(), state.sender.clone());
         }
         HostMessage::TurnAccepted {

@@ -25,6 +25,10 @@ uuid.workspace = true
 fs2 = "0.4.3"
 
 [dev-dependencies]
+garive-core = { path = "../engine/core" }
+garive-ledger = { path = "../engine/ledger" }
+garive-llm = { path = "../engine/llm" }
+garive-runtime = { path = "../runtime/replica" }
 tempfile = "3.23"
 
 [[bin]]

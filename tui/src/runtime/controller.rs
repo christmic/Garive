@@ -111,7 +111,9 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     }
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
-            KeyCode::Char('n') => create_session(state),
+            KeyCode::Char('n') => {
+                create_session(state);
+            }
             KeyCode::Char('s') => state.dispatch(AppAction::OverlayOpened(Overlay::SessionPicker)),
             KeyCode::Char('p') => state.dispatch(AppAction::OverlayOpened(Overlay::CommandPalette)),
             KeyCode::Char('r') => state.dispatch(AppAction::OverlayOpened(Overlay::PromptHistory)),
@@ -225,16 +227,16 @@ fn matching_sessions(state: &RuntimeState) -> Vec<String> {
         .collect()
 }
 
-fn create_session(state: &mut RuntimeState) {
-    create_session_with(state, None);
+fn create_session(state: &mut RuntimeState) -> bool {
+    create_session_with(state, None)
 }
 
-fn create_session_with(state: &mut RuntimeState, requested: Option<String>) {
+fn create_session_with(state: &mut RuntimeState, requested: Option<String>) -> bool {
     if requested.is_none() && state.config.definition.is_none() && state.model.definitions.len() > 1
     {
         state.model.notice = Some("Choose an Agent with /new <definition-id>.".into());
         state.model.overlay = Some(Overlay::ErrorDetails);
-        return;
+        return false;
     }
     let definition = requested
         .or_else(|| state.config.definition.clone())
@@ -255,7 +257,7 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) {
         {
             state.model.notice = Some("That Agent definition is not installed.".into());
             state.model.overlay = Some(Overlay::ErrorDetails);
-            return;
+            return false;
         }
         if !admit(
             state,
@@ -268,9 +270,14 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) {
             None,
             json!({"agent_definition_id": definition}),
         ) {
-            return;
+            return false;
         }
         host::create_session(state.client.clone(), id, definition, state.sender.clone());
+        true
+    } else {
+        state.model.notice = Some("No Agent definition is installed yet.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        false
     }
 }
 
@@ -293,7 +300,10 @@ fn submit(state: &mut RuntimeState) {
         CommandParse::NotCommand => {}
     }
     if state.model.selected_session.is_none() {
-        create_session(state);
+        state.queued_prompt = Some(text);
+        if !create_session(state) {
+            state.queued_prompt = None;
+        }
         return;
     }
     let session = state.model.selected_session.clone().unwrap_or_default();
@@ -389,7 +399,9 @@ fn submit(state: &mut RuntimeState) {
 
 fn execute_command(command: Command, state: &mut RuntimeState) {
     match command {
-        Command::New { definition } => create_session_with(state, definition),
+        Command::New { definition } => {
+            create_session_with(state, definition);
+        }
         Command::Sessions { filter } => {
             state.model.session_filter = filter.unwrap_or_default();
             state.model.session_selection = 0;
