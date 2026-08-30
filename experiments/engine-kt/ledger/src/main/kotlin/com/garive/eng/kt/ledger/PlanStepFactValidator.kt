@@ -44,7 +44,8 @@ private fun JsonObject.claimExpired() {
 private fun JsonObject.started() {
     planMutation(
         setOf(
-            "step_id", "step_digest", "claim_id", "lease_epoch", "attempt_id", "execution_id",
+            "step_id", "step_digest", "claim_id", "lease_epoch", "clock_revision", "observed_at_tick",
+            "attempt_id", "execution_id",
             "execution_snapshot_digest", "sandbox_profile_digest", "safety_decision_id",
         ),
     )
@@ -52,6 +53,8 @@ private fun JsonObject.started() {
     digest("step_digest")
     nonEmpty("claim_id")
     ulong("lease_epoch", true)
+    nonEmpty("clock_revision")
+    ulong("observed_at_tick")
     nonEmpty("attempt_id")
     nonEmpty("execution_id")
     digest("execution_snapshot_digest")

@@ -78,6 +78,8 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "step_digest",
             "claim_id",
             "lease_epoch",
+            "clock_revision",
+            "observed_at_tick",
             "attempt_id",
             "execution_id",
             "execution_snapshot_digest",
@@ -90,6 +92,8 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
     digest(value, "step_digest")?;
     non_empty(value, "claim_id")?;
     unsigned(value, "lease_epoch", true)?;
+    non_empty(value, "clock_revision")?;
+    unsigned(value, "observed_at_tick", false)?;
     non_empty(value, "attempt_id")?;
     non_empty(value, "execution_id")?;
     digest(value, "execution_snapshot_digest")?;

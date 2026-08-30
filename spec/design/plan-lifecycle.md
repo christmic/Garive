@@ -193,7 +193,7 @@ the Plan mutation and any corresponding C6 posture atomically.
 | `plan.superseded` | old/new state versions, replacement Plan/revision/digest and canonical unresolved-work binding |
 | `plan.step.claimed` | old/new state versions, step/digest, claim, worker, positive lease epoch, monotonic clock revision and `[claimed_at_tick, expires_at_tick)` |
 | `plan.step.claim_expired` | old/new state versions, step/claim/lease epoch and observed monotonic expiry tick |
-| `plan.step.started` | old/new state versions, step/claim/lease epoch, attempt, Kernel Execution/snapshot, Prepared-v3 Sandbox profile and Safety decision bindings |
+| `plan.step.started` | old/new state versions, step/claim/lease epoch, same monotonic clock revision plus pre-expiry observed tick, attempt, Kernel Execution/snapshot, Prepared-v3 Sandbox profile and Safety decision bindings |
 | `plan.step.completed` | old/new state versions, step/attempt/Execution, result digest and canonical step/criterion evidence bindings |
 | `plan.step.failed` | old/new state versions, step/attempt/Execution, stable reason, optional evidence and closed retry posture |
 | `plan.step.suspended` | old/new state versions, step/attempt/Execution and typed continuation reference |
