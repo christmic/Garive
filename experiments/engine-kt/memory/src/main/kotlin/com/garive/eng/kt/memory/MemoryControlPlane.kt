@@ -92,6 +92,10 @@ public data class MemoryControlDocument(
         append(content)
     }
 
+    /** Returns the same immutable revision rendered at a later admitted lifecycle state. */
+    public fun withLifecycle(lifecycle: HypothesisState): MemoryControlDocument =
+        copy(lifecycle = lifecycle, eraseRequested = false)
+
     public companion object {
         /** Builds one canonical current document from admitted repository fields. */
         @Suppress("LongParameterList")

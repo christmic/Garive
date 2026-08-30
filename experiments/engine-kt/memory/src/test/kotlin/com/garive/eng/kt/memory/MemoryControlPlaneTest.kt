@@ -32,6 +32,7 @@ class MemoryControlPlaneTest {
             ),
         ).value
         assertEquals(DOCUMENT, built.render())
+        assertEquals(HypothesisState.COLD, built.withLifecycle(HypothesisState.COLD).lifecycle)
         assertEquals(
             MemoryControlError.INVALID_SNAPSHOT,
             assertIs<MemoryControlResult.Failure>(MemoryControlDocument.fromRepositoryRecord(

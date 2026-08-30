@@ -478,6 +478,113 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
 }
 
 #[test]
+fn lifecycle_fact_updates_canonical_current_and_rebuilds_from_the_same_prefix() {
+    let directory = tempdir().unwrap();
+    let session = SessionId::try_from("session").unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("lifecycle.sqlite3")).unwrap();
+    ledger.commit(session.clone(), 0, initial_facts()).unwrap();
+    let evidence_digest = ledger.read_facts(&session, 0, 1, None).unwrap()[0]
+        .payload
+        .sha256()
+        .to_owned();
+    let proposal = proposal(None, "stable preference", &evidence_digest);
+    let classification = MemoryRevisionClassification::new(
+        MemoryKind::Preference,
+        MemoryAuthorityBinding::new(MemoryAuthority::AgentLearned, None).unwrap(),
+        MemoryRevisionScope::new(MemoryScopeClass::Session, "session", None).unwrap(),
+        HypothesisState::Candidate,
+        "classification-v1",
+        &classification_registry(),
+    )
+    .unwrap();
+    let planned = plan_classified_memory_write(
+        &context(3),
+        &MemoryState::default(),
+        &proposal,
+        commit("record", "revision-1", 5, None),
+        &session,
+        "classification",
+        &classification,
+    )
+    .unwrap();
+    ledger
+        .commit_classified_memory_write(
+            session.clone(),
+            1,
+            planned,
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    let mut lifecycle = draft("lifecycle", "memory.lifecycle_transitioned", None, None);
+    lifecycle.payload = CanonicalPayload::from_value(&json!({
+        "transition_id": "transition-lifecycle",
+        "namespace_id": "namespace",
+        "record_id": "record",
+        "revision_id": "revision-1",
+        "from_state": "candidate",
+        "to_state": "active",
+        "verified": 1,
+        "falsified": 0,
+        "neutral": 0,
+        "last_observed_position": 7,
+        "cause_kind": "maintenance",
+        "cause_id": "policy-lifecycle-v1"
+    }))
+    .unwrap();
+    let transitioned = ledger
+        .commit_memory_lifecycle_transition(
+            session.clone(),
+            2,
+            vec![lifecycle.clone()],
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(transitioned.ledger.positions, vec![7]);
+    assert_eq!(transitioned.committed_repository_revision, 2);
+    let grant = MemoryControlGrant::new(
+        "namespace",
+        [MemoryControlAction::Export],
+        [MemoryAuthorizedScope {
+            scope: MemoryScopeClass::Session,
+            owner_id: "session".into(),
+        }],
+    )
+    .unwrap();
+    let projection = ledger
+        .read_memory_control_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(projection.documents[0].lifecycle(), HypothesisState::Active);
+    assert_eq!(projection.repository_revision, 2);
+    assert_eq!(
+        reconstruct_memory_repository_projection(
+            &ledger,
+            &[MemoryPrefix {
+                session_id: session.clone(),
+                through_position: 7,
+            }],
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap(),
+        projection,
+    );
+    let replay = ledger
+        .commit_memory_lifecycle_transition(
+            session,
+            2,
+            vec![lifecycle],
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(replay.ledger.disposition, CommitDisposition::Replayed);
+    assert_eq!(replay.committed_repository_revision, 2);
+}
+
+#[test]
 fn sqlite_write_batches_are_atomic_replayable_and_restart_safe() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("memory.sqlite3");

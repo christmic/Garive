@@ -27,6 +27,7 @@ pub fn reconstruct_memory_repository_projection(
         FactKind::new("memory.committed").unwrap(),
         FactKind::new("memory.revision_classified").unwrap(),
         FactKind::new("memory.tombstoned").unwrap(),
+        FactKind::new("memory.lifecycle_transitioned").unwrap(),
     ]);
     let mut commits = BTreeMap::new();
     let mut classifications = BTreeMap::new();
@@ -41,7 +42,10 @@ pub fn reconstruct_memory_repository_projection(
             if text(&value, "namespace_id")? != namespace_id {
                 continue;
             }
-            if fact.kind.as_str() == "memory.tombstoned" {
+            if matches!(
+                fact.kind.as_str(),
+                "memory.tombstoned" | "memory.lifecycle_transitioned"
+            ) {
                 transition_count = transition_count
                     .checked_add(1)
                     .ok_or(MemoryErrorCode::CorruptMemoryState)?;

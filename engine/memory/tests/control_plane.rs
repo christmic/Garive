@@ -63,6 +63,10 @@ fn repository_fields_build_the_same_canonical_document() {
     .unwrap();
     assert_eq!(built.render(), DOCUMENT);
     assert_eq!(
+        built.with_lifecycle(HypothesisState::Cold).lifecycle(),
+        HypothesisState::Cold,
+    );
+    assert_eq!(
         garive_memory::MemoryControlDocument::from_repository_record(
             "mem-01",
             "rev-04",

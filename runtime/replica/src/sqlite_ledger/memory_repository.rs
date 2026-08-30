@@ -168,6 +168,92 @@ pub(super) fn apply_tombstone(
     Ok((previous, committed))
 }
 
+pub(super) fn apply_lifecycle(
+    transaction: &Transaction<'_>,
+    result: &CommitResult,
+    drafts: &[FactDraft],
+    limits: MemoryDocumentLimits,
+) -> Result<(u64, u64), MemoryControlRuntimeError> {
+    let transitions = drafts
+        .iter()
+        .filter(|draft| draft.kind.as_str() == "memory.lifecycle_transitioned")
+        .collect::<Vec<_>>();
+    if transitions.len() != 1 || result.positions.len() != drafts.len() {
+        return Err(MemoryControlRuntimeError::InvalidSnapshot);
+    }
+    let draft = transitions[0];
+    let value: Value = serde_json::from_str(draft.payload.as_json())
+        .map_err(|_| MemoryControlRuntimeError::InvalidSnapshot)?;
+    let namespace = text(&value, "namespace_id")?;
+    let record = text(&value, "record_id")?;
+    let revision = text(&value, "revision_id")?;
+    let from = text(&value, "from_state")?;
+    let to = text(&value, "to_state")?;
+    let lifecycle = lifecycle(to)?;
+    if from == to {
+        return Err(MemoryControlRuntimeError::InvalidSnapshot);
+    }
+    if result.disposition == CommitDisposition::Replayed {
+        let stored = transaction.query_row(
+            "SELECT payload_digest,repository_revision FROM memory_repository_transitions WHERE namespace_id=?1 AND fact_id=?2 AND transition_kind='lifecycle'",
+            params![namespace,draft.fact_id.as_str()],
+            |row| Ok((row.get::<_,String>(0)?,decode(row.get::<_,Vec<u8>>(1)?)?)),
+        ).optional().map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        return match stored {
+            Some((digest, committed)) if digest == draft.payload.sha256() && committed > 0 => {
+                Ok((committed - 1, committed))
+            }
+            _ => Err(MemoryControlRuntimeError::PersistenceFailed),
+        };
+    }
+    let (previous, mode) = transaction
+        .query_row(
+            "SELECT repository_revision,source_mode FROM memory_namespaces WHERE namespace_id=?1",
+            [namespace],
+            |row| Ok((decode(row.get::<_, Vec<u8>>(0)?)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    if mode != "fact_backed" {
+        return Err(MemoryControlRuntimeError::InvalidSnapshot);
+    }
+    let current = transaction.query_row(
+        "SELECT revision_id,lifecycle,document_markdown FROM memory_control_current WHERE namespace_id=?1 AND record_id=?2",
+        params![namespace,record],
+        |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?)),
+    ).optional().map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    let Some((current_revision, current_lifecycle, markdown)) = current else {
+        return Err(MemoryControlRuntimeError::StaleSnapshot);
+    };
+    if current_revision != revision || current_lifecycle != from {
+        return Err(MemoryControlRuntimeError::StaleSnapshot);
+    }
+    let document = garive_memory::parse_memory_document(markdown.as_bytes(), limits)
+        .map_err(MemoryControlRuntimeError::from)?
+        .with_lifecycle(lifecycle);
+    let committed = previous
+        .checked_add(1)
+        .ok_or(MemoryControlRuntimeError::StaleSnapshot)?;
+    let updated = transaction.execute(
+        "UPDATE memory_control_current SET lifecycle=?1,document_markdown=?2,document_digest=?3,updated_sequence=?4 WHERE namespace_id=?5 AND record_id=?6 AND revision_id=?7 AND lifecycle=?8",
+        params![to,document.render(),document.document_digest(),encode_u64(committed),namespace,record,revision,from],
+    ).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    if updated != 1 {
+        return Err(MemoryControlRuntimeError::StaleSnapshot);
+    }
+    transaction.execute(
+        "INSERT INTO memory_repository_transitions(namespace_id,record_id,revision_id,transition_kind,fact_id,payload_digest,repository_revision) VALUES (?1,?2,?3,'lifecycle',?4,?5,?6)",
+        params![namespace,record,revision,draft.fact_id.as_str(),draft.payload.sha256(),encode_u64(committed)],
+    ).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    let advanced = transaction.execute(
+        "UPDATE memory_namespaces SET repository_revision=?1 WHERE namespace_id=?2 AND repository_revision=?3 AND source_mode='fact_backed'",
+        params![encode_u64(committed),namespace,encode_u64(previous)],
+    ).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    if advanced != 1 {
+        return Err(MemoryControlRuntimeError::StaleSnapshot);
+    }
+    Ok((previous, committed))
+}
+
 fn replay(
     transaction: &Transaction<'_>,
     revision: &FactBackedRevision,
@@ -319,6 +405,9 @@ fn lifecycle(value: &str) -> Result<HypothesisState, MemoryControlRuntimeError> 
     match value {
         "candidate" => Ok(HypothesisState::Candidate),
         "active" => Ok(HypothesisState::Active),
+        "cold" => Ok(HypothesisState::Cold),
+        "archived" => Ok(HypothesisState::Archived),
+        "promoted" => Ok(HypothesisState::Promoted),
         _ => Err(MemoryControlRuntimeError::InvalidSnapshot),
     }
 }

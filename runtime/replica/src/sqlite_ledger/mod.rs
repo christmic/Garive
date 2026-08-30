@@ -264,6 +264,41 @@ impl SqliteLedger {
         })
     }
 
+    /// Atomically commits one lifecycle fact batch and updates the same canonical current row.
+    pub fn commit_memory_lifecycle_transition(
+        &mut self,
+        session_id: SessionId,
+        expected_session_version: u64,
+        facts: Vec<FactDraft>,
+        limits: garive_memory::MemoryDocumentLimits,
+    ) -> Result<crate::MemoryRepositoryCommitResult, MemoryRepositoryCommitError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryCommitError::Ledger)?;
+        let result = commit_transaction(
+            &transaction,
+            session_id,
+            expected_session_version,
+            facts.clone(),
+        )
+        .map_err(MemoryRepositoryCommitError::Ledger)?;
+        let (previous_repository_revision, committed_repository_revision) =
+            memory_repository::apply_lifecycle(&transaction, &result, &facts, limits)
+                .map_err(crate::MemoryRepositoryError::from)
+                .map_err(MemoryRepositoryCommitError::Repository)?;
+        transaction
+            .commit()
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryCommitError::Ledger)?;
+        Ok(crate::MemoryRepositoryCommitResult {
+            ledger: result,
+            previous_repository_revision,
+            committed_repository_revision,
+        })
+    }
+
     /// Acquires or renews one latest-active Execution lease transactionally.
     pub fn acquire_execution_lease(
         &mut self,

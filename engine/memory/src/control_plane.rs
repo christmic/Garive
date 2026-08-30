@@ -289,6 +289,14 @@ impl MemoryControlDocument {
         bound.erase = false;
         Ok(bound)
     }
+
+    /// Returns the same immutable revision rendered at a later admitted lifecycle state.
+    pub fn with_lifecycle(&self, lifecycle: HypothesisState) -> Self {
+        let mut updated = self.clone();
+        updated.lifecycle = lifecycle;
+        updated.erase = false;
+        updated
+    }
 }
 
 /// Parses strict M2 front matter and normalizes CRLF/content termination.
