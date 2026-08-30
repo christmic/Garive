@@ -280,6 +280,16 @@ exact macOS package, Runtime/file-SQLite/PTTY, Clippy, release, and six-PTY
 timings are pinned in the evidence document. Physical Terminal/iTerm2-class
 screenshots remain an open native gate.
 
+TUI merge revision `6f5f43c7`, verified in integrated macOS candidate
+`9a96a8d5`, covers the shared rich-Markdown presentation component and all 124
+listed TUI cases. Exact unit evidence binds nested-style restoration, heading
+scope, preserved ordered indices, sanitized bounded link targets, semantic
+fenced-code framing/language, tab expansion, grapheme-safe CJK clipping, and
+terminal-control rejection. Dark, light, and monochrome style-run snapshots
+record both content and semantic Ratatui style, rather than text symbols alone.
+The complete package, six shipping PTYs, production Runtime/file-SQLite/PTTY,
+strict Clippy, and release timings are pinned in the evidence document.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the
