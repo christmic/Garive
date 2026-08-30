@@ -174,6 +174,12 @@ pub(crate) fn composer_vertical_target(model: &AppModel, direction: i8) -> (usiz
     composer::vertical_target(&model.composer, area.width.saturating_sub(4), direction)
 }
 
+pub(crate) fn composer_line_edge_target(model: &AppModel, direction: i8) -> usize {
+    let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let area = content_rows(model, main_content_area(full))[1];
+    composer::line_edge_target(&model.composer, area.width.saturating_sub(4), direction)
+}
+
 fn render_header(
     model: &AppModel,
     theme: Theme,

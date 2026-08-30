@@ -274,6 +274,45 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
 }
 
 #[test]
+fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("composer-visual-end.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 16 columns 20; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            send "hello wonderful world"
+            after 100
+            send "\033\[A"
+            send "\033\[F"
+            send "X"
+            expect "wonderfulX"
+            send "\021"
+            expect "Garive?"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("hello wonderful"));
+    assert!(text.contains("wonderfulX"));
+    assert!(text.contains("\x1b[?1049l"));
+}
+
+#[test]
 fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
     let (address, server) = empty_host();
     let temporary = tempfile::tempdir().unwrap();

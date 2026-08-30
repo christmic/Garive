@@ -331,14 +331,14 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
                 key.modifiers.contains(KeyModifiers::SHIFT),
             );
         }
-        KeyCode::Home => state
-            .model
-            .composer
-            .move_line_start(key.modifiers.contains(KeyModifiers::SHIFT)),
-        KeyCode::End if !key.modifiers.contains(KeyModifiers::CONTROL) => state
-            .model
-            .composer
-            .move_line_end(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Home | KeyCode::End => {
+            let direction = if key.code == KeyCode::Home { -1 } else { 1 };
+            let target = crate::view::composer_line_edge_target(&state.model, direction);
+            state
+                .model
+                .composer
+                .place_cursor(target, key.modifiers.contains(KeyModifiers::SHIFT));
+        }
         KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
             let _ = state.model.composer.insert("\n");
         }

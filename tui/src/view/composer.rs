@@ -256,6 +256,27 @@ impl EditorLayout {
         (target, preferred)
     }
 
+    fn line_edge_target(&self, origin: usize, direction: i8) -> usize {
+        let (_, row) = self.position_for(origin);
+        let Some(line) = self.rows.get(usize::from(row)) else {
+            return self.rows.last().map_or(0, |line| line.end);
+        };
+        if direction < 0 {
+            return line.start;
+        }
+        if self
+            .rows
+            .get(usize::from(row).saturating_add(1))
+            .is_some_and(|next| next.start == line.end)
+        {
+            line.tokens
+                .last()
+                .map_or(line.start, |token| token.grapheme)
+        } else {
+            line.end
+        }
+    }
+
     fn visual_row_count(&self) -> u16 {
         let rows = u16::try_from(self.rows.len()).unwrap_or(u16::MAX);
         let continuation = self.rows.last().is_some_and(|row| {
@@ -293,6 +314,11 @@ impl EditorLayout {
 pub(super) fn vertical_target(editor: &EditorState, width: u16, direction: i8) -> (usize, usize) {
     let (origin, preferred) = editor.visual_vertical_state(direction);
     EditorLayout::new(editor, width.max(1)).vertical_target(origin, preferred, direction)
+}
+
+pub(super) fn line_edge_target(editor: &EditorState, width: u16, direction: i8) -> usize {
+    let origin = editor.visual_directional_origin(direction);
+    EditorLayout::new(editor, width.max(1)).line_edge_target(origin, direction)
 }
 
 fn wrap_logical_line(
@@ -466,5 +492,25 @@ mod tests {
         editor.apply_visual_vertical_move(target, preferred, -1, false);
         let (target, preferred) = vertical_target(&editor, 5, 1);
         assert_eq!((target, preferred), (5, 0));
+    }
+
+    #[test]
+    fn visual_line_edges_follow_soft_wraps_and_exact_width_continuation() {
+        let mut editor = EditorState::new(128);
+        editor.replace("hello world").unwrap();
+        editor.move_document_start(false);
+        assert_eq!(line_edge_target(&editor, 8, 1), 5);
+        editor.place_cursor(8, false);
+        assert_eq!(line_edge_target(&editor, 8, -1), 6);
+        assert_eq!(line_edge_target(&editor, 8, 1), 11);
+        editor.move_document_end(false);
+        editor.move_left(true);
+        editor.move_left(true);
+        assert_eq!(line_edge_target(&editor, 8, -1), 6);
+        assert_eq!(line_edge_target(&editor, 8, 1), 11);
+
+        editor.replace("12345").unwrap();
+        assert_eq!(line_edge_target(&editor, 5, -1), 5);
+        assert_eq!(line_edge_target(&editor, 5, 1), 5);
     }
 }

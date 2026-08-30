@@ -66,18 +66,28 @@ impl EditorState {
     }
 
     pub(crate) fn visual_vertical_state(&self, direction: i8) -> (usize, Option<usize>) {
+        (
+            self.visual_directional_origin(direction),
+            if self.has_selection() {
+                None
+            } else {
+                self.preferred_display_column
+            },
+        )
+    }
+
+    pub(crate) fn visual_directional_origin(&self, direction: i8) -> usize {
         let Some(anchor) = self
             .selection_anchor
             .filter(|anchor| *anchor != self.cursor_grapheme)
         else {
-            return (self.cursor_grapheme, self.preferred_display_column);
+            return self.cursor_grapheme;
         };
-        let edge = if direction < 0 {
+        if direction < 0 {
             anchor.min(self.cursor_grapheme)
         } else {
             anchor.max(self.cursor_grapheme)
-        };
-        (edge, None)
+        }
     }
 
     pub(crate) fn apply_visual_vertical_move(
@@ -163,30 +173,6 @@ impl EditorState {
         }
         self.prepare_selection(selecting);
         self.cursor_grapheme = (self.cursor_grapheme + 1).min(self.grapheme_len());
-        self.preferred_display_column = None;
-    }
-
-    pub(crate) fn move_line_start(&mut self, selecting: bool) {
-        if !selecting {
-            self.collapse_selection(SelectionEdge::Start);
-        }
-        self.prepare_selection(selecting);
-        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
-        let start = self.text[..byte].rfind('\n').map_or(0, |value| value + 1);
-        self.cursor_grapheme = self.text[..start].graphemes(true).count();
-        self.preferred_display_column = None;
-    }
-
-    pub(crate) fn move_line_end(&mut self, selecting: bool) {
-        if !selecting {
-            self.collapse_selection(SelectionEdge::End);
-        }
-        self.prepare_selection(selecting);
-        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
-        let end = self.text[byte..]
-            .find('\n')
-            .map_or(self.text.len(), |value| byte + value);
-        self.cursor_grapheme = self.text[..end].graphemes(true).count();
         self.preferred_display_column = None;
     }
 

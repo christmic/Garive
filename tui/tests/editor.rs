@@ -140,13 +140,9 @@ fn word_deletion_document_motion_and_tab_expansion_are_grapheme_safe() {
 }
 
 #[test]
-fn logical_line_and_word_navigation_preserve_grapheme_boundaries() {
+fn word_navigation_preserves_grapheme_boundaries() {
     let mut editor = EditorState::new(100);
     editor.insert("ab 界\nx\nhello world").unwrap();
-    editor.move_line_start(false);
-    assert_eq!(editor.cursor_grapheme(), 7);
-    editor.move_line_end(false);
-    assert_eq!(editor.cursor_grapheme(), 18);
     editor.move_word_left(false);
     assert_eq!(editor.cursor_grapheme(), 13);
     editor.move_word_left(false);
