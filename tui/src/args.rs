@@ -79,6 +79,20 @@ pub enum LaunchParseError {
     InvalidArguments,
 }
 
+pub(crate) fn apply_terminal_environment(
+    config: &mut LaunchConfig,
+    term: Option<&str>,
+    no_color: bool,
+) {
+    if !config.theme_explicit && no_color {
+        config.theme = Theme::Mono;
+    }
+    if term.is_some_and(|value| value.eq_ignore_ascii_case("dumb")) {
+        config.screen_reader = true;
+        config.mouse = MouseMode::Off;
+    }
+}
+
 impl std::fmt::Display for LaunchParseError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -156,4 +170,31 @@ struct RawArgs {
     ephemeral: bool,
     #[arg(long)]
     no_prompt_history: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_environment_selects_accessible_fallbacks_without_overriding_cli_theme() {
+        let mut config =
+            parse_launch_config(["garive-tui", "--host", "http://127.0.0.1:4317/"]).unwrap();
+        apply_terminal_environment(&mut config, Some("dumb"), true);
+        assert_eq!(config.theme, Theme::Mono);
+        assert!(config.screen_reader);
+        assert_eq!(config.mouse, MouseMode::Off);
+
+        let mut explicit = parse_launch_config([
+            "garive-tui",
+            "--host",
+            "http://127.0.0.1:4317/",
+            "--theme",
+            "light",
+        ])
+        .unwrap();
+        apply_terminal_environment(&mut explicit, Some("xterm-256color"), true);
+        assert_eq!(explicit.theme, Theme::Light);
+        assert!(!explicit.screen_reader);
+    }
 }

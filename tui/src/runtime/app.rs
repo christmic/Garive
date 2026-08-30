@@ -63,6 +63,11 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if !config.reduced_motion_explicit {
         config.reduced_motion = preferences.reduced_motion;
     }
+    crate::args::apply_terminal_environment(
+        &mut config,
+        std::env::var("TERM").ok().as_deref(),
+        std::env::var_os("NO_COLOR").is_some(),
+    );
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
     let restored = RestoredState {
         store,

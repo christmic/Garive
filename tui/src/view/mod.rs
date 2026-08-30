@@ -126,7 +126,12 @@ fn render_body(
         let horizontal =
             Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)]).split(area);
         render_navigation(model, theme, horizontal[0], buffer);
-        render_conversation(model, theme, horizontal[1], buffer, cache);
+        let conversation = if area.width >= 160 {
+            centered_horizontal(horizontal[1], 114)
+        } else {
+            horizontal[1]
+        };
+        render_conversation(model, theme, conversation, buffer, cache);
     } else {
         render_conversation(model, theme, area, buffer, cache);
     }
@@ -735,6 +740,16 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
         area.y + area.height.saturating_sub(height) / 2,
         width,
         height,
+    )
+}
+
+fn centered_horizontal(area: Rect, width: u16) -> Rect {
+    let width = width.min(area.width);
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.y,
+        width,
+        area.height,
     )
 }
 

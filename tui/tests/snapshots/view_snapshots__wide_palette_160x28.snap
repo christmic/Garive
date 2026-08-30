@@ -1,21 +1,22 @@
 ---
 source: tui/tests/view_snapshots.rs
+assertion_line: 27
 expression: "frame(&wide, Theme::Light, 160, 28)"
 ---
   GARIVE  research-age  /  Session session-alph                                                                                           ● online  ·  running
 
- Sessions 2                      │ Conversation
-                                 │  ╭─ YOU #2
- ▸ New session · 123456          │  │  Summ╭ Command palette ───────────────────────────────────────────────────────╮
-   completed  ·  3 turns         │  ╰─     │                                                                        │
+ Sessions 2                      │       Conversation
+                                 │        ╭─ YOU #2
+ ▸ New session · 123456          │        │╭ Command palette ───────────────────────────────────────────────────────╮
+   completed  ·  3 turns         │        ╰│                                                                        │
                                  │         │  Search: type to search                                                │
-   New session · 987654          │    ◌  ac│  › /new         Create session                                         │
+   New session · 987654          │         │  › /new         Create session                                         │
    running  ·  1 turns           │         │    /sessions    Switch session                                         │
-                                 │  ◆  GARI│    /status      Connection details                                     │
-                                 │     ## R│    /retry       Retry unknown command  · no pending command            │
-                                 │     • Ve│    /reconnect   Resume event stream                                    │
-                                 │     • Sh│    /cancel      Cancel running turn                                    │
-                                 │     carg│    /theme system Follow terminal theme                                 │
+                                 │        ◆│    /status      Connection details                                     │
+                                 │         │    /retry       Retry unknown command  · no pending command            │
+                                 │         │    /reconnect   Resume event stream                                    │
+                                 │         │    /cancel      Cancel running turn                                    │
+                                 │         │    /theme system Follow terminal theme                                 │
                                  │         │    /mouse off   Disable mouse capture next launch                      │
                                  │         │    /copy last   Copy last completion                                   │
                                  │         │    /copy session-id Copy Session ID                                    │
@@ -25,7 +26,7 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                  │         │  ↑/↓ select   Enter run   Esc close                                    │
                                  │         │                                                                        │
                                  │         ╰────────────────────────────────────────────────────────────────────────╯
-                                 │──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                 │      ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Message ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Ask a follow-up…                                                                                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
