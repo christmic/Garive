@@ -177,6 +177,8 @@ Agents 展示服务端已安装的 Agent、用途和可用状态。移动端只�
 当前 Turn 进入终态后，底部输入框可发送新的方向，形成同一 Session 中的新 Turn。运行中的
 Execution 不接受绕过协议的即时文本注入。
 
+![Android 在原 Session 中追加方向](assets/mobile/android-09-steering.png)
+
 ## 9. 审批与输入
 
 ![Android 审批](assets/mobile/android-06-approval.png)
@@ -268,4 +270,3 @@ decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部�
 - [`../../spec/design/mobile-remote-work-client.md`](../../spec/design/mobile-remote-work-client.md)
 - [`../../spec/design/mobile-gateway-v1.md`](../../spec/design/mobile-gateway-v1.md)
 - [`../architecture/mobile-remote-work.md`](../architecture/mobile-remote-work.md)
-
