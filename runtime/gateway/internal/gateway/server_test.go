@@ -110,6 +110,16 @@ func TestAbsentExpiredAndRevokedGrantsFailClosed(t *testing.T) {
 	assertError(t, serve(expiring, http.MethodGet, "/v1/agent-definitions", "", expiredGrant), http.StatusUnauthorized, "authentication_required")
 }
 
+func TestDeviceCanRevokeItsOwnGrant(t *testing.T) {
+	server := newServer(t, okTransport(), time.Now)
+	grant, _ := pair(t, server)
+	response := serve(server, http.MethodPost, "/v1/mobile/grants/self:revoke", "", grant)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("self revoke status = %d", response.Code)
+	}
+	assertError(t, serve(server, http.MethodGet, "/v1/agent-definitions", "", grant), http.StatusUnauthorized, "authentication_required")
+}
+
 func TestRouteAndMethodAdmission(t *testing.T) {
 	server := newServer(t, okTransport(), time.Now)
 	grant, _ := pair(t, server)

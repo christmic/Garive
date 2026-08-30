@@ -93,6 +93,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/mobile/pair":
 		s.pair(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/mobile/grants/self:revoke":
+		s.revokeSelf(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/mobile/devices/") && strings.HasSuffix(r.URL.Path, ":revoke"):
 		s.revoke(w, r)
 	case admittedRoute.MatchString(r.URL.Path) && admittedMethod(r.Method, r.URL.Path):
@@ -100,6 +102,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "route_not_admitted")
 	}
+}
+
+func (s *Server) revokeSelf(w http.ResponseWriter, r *http.Request) {
+	token, ok := bearer(r.Header.Get("Authorization"))
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication_required")
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value := s.grants[sha256.Sum256([]byte(token))]
+	if value == nil || value.revoked || !s.now().Before(value.expires) {
+		writeError(w, http.StatusUnauthorized, "authentication_required")
+		return
+	}
+	value.revoked = true
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type pairRequest struct {
