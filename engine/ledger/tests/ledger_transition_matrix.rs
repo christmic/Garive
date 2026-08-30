@@ -639,3 +639,133 @@ fn envelope_identity_and_canonical_payload_boundaries_are_typed() {
     invalid.recorded_at = "not-a-time".into();
     assert_eq!(invalid.validate(), Err(LedgerError::InvalidFact));
 }
+
+#[test]
+fn prepared_v3_requires_the_exact_durable_f0_chain_before_start() {
+    let prefix = [
+        fact("open-f0", "session.opened"),
+        fact("turn-f0", "turn.started"),
+        fact("execution-f0", "execution.started"),
+    ];
+    let chain = [
+        f0_fact("prepared-f0", "effect.prepared"),
+        f0_fact("safety-f0", "safety.decided"),
+        f0_fact("authorized-f0", "effect.authorized"),
+        f0_fact("bound-f0", "sandbox.bound"),
+        f0_fact("preflight-f0", "sandbox.preflighted"),
+        f0_fact("started-f0", "effect.started"),
+        f0_fact("failed-f0", "effect.failed"),
+    ];
+    let mut ledger = LedgerState::default();
+    assert!(ledger
+        .commit(
+            SessionId::try_from("f0-valid").unwrap(),
+            0,
+            prefix.clone().into_iter().chain(chain).collect(),
+        )
+        .is_ok());
+
+    for omitted in ["safety.decided", "sandbox.bound", "sandbox.preflighted"] {
+        let mut ledger = LedgerState::default();
+        let facts = prefix
+            .clone()
+            .into_iter()
+            .chain(
+                [
+                    "effect.prepared",
+                    "safety.decided",
+                    "effect.authorized",
+                    "sandbox.bound",
+                    "sandbox.preflighted",
+                    "effect.started",
+                ]
+                .into_iter()
+                .filter(|kind| *kind != omitted)
+                .enumerate()
+                .map(|(index, kind)| f0_fact(&format!("{omitted}-{index}"), kind)),
+            )
+            .collect();
+        assert_eq!(
+            ledger.commit(SessionId::try_from(omitted).unwrap(), 0, facts),
+            Err(LedgerError::InvalidTransition),
+            "{omitted}"
+        );
+    }
+
+    let mut mixed = f0_fact("mixed-preflight", "sandbox.preflighted");
+    let mut payload = serde_json::from_str::<serde_json::Value>(mixed.payload.as_json()).unwrap();
+    payload["decision_id"] = serde_json::json!("different-decision");
+    mixed.payload = CanonicalPayload::from_value(&payload).unwrap();
+    let mut ledger = LedgerState::default();
+    assert_eq!(
+        ledger.commit(
+            SessionId::try_from("f0-mixed").unwrap(),
+            0,
+            prefix
+                .into_iter()
+                .chain([
+                    f0_fact("mixed-prepared", "effect.prepared"),
+                    f0_fact("mixed-safety", "safety.decided"),
+                    f0_fact("mixed-authorized", "effect.authorized"),
+                    f0_fact("mixed-bound", "sandbox.bound"),
+                    mixed,
+                ])
+                .collect(),
+        ),
+        Err(LedgerError::InvalidTransition)
+    );
+}
+
+fn f0_fact(id: &str, kind: &str) -> FactDraft {
+    let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let mut value = fact(id, "effect.prepared");
+    value.kind = FactKind::new(kind).unwrap();
+    value.schema_version = match kind {
+        "effect.prepared" => 3,
+        "effect.authorized" => 2,
+        _ => 1,
+    };
+    value.payload = CanonicalPayload::from_value(&match kind {
+        "effect.prepared" => serde_json::json!({
+            "prepared_contract_version":3,"prepared_digest":empty,"tool_name":"tool",
+            "tool_revision":"revision-v3","replay_class":"read_only","model_call_id":"call",
+            "access_policy_revision":"access-v1","access_resolver_revision":"resolver-v1",
+            "invocation_accesses":{"digest":empty,"inline_utf8":""},"max_result_bytes":512,
+            "sandbox_requirements":{"digest":empty,"inline_utf8":""},
+            "sandbox_requirements_digest":empty
+        }),
+        "safety.decided" => serde_json::json!({
+            "request_id":"request","decision_id":"decision","disposition":"allow",
+            "prepared_digest":empty,"tool_name":"tool","tool_revision":"revision-v3",
+            "actor_authority_reference":"actor","exact_access_digest":empty,
+            "sandbox_requirements_digest":empty,"policy_revision":"policy-v1",
+            "constraints_digest":empty
+        }),
+        "effect.authorized" => serde_json::json!({
+            "prepared_contract_version":3,"prepared_digest":empty,"grant_id":"grant",
+            "authority_revision":"policy-v1","constraints_digest":empty,
+            "granted_requirements":{"digest":empty,"inline_utf8":""}
+        }),
+        "sandbox.bound" => serde_json::json!({
+            "binding_id":"binding","decision_id":"decision","prepared_digest":empty,
+            "workspace_capability_id":"workspace","executor_id":"executor",
+            "executor_revision":"executor-v1","policy_revision":"policy-v1",
+            "access_scope_digest":empty,"enforcement_digest":empty,"effective_limits_digest":empty
+        }),
+        "sandbox.preflighted" => serde_json::json!({
+            "preflight_id":"preflight","binding_id":"binding","decision_id":"decision",
+            "prepared_digest":empty,"grant_id":"grant","executor_id":"executor",
+            "executor_revision":"executor-v1","dispatch_attempt_id":"attempt"
+        }),
+        "effect.started" => serde_json::json!({
+            "prepared_digest":empty,"grant_id":"grant","executor_id":"executor",
+            "executor_revision":"executor-v1","dispatch_attempt_id":"attempt"
+        }),
+        "effect.failed" => serde_json::json!({
+            "prepared_digest":empty,"code":"tool_failure"
+        }),
+        _ => unreachable!(),
+    })
+    .unwrap();
+    value
+}

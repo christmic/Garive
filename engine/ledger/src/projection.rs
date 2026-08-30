@@ -66,6 +66,32 @@ struct EffectBatchRecord {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SafetyDecisionState {
+    Allow,
+    Deny,
+    InteractionRequired,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SandboxProofRecord {
+    binding_id: String,
+    executor_id: String,
+    executor_revision: String,
+    grant_id: Option<String>,
+    dispatch_attempt_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct F0Record {
+    decision_id: String,
+    disposition: SafetyDecisionState,
+    prepared_digest: String,
+    policy_revision: String,
+    constraints_digest: Option<String>,
+    sandbox: Option<SandboxProofRecord>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ScheduleState {
     Active,
     Superseding,
@@ -126,11 +152,15 @@ pub(crate) struct SessionProjection {
     model_digests: BTreeMap<ModelRequestId, String>,
     tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
     tool_digests: BTreeMap<ToolInvocationId, String>,
+    tool_revisions: BTreeMap<ToolInvocationId, (String, String)>,
+    tool_access_digests: BTreeMap<ToolInvocationId, String>,
+    tool_sandbox_digests: BTreeMap<ToolInvocationId, String>,
     artifacts: BTreeSet<(String, u64)>,
     tool_contract_versions: BTreeMap<ToolInvocationId, u32>,
     tool_result_bytes: BTreeMap<ToolInvocationId, u64>,
     tool_batch_plans: BTreeMap<ToolInvocationId, String>,
     effect_batches: BTreeMap<String, EffectBatchRecord>,
+    f0: BTreeMap<ToolInvocationId, F0Record>,
     tool_grants: BTreeMap<ToolInvocationId, String>,
     tool_receipts: BTreeMap<ToolInvocationId, String>,
     tool_executors: BTreeMap<ToolInvocationId, (String, String)>,
@@ -195,7 +225,10 @@ impl SessionProjection {
             "model.unavailable" => self.transition_model(fact, InvocationState::Unavailable),
             "model.uncertain" => self.transition_model(fact, InvocationState::Uncertain),
             "effect.prepared" => self.prepare_tool(fact),
+            "safety.decided" => self.decide_safety(fact),
             "effect.authorized" => self.transition_tool(fact, InvocationState::Authorized),
+            "sandbox.bound" => self.bind_sandbox(fact),
+            "sandbox.preflighted" => self.preflight_sandbox(fact),
             "effect.started" => self.transition_tool(fact, InvocationState::Started),
             "effect.receipt" => self.transition_tool(fact, InvocationState::Receipt),
             "effect.completed" => self.transition_tool(fact, InvocationState::Completed),
@@ -559,16 +592,34 @@ impl SessionProjection {
             tool.clone(),
             text(&payload(fact)?, "prepared_digest")?.to_owned(),
         );
+        self.tool_revisions.insert(
+            tool.clone(),
+            (
+                text(&payload(fact)?, "tool_name")?.to_owned(),
+                text(&payload(fact)?, "tool_revision")?.to_owned(),
+            ),
+        );
         self.tool_contract_versions
             .insert(tool.clone(), fact.schema_version);
-        if fact.schema_version == 2 {
+        if matches!(fact.schema_version, 2 | 3) {
+            let value = payload(fact)?;
             self.tool_result_bytes.insert(
                 tool.clone(),
-                payload(fact)?
+                value
                     .get("max_result_bytes")
                     .and_then(Value::as_u64)
                     .ok_or(LedgerError::InvalidFact)?,
             );
+            if fact.schema_version == 3 {
+                self.tool_access_digests.insert(
+                    tool.clone(),
+                    content_digest(&value, "invocation_accesses")?.to_owned(),
+                );
+                self.tool_sandbox_digests.insert(
+                    tool.clone(),
+                    text(&value, "sandbox_requirements_digest")?.to_owned(),
+                );
+            }
         }
         Ok(())
     }
@@ -646,6 +697,12 @@ impl SessionProjection {
         ) {
             return Err(LedgerError::InvalidTransition);
         }
+        if self.tool_contract_versions.get(tool) == Some(&3)
+            && self.f0.get(tool).map(|record| record.disposition)
+                != Some(SafetyDecisionState::InteractionRequired)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
         let payload = payload(fact)?;
         let interaction_id = text(&payload, "interaction_id")?.to_owned();
         let prepared_digest = text(&payload, "prepared_digest")?.to_owned();
@@ -706,7 +763,7 @@ impl SessionProjection {
             return Err(LedgerError::InvalidTransition);
         }
         let current = *state;
-        let valid = matches!(
+        let mut valid = matches!(
             (current, next),
             (InvocationState::Prepared, InvocationState::Authorized)
                 | (InvocationState::Prepared, InvocationState::Started)
@@ -720,6 +777,19 @@ impl SessionProjection {
                 | (InvocationState::Receipt, InvocationState::Completed)
                 | (InvocationState::Receipt, InvocationState::Failed)
         );
+        if self.tool_contract_versions.get(tool) == Some(&3) {
+            valid &= match next {
+                InvocationState::Authorized => {
+                    current == InvocationState::Prepared && fact.schema_version == 2
+                }
+                InvocationState::Started => current == InvocationState::Authorized,
+                InvocationState::Denied => self
+                    .f0
+                    .get(tool)
+                    .is_some_and(|record| record.disposition != SafetyDecisionState::Allow),
+                _ => true,
+            };
+        }
         if !valid {
             return Err(LedgerError::InvalidTransition);
         }
@@ -783,6 +853,17 @@ impl SessionProjection {
     ) -> Result<(), LedgerError> {
         match next {
             InvocationState::Authorized => {
+                if self.tool_contract_versions.get(tool) == Some(&3) {
+                    let record = self.f0.get(tool).ok_or(LedgerError::InvalidTransition)?;
+                    if record.disposition != SafetyDecisionState::Allow
+                        || record.prepared_digest != text(payload, "prepared_digest")?
+                        || record.policy_revision != text(payload, "authority_revision")?
+                        || record.constraints_digest.as_deref()
+                            != Some(text(payload, "constraints_digest")?)
+                    {
+                        return Err(LedgerError::InvalidTransition);
+                    }
+                }
                 self.tool_grants
                     .insert(tool.clone(), text(payload, "grant_id")?.to_owned());
             }
@@ -794,6 +875,23 @@ impl SessionProjection {
                     .is_some_and(|value| value != grant)
                 {
                     return Err(LedgerError::InvalidTransition);
+                }
+                if self.tool_contract_versions.get(tool) == Some(&3) {
+                    let executor_id = text(payload, "executor_id")?;
+                    let executor_revision = text(payload, "executor_revision")?;
+                    let dispatch_attempt_id = text(payload, "dispatch_attempt_id")?;
+                    let proof = self
+                        .f0
+                        .get(tool)
+                        .and_then(|record| record.sandbox.as_ref())
+                        .filter(|proof| proof.grant_id.as_deref() == Some(grant))
+                        .filter(|proof| {
+                            proof.executor_id == executor_id
+                                && proof.executor_revision == executor_revision
+                                && proof.dispatch_attempt_id.as_deref() == Some(dispatch_attempt_id)
+                        })
+                        .ok_or(LedgerError::InvalidTransition)?;
+                    let _ = proof;
                 }
                 self.tool_grants.insert(tool.clone(), grant.to_owned());
                 self.tool_executors.insert(
@@ -834,6 +932,108 @@ impl SessionProjection {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    fn decide_safety(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let execution = required(&fact.execution_id)?;
+        if self.tool_contract_versions.get(tool) != Some(&3)
+            || !matches!(self.tools.get(tool), Some((owner, InvocationState::Prepared)) if owner == execution)
+            || self.f0.contains_key(tool)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let value = payload(fact)?;
+        if self.tool_digests.get(tool).map(String::as_str) != Some(text(&value, "prepared_digest")?)
+            || self.tool_revisions.get(tool)
+                != Some(&(
+                    text(&value, "tool_name")?.to_owned(),
+                    text(&value, "tool_revision")?.to_owned(),
+                ))
+            || self.tool_access_digests.get(tool).map(String::as_str)
+                != Some(text(&value, "exact_access_digest")?)
+            || self.tool_sandbox_digests.get(tool).map(String::as_str)
+                != Some(text(&value, "sandbox_requirements_digest")?)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let disposition = match text(&value, "disposition")? {
+            "allow" => SafetyDecisionState::Allow,
+            "deny" => SafetyDecisionState::Deny,
+            "interaction_required" => SafetyDecisionState::InteractionRequired,
+            _ => return Err(LedgerError::InvalidFact),
+        };
+        self.f0.insert(
+            tool.clone(),
+            F0Record {
+                decision_id: text(&value, "decision_id")?.to_owned(),
+                disposition,
+                prepared_digest: text(&value, "prepared_digest")?.to_owned(),
+                policy_revision: text(&value, "policy_revision")?.to_owned(),
+                constraints_digest: value
+                    .get("constraints_digest")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                sandbox: None,
+            },
+        );
+        Ok(())
+    }
+
+    fn bind_sandbox(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let value = payload(fact)?;
+        let record = self
+            .f0
+            .get_mut(tool)
+            .ok_or(LedgerError::InvalidTransition)?;
+        if record.disposition != SafetyDecisionState::Allow
+            || record.sandbox.is_some()
+            || self.tools.get(tool).map(|(_, state)| *state) != Some(InvocationState::Authorized)
+            || record.decision_id != text(&value, "decision_id")?
+            || record.prepared_digest != text(&value, "prepared_digest")?
+            || record.policy_revision != text(&value, "policy_revision")?
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        record.sandbox = Some(SandboxProofRecord {
+            binding_id: text(&value, "binding_id")?.to_owned(),
+            executor_id: text(&value, "executor_id")?.to_owned(),
+            executor_revision: text(&value, "executor_revision")?.to_owned(),
+            grant_id: None,
+            dispatch_attempt_id: None,
+        });
+        Ok(())
+    }
+
+    fn preflight_sandbox(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let value = payload(fact)?;
+        let record = self
+            .f0
+            .get_mut(tool)
+            .ok_or(LedgerError::InvalidTransition)?;
+        let proof = record
+            .sandbox
+            .as_mut()
+            .ok_or(LedgerError::InvalidTransition)?;
+        let grant = text(&value, "grant_id")?;
+        if proof.grant_id.is_some()
+            || record.decision_id != text(&value, "decision_id")?
+            || record.prepared_digest != text(&value, "prepared_digest")?
+            || proof.binding_id != text(&value, "binding_id")?
+            || proof.executor_id != text(&value, "executor_id")?
+            || proof.executor_revision != text(&value, "executor_revision")?
+            || self.tool_grants.get(tool).map(String::as_str) != Some(grant)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        proof.grant_id = Some(grant.to_owned());
+        proof.dispatch_attempt_id = Some(text(&value, "dispatch_attempt_id")?.to_owned());
         Ok(())
     }
 
@@ -1420,6 +1620,16 @@ fn content_value(value: &Map<String, Value>, key: &str) -> Result<Value, LedgerE
     )
     .map_err(|_| LedgerError::InvalidFact)?;
     serde_json::from_str(canonical.as_json()).map_err(|_| LedgerError::InvalidFact)
+}
+
+fn content_digest<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, LedgerError> {
+    text(
+        value
+            .get(key)
+            .and_then(Value::as_object)
+            .ok_or(LedgerError::InvalidFact)?,
+        "digest",
+    )
 }
 
 fn validate_batch_steps(
