@@ -383,6 +383,91 @@ async fn terminal_durability_failure_stops_later_publication() {
     );
 }
 
+#[tokio::test]
+async fn shared_capacity_has_a_separate_bounded_queue_timeout() {
+    let runtime_limits = EffectBatchRuntimeLimits {
+        max_parallel_reads: 1,
+        queue_timeout: Duration::from_millis(100),
+        invocation_timeout: Duration::from_millis(100),
+        cancellation_grace: Duration::from_millis(2),
+    };
+    let dispatcher = Arc::new(EffectBatchDispatcher::new(runtime_limits).unwrap());
+    let first_invocations = invocations(1);
+    let first_plan = plan_effect_batch(
+        &[first_invocations[0].prepared.clone()],
+        &EffectBatchLimitsV1::new(1, 1, 1, 1, 512).unwrap(),
+    )
+    .unwrap();
+    let first_started = Arc::new(Mutex::new(HashSet::new()));
+    let first_signal = first_started.clone();
+    let first_dispatcher = dispatcher.clone();
+    let first = tokio::spawn(async move {
+        let executor = Executor {
+            mode: Mode::Complete(vec![40]),
+            started: first_started.clone(),
+        };
+        let mut publisher = Publisher {
+            events: Vec::new(),
+            started: first_started,
+            fail_terminal: None,
+        };
+        let cancellation = EffectCancellation::default();
+        first_dispatcher
+            .execute(
+                &first_plan,
+                &first_invocations,
+                runtime_limits,
+                &cancellation,
+                &executor,
+                &mut publisher,
+            )
+            .await
+            .unwrap();
+    });
+    tokio::time::timeout(Duration::from_millis(50), async {
+        while first_signal.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let second_invocations = invocations(1);
+    let second_plan = plan_effect_batch(
+        &[second_invocations[0].prepared.clone()],
+        &EffectBatchLimitsV1::new(1, 1, 1, 1, 512).unwrap(),
+    )
+    .unwrap();
+    let second_started = Arc::new(Mutex::new(HashSet::new()));
+    let executor = Executor {
+        mode: Mode::Complete(vec![1]),
+        started: second_started.clone(),
+    };
+    let mut publisher = Publisher {
+        events: Vec::new(),
+        started: second_started,
+        fail_terminal: None,
+    };
+    let short_queue = EffectBatchRuntimeLimits {
+        queue_timeout: Duration::from_millis(2),
+        ..runtime_limits
+    };
+    let error = dispatcher
+        .execute(
+            &second_plan,
+            &second_invocations,
+            short_queue,
+            &EffectCancellation::default(),
+            &executor,
+            &mut publisher,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error, BatchRuntimeError::QueueTimeout);
+    assert!(publisher.events.is_empty());
+    first.await.unwrap();
+}
+
 #[test]
 fn admission_facts_commit_prepared_v2_authorizations_then_exact_plan() {
     let directory = tempdir().unwrap();

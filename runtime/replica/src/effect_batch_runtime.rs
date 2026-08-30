@@ -117,7 +117,7 @@ pub enum BatchTerminal {
 }
 
 /// Durable publication boundary owned by the Runtime ledger adapter.
-pub trait EffectBatchPublisher {
+pub trait EffectBatchPublisher: Send {
     /// Commits Started before the corresponding executor is polled.
     fn commit_started(
         &mut self,
