@@ -149,6 +149,7 @@ public data class AppViewState(
     public val pending: List<PendingCommand> = emptyList(),
     public val activities: List<ActivityItem> = emptyList(),
     public val outstanding: List<AppEffect> = emptyList(),
+    public val preferenceDirty: Boolean = false,
     public val notice: AppError? = null,
 )
 

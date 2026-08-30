@@ -46,6 +46,19 @@ describe("A-UX1 shared controller", () => {
     expect(actual).toEqual(["configuration", "validation", "command_unknown", "host",
       "transport", "protocol", "local_preference"]);
   });
+
+  it("rejects fixture root, case, duplicate, and omission drift", () => {
+    expect(() => validateFixture({ ...FIXTURE, unknown: true })).toThrow();
+    const unknownCase = structuredClone(FIXTURE);
+    object(array(unknownCase.bootstrap_cases)[0]).unknown = true;
+    expect(() => validateFixture(unknownCase)).toThrow();
+    const omitted = structuredClone(FIXTURE);
+    delete object(array(omitted.bootstrap_cases)[0]).expected_state;
+    expect(() => validateFixture(omitted)).toThrow();
+    const duplicate = structuredClone(FIXTURE);
+    object(array(duplicate.preference_cases)[1]).name = object(array(duplicate.preference_cases)[0]).name;
+    expect(() => validateFixture(duplicate)).toThrow();
+  });
 });
 
 function runControllerCase(test: Record<string, unknown>): void {
@@ -179,13 +192,24 @@ function decodePending(value: unknown): PendingCommand { const item = object(val
   generation: 0, sessionId: nullableText(item.session_id), turnId: nullableText(item.turn_id), status: text(item.status) as PendingCommand["status"],
 }; }
 
-function validateFixture(): void {
-  expect(FIXTURE.schema_version).toBe(1); expect(FIXTURE.contract).toBe("client-product-experience-v1");
-  expect(Object.keys(FIXTURE).sort()).toEqual(["activity_cases","bootstrap_cases","command_cases","contract","failure_cases",
+function validateFixture(value: Record<string, unknown> = FIXTURE): void {
+  expect(value.schema_version).toBe(1); expect(value.contract).toBe("client-product-experience-v1");
+  expect(Object.keys(value).sort()).toEqual(["activity_cases","bootstrap_cases","command_cases","contract","failure_cases",
     "follow_cases","limits","navigation_cases","preference_cases","schema_version","suspension_cases"]);
   for (const family of FAMILIES) {
-    const names = array(FIXTURE[family]).map((raw) => text(object(raw).name));
+    const cases = array(value[family]); const names = cases.map((raw) => text(object(raw).name));
     expect(names.length, family).toBeGreaterThan(0); expect(new Set(names).size, family).toBe(names.length);
+    for (const raw of cases) {
+      const item = object(raw); const keys = Object.keys(item);
+      const required = family === "preference_cases"
+        ? ["document", "expected_draft_count", "expected_reset", "name"]
+        : ["expected_effects", "expected_state", "initial_state", "name", "steps"];
+      const allowed = family === "command_cases" ? [...required, "expected_retried_command_id", "expected_retried_request_digest"]
+        : family === "suspension_cases" ? [...required, "expected_effect_binding"]
+          : family === "failure_cases" ? [...required, "error", "expected_public_kind"] : required;
+      for (const key of required) expect(keys, `${family}.${text(item.name)} missing ${key}`).toContain(key);
+      expect(keys.every((key) => allowed.includes(key)), `${family}.${text(item.name)} unknown key`).toBe(true);
+    }
   }
 }
 function controllerLimits() { return { maxDraftBytes: number(limits.max_draft_bytes), maxActivities: number(limits.max_activities) }; }

@@ -56,7 +56,7 @@ export interface AppViewState {
   readonly timeline: readonly TimelineItem[]; readonly cursor: number;
   readonly drafts: readonly Draft[]; readonly execution: ExecutionState;
   readonly pending: readonly PendingCommand[]; readonly activities: readonly ActivityItem[];
-  readonly outstanding: readonly AppEffect[]; readonly notice?: AppError;
+  readonly outstanding: readonly AppEffect[]; readonly preferenceDirty: boolean; readonly notice?: AppError;
 }
 
 export type AppIntent =
@@ -93,7 +93,7 @@ export function initialAppViewState(
 ): AppViewState {
   return { configuration, shell: "booting", generation: 0, nextEffect: 1,
     definitions: [], sessions: [], timeline: [], cursor: 0, drafts: [], execution: "idle",
-    pending: [], activities: [], outstanding: [] };
+    pending: [], activities: [], outstanding: [], preferenceDirty: false };
 }
 
 export function reduceApp(
@@ -118,7 +118,7 @@ export function reduceApp(
       if (utf8(intent.text) > limits.maxDraftBytes) return notice(state, "validation", "draft_too_large");
       const drafts = state.drafts.filter((item) => item.sessionId !== intent.sessionId);
       if (intent.text.length) drafts.push({ sessionId: intent.sessionId, text: intent.text });
-      return issueMany({ ...state, drafts, notice: undefined }, [{ kind: "save_preferences" }]);
+      return savePreferences({ ...state, drafts, notice: undefined });
     }
     case "create_session":
       if (!state.definitions.some((item) => item.definitionId === intent.definitionId)) {
@@ -192,7 +192,7 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
   switch (intent.result.type) {
     case "preferences_loaded": return changed({ ...next, drafts: intent.result.drafts,
       selectedSessionId: intent.result.selectedSessionId ?? next.selectedSessionId });
-    case "preferences_saved": return changed(next);
+    case "preferences_saved": return next.preferenceDirty ? savePreferences(next) : changed(next);
     case "definitions_loaded":
       return issueMany({ ...next, definitions: intent.result.definitions }, [{ kind: "load_session_page" }]);
     case "session_page_loaded": {
@@ -225,7 +225,7 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
       [{ sessionId: result.sessionId }, ...state.sessions];
     const base = { ...state, sessions, selectedSessionId: result.sessionId, pending,
       generation: state.generation + 1, shell: "ready" as const };
-    return issueMany(base, [{ kind: "load_timeline", sessionId: result.sessionId }, { kind: "save_preferences" }]);
+    return issueWithPreference(base, [{ kind: "load_timeline", sessionId: result.sessionId }]);
   }
   const drafts = effect.kind === "start_turn" ? state.drafts.filter((item) => item.sessionId !== result.sessionId) : state.drafts;
   const timeline = effect.kind === "start_turn" && result.turnId &&
@@ -234,8 +234,9 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
       userText: effect.text ?? "", contentTruncated: false, activities: [] }] : state.timeline;
   const base = { ...state, pending, drafts, timeline, cursor: result.committedPosition,
     execution: "following" as const, notice: undefined };
-  return issueMany(base, [{ kind: "follow_events", sessionId: result.sessionId,
-    afterPosition: result.committedPosition }, ...(effect.kind === "start_turn" ? [{ kind: "save_preferences" as const }] : [])]);
+  const follow = [{ kind: "follow_events" as const, sessionId: result.sessionId,
+    afterPosition: result.committedPosition }];
+  return effect.kind === "start_turn" ? issueWithPreference(base, follow) : issueMany(base, follow);
 }
 
 function hostEvent(state: AppViewState, effect: AppEffect, result: Extract<AppEffectPayload, { type: "host_event" }>, limits: ControllerLimits): Reduction {
@@ -291,6 +292,18 @@ function issueMany(state: AppViewState, raw: readonly (Partial<AppEffect> & { ki
   let next = state.nextEffect;
   const effects = raw.map((value) => ({ ...value, effectId: `effect-${next++}`, generation: state.generation } as AppEffect));
   return { state: { ...state, nextEffect: next, outstanding: [...state.outstanding, ...effects] }, effects };
+}
+function savePreferences(state: AppViewState): Reduction {
+  if (state.outstanding.some((effect) => effect.kind === "save_preferences")) {
+    return changed({ ...state, preferenceDirty: true });
+  }
+  return issueMany({ ...state, preferenceDirty: false }, [{ kind: "save_preferences" }]);
+}
+function issueWithPreference(
+  state: AppViewState, raw: readonly (Partial<AppEffect> & { kind: EffectKind })[],
+): Reduction {
+  const primary = issueMany(state, raw); const saved = savePreferences(primary.state);
+  return { state: saved.state, effects: [...primary.effects, ...saved.effects] };
 }
 function removeEffect(state: AppViewState, id: string): AppViewState {
   return { ...state, outstanding: state.outstanding.filter((item) => item.effectId !== id) };

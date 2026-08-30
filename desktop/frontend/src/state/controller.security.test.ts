@@ -44,6 +44,21 @@ describe("A-UX1 controller boundaries", () => {
     expect(oversized.state.notice?.code).toBe("draft_too_large");
   });
 
+  it("coalesces preference writes while preserving the latest state", () => {
+    const first = reduceApp(ready(["session-a"], "session-a"),
+      { type: "edit_draft", sessionId: "session-a", text: "first" });
+    const second = reduceApp(first.state,
+      { type: "edit_draft", sessionId: "session-a", text: "latest" });
+    expect(second.effects).toEqual([]);
+    expect(second.state.outstanding.filter((effect) => effect.kind === "save_preferences")).toHaveLength(1);
+    const save = first.effects[0]!;
+    const completed = reduceApp(second.state, { type: "effect_result", effectId: save.effectId,
+      generation: save.generation, result: { type: "preferences_saved" } });
+    expect(completed.effects.map((effect) => effect.kind)).toEqual(["save_preferences"]);
+    expect(completed.state.drafts).toEqual([{ sessionId: "session-a", text: "latest" }]);
+    expect(completed.state.preferenceDirty).toBe(false);
+  });
+
   it("round-trips a minimal pending record and clears only a corrupt record", async () => {
     const port = new MemoryPort(); const adapter = new JsonPreferenceAdapter(port,
       { max_document_bytes: 1024, max_drafts: 4, max_id_bytes: 128, max_draft_bytes: 256 });

@@ -117,7 +117,7 @@ private fun editDraft(state: AppViewState, intent: AppIntent.EditDraft, limits: 
     if (intent.text.encodeToByteArray().size > limits.maxDraftBytes) return notice(state, AppErrorKind.VALIDATION, "draft_too_large")
     val drafts = state.drafts.filterNot { it.sessionId == intent.sessionId }.toMutableList()
     if (intent.text.isNotEmpty()) drafts += Draft(intent.sessionId, intent.text)
-    return issueMany(state.copy(drafts = drafts, notice = null), listOf(EffectDraft(EffectKind.SAVE_PREFERENCES)))
+    return savePreferences(state.copy(drafts = drafts, notice = null))
 }
 
 private fun submitDraft(state: AppViewState, intent: AppIntent.SubmitDraft, limits: ControllerLimits): Reduction {
@@ -182,7 +182,7 @@ private fun applyResult(state: AppViewState, intent: AppIntent.EffectResult, lim
     return when (val result = intent.result) {
         is AppEffectPayload.PreferencesLoaded -> Reduction(next.copy(drafts = result.drafts,
             selectedSessionId = result.selectedSessionId ?: next.selectedSessionId))
-        AppEffectPayload.PreferencesSaved -> Reduction(next)
+        AppEffectPayload.PreferencesSaved -> if (next.preferenceDirty) savePreferences(next) else Reduction(next)
         is AppEffectPayload.DefinitionsLoaded -> issueMany(next.copy(definitions = result.definitions), listOf(EffectDraft(EffectKind.LOAD_SESSION_PAGE)))
         is AppEffectPayload.SessionPageLoaded -> sessionPageLoaded(next, result)
         is AppEffectPayload.TimelineLoaded -> timelineLoaded(next, effect, result)
@@ -218,10 +218,10 @@ private fun commandSucceeded(state: AppViewState, effect: AppEffect, result: App
     val pending = state.pending.filterNot { it.commandId == effect.commandId }
     if (effect.kind == EffectKind.CREATE_SESSION) {
         val sessions = if (state.sessions.any { it.sessionId == result.sessionId }) state.sessions else listOf(SessionItem(result.sessionId)) + state.sessions
-        return issueMany(
+        return issueWithPreference(
             state.copy(sessions = sessions, selectedSessionId = result.sessionId, pending = pending,
                 generation = state.generation + 1, shell = ShellState.READY),
-            listOf(EffectDraft(EffectKind.LOAD_TIMELINE, sessionId = result.sessionId), EffectDraft(EffectKind.SAVE_PREFERENCES)),
+            listOf(EffectDraft(EffectKind.LOAD_TIMELINE, sessionId = result.sessionId)),
         )
     }
     val drafts = if (effect.kind == EffectKind.START_TURN) state.drafts.filterNot { it.sessionId == result.sessionId } else state.drafts
@@ -229,10 +229,10 @@ private fun commandSucceeded(state: AppViewState, effect: AppEffect, result: App
         state.timeline + TimelineItem(result.turnId, "running", result.committedPosition,
             userText = effect.text.orEmpty())
     } else state.timeline
-    val effects = mutableListOf(EffectDraft(EffectKind.FOLLOW_EVENTS, sessionId = result.sessionId, afterPosition = result.committedPosition))
-    if (effect.kind == EffectKind.START_TURN) effects += EffectDraft(EffectKind.SAVE_PREFERENCES)
-    return issueMany(state.copy(pending = pending, drafts = drafts, timeline = timeline, cursor = result.committedPosition,
-        execution = ExecutionState.FOLLOWING, notice = null), effects)
+    val base = state.copy(pending = pending, drafts = drafts, timeline = timeline, cursor = result.committedPosition,
+        execution = ExecutionState.FOLLOWING, notice = null)
+    val follow = listOf(EffectDraft(EffectKind.FOLLOW_EVENTS, sessionId = result.sessionId, afterPosition = result.committedPosition))
+    return if (effect.kind == EffectKind.START_TURN) issueWithPreference(base, follow) else issueMany(base, follow)
 }
 
 private fun hostEvent(
@@ -315,6 +315,19 @@ private fun issueMany(state: AppViewState, drafts: List<EffectDraft>): Reduction
             draft.suspensionId, draft.sessionVersion, draft.responseSchemaDigest)
     }
     return Reduction(state.copy(nextEffect = next, outstanding = state.outstanding + effects), effects)
+}
+
+private fun savePreferences(state: AppViewState): Reduction {
+    if (state.outstanding.any { it.kind == EffectKind.SAVE_PREFERENCES }) {
+        return Reduction(state.copy(preferenceDirty = true))
+    }
+    return issueMany(state.copy(preferenceDirty = false), listOf(EffectDraft(EffectKind.SAVE_PREFERENCES)))
+}
+
+private fun issueWithPreference(state: AppViewState, drafts: List<EffectDraft>): Reduction {
+    val primary = issueMany(state, drafts)
+    val saved = savePreferences(primary.state)
+    return Reduction(saved.state, primary.effects + saved.effects)
 }
 
 private fun removeEffect(state: AppViewState, id: String): AppViewState = state.copy(outstanding = state.outstanding.filterNot { it.effectId == id })

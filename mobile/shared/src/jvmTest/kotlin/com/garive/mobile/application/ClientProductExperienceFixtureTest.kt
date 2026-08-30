@@ -50,6 +50,15 @@ public class ClientProductExperienceFixtureTest {
         assertEquals(listOf("configuration", "validation", "command_unknown", "host", "transport", "protocol", "local_preference"), actual)
     }
 
+    @Test
+    public fun rejectsFixtureRootCaseDuplicateAndOmissionDrift(): Unit {
+        assertFails { validateFixture(JsonObject(fixture + ("unknown" to JsonPrimitive(true)))) }
+        assertFails { validateFixture(replaceCase("bootstrap_cases", 0) { JsonObject(it + ("unknown" to JsonPrimitive(true))) }) }
+        assertFails { validateFixture(replaceCase("bootstrap_cases", 0) { JsonObject(it - "expected_state") }) }
+        val duplicateName = fixture.array("preference_cases").first().jsonObject.text("name")
+        assertFails { validateFixture(replaceCase("preference_cases", 1) { JsonObject(it + ("name" to JsonPrimitive(duplicateName))) }) }
+    }
+
     private fun runControllerCase(test: JsonObject): Unit {
         var state = decodeState(test.obj("initial_state"))
         val emitted = mutableListOf<AppEffect>(); val aliases = mutableMapOf<String, AppEffect>()
@@ -184,13 +193,32 @@ public class ClientProductExperienceFixtureTest {
         PendingStatus.entries.first { it.wireName == raw.text("status") })
     private fun decodeError(raw: JsonObject): AppError = AppError(AppErrorKind.entries.first { it.wireName == raw.text("kind") }, raw.text("code"))
 
-    private fun validateFixture(): Unit {
-        assertEquals(1, fixture.long("schema_version")); assertEquals("client-product-experience-v1", fixture.text("contract"))
-        assertEquals(setOf("schema_version", "contract", "limits") + families, fixture.keys)
+    private fun validateFixture(value: JsonObject = fixture): Unit {
+        assertEquals(1, value.long("schema_version")); assertEquals("client-product-experience-v1", value.text("contract"))
+        assertEquals(setOf("schema_version", "contract", "limits") + families, value.keys)
         families.forEach { family ->
-            val names = fixture.array(family).map { it.jsonObject.text("name") }
+            val cases = value.array(family); val names = cases.map { it.jsonObject.text("name") }
             assertTrue(names.isNotEmpty(), family); assertEquals(names.size, names.toSet().size, family)
+            cases.forEach { raw ->
+                val required = if (family == "preference_cases") {
+                    setOf("document", "expected_draft_count", "expected_reset", "name")
+                } else setOf("expected_effects", "expected_state", "initial_state", "name", "steps")
+                val allowed = when (family) {
+                    "command_cases" -> required + setOf("expected_retried_command_id", "expected_retried_request_digest")
+                    "suspension_cases" -> required + "expected_effect_binding"
+                    "failure_cases" -> required + setOf("error", "expected_public_kind")
+                    else -> required
+                }
+                assertTrue(raw.jsonObject.keys.containsAll(required), "$family missing required result")
+                assertTrue(allowed.containsAll(raw.jsonObject.keys), "$family contains unknown key")
+            }
         }
+    }
+
+    private fun replaceCase(family: String, index: Int, transform: (JsonObject) -> JsonObject): JsonObject {
+        val cases = fixture.array(family).toMutableList()
+        cases[index] = transform(cases[index].jsonObject)
+        return JsonObject(fixture + (family to JsonArray(cases)))
     }
 
     private fun controllerLimits(): ControllerLimits = ControllerLimits(fixture.obj("limits").long("max_draft_bytes").toInt(),

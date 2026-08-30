@@ -47,6 +47,20 @@ public class ProductControllerBoundaryTest {
     }
 
     @Test
+    public fun preferenceWritesAreCoalescedWithoutLosingLatestState(): Unit {
+        val first = reduceApp(ready(listOf("session-a"), "session-a"), AppIntent.EditDraft("session-a", "first"))
+        val second = reduceApp(first.state, AppIntent.EditDraft("session-a", "latest"))
+        assertTrue(second.effects.isEmpty())
+        assertEquals(1, second.state.outstanding.count { it.kind == EffectKind.SAVE_PREFERENCES })
+        val save = first.effects.first()
+        val completed = reduceApp(second.state, AppIntent.EffectResult(save.effectId, save.generation,
+            result = AppEffectPayload.PreferencesSaved))
+        assertEquals(listOf(EffectKind.SAVE_PREFERENCES), completed.effects.map { it.kind })
+        assertEquals(listOf(Draft("session-a", "latest")), completed.state.drafts)
+        assertFalse(completed.state.preferenceDirty)
+    }
+
+    @Test
     public fun pendingRecordRoundTripsAndCorruptionClearsOnlyPending(): Unit = runBlocking {
         val port = MemoryPort()
         val adapter = JsonPreferenceAdapter(port, PreferenceLimits(1_024, 4, 128, 256))
