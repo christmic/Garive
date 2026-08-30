@@ -7,6 +7,8 @@ mod goal;
 mod knowledge;
 mod memory;
 mod model;
+mod plan;
+mod plan_step;
 mod scheduler;
 mod skill;
 mod turn;
@@ -43,6 +45,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let workspace_family = kind.starts_with("workspace.");
     let artifact_family = kind.starts_with("artifact.");
     let goal_family = kind.starts_with("goal.");
+    let plan_family = kind.starts_with("plan.");
     let memory_session_scoped = matches!(
         kind,
         "memory.tombstoned"
@@ -71,6 +74,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !workspace_family
         && !artifact_family
         && !goal_family
+        && !plan_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -80,7 +84,11 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         return Ok(RuntimeFactDisposition::Opaque);
     }
     if fact.turn_id.is_some()
-        != !(memory_session_scoped || scheduler_family || workspace_family || goal_family)
+        != !(memory_session_scoped
+            || scheduler_family
+            || workspace_family
+            || goal_family
+            || plan_family)
         || fact.execution_id.is_some()
             != (execution_family
                 || model_family
@@ -102,6 +110,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         artifact::validate(kind, object(&payload)?)?;
     } else if goal_family {
         goal::validate(kind, object(&payload)?)?;
+    } else if plan_family {
+        plan::validate(kind, object(&payload)?)?;
     } else if workspace_family {
         workspace::validate(kind, object(&payload)?)?;
     } else if effect_prepared_v2 {
