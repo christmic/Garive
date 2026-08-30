@@ -64,7 +64,12 @@ public class MainActivity : ComponentActivity() {
             }
             GariveTheme(theme) {
                 if (walkthrough) {
-                    GariveWalkthroughRoot(theme, selectTheme, ::openNotificationSettings)
+                    GariveWalkthroughRoot(
+                        theme,
+                        selectTheme,
+                        ::openNotificationSettings,
+                        intent.getStringExtra(WALKTHROUGH_SESSION_EXTRA),
+                    )
                 } else {
                     GariveRoot(
                         store, pairingSuggestion.value, wakeToken.value,
@@ -101,6 +106,7 @@ public class MainActivity : ComponentActivity() {
     private companion object {
         const val NOTIFICATION_PERMISSION_REQUEST = 41
         const val WALKTHROUGH_EXTRA = "garive_walkthrough"
+        const val WALKTHROUGH_SESSION_EXTRA = "garive_walkthrough_session"
     }
 }
 
@@ -109,6 +115,7 @@ private fun GariveWalkthroughRoot(
     theme: Theme,
     onTheme: (Theme) -> Unit,
     openNotificationSettings: () -> Unit,
+    walkthroughSessionId: String?,
 ) {
     val context = LocalContext.current
     val origin = "http://127.0.0.1:4318/"
@@ -119,7 +126,10 @@ private fun GariveWalkthroughRoot(
             persistence = AndroidMobileWorkPersistence(context),
         )
     }
-    GariveMobileApp(origin, controller, null, {}, {}, theme, onTheme, openNotificationSettings)
+    GariveMobileApp(
+        origin, controller, null, {}, {}, theme, onTheme, openNotificationSettings,
+        walkthroughSessionId = walkthroughSessionId,
+    )
 }
 
 @Composable

@@ -268,7 +268,8 @@ final class MobileViewModel: ObservableObject {
             bootWalkthrough(
                 controller,
                 destination: destination,
-                presentNewTask: arguments.contains("--garive-walkthrough-new-task")
+                presentNewTask: arguments.contains("--garive-walkthrough-new-task"),
+                openConversation: arguments.contains("--garive-walkthrough-conversation")
             )
         } catch {
             errorCode = "walkthrough_connection_failed"
@@ -278,7 +279,8 @@ final class MobileViewModel: ObservableObject {
     private func bootWalkthrough(
         _ controller: MobileWorkController,
         destination: MobileDestination?,
-        presentNewTask: Bool
+        presentNewTask: Bool,
+        openConversation: Bool
     ) {
         let transferredController = UnsafeTransfer(controller)
         let transferredDestination = UnsafeTransfer(destination)
@@ -297,6 +299,7 @@ final class MobileViewModel: ObservableObject {
                     self.state = transferredController.value.selectDestination(destination: destination)
                 }
                 self.presentingNewTask = presentNewTask
+                if openConversation { self.open("release-approval") }
             }
         }
     }

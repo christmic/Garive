@@ -72,6 +72,7 @@ internal fun GariveMobileApp(
     theme: Theme,
     onTheme: (Theme) -> Unit,
     openNotificationSettings: () -> Unit,
+    walkthroughSessionId: String? = null,
 ) {
     var state by remember(controller) { mutableStateOf(controller.state()) }
     var showNewTask by remember { mutableStateOf(false) }
@@ -83,9 +84,12 @@ internal fun GariveMobileApp(
     val context = LocalContext.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    LaunchedEffect(controller, wakeRoute) {
+    LaunchedEffect(controller, wakeRoute, walkthroughSessionId) {
         state = controller.boot()
         state = controller.setTheme(theme.wireName)
+        if (walkthroughSessionId != null) {
+            state = controller.openSession(walkthroughSessionId)
+        }
         wakeRoute?.let { route ->
             state = if (route.destination == "session" && route.sessionId != null) {
                 controller.openSession(route.sessionId!!)
