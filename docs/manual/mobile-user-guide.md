@@ -291,6 +291,8 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 
 ![Android 离线但保留已验证历史](assets/mobile/android-12-offline.png)
 
+![iOS 前后台返回后的连接中断提示](assets/mobile/ios-15-recovery-notice.png)
+
 实际离线验证中，停止 Host 后刷新会显示明确的连接中断 banner 和
 **Offline · verified history**，并继续保留最后一次已验证的会话投影；banner 可关闭，但关闭只影响
 提示，不会修改历史或 pending command。Host 恢复后再次刷新回到 **Server connected**。离线投影
@@ -397,10 +399,10 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（13 条）、Swift 测试（8 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+界面流程（13 条）、Swift 测试（9 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 33 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 34 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
