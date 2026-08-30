@@ -173,18 +173,43 @@ Plan/step/invocation even if a new Plan is adopted.
 
 ## Runtime facts
 
+Plan revision is immutable definition identity. Runtime additionally maintains
+a positive contiguous `state_version` for each `(plan_id, plan_revision)`:
+`plan.proposed` creates state version 1 and every admitted lifecycle, claim or
+attempt mutation records `previous_state_version` and exactly the next
+`state_version`. This prevents definition revision and mutable progress
+concurrency from being conflated.
+
+All PL1 facts are Session-scoped L0 facts: outer Turn, Execution, model request
+and tool invocation identities are absent. A step-start fact binds the C6
+Execution in its payload because the Plan remains cross-Turn. Runtime commits
+the Plan mutation and any corresponding C6 posture atomically.
+
 | Fact | Required payload |
 |---|---|
-| `plan.proposed` | Plan/revision/digest, Goal and frozen bindings |
-| `plan.adopted` | expected revisions, actor/policy reference, carry-forward evidence |
-| `plan.rejected` | revision and stable safe reason |
-| `plan.superseded` | old/new revision/digest and unresolved-work references |
-| `plan.step.claimed` | step, state version, claim, worker, lease reading |
-| `plan.step.started` | claim, attempt and Kernel Execution bindings |
-| `plan.step.completed` | attempt, result/evidence digests and criterion evidence |
-| `plan.step.failed` | attempt, stable reason and retry posture |
-| `plan.step.suspended` | attempt, typed interaction/reconciliation reference |
-| `plan.completed/failed/suspended` | revision and exact reduction evidence |
+| `plan.proposed` | command, Plan/revision, state version 1, definition digest/content, Goal and frozen Agent/Tool/Safety bindings, proposer reference |
+| `plan.adopted` | old/new state versions, expected Goal/prior-Plan revisions, actor/policy reference, canonical carry-forward evidence binding |
+| `plan.rejected` | old/new state versions and stable safe reason |
+| `plan.superseded` | old/new state versions, replacement Plan/revision/digest and canonical unresolved-work binding |
+| `plan.step.claimed` | old/new state versions, step/digest, claim, worker, positive lease epoch, monotonic clock revision and `[claimed_at_tick, expires_at_tick)` |
+| `plan.step.claim_expired` | old/new state versions, step/claim/lease epoch and observed monotonic expiry tick |
+| `plan.step.started` | old/new state versions, step/claim/lease epoch, attempt, Kernel Execution/snapshot, Prepared-v3 Sandbox profile and Safety decision bindings |
+| `plan.step.completed` | old/new state versions, step/attempt/Execution, result digest and canonical step/criterion evidence bindings |
+| `plan.step.failed` | old/new state versions, step/attempt/Execution, stable reason, optional evidence and closed retry posture |
+| `plan.step.suspended` | old/new state versions, step/attempt/Execution and typed continuation reference |
+| `plan.step.resumed` | old/new state versions, step and resolved continuation reference |
+| `plan.suspended` | old/new state versions and typed Plan-level continuation reference |
+| `plan.resumed` | old/new state versions and resolved continuation reference |
+| `plan.completed` | old/new state versions and canonical complete reduction evidence |
+| `plan.failed` | old/new state versions, stable terminal reason and optional canonical evidence |
+
+Every payload carries `command_id`, `plan_id` and `plan_revision`. Every
+non-proposal fact carries contiguous old/new state versions. Digests are
+lowercase SHA-256; content uses the L0 exact inline-or-reference binding. Lease
+ticks are non-negative integers from one named monotonic clock revision and
+`expires_at_tick` must be greater than `claimed_at_tick`. `retry_posture` is
+`retry | suspend | replan | fail`. Continuation kind is `interaction |
+reconciliation`; it never embeds user text or credentials.
 
 Command receipt and corresponding state facts commit atomically. Claims use
 monotonic lease readings; durable facts retain portable recorded-at values
