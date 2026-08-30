@@ -52,7 +52,7 @@ cd experiments/engine-kt
 ./gradlew test
 ```
 
-`just conformance` is the joint D0/C0-C5/C5b-A/G1 gate; full Gradle build verifies all
+`just conformance` is the joint D0/C0-C5/C5b-A/G1/PL1 gate; full Gradle build verifies all
 currently admitted Kotlin modules.
 
 `just providers` verifies both protocol adapters, explicit Provider

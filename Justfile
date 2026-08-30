@@ -29,6 +29,9 @@ memory-boundaries:
 goal-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/goal/src experiments/engine-kt/goal/src/main; then echo 'G1 Engine must remain a pure Goal value and reduction contract' >&2; exit 1; fi
 
+plan-boundaries:
+    @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/plan/src experiments/engine-kt/plan/src/main; then echo 'PL1 Engine must remain a pure Plan value and reduction contract' >&2; exit 1; fi
+
 knowledge-boundaries:
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|java\.io|java\.net|ModelPort|reqwest|tokio|rusqlite|postgres' engine/knowledge/src experiments/engine-kt/knowledge/src/main; then echo 'K0 Engine must remain a pure retrieval value and reduction contract' >&2; exit 1; fi
     @if rg -n 'std::env|std::fs|std::process|System\.getenv|reqwest|OPENAI|ANTHROPIC|api[_-]?key' runtime/replica/src/core_bridge/knowledge_*.rs; then echo 'K0 Runtime ports must receive connector configuration explicitly' >&2; exit 1; fi
@@ -57,9 +60,9 @@ creativity-publication-boundaries:
 test-layout:
     @if rg -n '#\[cfg\(test\)\]|#\[(tokio::)?test\]' --glob '**/src/**/*.rs' .; then echo 'Rust tests must live under tests/' >&2; exit 1; fi
 
-conformance: architecture config-boundaries skill-boundaries memory-boundaries goal-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries creativity-boundaries creativity-publication-boundaries
-    cargo test -p garive-config -p garive-core -p garive-eval -p garive-goal -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-scheduler -p garive-skill -p garive-tools
-    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :goal:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :scheduler:test :skill:test :tools:test
+conformance: architecture config-boundaries skill-boundaries memory-boundaries goal-boundaries plan-boundaries knowledge-boundaries scheduler-boundaries multiagent-boundaries observability-boundaries evaluation-boundaries creativity-boundaries creativity-publication-boundaries
+    cargo test -p garive-config -p garive-core -p garive-eval -p garive-goal -p garive-knowledge -p garive-ledger -p garive-llm -p garive-memory -p garive-multiagent -p garive-observability -p garive-plan -p garive-scheduler -p garive-skill -p garive-tools
+    cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :config:test :core:test :goal:test :knowledge:test :ledger:test :llm:test :memory:test :multiagent:test :observability:test :plan:test :scheduler:test :skill:test :tools:test
 
 adapter-boundaries:
     @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' adapters/openai-responses adapters/anthropic-messages experiments/engine-kt/adapter-openai-responses experiments/engine-kt/adapter-anthropic-messages --glob '!**/build/**'; then echo 'Protocol adapters must not read process configuration' >&2; exit 1; fi
