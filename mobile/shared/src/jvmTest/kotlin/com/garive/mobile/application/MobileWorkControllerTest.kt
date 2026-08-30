@@ -121,6 +121,8 @@ public class MobileWorkControllerTest {
 
         assertEquals("command-2", booted.pendingCommand?.commandId)
         assertEquals("Ship the mobile client", booted.draft)
+        assertEquals(MobileConnectionState.ONLINE, booted.connection)
+        assertEquals("command_unknown", booted.noticeCode)
         val retried = restored.retryExact()
         assertEquals(listOf("command-2"), restoredHost.startCommandIds)
         assertNull(retried.pendingCommand)

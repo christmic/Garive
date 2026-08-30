@@ -209,7 +209,7 @@ public class MobileWorkController(
         viewState = viewState.copy(
             connection = MobileConnectionState.ONLINE,
             refreshing = false,
-            noticeCode = null,
+            noticeCode = if (pendingOperation != null) "command_unknown" else null,
         )
         viewState
     } catch (error: CancellationException) {

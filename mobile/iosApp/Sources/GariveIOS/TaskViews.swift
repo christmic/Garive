@@ -62,9 +62,9 @@ struct ConversationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 18) {
-                        if let notice = state.noticeCode {
+                        if state.pendingCommand != nil || state.noticeCode != nil {
                             RetryNotice(
-                                code: notice,
+                                code: state.noticeCode ?? "command_unknown",
                                 pending: state.pendingCommand != nil,
                                 retry: model.retryExact,
                                 abandon: { confirmingAbandonRetry = true }

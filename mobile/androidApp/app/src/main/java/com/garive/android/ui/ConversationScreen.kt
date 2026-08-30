@@ -134,7 +134,7 @@ internal fun ConversationScreen(
                 enabled = latest?.status !in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT),
             )
         }
-        if (state.pendingCommand != null && state.connection.name == "OFFLINE") {
+        if (state.pendingCommand != null) {
             Surface(color = MaterialTheme.colorScheme.errorContainer) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
