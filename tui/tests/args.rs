@@ -101,4 +101,5 @@ fn help_is_safe_and_does_not_require_a_host() {
     };
     assert!(help.contains("--screen-reader"));
     assert!(help.contains("--state-dir"));
+    assert!(!help.contains("test-crash"));
 }

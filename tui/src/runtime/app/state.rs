@@ -292,6 +292,8 @@ impl RuntimeState {
         }
         self.pending.push(pending);
         self.model.has_pending_command = true;
+        #[cfg(feature = "test-hooks")]
+        self.crash_if(crate::args::TestCrashHook::PendingPersisted);
         true
     }
 
@@ -349,6 +351,8 @@ impl RuntimeState {
         else {
             return;
         };
+        #[cfg(feature = "test-hooks")]
+        self.crash_if(crate::args::TestCrashHook::ResponseAccepted);
         let pending = self.pending[index].clone();
         if self
             .store
@@ -358,6 +362,8 @@ impl RuntimeState {
             self.local_state_failure("pending_remove_failed");
             return;
         }
+        #[cfg(feature = "test-hooks")]
+        self.crash_if(crate::args::TestCrashHook::PendingRemoved);
         if !self.config.no_prompt_history
             && !submitted_text.is_empty()
             && matches!(
@@ -386,6 +392,13 @@ impl RuntimeState {
         }
         self.pending.remove(index);
         self.model.has_pending_command = !self.pending.is_empty();
+    }
+
+    #[cfg(feature = "test-hooks")]
+    fn crash_if(&self, point: crate::args::TestCrashHook) {
+        if self.config.test_crash_hook == Some(point) {
+            std::process::abort();
+        }
     }
 
     pub(super) fn reject_pending(&mut self, command_id: &str, code: HostClientErrorCode) {

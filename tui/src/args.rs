@@ -39,6 +39,18 @@ pub enum MouseMode {
     Off,
 }
 
+/// Abrupt process boundaries available only to crash-recovery tests.
+#[cfg(feature = "test-hooks")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum TestCrashHook {
+    /// Abort after the exact pending command is durable and before Host I/O.
+    PendingPersisted,
+    /// Abort after a mutation response is validated and before pending removal.
+    ResponseAccepted,
+    /// Abort after pending removal and before convenience-state updates.
+    PendingRemoved,
+}
+
 /// Validated configuration for one resident TUI process.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LaunchConfig {
@@ -68,6 +80,9 @@ pub struct LaunchConfig {
     pub ephemeral: bool,
     /// Whether to disable prompt-history writes.
     pub no_prompt_history: bool,
+    /// Optional abrupt boundary used only by process crash-recovery tests.
+    #[cfg(feature = "test-hooks")]
+    pub test_crash_hook: Option<TestCrashHook>,
 }
 
 /// Non-launch outcome produced while parsing process arguments.
@@ -140,6 +155,8 @@ where
         mouse_explicit: raw.mouse.is_some(),
         ephemeral: raw.ephemeral,
         no_prompt_history: raw.no_prompt_history,
+        #[cfg(feature = "test-hooks")]
+        test_crash_hook: raw.test_crash_hook,
     })
 }
 
@@ -170,6 +187,9 @@ struct RawArgs {
     ephemeral: bool,
     #[arg(long)]
     no_prompt_history: bool,
+    #[cfg(feature = "test-hooks")]
+    #[arg(long, value_enum, hide = true)]
+    test_crash_hook: Option<TestCrashHook>,
 }
 
 #[cfg(test)]
