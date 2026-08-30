@@ -8,11 +8,11 @@ pub use http::{LiveHostServer, LiveHostServerError};
 pub use service::LiveHost;
 pub use types::{
     ActivityProjectionLimits, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
-    HostActivity, HostClock, HostContinuationInput, HostEventPage, HostWorkspaceAttachment,
-    HostWorkspaceContextEntry, InstalledActivityCatalogue, InstalledActivityDescriptor,
-    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, SessionSummary,
-    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
-    TurnTimelinePage,
+    HostActivity, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    HostWorkspaceAttachment, HostWorkspaceContextEntry, InstalledActivityCatalogue,
+    InstalledActivityDescriptor, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
+    SessionSummary, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelinePage,
 };
 
 pub(crate) use activity_projection::project_activities;

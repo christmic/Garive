@@ -21,6 +21,10 @@ mod workspace;
 mod workspace_bookmark;
 mod workspace_execution;
 
+/// Immutable committed Artifact projection exposed to Desktop clients.
+pub use garive_runtime::HostArtifact as DesktopArtifact;
+/// Bounded committed Artifact page exposed to Desktop clients.
+pub use garive_runtime::HostArtifactPage as DesktopArtifactPage;
 /// Durable path-free Workspace attachment exposed to Desktop clients.
 pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
 /// Restart-safe durable Session summary exposed to Desktop clients.
@@ -265,6 +269,18 @@ impl DesktopHost {
         self.host
             .session_workspaces(session_id)
             .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Returns immutable committed Artifact revisions for one Session.
+    pub fn artifacts(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<DesktopArtifactPage, DesktopHostError> {
+        self.host
+            .list_artifacts(session_id, after_position, limit)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
     }
 
     /// Creates a Session and executes one Turn through the embedded durable loop.
@@ -599,6 +615,17 @@ impl DesktopState {
             .clone()
             .ok_or(DesktopHostError::NotConfigured)?;
         host.session_workspaces(session_id)
+    }
+
+    /// Returns one bounded immutable Artifact page.
+    pub fn artifacts(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<DesktopArtifactPage, DesktopHostError> {
+        self.installed_host()?
+            .artifacts(session_id, after_position, limit)
     }
 
     /// Runs one typed command or reports missing system configuration.

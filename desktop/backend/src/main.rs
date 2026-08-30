@@ -260,6 +260,18 @@ fn get_session_workspaces(
 }
 
 #[tauri::command]
+fn list_artifacts(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    after_position: u64,
+    limit: usize,
+) -> Result<garive_desktop::DesktopArtifactPage, String> {
+    state
+        .artifacts(&session_id, after_position, limit)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn get_setup_catalogue(
     setup: tauri::State<'_, SetupState>,
 ) -> garive_desktop::DesktopSetupCatalogue {
@@ -379,6 +391,7 @@ fn main() {
             create_work_session,
             attach_workspace_to_session,
             get_session_workspaces,
+            list_artifacts,
             restart_desktop,
             get_recent_sessions,
             get_session_timeline,

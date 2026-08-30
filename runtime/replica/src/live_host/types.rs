@@ -249,6 +249,60 @@ pub struct HostWorkspaceAttachment {
     pub attached_position: u64,
 }
 
+/// Immutable user-visible projection of one committed Artifact revision.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct HostArtifact {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable Artifact identity.
+    pub artifact_id: String,
+    /// Immutable revision number.
+    pub revision: u64,
+    /// Owning Session.
+    pub session_id: String,
+    /// Owning Turn.
+    pub turn_id: String,
+    /// Bounded display label.
+    pub display_name: String,
+    /// Safe coarse kind.
+    pub kind: String,
+    /// Verified declared MIME type.
+    pub mime_type: String,
+    /// Exact committed byte count.
+    pub byte_size: u64,
+    /// SHA-256 digest of committed bytes.
+    pub content_digest: String,
+    /// Durable Artifact fact position.
+    pub committed_position: u64,
+    /// Verification posture.
+    pub verification: String,
+    /// Safe preview posture.
+    pub preview: String,
+    /// Optional opaque Workspace backing identity.
+    pub workspace_id: Option<String>,
+    /// Whether an active backing grant may be revealed.
+    pub revealable: bool,
+    /// Whether an explicit export flow is supported.
+    pub exportable: bool,
+}
+
+/// One bounded fixed-prefix Artifact page.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HostArtifactPage {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session.
+    pub session_id: String,
+    /// Ascending immutable Artifact revisions.
+    pub items: Vec<HostArtifact>,
+    /// Highest durable position scanned.
+    pub scanned_through_position: u64,
+    /// Fixed maximum position observed for this page.
+    pub observed_max_position: u64,
+    /// Whether another page remains.
+    pub has_more: bool,
+}
+
 /// Backend-supplied selected Workspace text admitted with one Turn command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostWorkspaceContextEntry {

@@ -450,6 +450,23 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
         std::fs::read_to_string(workspace_path.join("result.md")).unwrap(),
         "durable artifact"
     );
+    let artifacts = state.artifacts(&session_id, 0, 8).unwrap();
+    assert_eq!(artifacts.items.len(), 1);
+    let artifact_view = &artifacts.items[0];
+    assert_eq!(artifact_view.display_name, "result.md");
+    assert_eq!(artifact_view.mime_type, "text/markdown");
+    assert_eq!(artifact_view.byte_size, 16);
+    assert_eq!(artifact_view.preview, "text");
+    assert_eq!(
+        artifact_view.workspace_id.as_deref(),
+        Some(writable.workspace_id.as_str())
+    );
+    assert!(!serde_json::to_string(&artifacts)
+        .unwrap()
+        .contains(directory.path().to_string_lossy().as_ref()));
+
+    let restarted = desktop_host(&database, Arc::new(CompletingModel));
+    assert_eq!(restarted.artifacts(&session_id, 0, 8).unwrap(), artifacts);
 
     let ledger = SqliteLedger::open(&database).unwrap();
     let session = SessionId::try_from(session_id.as_str()).unwrap();

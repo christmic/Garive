@@ -24,10 +24,10 @@ use crate::{
 
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
-    CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
-    HostWorkspaceAttachment, HostWorkspaceContextEntry, InstalledAgent, LiveHostError,
-    LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, TurnCommandResponse,
-    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    CreateSessionResponse, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
+    HostEventPage, HostWorkspaceAttachment, HostWorkspaceContextEntry, InstalledAgent,
+    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary,
+    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -197,6 +197,45 @@ impl LiveHost {
             );
         }
         Ok(attached.into_values().collect())
+    }
+
+    /// Projects one bounded fixed-prefix page of immutable Artifact revisions.
+    pub fn list_artifacts(
+        &self,
+        session: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<HostArtifactPage, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, after_position, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let mut items = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "artifact.committed")
+            .map(|fact| artifact_projection(&session_id, fact))
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more = items.len() > limit;
+        items.truncate(limit);
+        let scanned_through_position = items
+            .last()
+            .map_or(watermark.max_position, |item| item.committed_position);
+        Ok(HostArtifactPage {
+            api_version: "v1",
+            session_id: session_id.as_str().into(),
+            items,
+            scanned_through_position,
+            observed_max_position: watermark.max_position,
+            has_more,
+        })
     }
 
     /// Returns complete durable Turns changed after a caller watermark.
@@ -999,6 +1038,55 @@ struct WorkspaceAttached {
     display_name: String,
     grant_revision: u64,
     access: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtifactCommitted {
+    artifact_id: String,
+    revision: u64,
+    receipt_id: String,
+    display_name: String,
+    kind: String,
+    mime_type: String,
+    byte_size: u64,
+    content_digest: String,
+    verification: String,
+    preview: String,
+    workspace_id: String,
+    revealable: bool,
+    exportable: bool,
+}
+
+fn artifact_projection(
+    session_id: &SessionId,
+    fact: &DurableFact,
+) -> Result<HostArtifact, LiveHostError> {
+    let payload: ArtifactCommitted = decode_payload(fact)?;
+    let _receipt_id = payload.receipt_id;
+    Ok(HostArtifact {
+        api_version: "v1",
+        artifact_id: payload.artifact_id,
+        revision: payload.revision,
+        session_id: session_id.as_str().into(),
+        turn_id: fact
+            .turn_id
+            .as_ref()
+            .ok_or(LiveHostError::CorruptState)?
+            .as_str()
+            .into(),
+        display_name: payload.display_name,
+        kind: payload.kind,
+        mime_type: payload.mime_type,
+        byte_size: payload.byte_size,
+        content_digest: payload.content_digest,
+        committed_position: fact.position,
+        verification: payload.verification,
+        preview: payload.preview,
+        workspace_id: Some(payload.workspace_id),
+        revealable: payload.revealable,
+        exportable: payload.exportable,
+    })
 }
 
 fn workspace_attachment(
