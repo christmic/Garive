@@ -17,8 +17,8 @@ pub use context::{
     ContextSurface, FactRef, Retention, Visibility,
 };
 pub use governed_execution::{
-    execute_agent, AgentToolCapabilities, CommittedGovernedResult, GovernedEffectFuture,
-    GovernedEffectPort, GovernedSuspensionBinding,
+    execute_agent, execute_agent_with_preparation, AgentToolCapabilities, CommittedGovernedResult,
+    GovernedEffectFuture, GovernedEffectPort, GovernedSuspensionBinding, ToolPreparationPort,
 };
 pub use memory_context::{
     derive_context_with_memory, MemoryContextError, MemoryContextItem, MemoryContextState,

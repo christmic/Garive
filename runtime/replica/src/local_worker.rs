@@ -9,13 +9,15 @@ use std::{
     },
 };
 
+use garive_core::ToolPreparationPort;
 use garive_core::{AgentEvent, AgentToolCapabilities, ClockPort, EventSink, PortFailure};
 use garive_llm::{ModelCancellation, ModelPort};
 
 use crate::{
-    execute_durable_agent, execute_durable_model_only, reconstruct_local_start, AuthorityPort,
-    CommittedTurn, ExecutorPort, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalReconstructionError, SqliteLedger, TerminalPublicationError, TerminalPublisher,
+    execute_durable_agent, execute_durable_agent_with_f0, execute_durable_model_only,
+    reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
+    F0GovernanceContext, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
+    SafetyPort, SandboxAdmissionPort, SqliteLedger, TerminalPublicationError, TerminalPublisher,
     TurnDispatchError, TurnDispatcher,
 };
 
@@ -129,6 +131,20 @@ pub struct LocalGovernedExecution {
     pub authority: Box<dyn AuthorityPort>,
     /// Two-phase executor implementation for authorized calls.
     pub executor: Box<dyn ExecutorPort>,
+    /// Mandatory v3 governance when this snapshot admits Prepared-v3 tools.
+    pub f0: Option<LocalF0Governance>,
+}
+
+/// Owned Safety/Sandbox composition frozen for one local Execution.
+pub struct LocalF0Governance {
+    /// Pure versioned Prepared-v3 resolver composition.
+    pub preparation: Box<dyn ToolPreparationPort>,
+    /// Runtime Safety policy broker.
+    pub safety: Box<dyn SafetyPort>,
+    /// Runtime Sandbox selection and preflight broker.
+    pub sandbox: Box<dyn SandboxAdmissionPort>,
+    /// Authenticated authority and effective-policy bindings.
+    pub context: F0GovernanceContext,
 }
 
 /// Constructs isolated governed ports for one committed local Execution.
@@ -193,21 +209,45 @@ impl LocalExecutionWorker {
             if governed.capabilities.definitions.is_empty() {
                 return Err(LocalWorkerError::InvalidComposition);
             }
-            execute_durable_agent(
-                &mut ledger,
-                &reconstructed.durable,
-                &reconstructed.request,
-                &governed.capabilities,
-                &mut reconstructed.context,
-                self.model.as_ref(),
-                governed.authority.as_mut(),
-                governed.executor.as_mut(),
-                &mut events,
-                &cancellation,
-                &clock,
-                &mut publisher,
-            )
-            .await
+            if let Some(mut f0) = governed.f0 {
+                execute_durable_agent_with_f0(
+                    &mut ledger,
+                    &reconstructed.durable,
+                    &reconstructed.request,
+                    &governed.capabilities,
+                    &mut reconstructed.context,
+                    self.model.as_ref(),
+                    governed.authority.as_mut(),
+                    governed.executor.as_mut(),
+                    F0ExecutionGovernance {
+                        preparation: f0.preparation.as_ref(),
+                        safety: f0.safety.as_mut(),
+                        sandbox: f0.sandbox.as_mut(),
+                        context: f0.context,
+                    },
+                    &mut events,
+                    &cancellation,
+                    &clock,
+                    &mut publisher,
+                )
+                .await
+            } else {
+                execute_durable_agent(
+                    &mut ledger,
+                    &reconstructed.durable,
+                    &reconstructed.request,
+                    &governed.capabilities,
+                    &mut reconstructed.context,
+                    self.model.as_ref(),
+                    governed.authority.as_mut(),
+                    governed.executor.as_mut(),
+                    &mut events,
+                    &cancellation,
+                    &clock,
+                    &mut publisher,
+                )
+                .await
+            }
         } else {
             execute_durable_model_only(
                 &mut ledger,

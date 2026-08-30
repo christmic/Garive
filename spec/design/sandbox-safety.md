@@ -168,6 +168,12 @@ existing governed observation or typed interaction path.
 same invocation at the explicit Safety-pending recovery cut and never erases
 or silently reallocates its Prepared identity.
 
+The local governed worker freezes one composition containing public Tool
+definitions, a pure `ToolPreparationPort`, Safety broker, Sandbox broker and
+executor. Core sees only definitions plus the preparation interface. A v3
+intent therefore cannot bypass F0 through the legacy v1 Core catalogue path;
+the production loop proves the same nine-fact chain as direct Runtime use.
+
 ## Filesystem enforcement
 
 Workspace filesystem keys remain non-empty relative slash-separated values

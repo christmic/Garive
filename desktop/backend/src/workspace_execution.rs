@@ -82,6 +82,7 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
                 attachments: snapshot.attachments,
                 tool_revision,
             }),
+            f0: None,
         })
     }
 }

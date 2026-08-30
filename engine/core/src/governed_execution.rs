@@ -73,12 +73,39 @@ pub trait GovernedEffectPort: Send {
     ) -> GovernedEffectFuture<'a>;
 }
 
+/// Pure C4 boundary supplied by the frozen Runtime capability composition.
+pub trait ToolPreparationPort: Send + Sync {
+    /// Validates one model intent and derives its exact Prepared Call.
+    fn prepare(&self, intent: &ToolIntent) -> Result<PreparedToolCall, PreparationError>;
+}
+
 /// Runs the C0-C5 tool-capable bounded Agent loop.
 pub async fn execute_agent(
     request: &AgentTurnRequest,
     capabilities: &AgentToolCapabilities,
     ports: &mut AgentExecutionPorts<'_>,
     effects: &mut dyn GovernedEffectPort,
+) -> ExecutionReport {
+    execute_agent_inner(request, capabilities, ports, effects, None).await
+}
+
+/// Runs the bounded Agent loop with an explicit portable C4 preparation port.
+pub async fn execute_agent_with_preparation(
+    request: &AgentTurnRequest,
+    capabilities: &AgentToolCapabilities,
+    ports: &mut AgentExecutionPorts<'_>,
+    preparation: &dyn ToolPreparationPort,
+    effects: &mut dyn GovernedEffectPort,
+) -> ExecutionReport {
+    execute_agent_inner(request, capabilities, ports, effects, Some(preparation)).await
+}
+
+async fn execute_agent_inner(
+    request: &AgentTurnRequest,
+    capabilities: &AgentToolCapabilities,
+    ports: &mut AgentExecutionPorts<'_>,
+    effects: &mut dyn GovernedEffectPort,
+    preparation: Option<&dyn ToolPreparationPort>,
 ) -> ExecutionReport {
     let narrowed;
     let definitions = if request.activated_skills.is_empty() {
@@ -102,5 +129,5 @@ pub async fn execute_agent(
             .collect::<Vec<_>>();
         &narrowed
     };
-    crate::model_only::execute_with_tools(request, ports, definitions, effects).await
+    crate::model_only::execute_with_tools(request, ports, definitions, preparation, effects).await
 }

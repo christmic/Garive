@@ -5,6 +5,7 @@ use std::sync::{
 
 use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
+    ToolPreparationPort,
 };
 use garive_ledger::{CanonicalPayload, ExecutionId, SessionId, TurnId};
 use garive_llm::{
@@ -15,17 +16,22 @@ use garive_llm::{
 use garive_runtime::{
     local_dispatch_queue, recover_local_dispatches, CommittedTurn, EffectiveRuntimeLimits,
     HostClock, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecution,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution,
     LocalGovernedExecutionFactory, LocalWorkerDisposition, LocalWorkerError, SqliteLedger,
     TurnDispatcher,
 };
 use garive_runtime::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
-    ExecutorFuture, ExecutorPort, PreparedExecution,
+    ExecutorFuture, ExecutorPort, F0GovernanceContext, PreparedExecution, SafetyDecisionV1,
+    SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyPort, SandboxAdmission,
+    SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
 };
 use garive_tools::{
-    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
-    ReplayClass, TerminalClassification, ToolDefinition,
+    AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
+    ExecutionFact, ExecutionRequirements, InvocationAccessSet, PreparationError, PreparedToolCall,
+    ReceiptId, ReplayClass, ResourceAccess, SandboxControl, SandboxRequirementsV1,
+    TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog, ToolDefinition,
+    ToolIntent,
 };
 use serde_json::json;
 use tempfile::tempdir;
@@ -157,27 +163,141 @@ impl ExecutorPort for CompleteEffect {
 }
 
 struct GovernedFactory;
-impl LocalGovernedExecutionFactory for GovernedFactory {
-    fn create(&self, _: &CommittedTurn) -> Result<LocalGovernedExecution, LocalWorkerError> {
-        Ok(LocalGovernedExecution {
-            capabilities: garive_core::AgentToolCapabilities {
-                definitions: vec![ToolDefinition::new(
-                    "write_file",
-                    "1",
-                    "Write one governed Workspace artifact.",
-                    json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+
+struct WriteResolver;
+impl ToolAccessResolver for WriteResolver {
+    fn revision(&self) -> &str {
+        "t1-write-resolver-1"
+    }
+    fn resolve(
+        &self,
+        arguments: &serde_json::Value,
+    ) -> Result<InvocationAccessSet, PreparationError> {
+        InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            arguments["path"].as_str().unwrap(),
+            AccessMode::Write,
+        )?])
+    }
+}
+
+struct WritePreparation(ToolCatalog);
+impl ToolPreparationPort for WritePreparation {
+    fn prepare(&self, intent: &ToolIntent) -> Result<PreparedToolCall, PreparationError> {
+        self.0.prepare_v3(intent, &WriteResolver)
+    }
+}
+
+struct AllowF0;
+impl SafetyPort for AllowF0 {
+    fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        Box::pin(async move {
+            Ok(SafetyEvaluation {
+                decision: SafetyDecisionV1::new(
+                    "local-safety",
+                    SafetyDisposition::Allow,
+                    request.invocation_id().clone(),
+                    request.prepared_digest(),
+                    Some("b".repeat(64)),
+                    "desktop-test-1",
+                    None,
+                )
+                .unwrap(),
+                granted_requirements: Some(
                     ExecutionRequirements::new(
                         [ExecutionCapability::FilesystemWrite],
                         1_000,
                         4_096,
                     )
                     .unwrap(),
-                    ReplayClass::NeverReplay,
-                )
-                .unwrap()],
+                ),
+                interaction: None,
+            })
+        })
+    }
+}
+
+struct LocalF0Sandbox;
+impl SandboxAdmissionPort for LocalF0Sandbox {
+    fn admit(
+        &mut self,
+        _: SandboxAdmissionRequest<'_>,
+    ) -> Result<SandboxAdmission, garive_runtime::GovernedRuntimePortError> {
+        Ok(SandboxAdmission {
+            binding: SandboxBindingV1::new(
+                "local-binding",
+                "workspace",
+                "desktop.workspace",
+                "1",
+                "desktop-test-1",
+                write_policy(),
+                write_sandbox(),
+            )
+            .unwrap(),
+            effective_limits_digest: "e".repeat(64),
+            preflight_id: "local-preflight".into(),
+            dispatch_attempt_id: "dispatch-write-1".into(),
+        })
+    }
+}
+
+fn write_policy() -> ToolAccessPolicyV1 {
+    ToolAccessPolicyV1::new(
+        "t1-write-policy-1",
+        [AccessPolicyEntry::new("result.md", [AccessMode::Write]).unwrap()],
+        [],
+        [],
+        [],
+        1,
+        4_096,
+    )
+    .unwrap()
+}
+
+fn write_sandbox() -> SandboxRequirementsV1 {
+    SandboxRequirementsV1::new(
+        [ExecutionCapability::FilesystemWrite],
+        [
+            SandboxControl::FilesystemScope,
+            SandboxControl::SymlinkContainment,
+            SandboxControl::ResourceLimits,
+        ],
+        None,
+        8,
+    )
+    .unwrap()
+}
+
+fn governed_definition() -> ToolDefinition {
+    ToolDefinition::new_v3(
+        "write_file", "1", "Write one governed Workspace artifact.",
+        json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        ExecutionRequirements::new([ExecutionCapability::FilesystemWrite], 1_000, 4_096).unwrap(),
+        ReplayClass::ReceiptRecoverable, write_policy(), "t1-write-resolver-1", write_sandbox(),
+    ).unwrap()
+}
+
+impl LocalGovernedExecutionFactory for GovernedFactory {
+    fn create(&self, _: &CommittedTurn) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        Ok(LocalGovernedExecution {
+            capabilities: garive_core::AgentToolCapabilities {
+                definitions: vec![governed_definition()],
             },
             authority: Box::new(Approve),
             executor: Box::new(CompleteEffect),
+            f0: Some(LocalF0Governance {
+                preparation: Box::new(WritePreparation(
+                    ToolCatalog::new([governed_definition()]).unwrap(),
+                )),
+                safety: Box::new(AllowF0),
+                sandbox: Box::new(LocalF0Sandbox),
+                context: F0GovernanceContext {
+                    actor_authority_reference: "actor:test".into(),
+                    goal_reference: None,
+                    plan_reference: None,
+                    effective_policy_revision: "desktop-test-1".into(),
+                },
+            }),
         })
     }
 }
@@ -303,7 +423,7 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
 }
 
 #[tokio::test]
-async fn explicit_governed_factory_runs_the_complete_effect_fact_chain() {
+async fn explicit_governed_factory_runs_the_complete_f0_effect_fact_chain() {
     let directory = tempdir().expect("tempdir");
     let database = directory.path().join("governed.db");
     let (dispatcher, mut queue) = local_dispatch_queue(1).expect("queue");
@@ -368,10 +488,13 @@ async fn explicit_governed_factory_runs_the_complete_effect_fact_chain() {
         .position(|kind| *kind == "effect.prepared")
         .expect("effect prepared");
     assert_eq!(
-        &kinds[effect_start..effect_start + 6],
+        &kinds[effect_start..effect_start + 9],
         [
             "effect.prepared",
+            "safety.decided",
             "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
             "effect.started",
             "effect.receipt",
             "effect.completed",

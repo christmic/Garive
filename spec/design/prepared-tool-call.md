@@ -26,9 +26,18 @@ one exact admitted definition, validates and normalizes the arguments, and
 returns an immutable `PreparedToolCall`. It performs no authorization,
 invocation-ID allocation, persistence, execution, retry, or recovery.
 
-Producer: Core/tool preparation. Consumers: Core reduction and Runtime C5.
-Rust is production-first; Kotlin is an experimental independent implementation
-of the same admitted semantics after this Spec is accepted.
+Producer: the portable tool-preparation implementation selected by Runtime;
+consumer: Core sequencing followed by Runtime C5. Core owns when an intent is
+prepared but depends only on `ToolPreparationPort`; it never imports a
+workspace resolver, filesystem, environment or executor. Runtime freezes the
+catalogue and pure resolver implementation for the Execution and injects that
+port. Rust is production-first; Kotlin is an experimental independent
+implementation of the same admitted semantics after this Spec is accepted.
+
+The legacy definition-only Core entry point may construct the v1 catalogue for
+existing snapshots. A snapshot admitting Prepared-v2/v3 MUST supply an
+explicit preparation port and MUST NOT fall back to v1 preparation after a
+resolver/configuration failure.
 
 ## Inputs
 

@@ -4,9 +4,10 @@ use std::{
 };
 
 use garive_core::{
-    execute_agent, execute_model_only, AgentEvent, AgentEventKind, AgentExecutionPorts,
-    AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort, ContextCandidate,
-    ContextPort, ContextPurpose, EventSink, FactRef, PortFailure, Retention, Visibility,
+    execute_agent, execute_agent_with_preparation, execute_model_only, AgentEvent, AgentEventKind,
+    AgentExecutionPorts, AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort,
+    ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef, PortFailure, Retention,
+    ToolPreparationPort, Visibility,
 };
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId, TurnId,
@@ -23,9 +24,10 @@ use super::encoding::digest;
 use super::{
     knowledge_connector::execute_knowledge_capability, plan_core_terminal, plan_model_prepared,
     plan_model_started, plan_model_terminal, plan_model_uncertain, AuthorityPort,
-    CoreTerminalContext, ExecutorPort, GovernedEffectConfig, KnowledgeLifecycleContext,
-    ModelLifecycleContext, PlannedMemoryRetrieval, PlannedSkillActivation,
-    PreparedKnowledgeCapability, RuntimeModelUncertainReason, SqliteGovernedEffectPort,
+    CoreTerminalContext, ExecutorPort, F0GovernanceContext, GovernedEffectConfig,
+    KnowledgeLifecycleContext, ModelLifecycleContext, PlannedMemoryRetrieval,
+    PlannedSkillActivation, PreparedKnowledgeCapability, RuntimeModelUncertainReason, SafetyPort,
+    SandboxAdmissionPort, SqliteGovernedEffectPort,
 };
 
 use super::execution_types::{
@@ -41,6 +43,18 @@ pub struct PreparedAgentCapabilities {
     pub memory_retrieval: Option<PlannedMemoryRetrieval>,
     /// Exact K0 retrieval executed durably before Core sees its evidence.
     pub knowledge_retrieval: Option<PreparedKnowledgeCapability>,
+}
+
+/// Runtime-owned F0 brokers and immutable authority context for one Execution.
+pub struct F0ExecutionGovernance<'a> {
+    /// Pure versioned resolver that derives Prepared-v3 from one ToolIntent.
+    pub preparation: &'a dyn ToolPreparationPort,
+    /// Policy broker evaluating every exact Prepared-v3 call.
+    pub safety: &'a mut dyn SafetyPort,
+    /// Sandbox broker selecting and proving a concrete executor binding.
+    pub sandbox: &'a mut dyn SandboxAdmissionPort,
+    /// Authenticated Goal/Plan/policy bindings frozen for this Execution.
+    pub context: F0GovernanceContext,
 }
 
 /// Runs Core with a model port whose external boundaries are durably ordered.
@@ -260,6 +274,7 @@ pub async fn execute_durable_agent(
         model,
         authority,
         executor,
+        None,
         events,
         cancellation,
         clock,
@@ -299,6 +314,7 @@ pub async fn execute_durable_agent_with_skill_activation(
         model,
         authority,
         executor,
+        None,
         events,
         cancellation,
         clock,
@@ -318,6 +334,7 @@ async fn execute_durable_agent_inner(
     model: &dyn ModelPort,
     authority: &mut dyn AuthorityPort,
     executor: &mut dyn ExecutorPort,
+    f0: Option<F0ExecutionGovernance<'_>>,
     events: &mut dyn EventSink,
     cancellation: &dyn ModelCancellation,
     clock: &dyn ClockPort,
@@ -370,7 +387,7 @@ async fn execute_durable_agent_inner(
             .lock()
             .map_err(|_| DurableExecutionError::Coordination)?
             .version();
-        let mut effects = SqliteGovernedEffectPort::coordinated(
+        let effects = SqliteGovernedEffectPort::coordinated(
             &coordinator,
             authority,
             executor,
@@ -384,6 +401,14 @@ async fn execute_durable_agent_inner(
             },
         )
         .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
+        let (preparation, mut effects) = if let Some(f0) = f0 {
+            let effects = effects
+                .with_f0_governance(f0.safety, f0.sandbox, f0.context)
+                .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
+            (Some(f0.preparation), effects)
+        } else {
+            (None, effects)
+        };
         let mut ports = AgentExecutionPorts {
             context,
             model: &durable_model,
@@ -391,9 +416,56 @@ async fn execute_durable_agent_inner(
             cancellation: &durable_cancellation,
             clock,
         };
-        execute_agent(&effective_request, capabilities, &mut ports, &mut effects).await
+        if let Some(preparation) = preparation {
+            execute_agent_with_preparation(
+                &effective_request,
+                capabilities,
+                &mut ports,
+                preparation,
+                &mut effects,
+            )
+            .await
+        } else {
+            execute_agent(&effective_request, capabilities, &mut ports, &mut effects).await
+        }
     };
     finish_durable_execution(coordinator, config, report, publisher)
+}
+
+/// Runs the complete tool-capable Core loop with mandatory Prepared-v3 governance.
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_durable_agent_with_f0(
+    ledger: &mut SqliteLedger,
+    config: &DurableExecutionConfig,
+    request: &AgentTurnRequest,
+    capabilities: &AgentToolCapabilities,
+    context: &mut dyn ContextPort,
+    model: &dyn ModelPort,
+    authority: &mut dyn AuthorityPort,
+    executor: &mut dyn ExecutorPort,
+    f0: F0ExecutionGovernance<'_>,
+    events: &mut dyn EventSink,
+    cancellation: &dyn ModelCancellation,
+    clock: &dyn ClockPort,
+    publisher: &mut dyn TerminalPublisher,
+) -> Result<DurableExecutionResult, DurableExecutionError> {
+    execute_durable_agent_inner(
+        ledger,
+        config,
+        request,
+        PreparedAgentCapabilities::default(),
+        capabilities,
+        context,
+        model,
+        authority,
+        executor,
+        Some(f0),
+        events,
+        cancellation,
+        clock,
+        publisher,
+    )
+    .await
 }
 
 /// Runs tool-capable Core after committing all supplied capability inputs in order.
@@ -423,6 +495,7 @@ pub async fn execute_durable_agent_with_capabilities(
         model,
         authority,
         executor,
+        None,
         events,
         cancellation,
         clock,

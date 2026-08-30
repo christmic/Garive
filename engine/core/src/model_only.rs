@@ -27,22 +27,24 @@ pub async fn execute_model_only(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
 ) -> ExecutionReport {
-    execute_kernel(request, ports, &[], None).await
+    execute_kernel(request, ports, &[], None, None).await
 }
 
 pub(crate) async fn execute_with_tools(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
     definitions: &[ToolDefinition],
+    preparation: Option<&dyn crate::ToolPreparationPort>,
     effects: &mut dyn crate::GovernedEffectPort,
 ) -> ExecutionReport {
-    execute_kernel(request, ports, definitions, Some(effects)).await
+    execute_kernel(request, ports, definitions, preparation, Some(effects)).await
 }
 
 async fn execute_kernel(
     request: &AgentTurnRequest,
     ports: &mut AgentExecutionPorts<'_>,
     definitions: &[ToolDefinition],
+    preparation: Option<&dyn crate::ToolPreparationPort>,
     mut effects: Option<&mut dyn crate::GovernedEffectPort>,
 ) -> ExecutionReport {
     let mut control = match prepare_control(request) {
@@ -383,6 +385,7 @@ async fn execute_kernel(
                     match govern_tool_intents(
                         &items,
                         &catalog,
+                        preparation,
                         effects,
                         &request_id,
                         ports.cancellation,
@@ -573,6 +576,7 @@ enum ToolStep {
 async fn govern_tool_intents(
     items: &[ModelItem],
     catalog: &ToolCatalog,
+    preparation: Option<&dyn crate::ToolPreparationPort>,
     effects: &mut dyn crate::GovernedEffectPort,
     source_model_request_id: &str,
     cancellation: &dyn ModelCancellation,
@@ -593,7 +597,10 @@ async fn govern_tool_intents(
             });
         }
         let intent = ToolIntent::new(model_call_id, tool_name, arguments_json);
-        let committed = match catalog.prepare(&intent) {
+        let prepared = preparation
+            .map(|port| port.prepare(&intent))
+            .unwrap_or_else(|| catalog.prepare(&intent));
+        let committed = match prepared {
             Ok(prepared) => effects.invoke(source_model_request_id, &prepared).await,
             Err(error) => {
                 effects

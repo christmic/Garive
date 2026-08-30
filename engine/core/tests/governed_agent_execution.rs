@@ -6,13 +6,14 @@ use std::{
 
 use futures::executor::block_on;
 use garive_core::{
-    execute_agent, AgentCursor, AgentDefinitionId, AgentDefinitionRevision, AgentEntry, AgentEvent,
-    AgentExecutionPorts, AgentInstanceId, AgentOutcome, AgentToolCapabilities, AgentTurnRequest,
-    CandidateKind, ClockPort, CommittedGovernedResult, ContextCandidate, ContextPort,
-    ContextPortError, ContextPurpose, ContextRequest, EventSink, ExecutionId, ExecutionLimits,
-    FactRef, GovernedEffectFuture, GovernedEffectPort, MissingUsagePolicy, ModelOnlyLimits,
-    ModelRecoveryPolicy, OutputLimitAction, PortFailure, Retention, SessionId, SuspensionReason,
-    TerminalRecoveryAction, TurnId, Visibility,
+    execute_agent, execute_agent_with_preparation, AgentCursor, AgentDefinitionId,
+    AgentDefinitionRevision, AgentEntry, AgentEvent, AgentExecutionPorts, AgentInstanceId,
+    AgentOutcome, AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort,
+    CommittedGovernedResult, ContextCandidate, ContextPort, ContextPortError, ContextPurpose,
+    ContextRequest, EventSink, ExecutionId, ExecutionLimits, FactRef, GovernedEffectFuture,
+    GovernedEffectPort, MissingUsagePolicy, ModelOnlyLimits, ModelRecoveryPolicy,
+    OutputLimitAction, PortFailure, Retention, SessionId, SuspensionReason, TerminalRecoveryAction,
+    ToolPreparationPort, TurnId, Visibility,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputItem, ModelItem,
@@ -24,10 +25,12 @@ use garive_skill::{
     SkillActivationRequest, SkillActivationResult, SkillDefinition,
 };
 use garive_tools::{
-    ExecutionCapability, ExecutionRequirements, GovernedEffectFailure, GovernedFailureCode,
-    GovernedObservation, GovernedToolResult, InteractionId, InteractionKind, InteractionRequest,
-    ObservationOutcome, PreparationError, PreparedToolCall, ReplayClass, SuspensionRequirement,
-    ToolDefinition, ToolFeedback, ToolIntent, ToolInvocationId,
+    AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
+    GovernedEffectFailure, GovernedFailureCode, GovernedObservation, GovernedToolResult,
+    InteractionId, InteractionKind, InteractionRequest, InvocationAccessSet, ObservationOutcome,
+    PreparationError, PreparedToolCall, ReplayClass, ResourceAccess, SandboxControl,
+    SandboxRequirementsV1, SuspensionRequirement, ToolAccessPolicyV1, ToolAccessResolver,
+    ToolCatalog, ToolDefinition, ToolFeedback, ToolIntent, ToolInvocationId,
 };
 use serde_json::json;
 
@@ -294,6 +297,102 @@ fn governed_observation_advances_context_and_completes() {
     assert!(matches!(report.outcome, AgentOutcome::Completed { .. }));
     assert_eq!(positions, [1, 5]);
     assert_eq!(tool_counts, [1, 1]);
+}
+
+struct V3Resolver;
+impl ToolAccessResolver for V3Resolver {
+    fn revision(&self) -> &str {
+        "v3-resolver-1"
+    }
+    fn resolve(
+        &self,
+        arguments: &serde_json::Value,
+    ) -> Result<InvocationAccessSet, PreparationError> {
+        InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            arguments["path"].as_str().unwrap(),
+            AccessMode::Read,
+        )?])
+    }
+}
+
+struct V3Preparation(ToolCatalog);
+impl ToolPreparationPort for V3Preparation {
+    fn prepare(&self, intent: &ToolIntent) -> Result<PreparedToolCall, PreparationError> {
+        self.0.prepare_v3(intent, &V3Resolver)
+    }
+}
+
+struct V3Effects;
+impl GovernedEffectPort for V3Effects {
+    fn reject<'a>(
+        &'a mut self,
+        _: &'a str,
+        _: &'a ToolIntent,
+        _: &'a PreparationError,
+    ) -> GovernedEffectFuture<'a> {
+        Box::pin(async { Err(PortFailure::Tool) })
+    }
+    fn invoke<'a>(
+        &'a mut self,
+        _: &'a str,
+        prepared: &'a PreparedToolCall,
+    ) -> GovernedEffectFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(prepared.contract_version(), 3);
+            Ok(CommittedGovernedResult {
+                result: observation(),
+                through_position: 5,
+                suspension_binding: None,
+            })
+        })
+    }
+}
+
+#[test]
+fn explicit_preparation_port_reaches_core_as_prepared_v3() {
+    let definition = ToolDefinition::new_v3(
+        "read_file", "1", "Read one file.",
+        json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 1_024).unwrap(),
+        ReplayClass::ReadOnly,
+        ToolAccessPolicyV1::new(
+            "policy-1", [AccessPolicyEntry::new("a", [AccessMode::Read]).unwrap()], [], [], [], 1, 1_024,
+        ).unwrap(),
+        "v3-resolver-1",
+        SandboxRequirementsV1::new(
+            [ExecutionCapability::FilesystemRead],
+            [SandboxControl::FilesystemScope, SandboxControl::SymlinkContainment, SandboxControl::ResourceLimits],
+            None, 8,
+        ).unwrap(),
+    ).unwrap();
+    let preparation = V3Preparation(ToolCatalog::new([definition.clone()]).unwrap());
+    let model = Model {
+        outcomes: Mutex::new(VecDeque::from([tool_outcome("read_file"), text_outcome()])),
+        tool_counts: Mutex::new(vec![]),
+        inputs: Mutex::new(vec![]),
+    };
+    let mut context = Context { positions: vec![] };
+    let mut events = Events;
+    let mut effects = V3Effects;
+    let mut ports = AgentExecutionPorts {
+        context: &mut context,
+        model: &model,
+        events: &mut events,
+        cancellation: &Cancellation,
+        clock: &Clock,
+    };
+    let report = block_on(execute_agent_with_preparation(
+        &request(),
+        &AgentToolCapabilities {
+            definitions: vec![definition],
+        },
+        &mut ports,
+        &preparation,
+        &mut effects,
+    ));
+    assert!(matches!(report.outcome, AgentOutcome::Completed { .. }));
+    assert_eq!(context.positions, [1, 5]);
 }
 
 #[test]
