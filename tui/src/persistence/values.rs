@@ -90,7 +90,6 @@ impl Preferences {
                 .sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
             self.drafts.truncate(32);
         }
-        self.revision = self.revision.saturating_add(1);
     }
 }
 

@@ -5,7 +5,7 @@ use std::{
 };
 
 use fs2::FileExt;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -48,30 +48,67 @@ impl StateStore {
     }
 
     pub(crate) fn load_preferences(&self) -> Result<Preferences, StateError> {
-        let value: Preferences = self.read_json("preferences.v1.json")?.unwrap_or_default();
-        value.validate()?;
-        Ok(value)
+        let Some(root) = &self.root else {
+            return Ok(Preferences::default());
+        };
+        match self.read_json::<Preferences>("preferences.v1.json") {
+            Ok(Some(value)) if value.validate().is_ok() => Ok(value),
+            Ok(None) => Ok(Preferences::default()),
+            Ok(Some(_)) | Err(StateError::InvalidData) => {
+                let path = root.join("preferences.v1.json");
+                with_lock(root, "state.lock", || {
+                    quarantine(root, &path, "preferences")
+                })?;
+                Ok(Preferences::default())
+            }
+            Err(error) => Err(error),
+        }
     }
 
-    pub(crate) fn save_preferences(&self, value: &Preferences) -> Result<(), StateError> {
+    pub(crate) fn save_preferences(&self, value: &mut Preferences) -> Result<(), StateError> {
         value.validate()?;
-        self.write_json("preferences.v1.json", value)
+        let Some(root) = &self.root else {
+            return Ok(());
+        };
+        with_lock(root, "state.lock", || {
+            let current = self.read_json::<Preferences>("preferences.v1.json")?;
+            if let Some(current) = &current {
+                current.validate()?;
+                if current.revision != value.revision {
+                    return Err(StateError::Conflict);
+                }
+            } else if value.revision != 0 {
+                return Err(StateError::Conflict);
+            }
+            let mut next = value.clone();
+            next.revision = next.revision.checked_add(1).ok_or(StateError::Conflict)?;
+            let bytes = serde_jcs::to_vec(&next).map_err(|_| StateError::InvalidData)?;
+            atomic_write(root, "preferences.v1.json", &bytes)?;
+            *value = next;
+            Ok(())
+        })
     }
 
     pub(crate) fn save_pending(&self, value: &PendingCommand) -> Result<(), StateError> {
         value.validate()?;
+        let Some(root) = &self.root else {
+            return Ok(());
+        };
         let path = format!(
             "pending/{}.v1.json",
             session_key(value.session_id.as_deref().unwrap_or("new"))
         );
-        if let Some(existing) = self.read_json::<PendingCommand>(&path)? {
-            existing.validate()?;
-            if existing.request_digest != value.request_digest {
-                return Err(StateError::Conflict);
+        with_lock(root, "pending.lock", || {
+            if let Some(existing) = self.read_json::<PendingCommand>(&path)? {
+                existing.validate()?;
+                if existing.request_digest != value.request_digest {
+                    return Err(StateError::Conflict);
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
-        self.write_json(&path, value)
+            let bytes = serde_jcs::to_vec(value).map_err(|_| StateError::InvalidData)?;
+            atomic_write(root, &path, &bytes)
+        })
     }
 
     pub(crate) fn load_any_pending(&self) -> Result<Option<PendingCommand>, StateError> {
@@ -177,17 +214,6 @@ impl StateStore {
         serde_json::from_slice(&bytes)
             .map(Some)
             .map_err(|_| StateError::InvalidData)
-    }
-
-    fn write_json<T: Serialize>(&self, relative: &str, value: &T) -> Result<(), StateError> {
-        let Some(root) = &self.root else {
-            return Ok(());
-        };
-        let bytes = serde_jcs::to_vec(value).map_err(|_| StateError::InvalidData)?;
-        if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err(StateError::InvalidData);
-        }
-        with_lock(root, "state.lock", || atomic_write(root, relative, &bytes))
     }
 }
 

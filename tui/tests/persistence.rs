@@ -18,9 +18,9 @@ fn preferences_round_trip_atomically_with_private_permissions() {
     let root = temporary.path().join("state");
     let store = StateStore::open(Some(root.clone()), false).unwrap();
     let mut preferences = Preferences::default();
-    preferences.revision = 7;
     preferences.theme = Theme::Dark;
-    store.save_preferences(&preferences).unwrap();
+    store.save_preferences(&mut preferences).unwrap();
+    assert_eq!(preferences.revision, 1);
     assert_eq!(store.load_preferences().unwrap(), preferences);
     assert_eq!(fs::metadata(&root).unwrap().permissions().mode() & 0o077, 0);
     assert_eq!(
@@ -60,6 +60,27 @@ fn hostile_permissions_and_invalid_preference_shape_are_rejected() {
         StateStore::open(Some(root), false).unwrap_err(),
         StateError::UnsafePermissions
     );
+}
+
+#[test]
+fn preference_writes_compare_and_swap_and_corruption_is_quarantined() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let store = StateStore::open(Some(root.clone()), false).unwrap();
+    let mut first = store.load_preferences().unwrap();
+    let mut stale = first.clone();
+    first.theme = Theme::Dark;
+    store.save_preferences(&mut first).unwrap();
+    stale.theme = Theme::Light;
+    assert_eq!(
+        store.save_preferences(&mut stale),
+        Err(StateError::Conflict)
+    );
+    assert_eq!(store.load_preferences().unwrap().theme, Theme::Dark);
+
+    fs::write(root.join("preferences.v1.json"), b"{broken}").unwrap();
+    assert_eq!(store.load_preferences().unwrap(), Preferences::default());
+    assert_eq!(fs::read_dir(root.join("quarantine")).unwrap().count(), 1);
 }
 
 #[test]

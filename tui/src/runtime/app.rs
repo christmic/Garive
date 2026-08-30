@@ -357,7 +357,7 @@ impl RuntimeState {
         self.preferences.theme = self.config.theme;
         self.preferences.mouse = self.config.mouse;
         self.preferences.reduced_motion = self.config.reduced_motion;
-        if let Err(error) = self.store.save_preferences(&self.preferences) {
+        if let Err(error) = self.store.save_preferences(&mut self.preferences) {
             self.model.notice = Some(format!("Local state: {}", state_error_name(error)));
         }
     }
