@@ -96,4 +96,20 @@ describe("Desktop work state", () => {
       observed_max_position: 9, has_more: false } });
     expect(current.artifacts).toEqual([artifact]);
   });
+
+  it("keeps Workspace attachments scoped to the current durable Session", () => {
+    const loaded = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
+      api_version: "v1", session_id: "session-1", scanned_through_position: 1,
+      observed_max_position: 1, has_more: false, items: [],
+    } });
+    const attachment = { api_version: "v1" as const, session_id: "session-1",
+      workspace_id: "workspace-1", display_name: "Launch materials", grant_revision: 2,
+      access: "read_write" as const, attached_position: 4 };
+    const stale = reduceWork(loaded, { type: "workspaces_loaded", sessionId: "session-old",
+      workspaces: [attachment] });
+    expect(stale.workspaces).toEqual([]);
+    const current = reduceWork(loaded, { type: "workspaces_loaded", sessionId: "session-1",
+      workspaces: [attachment] });
+    expect(current.workspaces).toEqual([attachment]);
+  });
 });
