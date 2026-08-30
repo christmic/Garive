@@ -6,25 +6,25 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
 
  Sessions 2                      │ Conversation
                                  │  ╭─ YOU #2
- ▸ New session · 123456          │  │  Summarize the release plan.
-   completed  ·  3 turns         │  ╰─
-                                 │               ╭ Command palette ───────────────────────────────────────────╮
-   New session · 987654          │    ◌  activity│                                                            │
-   running  ·  1 turns           │               │  › /new         Create session                             │
-                                 │  ◆  GARIVE #6 │    /sessions    Switch session                             │
-                                 │     ## Release│    /status      Connection details                         │
-                                 │     • Verify t│    /retry       Retry unknown command  unavailable         │
-                                 │     • Ship wit│    /reconnect   Resume event stream                        │
-                                 │     cargo test│    /cancel      Cancel running turn                        │
-                                 │               │    /theme system Follow terminal theme                     │
-                                 │               │    /mouse off   Disable mouse capture next launch          │
-                                 │               │    /copy last   Copy last completion                       │
-                                 │               │    /copy session-id Copy Session ID                        │
-                                 │               │    /help        Keyboard guide                             │
-                                 │               │    /quit        Exit safely                                │
-                                 │               │                                                            │
-                                 │               ╰────────────────────────────────────────────────────────────╯
-                                 │
+ ▸ New session · 123456          │  │  Summ╭ Command palette ───────────────────────────────────────────────────────╮
+   completed  ·  3 turns         │  ╰─     │                                                                        │
+                                 │         │  Search: type to search                                                │
+   New session · 987654          │    ◌  ac│  › /new         Create session                                         │
+   running  ·  1 turns           │         │    /sessions    Switch session                                         │
+                                 │  ◆  GARI│    /status      Connection details                                     │
+                                 │     ## R│    /retry       Retry unknown command  · no pending command            │
+                                 │     • Ve│    /reconnect   Resume event stream                                    │
+                                 │     • Sh│    /cancel      Cancel running turn                                    │
+                                 │     carg│    /theme system Follow terminal theme                                 │
+                                 │         │    /mouse off   Disable mouse capture next launch                      │
+                                 │         │    /copy last   Copy last completion                                   │
+                                 │         │    /copy session-id Copy Session ID                                    │
+                                 │         │    /help        Keyboard guide                                         │
+                                 │         │    /quit        Exit safely                                            │
+                                 │         │                                                                        │
+                                 │         │  ↑/↓ select   Enter run   Esc close                                    │
+                                 │         │                                                                        │
+                                 │         ╰────────────────────────────────────────────────────────────────────────╯
                                  │──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭ Message ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Ask a follow-up…                                                                                                                                             │

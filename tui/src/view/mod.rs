@@ -11,7 +11,7 @@ use crate::{
     application::{
         AppModel, BootState, ConnectionState, ExecutionState, Overlay, TerminalSize, TimelineRole,
     },
-    input::{describe_schema, COMMAND_PALETTE},
+    input::{command_matches, describe_schema, COMMAND_PALETTE},
     Theme,
 };
 use markdown::render_markdown;
@@ -402,7 +402,7 @@ fn render_overlay(
         Overlay::CommandPalette => (
             " Command palette ",
             palette_text(model),
-            (COMMAND_PALETTE.len() as u16 + 4).clamp(12, 18),
+            (COMMAND_PALETTE.len() as u16 + 7).clamp(12, 22),
         ),
         Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
@@ -413,9 +413,14 @@ fn render_overlay(
         Overlay::EphemeralConfirmation => (" Ephemeral mode ", "A lost response cannot be recovered after exit.\n\nEnter  Accept for this run     Esc  Cancel".into(), 7),
         Overlay::QuitConfirmation => (" Quit Garive? ", "Your Sessions stay durable in the Host.\n\nEnter  Quit     Esc  Keep working".into(), 7),
     };
+    let popup_width = if overlay == Overlay::CommandPalette {
+        74
+    } else {
+        62
+    };
     let popup = centered(
         area,
-        62.min(area.width.saturating_sub(4)),
+        popup_width.min(area.width.saturating_sub(4)),
         height.min(area.height.saturating_sub(2)),
     );
     Clear.render(popup, buffer);
@@ -435,25 +440,37 @@ fn render_overlay(
 
 fn session_picker_text(model: &AppModel) -> String {
     let filter = model.session_filter.to_lowercase();
-    let mut rows = model
-        .sessions
-        .iter()
-        .filter(|session| filter.is_empty() || session.session_id.to_lowercase().contains(&filter))
-        .enumerate()
-        .map(|(index, session)| {
-            let marker = if index == model.session_selection {
-                "›"
-            } else {
-                " "
-            };
-            format!(
-                "{marker} New session · {}   {}",
-                short_tail(&session.session_id),
-                session.latest_turn_state.as_deref().unwrap_or("new")
-            )
-        })
-        .collect::<Vec<_>>();
-    if rows.is_empty() {
+    let mut rows = vec![format!(
+        "Filter: {}",
+        if model.session_filter.is_empty() {
+            "type to search".into()
+        } else {
+            safe_text(&model.session_filter)
+        }
+    )];
+    rows.extend(
+        model
+            .sessions
+            .iter()
+            .filter(|session| {
+                filter.is_empty() || session.session_id.to_lowercase().contains(&filter)
+            })
+            .enumerate()
+            .map(|(index, session)| {
+                let marker = if index == model.session_selection {
+                    "›"
+                } else {
+                    " "
+                };
+                format!(
+                    "{marker} New session · {}   {}",
+                    short_tail(&session.session_id),
+                    session.latest_turn_state.as_deref().unwrap_or("new")
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    if rows.len() == 1 {
         rows.push("  No matching Sessions".into());
     }
     rows.push(String::new());
@@ -468,23 +485,35 @@ fn session_picker_text(model: &AppModel) -> String {
 }
 
 fn history_text(model: &AppModel) -> String {
-    let mut rows = model
-        .prompt_history
-        .iter()
-        .take(10)
-        .enumerate()
-        .map(|(index, text)| {
-            let marker = if index == model.history_selection {
-                "›"
-            } else {
-                " "
-            };
-            let first = text.lines().next().unwrap_or_default();
-            let preview = first.chars().take(46).collect::<String>();
-            format!("{marker} {preview}")
-        })
-        .collect::<Vec<_>>();
-    if rows.is_empty() {
+    let filter = model.history_filter.to_lowercase();
+    let mut rows = vec![format!(
+        "Search: {}",
+        if model.history_filter.is_empty() {
+            "type to search".into()
+        } else {
+            safe_text(&model.history_filter)
+        }
+    )];
+    rows.extend(
+        model
+            .prompt_history
+            .iter()
+            .filter(|text| filter.is_empty() || text.to_lowercase().contains(&filter))
+            .take(10)
+            .enumerate()
+            .map(|(index, text)| {
+                let marker = if index == model.history_selection {
+                    "›"
+                } else {
+                    " "
+                };
+                let first = text.lines().next().unwrap_or_default();
+                let preview = first.chars().take(46).collect::<String>();
+                format!("{marker} {preview}")
+            })
+            .collect::<Vec<_>>(),
+    );
+    if rows.len() == 1 {
         rows.push("  No local prompt history".into());
     }
     rows.push(String::new());
@@ -493,23 +522,43 @@ fn history_text(model: &AppModel) -> String {
 }
 
 fn palette_text(model: &AppModel) -> String {
-    let mut rows = COMMAND_PALETTE
-        .iter()
-        .enumerate()
-        .map(|(index, (name, help))| {
-            let marker = if index == model.command_selection {
-                "›"
-            } else {
-                " "
-            };
-            let disabled = match *name {
-                "/retry" if !model.has_pending_command => "  unavailable",
-                "/cancel" if model.execution != ExecutionState::Following => "  unavailable",
-                _ => "",
-            };
-            format!("{marker} {name:<12} {help}{disabled}")
-        })
-        .collect::<Vec<_>>();
+    let mut rows = vec![format!(
+        "Search: {}",
+        if model.command_filter.is_empty() {
+            "type to search".into()
+        } else {
+            safe_text(&model.command_filter)
+        }
+    )];
+    rows.extend(
+        COMMAND_PALETTE
+            .iter()
+            .filter(|(name, help)| command_matches(name, help, &model.command_filter))
+            .enumerate()
+            .map(|(index, (name, help))| {
+                let marker = if index == model.command_selection {
+                    "›"
+                } else {
+                    " "
+                };
+                let disabled = match *name {
+                    "/new" if model.definitions.is_empty() => "  · no Agent installed",
+                    "/retry" if !model.has_pending_command => "  · no pending command",
+                    "/cancel" if model.execution != ExecutionState::Following => {
+                        "  · no Turn running"
+                    }
+                    "/copy session-id" if model.selected_session.is_none() => {
+                        "  · no Session selected"
+                    }
+                    _ => "",
+                };
+                format!("{marker} {name:<12} {help}{disabled}")
+            })
+            .collect::<Vec<_>>(),
+    );
+    if rows.len() == 1 {
+        rows.push("  No matching commands".into());
+    }
     rows.push(String::new());
     rows.push("↑/↓ select   Enter run   Esc close".into());
     rows.join("\n")

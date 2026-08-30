@@ -82,6 +82,25 @@ fn only_the_composer_owns_the_terminal_cursor() {
 }
 
 #[test]
+fn searchable_overlays_show_only_matching_rows() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::CommandPalette),
+        command_filter: "copy completion".into(),
+        ..Default::default()
+    };
+    let palette = frame(&model, 100, 24);
+    assert!(palette.contains("/copy last"));
+    assert!(!palette.contains("/status"));
+
+    model.overlay = Some(Overlay::PromptHistory);
+    model.history_filter = "deploy".into();
+    model.prompt_history = vec!["deploy release".into(), "write tests".into()];
+    let history = frame(&model, 100, 24);
+    assert!(history.contains("deploy release"));
+    assert!(!history.contains("write tests"));
+}
+
+#[test]
 fn agent_markdown_is_structured_and_terminal_safe() {
     let mut model = AppModel {
         boot: BootState::Ready,

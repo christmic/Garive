@@ -6,7 +6,7 @@ pub use args::{MouseMode, Theme};
 #[path = "../src/input/commands.rs"]
 mod commands;
 
-use commands::{parse_command, Command, CommandParse};
+use commands::{command_matches, parse_command, Command, CommandParse};
 
 #[test]
 fn non_commands_remain_host_text_and_known_commands_are_exact() {
@@ -38,4 +38,19 @@ fn malformed_or_ambiguous_commands_never_fall_through_to_host() {
     ] {
         assert_eq!(parse_command(value), CommandParse::Invalid, "{value}");
     }
+}
+
+#[test]
+fn palette_search_matches_all_terms_across_name_and_help() {
+    assert!(command_matches(
+        "/copy last",
+        "Copy last completion",
+        "copy completion"
+    ));
+    assert!(command_matches("/status", "Connection details", "STATUS"));
+    assert!(!command_matches(
+        "/copy session-id",
+        "Copy Session ID",
+        "completion"
+    ));
 }

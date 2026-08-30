@@ -15,6 +15,13 @@ pub(crate) const COMMAND_PALETTE: &[(&str, &str)] = &[
     ("/quit", "Exit safely"),
 ];
 
+pub(crate) fn command_matches(name: &str, help: &str, filter: &str) -> bool {
+    let searchable = format!("{name} {help}").to_lowercase();
+    filter
+        .split_whitespace()
+        .all(|term| searchable.contains(&term.to_lowercase()))
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
     New { definition: Option<String> },

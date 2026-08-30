@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use crate::{
     application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize},
-    input::{parse_command, parse_schema_input, Command, CommandParse, COMMAND_PALETTE},
+    input::{
+        command_matches, parse_command, parse_schema_input, Command, CommandParse, COMMAND_PALETTE,
+    },
     persistence::{now, PendingCommand, PendingKind},
 };
 use serde_json::{json, Value};
@@ -95,17 +97,47 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             }
             KeyCode::Down if overlay == Overlay::PromptHistory => {
                 state.model.history_selection = (state.model.history_selection + 1)
-                    .min(state.model.prompt_history.len().saturating_sub(1))
+                    .min(matching_history(state).len().saturating_sub(1))
             }
             KeyCode::Enter if overlay == Overlay::PromptHistory => select_history(state),
             KeyCode::Up if overlay == Overlay::CommandPalette => {
                 state.model.command_selection = state.model.command_selection.saturating_sub(1)
             }
             KeyCode::Down if overlay == Overlay::CommandPalette => {
-                state.model.command_selection =
-                    (state.model.command_selection + 1).min(COMMAND_PALETTE.len() - 1)
+                state.model.command_selection = (state.model.command_selection + 1)
+                    .min(matching_commands(state).len().saturating_sub(1))
             }
             KeyCode::Enter if overlay == Overlay::CommandPalette => select_command(state),
+            KeyCode::Char(character)
+                if overlay == Overlay::CommandPalette && is_safe_query_character(character) =>
+            {
+                state.model.command_filter.push(character);
+                state.model.command_selection = 0;
+            }
+            KeyCode::Backspace if overlay == Overlay::CommandPalette => {
+                state.model.command_filter.pop();
+                state.model.command_selection = 0;
+            }
+            KeyCode::Char(character)
+                if overlay == Overlay::SessionPicker && is_safe_query_character(character) =>
+            {
+                state.model.session_filter.push(character);
+                state.model.session_selection = 0;
+            }
+            KeyCode::Backspace if overlay == Overlay::SessionPicker => {
+                state.model.session_filter.pop();
+                state.model.session_selection = 0;
+            }
+            KeyCode::Char(character)
+                if overlay == Overlay::PromptHistory && is_safe_query_character(character) =>
+            {
+                state.model.history_filter.push(character);
+                state.model.history_selection = 0;
+            }
+            KeyCode::Backspace if overlay == Overlay::PromptHistory => {
+                state.model.history_filter.pop();
+                state.model.history_selection = 0;
+            }
             KeyCode::Enter if overlay == Overlay::Suspension => {
                 state.editing_suspension = state
                     .model
@@ -131,8 +163,8 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                 create_session(state);
             }
             KeyCode::Char('s') => open_session_picker(state),
-            KeyCode::Char('p') => state.dispatch(AppAction::OverlayOpened(Overlay::CommandPalette)),
-            KeyCode::Char('r') => state.dispatch(AppAction::OverlayOpened(Overlay::PromptHistory)),
+            KeyCode::Char('p') => open_command_palette(state),
+            KeyCode::Char('r') => open_prompt_history(state),
             KeyCode::Char('j') => {
                 let _ = state.model.composer.insert("\n");
             }
@@ -283,8 +315,26 @@ fn conversation_page_cells(state: &RuntimeState) -> usize {
     usize::from(state.model.terminal_size.height.saturating_sub(8) / 3).max(1)
 }
 
+fn is_safe_query_character(character: char) -> bool {
+    !character.is_control()
+        && !matches!(
+            character,
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+        )
+}
+
 fn select_command(state: &mut RuntimeState) {
-    let name = COMMAND_PALETTE[state.model.command_selection].0;
+    let Some(index) = matching_commands(state)
+        .get(state.model.command_selection)
+        .copied()
+    else {
+        return;
+    };
+    let name = COMMAND_PALETTE[index].0;
+    if let Some(reason) = command_disabled_reason(name, state) {
+        state.model.notice = Some(format!("Command unavailable: {reason}."));
+        return;
+    }
     state.model.overlay = None;
     if let CommandParse::Valid(command) = parse_command(name) {
         execute_command(command, state);
@@ -292,15 +342,66 @@ fn select_command(state: &mut RuntimeState) {
 }
 
 fn select_history(state: &mut RuntimeState) {
-    if let Some(text) = state
-        .model
-        .prompt_history
+    if let Some(text) = matching_history(state)
         .get(state.model.history_selection)
         .cloned()
     {
         let _ = state.model.composer.replace(&text);
     }
     state.model.overlay = None;
+}
+
+fn open_command_palette(state: &mut RuntimeState) {
+    state.model.command_filter.clear();
+    state.model.command_selection = 0;
+    state.dispatch(AppAction::OverlayOpened(Overlay::CommandPalette));
+}
+
+fn open_prompt_history(state: &mut RuntimeState) {
+    state.model.history_filter.clear();
+    state.model.history_selection = 0;
+    state.dispatch(AppAction::OverlayOpened(Overlay::PromptHistory));
+}
+
+fn matching_commands(state: &RuntimeState) -> Vec<usize> {
+    COMMAND_PALETTE
+        .iter()
+        .enumerate()
+        .filter(|(_, (name, help))| command_matches(name, help, &state.model.command_filter))
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn matching_history(state: &RuntimeState) -> Vec<String> {
+    let filter = state.model.history_filter.to_lowercase();
+    state
+        .model
+        .prompt_history
+        .iter()
+        .filter(|text| filter.is_empty() || text.to_lowercase().contains(&filter))
+        .cloned()
+        .collect()
+}
+
+fn command_disabled_reason(name: &str, state: &RuntimeState) -> Option<&'static str> {
+    match name {
+        "/new" if state.model.definitions.is_empty() => Some("no Agent is installed"),
+        "/retry" if state.pending_for_context().is_none() => Some("no pending command"),
+        "/cancel" if state.model.execution != ExecutionState::Following => {
+            Some("no Turn is running")
+        }
+        "/copy last"
+            if !state
+                .model
+                .timeline
+                .iter()
+                .any(|item| item.role == crate::application::TimelineRole::Agent) =>
+        {
+            Some("no completion is visible")
+        }
+        "/copy session-id" if state.model.selected_session.is_none() => Some("no Session selected"),
+        _ => None,
+    }
 }
 
 fn select_session(state: &mut RuntimeState) {
