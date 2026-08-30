@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+#[cfg(unix)]
+mod confined_read_executor;
 mod core_bridge;
 mod delegation_runtime;
 mod effect_batch_facts;
@@ -22,6 +24,8 @@ mod runtime_turn;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
+#[cfg(unix)]
+pub use confined_read_executor::ConfinedFileReadExecutor;
 pub use core_bridge::{
     authorize_memory_query, authorize_memory_write, canonical_model_request_digest,
     decode_committed_memory_recall, derive_knowledge_recovery, execute_durable_agent,

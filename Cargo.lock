@@ -1392,6 +1392,7 @@ dependencies = [
  "garive-tools",
  "reqwest 0.12.28",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_jcs",
  "serde_json",
