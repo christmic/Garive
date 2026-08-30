@@ -541,6 +541,86 @@ contract (angle ⑧):
 The `recall.outcome` row is the **weekly calibration input**
 for `R` (Beta-Binomial) and for the ranker weights.
 
+### Recall quality — measured by the feedback loop, not by offline eval
+
+Recall precision is **not** measured by a separate
+benchmark. It is **measured by the same feedback loop** that
+calibrates `R` — the chain
+
+```
+recall.event → recall.apply → recall.outcome → β update → conf recompute → ranker weight recalibrate
+```
+
+**The link** is the unit of evidence:
+
+| Link state | Meaning | What it does |
+|-----------|---------|--------------|
+| `event` only | The model was shown the entry but did not cite it | **Censored** — no signal |
+| `event + apply` (no outcome yet) | The model cited it but the world hasn't checked | **Pending** — outcome arrives |
+| `event + apply + outcome.success` | The model cited it AND the world confirmed | **Confirmed** — β +1 |
+| `event + apply + outcome.failure` | The model cited it AND the world contradicted | **Falsified** — β +1 (failure counts) |
+| `event + apply + outcome.conflict` | Cited entry contradicted another cited entry | **Conflict** — both entries lose β, high-conf wins on recall |
+
+The chain's **density** is the signal:
+
+- High density of `event + apply + success` chains per query
+  pattern → that query pattern has good recall precision.
+- Low density → recall is failing on that pattern; the
+  query expansion + ranker weights need adjustment.
+
+> **The loop is the metric.** Offline recall-precision@k
+> benchmarks are a **snapshot**; the production feedback
+> chain is a **stream**. The stream is the ground truth —
+> the snapshot is for catching regressions when the stream
+> drifts.
+
+### Beta as indirect calibration
+
+Recall precision is **not directly measured** by a held-out
+test set. It is **indirectly calibrated** via the
+`recall.outcome` → `β` update path:
+
+- The **Beta-Binomial posterior** (angle ⑧) tracks per-entry
+  reliability. `recall.outcome` (success/failure) updates `α`
+  or `β`.
+- The ranker weights `α_v, α_t, α_recency` in the RRF
+  formula are **regressed weekly** against the chain density
+  per query pattern: which ranker contributed the most
+  *successful* `event → apply → outcome` triples?
+- The **expansion prompts** for `llm_expand(...)` are
+  regression-tested the same way: which expansions
+  produce recall triples, which produce misses?
+
+This is a **closed feedback loop**: the chain's outcome
+feeds back into the weights that produced the chain. The
+weights shift slowly; the loop is steady-state.
+
+### What "good recall" means in practice
+
+The user-visible signal of good recall is **not**
+"the agent retrieved the right entry". It's:
+
+- "The agent **cited** the entry in its reply" (apply),
+- AND "the world **confirmed** the entry's claim was correct"
+  (outcome.success),
+- AND "the agent's action on the recalled entry **succeeded**
+  in the world" (the actual outcome).
+
+**Recall → apply → confirmed → world-success** is the
+end-to-end chain. Recall quality is the **density** of this
+chain across query patterns and over time. The weekly
+regression computes per-query-pattern density and adjusts
+ranker weights to maximise it.
+
+### Anti-patterns the feedback loop catches
+
+| Anti-pattern | How the loop catches it |
+|--------------|--------------------------|
+| Recall fires but the model never cites the entry | `recall.event` without `recall.apply` → chain density drops → ranker adjusted |
+| Recall + apply, but cited entry contradicts reality | `recall.outcome = failure` → β +1 (failure counts) → entry demoted, ranker adjusted |
+| Recall + apply, but entry is `stale` | `F` factor decays; downstream gates filter; `recall.outcome` is `censored` if entry wasn't used |
+| New entry added but never recalled | `recall.event` count = 0; chronic lack → entry demoted via decay (lessons exempt) |
+
 ### Five recall **timings**
 
 | Timing | Mechanism | Direction |
