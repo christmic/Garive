@@ -209,6 +209,10 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         assert!(first.contains("runtime"));
         assert!(first.as_bytes().contains(&b'\x07'));
         assert!(!first.contains("unavailable"));
+        assert!(first.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
+        assert!(first.contains("· Online · Running\x07"));
+        assert!(first.contains("· Online · Action required\x07"));
+        assert!(first.contains("\x1b]0;Garive\x07"));
 
         let sessions = SqliteLedger::open(&database)
             .unwrap()
@@ -258,6 +262,8 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         let restarted = fs::read_to_string(restart_log).unwrap();
         assert!(restarted.contains("You: hello durable\n耐久 tui"));
         assert!(restarted.contains("Garive: answer from production runtime"));
+        assert!(restarted.contains("· Online · Ready\x07"));
+        assert!(restarted.contains("\x1b]0;Garive\x07"));
         assert!(SqliteLedger::open(&database)
             .unwrap()
             .session_watermark(&SessionId::try_from(session.as_str()).unwrap())

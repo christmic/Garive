@@ -85,10 +85,17 @@ tui/src/
     status.rs            connection/execution/status footer
     theme.rs             semantic theme tokens
     text.rs              wrapping, markdown subset, safe control filtering
+    title.rs             content-free terminal title presentation
 ```
 
 No production module exceeds 500 non-test lines. `lib.rs` exports only launch
 configuration, launch outcome, and stable launch error types.
+
+The title presenter is pure and returns only bounded product labels derived
+from typed connection/execution state plus a loaded Session ordinal. The
+terminal guard owns OSC-title writes, suppresses unchanged titles, and resets
+the title to neutral `Garive` during normal exit, setup failure, signal exit,
+and unwinding. Screen-reader and full-screen runtimes consume the same title.
 
 ## Application values
 

@@ -48,6 +48,11 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
         assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
         assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
+        assert!(
+            text.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"),
+            "safe semantic title emitted"
+        );
+        assert!(text.contains("\x1b]0;Garive\x07"), "title reset on exit");
     }
 }
 
@@ -149,6 +154,8 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         assert!(!text.contains("\x1b[2J"));
         assert!(!text.contains("\x1b[?1049h"));
         assert!(text.contains("\x1b[?2004l"));
+        assert!(text.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
+        assert!(text.contains("\x1b]0;Garive\x07"));
     }
 }
 

@@ -280,6 +280,8 @@ Executable scans fail on:
   screen-reader/restore boundary;
 - raw Host/user content in tracing fields, errors, `Debug`, terminal title, or
   preference diagnostics;
+- terminal-title presentation without hostile-content canaries, unchanged-write
+  suppression, and normal/drop-path neutral reset tests;
 - unbounded channel/collection/history/undo/reconnect loops;
 - terminal setup without paired teardown and injected-failure tests;
 - unsafe code outside the single audited Windows persistence FFI boundary,

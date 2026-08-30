@@ -10,6 +10,7 @@ use terminal::{TerminalError, TerminalGuard, TerminalOps, TerminalOptions};
 #[derive(Clone)]
 struct FakeOps {
     calls: Rc<RefCell<Vec<&'static str>>>,
+    titles: Rc<RefCell<Vec<String>>>,
     fail_at: Option<&'static str>,
     available: bool,
 }
@@ -59,6 +60,10 @@ impl TerminalOps for FakeOps {
     fn disable_mouse(&mut self) -> io::Result<()> {
         self.call("disable_mouse")
     }
+    fn set_title(&mut self, title: &str) -> io::Result<()> {
+        self.titles.borrow_mut().push(title.into());
+        self.call("set_title")
+    }
     fn show_cursor(&mut self) -> io::Result<()> {
         self.call("show_cursor")
     }
@@ -72,11 +77,47 @@ fn fake(fail_at: Option<&'static str>) -> (FakeOps, Rc<RefCell<Vec<&'static str>
     (
         FakeOps {
             calls: calls.clone(),
+            titles: Rc::new(RefCell::new(Vec::new())),
             fail_at,
             available: true,
         },
         calls,
     )
+}
+
+#[test]
+fn semantic_title_is_deduplicated_and_reset_on_drop() {
+    let (ops, calls) = fake(None);
+    let titles = ops.titles.clone();
+    let mut guard = TerminalGuard::acquire(ops, TerminalOptions::default()).unwrap();
+
+    guard
+        .set_title("Garive · Workspace · Connecting · Ready")
+        .unwrap();
+    guard
+        .set_title("Garive · Workspace · Connecting · Ready")
+        .unwrap();
+    guard
+        .set_title("Garive · Session 1 · Online · Running")
+        .unwrap();
+    drop(guard);
+
+    assert_eq!(
+        *titles.borrow(),
+        [
+            "Garive · Workspace · Connecting · Ready",
+            "Garive · Session 1 · Online · Running",
+            "Garive",
+        ]
+    );
+    assert_eq!(
+        calls
+            .borrow()
+            .iter()
+            .filter(|call| **call == "set_title")
+            .count(),
+        3
+    );
 }
 
 #[test]

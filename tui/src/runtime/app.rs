@@ -115,6 +115,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let mut events = EventStream::new();
     let mut interrupted = None;
     loop {
+        guard
+            .set_title(&view::terminal_title(&state.model))
+            .map_err(map_terminal_error)?;
         draw(&mut terminal, &mut state)?;
         if state.model.quit_requested {
             break;

@@ -7,7 +7,9 @@ use crossterm::{
         EnableFocusChange, EnableMouseCapture,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -35,6 +37,7 @@ pub(crate) trait TerminalOps {
     fn disable_focus(&mut self) -> io::Result<()>;
     fn enable_mouse(&mut self) -> io::Result<()>;
     fn disable_mouse(&mut self) -> io::Result<()>;
+    fn set_title(&mut self, title: &str) -> io::Result<()>;
     fn show_cursor(&mut self) -> io::Result<()>;
     fn flush(&mut self) -> io::Result<()>;
 }
@@ -46,6 +49,7 @@ pub(crate) struct TerminalGuard<O: TerminalOps> {
     paste: bool,
     focus: bool,
     mouse: bool,
+    current_title: Option<String>,
     restored: bool,
 }
 
@@ -61,6 +65,7 @@ impl<O: TerminalOps> TerminalGuard<O> {
             paste: false,
             focus: false,
             mouse: false,
+            current_title: None,
             restored: false,
         };
         if guard.ops.enable_raw().is_err() {
@@ -82,12 +87,26 @@ impl<O: TerminalOps> TerminalGuard<O> {
         Ok(guard)
     }
 
+    pub(crate) fn set_title(&mut self, title: &str) -> Result<(), TerminalError> {
+        if self.current_title.as_deref() == Some(title) {
+            return Ok(());
+        }
+        self.ops
+            .set_title(title)
+            .map_err(|_| TerminalError::Setup)?;
+        self.current_title = Some(title.to_owned());
+        Ok(())
+    }
+
     pub(crate) fn restore(&mut self) -> Result<(), TerminalError> {
         if self.restored {
             return Ok(());
         }
         self.restored = true;
         let mut failed = false;
+        if self.current_title.take().is_some() {
+            failed |= self.ops.set_title("Garive").is_err();
+        }
         if self.mouse {
             failed |= self.ops.disable_mouse().is_err();
             self.mouse = false;
@@ -182,6 +201,9 @@ impl TerminalOps for SystemTerminal {
     }
     fn disable_mouse(&mut self) -> io::Result<()> {
         execute!(self.stderr, DisableMouseCapture).map(|_| ())
+    }
+    fn set_title(&mut self, title: &str) -> io::Result<()> {
+        execute!(self.stderr, SetTitle(title)).map(|_| ())
     }
     fn show_cursor(&mut self) -> io::Result<()> {
         execute!(self.stderr, Show).map(|_| ())

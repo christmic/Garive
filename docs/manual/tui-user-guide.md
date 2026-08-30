@@ -89,6 +89,10 @@ viewport state remain intact while the terminal is resized back.
 The header connection states are connecting, online, disconnected,
 reconnecting, and unavailable. Turn states are ready, running, action required,
 and failed. A disconnected stream never implies that a running Turn completed.
+The terminal tab title mirrors the safe workspace/Session ordinal, connection,
+and Turn state so multiple Garive tabs remain distinguishable. It never includes
+prompt text, Agent output, definition names, error codes, or opaque IDs, and is
+reset to `Garive` when the client restores the terminal.
 
 ## First Session and first Turn
 
