@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  cancelSetup, commitSetup, decodeHostTimelinePage, getSetupCatalogue, prepareSetup, runAgentTurn,
+  cancelSetup, commitSetup, decodeHostTimelinePage, getSetupCatalogue, getSetupState, prepareSetup,
+  runAgentTurn,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -54,12 +55,18 @@ describe("desktop Host IPC", () => {
       expect(args).toEqual({ planDigest: "plan-1", credential: "secret-once" });
       return { restart_required: true } as T;
     };
+    await getSetupState(async <T>(command: string) => {
+      calls.push(command);
+      return { state: "not_configured" } as T;
+    });
     await getSetupCatalogue(invoke);
     await prepareSetup({ schema_version: 1, caller_nonce: "nonce", catalogue_revision: "catalogue-1",
-      profile_id: "profile", model_target_id: "target", model_id: "model",
+      preset_id: "preset", profile_id: "profile", model_target_id: "target", model_id: "model",
       deployment_id: "deployment", definition_id: "definition" }, invoke);
     expect((await commitSetup("plan-1", "secret-once", invoke)).restart_required).toBe(true);
-    expect(calls).toEqual(["get_setup_catalogue", "prepare_setup", "commit_setup"]);
+    expect(calls).toEqual([
+      "get_setup_state", "get_setup_catalogue", "prepare_setup", "commit_setup",
+    ]);
   });
 
   it("cancels only one exact prepared setup plan", async () => {
