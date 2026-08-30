@@ -225,6 +225,39 @@ the provider; setup performs no network request or model attempt.
 - source scans prove no environment loader, generic config read/write IPC,
   frontend secret persistence, Provider construction, or setup network call.
 
+## Delivery evidence
+
+- `desktop/backend/src/setup.rs` owns the preset-expanded catalogue, redacted
+  state, exact current revision/digest binding, expiring idempotent plans,
+  deserialize-only zeroizing credential value, strict receipts and five-stage
+  recovery state machine. Clock, identities, credential store and every durable
+  fault point are injected in native tests.
+- `desktop/backend/capabilities/main.json` and the generated application command
+  manifest limit setup commands to the bundled `main` window. Command handlers
+  also reject any other label with `setup_not_allowed`; no remote origin is
+  admitted.
+- `spec/fixtures/desktop/desktop-setup-v1.json` freezes both installed profile
+  modes, catalogue/preset limits, canonical plan/configuration digests, failure
+  codes and receipt redaction. Rust and TypeScript tests consume the same file.
+- Native tests cover absence, invalid state, legacy-v1 migration, exact v2
+  rotation binding, duplicate nonce conflict, expiry, cancellation, corrupt
+  receipt replay, every crash stage, cleanup after Runtime start and a fresh
+  configured composition completing a durable Turn after explicit restart.
+- React tests cover first run, invalid-configuration reconfigure, immutable
+  Runtime reconfigure warning, redacted review, secure field behavior, failure
+  focus and credential clearing. Strict TypeScript, production Vite, Rust
+  formatting, warning-denied Clippy, all Desktop tests and warning-denied
+  rustdoc pass.
+
+### Dependency evidence
+
+Reviewed 2026-08-30 against the canonical npm registry: React Testing Library
+[`16.3.3`](https://www.npmjs.com/package/@testing-library/react), DOM Testing
+Library [`10.4.1`](https://www.npmjs.com/package/@testing-library/dom), and
+jsdom [`30.0.1`](https://www.npmjs.com/package/jsdom). All are stable exact
+pins in the frontend manifest and lockfile; the native build and UI tests pass
+with those pins.
+
 ## See also
 
 - [`desktop-system-configuration.md`](desktop-system-configuration.md) — C1
