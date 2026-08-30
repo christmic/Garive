@@ -1,8 +1,10 @@
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::safe_text;
 
@@ -12,8 +14,9 @@ pub(super) fn render_markdown(
     normal: Style,
     accent: Style,
     muted: Style,
+    width: u16,
 ) -> Vec<Line<'static>> {
-    let mut renderer = Renderer::new(prefix, normal, accent, muted);
+    let mut renderer = Renderer::new(prefix, normal, accent, muted, width);
     let options =
         Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
     for event in Parser::new_ext(source, options) {
@@ -27,27 +30,43 @@ struct Renderer<'a> {
     normal: Style,
     accent: Style,
     muted: Style,
-    style: Style,
+    block_style: Style,
+    inline_styles: Vec<Style>,
     lines: Vec<Line<'static>>,
     spans: Vec<Span<'static>>,
-    list_depth: usize,
+    lists: Vec<ListState>,
     quote_depth: usize,
     code_block: bool,
+    link: Option<LinkState>,
+    width: usize,
+}
+
+enum ListState {
+    Unordered,
+    Ordered(u64),
+}
+
+struct LinkState {
+    destination: String,
+    label: String,
 }
 
 impl<'a> Renderer<'a> {
-    fn new(prefix: &'a str, normal: Style, accent: Style, muted: Style) -> Self {
+    fn new(prefix: &'a str, normal: Style, accent: Style, muted: Style, width: u16) -> Self {
         Self {
             prefix,
             normal,
             accent,
             muted,
-            style: normal,
+            block_style: normal,
+            inline_styles: Vec::new(),
             lines: Vec::new(),
             spans: Vec::new(),
-            list_depth: 0,
+            lists: Vec::new(),
             quote_depth: 0,
             code_block: false,
+            link: None,
+            width: usize::from(width.max(1)),
         }
     }
 
@@ -58,8 +77,12 @@ impl<'a> Renderer<'a> {
             Event::Text(value) | Event::Html(value) | Event::InlineHtml(value) => {
                 self.text(&safe_text(&value))
             }
-            Event::Code(value) => self.push(&safe_text(&value), self.accent),
-            Event::SoftBreak => self.push(" ", self.style),
+            Event::Code(value) => {
+                let value = safe_text(&value);
+                self.record_link_label(&value);
+                self.push(&value, self.accent);
+            }
+            Event::SoftBreak => self.push(" ", self.current_style()),
             Event::HardBreak => self.flush(),
             Event::Rule => {
                 self.flush();
@@ -82,32 +105,49 @@ impl<'a> Renderer<'a> {
         match tag {
             Tag::Heading { level, .. } => {
                 self.flush();
-                self.style = self.accent.add_modifier(Modifier::BOLD);
-                self.push(heading_marker(level), self.style);
+                self.block_style = heading_style(level, self.accent);
+                self.push(heading_marker(level), self.current_style());
             }
             Tag::Paragraph => self.flush(),
-            Tag::Strong => self.style = self.style.add_modifier(Modifier::BOLD),
-            Tag::Emphasis => self.style = self.style.add_modifier(Modifier::ITALIC),
-            Tag::Strikethrough => self.style = self.style.add_modifier(Modifier::CROSSED_OUT),
+            Tag::Strong => self.push_inline(Modifier::BOLD),
+            Tag::Emphasis => self.push_inline(Modifier::ITALIC),
+            Tag::Strikethrough => self.push_inline(Modifier::CROSSED_OUT),
             Tag::BlockQuote(_) => {
                 self.flush();
                 self.quote_depth += 1;
             }
-            Tag::List(_) => {
+            Tag::List(start) => {
                 self.flush();
-                self.list_depth += 1;
+                self.lists
+                    .push(start.map_or(ListState::Unordered, ListState::Ordered));
             }
             Tag::Item => {
                 self.flush();
-                self.push(
-                    &format!("{}• ", "  ".repeat(self.list_depth.saturating_sub(1))),
-                    self.accent,
-                );
+                let depth = self.lists.len().saturating_sub(1);
+                let marker = match self.lists.last_mut() {
+                    Some(ListState::Ordered(next)) => {
+                        let marker = format!("{next}. ");
+                        *next = next.saturating_add(1);
+                        marker
+                    }
+                    _ => "• ".to_owned(),
+                };
+                self.push(&format!("{}{marker}", "  ".repeat(depth)), self.accent);
             }
-            Tag::CodeBlock(_) => {
+            Tag::CodeBlock(kind) => {
+                self.flush();
+                let language = match kind {
+                    CodeBlockKind::Fenced(value) => bounded_label(&safe_text(&value)),
+                    CodeBlockKind::Indented => None,
+                };
+                self.push("╭─ CODE", self.accent);
+                if let Some(language) = language {
+                    self.push(" · ", self.muted);
+                    self.push(&language, self.accent);
+                }
                 self.flush();
                 self.code_block = true;
-                self.style = self.muted;
+                self.block_style = self.muted;
             }
             Tag::Table(_) => self.flush(),
             Tag::TableHead | Tag::TableRow => self.flush(),
@@ -116,8 +156,15 @@ impl<'a> Renderer<'a> {
                     self.push(" │ ", self.muted);
                 }
             }
-            Tag::Link { .. }
-            | Tag::Image { .. }
+            Tag::Link { dest_url, .. } => {
+                self.link = Some(LinkState {
+                    destination: safe_text(&dest_url),
+                    label: String::new(),
+                });
+                self.inline_styles
+                    .push(self.accent.add_modifier(Modifier::UNDERLINED));
+            }
+            Tag::Image { .. }
             | Tag::MetadataBlock(_)
             | Tag::FootnoteDefinition(_)
             | Tag::DefinitionList
@@ -131,25 +178,30 @@ impl<'a> Renderer<'a> {
 
     fn end(&mut self, tag: TagEnd) {
         match tag {
-            TagEnd::Paragraph
-            | TagEnd::Heading(_)
-            | TagEnd::Item
-            | TagEnd::TableRow
-            | TagEnd::TableHead => self.flush(),
-            TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough => self.style = self.normal,
+            TagEnd::Paragraph | TagEnd::Item | TagEnd::TableRow | TagEnd::TableHead => self.flush(),
+            TagEnd::Heading(_) => {
+                self.flush();
+                self.block_style = self.normal;
+            }
+            TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough => {
+                self.inline_styles.pop();
+            }
             TagEnd::BlockQuote(_) => {
                 self.flush();
                 self.quote_depth = self.quote_depth.saturating_sub(1);
             }
             TagEnd::List(_) => {
                 self.flush();
-                self.list_depth = self.list_depth.saturating_sub(1);
+                self.lists.pop();
             }
             TagEnd::CodeBlock => {
                 self.flush();
                 self.code_block = false;
-                self.style = self.normal;
+                self.block_style = self.normal;
+                self.push("╰─", self.muted);
+                self.flush();
             }
+            TagEnd::Link => self.end_link(),
             TagEnd::Table => self.flush(),
             _ => {}
         }
@@ -160,8 +212,54 @@ impl<'a> Renderer<'a> {
             if index > 0 {
                 self.flush();
             }
-            self.push(line, self.style);
+            self.record_link_label(line);
+            if self.code_block {
+                let line = code_display_line(line, self.code_content_width());
+                self.push(&line, self.current_style());
+            } else {
+                self.push(line, self.current_style());
+            }
         }
+    }
+
+    fn code_content_width(&self) -> usize {
+        self.width
+            .saturating_sub(UnicodeWidthStr::width(self.prefix))
+            .saturating_sub(self.quote_depth.saturating_mul(2))
+            .saturating_sub(2)
+    }
+
+    fn current_style(&self) -> Style {
+        self.inline_styles
+            .iter()
+            .fold(self.block_style, |style, layer| style.patch(*layer))
+    }
+
+    fn push_inline(&mut self, modifier: Modifier) {
+        self.inline_styles
+            .push(Style::default().add_modifier(modifier));
+    }
+
+    fn record_link_label(&mut self, value: &str) {
+        if let Some(link) = self.link.as_mut() {
+            link.label.push_str(value);
+        }
+    }
+
+    fn end_link(&mut self) {
+        self.inline_styles.pop();
+        let Some(link) = self.link.take() else {
+            return;
+        };
+        let Some(destination) = bounded_destination(&link.destination) else {
+            return;
+        };
+        if destination == link.label.trim() {
+            return;
+        }
+        self.push(" (", self.muted);
+        self.push(&destination, self.accent.add_modifier(Modifier::UNDERLINED));
+        self.push(")", self.muted);
     }
 
     fn push(&mut self, value: &str, style: Style) {
@@ -174,12 +272,15 @@ impl<'a> Renderer<'a> {
         if self.spans.is_empty() {
             return;
         }
-        let mut spans = vec![Span::raw(self.prefix.to_owned())];
+        let mut spans = Vec::new();
+        if !self.prefix.is_empty() {
+            spans.push(Span::raw(self.prefix.to_owned()));
+        }
         if self.quote_depth > 0 {
             spans.push(Span::styled("│ ".repeat(self.quote_depth), self.muted));
         }
         if self.code_block {
-            spans.push(Span::styled("▏ ", self.muted));
+            spans.push(Span::styled("│ ", self.muted));
         }
         spans.append(&mut self.spans);
         self.lines.push(Line::from(spans));
@@ -199,5 +300,151 @@ fn heading_marker(level: HeadingLevel) -> &'static str {
         HeadingLevel::H4 => "#### ",
         HeadingLevel::H5 => "##### ",
         HeadingLevel::H6 => "###### ",
+    }
+}
+
+fn heading_style(level: HeadingLevel, accent: Style) -> Style {
+    match level {
+        HeadingLevel::H1 => accent.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        HeadingLevel::H2 => accent.add_modifier(Modifier::BOLD),
+        _ => accent.add_modifier(Modifier::ITALIC),
+    }
+}
+
+fn bounded_label(value: &str) -> Option<String> {
+    let value = value.split_whitespace().next()?.trim();
+    (!value.is_empty()).then(|| value.chars().take(24).collect())
+}
+
+fn bounded_destination(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let mut chars = value.chars();
+    let mut bounded = chars.by_ref().take(120).collect::<String>();
+    if chars.next().is_some() {
+        bounded.push('…');
+    }
+    Some(bounded)
+}
+
+fn code_display_line(value: &str, width: usize) -> String {
+    let expanded = value.replace('\t', "    ");
+    if UnicodeWidthStr::width(expanded.as_str()) <= width {
+        return expanded;
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let available = width.saturating_sub(1);
+    let mut rendered = String::new();
+    let mut used = 0_usize;
+    for grapheme in expanded.graphemes(true) {
+        let grapheme_width = UnicodeWidthStr::width(grapheme);
+        if used.saturating_add(grapheme_width) > available {
+            break;
+        }
+        rendered.push_str(grapheme);
+        used = used.saturating_add(grapheme_width);
+    }
+    rendered.push('…');
+    rendered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    fn text(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn nested_inline_styles_compose_and_links_expose_their_destination() {
+        let normal = Style::default().fg(Color::White);
+        let accent = Style::default().fg(Color::Cyan);
+        let muted = Style::default().fg(Color::DarkGray);
+        let lines = render_markdown(
+            "**outer *inner* tail** and [docs](https://example.com)",
+            "",
+            normal,
+            accent,
+            muted,
+            80,
+        );
+
+        assert_eq!(
+            text(&lines),
+            vec!["outer inner tail and docs (https://example.com)"]
+        );
+        let spans = &lines[0].spans;
+        assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert!(spans[1].style.add_modifier.contains(Modifier::ITALIC));
+        assert!(spans[2].style.add_modifier.contains(Modifier::BOLD));
+        assert!(spans[4].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert!(spans[6].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn ordered_lists_and_fenced_code_keep_semantic_structure() {
+        let lines = render_markdown(
+            "3. first\n4. second\n\n```rust\nfn main() {}\n```",
+            "",
+            Style::default(),
+            Style::default().add_modifier(Modifier::BOLD),
+            Style::default().add_modifier(Modifier::DIM),
+            80,
+        );
+
+        assert_eq!(
+            text(&lines),
+            vec![
+                "3. first",
+                "4. second",
+                "╭─ CODE · rust",
+                "│ fn main() {}",
+                "╰─",
+            ]
+        );
+
+        let heading = render_markdown(
+            "# accent\n\nplain",
+            "",
+            Style::default().fg(Color::White),
+            Style::default().fg(Color::Cyan),
+            Style::default().fg(Color::DarkGray),
+            80,
+        );
+        assert!(heading[0].spans[0]
+            .style
+            .add_modifier
+            .contains(Modifier::UNDERLINED));
+        assert_eq!(heading[1].spans[0].style.fg, Some(Color::White));
+        assert!(!heading[1].spans[0]
+            .style
+            .add_modifier
+            .contains(Modifier::UNDERLINED));
+
+        let clipped = render_markdown(
+            "```text\n\t界abcde\n```",
+            "",
+            Style::default(),
+            Style::default(),
+            Style::default(),
+            10,
+        );
+        assert_eq!(text(&clipped)[1], "│     界a…");
+        assert_eq!(UnicodeWidthStr::width(text(&clipped)[1].as_str()), 10);
     }
 }

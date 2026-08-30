@@ -34,6 +34,9 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "motion_running_mono_100x24",
         motion_frame(&model, Theme::Mono, 4, 100, 24)
     );
+    insta::assert_snapshot!("markdown_rich_dark", markdown_style_preview(Theme::Dark));
+    insta::assert_snapshot!("markdown_rich_light", markdown_style_preview(Theme::Light));
+    insta::assert_snapshot!("markdown_rich_mono", markdown_style_preview(Theme::Mono));
 
     let mut wide = model;
     wide.overlay = Some(Overlay::CommandPalette);
@@ -237,6 +240,30 @@ fn motion_frame(model: &AppModel, theme: Theme, tick: u64, width: u16, height: u
                 .collect::<String>()
                 .trim_end()
                 .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn markdown_style_preview(theme: Theme) -> String {
+    const SOURCE: &str = "# Delivery\n\n**outer *inner* tail**\n\n3. inspect\n4. ship\n\n[Guide](https://garive.local/guide)\n\n```rust\nfn main() {}\n```";
+    view::markdown_preview(SOURCE, theme)
+        .into_iter()
+        .map(|line| {
+            line.spans
+                .into_iter()
+                .map(|span| {
+                    format!(
+                        "{:?} <fg={:?} bg={:?} +{:?} -{:?}>",
+                        span.content,
+                        span.style.fg,
+                        span.style.bg,
+                        span.style.add_modifier,
+                        span.style.sub_modifier
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" | ")
         })
         .collect::<Vec<_>>()
         .join("\n")

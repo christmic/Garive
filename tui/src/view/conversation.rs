@@ -194,7 +194,7 @@ impl RenderCache {
             }
             return lines;
         }
-        let lines = render_timeline_item(item, theme);
+        let lines = render_timeline_item(item, theme, width);
         let bytes = item.stable_key.len()
             + lines
                 .iter()
@@ -245,6 +245,7 @@ fn theme_key(theme: Theme) -> u8 {
 fn render_timeline_item(
     item: &crate::application::TimelineItem,
     theme: Theme,
+    width: u16,
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
     let mut lines = Vec::new();
@@ -268,6 +269,7 @@ fn render_timeline_item(
                 colors.normal,
                 colors.agent,
                 colors.muted,
+                width,
             ));
         }
         TimelineRole::Status => {

@@ -183,6 +183,22 @@ chips, modal background dimming, and reverse-video monochrome selection. Those
 choices are Garive-authored against its Host contracts; they are not copied
 product decoration.
 
+### Markdown presentation
+
+Codex `codex-rs/tui/src/markdown_render.rs:430-567` keeps inline styles in a
+stack, pairs every emphasis/strong/strikethrough/link start with a pop, records
+fenced-code language, and gives tables their own structured pipeline. Its
+`markdown_render_tests.rs:717-768` directly proves nested strong/emphasis and
+visible Web-link destinations. Grok Build independently separates Markdown
+style, parsing, hyperlinks, code-block metadata, streaming, and syntax in
+`xai-grok-markdown/src/{style,parse,hyperlinks,output,streaming,syntax}.rs`.
+
+Garive adopts the bounded component boundaries that its transcript needs:
+compositional inline styles, visible sanitized link destinations, ordered-list
+indices, semantic fenced-code frames/language labels, and width-aware
+grapheme-safe code clipping. It does not copy either renderer, emit active OSC
+8 links, or import their large syntax/table systems.
+
 ### Motion ownership
 
 `codex-rs/tui/src/motion.rs` centralizes time-varying indicators and requires

@@ -393,3 +393,10 @@ fn empty_detail(value: BootState) -> &'static str {
 }
 
 mod markdown;
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn markdown_preview(source: &str, theme: Theme) -> Vec<Line<'static>> {
+    let colors = palette(theme);
+    markdown::render_markdown(source, "", colors.normal, colors.agent, colors.muted, 80)
+}

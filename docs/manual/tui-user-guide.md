@@ -94,6 +94,13 @@ and Turn state so multiple Garive tabs remain distinguishable. It never includes
 prompt text, Agent output, definition names, error codes, or opaque IDs, and is
 reset to `Garive` when the client restores the terminal.
 
+Agent responses render safe headings, nested emphasis, block quotes, tables,
+task and numbered lists, inline code, and framed fenced code. A fenced language
+appears in its `CODE` header. Code that exceeds the conversation width ends in
+`…` instead of wrapping into an ambiguous gutter; tabs display as four spaces.
+Markdown links show both their label and bounded destination as inert terminal
+text, so the target remains inspectable even when OSC hyperlinks are disabled.
+
 ## First Session and first Turn
 
 When exactly one Agent definition is installed, type a prompt and press Enter.

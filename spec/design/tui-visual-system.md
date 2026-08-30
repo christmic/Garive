@@ -52,6 +52,7 @@ sequences or schedule their own redraw loops.
 | Header | compact/full; connection chip; execution chip; safe identity |
 | Session rail | empty/populated; selected; terminal/running/action/failed; overflow |
 | Conversation | empty/live/scrolled/newer updates; user/Agent/activity/notice cells |
+| Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped code |
 | Composer | idle/focused/frozen/action response; placeholder/draft/over-limit |
 | Context footer | idle/running/notice/recovery; tiny/full width collapse |
 | Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
@@ -98,6 +99,14 @@ ambiguous `Unknown command`.
 Motion ticks are scheduled only while a typed state has a visible animated
 variant. Idle, suspended, failed, disconnected, and screen-reader views do not
 run an animation timer. Terminal titles never animate.
+
+Markdown styling is compositional rather than a single mutable flag: ending an
+inner emphasis cannot erase an enclosing strong, link, or heading style.
+Headings return to normal body style at their boundary. Explicit links render
+their label and a bounded sanitized destination without emitting OSC 8.
+Fenced code uses one semantic frame, retains its first bounded language token,
+expands tabs to four cells for display, and clips by grapheme/display width with
+an explicit `…`; source text remains unchanged for copy.
 
 ## Conformance
 
