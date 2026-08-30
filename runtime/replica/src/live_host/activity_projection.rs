@@ -1,237 +1,436 @@
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 use garive_ledger::DurableFact;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use super::{
-    activity_transition, HostActivityV1, HostReadLimits, LiveHostError,
-    PublicToolActivityCatalogueV1,
-};
+use super::{ActivityProjectionLimits, HostActivity, InstalledActivityCatalogue, LiveHostError};
 
-pub(super) struct ActivityProjection {
-    pub by_turn: BTreeMap<String, Vec<HostActivityV1>>,
-    pub events: BTreeMap<u64, (&'static str, HostActivityV1)>,
+const API_VERSION: &str = "v1";
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
+pub(crate) struct ActivityProjection {
+    pub events: BTreeMap<u64, ProjectedActivityEvent>,
+    pub by_turn: BTreeMap<String, Vec<HostActivity>>,
 }
 
-pub(super) fn project(
+pub(crate) struct ProjectedActivityEvent {
+    pub event: &'static str,
+    pub activity: HostActivity,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Family {
+    Effect,
+    Interaction,
+    Rejection,
+}
+
+struct State {
+    family: Family,
+    public: HostActivity,
+    first_position: u64,
+    receipt: Option<Receipt>,
+}
+
+struct Receipt {
+    id: String,
+    classification: String,
+}
+
+pub(crate) fn project_activities(
     facts: &[DurableFact],
-    catalogue: &PublicToolActivityCatalogueV1,
-    limits: HostReadLimits,
+    catalogue: &InstalledActivityCatalogue,
+    limits: ActivityProjectionLimits,
 ) -> Result<ActivityProjection, LiveHostError> {
-    let mut records = BTreeMap::<String, Record>::new();
+    let mut states: BTreeMap<(String, String, String), State> = BTreeMap::new();
     let mut events = BTreeMap::new();
+    let mut activity_facts = 0usize;
     for fact in facts {
-        let kind = fact.kind.as_str();
-        if !is_activity_fact(kind) {
+        fact.verify().map_err(|_| LiveHostError::CorruptState)?;
+        if fact.position == 0 || fact.position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        if !is_activity_fact(fact.kind.as_str()) {
             continue;
         }
-        fact.verify().map_err(|_| LiveHostError::CorruptState)?;
-        if fact.schema_version != 1 {
-            return Err(LiveHostError::CorruptState);
+        activity_facts = activity_facts
+            .checked_add(1)
+            .ok_or(LiveHostError::CorruptState)?;
+        if activity_facts > limits.max_activity_facts {
+            return Err(LiveHostError::ReadBoundExceeded);
         }
-        let turn_id = fact
+        let turn = fact
             .turn_id
             .as_ref()
             .ok_or(LiveHostError::CorruptState)?
             .as_str()
             .to_owned();
-        let payload = object(fact)?;
-        let projected = match kind {
-            "tool.preparation_rejected" => {
-                let code = activity_transition::code(
-                    text(&payload, "code")?,
-                    &[
-                        "invalid_tool_name",
-                        "tool_not_admitted",
-                        "invalid_arguments_json",
-                        "arguments_schema_mismatch",
-                        "non_canonical_value",
-                    ],
-                )?;
-                let activity_id = rejection_id(fact.fact_id.as_str());
-                if records.contains_key(&activity_id) {
+        let payload: Value = serde_json::from_str(fact.payload.as_json())
+            .map_err(|_| LiveHostError::CorruptState)?;
+        if matches!(fact.kind.as_str(), "effect.receipt" | "effect.observation") {
+            let id = tool_id(fact)?;
+            let state = states
+                .get_mut(&(turn, "tool".into(), id))
+                .ok_or(LiveHostError::CorruptState)?;
+            if state.family != Family::Effect {
+                return Err(LiveHostError::CorruptState);
+            }
+            if fact.kind.as_str() == "effect.receipt" {
+                if state.public.state != "running" || state.receipt.is_some() {
                     return Err(LiveHostError::CorruptState);
                 }
-                let record = Record::new(
-                    activity_id.clone(),
-                    turn_id,
-                    "tool",
-                    "agent.activity.tool_rejected",
-                    "failed",
-                    fact.position,
-                    Some(code),
-                );
-                records.insert(activity_id, record.clone());
-                Some(("agent.activity.rejected", record.view))
+                state.receipt = Some(Receipt {
+                    id: text(&payload, "receipt_id")?.to_owned(),
+                    classification: admitted(
+                        text(&payload, "classification")?,
+                        &["completed", "failed"],
+                    )?
+                    .to_owned(),
+                });
+            } else if !state.public.terminal {
+                return Err(LiveHostError::CorruptState);
             }
-            "effect.prepared" => {
-                let activity_id = tool_id(fact)?;
-                if records.contains_key(&activity_id) {
-                    return Err(LiveHostError::CorruptState);
-                }
-                let label = catalogue
-                    .descriptors
-                    .iter()
-                    .find(|value| {
-                        value.tool_name == text(&payload, "tool_name").unwrap_or_default()
-                            && value.tool_revision
-                                == text(&payload, "tool_revision").unwrap_or_default()
-                    })
-                    .ok_or(LiveHostError::CorruptState)?
-                    .label_key
-                    .clone();
-                let record = Record::new(
-                    activity_id.clone(),
-                    turn_id,
-                    "tool",
-                    &label,
-                    "prepared",
-                    fact.position,
-                    None,
-                );
-                records.insert(activity_id, record.clone());
-                Some(("agent.activity.prepared", record.view))
-            }
-            "interaction.requested" => {
-                let tool = tool_id(fact)?;
-                let parent = records.get(&tool).ok_or(LiveHostError::CorruptState)?;
-                if parent.turn_id != turn_id || parent.view.state != "prepared" {
-                    return Err(LiveHostError::CorruptState);
-                }
-                let activity_id = text(&payload, "interaction_id")?.to_owned();
-                if records.contains_key(&activity_id) {
-                    return Err(LiveHostError::CorruptState);
-                }
-                let label = match text(&payload, "kind")? {
-                    "approval" => "agent.activity.approval",
-                    "external_input" => "agent.activity.external_input",
-                    _ => return Err(LiveHostError::CorruptState),
-                };
-                let record = Record::new(
-                    activity_id.clone(),
-                    turn_id,
-                    "interaction",
-                    label,
-                    "waiting_for_input",
-                    fact.position,
-                    None,
-                );
-                records.insert(activity_id, record.clone());
-                Some(("agent.activity.input_requested", record.view))
-            }
-            "interaction.resolved" | "interaction.cancelled" => {
-                let activity_id = text(&payload, "interaction_id")?;
-                let record = records
-                    .get_mut(activity_id)
-                    .ok_or(LiveHostError::CorruptState)?;
-                if record.view.kind != "interaction"
-                    || record.view.state != "waiting_for_input"
-                    || record.turn_id != turn_id
-                {
-                    return Err(LiveHostError::CorruptState);
-                }
-                let (event, state, code) = if kind == "interaction.resolved" {
-                    ("agent.activity.input_received", "input_received", None)
-                } else {
-                    (
-                        "agent.activity.cancelled",
-                        "cancelled",
-                        Some(activity_transition::code(
-                            text(&payload, "reason")?,
-                            &["user", "expired", "turn_cancelled", "operator"],
-                        )?),
-                    )
-                };
-                record.advance(state, fact.position, code)?;
-                Some((event, record.view.clone()))
-            }
-            "effect.receipt" => {
-                let record = effect_record(&mut records, fact, &turn_id)?;
-                if record.view.state != "running" || record.receipt_seen {
-                    return Err(LiveHostError::CorruptState);
-                }
-                record.receipt_seen = true;
-                None
-            }
-            "effect.observation" => {
-                effect_record(&mut records, fact, &turn_id)?;
-                None
-            }
-            _ => {
-                let record = effect_record(&mut records, fact, &turn_id)?;
-                let (event, state, code) = activity_transition::effect(
-                    kind,
-                    &payload,
-                    &record.view.state,
-                    record.receipt_seen,
-                )?;
-                record.advance(state, fact.position, code)?;
-                Some((event, record.view.clone()))
-            }
+            continue;
+        }
+        let projected = match fact.kind.as_str() {
+            "tool.preparation_rejected" => rejection(fact, &payload)?,
+            "effect.prepared" => prepared(fact, &payload, catalogue)?,
+            "interaction.requested" => interaction_requested(fact, &payload)?,
+            kind => transition(fact, kind, &payload, &mut states)?,
         };
-        if let Some((event, activity)) = projected {
-            validate_public(&activity, limits)?;
-            events.insert(fact.position, (event, activity));
+        let key = (
+            turn.clone(),
+            projected.activity.kind.clone(),
+            projected.activity.activity_id.clone(),
+        );
+        if projected.activity.activity_id.len() > limits.max_activity_id_bytes
+            || projected.activity.label_key.len() > limits.max_label_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        if matches!(
+            fact.kind.as_str(),
+            "tool.preparation_rejected" | "effect.prepared" | "interaction.requested"
+        ) {
+            if states.contains_key(&key) {
+                return Err(LiveHostError::CorruptState);
+            }
+            let family = match fact.kind.as_str() {
+                "effect.prepared" => Family::Effect,
+                "interaction.requested" => Family::Interaction,
+                _ => Family::Rejection,
+            };
+            states.insert(
+                key,
+                State {
+                    family,
+                    public: projected.activity.clone(),
+                    first_position: fact.position,
+                    receipt: None,
+                },
+            );
+        }
+        if events.insert(fact.position, projected).is_some() {
+            return Err(LiveHostError::CorruptState);
         }
     }
-    let mut by_turn = BTreeMap::<String, Vec<(u64, HostActivityV1)>>::new();
-    for record in records.into_values() {
-        by_turn
-            .entry(record.turn_id)
+
+    let mut grouped: BTreeMap<String, Vec<(u64, HostActivity)>> = BTreeMap::new();
+    for ((turn, _, _), state) in states {
+        grouped
+            .entry(turn)
             .or_default()
-            .push((record.first_position, record.view));
+            .push((state.first_position, state.public));
     }
-    let by_turn = by_turn
-        .into_iter()
-        .map(|(turn, mut values)| {
-            values.sort_by(|left, right| {
-                left.0
-                    .cmp(&right.0)
-                    .then_with(|| left.1.activity_id.cmp(&right.1.activity_id))
-            });
-            if values.len() > limits.max_activities_per_turn {
-                return Err(LiveHostError::ReadBoundExceeded);
-            }
-            Ok((turn, values.into_iter().map(|(_, value)| value).collect()))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    if serde_json::to_vec(&by_turn)
-        .map_err(|_| LiveHostError::CorruptState)?
-        .len()
-        > limits.max_activity_bytes
-    {
-        return Err(LiveHostError::ReadBoundExceeded);
+    let mut by_turn = BTreeMap::new();
+    for (turn, mut values) in grouped {
+        values.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.activity_id.cmp(&right.1.activity_id))
+        });
+        if values.len() > limits.max_activities_per_turn {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let activities = values
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>();
+        if serde_json::to_vec(&activities)
+            .map_err(|_| LiveHostError::CorruptState)?
+            .len()
+            > limits.max_encoded_bytes_per_turn
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        by_turn.insert(turn, activities);
     }
-    Ok(ActivityProjection { by_turn, events })
+    Ok(ActivityProjection { events, by_turn })
 }
 
-fn effect_record<'a>(
-    records: &'a mut BTreeMap<String, Record>,
+fn prepared(
     fact: &DurableFact,
-    turn_id: &str,
-) -> Result<&'a mut Record, LiveHostError> {
-    let record = records
-        .get_mut(&tool_id(fact)?)
-        .ok_or(LiveHostError::CorruptState)?;
-    if record.view.kind != "tool" || record.turn_id != turn_id {
+    payload: &Value,
+    catalogue: &InstalledActivityCatalogue,
+) -> Result<ProjectedActivityEvent, LiveHostError> {
+    let name = text(payload, "tool_name")?;
+    let revision = text(payload, "tool_revision")?;
+    let label = catalogue
+        .descriptors
+        .iter()
+        .find(|item| item.tool_name == name && item.tool_revision == revision)
+        .ok_or(LiveHostError::CorruptState)?
+        .label_key
+        .clone();
+    Ok(event(
+        "agent.activity.prepared",
+        tool_id(fact)?,
+        "tool",
+        label,
+        "prepared",
+        fact.position,
+        false,
+        None,
+    ))
+}
+
+fn rejection(fact: &DurableFact, payload: &Value) -> Result<ProjectedActivityEvent, LiveHostError> {
+    let activity_id = format!(
+        "{:x}",
+        Sha256::digest(format!("preparation-rejected-v1\n{}", fact.fact_id.as_str()).as_bytes())
+    );
+    Ok(event(
+        "agent.activity.rejected",
+        activity_id,
+        "tool",
+        "agent.activity.tool_rejected".into(),
+        "failed",
+        fact.position,
+        true,
+        Some(
+            admitted(
+                text(payload, "code")?,
+                &[
+                    "invalid_tool_name",
+                    "tool_not_admitted",
+                    "invalid_arguments_json",
+                    "arguments_schema_mismatch",
+                    "non_canonical_value",
+                ],
+            )?
+            .into(),
+        ),
+    ))
+}
+
+fn interaction_requested(
+    fact: &DurableFact,
+    payload: &Value,
+) -> Result<ProjectedActivityEvent, LiveHostError> {
+    let kind = text(payload, "kind")?;
+    let label = match kind {
+        "approval" => "agent.activity.approval",
+        "external_input" => "agent.activity.external_input",
+        _ => return Err(LiveHostError::CorruptState),
+    };
+    Ok(event(
+        "agent.activity.input_requested",
+        text(payload, "interaction_id")?.into(),
+        "interaction",
+        label.into(),
+        "waiting_for_input",
+        fact.position,
+        false,
+        None,
+    ))
+}
+
+fn transition(
+    fact: &DurableFact,
+    kind: &str,
+    payload: &Value,
+    states: &mut BTreeMap<(String, String, String), State>,
+) -> Result<ProjectedActivityEvent, LiveHostError> {
+    let turn = fact.turn_id.as_ref().ok_or(LiveHostError::CorruptState)?;
+    let (class, id) = if kind.starts_with("interaction.") {
+        ("interaction", text(payload, "interaction_id")?.to_owned())
+    } else {
+        ("tool", tool_id(fact)?)
+    };
+    let key = (turn.as_str().to_owned(), class.into(), id);
+    let state = states.get_mut(&key).ok_or(LiveHostError::CorruptState)?;
+    if state.public.terminal || state.family == Family::Rejection {
         return Err(LiveHostError::CorruptState);
     }
-    Ok(record)
+    let (event_name, next, terminal, safe_code) = match kind {
+        "interaction.resolved" if state.public.state == "waiting_for_input" => (
+            "agent.activity.input_received",
+            "input_received",
+            true,
+            None,
+        ),
+        "interaction.cancelled" if state.public.state == "waiting_for_input" => (
+            "agent.activity.cancelled",
+            "cancelled",
+            true,
+            Some(
+                admitted(
+                    text(payload, "reason")?,
+                    &["user", "expired", "turn_cancelled", "operator"],
+                )?
+                .to_owned(),
+            ),
+        ),
+        "effect.authorized" if state.public.state == "prepared" => {
+            ("agent.activity.authorized", "authorized", false, None)
+        }
+        "effect.denied" if matches!(state.public.state.as_str(), "prepared" | "authorized") => (
+            "agent.activity.denied",
+            "denied",
+            true,
+            Some(
+                admitted(
+                    text(payload, "code")?,
+                    &["authorization_denied", "replacement_required"],
+                )?
+                .to_owned(),
+            ),
+        ),
+        "effect.started" if matches!(state.public.state.as_str(), "prepared" | "authorized") => {
+            ("agent.activity.started", "running", false, None)
+        }
+        "effect.completed"
+            if state.public.state == "running" && receipt_matches(state, payload, "completed")? =>
+        {
+            ("agent.activity.completed", "completed", true, None)
+        }
+        "effect.failed"
+            if state.public.state == "authorized" && payload.get("receipt_id").is_none() =>
+        {
+            (
+                "agent.activity.failed",
+                "failed",
+                true,
+                Some(failure_code(payload)?.to_owned()),
+            )
+        }
+        "effect.failed"
+            if state.public.state == "running" && receipt_matches(state, payload, "failed")? =>
+        {
+            (
+                "agent.activity.failed",
+                "failed",
+                true,
+                Some(failure_code(payload)?.to_owned()),
+            )
+        }
+        "effect.uncertain" if state.public.state == "running" && state.receipt.is_none() => (
+            "agent.activity.attention_required",
+            "attention_required",
+            false,
+            Some(
+                admitted(
+                    text(payload, "reason")?,
+                    &[
+                        "started_without_receipt",
+                        "receipt_invalid",
+                        "executor_state_unknown",
+                    ],
+                )?
+                .to_owned(),
+            ),
+        ),
+        "effect.reconciled" if state.public.state == "attention_required" => {
+            let decision = text(payload, "decision")?;
+            let (next, code) = match decision {
+                "completed" => ("completed", "reconciled_completed"),
+                "failed" => ("failed", "reconciled_failed"),
+                _ => return Err(LiveHostError::CorruptState),
+            };
+            ("agent.activity.reconciled", next, true, Some(code.into()))
+        }
+        _ => return Err(LiveHostError::CorruptState),
+    };
+    state.public.state = next.into();
+    state.public.source_position = fact.position;
+    state.public.terminal = terminal;
+    state.public.safe_code = safe_code;
+    Ok(ProjectedActivityEvent {
+        event: event_name,
+        activity: state.public.clone(),
+    })
 }
 
-fn validate_public(value: &HostActivityV1, limits: HostReadLimits) -> Result<(), LiveHostError> {
-    if value.activity_id.is_empty()
-        || value.activity_id.len() > limits.max_activity_id_bytes
-        || value.label_key.is_empty()
-        || value.label_key.len() > limits.max_activity_label_bytes
-        || value.source_position == 0
-    {
-        Err(LiveHostError::ReadBoundExceeded)
-    } else {
-        Ok(())
+#[allow(clippy::too_many_arguments)]
+fn event(
+    name: &'static str,
+    activity_id: String,
+    kind: &str,
+    label_key: String,
+    state: &str,
+    source_position: u64,
+    terminal: bool,
+    safe_code: Option<String>,
+) -> ProjectedActivityEvent {
+    ProjectedActivityEvent {
+        event: name,
+        activity: HostActivity {
+            api_version: API_VERSION,
+            activity_id,
+            kind: kind.into(),
+            label_key,
+            state: state.into(),
+            source_position,
+            terminal,
+            safe_code,
+        },
     }
+}
+
+fn tool_id(fact: &DurableFact) -> Result<String, LiveHostError> {
+    fact.tool_invocation_id
+        .as_ref()
+        .map(|value| value.as_str().to_owned())
+        .ok_or(LiveHostError::CorruptState)
+}
+
+fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, LiveHostError> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or(LiveHostError::CorruptState)
+}
+
+fn admitted<'a>(value: &'a str, values: &[&str]) -> Result<&'a str, LiveHostError> {
+    values
+        .contains(&value)
+        .then_some(value)
+        .ok_or(LiveHostError::CorruptState)
+}
+
+fn failure_code(payload: &Value) -> Result<&str, LiveHostError> {
+    admitted(
+        text(payload, "code")?,
+        &[
+            "timeout",
+            "cancelled",
+            "tool_failure",
+            "requirement_unsupported",
+            "executor_unavailable",
+        ],
+    )
+}
+
+fn receipt_matches(
+    state: &State,
+    payload: &Value,
+    classification: &str,
+) -> Result<bool, LiveHostError> {
+    let receipt = state.receipt.as_ref().ok_or(LiveHostError::CorruptState)?;
+    Ok(receipt.classification == classification
+        && payload.get("receipt_id").and_then(Value::as_str) == Some(receipt.id.as_str()))
 }
 
 fn is_activity_fact(kind: &str) -> bool {
@@ -251,94 +450,5 @@ fn is_activity_fact(kind: &str) -> bool {
             | "effect.uncertain"
             | "effect.reconciled"
             | "effect.observation"
-    )
-}
-
-fn object(fact: &DurableFact) -> Result<Map<String, Value>, LiveHostError> {
-    serde_json::from_str::<Value>(fact.payload.as_json())
-        .ok()
-        .and_then(|value| value.as_object().cloned())
-        .ok_or(LiveHostError::CorruptState)
-}
-
-fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, LiveHostError> {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .ok_or(LiveHostError::CorruptState)
-}
-
-fn tool_id(fact: &DurableFact) -> Result<String, LiveHostError> {
-    fact.tool_invocation_id
-        .as_ref()
-        .map(|value| value.as_str().to_owned())
-        .ok_or(LiveHostError::CorruptState)
-}
-
-fn rejection_id(fact_id: &str) -> String {
-    let mut value = String::with_capacity(64);
-    for byte in Sha256::digest(format!("preparation-rejected-v1\n{fact_id}").as_bytes()) {
-        let _ = write!(value, "{byte:02x}");
-    }
-    value
-}
-
-#[derive(Clone)]
-struct Record {
-    turn_id: String,
-    first_position: u64,
-    view: HostActivityV1,
-    receipt_seen: bool,
-}
-
-impl Record {
-    fn new(
-        activity_id: String,
-        turn_id: String,
-        kind: &str,
-        label_key: &str,
-        state: &str,
-        position: u64,
-        safe_code: Option<String>,
-    ) -> Self {
-        Self {
-            turn_id,
-            first_position: position,
-            view: HostActivityV1 {
-                api_version: "v1",
-                activity_id,
-                kind: kind.to_owned(),
-                label_key: label_key.to_owned(),
-                state: state.to_owned(),
-                source_position: position,
-                terminal: terminal(state),
-                safe_code,
-            },
-            receipt_seen: false,
-        }
-    }
-
-    fn advance(
-        &mut self,
-        state: &str,
-        position: u64,
-        safe_code: Option<String>,
-    ) -> Result<(), LiveHostError> {
-        if position <= self.view.source_position {
-            return Err(LiveHostError::CorruptState);
-        }
-        self.view.state = state.to_owned();
-        self.view.source_position = position;
-        self.view.terminal = terminal(state);
-        self.view.safe_code = safe_code;
-        Ok(())
-    }
-}
-
-fn terminal(state: &str) -> bool {
-    matches!(
-        state,
-        "input_received" | "completed" | "denied" | "failed" | "cancelled"
     )
 }

@@ -236,6 +236,20 @@ readers reject unknown case fields and duplicate names.
 - [`durable-runtime-facts.md`](durable-runtime-facts.md) — C6 fact schemas.
 - [`client-product-experience.md`](client-product-experience.md) — consuming UI contract.
 
+## Delivery evidence
+
+- Runtime reduces verified committed effect and interaction facts through one
+  closed transition implementation shared by H1 event pages and H2 timelines.
+- The reducer validates admitted safe-code sets, receipt identity/classification,
+  reconciliation order, JavaScript-safe source positions and independent count,
+  identity, label and encoded-byte bounds without partial query results.
+- File-backed restart tests prove byte-equivalent events and timelines. Canary
+  assertions prove internal tool names, results, observations, executor/grant,
+  receipt and dispatch identities do not cross the public projection.
+- `host-agent-activity-v1.json` enumerates every fact mapping, gap, transition,
+  bound and redaction family and is consumed by strict Rust, Kotlin and
+  TypeScript readers.
+
 ## Meta
 
 - Owner: `@christmic`

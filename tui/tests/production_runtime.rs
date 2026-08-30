@@ -181,6 +181,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
             max_command_bytes: 4_096,
             event_batch_size: 64,
             event_poll_interval_ms: 10,
+            activity: None,
         },
         Arc::new(Clock),
         Arc::new(CompletingDispatcher {
@@ -334,6 +335,8 @@ fn installed() -> InstalledAgent {
         definition_revision: "revision-1".into(),
         snapshot_digest: "a".repeat(64),
         agent_instance_namespace: "installed-main".into(),
+        public_capabilities: Vec::new(),
+        public_activity_catalogue: None,
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: 4,
             max_input_tokens: Some(1_024),

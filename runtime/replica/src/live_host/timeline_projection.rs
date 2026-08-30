@@ -5,37 +5,37 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::{
-    activity_projection, projection,
+    projection,
     timeline_prompt::{self, Interaction},
-    HostActivityV1, HostReadLimits, LiveHostError, PublicToolActivityCatalogueV1, SuspensionViewV1,
-    TurnTimelineItemV1, TurnTimelinePageV1,
+    HostActivity, HostReadLimits, LiveHostError, SuspensionViewV1, TurnTimelineItemV1,
+    TurnTimelinePageV1,
 };
 
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
-pub(super) struct TimelineProjection<'a> {
+pub(super) struct TimelineProjectionInput<'a> {
     pub session_id: &'a SessionId,
     pub observed_max_position: u64,
     pub session_version: u64,
     pub after_position: u64,
     pub limit: usize,
     pub facts: &'a [DurableFact],
+    pub activities: BTreeMap<String, Vec<HostActivity>>,
     pub limits: HostReadLimits,
-    pub catalogue: &'a PublicToolActivityCatalogueV1,
 }
 
 pub(super) fn project_timeline(
-    input: TimelineProjection<'_>,
+    input: TimelineProjectionInput<'_>,
 ) -> Result<TurnTimelinePageV1, LiveHostError> {
-    let TimelineProjection {
+    let TimelineProjectionInput {
         session_id,
         observed_max_position,
         session_version,
         after_position,
         limit,
         facts,
+        mut activities,
         limits,
-        catalogue,
     } = input;
     if limit == 0
         || limit > limits.max_timeline_items
@@ -45,13 +45,11 @@ pub(super) fn project_timeline(
         || session_version == 0
         || session_version > MAX_SAFE_JSON_INTEGER
         || after_position > observed_max_position
-        || facts.len() as u64 != observed_max_position
     {
         return Err(LiveHostError::ReadBoundExceeded);
     }
-    verify_prefix(session_id, facts)?;
+    verify_prefix(session_id, observed_max_position, facts)?;
     let interactions = timeline_prompt::interactions(facts, limits)?;
-    let mut activities = activity_projection::project(facts, catalogue, limits)?.by_turn;
     let mut turns = BTreeMap::<String, Turn>::new();
     for fact in facts.iter().skip(1) {
         let Some(turn_id) = fact.turn_id.as_ref().map(|value| value.as_str()) else {
@@ -77,28 +75,16 @@ pub(super) fn project_timeline(
             _ => {}
         }
     }
-    if activities
-        .keys()
-        .any(|turn_id| !turns.contains_key(turn_id))
-    {
+    let mut items = turns
+        .into_values()
+        .map(|turn| {
+            let values = activities.remove(&turn.turn_id).unwrap_or_default();
+            turn.finish(values)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !activities.is_empty() {
         return Err(LiveHostError::CorruptState);
     }
-    let mut items = turns
-        .into_iter()
-        .map(|(turn_id, mut turn)| {
-            turn.activities = activities.remove(&turn_id).unwrap_or_default();
-            if let Some(position) = turn
-                .activities
-                .iter()
-                .map(|activity| activity.source_position)
-                .max()
-            {
-                turn.latest_position = turn.latest_position.max(position);
-            }
-            turn
-        })
-        .map(Turn::finish)
-        .collect::<Result<Vec<_>, _>>()?;
     items.retain(|item| item.latest_position > after_position);
     items.sort_by_key(|item| (item.latest_position, item.started_position));
     let has_more = items.len() > limit;
@@ -121,15 +107,25 @@ pub(super) fn project_timeline(
     })
 }
 
-fn verify_prefix(session_id: &SessionId, facts: &[DurableFact]) -> Result<(), LiveHostError> {
-    for (index, fact) in facts.iter().enumerate() {
+fn verify_prefix(
+    session_id: &SessionId,
+    observed_max_position: u64,
+    facts: &[DurableFact],
+) -> Result<(), LiveHostError> {
+    let mut previous = 0;
+    for fact in facts {
         fact.verify().map_err(|_| LiveHostError::CorruptState)?;
-        if &fact.session_id != session_id || fact.position != index as u64 + 1 {
+        if &fact.session_id != session_id || fact.position <= previous {
             return Err(LiveHostError::CorruptState);
         }
+        previous = fact.position;
     }
     let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
-    if opened.kind.as_str() != "session.opened" || opened.schema_version != 1 {
+    if opened.position != 1
+        || previous != observed_max_position
+        || opened.kind.as_str() != "session.opened"
+        || opened.schema_version != 1
+    {
         return Err(LiveHostError::CorruptState);
     }
     Ok(())
@@ -167,12 +163,14 @@ fn start_or_continue(
                         .as_ref()
                         .map(|value| value.suspension_id.as_str())
                 || payload.expected_session_version.is_none()
+                || turn.pending_continuation.as_deref() != payload.prior_suspension_id.as_deref()
             {
                 return Err(LiveHostError::CorruptState);
             }
             turn.state = "running";
             turn.latest_position = fact.position;
             turn.suspension = None;
+            turn.pending_continuation = None;
         }
         _ => return Err(LiveHostError::CorruptState),
     }
@@ -190,13 +188,25 @@ fn admit_input(
     let turn = turns.get_mut(turn_id).ok_or(LiveHostError::CorruptState)?;
     verify_text(&payload.content)?;
     if payload.input_kind == "trusted_user" {
-        if turn.user_text.is_some() || payload.suspension_id.is_some() {
+        if turn.state != "running" || turn.user_text.is_some() || payload.suspension_id.is_some() {
             return Err(LiveHostError::CorruptState);
         }
         let (text, truncated) = truncate(payload.content.inline_utf8, limits.max_user_text_bytes);
         turn.user_text = Some(text);
         turn.content_truncated |= truncated;
-    } else if payload.input_kind != "trusted_system" && payload.suspension_id.is_none() {
+    } else if payload.suspension_id.is_some() {
+        if turn.state != "suspended"
+            || turn.pending_continuation.is_some()
+            || payload.suspension_id.as_deref()
+                != turn
+                    .suspension
+                    .as_ref()
+                    .map(|value| value.suspension_id.as_str())
+        {
+            return Err(LiveHostError::CorruptState);
+        }
+        turn.pending_continuation = payload.suspension_id;
+    } else if payload.input_kind != "trusted_system" || turn.user_text.is_some() {
         return Err(LiveHostError::CorruptState);
     }
     turn.latest_position = fact.position;
@@ -319,7 +329,7 @@ struct Turn {
     completion_text: Option<String>,
     suspension: Option<SuspensionViewV1>,
     content_truncated: bool,
-    activities: Vec<HostActivityV1>,
+    pending_continuation: Option<String>,
 }
 
 impl Turn {
@@ -333,12 +343,21 @@ impl Turn {
             completion_text: None,
             suspension: None,
             content_truncated: false,
-            activities: Vec::new(),
+            pending_continuation: None,
         }
     }
 
-    fn finish(mut self) -> Result<TurnTimelineItemV1, LiveHostError> {
+    fn finish(
+        mut self,
+        activities: Vec<HostActivity>,
+    ) -> Result<TurnTimelineItemV1, LiveHostError> {
         let user = self.user_text.take().ok_or(LiveHostError::CorruptState)?;
+        if self.pending_continuation.is_some() {
+            return Err(LiveHostError::CorruptState);
+        }
+        if let Some(position) = activities.iter().map(|value| value.source_position).max() {
+            self.latest_position = self.latest_position.max(position);
+        }
         Ok(TurnTimelineItemV1 {
             turn_id: self.turn_id,
             started_position: self.started_position,
@@ -348,7 +367,7 @@ impl Turn {
             completion_text: self.completion_text,
             suspension: self.suspension,
             content_truncated: self.content_truncated,
-            activities: self.activities,
+            activities,
         })
     }
 }

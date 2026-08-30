@@ -14,13 +14,13 @@ use garive_llm::{
 };
 use garive_runtime::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
-    reconstruct_suspended_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
-    AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
+    reconstruct_suspended_turn, ActivityProjectionLimits, AuthorityDecision, AuthorityFuture,
+    AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
     ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, HostClock,
-    HostReadLimits, InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits,
-    ModelLifecycleContext, PreparedExecution, PublicToolActivityCatalogueV1,
-    PublicToolActivityDescriptorV1, RuntimeCommandError, RuntimeCommandId,
-    SqliteGovernedEffectPort, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
+    InteractionInputRepresentation, LiveHost, LiveHostLimits, ModelLifecycleContext,
+    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort,
+    SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
@@ -275,7 +275,7 @@ fn sqlite_success_commits_every_effect_boundary_before_observation() {
             "effect.observation",
         ],
     );
-    let host = LiveHost::new_with_activity_catalogue(
+    let host = LiveHost::new_with_read_limits(
         &setup.database,
         InstalledAgent {
             definition_id: "definition".into(),
@@ -283,27 +283,36 @@ fn sqlite_success_commits_every_effect_boundary_before_observation() {
             snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                 .into(),
             agent_instance_namespace: "agent".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: garive_runtime::EffectiveRuntimeLimits {
                 max_iterations: 4,
                 max_input_tokens: None,
                 max_output_tokens: None,
                 deadline_budget_ms: None,
             },
+            public_activity_catalogue: Some(InstalledActivityCatalogue {
+                schema_version: 1,
+                catalogue_revision: "catalogue-1".into(),
+                descriptors: vec![InstalledActivityDescriptor {
+                    tool_name: "read_file".into(),
+                    tool_revision: "1".into(),
+                    label_key: "agent.activity.read_file".into(),
+                }],
+            }),
         },
         LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
             event_poll_interval_ms: 10,
+            activity: Some(ActivityProjectionLimits {
+                max_activities_per_turn: 8,
+                max_activity_facts: 64,
+                max_label_bytes: 128,
+                max_activity_id_bytes: 128,
+                max_encoded_bytes_per_turn: 8_192,
+            }),
         },
         HostReadLimits::PRODUCT_DEFAULT,
-        PublicToolActivityCatalogueV1 {
-            catalogue_revision: "catalogue-1".into(),
-            descriptors: vec![PublicToolActivityDescriptorV1 {
-                tool_name: "read_file".into(),
-                tool_revision: "1".into(),
-                label_key: "agent.activity.read_file".into(),
-            }],
-        },
         Arc::new(TestClock),
         Arc::new(NoopDispatcher),
     )

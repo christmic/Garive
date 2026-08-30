@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use garive_ledger::{CanonicalPayload, DurableFact};
+use garive_tools::validate_portable_value_schema;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -24,6 +25,9 @@ pub(super) fn interactions(
             .map_err(|_| LiveHostError::CorruptState)?;
         verify_json(&value.prompt, limits.max_prompt_bytes)?;
         verify_json(&value.response_schema, limits.max_prompt_bytes)?;
+        let schema: Value = serde_json::from_str(&value.response_schema.inline_utf8)
+            .map_err(|_| LiveHostError::CorruptState)?;
+        validate_portable_value_schema(&schema).map_err(|_| LiveHostError::CorruptState)?;
         if value.response_schema.digest != value.response_schema_digest
             || values.insert(value.suspension_id.clone(), value).is_some()
         {
@@ -101,14 +105,27 @@ fn validate_public_prompt(input: &str) -> Result<(), LiveHostError> {
     }
     let value: Prompt = serde_json::from_str(input).map_err(|_| LiveHostError::CorruptState)?;
     if value.schema_version != 1
-        || value.title_key.is_empty()
-        || value.action_label_key.is_empty()
+        || !valid_localization_key(&value.title_key)
+        || !valid_localization_key(&value.action_label_key)
         || value.message_text.as_deref() == Some("")
-        || value.cancel_label_key.as_deref() == Some("")
+        || value
+            .cancel_label_key
+            .as_deref()
+            .is_some_and(|key| !valid_localization_key(key))
     {
         return Err(LiveHostError::CorruptState);
     }
     Ok(())
+}
+
+fn valid_localization_key(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+        && !value.contains("..")
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_')
+        })
 }
 
 fn verify_json(content: &Content, limit: usize) -> Result<(), LiveHostError> {

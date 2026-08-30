@@ -18,12 +18,14 @@ use crate::{
 };
 
 use super::{
-    activity_projection, project_fact, read_cursor, read_model, timeline_projection,
-    AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
-    HostClock, HostContinuationInput, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
-    LiveHostEvent, LiveHostLimits, LiveHostState, PublicToolActivityCatalogueV1, SessionPageV1,
-    SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
+    project_activities, project_fact, AgentDefinitionPageV1, AgentDefinitionSummaryV1,
+    CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState,
+    SessionPageV1, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
 };
+use super::{read_cursor, read_model, timeline_projection};
+
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// Durable local Host command service shared by in-process and HTTP clients.
 #[derive(Clone)]
@@ -59,33 +61,8 @@ impl LiveHost {
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
     ) -> Result<Self, LiveHostError> {
-        Self::new_with_activity_catalogue(
-            database_path,
-            installed,
-            limits,
-            read_limits,
-            PublicToolActivityCatalogueV1 {
-                catalogue_revision: "none".to_owned(),
-                descriptors: Vec::new(),
-            },
-            clock,
-            dispatcher,
-        )
-    }
-
-    /// Constructs a Host with an exact Turn-bound H3 public Tool catalogue.
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_activity_catalogue(
-        database_path: impl AsRef<Path>,
-        installed: InstalledAgent,
-        limits: LiveHostLimits,
-        read_limits: HostReadLimits,
-        activity_catalogue: PublicToolActivityCatalogueV1,
-        clock: Arc<dyn HostClock>,
-        dispatcher: Arc<dyn TurnDispatcher>,
-    ) -> Result<Self, LiveHostError> {
         validate_installed(&installed, limits)?;
-        if !read_limits.valid() || !valid_activity_catalogue(&activity_catalogue, read_limits) {
+        if !read_limits.valid() {
             return Err(LiveHostError::InvalidRequest);
         }
         SqliteLedger::open(database_path.as_ref()).map_err(map_sqlite)?;
@@ -95,7 +72,6 @@ impl LiveHost {
                 installed,
                 limits,
                 read_limits,
-                activity_catalogue,
                 clock,
                 dispatcher,
             }),
@@ -110,7 +86,7 @@ impl LiveHost {
                 api_version: "v1",
                 definition_id: self.state.installed.definition_id.clone(),
                 definition_revision: self.state.installed.definition_revision.clone(),
-                capabilities: Vec::new(),
+                capabilities: self.state.installed.public_capabilities.clone(),
             }],
         };
         if page.definitions.len() > self.state.read_limits.max_definitions
@@ -132,7 +108,7 @@ impl LiveHost {
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
-        if watermark.max_position > self.state.read_limits.max_facts as u64 {
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         let facts = ledger
@@ -164,8 +140,8 @@ impl LiveHost {
         if limit == 0 || limit > self.state.read_limits.max_sessions {
             return Err(LiveHostError::InvalidRequest);
         }
-        let ledger = self.ledger()?;
-        let mut sessions = ledger
+        let mut sessions = self
+            .ledger()?
             .list_sessions()
             .map_err(map_sqlite)?
             .into_iter()
@@ -185,41 +161,27 @@ impl LiveHost {
             .into_iter()
             .map(|(_, session)| session)
             .collect::<Vec<_>>();
-        let start = if let Some(token) = before {
-            let (opened_at, session_id) =
-                read_cursor::decode(token, &self.state.installed, self.state.read_limits)?;
+        let start = before.map_or(Ok(0), |token| {
+            let key = read_cursor::decode(token, &self.state.installed, self.state.read_limits)?;
             sessions
                 .iter()
-                .position(|item| item.opened_at == opened_at && item.session_id == session_id)
-                .ok_or(LiveHostError::InvalidRequest)?
-                + 1
-        } else {
-            0
-        };
+                .position(|item| item.opened_at == key.0 && item.session_id == key.1)
+                .map(|index| index + 1)
+                .ok_or(LiveHostError::InvalidRequest)
+        })?;
         let end = start.saturating_add(limit).min(sessions.len());
         let page_sessions = sessions[start..end].to_vec();
-        let next_before = if end < sessions.len() {
-            page_sessions
-                .last()
-                .map(|item| {
-                    read_cursor::encode(item, &self.state.installed, self.state.read_limits)
-                })
-                .transpose()?
-        } else {
-            None
-        };
+        let next_before = (end < sessions.len())
+            .then(|| page_sessions.last())
+            .flatten()
+            .map(|item| read_cursor::encode(item, &self.state.installed, self.state.read_limits))
+            .transpose()?;
         let page = SessionPageV1 {
             api_version: "v1",
             sessions: page_sessions,
             next_before,
         };
-        if serde_json::to_vec(&page)
-            .map_err(|_| LiveHostError::CorruptState)?
-            .len()
-            > self.state.read_limits.max_response_bytes
-        {
-            return Err(LiveHostError::ReadBoundExceeded);
-        }
+        ensure_response_bound(&page, self.state.read_limits.max_response_bytes)?;
         Ok(page)
     }
 
@@ -239,10 +201,12 @@ impl LiveHost {
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
-        if after_position > watermark.max_position {
+        if after_position > MAX_SAFE_JSON_INTEGER || after_position > watermark.max_position {
             return Err(LiveHostError::InvalidRequest);
         }
-        if watermark.max_position > self.state.read_limits.max_facts as u64 {
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER
+            || watermark.session_version > MAX_SAFE_JSON_INTEGER
+        {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         let facts = ledger
@@ -255,16 +219,26 @@ impl LiveHost {
             &self.state.installed,
             self.state.read_limits,
         )?;
+        let activities = match (
+            self.state.installed.public_activity_catalogue.as_ref(),
+            self.state.limits.activity,
+        ) {
+            (Some(catalogue), Some(limits)) => {
+                project_activities(&facts, catalogue, limits)?.by_turn
+            }
+            (None, None) => Default::default(),
+            _ => return Err(LiveHostError::CorruptState),
+        };
         let page =
-            timeline_projection::project_timeline(timeline_projection::TimelineProjection {
+            timeline_projection::project_timeline(timeline_projection::TimelineProjectionInput {
                 session_id: &session_id,
                 observed_max_position: watermark.max_position,
                 session_version: watermark.session_version,
                 after_position,
                 limit,
                 facts: &facts,
+                activities,
                 limits: self.state.read_limits,
-                catalogue: &self.state.activity_catalogue,
             })?;
         if serde_json::to_vec(&page)
             .map_err(|_| LiveHostError::CorruptState)?
@@ -491,16 +465,15 @@ impl LiveHost {
     }
 
     /// Continues one exact external-input suspension with a fresh Execution.
-    pub fn continue_turn<'a>(
+    pub fn continue_turn(
         &self,
         idempotency_key: &str,
         session: &str,
         turn: &str,
         suspension_id: &str,
         expected_session_version: u64,
-        input: impl Into<HostContinuationInput<'a>>,
+        input: HostContinuationInput<'_>,
     ) -> Result<TurnCommandResponse, LiveHostError> {
-        let input = input.into();
         validate_key(idempotency_key)?;
         validate_continuation_bytes(input, self.state.limits.max_command_bytes)?;
         let session_id = identity::<SessionId>(session)?;
@@ -585,12 +558,18 @@ impl LiveHost {
         session: &str,
         after_position: u64,
     ) -> Result<HostEventPage, LiveHostError> {
+        if after_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::InvalidRequest);
+        }
         let session_id = identity::<SessionId>(session)?;
         let ledger = self.ledger()?;
         let watermark = ledger
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
         if after_position > watermark.max_position {
             return Err(LiveHostError::InvalidRequest);
         }
@@ -604,44 +583,51 @@ impl LiveHost {
         let through = after_position
             .saturating_add(self.state.limits.event_batch_size)
             .min(watermark.max_position);
-        if through > self.state.read_limits.max_facts as u64 {
-            return Err(LiveHostError::ReadBoundExceeded);
-        }
-        let prefix = ledger
-            .read_facts(&session_id, 0, through, None)
+        let activity_enabled = self.state.limits.activity.is_some();
+        let facts = ledger
+            .read_facts(
+                &session_id,
+                if activity_enabled { 0 } else { after_position },
+                through,
+                None,
+            )
             .map_err(map_sqlite)?;
-        let mut activities = activity_projection::project(
-            &prefix,
-            &self.state.activity_catalogue,
-            self.state.read_limits,
-        )?
-        .events;
-        let events = prefix
-            .iter()
-            .filter(|fact| fact.position > after_position)
-            .filter_map(|fact| {
-                if let Some((event, activity)) = activities.remove(&fact.position) {
-                    let turn_id = match fact.turn_id.as_ref() {
-                        Some(value) => value.as_str().to_owned(),
-                        None => return Some(Err(LiveHostError::CorruptState)),
-                    };
-                    return Some(Ok(LiveHostEvent {
-                        api_version: "v1",
-                        session_id: session_id.as_str().to_owned(),
-                        position: fact.position,
-                        event: event.to_owned(),
-                        turn_id,
-                        execution_id: fact
-                            .execution_id
-                            .as_ref()
-                            .map_or_else(String::new, |value| value.as_str().to_owned()),
-                        text: String::new(),
-                        activity: Some(activity),
-                    }));
-                }
-                project_fact(fact).transpose()
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let activities = match (
+            self.state.installed.public_activity_catalogue.as_ref(),
+            self.state.limits.activity,
+        ) {
+            (Some(catalogue), Some(limits)) => {
+                Some(project_activities(&facts, catalogue, limits)?.events)
+            }
+            (None, None) => None,
+            _ => return Err(LiveHostError::CorruptState),
+        };
+        let mut events = Vec::new();
+        for fact in facts.iter().filter(|fact| fact.position > after_position) {
+            if let Some(activity) = activities
+                .as_ref()
+                .and_then(|items| items.get(&fact.position))
+            {
+                events.push(LiveHostEvent {
+                    api_version: "v1",
+                    session_id: fact.session_id.as_str().to_owned(),
+                    position: fact.position,
+                    event: activity.event.into(),
+                    turn_id: fact
+                        .turn_id
+                        .as_ref()
+                        .map_or_else(String::new, |value| value.as_str().to_owned()),
+                    execution_id: fact
+                        .execution_id
+                        .as_ref()
+                        .map_or_else(String::new, |value| value.as_str().to_owned()),
+                    text: String::new(),
+                    activity: Some(activity.activity.clone()),
+                });
+            } else if let Some(event) = project_fact(fact)? {
+                events.push(event);
+            }
+        }
         Ok(HostEventPage {
             events,
             scanned_through_position: through,
@@ -992,39 +978,68 @@ fn validate_installed(
         || limits.max_command_bytes == 0
         || limits.event_batch_size == 0
         || limits.event_poll_interval_ms == 0
+        || installed.public_activity_catalogue.is_some() != limits.activity.is_some()
+        || installed.public_capabilities.iter().any(String::is_empty)
+        || installed
+            .public_capabilities
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
     {
-        Err(LiveHostError::InvalidRequest)
+        return Err(LiveHostError::InvalidRequest);
+    }
+    if let (Some(catalogue), Some(activity)) =
+        (&installed.public_activity_catalogue, limits.activity)
+    {
+        let keys = catalogue
+            .descriptors
+            .iter()
+            .map(|item| (item.tool_name.as_str(), item.tool_revision.as_str()))
+            .collect::<Vec<_>>();
+        let valid_label = |value: &str| {
+            !value.is_empty()
+                && value.len() <= activity.max_label_bytes
+                && !value.starts_with('.')
+                && !value.ends_with('.')
+                && !value.contains("..")
+                && value.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'.' | b'_')
+                })
+        };
+        if catalogue.schema_version != 1
+            || catalogue.catalogue_revision.is_empty()
+            || keys.windows(2).any(|pair| pair[0] >= pair[1])
+            || catalogue.descriptors.iter().any(|item| {
+                item.tool_name.is_empty()
+                    || item.tool_revision.is_empty()
+                    || !valid_label(&item.label_key)
+            })
+            || activity.max_activities_per_turn == 0
+            || activity.max_activity_facts == 0
+            || activity.max_label_bytes == 0
+            || activity.max_activity_id_bytes == 0
+            || activity.max_encoded_bytes_per_turn == 0
+        {
+            return Err(LiveHostError::InvalidRequest);
+        }
+    }
+    Ok(())
+}
+
+fn ensure_response_bound<T: serde::Serialize>(
+    value: &T,
+    max_bytes: usize,
+) -> Result<(), LiveHostError> {
+    if serde_json::to_vec(value)
+        .map_err(|_| LiveHostError::CorruptState)?
+        .len()
+        > max_bytes
+    {
+        Err(LiveHostError::ReadBoundExceeded)
     } else {
         Ok(())
     }
-}
-
-fn valid_activity_catalogue(
-    catalogue: &PublicToolActivityCatalogueV1,
-    limits: HostReadLimits,
-) -> bool {
-    !catalogue.catalogue_revision.is_empty()
-        && catalogue.catalogue_revision.len() <= limits.max_activity_id_bytes
-        && catalogue.descriptors.len() <= limits.max_activities_per_turn
-        && catalogue.descriptors.iter().all(|value| {
-            !value.tool_name.is_empty()
-                && value.tool_name.len() <= limits.max_activity_id_bytes
-                && !value.tool_revision.is_empty()
-                && value.tool_revision.len() <= limits.max_activity_id_bytes
-                && !value.label_key.is_empty()
-                && value.label_key.len() <= limits.max_activity_label_bytes
-                && localization_key(&value.label_key)
-        })
-        && catalogue.descriptors.windows(2).all(|pair| {
-            (&pair[0].tool_name, &pair[0].tool_revision)
-                < (&pair[1].tool_name, &pair[1].tool_revision)
-        })
-}
-
-fn localization_key(value: &str) -> bool {
-    value.bytes().all(|byte| {
-        byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
-    }) && value.bytes().any(|byte| byte.is_ascii_lowercase())
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), LiveHostError> {

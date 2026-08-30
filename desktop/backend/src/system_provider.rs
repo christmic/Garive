@@ -218,6 +218,7 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
                 event_poll_interval_ms: config.host.event_poll_interval_ms,
+                activity: None,
             },
             execution_policy,
             dispatch_capacity: config.dispatch_capacity,
@@ -237,12 +238,14 @@ fn installed_agent(config: &DesktopSystemConfiguration) -> InstalledAgent {
         definition_revision: config.installed_agent.definition_revision.clone(),
         snapshot_digest: config.installed_agent.snapshot_digest.clone(),
         agent_instance_namespace: config.installed_agent.agent_instance_namespace.clone(),
+        public_capabilities: Vec::new(),
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: config.installed_agent.max_iterations,
             max_input_tokens: config.installed_agent.max_input_tokens,
             max_output_tokens: config.installed_agent.max_output_tokens,
             deadline_budget_ms: config.installed_agent.deadline_budget_ms,
         },
+        public_activity_catalogue: None,
     }
 }
 

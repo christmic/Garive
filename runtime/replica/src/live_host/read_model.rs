@@ -17,10 +17,10 @@ pub(super) fn project_session(
     if facts.len() > limits.max_facts
         || observed_max_position == 0
         || observed_max_position > MAX_SAFE_JSON_INTEGER
-        || facts.len() as u64 != observed_max_position
     {
         return Err(LiveHostError::ReadBoundExceeded);
     }
+    verify_prefix(session_id, observed_max_position, facts)?;
     let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
     if opened.position != 1
         || opened.kind.as_str() != "session.opened"
@@ -34,6 +34,7 @@ pub(super) fn project_session(
         || binding.definition_revision != installed.definition_revision
         || binding.snapshot_digest != installed.snapshot_digest
         || AgentInstanceId::try_from(binding.agent_instance_id.as_str()).is_err()
+        || chrono::DateTime::parse_from_rfc3339(&opened.recorded_at).is_err()
     {
         return Err(LiveHostError::CorruptState);
     }
@@ -58,7 +59,11 @@ pub(super) fn project_session(
         if kind == "turn.started" {
             let started: TurnStarted = decode(fact)?;
             match started.kind.as_str() {
-                "start" if !turns.contains_key(turn_id) => {
+                "start"
+                    if !turns.contains_key(turn_id)
+                        && started.prior_suspension_id.is_none()
+                        && started.expected_session_version.is_none() =>
+                {
                     turns.insert(
                         turn_id.to_owned(),
                         TurnProjection {
@@ -68,15 +73,26 @@ pub(super) fn project_session(
                     );
                 }
                 "continue" => {
-                    turns
-                        .get_mut(turn_id)
-                        .ok_or(LiveHostError::CorruptState)?
-                        .state = "running";
+                    let turn = turns.get_mut(turn_id).ok_or(LiveHostError::CorruptState)?;
+                    if turn.state != "suspended"
+                        || started
+                            .prior_suspension_id
+                            .as_deref()
+                            .is_none_or(str::is_empty)
+                        || started.expected_session_version == Some(0)
+                        || started.expected_session_version.is_none()
+                    {
+                        return Err(LiveHostError::CorruptState);
+                    }
+                    turn.state = "running";
                 }
                 _ => return Err(LiveHostError::CorruptState),
             }
         } else {
             let turn = turns.get_mut(turn_id).ok_or(LiveHostError::CorruptState)?;
+            if turn.state != "running" {
+                return Err(LiveHostError::CorruptState);
+            }
             turn.state = match kind {
                 "turn.suspended" => "suspended",
                 "turn.completed" => "completed",
@@ -107,6 +123,28 @@ pub(super) fn project_session(
     })
 }
 
+fn verify_prefix(
+    session_id: &SessionId,
+    observed_max_position: u64,
+    facts: &[DurableFact],
+) -> Result<(), LiveHostError> {
+    let mut previous = 0;
+    for fact in facts {
+        fact.verify().map_err(|_| LiveHostError::CorruptState)?;
+        if &fact.session_id != session_id
+            || fact.position <= previous
+            || fact.position > observed_max_position
+        {
+            return Err(LiveHostError::CorruptState);
+        }
+        previous = fact.position;
+    }
+    if previous != observed_max_position {
+        return Err(LiveHostError::CorruptState);
+    }
+    Ok(())
+}
+
 fn decode<T: for<'de> Deserialize<'de>>(fact: &DurableFact) -> Result<T, LiveHostError> {
     fact.verify().map_err(|_| LiveHostError::CorruptState)?;
     serde_json::from_str(fact.payload.as_json()).map_err(|_| LiveHostError::CorruptState)
@@ -130,4 +168,6 @@ struct SessionOpened {
 #[derive(Deserialize)]
 struct TurnStarted {
     kind: String,
+    prior_suspension_id: Option<String>,
+    expected_session_version: Option<u64>,
 }

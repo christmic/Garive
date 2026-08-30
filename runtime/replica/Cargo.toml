@@ -38,7 +38,6 @@ tokio.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 garive-host-client = { path = "../../clients/host-rs" }
 garive-provider-profile = { path = "../../providers/profile" }
 serde_json.workspace = true

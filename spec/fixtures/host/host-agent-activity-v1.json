@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "contract": "host-agent-activity-v1",
+  "projection_cases": [
+    {"name":"preparation-rejected","fact":"tool.preparation_rejected","event":"agent.activity.rejected","state":"failed","terminal":true,"safe_code":"arguments_schema_mismatch"},
+    {"name":"prepared","fact":"effect.prepared","event":"agent.activity.prepared","state":"prepared","terminal":false,"safe_code":null},
+    {"name":"input-requested","fact":"interaction.requested","event":"agent.activity.input_requested","state":"waiting_for_input","terminal":false,"safe_code":null},
+    {"name":"input-received","fact":"interaction.resolved","event":"agent.activity.input_received","state":"input_received","terminal":true,"safe_code":null},
+    {"name":"input-cancelled","fact":"interaction.cancelled","event":"agent.activity.cancelled","state":"cancelled","terminal":true,"safe_code":"expired"},
+    {"name":"authorized","fact":"effect.authorized","event":"agent.activity.authorized","state":"authorized","terminal":false,"safe_code":null},
+    {"name":"denied","fact":"effect.denied","event":"agent.activity.denied","state":"denied","terminal":true,"safe_code":"authorization_denied"},
+    {"name":"started","fact":"effect.started","event":"agent.activity.started","state":"running","terminal":false,"safe_code":null},
+    {"name":"completed","fact":"effect.completed","event":"agent.activity.completed","state":"completed","terminal":true,"safe_code":null},
+    {"name":"failed","fact":"effect.failed","event":"agent.activity.failed","state":"failed","terminal":true,"safe_code":"tool_failure"},
+    {"name":"uncertain","fact":"effect.uncertain","event":"agent.activity.attention_required","state":"attention_required","terminal":false,"safe_code":"receipt_invalid"},
+    {"name":"reconciled-completed","fact":"effect.reconciled","event":"agent.activity.reconciled","state":"completed","terminal":true,"safe_code":"reconciled_completed"},
+    {"name":"reconciled-failed","fact":"effect.reconciled","event":"agent.activity.reconciled","state":"failed","terminal":true,"safe_code":"reconciled_failed"},
+    {"name":"receipt-gap","fact":"effect.receipt","event":null,"state":"running","terminal":false,"safe_code":null},
+    {"name":"observation-gap","fact":"effect.observation","event":null,"state":"completed","terminal":true,"safe_code":null}
+  ],
+  "timeline_cases": [
+    {"name":"latest-effect-state","facts":["effect.prepared","effect.started","effect.receipt","effect.completed"],"expected_states":["completed"],"error":null},
+    {"name":"effect-and-interaction","facts":["effect.prepared","interaction.requested"],"expected_states":["prepared","waiting_for_input"],"error":null},
+    {"name":"continuation-preserves-history","facts":["interaction.requested","interaction.resolved","effect.started"],"expected_states":["input_received","running"],"error":null},
+    {"name":"activity-only-change-after-cursor","facts":["effect.prepared","effect.authorized"],"expected_states":["authorized"],"error":null}
+  ],
+  "reducer_cases": [
+    {"name":"prepared-running","from":"prepared","fact":"effect.started","to":"running","valid":true},
+    {"name":"authorized-failed-without-receipt","from":"authorized","fact":"effect.failed","to":"failed","valid":true},
+    {"name":"running-completed-with-receipt","from":"running","fact":"effect.completed","to":"completed","valid":true},
+    {"name":"waiting-resolved","from":"waiting_for_input","fact":"interaction.resolved","to":"input_received","valid":true},
+    {"name":"terminal-reversal","from":"completed","fact":"effect.started","to":"running","valid":false},
+    {"name":"missing-preparation","from":"missing","fact":"effect.started","to":"running","valid":false},
+    {"name":"completed-without-receipt","from":"running","fact":"effect.completed","to":"completed","valid":false},
+    {"name":"receipt-classification-mismatch","from":"running","fact":"effect.failed","to":"failed","valid":false},
+    {"name":"reconcile-without-uncertainty","from":"running","fact":"effect.reconciled","to":"completed","valid":false},
+    {"name":"unknown-safe-code","from":"running","fact":"effect.failed","to":"failed","valid":false}
+  ],
+  "bound_cases": [
+    {"name":"activity-count","bound":"max_activities_per_turn","error":"read_bound_exceeded"},
+    {"name":"activity-facts","bound":"max_activity_facts","error":"read_bound_exceeded"},
+    {"name":"label-bytes","bound":"max_label_bytes","error":"read_bound_exceeded"},
+    {"name":"activity-id-bytes","bound":"max_activity_id_bytes","error":"read_bound_exceeded"},
+    {"name":"encoded-bytes","bound":"max_encoded_bytes_per_turn","error":"read_bound_exceeded"},
+    {"name":"js-safe-position","bound":"source_position","error":"read_bound_exceeded"}
+  ],
+  "redaction_cases": [
+    {"name":"tool-arguments","canary":"secret-tool-argument","must_be_absent":true},
+    {"name":"tool-result","canary":"secret-tool-result","must_be_absent":true},
+    {"name":"credential","canary":"secret-api-key","must_be_absent":true},
+    {"name":"endpoint","canary":"https://private.invalid","must_be_absent":true},
+    {"name":"executor-identity","canary":"executor-private","must_be_absent":true},
+    {"name":"raw-tool-name","canary":"read_private_file","must_be_absent":true}
+  ]
+}

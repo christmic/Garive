@@ -172,6 +172,7 @@ fn runtime_host(mode: TerminalMode) -> RuntimeHost {
                         max_command_bytes: 4096,
                         event_batch_size: 64,
                         event_poll_interval_ms: 5,
+                        activity: None,
                     },
                     Arc::new(FixedClock),
                     Arc::new(CompletingDispatcher {
@@ -211,12 +212,14 @@ fn installed() -> InstalledAgent {
         definition_revision: "revision-1".into(),
         snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
         agent_instance_namespace: "installed-main".into(),
+        public_capabilities: Vec::new(),
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: 4,
             max_input_tokens: None,
             max_output_tokens: None,
             deadline_budget_ms: None,
         },
+        public_activity_catalogue: None,
     }
 }
 

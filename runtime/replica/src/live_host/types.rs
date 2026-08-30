@@ -16,8 +16,49 @@ pub struct InstalledAgent {
     pub snapshot_digest: String,
     /// Stable namespace used while deriving installed Agent instance identities.
     pub agent_instance_namespace: String,
+    /// Sorted stable public capabilities available to newly created Sessions.
+    pub public_capabilities: Vec<String>,
     /// Effective Runtime limits frozen into each first Execution.
     pub runtime_limits: EffectiveRuntimeLimits,
+    /// Optional snapshot-bound H3 public label catalogue.
+    pub public_activity_catalogue: Option<InstalledActivityCatalogue>,
+}
+
+/// One snapshot-bound tool identity to public localization-key mapping.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstalledActivityDescriptor {
+    /// Runtime-private provider-neutral tool name.
+    pub tool_name: String,
+    /// Exact immutable tool revision.
+    pub tool_revision: String,
+    /// Public stable localization key.
+    pub label_key: String,
+}
+
+/// Complete immutable H3 catalogue installed with one Agent snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstalledActivityCatalogue {
+    /// Exact catalogue schema version.
+    pub schema_version: u32,
+    /// Immutable catalogue revision.
+    pub catalogue_revision: String,
+    /// Canonically sorted unique descriptors.
+    pub descriptors: Vec<InstalledActivityDescriptor>,
+}
+
+/// Independent bounds for reconstructing and encoding H3 activity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ActivityProjectionLimits {
+    /// Maximum activities projected for one Turn.
+    pub max_activities_per_turn: usize,
+    /// Maximum activity-related facts scanned in one fixed prefix.
+    pub max_activity_facts: usize,
+    /// Maximum UTF-8 bytes in one public localization key.
+    pub max_label_bytes: usize,
+    /// Maximum UTF-8 bytes in one opaque activity identity.
+    pub max_activity_id_bytes: usize,
+    /// Maximum canonical JSON bytes across one Turn's activities.
+    pub max_encoded_bytes_per_turn: usize,
 }
 
 /// Explicit bounds for Host command bodies, event pages, and follow polling.
@@ -29,6 +70,8 @@ pub struct LiveHostLimits {
     pub event_batch_size: u64,
     /// Non-zero delay between SQLite checks while following events.
     pub event_poll_interval_ms: u64,
+    /// Optional H3 projection bounds; absence keeps H3 unavailable.
+    pub activity: Option<ActivityProjectionLimits>,
 }
 
 /// Independent bounds for client-safe Host read projections.
@@ -52,14 +95,6 @@ pub struct HostReadLimits {
     pub max_prompt_bytes: usize,
     /// Maximum decoded or encoded Session cursor bytes.
     pub max_cursor_bytes: usize,
-    /// Maximum public activities projected for one Turn.
-    pub max_activities_per_turn: usize,
-    /// Maximum bytes in one opaque activity identity.
-    pub max_activity_id_bytes: usize,
-    /// Maximum bytes in one admitted localization key.
-    pub max_activity_label_bytes: usize,
-    /// Maximum encoded JSON bytes across activities in one response.
-    pub max_activity_bytes: usize,
 }
 
 impl HostReadLimits {
@@ -74,10 +109,6 @@ impl HostReadLimits {
         max_completion_bytes: 1_024 * 1_024,
         max_prompt_bytes: 64 * 1_024,
         max_cursor_bytes: 2_048,
-        max_activities_per_turn: 256,
-        max_activity_id_bytes: 256,
-        max_activity_label_bytes: 256,
-        max_activity_bytes: 512 * 1_024,
     };
 
     pub(crate) fn valid(self) -> bool {
@@ -90,31 +121,7 @@ impl HostReadLimits {
             && self.max_completion_bytes > 0
             && self.max_prompt_bytes > 0
             && self.max_cursor_bytes > 0
-            && self.max_activities_per_turn > 0
-            && self.max_activity_id_bytes > 0
-            && self.max_activity_label_bytes > 0
-            && self.max_activity_bytes > 0
     }
-}
-
-/// One installed immutable mapping from an internal Tool to a public label.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PublicToolActivityDescriptorV1 {
-    /// Exact internal Tool name used only inside Runtime projection.
-    pub tool_name: String,
-    /// Exact immutable Tool revision.
-    pub tool_revision: String,
-    /// Admitted public localization key.
-    pub label_key: String,
-}
-
-/// Turn-bound public Tool activity catalogue already included in its snapshot.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PublicToolActivityCatalogueV1 {
-    /// Exact non-empty immutable catalogue revision.
-    pub catalogue_revision: String,
-    /// Descriptors sorted by Tool name then revision.
-    pub descriptors: Vec<PublicToolActivityDescriptorV1>,
 }
 
 /// One installed Agent definition safe for client discovery.
@@ -233,8 +240,8 @@ pub struct TurnTimelineItemV1 {
     pub suspension: Option<SuspensionViewV1>,
     /// Whether display text was explicitly bounded by Runtime.
     pub content_truncated: bool,
-    /// Latest public state of each committed Agent activity.
-    pub activities: Vec<HostActivityV1>,
+    /// Latest committed public state for every activity owned by this Turn.
+    pub activities: Vec<HostActivity>,
 }
 
 /// Bounded ascending page of complete durable Turn projections.
@@ -244,7 +251,7 @@ pub struct TurnTimelinePageV1 {
     pub api_version: &'static str,
     /// Owning Session identity.
     pub session_id: String,
-    /// Complete changed Turns in first-start order.
+    /// Complete changed Turns in ascending latest-change order.
     pub items: Vec<TurnTimelineItemV1>,
     /// Highest durable position fully scanned for this page.
     pub scanned_through_position: u64,
@@ -318,12 +325,6 @@ pub enum HostContinuationInput<'a> {
     Json(&'a str),
 }
 
-impl<'a> From<&'a str> for HostContinuationInput<'a> {
-    fn from(value: &'a str) -> Self {
-        Self::String(value)
-    }
-}
-
 /// One replayable public event projected from an exact durable fact.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LiveHostEvent {
@@ -341,29 +342,29 @@ pub struct LiveHostEvent {
     pub execution_id: String,
     /// Redacted display text for a committed completion.
     pub text: String,
-    /// Public Agent activity state when this event is H3 activity progress.
+    /// Redacted committed H3 state when this event represents activity.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub activity: Option<HostActivityV1>,
+    pub activity: Option<HostActivity>,
 }
 
-/// One redacted committed Agent interaction or tool activity state.
+/// One bounded redacted committed Agent activity state.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct HostActivityV1 {
+pub struct HostActivity {
     /// Exact Host API version.
     pub api_version: &'static str,
-    /// Opaque activity identity scoped to the Session.
+    /// Opaque Session-scoped activity identity.
     pub activity_id: String,
-    /// Stable public family or unknown future string.
+    /// Stable activity class.
     pub kind: String,
-    /// Admitted localization key, never a raw tool name.
+    /// Snapshot-bound public localization key.
     pub label_key: String,
-    /// Stable public activity state.
+    /// Stable public lifecycle state.
     pub state: String,
-    /// Durable fact position that produced this state.
+    /// Exact committed source position.
     pub source_position: u64,
-    /// Authoritative terminal marker.
+    /// Authoritative known-state terminal marker.
     pub terminal: bool,
-    /// Optional admitted stable failure or cancellation code.
+    /// Optional admitted stable safe code.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_code: Option<String>,
 }
@@ -480,7 +481,6 @@ pub(crate) struct LiveHostState {
     pub installed: InstalledAgent,
     pub limits: LiveHostLimits,
     pub read_limits: HostReadLimits,
-    pub activity_catalogue: PublicToolActivityCatalogueV1,
     pub clock: Arc<dyn HostClock>,
     pub dispatcher: Arc<dyn TurnDispatcher>,
 }
