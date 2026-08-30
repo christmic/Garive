@@ -219,6 +219,8 @@ For each plan step Runtime performs:
    invocation receives its own non-zero timeout and cancellation token.
 4. Collect executor terminals into bounded per-index slots. A completion may be
    retained internally but cannot publish ahead of an earlier group member.
+   Each slot applies the accepted C5 output limit/truncation before buffering
+   and can never exceed its Prepared Call `max_result_bytes` charge.
 5. Commit terminal receipt/failure and model-visible observation strictly in
    model order. Then continue to the next plan step.
 

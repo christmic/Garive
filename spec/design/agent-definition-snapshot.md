@@ -254,6 +254,11 @@ content, credentials, or policy internals.
 - Adding an optional field requires a new canonical preimage version if it
   changes execution meaning. Unknown required contract versions are rejected.
 
+The accepted H3 product increment follows this rule with
+`effective_snapshot_version = 2`, extending v1 only by its canonical public Tool
+activity catalogue. V1 bytes retain their meaning. The additive contract is
+owned by [`host-agent-activity-v1.md`](host-agent-activity-v1.md).
+
 ## Required acceptance evidence after approval
 
 - fixture cases for exact resolution, ordering, missing/ambiguous/cyclic

@@ -28,9 +28,11 @@ authority and revision rules.
 | Apps | Review, edit, dry-run diff, confirmation, progress, and receipt presentation. |
 | Kotlin experiment | Independent semantic planner over the shared fixture; no product file or database adapter. |
 
-The Memory database remains the SSOT. Exported files are immutable snapshots
-until an explicit import command is submitted. No watcher, background sync,
-merge-on-open, or direct database editing is admitted.
+Append-only M0 Runtime facts and M2 control-journal events remain durable source
+records. Their Runtime-owned Memory repository projection is the sole current
+state used by recall/export; exported files are never a second truth source.
+No watcher, background sync, merge-on-open, or direct database editing is
+admitted.
 
 ## Snapshot package v1
 
@@ -220,12 +222,76 @@ and downgrade from user authority fail closed.
   revisions, and `through_revision` into a canonical digest.
 - Any repository or affected-entry revision change after planning returns
   `stale_memory_snapshot`; Runtime does not partially rebase.
-- The database transaction writes all record revisions, lifecycle changes,
-  M1 facts, import receipt, and repository revision together.
+- The Runtime transaction writes the M2 journal event, all record revisions,
+  lifecycle changes, import receipt, and repository revision together.
 - A crash before commit leaves no domain change. A crash after commit returns
   the original receipt when the command is replayed.
-- Export is a read snapshot and may be retried to a new empty destination; an
+- An unknown export replays only with the same command/capability binding. A
+  different empty destination requires a new command and export identity; an
   incomplete destination is never treated as a valid package.
+
+Successful Runtime commands return these exact public receipts:
+
+```text
+MemoryExportReceiptV1 {
+  schema_version: 1
+  receipt_id, command_id, export_id, namespace_id
+  manifest_digest, through_repository_revision, entry_count
+  receipt_digest
+}
+MemoryImportReceiptV1 {
+  schema_version: 1
+  receipt_id, command_id, export_id, namespace_id, plan_digest
+  previous_repository_revision, committed_repository_revision
+  add_count, supersede_count, archive_count, erase_count
+  changed, receipt_digest
+}
+```
+
+Revisions and counts are unsigned; repository revisions are non-zero while
+counts may be zero. Import with any operation requires `changed = true` and
+`committed_repository_revision = previous_repository_revision + 1` without
+overflow. An empty plan is valid, commits only its audit receipt with
+`changed = false`, and preserves the repository revision. Each `receipt_digest`
+is lowercase SHA-256 over RFC 8785 JSON with itself omitted. Receipts contain no
+path, content, evidence, credential, or hidden authority value. Command replay
+returns the byte-equivalent original receipt.
+
+## Durable control journal
+
+M2 does not encode a user control operation as a fake conversation Turn and
+does not mutate an M0 fact. Runtime adds one namespace-scoped append-only
+Memory journal beside its projection:
+
+```text
+MemoryImportJournalEventV1 {
+  schema_version: 1
+  event_id, namespace_id, command_id, plan_digest
+  previous_repository_revision, committed_repository_revision
+  operations: ContentBinding
+  receipt_digest, event_digest
+}
+MemoryExportJournalEventV1 {
+  schema_version: 1
+  event_id, namespace_id, command_id, export_id, manifest_digest
+  through_repository_revision, receipt_digest, event_digest
+}
+```
+
+This journal is not the Session Ledger and has no Session/Turn/Execution ID.
+Existing M0/M1 facts remain immutable provenance inputs; their committed Runtime
+transaction updates the same Memory repository projection. M2 events are the
+source records only for explicit control operations. Recall/export fixes one
+repository revision and never merges directly from files or two live stores.
+
+`operations` is canonical JSON for the exact ordered plan operations. Event
+digests use RFC 8785/lowercase SHA-256 with `event_digest` omitted. Command ID is
+unique per namespace: equal replay requires equal event/receipt bindings;
+different semantics conflict. For import, journal event, projection changes,
+receipt, and revision commit in one SQLite transaction. For export, Runtime
+uses a fsynced recovery journal so a directory rename followed by process loss
+either repairs the exact export event/receipt or classifies the destination as
+incomplete; it never creates a different manifest under the same command.
 
 Unknown `schema_version` values are rejected; a future reader may add a new
 version but cannot reinterpret v1 fields. Export/import canonical bytes are a

@@ -30,12 +30,12 @@ separate authenticated content-transfer contract and is not implied.
 
 ```text
 choose_memory_export_target() -> MemoryFileCapabilityV1 | Cancelled
-export_memory_snapshot(command_id, capability_id, scope) -> ExportReceiptV1
+export_memory_snapshot(command_id, capability_id, scope) -> MemoryExportViewV1
 choose_memory_import_source() -> MemoryFileCapabilityV1 | Cancelled
 prepare_memory_import(capability_id) -> MemoryImportReviewV1
 commit_memory_import(command_id, plan_digest,
                      expected_repository_revision,
-                     confirmation) -> ImportReceiptV1
+                     confirmation) -> MemoryImportReceiptV1
 discard_memory_import(plan_digest) -> Discarded | AlreadyCommitted
 reveal_export(capability_id) -> Revealed
 get_memory_command(command_id) -> Unknown | Pending |
@@ -49,10 +49,11 @@ main-window-bound, non-serializable to preferences, and invalid after
 expiry/restart/discard. Import consumption is terminal; a committed export may
 be used only by `reveal_export` until expiry.
 
-Export selects an empty directory and invokes M2-C. `ExportReceiptV1` returns
-export identity, manifest digest, entry count, through revision, and display
-name. `reveal_export` asks the backend to reveal that already authorized
-directory using a native OS action; it cannot open another path.
+`MemoryExportViewV1 { receipt: MemoryExportReceiptV1, display_name }` is the
+Desktop-only envelope. Export selects an empty directory and invokes M2-C; the
+view returns the exact M2 receipt plus the capability's bounded display name.
+`reveal_export` asks the backend to reveal that already authorized directory
+using a native OS action; it cannot open another path.
 
 ## Review model
 
@@ -60,12 +61,17 @@ directory using a native OS action; it cannot open another path.
 MemoryImportReviewV1 {
   schema_version: 1
   plan_digest, export_id, expected_repository_revision
-  totals, warnings[]
+  totals: MemoryChangeTotalsV1, warning_keys[]
   changes: MemoryChangeReviewV1[]
   expires_at
 }
+MemoryChangeTotalsV1 {
+  add_count, supersede_count, archive_count, erase_count,
+  unchanged_count, visible_content_bytes
+}
 MemoryChangeReviewV1 {
-  operation, record_id, memory_type, memory_role, scope, sensitivity
+  operation: add | supersede | archive | erase
+  record_id, memory_type, memory_role, scope, sensitivity
   authority_before?, authority_after?
   lifecycle_before?, lifecycle_after?
   content_before?: MemoryContentReviewV1
@@ -80,7 +86,7 @@ Changes use M2 canonical order. Content is included only after exact read
 authority and under independent item/total byte bounds. Restricted content is
 shown only when the current Desktop actor holds its frozen grant; otherwise the
 review returns a redacted digest/size marker and cannot commit that change from
-this UI. Warnings and provenance notes are stable localization keys.
+this UI. Warning and provenance-note values are stable localization keys.
 
 An Agent-learned edit displays that the imported text will become a new
 User-declared supersession, not rewritten evidence. Organisation-published

@@ -23,7 +23,8 @@ credential read API, or Provider construction in the frontend.
 C2 amends the C1 prohibition only for the exact commands below. Normal Agent
 IPC still carries no endpoint, model, profile, header, credential, or database
 path. C1 remains the stored document, resolver, registry, startup, and Runtime
-construction contract.
+construction contract; C2 owns only its strict schema-v2 revision/digest
+successor and staged mutation behavior.
 
 The backend exposes a redacted public setup catalogue generated from installed
 profile constructors:
@@ -33,6 +34,7 @@ DesktopSetupCatalogueV1 {
   schema_version: 1
   catalogue_revision
   profiles: SetupProfileV1[]
+  presets: SetupPresetV1[]
   limits: SetupInputLimitsV1
 }
 SetupProfileV1 {
@@ -41,6 +43,9 @@ SetupProfileV1 {
   model_mode: exact_id
   credential_label_key
   supported_capabilities[]
+}
+SetupPresetV1 {
+  preset_id, display_name_key, supported_profile_ids[]
 }
 SetupInputLimitsV1 {
   max_profiles, max_text_bytes, max_endpoint_bytes, max_secret_bytes,
@@ -51,8 +56,10 @@ SetupInputLimitsV1 {
 Display keys are localizable presentation metadata. The stable setup wire has
 opaque profile identities and neutral capabilities; it does not branch on a
 vendor enum. Hosted special capabilities require their own admitted Specs.
-Profiles sort by raw UTF-8 `profile_id`; capabilities sort by stable enum order.
-Empty/duplicate identities and zero limits are invalid.
+Profiles/presets sort by raw UTF-8 identity; capabilities and supported profile
+IDs use their stable order. Empty/duplicate identities, dangling profile IDs,
+and zero limits are invalid. A preset selects backend-owned C1 Host/HTTP/Runtime
+limits and policies; it is not a frontend defaults object.
 
 ## Typed IPC
 
@@ -68,41 +75,64 @@ cancel_setup(plan_digest) -> Cancelled | AlreadyCommitted
 ```text
 DesktopSetupInputV1 {
   schema_version: 1
-  caller_nonce, catalogue_revision
-  installed_agent, host, execution, http
-  dispatch_capacity, execution_lease_duration_ms
+  caller_nonce, catalogue_revision, preset_id, profile_id
+  endpoint_override?
+  model_target_id, model_id, deployment_id, definition_id
 }
 DesktopSetupPlanV1 {
   schema_version: 1
   setup_id, caller_nonce, catalogue_revision
-  expected_configuration_revision?
-  expires_at
-  normalized_input: DesktopSetupInputV1
+  expected_configuration_revision?, expected_configuration_digest?
+  expires_at, effective_configuration_digest
+  summary: DesktopSetupSummaryV1
   plan_digest
+}
+DesktopSetupSummaryV1 {
+  preset_id, profile_id, endpoint_mode, endpoint_override?
+  model_target_id, model_id, deployment_id, definition_id
 }
 DesktopSetupReceiptV1 {
   schema_version: 1
-  setup_id, plan_digest, configuration_revision, restart_required: true
+  setup_id, plan_digest, configuration_revision
+  configuration_digest, restart_required: true, receipt_digest
 }
 ```
 
-`DesktopSetupInputV1` is the exact C1 document shape with `schema_version`,
-`database_file`, and `execution.credential_ref` removed. All remaining nested
-fields and enum strings retain C1 meaning; they are messages, never extensible
-maps. Backend fixes the database file to its admitted app-data-relative name.
-`prepare_setup` validates every value, resolves the immutable profile
-constructor, generates a fresh opaque credential reference/setup identity, and
-stores the reference only in a backend-private prepared record keyed by plan
-digest. The returned plan may echo only the caller's normalized non-secret
-input for review; it is not a read of persisted configuration.
+`DesktopSetupInputV1` contains only user choices. Backend fixes the database
+file to its admitted app-data-relative name and expands the exact immutable
+preset/profile into all C1 limits, HTTP values, Runtime policies, and installed
+Agent snapshot values. `prepare_setup` validates every choice, generates a fresh
+opaque credential reference/setup identity, and stores the complete strict v2
+configuration only in a backend-private prepared record keyed by plan digest.
+The returned summary may echo only normalized user choices; it is not a read of
+persisted configuration. `endpoint_mode` is `fixed` or `override` and never
+returns a fixed registry endpoint; an override remains the caller's visible
+input but is excluded from logs/errors.
 
-`plan_digest` is lowercase SHA-256 over RFC 8785 JSON for the complete plan with
-itself omitted. `expires_at` is canonical UTC RFC 3339 and comes from the
+`effective_configuration_digest` binds the complete private v2 document,
+including generated credential reference, without revealing it. `plan_digest`
+is lowercase SHA-256 over RFC 8785 JSON for the complete public plan with itself
+omitted. `expires_at` is canonical UTC RFC 3339 and comes from the
 injected backend clock. Duplicate caller nonces with byte-equivalent input
 return the same unexpired plan; different input conflicts. The public setup
 identity and expiry are frozen before digesting. The private credential
 reference is bound to that digest in backend state but never serialized through
 IPC. Unknown fields/versions fail closed.
+
+C2 persists `DesktopSystemConfigV2` in the existing `desktop-v1.json` file. V2
+is the exact C1 v1 document with `schema_version = 2` plus non-zero
+`configuration_revision` and `setup_id`; all other fields retain C1
+meaning. An absent configuration binds neither expected field. A legacy v1
+document binds its canonical SHA-256 configuration digest but no numeric
+revision; its first C2 commit migrates to revision 1. A v2 document binds both
+and increments revision by exactly one without overflow. The backend reader
+accepts strict v1/v2 and never rewrites v1 before an explicit commit.
+
+Configuration, plan, and receipt digests are lowercase SHA-256 over their
+RFC 8785 JSON objects with their own digest field omitted where present. The
+receipt `configuration_digest` must equal the prepared
+`effective_configuration_digest`; the receipt contains no normalized input or
+credential reference.
 
 `commit_setup` accepts the exact unexpired plan and one bounded secret byte
 buffer. The IPC layer marks the credential parameter sensitive: Debug,
@@ -130,7 +160,7 @@ Backend commits in this order, durably advancing the journal after each stage:
 2. Persist and fsync the `planned` journal entry.
 3. Store the new credential under the fresh reference in the OS credential
    service. Never overwrite the current reference.
-4. Write and fsync a new strict C1 document to a same-directory temporary file.
+4. Write and fsync a new strict v2 document to a same-directory temporary file.
 5. Atomically rename it to `desktop-v1.json` and fsync the directory.
 6. Persist a non-secret setup receipt and mark the new revision committed.
 7. On a later successful Runtime start, delete an obsolete credential reference

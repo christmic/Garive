@@ -28,10 +28,12 @@ channel admitted by
 
 ## Configuration document
 
-The only accepted file is `desktop-v1.json` under the explicit app config
-directory. UTF-8 bytes are bounded to 64 KiB. Unknown fields, duplicate JSON
-members, unsupported versions, absolute database paths, parent traversal and
-empty required strings fail before a Host or HTTP client exists.
+The only accepted file name is `desktop-v1.json` under the explicit app config
+directory. This C1 slice defines schema version 1; accepted A-DESKTOP-C2 adds a
+strict version 2 successor in the same file. UTF-8 bytes are bounded to 64 KiB.
+Unknown fields, duplicate JSON members, unsupported versions, absolute database
+paths, parent traversal and empty required strings fail before a Host or HTTP
+client exists.
 
 ```text
 DesktopSystemConfigV1 {

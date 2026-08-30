@@ -86,6 +86,11 @@ effective Agent snapshot digest. Changing a mapping requires a new catalogue
 revision, Definition revision, and installed snapshot; clients never receive
 tool name/revision.
 
+Existing D0 snapshot preimage v1 remains unchanged. A Definition admitting H3
+uses `effective_snapshot_version = 2`; v2 extends the exact v1 preimage with the
+complete canonical `PublicToolActivityCatalogueV1` and includes the version in
+the preimage. Unknown versions fail definition resolution.
+
 Known states are:
 
 ```text
