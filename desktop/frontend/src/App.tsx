@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -25,6 +26,7 @@ import {
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { shouldSubmitComposer } from "./composer";
+import { nextDesktopZoom } from "./zoom";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -98,6 +100,7 @@ export function App() {
   const t = useMemo(() => createTranslator(locale), [locale]);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
+  const desktopZoom = useRef(1);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -184,6 +187,13 @@ export function App() {
       else if (intent === "desktop.settings") setScreen("settings");
       else if (intent === "desktop.toggle-inspector") {
         dispatch({ type: "inspector_toggled" }); setScreen("work");
+      } else if (intent === "desktop.zoom-in" || intent === "desktop.zoom-out"
+        || intent === "desktop.actual-size") {
+        const next = nextDesktopZoom(desktopZoom.current, intent);
+        void getCurrentWebview().setZoom(next).then(() => {
+          desktopZoom.current = next;
+          document.documentElement.dataset.zoom = String(next);
+        }).catch(() => undefined);
       }
     }).then((unlisten) => {
       if (active) stop = unlisten;

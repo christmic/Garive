@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.garive.desktop",
   "build": {
-    "beforeBuildCommand": "pnpm --dir ../frontend build",
-    "beforeDevCommand": "pnpm --dir ../frontend dev",
+    "beforeBuildCommand": "pnpm --dir frontend build",
+    "beforeDevCommand": "pnpm --dir frontend dev",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../frontend/dist"
   },
