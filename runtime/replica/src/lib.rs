@@ -10,6 +10,8 @@ mod local_composition;
 mod local_recovery;
 mod local_worker;
 mod memory_control;
+mod memory_export;
+mod memory_export_io;
 mod model_http_transport;
 mod observability_runtime;
 mod runtime_turn;
@@ -73,6 +75,8 @@ pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,
     MemoryImportCommand, MemoryImportReceipt,
 };
+pub use memory_export::{MemoryExportCommand, MemoryExportReceipt, MemoryExportTarget};
+pub use memory_export_io::export_memory_snapshot;
 pub use model_http_transport::{
     RuntimeHttpLimits, RuntimeHttpTransportError, RuntimeModelHttpTransport,
     RUNTIME_MODEL_HTTP_TRANSPORT_REVISION,

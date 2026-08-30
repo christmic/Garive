@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use garive_memory::{
     parse_memory_document, MemoryAuthority, MemoryAuthorizedScope, MemoryControlDocument,
     MemoryCurrentEntry, MemoryDocumentLimits, MemoryScopeClass,

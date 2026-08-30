@@ -76,7 +76,10 @@ pub(super) fn initialize(
     repository_revision: u64,
     documents: &[MemoryControlDocument],
 ) -> Result<(), MemoryControlRuntimeError> {
-    if repository_revision == 0 || !grant.admits_action(namespace_id, MemoryControlAction::Import) {
+    if repository_revision == 0 {
+        return Err(MemoryControlRuntimeError::InvalidSnapshot);
+    }
+    if !grant.admits_action(namespace_id, MemoryControlAction::Import) {
         return Err(MemoryControlRuntimeError::Unauthorized);
     }
     if documents

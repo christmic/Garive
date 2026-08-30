@@ -10,6 +10,7 @@ mod lease;
 mod memory_control;
 mod memory_control_integrity;
 mod memory_control_operations;
+mod memory_export;
 mod migrations;
 mod schedule_lease;
 mod storage;
@@ -118,6 +119,35 @@ impl SqliteLedger {
         limits: garive_memory::MemoryDocumentLimits,
     ) -> Result<crate::MemoryControlProjection, crate::MemoryControlRuntimeError> {
         memory_control::read_projection(&self.connection, grant, namespace_id, limits)
+    }
+
+    pub(crate) fn commit_memory_export_journal(
+        &mut self,
+        grant: &crate::MemoryControlGrant,
+        command: &crate::MemoryExportCommand,
+        target: &crate::MemoryExportTarget,
+        receipt: &crate::MemoryExportReceipt,
+    ) -> Result<crate::MemoryExportReceipt, crate::MemoryControlRuntimeError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)?;
+        let receipt = memory_export::commit(&transaction, grant, command, target, receipt)?;
+        transaction
+            .commit()
+            .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)?;
+        Ok(receipt)
+    }
+
+    pub(crate) fn read_memory_export_journal(
+        &self,
+        command: &crate::MemoryExportCommand,
+        target: &crate::MemoryExportTarget,
+        receipt: &crate::MemoryExportReceipt,
+    ) -> Result<Option<crate::MemoryExportReceipt>, crate::MemoryControlRuntimeError> {
+        let binding =
+            crate::memory_export::export_binding_digest(command, target, &receipt.manifest_digest)?;
+        memory_export::load(&self.connection, command, receipt, &binding)
     }
 
     /// Lists verified durable Session identities in lexical order.
