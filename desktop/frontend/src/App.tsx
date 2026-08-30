@@ -161,6 +161,7 @@ export function App() {
       }
       if (event.key === ",") { event.preventDefault(); setScreen("settings"); }
       if (event.key.toLowerCase() === "k") { event.preventDefault(); setScreen("search"); }
+      if (event.key.toLowerCase() === "f") { event.preventDefault(); setScreen("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault(); dispatch({ type: "inspector_toggled" });
       }
@@ -506,12 +507,16 @@ function Timeline({ state }: { state: WorkState }) {
       setCopiedId(undefined);
     }
   };
-  return <div className="timeline" aria-live="polite">{state.messages.map((message) => message.role === "user"
+  const latest = state.messages.at(-1);
+  const announcement = state.phase === "submitting" ? "Garive is working."
+    : latest?.role === "assistant" ? `Turn ${terminalCopy(latest.terminal).toLocaleLowerCase()}.` : "";
+  return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal)}</Markdown></div>
       <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>Export .md</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{copiedId === message.id ? "Copied" : "Copy"}</button></div></div></div></article>)}
     {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>Working on your outcome…</p><span className="working-line" /></div></article>}
+    <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
 }
 
@@ -588,10 +593,10 @@ function ResultDeliverables({ state }: { state: WorkState }) {
         {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />Export unavailable. Check Workspace access and try again.</p>}
       </div>
     </article>; })}
-    {selected && <section className="artifact-preview" aria-live="polite"><header><div><span>VERIFIED PREVIEW</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label="Close Artifact preview"
+    {selected && <section className="artifact-preview" aria-label="Verified Artifact preview"><header><div><span>VERIFIED PREVIEW</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label="Close Artifact preview"
       onClick={() => { setSelected(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
-      {previewState === "loading" ? <div className="preview-state"><span className="spinner" />Verifying committed bytes…</div>
-        : previewState === "unavailable" ? <div className="preview-state error"><Icon name="warning" />The backing file changed or access is unavailable.</div>
+      {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />Verifying committed bytes…</div>
+        : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />The backing file changed or access is unavailable.</div>
           : preview && <pre>{preview.content_utf8}</pre>}
       <footer><Icon name="shield" />SHA-256 checked against revision {selected.revision}</footer>
     </section>}
