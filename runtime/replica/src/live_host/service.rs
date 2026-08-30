@@ -17,11 +17,11 @@ use crate::{
 };
 
 use super::{
-    project_fact, read_cursor, read_model, timeline_projection, AgentDefinitionPageV1,
-    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostClock, HostEventPage,
-    HostReadLimits, InstalledAgent, LiveHostError, LiveHostLimits, LiveHostState,
-    PublicToolActivityCatalogueV1, SessionPageV1, SessionViewV1, TurnCommandResponse,
-    TurnDispatcher, TurnTimelinePageV1,
+    activity_projection, project_fact, read_cursor, read_model, timeline_projection,
+    AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
+    HostClock, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent,
+    LiveHostLimits, LiveHostState, PublicToolActivityCatalogueV1, SessionPageV1, SessionViewV1,
+    TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -657,12 +657,43 @@ impl LiveHost {
         let through = after_position
             .saturating_add(self.state.limits.event_batch_size)
             .min(watermark.max_position);
-        let facts = ledger
-            .read_facts(&session_id, after_position, through, None)
+        if through > self.state.read_limits.max_facts as u64 {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let prefix = ledger
+            .read_facts(&session_id, 0, through, None)
             .map_err(map_sqlite)?;
-        let events = facts
+        let mut activities = activity_projection::project(
+            &prefix,
+            &self.state.activity_catalogue,
+            self.state.read_limits,
+        )?
+        .events;
+        let events = prefix
             .iter()
-            .filter_map(|fact| project_fact(fact).transpose())
+            .filter(|fact| fact.position > after_position)
+            .filter_map(|fact| {
+                if let Some((event, activity)) = activities.remove(&fact.position) {
+                    let turn_id = match fact.turn_id.as_ref() {
+                        Some(value) => value.as_str().to_owned(),
+                        None => return Some(Err(LiveHostError::CorruptState)),
+                    };
+                    return Some(Ok(LiveHostEvent {
+                        api_version: "v1",
+                        session_id: session_id.as_str().to_owned(),
+                        position: fact.position,
+                        event: event.to_owned(),
+                        turn_id,
+                        execution_id: fact
+                            .execution_id
+                            .as_ref()
+                            .map_or_else(String::new, |value| value.as_str().to_owned()),
+                        text: String::new(),
+                        activity: Some(activity),
+                    }));
+                }
+                project_fact(fact).transpose()
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(HostEventPage {
             events,

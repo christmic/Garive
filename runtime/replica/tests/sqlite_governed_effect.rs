@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::Arc};
+
 use futures::executor::block_on;
 use garive_core::{
     AgentOutcome, ExecutionReport, GovernedEffectPort, GovernedSuspensionBinding, SuspensionReason,
@@ -14,9 +16,11 @@ use garive_runtime::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
     reconstruct_suspended_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
     AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, ModelLifecycleContext,
-    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort,
-    SqliteLedger,
+    ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, HostClock,
+    HostReadLimits, InstalledAgent, LiveHost, LiveHostLimits, ModelLifecycleContext,
+    PreparedExecution, PublicToolActivityCatalogueV1, PublicToolActivityDescriptorV1,
+    RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort, SqliteLedger,
+    TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
@@ -29,6 +33,22 @@ enum Decision {
     Approve,
     Interaction,
     Deny,
+}
+
+struct TestClock;
+
+impl HostClock for TestClock {
+    fn recorded_at(&self) -> String {
+        timestamp().to_owned()
+    }
+}
+
+struct NoopDispatcher;
+
+impl TurnDispatcher for NoopDispatcher {
+    fn dispatch(&self, _: &garive_runtime::CommittedTurn) -> Result<(), TurnDispatchError> {
+        Ok(())
+    }
 }
 
 struct Authority {
@@ -119,6 +139,7 @@ impl ExecutorPort for Executor {
 }
 
 struct Setup {
+    database: PathBuf,
     ledger: SqliteLedger,
     session: SessionId,
     turn: TurnId,
@@ -135,13 +156,30 @@ fn setup(path: &std::path::Path) -> Setup {
     let execution = ExecutionId::try_from("e1").unwrap();
     let mut ledger = SqliteLedger::open(path).unwrap();
     let initial = vec![
-        draft("f1", "session.opened", None, None, json!({})),
+        draft(
+            "f1",
+            "session.opened",
+            None,
+            None,
+            json!({
+                "command_id":"open","definition_id":"definition",
+                "definition_revision":"revision","snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "agent_instance_id":"agent"
+            }),
+        ),
         draft(
             "f2",
             "turn.started",
             Some(&turn),
             None,
             runtime_payload("turn.started"),
+        ),
+        draft(
+            "f-input",
+            "turn.input",
+            Some(&turn),
+            None,
+            runtime_payload("turn.input"),
         ),
         draft(
             "f3",
@@ -187,6 +225,7 @@ fn setup(path: &std::path::Path) -> Setup {
         .commit(session.clone(), committed.session_version, vec![terminal])
         .unwrap();
     Setup {
+        database: path.to_owned(),
         ledger,
         session,
         turn,
@@ -235,6 +274,62 @@ fn sqlite_success_commits_every_effect_boundary_before_observation() {
             "effect.completed",
             "effect.observation",
         ],
+    );
+    let host = LiveHost::new_with_activity_catalogue(
+        &setup.database,
+        InstalledAgent {
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .into(),
+            agent_instance_namespace: "agent".into(),
+            runtime_limits: garive_runtime::EffectiveRuntimeLimits {
+                max_iterations: 4,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                deadline_budget_ms: None,
+            },
+        },
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+        },
+        HostReadLimits::PRODUCT_DEFAULT,
+        PublicToolActivityCatalogueV1 {
+            catalogue_revision: "catalogue-1".into(),
+            descriptors: vec![PublicToolActivityDescriptorV1 {
+                tool_name: "read_file".into(),
+                tool_revision: "1".into(),
+                label_key: "agent.activity.read_file".into(),
+            }],
+        },
+        Arc::new(TestClock),
+        Arc::new(NoopDispatcher),
+    )
+    .unwrap();
+    let timeline = host.get_timeline(setup.session.as_str(), 0, 10).unwrap();
+    let activity = &timeline.items[0].activities[0];
+    assert_eq!(activity.kind, "tool");
+    assert_eq!(activity.label_key, "agent.activity.read_file");
+    assert_eq!(activity.state, "completed");
+    assert!(activity.terminal);
+    assert!(activity.safe_code.is_none());
+    let events = host
+        .read_event_page(setup.session.as_str(), initial_position)
+        .unwrap();
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .map(|event| event.event.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "agent.activity.prepared",
+            "agent.activity.authorized",
+            "agent.activity.started",
+            "agent.activity.completed",
+        ]
     );
 }
 
