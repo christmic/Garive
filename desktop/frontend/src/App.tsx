@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  attachWorkspaceToSession, chooseWorkspace, continueAgentTurn, createWorkSession,
+  attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace, continueAgentTurn,
+  createWorkSession,
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, getWorkspaceRecoveryStatus,
-  listWorkspaceAuthorizations, reauthorizeWorkspace, runAgentTurn,
+  listWorkspaceAuthorizations, reauthorizeWorkspace, resolveTurnApproval, runAgentTurn,
   runAgentTurnWithWorkspaceContext, type HostSessionSummary, type WorkspaceAuthorization,
   type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
@@ -76,6 +77,15 @@ export function App() {
   useEffect(() => {
     if (visualTest) {
       dispatch({ type: "capabilities_loaded", capabilities: visualCapabilities });
+      if (visualTestMode === "approval") dispatch({ type: "session_loaded", timeline: {
+        api_version: "v1", session_id: "visual-session", scanned_through_position: 12,
+        observed_max_position: 12, has_more: false, items: [{
+          turn_id: "visual-turn", started_position: 3, latest_position: 12, state: "suspended",
+          user_text: "Create a decision memo in the selected Workspace", content_truncated: false,
+          suspension: { suspension_id: "visual-approval", session_version: 5,
+            kind: "approval_required" }, activities: [],
+        }],
+      } });
       return;
     }
     void getDesktopCapabilities()
@@ -173,6 +183,46 @@ export function App() {
     }
   };
 
+  const authorizeOutputs = async () => {
+    if (!selectedContext || state.phase === "submitting") return;
+    try {
+      const grant = visualTest ? { ...selectedContext.grant, access: "read_write" as const,
+        grant_revision: selectedContext.grant.grant_revision + 1 }
+        : await authorizeWorkspaceWrites(selectedContext.grant.workspace_id);
+      if (grant) setSelectedContext({ ...selectedContext, grant });
+    } catch {
+      dispatch({ type: "submission_failed", code: "workspace_unavailable" });
+    }
+  };
+
+  const resolveApproval = async (approved: boolean) => {
+    const message = [...state.messages].reverse().find((item) =>
+      item.suspension?.kind === "approval_required");
+    if (!message?.suspension || !state.sessionId || state.phase === "submitting") return;
+    dispatch({ type: "submission_started" });
+    try {
+      if (visualTest) {
+        dispatch({ type: "session_loaded", timeline: {
+          api_version: "v1", session_id: state.sessionId, scanned_through_position: 18,
+          observed_max_position: 18, has_more: false, items: [{ turn_id: message.id,
+            started_position: 3, latest_position: 18, state: "completed",
+            user_text: "Create a decision memo in the selected Workspace",
+            completion_text: approved ? "The approved artifact was created." : "The write was declined.",
+            content_truncated: false, activities: [],
+          }],
+        } });
+        return;
+      }
+      const result = await resolveTurnApproval(
+        state.sessionId, message.id, message.suspension, approved,
+      );
+      dispatch({ type: "session_loaded", timeline: await getSessionTimeline(result.session_id) });
+      void refreshRecents().catch(() => undefined);
+    } catch (cause) {
+      dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
+    }
+  };
+
   const startSuggestion = (text: string) => {
     dispatch({ type: "draft_changed", value: text });
     requestAnimationFrame(() => composer.current?.focus());
@@ -213,7 +263,8 @@ export function App() {
             </button>
           )) : state.messages.length > 0 ? (
             <button className="recent-item selected" type="button" onClick={() => setScreen("work")}>
-              <span>{title}</span><small>{state.phase === "submitting" ? "Working" : "Completed"}</small>
+              <span>{title}</span><small>{state.phase === "submitting" ? "Working"
+                : terminalCopy(state.messages.at(-1)?.terminal)}</small>
             </button>
           ) : <p className="sidebar-empty">Durable work will appear here.</p>}
         </div>
@@ -246,7 +297,8 @@ export function App() {
 
         {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit}
           startSuggestion={startSuggestion} dispatch={dispatch} context={selectedContext}
-          openContext={openContext} removeContext={() => setSelectedContext(undefined)} />
+          openContext={openContext} authorizeOutputs={authorizeOutputs}
+          resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)} />
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
             : <SettingsScreen capabilities={state.capabilities} />}
@@ -261,7 +313,8 @@ export function App() {
   </>;
 }
 
-function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext, removeContext }: {
+function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
+  authorizeOutputs, resolveApproval, removeContext }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
@@ -269,6 +322,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   dispatch: WorkDispatch;
   context?: SelectedContext;
   openContext: () => Promise<void>;
+  authorizeOutputs: () => Promise<void>;
+  resolveApproval: (approved: boolean) => Promise<void>;
   removeContext: () => void;
 }) {
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>Opening your workspace</h1><p>Recovering the local Runtime…</p></div>;
@@ -279,6 +334,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
   const needsInput = suspension?.kind === "partial_output" || suspension?.kind === "external_input_required";
   const blockedSuspension = Boolean(suspension && !needsInput);
+  const needsApproval = suspension?.kind === "approval_required";
 
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
@@ -288,6 +344,13 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
+        {needsApproval && <div className="approval-card" role="group" aria-label="Workspace write approval">
+          <span className="approval-icon"><Icon name="shield" /></span><div><strong>Approve this local write?</strong>
+            <p>Garive will execute only the exact prepared operation. A changed request requires a new approval.</p></div>
+          <div className="approval-actions"><button type="button" autoFocus disabled={state.phase === "submitting"}
+            onClick={() => void resolveApproval(false)}>Decline</button><button className="primary" type="button"
+              disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>Approve once</button></div>
+        </div>}
         {context && <div className="context-chips" aria-label="Context selected for next Turn">
           {context.entries.map((entry) => <span className="context-chip" key={entry.entry_id}>
             <Icon name="file" /><span><strong dir="auto">{entry.display_name}</strong>
@@ -305,7 +368,11 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
             title={state.capabilities?.workspaces ? "Choose local text files" : "Local Workspaces are not installed"}
             onClick={() => void openContext()}><Icon name="paperclip" /><span>Add context</span></button>
-            <span className="access-pill"><Icon name="shield" />{needsInput ? "Resume exact suspension" : context ? `${context.entries.length} local ${context.entries.length === 1 ? "file" : "files"}` : "Local · text only"}</span></div>
+            {context?.grant.access === "enumerate" && <button type="button" disabled={state.phase === "submitting"}
+              onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>Allow outputs</span></button>}
+            <span className="access-pill"><Icon name="shield" />{needsInput ? "Resume exact suspension"
+              : context?.grant.access === "read_write" ? "Output folder enabled"
+                : context ? `${context.entries.length} local ${context.entries.length === 1 ? "file" : "files"}` : "Local · text only"}</span></div>
           <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label="Send work" onClick={() => void submit()}>
             {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
           </button>
