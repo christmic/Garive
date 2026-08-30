@@ -265,6 +265,20 @@ fixture readers reject unknown case fields and duplicate names.
 - [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — H3 activity snapshots and events.
 - [`client-product-experience.md`](client-product-experience.md) — product UI consuming H2.
 
+## Delivery evidence
+
+- Runtime owns one bounded `*V1` projection surface for installed definitions,
+  reverse-opened Session pages/views, and complete latest-change timeline pages;
+  the earlier partial duplicate types and methods were removed.
+- Session cursors use canonical JSON, base64url without padding, installation
+  binding and self-digest validation. HTTP rejects missing, duplicate, unknown,
+  malformed and over-bound query values with the stable error model.
+- File-backed SQLite tests cover restart equality, concurrent commits, cursor
+  tampering, lifecycle corruption, JavaScript-safe positions, independent fact,
+  response and UTF-8 text bounds, and canonical suspension prompt/schema data.
+- `host-read-model-v1.json` is consumed by strict Rust, Kotlin and TypeScript
+  readers; generated Proto presence/tag round trips remain separately gated.
+
 ## Meta
 
 - Owner: `@christmic`
