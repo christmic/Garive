@@ -96,6 +96,10 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         },
     )
     .map_err(map_terminal_error)?;
+    #[cfg(feature = "test-hooks")]
+    if config.test_crash_hook == Some(crate::args::TestCrashHook::TerminalAcquiredPanic) {
+        panic!("injected panic after terminal acquisition");
+    }
     let mut terminal =
         Terminal::new(CrosstermBackend::new(io::stderr())).map_err(|_| TuiError::TerminalIo)?;
     terminal.clear().map_err(|_| TuiError::TerminalIo)?;

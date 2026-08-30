@@ -156,6 +156,7 @@ tui-runtime-e2e:
 
 tui-pty:
     cargo test -p garive-tui --test live_h1
+    cargo test -p garive-tui --features test-hooks --test live_h1 injected_panic_restores_the_real_pty_before_unwind_exit
 
 tui-bench:
     cargo test -p garive-tui --test performance -- --nocapture

@@ -182,6 +182,76 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
     }
 }
 
+#[cfg(feature = "test-hooks")]
+#[test]
+fn injected_panic_restores_the_real_pty_before_unwind_exit() {
+    for attempt in 0..2 {
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join(format!("panic-{attempt}.log"));
+        let status = Command::new("expect")
+            .env("TERM", "xterm-256color")
+            .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+            .env("GARIVE_TUI_LOG", &transcript)
+            .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+            .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; before=$(stty -g); "$GARIVE_TUI_BIN" --host http://127.0.0.1:9/ --state-dir "$GARIVE_TUI_STATE" --theme mono --test-crash-hook terminal-acquired-panic; code=$?; after=$(stty -g); test "$code" -ne 0 || exit 92; echo BEFORE_TERMIOS=$before; echo AFTER_TERMIOS=$after; echo SHELL_RESTORED}
+            expect {
+                -exact "SHELL_RESTORED" {}
+                timeout { exit 20 }
+                eof { exit 21 }
+            }
+        "#])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let text = fs::read_to_string(transcript).unwrap();
+        assert_restored_termios(&text);
+        assert!(text.contains("injected panic after terminal acquisition"));
+        assert!(text.contains("\x1b[?1049h"));
+        assert!(text.contains("\x1b[?1049l"));
+        assert!(text.contains("\x1b[?2004l"));
+        assert!(text.contains("\x1b[?1004l"));
+        assert!(text.contains("\x1b[?25h"));
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+fn assert_restored_termios(transcript: &str) {
+    let before = marked_value(transcript, "BEFORE_TERMIOS=");
+    let after = marked_value(transcript, "AFTER_TERMIOS=");
+    let normalize = |snapshot: &str| {
+        snapshot
+            .split(':')
+            .map(|field| {
+                field.strip_prefix("lflag=").map_or_else(
+                    || field.to_owned(),
+                    |hex| {
+                        let flags = u64::from_str_radix(hex, 16).unwrap();
+                        // Darwin marks input for reprint whenever canonical mode is restored.
+                        // PENDIN is kernel-owned here: even `stty -pendin` cannot clear it.
+                        #[cfg(target_os = "macos")]
+                        let flags = flags & !0x2000_0000;
+                        format!("lflag={flags:x}")
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(":")
+    };
+    assert_eq!(normalize(before), normalize(after));
+}
+
+#[cfg(feature = "test-hooks")]
+fn marked_value<'a>(transcript: &'a str, marker: &str) -> &'a str {
+    transcript
+        .lines()
+        .find_map(|line| line.find(marker).map(|index| &line[index + marker.len()..]))
+        .unwrap()
+        .trim_end_matches('\r')
+}
+
 fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

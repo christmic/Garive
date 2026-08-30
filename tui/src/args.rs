@@ -43,6 +43,8 @@ pub enum MouseMode {
 #[cfg(feature = "test-hooks")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum TestCrashHook {
+    /// Panic after terminal modes are acquired so unwind restoration is exercised.
+    TerminalAcquiredPanic,
     /// Pause after the exact pending command is durable and before Host I/O.
     PendingPersisted,
     /// Pause after a mutation response is validated and before pending removal.

@@ -29,6 +29,10 @@ pub(super) async fn run(
         },
     )
     .map_err(map_terminal_error)?;
+    #[cfg(feature = "test-hooks")]
+    if config.test_crash_hook == Some(crate::args::TestCrashHook::TerminalAcquiredPanic) {
+        panic!("injected panic after terminal acquisition");
+    }
     let (sender, mut receiver) = mpsc::channel(256);
     let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());

@@ -398,6 +398,7 @@ impl RuntimeState {
     fn crash_if(&self, point: crate::args::TestCrashHook) {
         if self.config.test_crash_hook == Some(point) {
             let name = match point {
+                crate::args::TestCrashHook::TerminalAcquiredPanic => "terminal-acquired-panic",
                 crate::args::TestCrashHook::PendingPersisted => "pending-persisted",
                 crate::args::TestCrashHook::ResponseAccepted => "response-accepted",
                 crate::args::TestCrashHook::PendingRemoved => "pending-removed",
