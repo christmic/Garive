@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
-  GARIVE                      ● running
+  GARIVE                  ●  ·  running
 
  Conversation · ↑ earlier
      • Verify the Runtime
@@ -10,7 +10,7 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
      cargo test passes.
 
 ────────────────────────────────────────
-╭ Message ─────────────────────────────╮
-│ Ask a follow-up…                     │
-╰──────────────────────────────────────╯
- Esc cancel · ? help      18/4096 bytes
+╔ Compose ═════════════════════════════╗
+║ Ask a follow-up…                     ║
+╚══════════════════════════════════════╝
+  Esc cancel   ? help       18 / 4096 B

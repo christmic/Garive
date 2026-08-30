@@ -35,6 +35,7 @@ uses a different ownership model.
 |---|---|---|
 | [`tui-application-architecture.md`](tui-application-architecture.md) | modules, state/effect model, concurrency, terminal lifecycle, failures | visual detail or file schema |
 | [`tui-interaction-and-rendering.md`](tui-interaction-and-rendering.md) | IA, responsive layout, editor, keymap, commands, Markdown, scroll, accessibility | HTTP or disk algorithms |
+| [`tui-visual-system.md`](tui-visual-system.md) | visual tokens, reusable components, state variants, responsive degradation, visual conformance | product commands or Host semantics |
 | [`tui-communication-and-persistence.md`](tui-communication-and-persistence.md) | Host port, snapshot/follow, backpressure, retry, files, crash matrix, privacy | widget composition |
 | [`tui-quality-and-verification.md`](tui-quality-and-verification.md) | competitive matrix, fixtures, snapshots, PTY, Runtime E2E, performance, compatibility, completion | product semantics already frozen elsewhere |
 

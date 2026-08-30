@@ -13,7 +13,7 @@ use crate::{
     Theme,
 };
 
-use super::{empty_detail, empty_title, markdown::render_markdown, palette, safe_text};
+use super::{empty_detail, empty_title, markdown::render_markdown, palette, safe_text, turn_label};
 
 pub(super) fn render_conversation(
     model: &AppModel,
@@ -43,6 +43,20 @@ pub(super) fn render_conversation(
         )
     } else if window.as_ref().is_some_and(|value| value.has_earlier) {
         " Conversation · ↑ earlier ".to_owned()
+    } else if model.execution == crate::application::ExecutionState::Following {
+        " Conversation · ● live ".to_owned()
+    } else if let Some(turn_count) = model
+        .selected_session
+        .as_deref()
+        .and_then(|selected| {
+            model
+                .sessions
+                .iter()
+                .find(|session| session.session_id == selected)
+        })
+        .map(|session| session.turn_count)
+    {
+        format!(" Conversation · {turn_count} {} ", turn_label(turn_count))
     } else {
         " Conversation ".to_owned()
     };
@@ -256,10 +270,22 @@ fn render_timeline_item(
                 colors.muted,
             ));
         }
-        TimelineRole::Status => lines.push(Line::from(vec![
-            Span::styled("  ◌  ", colors.activity),
-            Span::styled(safe_text(&item.text), colors.muted),
-        ])),
+        TimelineRole::Status => {
+            let text = safe_text(&item.text);
+            let (icon, style) = if text.contains("failed") {
+                ("×", colors.danger)
+            } else if text.contains("suspended") || text.contains("required") {
+                ("!", colors.warning)
+            } else if text.contains("completed") {
+                ("✓", colors.success)
+            } else {
+                ("◌", colors.activity)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {icon}  "), style),
+                Span::styled(text, colors.muted),
+            ]));
+        }
     }
     lines.push(Line::default());
     lines
