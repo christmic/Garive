@@ -70,6 +70,20 @@
       "resource_key": "https://[2001:DB8::1]:443",
       "mode": "read",
       "valid": false
+    },
+    {
+      "name": "network_ipv6_loopback",
+      "namespace": "network",
+      "resource_key": "http://[::1]:80",
+      "mode": "read",
+      "valid": true
+    },
+    {
+      "name": "network_ipv6_unsqueezed",
+      "namespace": "network",
+      "resource_key": "http://[0:0:0:0:0:0:0:1]:80",
+      "mode": "read",
+      "valid": false
     }
   ],
   "policy_cases": [
