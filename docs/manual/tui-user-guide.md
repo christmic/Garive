@@ -10,8 +10,9 @@ The currently verified native environment is macOS arm64 with an
 xterm-compatible pseudo-terminal. The full-screen client requires interactive
 stdin and stderr. The complete Windows target passes source-level all-target
 check and strict Clippy, but Windows native linking, ACL execution, and ConPTY
-behavior are not yet a supported claim. Linux build and native terminal
-behavior also remain unverified.
+behavior are not yet a supported claim. The complete Linux x86_64 target also
+passes source-level all-target check and strict Clippy, but Linux native
+linking, execution, and terminal behavior remain unverified.
 
 The TUI does not start a Runtime, select provider credentials, or read the
 Runtime database. A configured Runtime Host must already be listening on an

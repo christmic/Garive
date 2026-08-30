@@ -227,13 +227,18 @@ is a scheduled/release gate after the shorter deterministic harness passes.
 | Platform | Build gate | Native/PTY gate |
 |---|---|---|
 | macOS arm64 | workspace build/test | Apple Terminal plus one of iTerm2/WezTerm/Kitty; tmux |
-| Linux x86_64 | workspace build/test | xterm-compatible PTY; tmux; `TERM=dumb` refusal/linear fallback |
+| Linux x86_64 | workspace build/test; source-level all-target check and strict Clippy are necessary but not sufficient | xterm-compatible PTY; tmux; `TERM=dumb` refusal/linear fallback |
 | Windows x86_64 | MSVC build/test; source-level all-target check and strict Clippy are necessary but not sufficient | Windows Terminal ConPTY; ACL execution; signal-equivalent restore |
 
 The current Windows source-level result is pinned in
 [`../../docs/evidence/tui-windows-cross-build-2026-08-30.md`](../../docs/evidence/tui-windows-cross-build-2026-08-30.md).
 It compiles and lints every TUI target but does not close native linking,
 execution, ACL, or ConPTY rows.
+
+The corresponding Linux source-level result is pinned in
+[`../../docs/evidence/tui-linux-cross-build-2026-08-30.md`](../../docs/evidence/tui-linux-cross-build-2026-08-30.md).
+It also covers every TUI target but does not close native linking, execution,
+PTY, tmux, or `TERM=dumb` rows.
 
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.

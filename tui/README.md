@@ -57,8 +57,9 @@ The verified native target is currently macOS arm64 with an xterm-compatible
 PTY. The complete Windows target now passes source-level all-target check and
 strict Clippy, including its private-state backend. Windows native linking,
 ACL execution, and ConPTY interaction remain outside the verified claim until
-their named native gates run. Linux build and native PTY evidence also remain
-open.
+their named native gates run. The complete Linux x86_64 target also passes
+source-level all-target check and strict Clippy; Linux native linking, execution,
+and PTY behavior remain open.
 
 ## Verify
 
