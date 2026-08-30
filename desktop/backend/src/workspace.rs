@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,6 +10,10 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+use crate::workspace_bookmark::{
+    read_manifest, write_manifest, DesktopWorkspaceBookmarkStore, WorkspaceManifestRecord,
+};
 
 const MAX_ACTIVE_WORKSPACES: usize = 16;
 const MAX_DISPLAY_NAME_BYTES: usize = 128;
@@ -126,6 +130,9 @@ struct PrivateWorkspace {
     identity: FileIdentity,
     expires_unix: u64,
     entries: BTreeMap<String, PrivateEntry>,
+    bookmark_ref: Option<String>,
+    #[cfg(target_os = "macos")]
+    _security_scope: Option<garive_macos_bookmark::ScopedBookmark>,
 }
 
 #[derive(Clone)]
@@ -146,9 +153,99 @@ struct FileIdentity {
 #[derive(Default)]
 pub struct DesktopWorkspaceService {
     active: Mutex<BTreeMap<String, PrivateWorkspace>>,
+    persistence: Option<WorkspacePersistence>,
+}
+
+struct WorkspacePersistence {
+    manifest_path: PathBuf,
+    store: Arc<dyn DesktopWorkspaceBookmarkStore>,
 }
 
 impl DesktopWorkspaceService {
+    /// Constructs a service that persists native bookmark authority privately.
+    pub fn durable(manifest_path: PathBuf, store: Arc<dyn DesktopWorkspaceBookmarkStore>) -> Self {
+        Self {
+            active: Mutex::default(),
+            persistence: Some(WorkspacePersistence {
+                manifest_path,
+                store,
+            }),
+        }
+    }
+
+    /// Restores path-free Workspace identities from private native bookmarks.
+    pub fn recover(&self, owner_window: &str) -> Result<usize, DesktopWorkspaceError> {
+        if owner_window.is_empty() || owner_window.len() > 128 {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        let persistence = self
+            .persistence
+            .as_ref()
+            .ok_or(DesktopWorkspaceError::Unavailable)?;
+        let records = read_manifest(&persistence.manifest_path)?;
+        let now = unix_seconds()?;
+        let mut restored = BTreeMap::new();
+        for record in records {
+            if restored.contains_key(&record.workspace_id) {
+                return Err(DesktopWorkspaceError::Unavailable);
+            }
+            let bytes = persistence.store.load(&record.bookmark_ref)?;
+            #[cfg(target_os = "macos")]
+            let (scope, stale) = garive_macos_bookmark::resolve(&bytes)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            #[cfg(target_os = "macos")]
+            let canonical_root =
+                fs::canonicalize(scope.path()).map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            #[cfg(not(target_os = "macos"))]
+            let canonical_root = return Err(DesktopWorkspaceError::Unavailable);
+            let metadata = fs::symlink_metadata(&canonical_root)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            let identity = file_identity(&metadata);
+            if !metadata.is_dir()
+                || metadata.file_type().is_symlink()
+                || identity.device != record.device
+                || identity.file != record.file
+            {
+                return Err(DesktopWorkspaceError::Unavailable);
+            }
+            #[cfg(target_os = "macos")]
+            if stale {
+                let refreshed = garive_macos_bookmark::create_read_only(&canonical_root)
+                    .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+                persistence.store.store(&record.bookmark_ref, &refreshed)?;
+            }
+            let expires_unix = expires_after(now)?;
+            restored.insert(
+                record.workspace_id.clone(),
+                PrivateWorkspace {
+                    public: DesktopWorkspaceGrant {
+                        schema_version: 1,
+                        workspace_id: record.workspace_id,
+                        display_name: record.display_name,
+                        access: "enumerate",
+                        grant_revision: record.grant_revision,
+                        state: "active",
+                        expires_at: format_expiry(expires_unix)?,
+                    },
+                    owner_window: owner_window.into(),
+                    canonical_root,
+                    identity,
+                    expires_unix,
+                    entries: BTreeMap::new(),
+                    bookmark_ref: Some(record.bookmark_ref),
+                    #[cfg(target_os = "macos")]
+                    _security_scope: Some(scope),
+                },
+            );
+        }
+        let count = restored.len();
+        *self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)? = restored;
+        Ok(count)
+    }
+
     /// Converts one native picker result into an opaque bounded capability.
     pub fn admit_selected(
         &self,
@@ -175,15 +272,20 @@ impl DesktopWorkspaceService {
         }
         let display_name = display_name(&canonical_root)?;
         let now = unix_seconds()?;
-        let expires_unix = now
-            .checked_add(WORKSPACE_LIFETIME_SECONDS)
-            .ok_or(DesktopWorkspaceError::Unavailable)?;
-        let expires_at = DateTime::<Utc>::from_timestamp(
-            i64::try_from(expires_unix).map_err(|_| DesktopWorkspaceError::Unavailable)?,
-            0,
-        )
-        .ok_or(DesktopWorkspaceError::Unavailable)?
-        .to_rfc3339_opts(SecondsFormat::Secs, true);
+        let expires_unix = expires_after(now)?;
+        let expires_at = format_expiry(expires_unix)?;
+        let bookmark_ref = self
+            .persistence
+            .as_ref()
+            .map(|_| format!("bookmark-{}", Uuid::new_v4()));
+        if let (Some(persistence), Some(reference)) = (&self.persistence, &bookmark_ref) {
+            #[cfg(target_os = "macos")]
+            let bytes = garive_macos_bookmark::create_read_only(&canonical_root)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            #[cfg(not(target_os = "macos"))]
+            let bytes: Vec<u8> = return Err(DesktopWorkspaceError::Unavailable);
+            persistence.store.store(reference, &bytes)?;
+        }
         let public = DesktopWorkspaceGrant {
             schema_version: 1,
             workspace_id: format!("workspace-{}", Uuid::new_v4()),
@@ -210,8 +312,20 @@ impl DesktopWorkspaceService {
                 identity: file_identity(&canonical_metadata),
                 expires_unix,
                 entries: BTreeMap::new(),
+                bookmark_ref: bookmark_ref.clone(),
+                #[cfg(target_os = "macos")]
+                _security_scope: None,
             },
         );
+        if let Err(error) = self.persist_locked(&active) {
+            active.remove(&public.workspace_id);
+            if let (Some(persistence), Some(reference)) =
+                (&self.persistence, bookmark_ref.as_deref())
+            {
+                let _ = persistence.store.delete(reference);
+            }
+            return Err(error);
+        }
         Ok(public)
     }
 
@@ -260,7 +374,18 @@ impl DesktopWorkspaceService {
         {
             return Err(DesktopWorkspaceError::CapabilityInvalid);
         }
-        active.remove(workspace_id);
+        let removed = active
+            .remove(workspace_id)
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        if let Err(error) = self.persist_locked(&active) {
+            active.insert(workspace_id.to_owned(), removed);
+            return Err(error);
+        }
+        if let (Some(persistence), Some(reference)) =
+            (&self.persistence, removed.bookmark_ref.as_deref())
+        {
+            persistence.store.delete(reference)?;
+        }
         Ok(())
     }
 
@@ -457,6 +582,47 @@ impl DesktopWorkspaceService {
         }
         Ok(context)
     }
+
+    fn persist_locked(
+        &self,
+        active: &BTreeMap<String, PrivateWorkspace>,
+    ) -> Result<(), DesktopWorkspaceError> {
+        let Some(persistence) = &self.persistence else {
+            return Ok(());
+        };
+        let records = active
+            .values()
+            .filter_map(|workspace| {
+                workspace
+                    .bookmark_ref
+                    .as_ref()
+                    .map(|reference| WorkspaceManifestRecord {
+                        schema_version: 1,
+                        workspace_id: workspace.public.workspace_id.clone(),
+                        display_name: workspace.public.display_name.clone(),
+                        grant_revision: workspace.public.grant_revision,
+                        bookmark_ref: reference.clone(),
+                        device: workspace.identity.device,
+                        file: workspace.identity.file,
+                    })
+            })
+            .collect();
+        write_manifest(&persistence.manifest_path, records)
+    }
+}
+
+fn expires_after(now: u64) -> Result<u64, DesktopWorkspaceError> {
+    now.checked_add(WORKSPACE_LIFETIME_SECONDS)
+        .ok_or(DesktopWorkspaceError::Unavailable)
+}
+
+fn format_expiry(expires_unix: u64) -> Result<String, DesktopWorkspaceError> {
+    DateTime::<Utc>::from_timestamp(
+        i64::try_from(expires_unix).map_err(|_| DesktopWorkspaceError::Unavailable)?,
+        0,
+    )
+    .ok_or(DesktopWorkspaceError::Unavailable)
+    .map(|value| value.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
 fn display_name(root: &Path) -> Result<String, DesktopWorkspaceError> {

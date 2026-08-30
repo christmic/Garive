@@ -1205,9 +1205,11 @@ dependencies = [
 name = "garive-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "garive-core",
  "garive-llm",
+ "garive-macos-bookmark",
  "garive-provider-anthropic",
  "garive-provider-compatible",
  "garive-provider-openai",

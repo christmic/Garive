@@ -1,6 +1,40 @@
-use std::fs;
+use std::{
+    collections::BTreeMap,
+    fs,
+    sync::{Arc, Mutex},
+};
 
-use garive_desktop::{DesktopWorkspaceError, DesktopWorkspaceService};
+use garive_desktop::{
+    DesktopWorkspaceBookmarkStore, DesktopWorkspaceError, DesktopWorkspaceService,
+    DESKTOP_WORKSPACE_MANIFEST_FILE,
+};
+
+#[derive(Default)]
+struct MemoryBookmarkStore(Mutex<BTreeMap<String, Vec<u8>>>);
+
+impl DesktopWorkspaceBookmarkStore for MemoryBookmarkStore {
+    fn store(&self, bookmark_ref: &str, bytes: &[u8]) -> Result<(), DesktopWorkspaceError> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(bookmark_ref.into(), bytes.to_vec());
+        Ok(())
+    }
+
+    fn load(&self, bookmark_ref: &str) -> Result<Vec<u8>, DesktopWorkspaceError> {
+        self.0
+            .lock()
+            .unwrap()
+            .get(bookmark_ref)
+            .cloned()
+            .ok_or(DesktopWorkspaceError::Unavailable)
+    }
+
+    fn delete(&self, bookmark_ref: &str) -> Result<(), DesktopWorkspaceError> {
+        self.0.lock().unwrap().remove(bookmark_ref);
+        Ok(())
+    }
+}
 
 #[test]
 fn selected_directory_becomes_an_owner_bound_path_free_capability() {
@@ -19,6 +53,39 @@ fn selected_directory_becomes_an_owner_bound_path_free_capability() {
     assert_eq!(
         service.verify(&grant.workspace_id, "other").unwrap_err(),
         DesktopWorkspaceError::CapabilityInvalid
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn native_bookmark_restores_the_same_opaque_workspace_after_process_rebuild() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("Project");
+    fs::create_dir(&workspace).unwrap();
+    fs::write(workspace.join("brief.md"), "durable context").unwrap();
+    let manifest = root.path().join(DESKTOP_WORKSPACE_MANIFEST_FILE);
+    let store = Arc::new(MemoryBookmarkStore::default());
+
+    let original = DesktopWorkspaceService::durable(manifest.clone(), store.clone());
+    let grant = original.admit_selected(&workspace, "main").unwrap();
+    drop(original);
+
+    let restored = DesktopWorkspaceService::durable(manifest.clone(), store.clone());
+    assert_eq!(restored.recover("main").unwrap(), 1);
+    let recovered_grant = restored.verify(&grant.workspace_id, "main").unwrap();
+    assert_eq!(recovered_grant.workspace_id, grant.workspace_id);
+    assert_eq!(recovered_grant.display_name, "Project");
+    let page = restored
+        .list_entries(&grant.workspace_id, "main", None, None, 8)
+        .unwrap();
+    assert_eq!(page.entries[0].display_name, "brief.md");
+
+    restored.revoke(&grant.workspace_id, "main").unwrap();
+    assert_eq!(
+        DesktopWorkspaceService::durable(manifest, store)
+            .recover("main")
+            .unwrap(),
+        0
     );
 }
 

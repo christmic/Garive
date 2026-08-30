@@ -10,6 +10,7 @@ publish = false
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
 garive-core = { path = "../../engine/core" }
 garive-llm = { path = "../../engine/llm" }
@@ -29,6 +30,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+garive-macos-bookmark = { path = "../macos-bookmark" }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]

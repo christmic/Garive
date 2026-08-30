@@ -18,6 +18,7 @@ mod setup;
 mod system_configuration;
 mod system_provider;
 mod workspace;
+mod workspace_bookmark;
 
 /// Durable path-free Workspace attachment exposed to Desktop clients.
 pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
@@ -43,6 +44,10 @@ pub use system_provider::{
 pub use workspace::{
     DesktopWorkspaceContextFile, DesktopWorkspaceEntry, DesktopWorkspaceEntryPage,
     DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceService,
+};
+pub use workspace_bookmark::{
+    DesktopWorkspaceBookmarkStore, SystemDesktopWorkspaceBookmarkStore,
+    DESKTOP_WORKSPACE_BOOKMARK_SERVICE, DESKTOP_WORKSPACE_MANIFEST_FILE,
 };
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.

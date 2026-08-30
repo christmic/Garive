@@ -252,8 +252,12 @@ fn main() {
                 garive_desktop::BuiltinDesktopProfileRegistry,
             );
             let setup = garive_desktop::DesktopSetupService::new(
-                directory,
+                directory.clone(),
                 garive_desktop::SystemSetupCredentialStore,
+            );
+            let workspaces = garive_desktop::DesktopWorkspaceService::durable(
+                directory.join(garive_desktop::DESKTOP_WORKSPACE_MANIFEST_FILE),
+                std::sync::Arc::new(garive_desktop::SystemDesktopWorkspaceBookmarkStore),
             );
             let state = garive_desktop::DesktopState::default();
             let installed = state
@@ -262,9 +266,13 @@ fn main() {
             setup
                 .recover(installed)
                 .map_err(|error| stable_setup_error(error.code()))?;
+            // Workspace authorization can become unavailable independently of
+            // the Runtime configuration; never make a stale bookmark prevent
+            // the Desktop shell from launching.
+            let _workspace_recovery = workspaces.recover("main");
             app.manage(state);
             app.manage(setup);
-            app.manage(garive_desktop::DesktopWorkspaceService::default());
+            app.manage(workspaces);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
