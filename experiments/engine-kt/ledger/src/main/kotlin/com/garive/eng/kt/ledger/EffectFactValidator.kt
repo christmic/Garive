@@ -23,12 +23,24 @@ internal fun validateEffectFact(kind: String, value: JsonObject) {
 }
 
 private fun JsonObject.interactionRequested() {
-    exact(setOf("interaction_id", "suspension_id", "prepared_digest", "kind", "prompt", "response_schema_digest", "expiry_code"))
+    exact(
+        setOf(
+            "interaction_id",
+            "suspension_id",
+            "prepared_digest",
+            "kind",
+            "prompt",
+            "response_schema",
+            "response_schema_digest",
+            "expiry_code",
+        ),
+    )
     identities("interaction_id", "suspension_id")
     digests("prepared_digest", "response_schema_digest")
     enum("kind", setOf("approval", "external_input"))
     enum("expiry_code", setOf("none", "turn_deadline", "policy_deadline"))
     content("prompt")
+    content("response_schema")
 }
 
 private fun JsonObject.interactionResolved() {

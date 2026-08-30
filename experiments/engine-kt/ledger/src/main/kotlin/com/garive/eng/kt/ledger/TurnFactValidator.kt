@@ -41,7 +41,16 @@ private fun JsonObject.input() {
     content("content")
     val kind = enum(
         "input_kind",
-        setOf("trusted_user", "trusted_system", "external_input", "reconciliation", "resource_ready", "delegation_result"),
+        setOf(
+            "trusted_user",
+            "trusted_system",
+            "external_input",
+            "interaction_string",
+            "interaction_json",
+            "reconciliation",
+            "resource_ready",
+            "delegation_result",
+        ),
     )
     val continuation = kind != "trusted_user" && kind != "trusted_system"
     require(continuation == containsKey("suspension_id"))
