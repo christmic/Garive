@@ -21,6 +21,7 @@ mod memory_export_io;
 mod model_http_transport;
 mod observability_runtime;
 mod runtime_turn;
+mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
@@ -128,6 +129,9 @@ pub use runtime_turn::{
     RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
     RuntimeRecoverySnapshot, RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus,
     RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
+};
+pub use sandbox_runtime::{
+    preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SandboxBindingV1, SandboxPreflightError,
 };
 pub use scheduler_runtime::{
     cancel_schedule, create_schedule, reconstruct_schedule_state, run_schedule_once,
