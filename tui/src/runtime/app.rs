@@ -97,6 +97,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     );
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+    let mut interrupted = None;
     loop {
         draw(&mut terminal, &mut state)?;
         if state.model.quit_requested {
@@ -111,6 +114,10 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
+            signal = &mut shutdown => {
+                interrupted = Some(signal);
+                break;
+            }
         }
     }
     if let Some(task) = state.follow.take() {
@@ -120,7 +127,8 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         task.abort();
     }
     state.persist_presentation();
-    guard.restore().map_err(map_terminal_error)
+    guard.restore().map_err(map_terminal_error)?;
+    interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
 }
 
 async fn run_screen_reader(
@@ -155,6 +163,9 @@ async fn run_screen_reader(
     );
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+    let mut interrupted = None;
     let mut emitted = 0;
     let mut last_status = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
@@ -172,6 +183,10 @@ async fn run_screen_reader(
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
+            signal = &mut shutdown => {
+                interrupted = Some(signal);
+                break;
+            }
         }
     }
     if let Some(task) = state.follow.take() {
@@ -182,7 +197,26 @@ async fn run_screen_reader(
     }
     state.persist_presentation();
     write_linear("Garive exited. Terminal restored.")?;
-    guard.restore().map_err(map_terminal_error)
+    guard.restore().map_err(map_terminal_error)?;
+    interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
+}
+
+#[cfg(unix)]
+async fn shutdown_signal() -> i32 {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut interrupt = signal(SignalKind::interrupt()).expect("SIGINT handler");
+    let mut terminate = signal(SignalKind::terminate()).expect("SIGTERM handler");
+    tokio::select! {
+        _ = interrupt.recv() => 2,
+        _ = terminate.recv() => 15,
+    }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() -> i32 {
+    let _ = tokio::signal::ctrl_c().await;
+    2
 }
 
 fn emit_linear_changes(

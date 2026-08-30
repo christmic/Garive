@@ -24,6 +24,8 @@ pub enum TuiError {
     InvalidHost,
     /// Local presentation or recovery state could not be safely opened.
     LocalState,
+    /// The process received an operating-system termination signal after setup.
+    Interrupted(i32),
 }
 
 impl std::fmt::Display for TuiError {
@@ -33,6 +35,7 @@ impl std::fmt::Display for TuiError {
             Self::TerminalIo => "terminal operation failed",
             Self::InvalidHost => "invalid Host configuration",
             Self::LocalState => "local state is unavailable or unsafe",
+            Self::Interrupted(_) => "interrupted after terminal restoration",
         })
     }
 }

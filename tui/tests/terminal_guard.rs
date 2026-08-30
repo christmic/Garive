@@ -143,6 +143,40 @@ fn screen_reader_mode_never_enters_the_alternate_screen() {
 }
 
 #[test]
+fn unwinding_a_panic_restores_every_acquired_mode() {
+    let (ops, calls) = fake(None);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = TerminalGuard::acquire(
+            ops,
+            TerminalOptions {
+                screen_reader: false,
+                mouse: true,
+            },
+        )
+        .unwrap();
+        panic!("injected after acquisition");
+    }));
+    assert!(result.is_err());
+    assert_eq!(
+        *calls.borrow(),
+        [
+            "enable_raw",
+            "enter_alt",
+            "enable_paste",
+            "enable_focus",
+            "enable_mouse",
+            "disable_mouse",
+            "disable_focus",
+            "disable_paste",
+            "show_cursor",
+            "leave_alt",
+            "disable_raw",
+            "flush",
+        ]
+    );
+}
+
+#[test]
 fn mouse_capture_is_opt_in_and_restored_before_focus() {
     let (ops, calls) = fake(None);
     let guard = TerminalGuard::acquire(

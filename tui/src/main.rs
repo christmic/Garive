@@ -12,6 +12,9 @@ async fn main() {
         }
     };
     if let Err(error) = garive_tui::run(config).await {
+        if let garive_tui::TuiError::Interrupted(signal) = error {
+            std::process::exit(128 + signal);
+        }
         eprintln!("garive-tui: {error}");
         std::process::exit(1);
     }

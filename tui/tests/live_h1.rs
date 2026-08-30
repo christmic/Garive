@@ -80,6 +80,40 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
     assert!(text.contains("\x1b[?2004l"));
 }
 
+#[test]
+fn termination_signal_restores_the_shipping_terminal() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("signal.log");
+    let status = Command::new("expect")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            set child $spawn_id
+            exec kill -TERM [exp_pid -i $child]
+            expect eof
+            catch wait result
+            set code [lindex $result 3]
+            if {$code != 143} { exit 5 }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("\x1b[?1049l"));
+    assert!(text.contains("\x1b[?2004l"));
+    assert!(text.contains("\x1b[?1004l"));
+}
+
 fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
