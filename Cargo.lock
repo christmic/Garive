@@ -1647,6 +1647,7 @@ dependencies = [
  "futures",
  "garive-host-client",
  "ratatui",
+ "tempfile",
  "tokio",
  "unicode-segmentation",
  "unicode-width",
