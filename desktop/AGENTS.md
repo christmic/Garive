@@ -126,9 +126,10 @@ frontend/
 ├── src/
 │   ├── main.tsx
 │   ├── ipc/                typed wrappers (ts-rs-generated) around @tauri-apps/api
+│   ├── app/                composition, routes, error boundary
+│   ├── features/           setup, sessions, conversation, activity, memory
 │   ├── ui/
-│   ├── state/
-│   └── routes/
+│   └── state/
 └── README.md
 ```
 
@@ -197,9 +198,10 @@ Services/` of the Tauri `.app`.
 
 ## What NOT to Do
 
-- ❌ Don't put business logic in the frontend or in
-  `macos-native/`. Logic lives in `engine/`; both Tauri and
-  macos-native just bridge it.
+- ❌ Don't put Agent/domain authority in the frontend or in
+  `macos-native/`. Domain policy lives in Engine/Runtime. The A-UX1 pure
+  application controller belongs in frontend `state/`; Tauri and native
+  extensions own only their admitted composition/bridge responsibilities.
 - ❌ Don't reach for `macos-native/` when Tauri already has an
   API for it. Default to Tauri; only escalate to SwiftUI when
   there is no other option.

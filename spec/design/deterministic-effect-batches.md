@@ -68,10 +68,10 @@ InvocationAccessSet = non-empty ordered unique ResourceAccess values
 
 ToolAccessPolicyV1 {
   policy_revision
-  filesystem_roots[]
-  process_lanes[]
-  network_origins[]
-  runtime_lanes[]
+  filesystem_roots: [{ root, allowed_modes[] }]
+  process_lanes: [{ lane, allowed_modes[] }]
+  network_origins: [{ origin, allowed_modes[] }]
+  runtime_lanes: [{ lane, allowed_modes[] }]
   max_accesses, max_result_bytes
 }
 ```
@@ -87,18 +87,26 @@ The Prepared Call digest includes policy revision, resolver revision, ordered
 exact access set, and non-zero `max_result_bytes`. Grants bind that digest, so
 claims and buffer charge cannot change after authorization.
 
-Policy lists and access sets sort by namespace enum order
-`filesystem, process, network, runtime`, then raw UTF-8 key, then mode enum
-order `read, write, exclusive`. Duplicate policy entries or accesses are
-invalid rather than deduplicated. Policy roots/origins/lanes are authority
-ceilings; only exact `ResourceAccess` values participate in conflicts.
+Policy entry lists sort by raw UTF-8 root/origin/lane; each non-empty mode set
+sorts `read, write, exclusive`. Access sets sort by namespace enum order
+`filesystem, process, network, runtime`, then raw UTF-8 key, then that same mode
+order. Duplicate policy entries, modes, or accesses are invalid rather than
+deduplicated. Policy roots/origins/lanes are authority ceilings; only exact
+`ResourceAccess` values participate in conflicts.
+
+A filesystem root covers an equal key or a descendant beginning with
+`root + "/"`; raw string prefix alone never covers a sibling. Network origins
+and process/runtime lanes cover only exact equality. In every namespace the
+requested mode must occur in the matched policy entry's `allowed_modes`.
 
 Filesystem canonicalization is lexical and workspace-relative before any I/O:
 UTF-8 `/` separators, no empty/`.`/`..` segment, no leading slash, no NUL, and
-no platform-specific alias. Runtime later resolves components beneath its
-workspace capability without following an escaping symlink. Network origins
-are lowercase scheme/ASCII host/effective port triples with no user-info, path,
-query, or fragment. Process/runtime lanes are admitted opaque ASCII identities.
+no Unicode normalization or case folding. Runtime later resolves the exact
+UTF-8 components beneath its workspace capability without following an
+escaping symlink and rejects unsupported platform aliases. Network origins are
+`http`/`https` plus lowercase ASCII DNS name or RFC 5952 IP literal and explicit
+effective decimal port, with no user-info, path, query, fragment, or trailing
+DNS dot. Process/runtime lanes are admitted opaque ASCII identities.
 
 ## Declaration validation
 
@@ -106,7 +114,7 @@ Preparation fails closed when:
 
 - an access falls outside the Tool policy;
 - filesystem arguments cannot be resolved without I/O or contain ambiguous
-  aliases, traversal, absolute paths, or case-folding collisions;
+  lexical aliases, traversal, or absolute paths;
 - `ReplayClass::ReadOnly` declares any `write` or `exclusive` access;
 - a non-read-only invocation has no `write`/`exclusive` claim despite a write or
   process capability;

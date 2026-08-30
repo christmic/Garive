@@ -1,8 +1,8 @@
 # mobile/AGENTS.md
 
-> **Planned mobile Agent Apps.** Kotlin Multiplatform shares client logic,
+> **Mobile Agent Apps.** Kotlin Multiplatform shares client logic,
 > Jetpack Compose serves Android, and SwiftUI serves iOS. This is the target
-> skeleton; its build and release gates land slice by slice.
+> product structure; build and release gates land slice by slice.
 >
 > This file applies to everything under `mobile/`. It overrides
 > the root `AGENTS.md` where the two disagree.
@@ -20,7 +20,7 @@ mobile/
 
 | Subdir | Role |
 |--------|------|
-| `shared/` | KMP `commonMain` + `androidMain` + `iosMain` (or native targets). Holds: agent client, tool registry, memory / knowledge stores, KMP-side protocol bindings. **No UI.** |
+| `shared/` | KMP `commonMain` + platform transports. Holds the app controller, immutable views, Host mapping, preference ports, and generated protocol bindings. **No UI, Engine, Runtime store, tool registry, or Memory/Knowledge database.** |
 | `androidApp/` | Android app module. Jetpack Compose UI, Android-specific glue (push, permissions, notifications). Depends on `shared/`. |
 | `iosApp/` | iOS app. SwiftUI uses the generated KMP XCFramework for synchronous Host v1 calls. Add SKIE when a later slice exports coroutines or flows. Depends on `shared/`. |
 
@@ -37,15 +37,17 @@ choice because:
   Activities, visionOS) default to SwiftUI first.
 - **Risk isolation** — UI regressions don't block business-layer
   releases, and vice versa.
-- **Shared logic is where the value lives** — KMP already shares
-  the agent runtime, tools, memory, knowledge client. Forcing
-  UI into KMP too doubles the platform-specific risk for
-  marginal reuse.
+- **Shared logic is where the value lives** — KMP shares the
+  Host-client controller, retry/reconnect semantics and immutable
+  product views. Runtime, tools, Memory and Knowledge remain behind
+  the Host boundary. Forcing UI into KMP doubles platform-specific
+  risk for marginal reuse.
 
 ## Cross-platform Boundaries
 
-The `shared/` module is the **only** place that knows the
-business logic. UI tiers (`androidApp/`, `iosApp/`) are thin:
+The `shared/` module is the **only** mobile tier that knows application
+workflow/reducer logic. Agent domain policy stays behind Host/Runtime. UI tiers
+(`androidApp/`, `iosApp/`) are thin:
 
 - **Compose** calls `shared/` through plain Kotlin interfaces.
 - **SwiftUI** calls synchronous v1 functions through the generated framework;

@@ -20,7 +20,7 @@ evidence. Proposed numeric thresholds are not copied into accepted contracts.
 | P2-VX hosted capability | planned per capability | One concrete capability request; provider-neutral semantics and extension values; exact unsupported/failure behavior; protocol fixtures; proof that ordinary Tool/Knowledge semantics cannot represent it. No generic extension allowlist is admitted. |
 | P2-VX-ATC token count | delivered | Exact non-generating count semantics, official SDK evidence, explicit profiles, strict decoding and shared Rust/Kotlin fixtures are verified. A credentialed publication run remains separate C7-A evidence. |
 | G0 Go Gateway | gated | A live H1 edge workflow requiring independent scaling; load/failure measurements; authentication/routing ownership not already held by Host; deployment and recovery boundary. Language preference alone is insufficient. |
-| A-MOBILE Android evidence | delivered | Android SDK 36 assembles the real APK; an API 36 ARM64 emulator installs it and passes the native Compose instrumentation surface gate. KMP real-H1 and iOS native evidence remain green. |
+| A-MOBILE Android evidence | delivered | Android SDK 36 assembles the real APK; an API 36 ARM64 emulator installs it and passes the native Compose instrumentation surface gate. KMP real-loopback transport and iOS native evidence remain green; remote physical-device Host connectivity is not claimed. |
 
 ## Consequences
 

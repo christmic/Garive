@@ -54,7 +54,7 @@ garive-memory-v1/
 | `namespace_id` | Exact exported Agent namespace. |
 | `through_revision` | Optimistic Memory repository revision. |
 | `exported_at` | RFC 3339 display metadata; excluded from semantic entry digests. |
-| `entries` | Ordered by raw UTF-8 `memory_id`; each item has file name, authority, lifecycle, revision, and SHA-256 content digest. |
+| `entries` | Ordered by raw UTF-8 `record_id`, then `revision_id`; each item binds its file, M0/M1 classification, lifecycle, sensitivity, and digests. |
 
 The exact canonical shape is:
 
@@ -67,7 +67,8 @@ MemorySnapshotManifestV1 {
 }
 MemorySnapshotEntryV1 {
   record_id, revision_id, file_name
-  authority, memory_type, memory_role, scope, lifecycle, sensitivity
+  authority, memory_type, memory_role, scope, scope_owner_id
+  lifecycle, sensitivity
   content_digest, document_digest
 }
 ```
@@ -94,6 +95,7 @@ authority: user_declared
 memory_type: semantic
 memory_role: preference
 scope: agent_instance
+scope_owner_b64: YWdlbnQtMDE
 lifecycle: active
 sensitivity: ordinary
 ---
@@ -106,7 +108,7 @@ duplicate keys, unknown keys, and extra document markers fail closed. Content
 is normalized to UTF-8 with LF endings and exactly one final newline for digest
 calculation. Runtime preserves no filesystem metadata as domain truth.
 
-The eight fields shown above are required. An optional ninth field
+The nine fields shown above are required. An optional tenth field
 `erase: true` may follow `sensitivity` and has no other accepted value. It is an
 explicit import instruction, never an exported default. A document with erase
 set still carries its unchanged content so the planner can bind the destructive
@@ -117,6 +119,11 @@ content kind; `memory_type` is the orthogonal M1 classification. Import cannot
 change type, role, scope, or sensitivity of an existing record. Platform scope,
 restricted content, and organisation authority still require their existing
 frozen Runtime grants/receipts; text in a file proves none of them.
+
+`scope_owner_b64` is canonical unpadded base64url over the exact opaque
+Runtime-authorized scope owner identity. An existing document must preserve it.
+A new document may name only one owner in the export's frozen authorized scope
+set; Runtime checks the binding again at prepare and commit.
 
 For an exported entry, `record_ref` is exactly
 `existing.<record-id-b64>.<revision-id-b64>`. Both components are unpadded
@@ -186,9 +193,9 @@ bytes conflict.
 
 The planner input is the verified manifest/documents plus an ordered current
 Memory projection containing exact record/revision identities, authority,
-type, role, scope, lifecycle, sensitivity, content digest, and supersession
-provenance. It performs no I/O, clock read, ID generation, authorization lookup,
-or implicit merge.
+type, role, scope/owner, lifecycle, sensitivity, content digest, and
+supersession provenance. It performs no I/O, clock read, ID generation,
+authorization lookup, or implicit merge.
 
 ## Authority semantics
 

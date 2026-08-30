@@ -20,10 +20,11 @@ This set refines the existing accepted D0–C6/H1/R1 platform. It does not reope
 Engine authority, copy Runtime storage into clients, make H1 remotely reachable,
 or admit deferred Memory automation and effect speculation.
 
-The audit found one prerequisite implementation defect: the H1 Rust emitter
-currently uses a package-qualified API string while accepted clients/fixtures
-require exact `api_version = "v1"`. H1 is therefore `partial` in `STATUS.md`.
-The implementation phase must correct the emitter and add a real
+The audit found two prerequisite H1 implementation defects: the Rust emitter
+uses a package-qualified API string while clients/fixtures require exact
+`api_version = "v1"`, and its string-only continuation path does not yet validate
+the durable C5 response schema for non-string values. H1 is therefore `partial`
+in `STATUS.md`. The implementation phase must correct both and add a real
 live-Host-to-shared-client E2E before any H2/H3 or product completion claim.
 
 ## Requirement coverage
@@ -52,14 +53,17 @@ Call v2 path.
 ```text
 official version audit ───────────────────────────────────────────────┐
                                                                     v
+H1 version/typed-continuation repair --------------------------------+
+
 M2-A parser/projection -> M2-B planner -> M2-C durable control -> M2-D
              `---------- shared Rust/Kotlin fixtures ---------'       |
                                                                     v
-H2 wire -> H2 Runtime read model ----┐                         Desktop UX
-                                     +-> UX-A controller -> UX-B -----^
-H3 wire -> H3 Runtime projection ----┘                    |
-                                                          `-> UX-C Web/mobile
-A-DESKTOP-C -> A-DESKTOP-C2 backend/setup --------------------------^
+H2 wire -----------------> H2 Runtime read model ---------+
+D0 H3 catalogue -> H3 wire -> H3 Runtime projection -----+-> UX-A controller
+                                                               |          |
+                                                               v          v
+                                                         UX-B Desktop   UX-C
+A-DESKTOP-C -> A-DESKTOP-C2 backend/setup ---------------------^
 
 C5b declaration/digest -> shared planner -> Runtime dispatcher/evidence
 ```
@@ -82,16 +86,18 @@ or native-UI enforcement.
 | Order | Package | Deliverable | Completion evidence |
 |---:|---|---|---|
 | 1 | V1 | Audit official stable versions and compatible holds. | Lockfile/wrapper diff, source links, all affected native build gates. |
-| 2 | M2-A/B | Canonical snapshot parser/projector and pure import planner. | Complete Rust/Kotlin semantic and canonical vectors. |
-| 3 | C5b-A | Prepared v2 declaration/resolver/conflict planner. | Rust/Kotlin graph/plan vectors and sequential differential properties. |
-| 4 | H2/H3-W | Additive Proto and generated consumer mappings. | Tag audit, Rust/KMP/TypeScript presence and unknown-value round trips. |
-| 5 | M2-C | Runtime file capability and SQLite control transaction. | Symlink/bound tests plus crash/replay matrix. |
-| 6 | C5b-R | Bounded read dispatcher and ordered durable publication. | Completion-permutation, timeout/cancel/restart and confined-executor tests. |
-| 7 | H2/H3-R | Fixed-prefix read/activity projection and SSE extension. | SQLite restart/concurrency/corruption/redaction matrices. |
-| 8 | A-DESKTOP-C2 | Staged setup/rotation backend and first-run UI. | Credential-store, crash recovery, redaction and configured restart E2E. |
-| 9 | UX-A | Pure application controller and persistence adapter. | Shared scenarios across TypeScript and KMP. |
-| 10 | UX-B | Desktop reference product and M2-D workflow. | Embedded Runtime restart E2E, accessibility and Memory control E2E. |
-| 11 | UX-C | Web and native Android/iOS presentation. | Same-host Web E2E, controller fixtures, API 37/iOS builds and UI scenarios. |
+| 2 | H1-F | Fix exact API version and typed schema-validated continuation. | Existing fixtures plus real Runtime-Host/client E2E and restart replay. |
+| 3 | M2-A/B | Canonical snapshot parser/projector and pure import planner. | Complete Rust/Kotlin semantic and canonical vectors. |
+| 4 | C5b-A | Prepared v2 declaration/resolver/conflict planner. | Rust/Kotlin graph/plan vectors and sequential differential properties. |
+| 5 | H2/H3-W | D0 public activity catalogue, additive Proto and generated consumer mappings. | Snapshot-digest fixture, tag audit, Rust/KMP/TypeScript presence and unknown-value round trips. |
+| 6 | M2-C | Runtime file capability and SQLite control transaction. | Symlink/bound tests plus crash/replay matrix. |
+| 7 | C5b-R | Bounded read dispatcher and ordered durable publication. | Completion-permutation, timeout/cancel/restart and confined-executor tests. |
+| 8 | H2/H3-R | Fixed-prefix read/activity projection and SSE extension. | SQLite restart/concurrency/corruption/redaction matrices. |
+| 9 | A-DESKTOP-C2 | Staged setup/rotation backend and first-run UI. | Credential-store, crash recovery, redaction and configured restart E2E. |
+| 10 | UX-A | Pure application controller and persistence adapter. | Shared scenarios across TypeScript and KMP. |
+| 11 | UX-B | Desktop reference product. | Embedded Runtime restart E2E and accessibility scenarios. |
+| 12 | M2-D | Desktop Memory file capability, review and control workflow. | Product E2E over M2-C and the Desktop controller. |
+| 13 | UX-C | Web and native Android/iOS presentation. | Same-host Web E2E, controller fixtures, API 37/iOS builds and UI scenarios. |
 
 An order entry is a dependency-safe default, not permission to combine unrelated
 changes. Repository small-batch and status-evidence rules still apply.
@@ -116,6 +122,7 @@ I/O and storage.
 
 | Fixture | Required case families | Consumers |
 |---|---|---|
+| `spec/fixtures/host/live-host-v1.json` and `live-host-client-v1.json` | exact API version, string/JSON continuation, replay/conflict, real E2E | Rust Host/client, CLI/TUI, KMP |
 | `spec/fixtures/agent/memory-control-plane-v1.json` | snapshot, parser, plan, authority, bound, digest | Rust/Kotlin M2-A/B |
 | `spec/fixtures/agent/deterministic-effect-batches-v1.json` | declaration, normalization, conflict, plan, failure | Rust/Kotlin C5b-A |
 | `spec/fixtures/host/host-read-model-v1.json` | definitions, Session pages/views, timeline, cursor, failure | Rust/KMP/TypeScript H2 |

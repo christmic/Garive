@@ -69,6 +69,28 @@ back the command; C6 recovery owns the resulting open Execution.
 Cancellation is only a durable request. HTTP success does not claim that a
 running model or effect has stopped.
 
+### Typed continuation value amendment
+
+The shipped Proto `ContinueTurnRequestV1.input = 4` remains a raw UTF-8 string.
+The coordinated H2 wire slice additively assigns
+`optional string input_json = 5`. Exactly one field is present for an
+approval/external-input interaction:
+
+- `input` is allowed only when the durable portable response schema admits a
+  JSON string; Runtime canonical-JSON encodes that string before validation;
+- `input_json` contains exact RFC 8785 JSON text for any admitted root value.
+
+Runtime reconstructs the exact response schema/digest from the verified
+suspension continuation, validates the normalized value before commit, and
+stores those canonical JSON bytes in `interaction.resolved.response`. Unknown,
+non-canonical, schema-invalid, dual, or absent interaction input is
+`invalid_request` and commits nothing. Idempotency binds the selected field and
+its exact normalized bytes; a retry cannot change representation.
+
+Non-interaction suspension kinds do not gain authority from field 5.
+Operator reconciliation remains outside the ordinary H1 continuation route
+until a focused public authority contract is accepted.
+
 ## Successful responses
 
 Session creation returns `CreateSessionResponseV1`. Turn mutations return
@@ -163,6 +185,8 @@ HTTP tests must use a real loopback listener and a file-backed SQLite database.
 - a process restart replays the same event JSON and positions from SQLite;
 - SSE resumes after gaps and never invents a terminal on EOF;
 - cancellation and continuation enforce exact owner/version/suspension values;
+- typed interaction continuation validates canonical JSON against the durable
+  response schema before commit and preserves representation-bound replay;
 - route errors contain only stable codes and redacted messages;
 - the server refuses non-loopback binding and reads no environment/config file;
 - H1-T passes its local real-HTTP matrices;

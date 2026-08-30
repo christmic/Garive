@@ -63,11 +63,37 @@ native composition root
 | Domain view | immutable Session/Turn/activity/error presentation values | durable truth or side effects |
 | UI | layout, focus, input, native accessibility and rendering | Host calls, command IDs, retries, configuration parsing |
 
-Desktop frontend uses `app/`, `features/conversation`, `features/sessions`,
-`features/activity`, `state/`, `ipc/`, and `ui/`. Web follows the same boundaries
-without importing Desktop IPC. KMP `commonMain` owns the mobile application
+Desktop frontend uses the exact ownership tree below. Web follows the same
+conversation/session/activity boundaries without importing Desktop setup,
+Memory IPC, or Tauri adapters. KMP `commonMain` owns the mobile application
 controller and view values; Compose and SwiftUI contain no Host workflow.
 Cross-surface behavior is shared through fixtures, not forced source sharing.
+
+The target product directories are:
+
+```text
+desktop/frontend/src/
+  app/                         composition, routes, error boundary
+  features/setup/              C2 write-only first-run/reconfigure UI
+  features/sessions/           navigation and selection
+  features/conversation/       timeline, composer, suspension
+  features/activity/           H3 inspector
+  features/memory/             M2-D review/control
+  state/                       pure controller/reducer and view values
+  ipc/                         generated typed Tauri adapters only
+  ui/                          tokens and reusable accessible primitives
+
+mobile/shared/src/commonMain/kotlin/com/garive/mobile/
+  application/                 pure controller/effect correlation
+  host/                        generated Host mapping and transport port
+  model/                       immutable product view values
+  preferences/                 bounded local preference port
+```
+
+Android/iOS mirror product features in their native UI source trees but do not
+copy controller logic. A directory name is an ownership boundary, not permission
+for circular feature imports: features depend on `state`/`ui` contracts; `state`
+never imports a feature or concrete IPC/HTTP adapter.
 
 ## Information architecture
 
@@ -157,8 +183,11 @@ a pending identity or redirects its result into the new selection.
   the Turn.
 - Cancel states that it is a request. Controls remain truthful until a committed
   terminal arrives.
-- Suspension renders the public prompt and a schema-appropriate input action;
-  continue binds the exact suspension identity and Session version.
+- Approval/external-input suspension renders the H2 public prompt and a
+  schema-appropriate value action; continue binds the exact suspension identity,
+  Session version, response-schema digest, and H1 continuation variant.
+  Other suspension kinds render status only unless their own public authority
+  contract is accepted.
 - Failed/stopped states show stable localized copy and a copyable error code.
   Raw response bodies and exception messages are never rendered.
 
@@ -244,7 +273,8 @@ cannot close a product slice.
 
 The shared `client-product-experience-v1` fixture contains `bootstrap_cases`,
 `navigation_cases`, `command_cases`, `follow_cases`, `suspension_cases`,
-`preference_cases`, and `failure_cases`. Each case supplies initial state,
+`activity_cases`, `preference_cases`, and `failure_cases`. Each case supplies
+initial state,
 ordered intents/effect results, and the complete expected state/effect list.
 TypeScript Desktop/Web and KMP consume every semantic case; platform UI tests
 cover rendering/focus/navigation and do not reimplement controller semantics.

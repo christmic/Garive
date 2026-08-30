@@ -50,7 +50,9 @@ TurnTimelineItemV1 {
 }
 
 SuspensionViewV1 {
-  suspension_id, session_version, kind, prompt
+  suspension_id, session_version, kind
+  prompt_schema, prompt_json, prompt_digest
+  response_schema_json?, response_schema_digest?
 }
 
 AgentDefinitionPageV1 { api_version, definitions[] }
@@ -61,6 +63,24 @@ TurnTimelinePageV1 {
   observed_max_position, has_more
 }
 ```
+
+The additive Proto field allocation is exact:
+
+| Message | Fields and tags |
+|---|---|
+| `AgentDefinitionSummaryV1` | `api_version=1`, `definition_id=2`, `definition_revision=3`, `capabilities=4` repeated string |
+| `AgentDefinitionPageV1` | `api_version=1`, `definitions=2` repeated message |
+| `SessionSummaryV1` | `api_version=1`, `session_id=2`, `agent_instance_id=3`, `definition_id=4`, `definition_revision=5`, `opened_at=6`, `latest_position=7`, optional `latest_turn_id=8`, optional `latest_turn_state=9`, `turn_count=10` |
+| `SessionPageV1` | `api_version=1`, `sessions=2` repeated message, optional `next_before=3` |
+| `SessionViewV1` | `api_version=1`, `session=2`, `observed_max_position=3` |
+| `SuspensionViewV1` | `suspension_id=1`, `session_version=2`, `kind=3`, `prompt_schema=4`, `prompt_json=5` bytes, `prompt_digest=6`, optional `response_schema_json=7` bytes, optional `response_schema_digest=8` |
+| `TurnTimelineItemV1` | `turn_id=1`, `started_position=2`, `latest_position=3`, `state=4`, `user_text=5`, optional `completion_text=6`, optional `suspension=7`, `content_truncated=8`, H3 repeated `activities=9` |
+| `TurnTimelinePageV1` | `api_version=1`, `session_id=2`, `items=3` repeated message, `scanned_through_position=4`, `observed_max_position=5`, `has_more=6` |
+
+All unspecified scalar types are `string`; positions, versions, and counts are
+`uint64`. Message fields use message presence. Optional scalar fields use Proto
+`optional`, not empty-string sentinels. H3 field 9 is coordinated in the same
+Host v1 tag audit but remains absent until H3 is implemented.
 
 `capabilities` is a sorted set of stable public capability names installed for
 new Sessions, not a promise that every action is authorized. V1 may return one
@@ -74,10 +94,36 @@ facts only.
 
 `user_text` is reconstructed from the exact committed `turn.input` bound to the
 first start. `completion_text` uses the same redacted committed response-item
-projection as H1 `turn.completed`. `prompt` is the redacted structured public
-interaction prompt admitted by C5/C6. No model request, hidden instruction,
+projection as H1 `turn.completed`. `prompt_json` is the redacted structured
+public interaction prompt admitted by C5/C6. No model request, hidden instruction,
 context, reasoning, tool arguments/results, raw failure, credential, endpoint,
 or internal fact payload is included.
+
+`prompt_schema` is exactly `garive.public-suspension-prompt.v1`. `prompt_json`
+is canonical RFC 8785 UTF-8 JSON projected from the verified continuation
+binding; its lowercase SHA-256 is `prompt_digest`. Approval and external-input
+suspensions also carry the exact canonical C4 portable response schema and
+digest so clients can render and Runtime can revalidate input after restart.
+Both response fields are present or absent together. Operator-reconciliation,
+resource-unavailable, partial-output, and delegation-pending suspensions forbid
+them; H2 does not invent a public reconciliation command. Prompt/schema bytes
+are never truncated; exceeding either bound is `read_bound_exceeded`.
+
+```text
+PublicSuspensionPromptV1 {
+  schema_version: 1
+  title_key
+  message_text?
+  action_label_key
+  cancel_label_key?
+}
+```
+
+Keys are admitted localization identities, not model strings. `message_text`
+is the sole optional bounded user-visible text already redacted by Runtime.
+Unknown/duplicate fields, empty keys, or any additional structured value fail
+projection. Tool arguments, resource names, and hidden policy cannot be encoded
+inside localization keys or message text.
 
 `activities` is absent from H2-only implementations and becomes the repeated
 H3 public snapshot when H3 is admitted. H2 does not independently interpret

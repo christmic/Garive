@@ -172,15 +172,19 @@ their explicit configuration, reconstruction and retry rules.
 ```text
 dependency/toolchain audit ───────────────────────────────┐
                                                          v
+H1 version/typed-continuation repair ---------------------+
+
 M2-A projection/parser -> M2-B planner -> M2-C SQLite -> M2-D Desktop flow
                               |                              ^
                               v                              |
                          shared Rust/Kotlin                  |
                                                              |
-H2/H3 proto -> H2/H3 Runtime projections -> UX-A -> UX-B Desktop
-                                               |          ^
-                                               `-> UX-C   |
-A-DESKTOP-C -> A-DESKTOP-C2 ------------------------------'
+H2 proto ----------------> H2 Runtime projection ---------+
+D0 H3 catalogue -> H3 proto -> H3 Runtime projection -----+-> UX-A
+                                                               |    |
+                                                               v    v
+                                                        UX-B Desktop UX-C
+A-DESKTOP-C -> A-DESKTOP-C2 -------------------------------^
 
 C5b declarations -> shared planner -> Runtime read batches -> executor evidence
 ```
@@ -188,17 +192,18 @@ C5b declarations -> shared planner -> Runtime read batches -> executor evidence
 | Order | Package | Boundary | Exit evidence |
 |---:|---|---|---|
 | 1 | V1 | Review official stable toolchain/SDK/dependency sources; update owners and lockfiles under the dependency rule. | Native builds prove the selected compatible stable set; every hold is documented. |
-| 2 | M2-A/B | Canonical Memory snapshot parser/projection and authority-safe import planner. | Shared Rust/Kotlin fixture and plan digests. |
-| 3 | C5b-A | Tool access policy, pure exact resolver contract, Prepared Call digest amendment, conflict planner. | Shared Rust/Kotlin graph/plan fixture plus sequential differential properties. |
-| 4 | H2/H3-W | Additive Host v1 read-model/activity messages and shared client mappings. | Proto tag audit plus Rust/KMP/TypeScript presence and unknown-value round trips. |
-| 5 | M2-C | Runtime filesystem capability and atomic SQLite Memory import receipts. | Real-file bounds/symlink tests and crash/replay matrix. |
-| 6 | C5b-R | Bounded parallel read-only dispatcher with timeout/cancel/recovery ordering. | Completion-permutation properties and real confined executor tests. |
-| 7 | H2/H3-R | Installed-Agent, Session/timeline and redacted activity projections/events. | File-backed SQLite restart/concurrency/corruption/redaction matrices. |
-| 8 | A-DESKTOP-C2 | Staged backend setup/rotation and first-run UI. | OS credential-store, crash recovery, redaction and configured restart E2E. |
-| 9 | UX-A | Shared pure application controller. | Complete TypeScript/KMP controller scenarios over H2/H3 fixtures. |
-| 10 | UX-B | Desktop reference product UI. | Configured embedded-Runtime restart E2E plus accessibility gates. |
-| 11 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Same-host Web E2E, controller conformance, native builds and platform UI scenarios. |
+| 2 | H1-F | Exact API-version emitter, canonical JSON continuation and real Host/client integration. | Existing Host/client fixtures, schema validation, restart replay and Runtime-backed CLI/TUI E2E. |
+| 3 | M2-A/B | Canonical Memory snapshot parser/projection and authority-safe import planner. | Shared Rust/Kotlin fixture and plan digests. |
+| 4 | C5b-A | Tool access policy, pure exact resolver contract, Prepared Call digest amendment, conflict planner. | Shared Rust/Kotlin graph/plan fixture plus sequential differential properties. |
+| 5 | H2/H3-W | D0 public activity catalogue plus additive Host v1 read-model/activity messages and client mappings. | Snapshot digest, Proto tag audit, and Rust/KMP/TypeScript presence/unknown-value round trips. |
+| 6 | M2-C | Runtime filesystem capability and atomic SQLite Memory import receipts. | Real-file bounds/symlink tests and crash/replay matrix. |
+| 7 | C5b-R | Bounded parallel read-only dispatcher with timeout/cancel/recovery ordering. | Completion-permutation properties and real confined executor tests. |
+| 8 | H2/H3-R | Installed-Agent, Session/timeline and redacted activity projections/events. | File-backed SQLite restart/concurrency/corruption/redaction matrices. |
+| 9 | A-DESKTOP-C2 | Staged backend setup/rotation and first-run UI. | OS credential-store, crash recovery, redaction and configured restart E2E. |
+| 10 | UX-A | Shared pure application controller. | Complete TypeScript/KMP controller scenarios over H2/H3 fixtures. |
+| 11 | UX-B | Desktop reference product UI. | Configured embedded-Runtime restart E2E plus accessibility gates. |
 | 12 | M2-D | Desktop Memory export, edit handoff, dry-run diff, confirmation, import/erasure receipt. | Product E2E over M2-C and the A-UX1 controller boundary. |
+| 13 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Same-host Web E2E, controller conformance, native builds and platform UI scenarios. |
 
 M2, C5b, and the H2/H3 Host chain may progress independently after their own
 fixtures are accepted. UX-A requires coordinated H2/H3 wire fixtures; UX-B

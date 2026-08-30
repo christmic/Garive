@@ -50,6 +50,13 @@ HostEventV1.activity = field 8, message presence
 TurnTimelineItemV1.activities = repeated HostActivityV1
 ```
 
+`HostActivityV1` assigns `api_version=1`, `activity_id=2`, `kind=3`,
+`label_key=4`, `state=5`, `source_position=6` (`uint64`), `terminal=7`
+(`bool`), and optional `safe_code=8`. H3 assigns `HostEventV1.activity=8` and
+the coordinated H2 `TurnTimelineItemV1.activities=9`; no existing tag changes
+meaning. Optional scalar presence is Proto `optional`, while activity message
+presence is native message presence.
+
 `activity_id` is the outer `tool_invocation_id` for admitted tool/effect facts
 and the payload `interaction_id` for interaction facts. A preparation rejection
 has no Tool Invocation ID; Runtime derives `activity_id` as lowercase SHA-256
@@ -62,6 +69,22 @@ tool names and arbitrary model text never become labels. Preparation rejection
 uses the fixed key `agent.activity.tool_rejected`; interaction uses
 `agent.activity.approval` or `agent.activity.external_input`. A missing or
 invalid admitted mapping is `corrupt_state`.
+
+H3 additively admits this D0 snapshot value:
+
+```text
+PublicToolActivityDescriptorV1 { tool_name, tool_revision, label_key }
+PublicToolActivityCatalogueV1 {
+  schema_version: 1, catalogue_revision, descriptors[]
+}
+```
+
+Descriptors sort by raw UTF-8 tool name then revision and are unique. All
+strings are non-empty/bounded; `label_key` uses the repository localization-key
+grammar and is not user/model content. The catalogue is included in the
+effective Agent snapshot digest. Changing a mapping requires a new catalogue
+revision, Definition revision, and installed snapshot; clients never receive
+tool name/revision.
 
 Known states are:
 
@@ -184,6 +207,8 @@ and never alter durable order.
 
 - additive Proto bindings and Rust/KMP/TypeScript semantic round trips preserve
   message presence and unknown strings;
+- D0 snapshot fixtures prove catalogue ordering/digest, definition revision
+  binding, missing/duplicate mapping refusal, and no raw tool-name projection;
 - shared fixtures cover every mapping, optional interaction, denial,
   cancellation, uncertainty/reconciliation, omitted facts, gaps, duplicate
   replay, unknown client strings, and every invalid transition;

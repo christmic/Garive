@@ -18,6 +18,11 @@ continue_turn(command_id, session_id, turn_id, suspension, version, input)
 events(session_id, after_position)
 ```
 
+`input` is `ContinuationValue = Text(string) | CanonicalJson(string)`. `Text`
+maps only to H1 field 4; `CanonicalJson` maps only to additive field 5 and must
+already satisfy RFC 8785 canonical bytes. The client never guesses a variant
+from string contents or retries the same command with another variant.
+
 Browser, CLI, TUI and mobile receive an explicit loopback Host base URL. They
 do not discover ports from environment, read Provider credentials or access
 Engine/SQLite. Desktop uses typed Tauri IPC to embedded R1; its frontend still
