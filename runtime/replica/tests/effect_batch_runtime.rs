@@ -9,11 +9,11 @@ use garive_ledger::{
     CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
 };
 use garive_runtime::{
-    plan_effect_batch_admission, AuthorizedBatchInvocation, BatchRuntimeError, BatchTerminal,
-    CancellationEvidence, ConcurrentExecutorDispatch, ConcurrentExecutorPort,
-    EffectBatchAdmissionContext, EffectBatchDispatcher, EffectBatchPublisher,
-    EffectBatchRuntimeLimits, EffectCancellation, ExecutorDispatchError, PreparedExecution,
-    SqliteEffectBatchPublisher, SqliteLedger,
+    plan_effect_batch_admission, reconstruct_effect_batch_recovery, AuthorizedBatchInvocation,
+    BatchRuntimeError, BatchTerminal, CancellationEvidence, ConcurrentExecutorDispatch,
+    ConcurrentExecutorPort, EffectBatchAdmissionContext, EffectBatchDispatcher,
+    EffectBatchMemberRecovery, EffectBatchPublisher, EffectBatchRuntimeLimits, EffectCancellation,
+    ExecutorDispatchError, PreparedExecution, SqliteEffectBatchPublisher, SqliteLedger,
 };
 use garive_tools::{
     plan_effect_batch, AccessMode, AccessNamespace, AccessPolicyEntry, EffectBatchLimitsV1,
@@ -553,6 +553,18 @@ async fn sqlite_publisher_commits_started_before_dispatch_and_ordered_observatio
     let admitted = ledger
         .commit(session.clone(), initial.session_version, admission.facts)
         .unwrap();
+    let recovered = reconstruct_effect_batch_recovery(
+        &ledger,
+        &turn,
+        &context.execution_id,
+        plan.plan_digest(),
+        &invocations,
+    )
+    .unwrap();
+    assert!(recovered
+        .members
+        .iter()
+        .all(|state| *state == EffectBatchMemberRecovery::Authorized));
     let executor = SqlExecutor {
         path,
         turn: turn.clone(),
@@ -561,7 +573,7 @@ async fn sqlite_publisher_commits_started_before_dispatch_and_ordered_observatio
         &mut ledger,
         session,
         admitted.session_version,
-        context,
+        context.clone(),
         plan.plan_digest(),
     )
     .unwrap();
@@ -578,6 +590,18 @@ async fn sqlite_publisher_commits_started_before_dispatch_and_ordered_observatio
         .await
         .unwrap();
     drop(publisher);
+    let recovered = reconstruct_effect_batch_recovery(
+        &ledger,
+        &turn,
+        &context.execution_id,
+        plan.plan_digest(),
+        &invocations,
+    )
+    .unwrap();
+    assert!(recovered
+        .members
+        .iter()
+        .all(|state| *state == EffectBatchMemberRecovery::Observed));
     let kinds: Vec<_> = ledger
         .load_turn(&turn)
         .unwrap()
