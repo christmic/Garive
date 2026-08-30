@@ -50,10 +50,6 @@ impl EditorState {
         &self.text
     }
 
-    pub(crate) fn cursor_grapheme(&self) -> usize {
-        self.cursor_grapheme
-    }
-
     pub(crate) fn display_column(&self) -> usize {
         let byte = grapheme_byte(&self.text, self.cursor_grapheme);
         let line = self.text[..byte]

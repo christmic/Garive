@@ -74,21 +74,6 @@ impl StateStore {
         self.write_json(&path, value)
     }
 
-    pub(crate) fn load_pending(
-        &self,
-        session_id: Option<&str>,
-    ) -> Result<Option<PendingCommand>, StateError> {
-        let path = format!(
-            "pending/{}.v1.json",
-            session_key(session_id.unwrap_or("new"))
-        );
-        let value: Option<PendingCommand> = self.read_json(&path)?;
-        if let Some(value) = &value {
-            value.validate()?;
-        }
-        Ok(value)
-    }
-
     pub(crate) fn load_any_pending(&self) -> Result<Option<PendingCommand>, StateError> {
         let Some(root) = &self.root else {
             return Ok(None);

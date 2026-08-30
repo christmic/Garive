@@ -7,7 +7,6 @@ use editor::{EditError, EditorState};
 fn edits_extended_graphemes_without_splitting_bytes() {
     let mut editor = EditorState::new(128);
     editor.insert("a👨‍👩‍👧‍👦界").unwrap();
-    assert_eq!(editor.cursor_grapheme(), 3);
     assert_eq!(editor.display_column(), 5);
     editor.move_left(false);
     assert!(editor.backspace());

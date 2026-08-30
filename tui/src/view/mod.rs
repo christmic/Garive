@@ -7,7 +7,9 @@ use ratatui::{
 };
 
 use crate::{
-    application::{AppModel, BootState, ConnectionState, ExecutionState, Overlay, TimelineRole},
+    application::{
+        AppModel, BootState, ConnectionState, ExecutionState, Overlay, TerminalSize, TimelineRole,
+    },
     input::COMMAND_PALETTE,
     Theme,
 };
@@ -19,7 +21,12 @@ pub(crate) fn render(
     area: Rect,
     buffer: &mut Buffer,
 ) -> Option<(u16, u16)> {
-    if area.width < 20 || area.height < 8 {
+    if !(TerminalSize {
+        width: area.width,
+        height: area.height,
+    })
+    .is_supported()
+    {
         Paragraph::new("Need 20×8")
             .style(palette(theme).muted)
             .render(area, buffer);

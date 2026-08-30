@@ -10,8 +10,8 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
     application::{
-        AppModel, BootState, ConnectionState, ExecutionState, Overlay, TerminalSize, TimelineItem,
-        TimelineRole,
+        reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
+        TerminalSize, TimelineItem, TimelineRole,
     },
     persistence::{
         now, PendingCommand, PendingKind, Preferences, PromptHistoryEntry, StateError, StateStore,
@@ -274,8 +274,7 @@ impl RuntimeState {
         history_error: bool,
     ) -> Self {
         let mut model = AppModel::default();
-        model.boot = BootState::Loading;
-        model.connection = ConnectionState::Connecting;
+        reduce(&mut model, AppAction::BootStarted);
         model.prompt_history = history
             .into_iter()
             .rev()
@@ -306,6 +305,14 @@ impl RuntimeState {
 
     pub(super) fn command_id(&mut self, _operation: &str) -> String {
         uuid::Uuid::new_v4().to_string()
+    }
+
+    pub(super) fn dispatch(&mut self, action: AppAction) {
+        for effect in reduce(&mut self.model, action) {
+            match effect.kind {
+                EffectKind::Exit => debug_assert!(self.model.quit_requested),
+            }
+        }
     }
 
     pub(super) fn load(&mut self, session_id: String) {
@@ -457,10 +464,13 @@ fn draw(
     terminal
         .draw(|frame| {
             let area = frame.area();
-            state.model.terminal_size = TerminalSize {
-                width: area.width,
-                height: area.height,
-            };
+            reduce(
+                &mut state.model,
+                AppAction::TerminalResized(TerminalSize {
+                    width: area.width,
+                    height: area.height,
+                }),
+            );
             if let Some(cursor) =
                 view::render(&state.model, state.config.theme, area, frame.buffer_mut())
             {
@@ -477,16 +487,12 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             definitions,
             sessions,
         } => {
-            state.model.definition_count = definitions.len();
             state.model.definitions = definitions;
-            state.model.session_count = sessions.len();
             state.model.sessions = sessions;
-            state.model.boot = if state.model.definition_count == 0 {
-                BootState::NotConfigured
-            } else {
-                BootState::Ready
-            };
-            state.model.connection = ConnectionState::Online;
+            state.dispatch(AppAction::BootCompleted {
+                definition_count: state.model.definitions.len(),
+                session_count: state.model.sessions.len(),
+            });
             let selected = state
                 .config
                 .session
@@ -602,10 +608,9 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
         HostMessage::Failed(error) => {
             let code = error.code;
             state.reject_pending(code);
-            state.model.connection = ConnectionState::Unavailable {
+            state.dispatch(AppAction::HostUnavailable {
                 safe_code: code.wire_name(),
-            };
-            state.model.boot = BootState::Degraded;
+            });
             state.model.execution = ExecutionState::Failed;
         }
     }

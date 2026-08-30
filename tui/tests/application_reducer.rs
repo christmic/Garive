@@ -1,58 +1,48 @@
+#[path = "../src/args.rs"]
+mod args;
+pub use args::{MouseMode, Theme};
 #[path = "../src/application/mod.rs"]
 mod application;
 #[path = "../src/input/mod.rs"]
 mod input;
 
 use application::{
-    reduce, AppAction, AppModel, BootState, ConnectionState, EffectResult, EffectValue,
-    FocusTarget, Overlay, TerminalSize,
+    reduce, AppAction, AppModel, BootState, ConnectionState, FocusTarget, Overlay, TerminalSize,
 };
 
 #[test]
-fn boot_effects_are_ordered_correlated_and_complete_out_of_order() {
+fn boot_transitions_are_explicit_and_complete() {
     let mut model = AppModel::default();
-    let effects = reduce(&mut model, AppAction::Boot);
-    assert_eq!(effects.len(), 4);
+    assert!(reduce(&mut model, AppAction::BootStarted).is_empty());
     assert_eq!(model.boot, BootState::Loading);
-    assert!(effects.windows(2).all(|pair| pair[0].id < pair[1].id));
-
-    let values = [
-        EffectValue::SessionsLoaded { count: 3 },
-        EffectValue::DefinitionsLoaded { count: 2 },
-        EffectValue::PendingCommandLoaded,
-        EffectValue::PreferencesLoaded,
-    ];
-    for (effect, value) in effects.iter().rev().zip(values) {
-        reduce(
-            &mut model,
-            AppAction::EffectFinished(EffectResult {
-                effect_id: effect.id,
-                issued_generation: effect.issued_generation,
-                value,
-            }),
-        );
-    }
+    reduce(
+        &mut model,
+        AppAction::BootCompleted {
+            definition_count: 2,
+            session_count: 3,
+        },
+    );
     assert_eq!(model.boot, BootState::Ready);
     assert_eq!(model.connection, ConnectionState::Online);
     assert_eq!((model.definition_count, model.session_count), (2, 3));
 }
 
 #[test]
-fn foreign_or_mismatched_results_cannot_mutate_boot_state() {
+fn unavailable_host_has_a_safe_public_code() {
     let mut model = AppModel::default();
-    let effects = reduce(&mut model, AppAction::Boot);
-    let definition = effects[2];
     reduce(
         &mut model,
-        AppAction::EffectFinished(EffectResult {
-            effect_id: definition.id,
-            issued_generation: definition.issued_generation + 1,
-            value: EffectValue::DefinitionsLoaded { count: 99 },
-        }),
+        AppAction::HostUnavailable {
+            safe_code: "protocol_error",
+        },
     );
-    assert_eq!(model.definition_count, 0);
-    assert_eq!(model.pending_effects.len(), 4);
-    assert_eq!(model.stale_result_count, 1);
+    assert_eq!(model.boot, BootState::Degraded);
+    assert_eq!(
+        model.connection,
+        ConnectionState::Unavailable {
+            safe_code: "protocol_error"
+        }
+    );
 }
 
 #[test]

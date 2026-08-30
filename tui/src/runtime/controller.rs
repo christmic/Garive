@@ -3,7 +3,7 @@ use crossterm::event::{
 };
 
 use crate::{
-    application::{ExecutionState, Overlay, TerminalSize},
+    application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize},
     input::{parse_command, Command, CommandParse, COMMAND_PALETTE},
     persistence::{now, PendingCommand, PendingKind},
 };
@@ -13,9 +13,11 @@ use super::{app::RuntimeState, host};
 
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
     match event {
-        Event::Resize(width, height) => state.model.terminal_size = TerminalSize { width, height },
-        Event::FocusGained => state.model.terminal_focused = true,
-        Event::FocusLost => state.model.terminal_focused = false,
+        Event::Resize(width, height) => {
+            state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }))
+        }
+        Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
+        Event::FocusLost => state.dispatch(AppAction::TerminalFocusChanged(false)),
         Event::Paste(text) => {
             let _ = state.model.composer.insert(&text);
         }
@@ -28,9 +30,11 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
 fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             state.model.scroll_offset = state.model.scroll_offset.saturating_sub(3)
         }
         MouseEventKind::ScrollDown => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             state.model.scroll_offset =
                 (state.model.scroll_offset + 3).min(state.model.timeline.len().saturating_sub(1))
         }
@@ -44,6 +48,7 @@ fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
                     }
                 && mouse.row >= 3 =>
         {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
             let index = ((mouse.row - 3) / 3) as usize;
             if let Some(session) = state.model.sessions.get(index) {
                 state.model.session_selection = index;
@@ -56,14 +61,16 @@ fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
 
 fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
-        state.model.overlay = Some(Overlay::QuitConfirmation);
+        state.dispatch(AppAction::QuitRequested);
         return;
     }
     if let Some(overlay) = state.model.overlay {
         match key.code {
-            KeyCode::Esc if overlay != Overlay::UnknownCommand => state.model.overlay = None,
+            KeyCode::Esc if overlay != Overlay::UnknownCommand => {
+                state.dispatch(AppAction::OverlayClosed)
+            }
             KeyCode::Enter if overlay == Overlay::QuitConfirmation => {
-                state.model.quit_requested = true
+                state.dispatch(AppAction::QuitConfirmed)
             }
             KeyCode::Up if overlay == Overlay::SessionPicker => {
                 state.model.session_selection = state.model.session_selection.saturating_sub(1)
@@ -105,9 +112,9 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
             KeyCode::Char('n') => create_session(state),
-            KeyCode::Char('s') => state.model.overlay = Some(Overlay::SessionPicker),
-            KeyCode::Char('p') => state.model.overlay = Some(Overlay::CommandPalette),
-            KeyCode::Char('r') => state.model.overlay = Some(Overlay::PromptHistory),
+            KeyCode::Char('s') => state.dispatch(AppAction::OverlayOpened(Overlay::SessionPicker)),
+            KeyCode::Char('p') => state.dispatch(AppAction::OverlayOpened(Overlay::CommandPalette)),
+            KeyCode::Char('r') => state.dispatch(AppAction::OverlayOpened(Overlay::PromptHistory)),
             KeyCode::Char('j') => {
                 let _ = state.model.composer.insert("\n");
             }
@@ -123,9 +130,10 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     }
     match key.code {
         KeyCode::Char('?') if state.model.composer.text().is_empty() => {
-            state.model.overlay = Some(Overlay::Help)
+            state.dispatch(AppAction::OverlayOpened(Overlay::Help))
         }
         KeyCode::Char(character) => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Composer));
             let _ = state.model.composer.insert(&character.to_string());
         }
         KeyCode::Backspace => {
@@ -415,7 +423,7 @@ fn execute_command(command: Command, state: &mut RuntimeState) {
                 Some("Clipboard integration is unavailable in this terminal.".into());
             state.model.overlay = Some(Overlay::ErrorDetails);
         }
-        Command::Quit => state.model.overlay = Some(Overlay::QuitConfirmation),
+        Command::Quit => state.dispatch(AppAction::QuitRequested),
     }
 }
 

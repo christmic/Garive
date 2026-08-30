@@ -1,10 +1,6 @@
-use std::collections::BTreeMap;
-
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 
 use crate::input::EditorState;
-
-use super::{EffectId, EffectKind};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -101,15 +97,8 @@ pub(crate) struct TimelineItem {
     pub(crate) text: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct PendingEffect {
-    pub(crate) generation: u64,
-    pub(crate) kind: EffectKind,
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct AppModel {
-    pub(crate) generation: u64,
     pub(crate) boot: BootState,
     pub(crate) focus: FocusTarget,
     pub(crate) prior_focus: FocusTarget,
@@ -117,7 +106,6 @@ pub(crate) struct AppModel {
     pub(crate) connection: ConnectionState,
     pub(crate) terminal_size: TerminalSize,
     pub(crate) terminal_focused: bool,
-    pub(crate) dirty: bool,
     pub(crate) quit_requested: bool,
     pub(crate) definition_count: usize,
     pub(crate) definitions: Vec<AgentDefinitionSummary>,
@@ -138,7 +126,4 @@ pub(crate) struct AppModel {
     pub(crate) timeline: Vec<TimelineItem>,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,
-    pub(crate) stale_result_count: u64,
-    pub(crate) next_effect_id: u64,
-    pub(crate) pending_effects: BTreeMap<EffectId, PendingEffect>,
 }
