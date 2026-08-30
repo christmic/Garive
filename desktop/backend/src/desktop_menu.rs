@@ -20,6 +20,15 @@ pub fn build_desktop_menu<R: tauri::Runtime>(
         MenuItemBuilder::with_id(DesktopMenuIntent::ToggleInspector.id(), "Toggle Inspector")
             .accelerator("CmdOrCtrl+Shift+A")
             .build(app)?;
+    let zoom_in = MenuItemBuilder::with_id(DesktopMenuIntent::ZoomIn.id(), "Zoom In")
+        .accelerator("CmdOrCtrl+=")
+        .build(app)?;
+    let zoom_out = MenuItemBuilder::with_id(DesktopMenuIntent::ZoomOut.id(), "Zoom Out")
+        .accelerator("CmdOrCtrl+-")
+        .build(app)?;
+    let actual_size = MenuItemBuilder::with_id(DesktopMenuIntent::ActualSize.id(), "Actual Size")
+        .accelerator("CmdOrCtrl+0")
+        .build(app)?;
 
     let application = SubmenuBuilder::new(app, "Garive")
         .about(None)
@@ -50,6 +59,10 @@ pub fn build_desktop_menu<R: tauri::Runtime>(
         .select_all()
         .build()?;
     let view = SubmenuBuilder::new(app, "View")
+        .item(&zoom_in)
+        .item(&zoom_out)
+        .item(&actual_size)
+        .separator()
         .item(&inspector)
         .separator()
         .fullscreen()
@@ -74,6 +87,12 @@ pub enum DesktopMenuIntent {
     Settings,
     /// Shows or hides the current Work inspector.
     ToggleInspector,
+    /// Increases the current WebView zoom by one bounded step.
+    ZoomIn,
+    /// Decreases the current WebView zoom by one bounded step.
+    ZoomOut,
+    /// Restores the current WebView to 100% zoom.
+    ActualSize,
 }
 
 impl DesktopMenuIntent {
@@ -84,6 +103,9 @@ impl DesktopMenuIntent {
             Self::Search => "desktop.search",
             Self::Settings => "desktop.settings",
             Self::ToggleInspector => "desktop.toggle-inspector",
+            Self::ZoomIn => "desktop.zoom-in",
+            Self::ZoomOut => "desktop.zoom-out",
+            Self::ActualSize => "desktop.actual-size",
         }
     }
 
@@ -94,6 +116,9 @@ impl DesktopMenuIntent {
             "desktop.search" => Some(Self::Search),
             "desktop.settings" => Some(Self::Settings),
             "desktop.toggle-inspector" => Some(Self::ToggleInspector),
+            "desktop.zoom-in" => Some(Self::ZoomIn),
+            "desktop.zoom-out" => Some(Self::ZoomOut),
+            "desktop.actual-size" => Some(Self::ActualSize),
             _ => None,
         }
     }
@@ -110,6 +135,9 @@ mod tests {
             DesktopMenuIntent::Search,
             DesktopMenuIntent::Settings,
             DesktopMenuIntent::ToggleInspector,
+            DesktopMenuIntent::ZoomIn,
+            DesktopMenuIntent::ZoomOut,
+            DesktopMenuIntent::ActualSize,
         ];
         for intent in intents {
             assert_eq!(DesktopMenuIntent::from_id(intent.id()), Some(intent));

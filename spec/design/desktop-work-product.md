@@ -321,6 +321,12 @@ focus indicators meet 3:1 contrast. Text and essential controls meet WCAG 2.2
 AA, zoom to 200%, VoiceOver rotor landmarks, reduced motion, increased contrast,
 reduced transparency, and full keyboard access.
 
+The native View menu exposes Zoom In (`Command-=`), Zoom Out (`Command--`),
+and Actual Size (`Command-0`). These commands carry only closed, data-free
+intents and call the supported native WebView zoom API at bounded 80%, 100%,
+120%, 150%, 175%, and 200% steps. CSS transforms, viewport emulation, and
+browser-only responsive captures do not satisfy the M72 native 200% gate.
+
 UI copy is localized by stable keys with parameter bounds. Dates, numbers,
 pluralization, and shortcuts use locale/platform formatting. Pseudolocalization
 and CJK composition are release gates.

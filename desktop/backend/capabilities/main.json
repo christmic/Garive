@@ -10,6 +10,7 @@
     "allow-commit-setup",
     "allow-cancel-setup",
     "allow-restart-desktop",
-    "allow-run-agent-turn"
+    "allow-run-agent-turn",
+    "core:webview:allow-set-webview-zoom"
   ]
 }
