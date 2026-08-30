@@ -57,6 +57,24 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "session_picker_scrolled_100x24",
         frame(&sessions, Theme::Mono, 100, 24)
     );
+
+    let mut rail = sessions;
+    rail.overlay = None;
+    rail.focus = application::FocusTarget::Navigation;
+    rail.selected_session = Some("session-000000".into());
+    rail.navigation_selection = Some("session-000011".into());
+    insta::assert_snapshot!(
+        "session_rail_focus_dark_100x24",
+        frame(&rail, Theme::Dark, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "session_rail_focus_light_100x24",
+        frame(&rail, Theme::Light, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "session_rail_focus_mono_100x24",
+        frame(&rail, Theme::Mono, 100, 24)
+    );
 }
 
 #[test]

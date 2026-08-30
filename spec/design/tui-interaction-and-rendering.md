@@ -192,6 +192,7 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Ctrl+J` | composer | insert newline |
 | `Shift+Enter` | composer, when distinguishable | insert newline |
 | `Tab` / `Shift+Tab` | no blocking overlay | move focus forward/backward |
+| `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
 | `Ctrl+P` | any ready view | open command palette |
 | `Ctrl+R` | composer | open prompt-history search |
 | `Ctrl+N` | ready | create Session using selected/default definition |

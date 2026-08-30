@@ -152,6 +152,7 @@ pub(crate) struct AppModel {
     pub(crate) command_selection: usize,
     pub(crate) has_pending_command: bool,
     pub(crate) session_selection: usize,
+    pub(crate) navigation_selection: Option<String>,
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,
     pub(crate) observed_position: u64,

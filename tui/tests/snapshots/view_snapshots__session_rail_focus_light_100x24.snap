@@ -1,0 +1,28 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "frame(&rail, Theme::Light, 100, 24)"
+---
+  GARIVE  research-age  /  Session session-0000                               ● online  ·  running
+
+ Sessions 12               │ Conversation · ● live
+                           │  ╭─ YOU #2
+   research-age · 000006   │  │  Summarize the release plan.
+   ● running  ·  1 turn    │  ╰─
+                           │
+   research-age · 000007   │    ✓  Agent action · completed
+   ● running  ·  1 turn    │
+                           │  ◆  GARIVE #6
+   research-age · 000008   │     ## Release plan
+   ● running  ·  1 turn    │     • Verify the Runtime
+                           │     • Ship with evidence
+   research-age · 000009   │     cargo test passes.
+   ● running  ·  1 turn    │
+                           │
+   research-age · 000010   │
+   ● running  ·  1 turn    │
+                           │
+ › research-age · 000011   │────────────────────────────────────────────────────────────────────────
+   ● running  ·  1 turn    │╭ Compose ─────────────────────────────────────────────────────────────╮
+                           ││ Ask a follow-up…                                                     │
+  Ctrl+N new · Ctrl+S list │╰──────────────────────────────────────────────────────────────────────╯
+                           │  Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help   18 / 4096 B

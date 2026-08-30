@@ -13,9 +13,10 @@ mod navigation;
 pub(super) use actions::replay_pending;
 use actions::{cancel, create_session, retry_pending, submit};
 use navigation::{
-    conversation_page_cells, cycle_focus, cycle_session_selection, is_safe_query_character,
-    matching_commands, matching_history, matching_sessions, open_command_palette,
-    open_prompt_history, open_session_picker, select_command, select_history, select_session,
+    activate_navigation_selection, conversation_page_cells, cycle_focus, cycle_session_selection,
+    is_safe_query_character, matching_commands, matching_history, matching_sessions,
+    move_navigation_selection, move_navigation_to_edge, open_command_palette, open_prompt_history,
+    open_session_picker, select_command, select_history, select_session,
 };
 
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
@@ -62,6 +63,7 @@ fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
             let index = ((mouse.row - 3) / 3) as usize;
             if let Some(session) = state.model.sessions.get(index) {
                 state.model.session_selection = index;
+                state.model.navigation_selection = Some(session.session_id.clone());
                 state.load(session.session_id.clone());
             }
         }
@@ -222,6 +224,22 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     {
         state.dispatch(AppAction::OverlayOpened(Overlay::Help));
         return;
+    }
+    if state.model.focus == FocusTarget::Navigation {
+        match key.code {
+            KeyCode::Up => move_navigation_selection(&mut state.model, true),
+            KeyCode::Down => move_navigation_selection(&mut state.model, false),
+            KeyCode::Home => move_navigation_to_edge(&mut state.model, false),
+            KeyCode::End => move_navigation_to_edge(&mut state.model, true),
+            KeyCode::Enter => activate_navigation_selection(state),
+            _ => {}
+        }
+        if matches!(
+            key.code,
+            KeyCode::Up | KeyCode::Down | KeyCode::Home | KeyCode::End | KeyCode::Enter
+        ) {
+            return;
+        }
     }
     if state.composer_is_frozen()
         && matches!(

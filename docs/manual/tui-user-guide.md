@@ -140,6 +140,7 @@ available with `?` during that recovery state.
 | `Ctrl+R` | Open local prompt history. |
 | `?` | Open Help when the composer is empty or recovery-frozen. |
 | `Tab` / `Shift+Tab` | Move focus among visible regions. |
+| `Up` / `Down`, `Home` / `End`, `Enter` in the Session rail | Move its visible selection, jump to an edge, or open that Session. |
 | `PageUp` / `PageDown` | Scroll the conversation and stop/resume following latest. |
 | `Ctrl+Home` / `Ctrl+End` in conversation | Jump to the oldest loaded cell or latest cell. |
 | `Esc` | Close a nonblocking overlay, or request cancellation while a Turn runs. |
