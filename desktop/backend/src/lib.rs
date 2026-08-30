@@ -24,7 +24,7 @@ mod workspace_execution;
 
 pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
-    DesktopArtifactExportTarget,
+    DesktopArtifactExportTarget, DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE,
 };
 /// Immutable committed Artifact projection exposed to Desktop clients.
 pub use garive_runtime::HostArtifact as DesktopArtifact;

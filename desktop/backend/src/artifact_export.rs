@@ -1,20 +1,24 @@
 use std::{
-    collections::BTreeMap,
-    fs::File,
+    collections::{BTreeMap, BTreeSet},
+    fs::{self, File, OpenOptions},
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 const MAX_EXPORT_TARGETS: usize = 16;
 const MAX_ARTIFACT_BYTES: usize = 256 * 1_024;
 const EXPORT_TARGET_LIFETIME_SECONDS: u64 = 300;
+const MAX_EXPORT_JOURNAL_BYTES: usize = 8 * 1_024;
+const EXPORT_JOURNAL_TEMP_FILE: &str = ".desktop-artifact-exports.tmp";
+/// Path-free private journal containing only pending export target identities.
+pub const DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE: &str = "desktop-artifact-exports.json";
 
 /// One path-free, process-local destination selected through the native save panel.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -85,9 +89,28 @@ struct ExportTarget {
 #[derive(Clone, Default)]
 pub struct DesktopArtifactExportService {
     targets: Arc<Mutex<BTreeMap<String, ExportTarget>>>,
+    pending: Arc<Mutex<BTreeSet<String>>>,
+    journal_path: Option<Arc<PathBuf>>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ExportJournal {
+    schema_version: u32,
+    pending_target_ids: Vec<String>,
 }
 
 impl DesktopArtifactExportService {
+    /// Restores a bounded path-free crash-cleanup journal.
+    pub fn durable(journal_path: PathBuf) -> Result<Self, DesktopArtifactExportError> {
+        let pending = read_journal(&journal_path)?;
+        Ok(Self {
+            targets: Arc::default(),
+            pending: Arc::new(Mutex::new(pending)),
+            journal_path: Some(Arc::new(journal_path)),
+        })
+    }
+
     /// Admits one native-save-panel selection as a bounded path-free capability.
     pub fn admit_selected(
         &self,
@@ -123,6 +146,7 @@ impl DesktopArtifactExportService {
         );
         #[cfg(not(unix))]
         return Err(DesktopArtifactExportError::Unavailable);
+        self.cleanup_pending_in(&directory)?;
         let expires_at_unix = now.saturating_add(EXPORT_TARGET_LIFETIME_SECONDS);
         let export_target_id = format!("export-target-{}", Uuid::new_v4());
         let mut targets = self
@@ -178,7 +202,10 @@ impl DesktopArtifactExportService {
         {
             return Err(DesktopArtifactExportError::Invalid);
         }
-        atomic_create(&target, bytes)?;
+        self.begin_pending(export_target_id)?;
+        let result = atomic_create(&target, export_target_id, bytes);
+        let _ = self.finish_pending(export_target_id);
+        result?;
         Ok(DesktopArtifactExportReceipt {
             schema_version: 1,
             artifact_id: artifact_id.into(),
@@ -189,12 +216,76 @@ impl DesktopArtifactExportService {
             state: "exported",
         })
     }
+
+    fn begin_pending(&self, export_target_id: &str) -> Result<(), DesktopArtifactExportError> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+        let mut next = pending.clone();
+        if !next.insert(export_target_id.to_owned()) || next.len() > MAX_EXPORT_TARGETS {
+            return Err(DesktopArtifactExportError::Invalid);
+        }
+        self.persist_pending(&next)?;
+        *pending = next;
+        Ok(())
+    }
+
+    fn finish_pending(&self, export_target_id: &str) -> Result<(), DesktopArtifactExportError> {
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+        let mut next = pending.clone();
+        next.remove(export_target_id);
+        self.persist_pending(&next)?;
+        *pending = next;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn cleanup_pending_in(&self, directory: &File) -> Result<(), DesktopArtifactExportError> {
+        use rustix::fs::AtFlags;
+        let mut pending = self
+            .pending
+            .lock()
+            .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+        let mut next = pending.clone();
+        for target_id in pending.iter() {
+            let name = temporary_name(target_id);
+            match rustix::fs::unlinkat(directory, name.as_str(), AtFlags::empty()) {
+                Ok(()) | Err(rustix::io::Errno::NOENT) => {
+                    next.remove(target_id);
+                }
+                Err(_) => {}
+            }
+        }
+        if next != *pending {
+            self.persist_pending(&next)?;
+            *pending = next;
+        }
+        Ok(())
+    }
+
+    fn persist_pending(
+        &self,
+        pending: &BTreeSet<String>,
+    ) -> Result<(), DesktopArtifactExportError> {
+        let Some(path) = &self.journal_path else {
+            return Ok(());
+        };
+        write_journal(path, pending)
+    }
 }
 
 #[cfg(unix)]
-fn atomic_create(target: &ExportTarget, bytes: &[u8]) -> Result<(), DesktopArtifactExportError> {
+fn atomic_create(
+    target: &ExportTarget,
+    export_target_id: &str,
+    bytes: &[u8],
+) -> Result<(), DesktopArtifactExportError> {
     use rustix::fs::{AtFlags, Mode, OFlags};
-    let temporary = format!(".garive-export-{}.tmp", Uuid::new_v4());
+    let temporary = temporary_name(export_target_id);
     let descriptor = rustix::fs::openat(
         &target.directory,
         temporary.as_str(),
@@ -228,8 +319,85 @@ fn atomic_create(target: &ExportTarget, bytes: &[u8]) -> Result<(), DesktopArtif
 }
 
 #[cfg(not(unix))]
-fn atomic_create(_: &ExportTarget, _: &[u8]) -> Result<(), DesktopArtifactExportError> {
+fn atomic_create(_: &ExportTarget, _: &str, _: &[u8]) -> Result<(), DesktopArtifactExportError> {
     Err(DesktopArtifactExportError::Unavailable)
+}
+
+fn temporary_name(export_target_id: &str) -> String {
+    format!(".garive-export-{export_target_id}.tmp")
+}
+
+fn read_journal(path: &Path) -> Result<BTreeSet<String>, DesktopArtifactExportError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Err(_) => return Err(DesktopArtifactExportError::Unavailable),
+    };
+    if bytes.len() > MAX_EXPORT_JOURNAL_BYTES {
+        return Err(DesktopArtifactExportError::BoundExceeded);
+    }
+    let journal: ExportJournal =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    if journal.schema_version != 1 || journal.pending_target_ids.len() > MAX_EXPORT_TARGETS {
+        return Err(DesktopArtifactExportError::BoundExceeded);
+    }
+    let pending = journal
+        .pending_target_ids
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    if pending.len() > MAX_EXPORT_TARGETS || pending.iter().any(|value| !valid_target_id(value)) {
+        return Err(DesktopArtifactExportError::Invalid);
+    }
+    Ok(pending)
+}
+
+fn write_journal(
+    path: &Path,
+    pending: &BTreeSet<String>,
+) -> Result<(), DesktopArtifactExportError> {
+    if pending.len() > MAX_EXPORT_TARGETS || pending.iter().any(|value| !valid_target_id(value)) {
+        return Err(DesktopArtifactExportError::Invalid);
+    }
+    let bytes = serde_json::to_vec(&ExportJournal {
+        schema_version: 1,
+        pending_target_ids: pending.iter().cloned().collect(),
+    })
+    .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    if bytes.len() > MAX_EXPORT_JOURNAL_BYTES {
+        return Err(DesktopArtifactExportError::BoundExceeded);
+    }
+    let parent = path
+        .parent()
+        .ok_or(DesktopArtifactExportError::Unavailable)?;
+    fs::create_dir_all(parent).map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    let temporary = parent.join(EXPORT_JOURNAL_TEMP_FILE);
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&temporary)
+        .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    fs::rename(&temporary, path).map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    #[cfg(unix)]
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|_| DesktopArtifactExportError::Unavailable)?;
+    Ok(())
+}
+
+fn valid_target_id(value: &str) -> bool {
+    value.starts_with("export-target-")
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
 }
 
 fn valid_name(name: &str) -> bool {
@@ -369,5 +537,35 @@ mod tests {
             ),
             Err(DesktopArtifactExportError::Invalid)
         );
+    }
+
+    #[test]
+    fn durable_path_free_journal_cleans_only_its_interrupted_temporary() {
+        let config = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let journal = config.path().join(DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE);
+        let destination = directory.path().join("copy.md");
+        let service = DesktopArtifactExportService::durable(journal.clone()).unwrap();
+        let target = service.admit_selected(&destination, "main").unwrap();
+        service.begin_pending(&target.export_target_id).unwrap();
+        let interrupted = directory
+            .path()
+            .join(temporary_name(&target.export_target_id));
+        std::fs::write(&interrupted, "partial private export").unwrap();
+        let encoded = std::fs::read_to_string(&journal).unwrap();
+        assert!(!encoded.contains(directory.path().to_string_lossy().as_ref()));
+        drop(service);
+
+        let restarted = DesktopArtifactExportService::durable(journal.clone()).unwrap();
+        let unrelated = directory.path().join("keep.txt");
+        std::fs::write(&unrelated, "user data").unwrap();
+        restarted
+            .admit_selected(&directory.path().join("new-copy.md"), "main")
+            .unwrap();
+        assert!(!interrupted.exists());
+        assert_eq!(std::fs::read_to_string(unrelated).unwrap(), "user data");
+        assert!(!std::fs::read_to_string(journal)
+            .unwrap()
+            .contains(&target.export_target_id));
     }
 }

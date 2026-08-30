@@ -543,7 +543,12 @@ fn main() {
             app.manage(state);
             app.manage(setup);
             app.manage(workspaces);
-            app.manage(garive_desktop::DesktopArtifactExportService::default());
+            app.manage(
+                garive_desktop::DesktopArtifactExportService::durable(
+                    directory.join(garive_desktop::DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE),
+                )
+                .map_err(|error| stable_setup_error(error.code()))?,
+            );
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
