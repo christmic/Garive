@@ -232,12 +232,14 @@ struct SessionRow: View {
                         StatusBadge(status: session.status.name.lowercased())
                     }
                 } else {
-                    HStack(spacing: 14) {
+                    HStack(alignment: .top, spacing: 14) {
                         statusMark
-                        sessionIdentity
+                        VStack(alignment: .leading, spacing: 9) {
+                            sessionIdentity
+                            StatusBadge(status: session.status.name.lowercased())
+                        }
                         Spacer(minLength: 8)
-                        StatusBadge(status: session.status.name.lowercased())
-                        disclosure
+                        disclosure.padding(.top, 15)
                     }
                 }
             }
