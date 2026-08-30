@@ -29,6 +29,7 @@ impl HostClock for DemoClock {
 struct DemoDispatcher {
     database: PathBuf,
     calls: AtomicUsize,
+    churn: bool,
 }
 
 impl TurnDispatcher for DemoDispatcher {
@@ -36,9 +37,18 @@ impl TurnDispatcher for DemoDispatcher {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         let database = self.database.clone();
         let turn = turn.clone();
+        let churn = self.churn;
         thread::spawn(move || {
-            thread::sleep(Duration::from_millis(if call == 4 { 3_000 } else { 1_200 }));
-            if call == 3 {
+            thread::sleep(Duration::from_millis(if churn {
+                25
+            } else if call == 4 {
+                3_000
+            } else {
+                1_200
+            }));
+            if churn {
+                commit_churn_outcome(database, turn, call);
+            } else if call == 3 {
                 wait_for_cancel(database, turn);
             } else {
                 commit_demo_outcome(database, turn, call);
@@ -46,6 +56,19 @@ impl TurnDispatcher for DemoDispatcher {
         });
         Ok(())
     }
+}
+
+fn commit_churn_outcome(database: PathBuf, turn: CommittedTurn, call: usize) {
+    commit_report(
+        database,
+        turn,
+        AgentOutcome::Completed {
+            response_items: vec![ModelItem::Text {
+                text: format!("Churn event {call} committed."),
+            }],
+            usage: usage(),
+        },
+    );
 }
 
 fn commit_demo_outcome(database: PathBuf, turn: CommittedTurn, call: usize) {
@@ -168,6 +191,13 @@ async fn main() {
         .next()
         .and_then(|value| value.to_str().and_then(|text| text.parse().ok()))
         .unwrap_or_else(|| "127.0.0.1:4317".parse().unwrap());
+    let mode = arguments.next();
+    assert!(
+        mode.as_deref()
+            .is_none_or(|value| value == std::ffi::OsStr::new("--churn")),
+        "unexpected mode"
+    );
+    let churn = mode.is_some();
     assert!(arguments.next().is_none(), "unexpected argument");
 
     let host = LiveHost::new(
@@ -183,6 +213,7 @@ async fn main() {
         Arc::new(DemoDispatcher {
             database: database.clone(),
             calls: AtomicUsize::new(0),
+            churn,
         }),
     )
     .unwrap();
