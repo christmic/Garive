@@ -4,10 +4,10 @@ use std::sync::{
 };
 
 use garive_desktop::{
-    DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput, DesktopSetupService,
-    DesktopSetupState, DesktopSystemConfiguration, NoSetupCommitFaults, SensitiveSetupCredential,
-    SetupClock, SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
-    OPENAI_RESPONSES_PROFILE_ID,
+    authorize_setup_window, DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput,
+    DesktopSetupService, DesktopSetupState, DesktopSystemConfiguration, NoSetupCommitFaults,
+    SensitiveSetupCredential, SetupClock, SetupCommitFaults, SetupCommitStage,
+    SetupCredentialStore, SetupIdentitySource, OPENAI_RESPONSES_PROFILE_ID,
 };
 use serde::Deserialize;
 
@@ -309,6 +309,7 @@ fn shared_setup_fixture_freezes_catalogue_plans_and_redaction() {
     assert_eq!(
         fixture.failure_codes,
         [
+            "setup_not_allowed",
             "setup_input_invalid",
             "setup_plan_stale",
             "setup_plan_conflict",
@@ -368,6 +369,11 @@ fn tauri_capability_limits_setup_commands_to_the_main_window() {
         assert!(permissions.iter().any(|value| value == permission));
     }
     assert!(capability.get("remote").is_none());
+    authorize_setup_window("main").unwrap();
+    assert_eq!(
+        authorize_setup_window("extension").unwrap_err().code(),
+        "setup_not_allowed"
+    );
 }
 
 #[test]

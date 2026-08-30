@@ -58,6 +58,7 @@
     }
   ],
   "failure_codes": [
+    "setup_not_allowed",
     "setup_input_invalid",
     "setup_plan_stale",
     "setup_plan_conflict",

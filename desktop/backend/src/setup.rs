@@ -186,6 +186,8 @@ pub struct DesktopSetupReceipt {
 /// Stable secret-free setup failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopSetupError {
+    /// Caller window or capability does not own Desktop setup authority.
+    NotAllowed,
     /// Submitted choices, bounds, version, or profile are invalid.
     InputInvalid,
     /// The requested plan is missing or no longer current.
@@ -204,6 +206,7 @@ impl DesktopSetupError {
     /// Returns the stable frontend-safe error code.
     pub const fn code(self) -> &'static str {
         match self {
+            Self::NotAllowed => "setup_not_allowed",
             Self::InputInvalid => "setup_input_invalid",
             Self::PlanStale => "setup_plan_stale",
             Self::PlanConflict => "setup_plan_conflict",
@@ -211,6 +214,15 @@ impl DesktopSetupError {
             Self::PersistenceFailed => "setup_persistence_failed",
             Self::RecoveryFailed => "setup_recovery_failed",
         }
+    }
+}
+
+/// Requires the exact shipping main-window identity for setup IPC.
+pub fn authorize_setup_window(window_label: &str) -> Result<(), DesktopSetupError> {
+    if window_label == "main" {
+        Ok(())
+    } else {
+        Err(DesktopSetupError::NotAllowed)
     }
 }
 

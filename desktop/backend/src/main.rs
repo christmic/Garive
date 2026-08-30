@@ -16,21 +16,29 @@ type SetupState = garive_desktop::DesktopSetupService<garive_desktop::SystemSetu
 
 #[tauri::command]
 fn get_setup_catalogue(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
-) -> garive_desktop::DesktopSetupCatalogue {
-    setup.catalogue()
+) -> Result<garive_desktop::DesktopSetupCatalogue, String> {
+    require_setup_window(&window)?;
+    Ok(setup.catalogue())
 }
 
 #[tauri::command]
-fn get_setup_state(setup: tauri::State<'_, SetupState>) -> garive_desktop::DesktopSetupState {
-    setup.state()
+fn get_setup_state(
+    window: tauri::Window,
+    setup: tauri::State<'_, SetupState>,
+) -> Result<garive_desktop::DesktopSetupState, String> {
+    require_setup_window(&window)?;
+    Ok(setup.state())
 }
 
 #[tauri::command]
 fn prepare_setup(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
     input: garive_desktop::DesktopSetupInput,
 ) -> Result<garive_desktop::DesktopSetupPlan, String> {
+    require_setup_window(&window)?;
     setup
         .prepare(input)
         .map_err(|error| error.code().to_owned())
@@ -38,10 +46,12 @@ fn prepare_setup(
 
 #[tauri::command]
 fn commit_setup(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
     plan_digest: String,
     credential: garive_desktop::SensitiveSetupCredential,
 ) -> Result<garive_desktop::DesktopSetupReceipt, String> {
+    require_setup_window(&window)?;
     setup
         .commit(&plan_digest, credential.expose_secret())
         .map_err(|error| error.code().to_owned())
@@ -49,17 +59,24 @@ fn commit_setup(
 
 #[tauri::command]
 fn cancel_setup(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
     plan_digest: String,
 ) -> Result<garive_desktop::DesktopSetupCancellation, String> {
+    require_setup_window(&window)?;
     setup
         .cancel(&plan_digest)
         .map_err(|error| error.code().to_owned())
 }
 
 #[tauri::command]
-fn restart_desktop(app: tauri::AppHandle) {
+fn restart_desktop(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+    require_setup_window(&window)?;
     app.restart()
+}
+
+fn require_setup_window(window: &tauri::Window) -> Result<(), String> {
+    garive_desktop::authorize_setup_window(window.label()).map_err(|error| error.code().to_owned())
 }
 
 fn main() {

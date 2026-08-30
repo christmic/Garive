@@ -24,6 +24,7 @@ const DEFAULT_API: SetupFlowApi = {
 };
 
 const ERROR_COPY: Readonly<Record<string, string>> = {
+  setup_not_allowed: "This window is not allowed to change Desktop configuration.",
   setup_input_invalid: "Review the setup values and their limits.",
   setup_plan_stale: "This review expired. Prepare a new setup plan.",
   setup_plan_conflict: "These choices conflict with another setup attempt.",
