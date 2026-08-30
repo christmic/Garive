@@ -174,7 +174,14 @@ func summary(item *session) map[string]any {
 func (d *demoHost) timeline(w http.ResponseWriter, item *session) {
 	items := []any{}
 	if item.TurnID != "" {
-		turn := map[string]any{"turn_id": item.TurnID, "started_position": max(1, item.Position-2), "latest_position": item.Position, "state": item.State, "user_text": item.UserText, "content_truncated": false, "activities": []any{map[string]any{"api_version": "v1", "activity_id": "activity-" + item.TurnID, "kind": "work", "label_key": "agent.activity.verification", "state": map[bool]string{true: "completed", false: "running"}[item.State == "completed"], "source_position": item.Position, "terminal": item.State == "completed"}}}
+		activityState, terminal := "running", false
+		switch item.State {
+		case "completed":
+			activityState, terminal = "completed", true
+		case "stopped":
+			activityState, terminal = "cancelled", true
+		}
+		turn := map[string]any{"turn_id": item.TurnID, "started_position": max(1, item.Position-2), "latest_position": item.Position, "state": item.State, "user_text": item.UserText, "content_truncated": false, "activities": []any{map[string]any{"api_version": "v1", "activity_id": "activity-" + item.TurnID, "kind": "work", "label_key": "agent.activity.verification", "state": activityState, "source_position": item.Position, "terminal": terminal}}}
 		if item.Completion != "" {
 			turn["completion_text"] = item.Completion
 		}
