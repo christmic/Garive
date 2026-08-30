@@ -519,7 +519,7 @@ impl DesktopState {
             activity,
             setup: false,
             workspaces: configured,
-            artifacts: false,
+            artifacts: configured,
         }
     }
 

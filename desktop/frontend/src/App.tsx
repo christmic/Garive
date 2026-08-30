@@ -4,9 +4,11 @@ import remarkGfm from "remark-gfm";
 import {
   attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace, continueAgentTurn,
   createWorkSession,
-  getDesktopCapabilities, getRecentSessions, getSessionTimeline, getWorkspaceRecoveryStatus,
-  listWorkspaceAuthorizations, reauthorizeWorkspace, resolveTurnApproval, runAgentTurn,
-  runAgentTurnWithWorkspaceContext, type HostSessionSummary, type WorkspaceAuthorization,
+  getArtifactPreview, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
+  getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
+  resolveTurnApproval, runAgentTurn, runAgentTurnWithWorkspaceContext, type ArtifactPreview,
+  type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
+  type WorkspaceAuthorization,
   type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
@@ -49,8 +51,32 @@ const visualCapabilities = {
   activity: false,
   setup: visualTestMode === "setup",
   workspaces: visualTestMode !== "setup",
-  artifacts: false,
+  artifacts: visualTestMode === "artifact",
 } as const;
+const visualArtifactTimeline = {
+  api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 24,
+  observed_max_position: 24, has_more: false, items: [{ turn_id: "visual-artifact-turn",
+    started_position: 3, latest_position: 24, state: "completed",
+    user_text: "Create a concise launch decision memo in my Workspace",
+    completion_text: "The launch decision memo was created in your authorized Workspace.",
+    content_truncated: false, activities: [],
+  }],
+} satisfies HostTimelinePage;
+const visualArtifactPage = {
+  api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 23,
+  observed_max_position: 24, has_more: false, items: [{ api_version: "v1",
+    artifact_id: "artifact-launch-memo", revision: 1, session_id: "visual-artifact-session",
+    turn_id: "visual-artifact-turn", display_name: "launch-decision.md", kind: "document",
+    mime_type: "text/markdown", byte_size: 714, content_digest: "7".repeat(64),
+    committed_position: 23, verification: "not_run", preview: "text",
+    workspace_id: "workspace-preview", revealable: true, exportable: true,
+  }],
+} satisfies HostArtifactPage;
+const visualArtifactPreview = {
+  schema_version: 1, artifact_id: "artifact-launch-memo", revision: 1, kind: "text",
+  content_utf8: "# Launch decision\n\nProceed with a reversible pilot for the design-partner cohort.\n\n## Decision\n\n- Owner: Product Operations\n- Review gate: 14 September\n- Rollback: pause new invitations while preserving collected feedback\n\n## Next step\n\nPublish the pilot brief and confirm the named launch owner.",
+  truncated: false,
+} satisfies ArtifactPreview;
 
 export function App() {
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
@@ -74,6 +100,13 @@ export function App() {
     setRecentTitles(Object.fromEntries(titles));
   }, []);
 
+  const loadSession = useCallback(async (sessionId: string) => {
+    const timeline = await getSessionTimeline(sessionId);
+    dispatch({ type: "session_loaded", timeline });
+    const artifacts = await listArtifacts(sessionId);
+    dispatch({ type: "artifacts_loaded", page: artifacts });
+  }, []);
+
   useEffect(() => {
     if (visualTest) {
       dispatch({ type: "capabilities_loaded", capabilities: visualCapabilities });
@@ -86,6 +119,11 @@ export function App() {
             kind: "approval_required" }, activities: [],
         }],
       } });
+      if (visualTestMode === "artifact") {
+        dispatch({ type: "session_loaded", timeline: visualArtifactTimeline });
+        dispatch({ type: "artifacts_loaded", page: visualArtifactPage });
+        dispatch({ type: "inspector_selected", tab: "artifacts" });
+      }
       return;
     }
     void getDesktopCapabilities()
@@ -155,8 +193,9 @@ export function App() {
       } else {
         result = await runAgentTurn(definition, input, state.sessionId ?? preparedSessionId);
       }
-      if (suspended || result.terminal === "suspended" || state.capabilities?.activity) {
-        dispatch({ type: "session_loaded", timeline: await getSessionTimeline(result.session_id) });
+      if (suspended || result.terminal === "suspended" || state.capabilities?.activity
+          || state.capabilities?.artifacts) {
+        await loadSession(result.session_id);
       } else {
         dispatch({ type: "submission_succeeded", input, result });
       }
@@ -216,7 +255,7 @@ export function App() {
       const result = await resolveTurnApproval(
         state.sessionId, message.id, message.suspension, approved,
       );
-      dispatch({ type: "session_loaded", timeline: await getSessionTimeline(result.session_id) });
+      await loadSession(result.session_id);
       void refreshRecents().catch(() => undefined);
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
@@ -232,8 +271,7 @@ export function App() {
     setScreen("work");
     setSelectedContext(undefined); setPreparedSessionId(undefined);
     try {
-      const timeline = await getSessionTimeline(sessionId);
-      dispatch({ type: "session_loaded", timeline });
+      await loadSession(sessionId);
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "projection_failure" });
     }
@@ -419,12 +457,44 @@ function Inspector({ state, dispatch }: { state: WorkState; dispatch: WorkDispat
 }
 
 function ResultDeliverables({ state }: { state: WorkState }) {
+  const [selected, setSelected] = useState<HostArtifact>();
+  const [preview, setPreview] = useState<ArtifactPreview>();
+  const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
   const results = state.messages.filter((message) => message.role === "assistant" && message.text);
-  if (!results.length) return <div className="inspector-empty"><Icon name="file" /><h2>No deliverables yet</h2><p>Completed Markdown results become exportable here.</p></div>;
-  return <div className="deliverable-list"><div className="activity-intro"><h2>Result deliverables</h2><p>Durable response projections from this Session.</p></div>
+  const openPreview = async (artifact: HostArtifact) => {
+    setSelected(artifact); setPreview(undefined); setPreviewState("loading");
+    try {
+      const content = visualTest ? visualArtifactPreview
+        : await getArtifactPreview(state.sessionId ?? "", artifact);
+      setPreview(content); setPreviewState("idle");
+    } catch { setPreviewState("unavailable"); }
+  };
+  if (!results.length && !state.artifacts.length) return <div className="inspector-empty"><Icon name="file" /><h2>No deliverables yet</h2><p>Committed results and created files will appear here.</p></div>;
+  return <div className="deliverable-list"><div className="activity-intro"><h2>Deliverables</h2><p>Immutable results committed by the local Runtime.</p></div>
+    {state.artifacts.map((artifact) => <article className="artifact-card" key={`${artifact.artifact_id}-${artifact.revision}`}>
+      <span className="deliverable-icon"><Icon name="file" /></span><div className="artifact-card-body">
+        <div className="artifact-title"><strong dir="auto">{artifact.display_name}</strong><span>v{artifact.revision}</span></div>
+        <p>{formatBytes(artifact.byte_size)} · {artifact.mime_type} · Committed</p>
+        <div className="artifact-actions"><button type="button" disabled={artifact.preview !== "text"}
+          onClick={() => void openPreview(artifact)}>Preview verified content</button>
+          {artifact.workspace_id && <span><Icon name="shield" />Authorized Workspace</span>}</div>
+      </div>
+    </article>)}
+    {selected && <section className="artifact-preview" aria-live="polite"><header><div><span>VERIFIED PREVIEW</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label="Close Artifact preview"
+      onClick={() => { setSelected(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
+      {previewState === "loading" ? <div className="preview-state"><span className="spinner" />Verifying committed bytes…</div>
+        : previewState === "unavailable" ? <div className="preview-state error"><Icon name="warning" />The backing file changed or access is unavailable.</div>
+          : preview && <pre>{preview.content_utf8}</pre>}
+      <footer><Icon name="shield" />SHA-256 checked against revision {selected.revision}</footer>
+    </section>}
+    {results.length > 0 && <div className="deliverable-section-label">Response snapshots</div>}
     {results.map((result, index) => <article className="deliverable-card" key={result.id}><span className="deliverable-icon"><Icon name="file" /></span><div><strong>Result {index + 1}.md</strong><p>{result.text.replace(/[#|*`>\[\]]/g, " ").trim().slice(0, 92)}</p><button type="button" onClick={() => downloadMarkdown(result.id, result.text)}>Export Markdown</button></div></article>)}
     {!state.capabilities?.artifacts && <p className="activity-gate"><Icon name="shield" />These are redacted Runtime results. Governed workspace files remain gated.</p>}
   </div>;
+}
+
+function formatBytes(bytes: number) {
+  return bytes < 1_024 ? `${bytes} B` : `${(bytes / 1_024).toFixed(bytes < 10_240 ? 1 : 0)} KB`;
 }
 
 function CommittedActivity({ state }: { state: WorkState }) {
