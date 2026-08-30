@@ -251,7 +251,7 @@ pub struct TurnTimelinePageV1 {
     pub api_version: &'static str,
     /// Owning Session identity.
     pub session_id: String,
-    /// Complete changed Turns in first-start order.
+    /// Complete changed Turns in ascending latest-change order.
     pub items: Vec<TurnTimelineItemV1>,
     /// Highest durable position fully scanned for this page.
     pub scanned_through_position: u64,

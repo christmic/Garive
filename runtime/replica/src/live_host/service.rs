@@ -25,6 +25,8 @@ use super::{
 };
 use super::{read_cursor, read_model, timeline_projection};
 
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
 /// Durable local Host command service shared by in-process and HTTP clients.
 #[derive(Clone)]
 pub struct LiveHost {
@@ -106,6 +108,9 @@ impl LiveHost {
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
@@ -196,8 +201,13 @@ impl LiveHost {
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
-        if after_position > watermark.max_position {
+        if after_position > MAX_SAFE_JSON_INTEGER || after_position > watermark.max_position {
             return Err(LiveHostError::InvalidRequest);
+        }
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER
+            || watermark.session_version > MAX_SAFE_JSON_INTEGER
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
         }
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
@@ -548,12 +558,18 @@ impl LiveHost {
         session: &str,
         after_position: u64,
     ) -> Result<HostEventPage, LiveHostError> {
+        if after_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::InvalidRequest);
+        }
         let session_id = identity::<SessionId>(session)?;
         let ledger = self.ledger()?;
         let watermark = ledger
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
         if after_position > watermark.max_position {
             return Err(LiveHostError::InvalidRequest);
         }
