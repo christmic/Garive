@@ -248,12 +248,14 @@ and automated PTY evidence are pinned in
 [`../../docs/evidence/tui-linux-native-2026-08-30.md`](../../docs/evidence/tui-linux-native-2026-08-30.md);
 physical terminal, tmux, and `TERM=dumb` rows remain open.
 
-The current macOS arm64 candidate rerun is pinned in
+The current macOS arm64 componentized candidate rerun is pinned in
 [`../../docs/evidence/tui-macos-native-2026-08-31.md`](../../docs/evidence/tui-macos-native-2026-08-31.md).
-It covers release linking, all 75 TUI tests, strict Clippy, production
-Runtime/file-SQLite/PTTY execution, the automatic `TERM=dumb` accessible
-fallback, and native tmux 3.7c with exact terminal restoration. The locked
-login session prevented real-window screenshot admission.
+Revision `c9d0b459` covers release linking, all 90 listed TUI test cases,
+strict Clippy, and production Runtime/file-SQLite/PTTY execution. Earlier exact
+revisions in the same evidence record cover the automatic `TERM=dumb`
+accessible fallback and native tmux 3.7c with terminal restoration; those rows
+are not relabeled as a `c9d0b459` rerun. The locked login session prevented
+real-window screenshot admission.
 
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.

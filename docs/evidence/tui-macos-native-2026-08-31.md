@@ -49,6 +49,23 @@ cargo clippy -p garive-tui --all-targets -- \
 
 Result: exit `0`; `Finished dev profile` in 33.87 seconds.
 
+## Componentized candidate rerun
+
+After the semantic palette, reusable overlays, shared Session presentation,
+focus-aware footer, keyboard/pointer rail, and height-aware selectable-list
+windows landed, exact revision `c9d0b459` was rerun natively on the same macOS
+arm64 host. `cargo test -p garive-tui -- --list` enumerated 90 test cases. The
+complete package passed with no failed or ignored test; its five shipping-binary
+PTY cases completed in 41.46 seconds and its production Runtime/file-SQLite/PTTY
+case completed in 68.48 seconds. Strict all-target Clippy completed in 7.84
+seconds with warnings denied.
+
+The release shipping binary and `visual_demo_host` also linked successfully in
+16.23 seconds. This rerun supersedes the older revision only for current-source
+build/test admission; the performance distributions and tmux transcript below
+remain pinned to their own named revisions. The physical-window and PNG rows
+remain open because the login session is still locked.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
