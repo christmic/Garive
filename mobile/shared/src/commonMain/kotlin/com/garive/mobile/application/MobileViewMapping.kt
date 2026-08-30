@@ -9,6 +9,9 @@ import com.garive.mobile.model.MobileDecision
 import com.garive.mobile.model.MobileSessionCard
 import com.garive.mobile.model.MobileTurnItem
 import com.garive.mobile.model.MobileWorkStatus
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 internal fun agentCard(value: AgentDefinitionSummaryV1): MobileAgentCard = MobileAgentCard(
     value.definition_id,
@@ -42,6 +45,10 @@ internal fun turnItem(value: TurnTimelineItemV1): MobileTurnItem = MobileTurnIte
             suspension.session_version,
             suspension.kind,
             if (suspension.kind == "approval_required") "Approval needed" else "Input needed",
+            runCatching {
+                Json.parseToJsonElement(suspension.prompt_json.utf8()).jsonObject["message"]
+                    ?.jsonPrimitive?.content.orEmpty()
+            }.getOrDefault(""),
             if (suspension.kind == "approval_required") "Approve" else "Respond",
         )
     },

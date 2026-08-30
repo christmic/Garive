@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
+import okio.ByteString.Companion.encodeUtf8
 
 /** Maps strict H2/H3 JSON responses into Wire-generated public values. */
 internal fun decodeAgentDefinitionPage(value: JsonObject): AgentDefinitionPageV1 {
@@ -98,11 +99,27 @@ private fun decodeSessionSummary(value: JsonObject): SessionSummaryV1 {
     )
 }
 
-private fun decodeSuspension(value: JsonObject): SuspensionViewV1 = SuspensionViewV1(
-    suspension_id = value.text("suspension_id"),
-    session_version = value.positiveLong("session_version"),
-    kind = value.text("kind"),
-)
+private fun decodeSuspension(value: JsonObject): SuspensionViewV1 {
+    val prompt = value.text("prompt_json").encodeUtf8()
+    val promptDigest = value.text("prompt_digest")
+    val response = value.optionalText("response_schema_json")?.encodeUtf8()
+    val responseDigest = value.optionalText("response_schema_digest")
+    if (value.text("prompt_schema") != "garive.public-suspension-prompt.v1" ||
+        prompt.sha256().hex() != promptDigest ||
+        (response == null) != (responseDigest == null) ||
+        response != null && response.sha256().hex() != responseDigest
+    ) fail(HostClientError.INVALID_EVENT)
+    return SuspensionViewV1(
+        suspension_id = value.text("suspension_id"),
+        session_version = value.positiveLong("session_version"),
+        kind = value.text("kind"),
+        prompt_schema = "garive.public-suspension-prompt.v1",
+        prompt_json = prompt,
+        prompt_digest = promptDigest,
+        response_schema_json = response,
+        response_schema_digest = responseDigest,
+    )
+}
 
 private fun decodeActivity(value: JsonObject): HostActivityV1 {
     value.requireApiVersion()

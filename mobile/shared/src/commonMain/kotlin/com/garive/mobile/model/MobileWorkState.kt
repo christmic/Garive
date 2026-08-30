@@ -42,6 +42,7 @@ public data class MobileDecision(
     public val sessionVersion: Long,
     public val kind: String,
     public val title: String,
+    public val prompt: String,
     public val actionLabel: String,
 )
 
