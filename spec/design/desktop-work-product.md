@@ -140,6 +140,11 @@ preferences are bounded local preferences and do not represent durable truth.
 
 ## Visual system
 
+`shared-client-visual-system.md` is the executable semantic-token, component,
+capacity and interaction contract for every React surface shared by Desktop and
+Web. This section fixes the product character and macOS-specific constraints;
+it does not authorize local component palettes or alternate state vocabulary.
+
 The visual character is a quiet, warm workbench rather than a developer
 console. Use system fonts (`-apple-system`, then sans-serif), 14 px body, 12 px
 metadata, 20–28 px display hierarchy, and tabular numerals for positions/time.
@@ -259,6 +264,14 @@ Diagnostics, and About. Sensitive values are write-only. Permissions show
 grants by capability and Workspace with revoke actions. Diagnostics export only
 stable codes, versions, bounds, and redacted health. Destructive data actions
 name scope, consequences, recovery, and confirmation.
+
+When a trusted account, workspace, provider or Runtime composition supplies a
+`UsageBudgetView`, Settings leads with the shared Usage & capacity card and the
+top bar exposes its compact trigger. Scope, period, remaining/reset,
+reported-versus-estimated attribution and active-Turn continuation policy are
+one unit. Absence renders no zero balance. Capacity never changes durable Turn
+state, and plan capacity, purchased credits, provider API usage and Runtime
+execution budgets remain separate concepts.
 
 ## macOS integration
 

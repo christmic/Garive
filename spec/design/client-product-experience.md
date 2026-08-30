@@ -259,6 +259,9 @@ explicit user abandonment acknowledgement.
 
 ## Visual and accessibility contract
 
+- Shared Desktop/Web surfaces conform to `shared-client-visual-system.md`; new
+  components consume its semantic tokens and state grammar rather than local
+  palette, radius, typography or motion values.
 - Use platform system fonts, semantic spacing/color tokens, light/dark themes,
   and a restrained content-first surface. Status is never encoded by color alone.
 - Body text meets WCAG AA contrast; controls retain visible keyboard focus and
