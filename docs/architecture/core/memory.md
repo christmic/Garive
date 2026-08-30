@@ -676,6 +676,104 @@ whole point. **`agent_learned` is a falsifiable hypothesis**.
 It does not become law. The user's `user_declared` entries
 are the only law.
 
+### Three-party sharing — the shared accountability
+
+| Party | What it owns |
+|-------|--------------|
+| **Framework** (gates 1, 2, 3, 5 + formula inputs) | Confidence + freshness + conflict surfacing + observability log |
+| **Model** (using the memory) | Self-weighting; verifies when critical; treats low-conf as hypothesis |
+| **Reality** (gate 4 + β updates) | Closes the loop — the test that makes memory honest |
+
+**No single party guarantees accuracy** — and that's the
+whole point. **`agent_learned` is a falsifiable hypothesis**.
+It does not become law. The user's `user_declared` entries
+are the only law.
+
+### Real-world reconciliation — no user required for daily checks
+
+Outcome judgment is **not** the user's daily feedback channel.
+The user is the **final adjudicator** for edge cases and for
+`user_declared` overrides; the **daily** truth is settled by
+the agent itself against the world:
+
+| Memory claim | Reconciliation against reality |
+|--------------|-------------------------------|
+| "File at path P" | `fs.exists(P)` after the model acts on it — objective falsification |
+| "Lesson: method X fails because Y" | The next attempt at method X — if it succeeds, the lesson is **falsified** |
+| "Fact: the project's runtime is X" | The next time the runtime is invoked — observable evidence |
+| "Episode: session X did Y" | Verifiable from the ledger (source_session + source_seq) |
+
+The truth-source is the **world**, not the user. The user is
+the **adjudicator** for ambiguous cases (e.g. lesson that
+keeps failing in different ways — was it always wrong, or did
+the world change?). For the **common case** — verify against
+reality and update β automatically.
+
+This is the **load-bearing** difference between Garive's
+memory and every other memory system: their feedback signal
+is "the user said X"; ours is "the world did X". The
+confidence machine only works because the world is the input.
+
+### LLM vs math — the role split
+
+The memory pipeline splits work cleanly between
+**LLM-judged** and **mathematically-computed** steps. The
+boundary is "what can a deterministic formula express?" —
+LLM does the rest.
+
+| Step | Who | Why |
+|------|-----|-----|
+| **1. Memory extraction** | **LLM** | Semantic judgement — "this failure is a lesson", "this fact is general". Only an LLM can do this; math can't. |
+| **2. Semantic verification** (confirm / falsify) | **LLM or embedding similarity** | "Does this newly-encountered outcome match the existing memory?" — LLM for hard cases, embedding-similarity threshold for cheap ones. |
+| **3. Score computation** (`E × R × B × F`) | **math** | The four-factor confidence formula is closed-form. Calibration runs as regression against the historical outcome log. |
+| **4. Recall ranking fusion** (PRF, RRF, dedup) | **math** | Vector + FTS score fusion (Reciprocal Rank Fusion), top-k selection, deduplication — all deterministic. |
+
+The boundary is **deterministic**:
+
+- If the answer is "this failure is a lesson", ask the LLM.
+- If the answer is "did the lesson match this outcome", ask
+  the LLM or embedding-similarity.
+- If the answer is "what's the conf score", compute it.
+- If the answer is "what's the top-k", rank it.
+
+The **calibration layer** ties them together: the LLM-judged
+outcomes (step 1, 2) feed the math-computed scores (step 3,
+4) via β updates and weekly regressions. LLM is the
+**producer**; math is the **statistician**. The LLM's outputs
+are the **rows**; math is the **ledger**.
+
+### Role split — illustrated
+
+```python
+# 1. LLM: extract a lesson from a failure
+entry = llm_extract(
+    mtype = "memory.lesson",
+    evidence = "tool.result{status: error, ...}",
+    content = "method X fails under condition Y",
+    source_session = session_id,
+    source_seq = seq,
+)
+
+# 2. LLM or embedding: verify against a new outcome
+verdict = llm_or_embedding_match(
+    entry, observed_outcome,
+    threshold = 0.7,   # calibrated
+)
+# → "matches" → α += 1
+# → "contradicts" → β += 1
+# → "unclear" → censored (no update)
+
+# 3. math: compute the four-factor score
+score = E(entry.evidence) * R(entry.alpha, entry.beta) * B(query, entry) * F(entry.last_verified)
+
+# 4. math: rank the recall candidates
+top_k = fuse([(b, entry) for entry in candidates], method="RRF")
+```
+
+This is the **contract** between LLM and math:
+**LLM produces rows; math produces scores**. The boundary
+is preserved at every step.
+
 ## ⑦ Maintenance policies — promotion + anti-bloat
 
 ### Promotion channel — memory graduates to knowledge
