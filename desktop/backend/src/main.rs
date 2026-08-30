@@ -106,6 +106,15 @@ fn verify_workspace(
 }
 
 #[tauri::command]
+fn get_workspace_recovery_status(
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+) -> Result<garive_desktop::DesktopWorkspaceRecoveryStatus, String> {
+    workspaces
+        .recovery_status()
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn revoke_workspace(
     window: tauri::WebviewWindow,
     workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
@@ -283,6 +292,7 @@ fn main() {
             cancel_setup,
             choose_workspace,
             verify_workspace,
+            get_workspace_recovery_status,
             revoke_workspace,
             list_workspace_entries,
             create_work_session,

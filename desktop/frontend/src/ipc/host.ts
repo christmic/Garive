@@ -101,6 +101,14 @@ export interface WorkspaceGrant {
   readonly state: "active"; readonly expires_at: string;
 }
 
+/** Aggregate path-free health of durable macOS Workspace authorization. */
+export interface WorkspaceRecoveryStatus {
+  readonly schema_version: 1;
+  readonly state: "ready" | "attention_required" | "index_unavailable";
+  readonly restored_count: number;
+  readonly needs_reauthorization_count: number;
+}
+
 export interface WorkspaceAttachment {
   readonly api_version: "v1"; readonly session_id: string; readonly workspace_id: string;
   readonly display_name: string; readonly grant_revision: number; readonly access: "enumerate";
@@ -184,6 +192,12 @@ export async function restartDesktop(invoke: Invoke = tauriInvoke): Promise<void
 
 export async function chooseWorkspace(invoke: Invoke = tauriInvoke): Promise<WorkspaceGrant | null> {
   return invoke<WorkspaceGrant | null>("choose_workspace", {});
+}
+
+export async function getWorkspaceRecoveryStatus(
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceRecoveryStatus> {
+  return invoke<WorkspaceRecoveryStatus>("get_workspace_recovery_status", {});
 }
 
 export async function verifyWorkspace(

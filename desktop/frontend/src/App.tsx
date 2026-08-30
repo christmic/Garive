@@ -3,9 +3,9 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   attachWorkspaceToSession, chooseWorkspace, continueAgentTurn, createWorkSession,
-  getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+  getDesktopCapabilities, getRecentSessions, getSessionTimeline, getWorkspaceRecoveryStatus, runAgentTurn,
   runAgentTurnWithWorkspaceContext, type HostSessionSummary, type WorkspaceEntry,
-  type WorkspaceGrant,
+  type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import { Icon, type IconName } from "./ui/Icon";
@@ -426,7 +426,26 @@ function SearchScreen({ recents, titles, onOpen }: {
 
 function SetupRequired() { return <StatusCard icon="shield" title="Connect the local Runtime" body="Garive found no Desktop configuration. The secure guided setup is not installed in this build yet; add desktop-v1.json and its credential to the macOS Keychain, then restart." action="View setup status" />; }
 function AgentsScreen({ definition }: { definition?: string }) { return <section className="content-page"><p className="eyebrow">INSTALLED LOCALLY</p><h1>Your Agents</h1><p>Agents define the stable behavior and capabilities available to new work.</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? "No Agent configured"}</h2><p>{definition ? "Ready for local text work" : "Complete Desktop configuration to install an Agent."}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{definition ? "Ready" : "Unavailable"}</span></div></section>; }
-function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabilities"] }) { const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const; return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1><div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div><div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, or raw Runtime fact.</p></div></section>; }
+function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabilities"] }) {
+  const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
+  useEffect(() => {
+    if (!capabilities?.workspaces) return;
+    if (visualTest) {
+      setWorkspaceRecovery({ schema_version: 1, state: "ready", restored_count: 1,
+        needs_reauthorization_count: 0 });
+      return;
+    }
+    void getWorkspaceRecoveryStatus().then(setWorkspaceRecovery).catch(() => setWorkspaceRecovery({
+      schema_version: 1, state: "index_unavailable", restored_count: 0,
+      needs_reauthorization_count: 0,
+    }));
+  }, [capabilities?.workspaces]);
+  const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const;
+  const recoveryReady = workspaceRecovery?.state === "ready";
+  return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1><div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div>
+    {capabilities?.workspaces && <div className="settings-card"><h2>Workspace access</h2><p>Folder access is restored from read-only bookmarks stored in macOS Keychain. No filesystem path enters this interface.</p><div className="setting-row"><span>Authorization recovery</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} restored` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} needs access` : "Index unavailable" : "Checking…"}</span></div></div>}
+    <div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, bookmark data, or raw Runtime fact.</p></div></section>;
+}
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
 function NavItem({ icon, label, selected, disabled, hint, onClick }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>Soon</small>}</button>; }
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed") { return terminal === "completed" ? "Completed" : terminal === "suspended" ? "Needs input" : terminal === "stopped" ? "Stopped" : terminal === "failed" ? "Failed" : "Working"; }

@@ -101,6 +101,30 @@ pub struct DesktopWorkspaceContextFile {
     pub content_utf8: String,
 }
 
+/// Path-free aggregate health of durable Workspace authorization recovery.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopWorkspaceRecoveryStatus {
+    /// Exact public schema version.
+    pub schema_version: u32,
+    /// Stable aggregate state with no private storage details.
+    pub state: &'static str,
+    /// Number of Workspace grants restored for this process.
+    pub restored_count: usize,
+    /// Number of grants that require explicit user reauthorization.
+    pub needs_reauthorization_count: usize,
+}
+
+impl Default for DesktopWorkspaceRecoveryStatus {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            state: "ready",
+            restored_count: 0,
+            needs_reauthorization_count: 0,
+        }
+    }
+}
+
 /// Stable secret- and path-free Workspace failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopWorkspaceError {
@@ -154,6 +178,7 @@ struct FileIdentity {
 pub struct DesktopWorkspaceService {
     active: Mutex<BTreeMap<String, PrivateWorkspace>>,
     persistence: Option<WorkspacePersistence>,
+    recovery: Mutex<DesktopWorkspaceRecoveryStatus>,
 }
 
 struct WorkspacePersistence {
@@ -170,6 +195,7 @@ impl DesktopWorkspaceService {
                 manifest_path,
                 store,
             }),
+            recovery: Mutex::default(),
         }
     }
 
@@ -182,42 +208,49 @@ impl DesktopWorkspaceService {
             .persistence
             .as_ref()
             .ok_or(DesktopWorkspaceError::Unavailable)?;
-        let records = read_manifest(&persistence.manifest_path)?;
+        let records = match read_manifest(&persistence.manifest_path) {
+            Ok(records) => records,
+            Err(error) => {
+                self.set_recovery_status("index_unavailable", 0, 0)?;
+                return Err(error);
+            }
+        };
         let now = unix_seconds()?;
         let mut restored = BTreeMap::new();
+        let mut needs_reauthorization = 0;
         for record in records {
             if restored.contains_key(&record.workspace_id) {
-                return Err(DesktopWorkspaceError::Unavailable);
+                needs_reauthorization += 1;
+                continue;
             }
-            let bytes = persistence.store.load(&record.bookmark_ref)?;
-            #[cfg(target_os = "macos")]
-            let (scope, stale) = garive_macos_bookmark::resolve(&bytes)
-                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-            #[cfg(target_os = "macos")]
-            let canonical_root =
-                fs::canonicalize(scope.path()).map_err(|_| DesktopWorkspaceError::Unavailable)?;
-            #[cfg(not(target_os = "macos"))]
-            let canonical_root = return Err(DesktopWorkspaceError::Unavailable);
-            let metadata = fs::symlink_metadata(&canonical_root)
-                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-            let identity = file_identity(&metadata);
-            if !metadata.is_dir()
-                || metadata.file_type().is_symlink()
-                || identity.device != record.device
-                || identity.file != record.file
-            {
-                return Err(DesktopWorkspaceError::Unavailable);
-            }
-            #[cfg(target_os = "macos")]
-            if stale {
-                let refreshed = garive_macos_bookmark::create_read_only(&canonical_root)
+            let recovered = (|| {
+                let bytes = persistence.store.load(&record.bookmark_ref)?;
+                #[cfg(target_os = "macos")]
+                let (scope, stale) = garive_macos_bookmark::resolve(&bytes)
                     .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-                persistence.store.store(&record.bookmark_ref, &refreshed)?;
-            }
-            let expires_unix = expires_after(now)?;
-            restored.insert(
-                record.workspace_id.clone(),
-                PrivateWorkspace {
+                #[cfg(target_os = "macos")]
+                let canonical_root = fs::canonicalize(scope.path())
+                    .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+                #[cfg(not(target_os = "macos"))]
+                let canonical_root = return Err(DesktopWorkspaceError::Unavailable);
+                let metadata = fs::symlink_metadata(&canonical_root)
+                    .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+                let identity = file_identity(&metadata);
+                if !metadata.is_dir()
+                    || metadata.file_type().is_symlink()
+                    || identity.device != record.device
+                    || identity.file != record.file
+                {
+                    return Err(DesktopWorkspaceError::Unavailable);
+                }
+                #[cfg(target_os = "macos")]
+                if stale {
+                    let refreshed = garive_macos_bookmark::create_read_only(&canonical_root)
+                        .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+                    persistence.store.store(&record.bookmark_ref, &refreshed)?;
+                }
+                let expires_unix = expires_after(now)?;
+                Ok(PrivateWorkspace {
                     public: DesktopWorkspaceGrant {
                         schema_version: 1,
                         workspace_id: record.workspace_id,
@@ -235,15 +268,56 @@ impl DesktopWorkspaceService {
                     bookmark_ref: Some(record.bookmark_ref),
                     #[cfg(target_os = "macos")]
                     _security_scope: Some(scope),
-                },
-            );
+                })
+            })();
+            match recovered {
+                Ok(workspace) => {
+                    restored.insert(workspace.public.workspace_id.clone(), workspace);
+                }
+                Err(_) => needs_reauthorization += 1,
+            }
         }
         let count = restored.len();
         *self
             .active
             .lock()
             .map_err(|_| DesktopWorkspaceError::Unavailable)? = restored;
+        self.set_recovery_status(
+            if needs_reauthorization == 0 {
+                "ready"
+            } else {
+                "attention_required"
+            },
+            count,
+            needs_reauthorization,
+        )?;
         Ok(count)
+    }
+
+    /// Returns aggregate durable authorization recovery health without paths.
+    pub fn recovery_status(&self) -> Result<DesktopWorkspaceRecoveryStatus, DesktopWorkspaceError> {
+        self.recovery
+            .lock()
+            .map(|status| status.clone())
+            .map_err(|_| DesktopWorkspaceError::Unavailable)
+    }
+
+    fn set_recovery_status(
+        &self,
+        state: &'static str,
+        restored_count: usize,
+        needs_reauthorization_count: usize,
+    ) -> Result<(), DesktopWorkspaceError> {
+        *self
+            .recovery
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)? = DesktopWorkspaceRecoveryStatus {
+            schema_version: 1,
+            state,
+            restored_count,
+            needs_reauthorization_count,
+        };
+        Ok(())
     }
 
     /// Converts one native picker result into an opaque bounded capability.

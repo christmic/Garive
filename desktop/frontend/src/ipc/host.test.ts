@@ -3,7 +3,7 @@ import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
-  revokeWorkspace, runAgentTurnWithWorkspaceContext, verifyWorkspace,
+  getWorkspaceRecoveryStatus, revokeWorkspace, runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -110,6 +110,17 @@ describe("desktop Host IPC", () => {
       { command: "verify_workspace", args: { workspaceId: "workspace-1" } },
       { command: "revoke_workspace", args: { workspaceId: "workspace-1" } },
     ]);
+  });
+
+  it("reads only aggregate Workspace recovery health", async () => {
+    const status = await getWorkspaceRecoveryStatus(async <T>(command: string, args: Record<string, unknown>) => {
+      expect({ command, args }).toEqual({ command: "get_workspace_recovery_status", args: {} });
+      return { schema_version: 1, state: "attention_required", restored_count: 2,
+        needs_reauthorization_count: 1 } as T;
+    });
+    expect(status).toEqual({ schema_version: 1, state: "attention_required", restored_count: 2,
+      needs_reauthorization_count: 1 });
+    expect(JSON.stringify(status)).not.toContain("/");
   });
 
   it("durably attaches Workspace context before a Turn", async () => {

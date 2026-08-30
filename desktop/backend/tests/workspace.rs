@@ -89,6 +89,27 @@ fn native_bookmark_restores_the_same_opaque_workspace_after_process_rebuild() {
     );
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn missing_private_bookmark_is_reported_without_blocking_other_recovery() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("Project");
+    fs::create_dir(&workspace).unwrap();
+    let manifest = root.path().join(DESKTOP_WORKSPACE_MANIFEST_FILE);
+    let store = Arc::new(MemoryBookmarkStore::default());
+    let original = DesktopWorkspaceService::durable(manifest.clone(), store.clone());
+    original.admit_selected(&workspace, "main").unwrap();
+    drop(original);
+    store.0.lock().unwrap().clear();
+
+    let restored = DesktopWorkspaceService::durable(manifest, store);
+    assert_eq!(restored.recover("main").unwrap(), 0);
+    let status = restored.recovery_status().unwrap();
+    assert_eq!(status.state, "attention_required");
+    assert_eq!(status.restored_count, 0);
+    assert_eq!(status.needs_reauthorization_count, 1);
+}
+
 #[test]
 fn revocation_drops_private_authority_without_falsifying_the_public_receipt() {
     let directory = tempfile::tempdir().unwrap();

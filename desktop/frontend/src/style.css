@@ -230,6 +230,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .agent-card p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
 .state-chip { padding: 3px 7px; border-radius: 999px; color: var(--muted); background: rgba(45,43,35,.06); font-size: 10px; }
 .state-chip.ready { color: #176a47; background: #e5f3eb; }
+.state-chip.attention { color: #8a4f12; background: #fff0d8; }
 .settings-page { display: block; }
 .settings-card { margin-top: 18px; padding: 18px; }
 .settings-card > p { margin: 6px 0 16px; color: var(--muted); font-size: 12px; }
@@ -375,6 +376,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
   .user-message > div { background: #292a27; }
   .inspector { background: #1b1c1a; }
   .state-chip.ready { color: #8bd8b3; background: #18382b; }
+  .state-chip.attention { color: #f1c27d; background: #47351d; }
   .error-banner { color: #f0aaa4; background: #3a2422; }
   .search-results { background: rgba(255,255,255,.025); }
   .setup-card { background: rgba(35,36,33,.86); box-shadow: 0 28px 80px rgba(0,0,0,.3); }

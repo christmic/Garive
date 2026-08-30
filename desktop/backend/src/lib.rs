@@ -43,7 +43,8 @@ pub use system_provider::{
 };
 pub use workspace::{
     DesktopWorkspaceContextFile, DesktopWorkspaceEntry, DesktopWorkspaceEntryPage,
-    DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceService,
+    DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceRecoveryStatus,
+    DesktopWorkspaceService,
 };
 pub use workspace_bookmark::{
     DesktopWorkspaceBookmarkStore, SystemDesktopWorkspaceBookmarkStore,
