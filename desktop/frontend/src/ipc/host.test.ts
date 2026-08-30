@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
-  cancelSetup, commitSetup, continueAgentTurn, getSetupCatalogue, prepareSetup,
+  cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn, getSetupCatalogue, prepareSetup,
+  revokeWorkspace, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -86,5 +87,26 @@ describe("desktop Host IPC", () => {
       return "cancelled" as T;
     });
     expect(result).toBe("cancelled");
+  });
+
+  it("keeps native Workspace paths behind opaque commands", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push({ command, args });
+      if (command === "choose_workspace" || command === "verify_workspace") {
+        return { schema_version: 1, workspace_id: "workspace-1", display_name: "Briefs",
+          access: "enumerate", state: "active", expires_at: "2026-08-30T12:00:00Z" } as T;
+      }
+      return undefined as T;
+    };
+    const selected = await chooseWorkspace(invoke);
+    await verifyWorkspace(selected!.workspace_id, invoke);
+    await revokeWorkspace(selected!.workspace_id, invoke);
+    expect(JSON.stringify(calls)).not.toContain("/Users/");
+    expect(calls).toEqual([
+      { command: "choose_workspace", args: {} },
+      { command: "verify_workspace", args: { workspaceId: "workspace-1" } },
+      { command: "revoke_workspace", args: { workspaceId: "workspace-1" } },
+    ]);
   });
 });

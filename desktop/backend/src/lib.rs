@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 mod setup;
 mod system_configuration;
 mod system_provider;
+mod workspace;
 
 /// Restart-safe durable Session summary exposed to Desktop clients.
 pub use garive_runtime::SessionSummary as DesktopSessionSummary;
@@ -37,6 +38,7 @@ pub use system_provider::{
     SystemDesktopSecretResolver, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
     DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
+pub use workspace::{DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceService};
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.
 pub trait DesktopOperations: Send + Sync {

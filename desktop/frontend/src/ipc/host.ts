@@ -94,6 +94,12 @@ export interface SetupReceipt {
   readonly restart_required: true; readonly receipt_digest: string;
 }
 
+/** Opaque process-local Workspace selection; no filesystem path crosses IPC. */
+export interface WorkspaceGrant {
+  readonly schema_version: 1; readonly workspace_id: string; readonly display_name: string;
+  readonly access: "enumerate"; readonly state: "active"; readonly expires_at: string;
+}
+
 /** Loads the capability snapshot without exposing configuration values. */
 export async function getDesktopCapabilities(
   invoke: Invoke = tauriInvoke,
@@ -152,6 +158,26 @@ export async function cancelSetup(
 
 export async function restartDesktop(invoke: Invoke = tauriInvoke): Promise<void> {
   await invoke<void>("restart_desktop", {});
+}
+
+export async function chooseWorkspace(invoke: Invoke = tauriInvoke): Promise<WorkspaceGrant | null> {
+  return invoke<WorkspaceGrant | null>("choose_workspace", {});
+}
+
+export async function verifyWorkspace(
+  workspaceId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceGrant> {
+  if (!workspaceId) throw new Error("workspace_capability_invalid");
+  return invoke<WorkspaceGrant>("verify_workspace", { workspaceId });
+}
+
+export async function revokeWorkspace(
+  workspaceId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<void> {
+  if (!workspaceId) throw new Error("workspace_capability_invalid");
+  await invoke<void>("revoke_workspace", { workspaceId });
 }
 
 /** Invokes one typed Turn against the backend-owned embedded R1 composition. */

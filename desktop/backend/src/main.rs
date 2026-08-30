@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 async fn run_agent_turn(
@@ -38,6 +39,51 @@ fn get_desktop_capabilities(
 }
 
 type SetupState = garive_desktop::DesktopSetupService<garive_desktop::SystemSetupCredentialStore>;
+
+#[tauri::command]
+async fn choose_workspace(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+) -> Result<Option<garive_desktop::DesktopWorkspaceGrant>, String> {
+    let Some(selection) = app
+        .dialog()
+        .file()
+        .set_title("Choose a Workspace for Garive")
+        .blocking_pick_folder()
+    else {
+        return Ok(None);
+    };
+    let path = selection
+        .into_path()
+        .map_err(|_| "workspace_unavailable".to_owned())?;
+    workspaces
+        .admit_selected(&path, window.label())
+        .map(Some)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn verify_workspace(
+    window: tauri::WebviewWindow,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    workspace_id: String,
+) -> Result<garive_desktop::DesktopWorkspaceGrant, String> {
+    workspaces
+        .verify(&workspace_id, window.label())
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn revoke_workspace(
+    window: tauri::WebviewWindow,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    workspace_id: String,
+) -> Result<(), String> {
+    workspaces
+        .revoke(&workspace_id, window.label())
+        .map_err(|error| error.code().to_owned())
+}
 
 #[tauri::command]
 fn get_setup_catalogue(
@@ -106,6 +152,7 @@ fn get_session_timeline(
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let directory = app
                 .path()
@@ -130,6 +177,7 @@ fn main() {
                 .map_err(|error| stable_setup_error(error.code()))?;
             app.manage(state);
             app.manage(setup);
+            app.manage(garive_desktop::DesktopWorkspaceService::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -138,6 +186,9 @@ fn main() {
             prepare_setup,
             commit_setup,
             cancel_setup,
+            choose_workspace,
+            verify_workspace,
+            revoke_workspace,
             restart_desktop,
             get_recent_sessions,
             get_session_timeline,

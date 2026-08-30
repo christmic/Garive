@@ -23,6 +23,7 @@ serde_json.workspace = true
 serde_jcs.workspace = true
 sha2.workspace = true
 tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "2.7.2"
 tokio.workspace = true
 url = "2.5.8"
 uuid.workspace = true
