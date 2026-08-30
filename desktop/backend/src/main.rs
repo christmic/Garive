@@ -40,10 +40,10 @@ fn prepare_setup(
 fn commit_setup(
     setup: tauri::State<'_, SetupState>,
     plan_digest: String,
-    credential: String,
+    credential: garive_desktop::SensitiveSetupCredential,
 ) -> Result<garive_desktop::DesktopSetupReceipt, String> {
     setup
-        .commit(&plan_digest, &credential)
+        .commit(&plan_digest, credential.expose_secret())
         .map_err(|error| error.code().to_owned())
 }
 

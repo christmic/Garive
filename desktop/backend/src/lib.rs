@@ -21,8 +21,9 @@ pub use setup::{
     DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput,
     DesktopSetupLimits, DesktopSetupPlan, DesktopSetupPreset, DesktopSetupProfile,
     DesktopSetupReceipt, DesktopSetupService, DesktopSetupState, DesktopSetupSummary,
-    NoSetupCommitFaults, SetupClock, SetupCommitFaults, SetupCommitStage, SetupCredentialStore,
-    SetupIdentitySource, SystemSetupClock, SystemSetupCredentialStore, SystemSetupIdentitySource,
+    NoSetupCommitFaults, SensitiveSetupCredential, SetupClock, SetupCommitFaults, SetupCommitStage,
+    SetupCredentialStore, SetupIdentitySource, SystemSetupClock, SystemSetupCredentialStore,
+    SystemSetupIdentitySource,
 };
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,

@@ -5,8 +5,8 @@ use std::sync::{
 
 use garive_desktop::{
     DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput, DesktopSetupService,
-    DesktopSetupState, DesktopSystemConfiguration, NoSetupCommitFaults, SetupClock,
-    SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
+    DesktopSetupState, DesktopSystemConfiguration, NoSetupCommitFaults, SensitiveSetupCredential,
+    SetupClock, SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
     OPENAI_RESPONSES_PROFILE_ID,
 };
 use serde::Deserialize;
@@ -395,6 +395,17 @@ fn setup_state_reports_startup_without_configuration_values() {
     assert!(!serde_json::to_string(&service.state())
         .unwrap()
         .contains(directory.path().to_string_lossy().as_ref()));
+}
+
+#[test]
+fn sensitive_credential_is_deserialize_only_and_secret_free_in_errors() {
+    let credential: SensitiveSetupCredential = serde_json::from_str("\"secret-once\"").unwrap();
+    assert_eq!(credential.expose_secret(), "secret-once");
+    let invalid = match serde_json::from_str::<SensitiveSetupCredential>("123") {
+        Ok(_) => panic!("numeric credential must reject"),
+        Err(error) => error,
+    };
+    assert!(!invalid.to_string().contains("secret-once"));
 }
 
 #[test]

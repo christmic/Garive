@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use crate::{
     DesktopSystemConfiguration, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
@@ -241,6 +242,24 @@ pub enum DesktopSetupState {
     },
     /// Startup is classifying or repairing one staged setup.
     SetupRecovering,
+}
+
+/// Write-only credential value that cannot be serialized, cloned, or debug-formatted.
+#[derive(Deserialize)]
+#[serde(transparent)]
+pub struct SensitiveSetupCredential(String);
+
+impl SensitiveSetupCredential {
+    /// Borrows the credential only for the credential-store commit boundary.
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for SensitiveSetupCredential {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
 }
 
 /// Backend-owned clock used to freeze and validate setup expiry.
