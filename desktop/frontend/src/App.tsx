@@ -32,12 +32,6 @@ interface SelectedContext {
   readonly entries: readonly WorkspaceEntry[];
 }
 
-const suggestions = [
-  ["Synthesize", "Turn notes into a clear decision memo"],
-  ["Analyze", "Find the key patterns and recommend next steps"],
-  ["Create", "Draft a polished project brief from my outline"],
-] as const;
-
 const errorCopy: Record<string, string> = {
   not_configured: "Finish Desktop setup before starting work.",
   invalid_configuration: "The local configuration needs attention.",
@@ -218,8 +212,8 @@ export function App() {
 
   const title = useMemo(() => {
     const first = state.messages.find((message) => message.role === "user")?.text;
-    return first ? first.slice(0, 54) : "New work";
-  }, [state.messages]);
+    return first ? first.slice(0, 54) : t("work.new");
+  }, [state.messages, t]);
 
   const submit = async () => {
     if (!canSubmit(state)) return;
@@ -369,7 +363,7 @@ export function App() {
     ? systemDark ? "dark" : "light" : preferences.theme;
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
     <div className="app-shell" inert={Boolean(pickerGrant)} aria-hidden={Boolean(pickerGrant)}>
-      <aside className="sidebar" aria-label="Primary navigation">
+      <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
         <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
@@ -378,33 +372,33 @@ export function App() {
         <nav className="nav-stack">
           <NavItem icon="work" label={t("nav.work")} selected={screen === "work"} onClick={() => setScreen("work")} />
           <NavItem icon="search" label={t("nav.search")} selected={screen === "search"}
-            disabled={!state.capabilities?.durable_navigation} hint="Search durable work (⌘K)"
+            disabled={!state.capabilities?.durable_navigation} hint={t("shell.searchHint")}
             onClick={() => setScreen("search")} />
         </nav>
         <div className="sidebar-section">
-          <div className="section-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">Live</span>}</div>
+          <div className="section-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">{t("shell.live")}</span>}</div>
           {recents.length > 0 ? recents.map((recent) => (
             <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
               <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentTitles[recent.session_id] || recentLabel(recent)}</span>
-              <small>{recent.latest_turn_state ? terminalCopy(recent.latest_turn_state) : "Empty"}</small>
+              <small>{recent.latest_turn_state ? terminalCopy(recent.latest_turn_state, t) : t("shell.empty")}</small>
             </button>
           )) : state.messages.length > 0 ? (
             <button className="recent-item selected" type="button" onClick={() => setScreen("work")}>
-              <span>{title}</span><small>{state.phase === "submitting" ? "Working"
-                : terminalCopy(state.messages.at(-1)?.terminal)}</small>
+              <span>{title}</span><small>{state.phase === "submitting" ? t("status.working")
+                : terminalCopy(state.messages.at(-1)?.terminal, t)}</small>
             </button>
-          ) : <p className="sidebar-empty">Durable work will appear here.</p>}
+          ) : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
         </div>
         <div className="sidebar-section library">
           <div className="section-label">{t("nav.library")}</div>
           <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"} onClick={() => setScreen("agents")} />
-          <NavItem icon="memory" label="Memory" disabled hint="Requires M2-D" />
+          <NavItem icon="memory" label={t("shell.memory")} disabled hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </div>
         <div className="sidebar-footer">
           <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"} onClick={() => setScreen("settings")} />
           <div className={`runtime-state ${state.capabilities?.configured ? "online" : "offline"}`}>
-            <span className="status-dot" /><span>{state.capabilities?.configured ? "Local Runtime ready" : "Setup required"}</span>
+            <span className="status-dot" /><span>{state.capabilities?.configured ? t("shell.runtimeReady") : t("shell.setupRequired")}</span>
           </div>
         </div>
       </aside>
@@ -412,14 +406,14 @@ export function App() {
       <main className="main-surface">
         <header className="topbar" data-tauri-drag-region>
           <div className="topbar-title"><span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
-            {screen === "work" && <span className="local-badge"><span />Local</span>}
-            {visualTest && <span className="local-badge qa-badge">QA preview</span>}
+            {screen === "work" && <span className="local-badge"><span />{t("shell.local")}</span>}
+            {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
             {screen === "work" && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
-              type="button" aria-label="Toggle inspector" title="Toggle inspector (⌘⇧A)"
+              type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
-            <button className="avatar" type="button" aria-label="Account and app menu">G</button>
+            <button className="avatar" type="button" aria-label={t("shell.accountMenu")}>G</button>
           </div>
         </header>
 
@@ -429,8 +423,8 @@ export function App() {
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
           approvalAction={approvalAction} t={t} />
-          : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
-            : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
+          : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} t={t} />
+            : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} t={t} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} t={t} />}
       </main>
@@ -463,10 +457,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   approvalAction: React.RefObject<HTMLButtonElement | null>;
   t: (key: MessageKey) => string;
 }) {
-  if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>Opening your workspace</h1><p>Recovering the local Runtime…</p></div>;
-  if (state.boot === "unavailable") return <StatusCard icon="warning" title="Garive could not start" body={errorCopy.desktop_unavailable} />;
+  if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
+  if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={errorCopy.desktop_unavailable} />;
   if (!state.capabilities?.configured) {
-    return state.capabilities?.setup ? <SetupFlow preview={visualTest} t={t} /> : <SetupRequired />;
+    return state.capabilities?.setup ? <SetupFlow preview={visualTest} t={t} /> : <SetupRequired t={t} />;
   }
   const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
   const needsInput = suspension?.kind === "partial_output" || suspension?.kind === "external_input_required";
@@ -479,7 +473,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} /> : <Timeline state={state} />}
+      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} />}
     </div>
     {state.error && <div className="error-banner" role="alert"><Icon name="warning" /><span>{errorCopy[state.error] ?? "This work could not continue."}</span>
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
@@ -515,33 +509,36 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
               aria-label="Remove selected context file"><Icon name="close" /></button>
           </span>)}</div>}
         <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
-          aria-label={needsInput ? "Continue suspended work" : "Describe the outcome you want"}
-          placeholder={blockedSuspension ? "This suspension requires a governed action." : needsInput ? "Provide the input needed to continue…" : "Describe the outcome you want…"}
+          aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
+          placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
         <div className="composer-toolbar">
           <div className="composer-tools"><button type="button"
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
-            title={state.capabilities?.workspaces ? "Choose local text files" : "Local Workspaces are not installed"}
-            onClick={() => void openContext()}><Icon name="paperclip" /><span>Add context</span></button>
+            title={t(state.capabilities?.workspaces ? "work.composer.chooseFiles" : "work.composer.noWorkspaces")}
+            onClick={() => void openContext()}><Icon name="paperclip" /><span>{t("work.composer.addContext")}</span></button>
             {context?.grant.access === "enumerate" && <button type="button" disabled={state.phase === "submitting"}
-              onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>Allow outputs</span></button>}
-            <span className="access-pill"><Icon name="shield" />{needsInput ? "Resume exact suspension"
-              : context?.grant.access === "read_write" ? "Output folder enabled"
-                : context ? `${context.entries.length} local ${context.entries.length === 1 ? "file" : "files"}` : "Local · text only"}</span></div>
-          <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label="Send work" onClick={() => void submit()}>
+              onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>{t("work.composer.allowOutputs")}</span></button>}
+            <span className="access-pill"><Icon name="shield" />{needsInput ? t("work.composer.resume")
+              : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
+                : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></div>
+          <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
             {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
           </button>
         </div>
       </div>
-      <p className="composer-note">Garive shows results only after they are committed by the local Runtime.</p>
+      <p className="composer-note">{t("work.composer.commitNote")}</p>
     </div>
   </section>;
 }
 
-function Welcome({ onSelect }: { onSelect: (text: string) => void }) {
-  return <div className="welcome"><span className="hero-mark"><Icon name="sparkle" /></span><p className="eyebrow">LOCAL WORK AGENT</p>
-    <h1>What should we accomplish?</h1><p className="welcome-copy">Describe the finished outcome. Garive will keep the work local and make durable results clear.</p>
+function Welcome({ onSelect, t }: { onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
+  const suggestions = [[t("work.suggestion.synthesize"), t("work.suggestion.synthesizeBody")],
+    [t("work.suggestion.analyze"), t("work.suggestion.analyzeBody")],
+    [t("work.suggestion.create"), t("work.suggestion.createBody")]] as const;
+  return <div className="welcome"><span className="hero-mark"><Icon name="sparkle" /></span><p className="eyebrow">{t("work.welcome.eyebrow")}</p>
+    <h1>{t("work.welcome.title")}</h1><p className="welcome-copy">{t("work.welcome.description")}</p>
     <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>
   </div>;
 }
@@ -706,27 +703,28 @@ function activityIcon(state: string): IconName {
       : "warning";
 }
 
-function SearchScreen({ recents, titles, onOpen }: {
+function SearchScreen({ recents, titles, onOpen, t }: {
   recents: readonly HostSessionSummary[];
   titles: Readonly<Record<string, string>>;
   onOpen: (sessionId: string) => Promise<void>;
+  t: (key: MessageKey) => string;
 }) {
   const [query, setQuery] = useState("");
   const results = recents.filter((recent) => {
     const searchable = `${titles[recent.session_id] ?? ""} ${recent.definition_id}`.toLocaleLowerCase();
     return searchable.includes(query.trim().toLocaleLowerCase());
   });
-  return <section className="search-page"><div className="search-heading"><p className="eyebrow">DURABLE HISTORY</p><h1>Find your work</h1><p>Search the first request from recent local Sessions. No cloud index is created.</p></div>
-    <div className="search-box"><Icon name="search" /><input autoFocus aria-label="Search durable work"
-      value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent work…" /><kbd>⌘K</kbd></div>
+  return <section className="search-page"><div className="search-heading"><p className="eyebrow">{t("search.eyebrow")}</p><h1>{t("search.title")}</h1><p>{t("search.description")}</p></div>
+    <div className="search-box"><Icon name="search" /><input autoFocus aria-label={t("search.label")}
+      value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search.placeholder")} /><kbd>⌘K</kbd></div>
     <div className="search-results" aria-live="polite">{results.length ? results.map((recent) => <button type="button" key={recent.session_id} onClick={() => void onOpen(recent.session_id)}>
-      <span className="search-result-icon"><Icon name="work" /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {recent.turn_count === 1 ? "Turn" : "Turns"} · {terminalCopy(recent.latest_turn_state)}</small></span><Icon name="chevron" /></button>)
-      : <div className="search-empty"><Icon name="search" /><h2>{query ? "No matching work" : "No durable work yet"}</h2><p>{query ? "Try a different word from the original request." : "Completed Sessions will become searchable here."}</p></div>}</div>
+      <span className="search-result-icon"><Icon name="work" /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {t(recent.turn_count === 1 ? "search.turn" : "search.turns")} · {terminalCopy(recent.latest_turn_state, t)}</small></span><Icon name="chevron" /></button>)
+      : <div className="search-empty"><Icon name="search" /><h2>{t(query ? "search.noMatch" : "search.noWork")}</h2><p>{t(query ? "search.tryDifferent" : "search.completedHint")}</p></div>}</div>
   </section>;
 }
 
-function SetupRequired() { return <StatusCard icon="shield" title="Connect the local Runtime" body="Garive found no Desktop configuration. The secure guided setup is not installed in this build yet; add desktop-v1.json and its credential to the macOS Keychain, then restart." action="View setup status" />; }
-function AgentsScreen({ definition }: { definition?: string }) { return <section className="content-page"><p className="eyebrow">INSTALLED LOCALLY</p><h1>Your Agents</h1><p>Agents define the stable behavior and capabilities available to new work.</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? "No Agent configured"}</h2><p>{definition ? "Ready for local text work" : "Complete Desktop configuration to install an Agent."}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{definition ? "Ready" : "Unavailable"}</span></div></section>; }
+function SetupRequired({ t }: { t: (key: MessageKey) => string }) { return <StatusCard icon="shield" title={t("shell.setupRequired")} body={t("setup.unavailable")} />; }
+function AgentsScreen({ definition, t }: { definition?: string; t: (key: MessageKey) => string }) { return <section className="content-page"><p className="eyebrow">{t("agents.eyebrow")}</p><h1>{t("agents.title")}</h1><p>{t("agents.description")}</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? t("agents.none")}</h2><p>{t(definition ? "agents.readyBody" : "agents.configureBody")}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{t(definition ? "common.ready" : "common.unavailable")}</span></div></section>; }
 function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
   capabilities?: WorkState["capabilities"];
   preferences: DesktopPreferences;
@@ -864,8 +862,8 @@ function LocaleOptions({ value, onChange, t }: {
   </span>;
 }
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
-function NavItem({ icon, label, selected, disabled, hint, onClick }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>Soon</small>}</button>; }
-function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed") { return terminal === "completed" ? "Completed" : terminal === "suspended" ? "Needs input" : terminal === "stopped" ? "Stopped" : terminal === "failed" ? "Failed" : "Working"; }
+function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
+function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
 function recentLabel(session: HostSessionSummary) {
   const opened = new Date(session.opened_at);
   return Number.isNaN(opened.valueOf())
