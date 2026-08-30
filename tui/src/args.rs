@@ -2,6 +2,7 @@ use std::{ffi::OsString, path::PathBuf};
 
 use clap::{error::ErrorKind, Parser, ValueEnum};
 use garive_host_client::{ClientLimits, LiveHostClient};
+use serde::{Deserialize, Serialize};
 
 const VALIDATION_LIMITS: ClientLimits = ClientLimits {
     max_command_bytes: 1,
@@ -11,7 +12,8 @@ const VALIDATION_LIMITS: ClientLimits = ClientLimits {
 };
 
 /// Terminal color preference supplied at launch.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
 pub enum Theme {
     /// Defer to terminal capabilities and local preferences.
     #[default]
@@ -25,7 +27,8 @@ pub enum Theme {
 }
 
 /// Mouse capture preference supplied at launch.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
 pub enum MouseMode {
     /// Defer to terminal capabilities and local preferences.
     #[default]
