@@ -311,6 +311,7 @@ impl Turn {
             completion_text: self.completion_text,
             suspension: self.suspension,
             content_truncated: self.content_truncated,
+            activities: Vec::new(),
         })
     }
 }

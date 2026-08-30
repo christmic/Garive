@@ -34,6 +34,29 @@ pub struct HostEvent {
     pub execution_id: String,
     /// Committed presentation text, empty when not applicable.
     pub text: String,
+    /// Public Agent activity state when this is an H3 event.
+    pub activity: Option<HostActivity>,
+}
+
+/// One redacted committed Agent interaction or tool activity state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct HostActivity {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Opaque activity identity scoped to the Session.
+    pub activity_id: String,
+    /// Stable or unknown future activity family.
+    pub kind: String,
+    /// Admitted localization key.
+    pub label_key: String,
+    /// Stable or unknown future state.
+    pub state: String,
+    /// Durable source position.
+    pub source_position: u64,
+    /// Authoritative terminal marker.
+    pub terminal: bool,
+    /// Optional admitted stable code.
+    pub safe_code: Option<String>,
 }
 
 /// Durable terminal state recognized by A1 clients.
@@ -207,6 +230,9 @@ pub struct TurnTimelineItem {
     pub suspension: Option<SuspensionView>,
     /// Whether Runtime explicitly truncated display content.
     pub content_truncated: bool,
+    /// Latest public state of each committed Agent activity.
+    #[serde(default)]
+    pub activities: Vec<HostActivity>,
 }
 
 /// Bounded page of complete durable Turn projections.

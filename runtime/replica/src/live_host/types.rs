@@ -197,6 +197,8 @@ pub struct TurnTimelineItemV1 {
     pub suspension: Option<SuspensionViewV1>,
     /// Whether display text was explicitly bounded by Runtime.
     pub content_truncated: bool,
+    /// Latest public state of each committed Agent activity.
+    pub activities: Vec<HostActivityV1>,
 }
 
 /// Bounded ascending page of complete durable Turn projections.
@@ -288,6 +290,31 @@ pub struct LiveHostEvent {
     pub execution_id: String,
     /// Redacted display text for a committed completion.
     pub text: String,
+    /// Public Agent activity state when this event is H3 activity progress.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity: Option<HostActivityV1>,
+}
+
+/// One redacted committed Agent interaction or tool activity state.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HostActivityV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Opaque activity identity scoped to the Session.
+    pub activity_id: String,
+    /// Stable public family or unknown future string.
+    pub kind: String,
+    /// Admitted localization key, never a raw tool name.
+    pub label_key: String,
+    /// Stable public activity state.
+    pub state: String,
+    /// Durable fact position that produced this state.
+    pub source_position: u64,
+    /// Authoritative terminal marker.
+    pub terminal: bool,
+    /// Optional admitted stable failure or cancellation code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safe_code: Option<String>,
 }
 
 /// One bounded durable scan used by replay and SSE follow mode.

@@ -19,6 +19,28 @@ message HostEventV1 {
   string execution_id = 6;
   // Optional text carried by output events.
   string text = 7;
+  // Public Agent activity state for an H3 activity event.
+  HostActivityV1 activity = 8;
+}
+
+// One redacted committed Agent interaction or tool activity state.
+message HostActivityV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Opaque activity identity scoped to the Session.
+  string activity_id = 2;
+  // Stable public activity family or unknown future string.
+  string kind = 3;
+  // Admitted localization key, never a raw tool name.
+  string label_key = 4;
+  // Stable public activity state.
+  string state = 5;
+  // Durable fact position that produced this state.
+  uint64 source_position = 6;
+  // Authoritative terminal marker.
+  bool terminal = 7;
+  // Optional admitted stable failure or cancellation code.
+  optional string safe_code = 8;
 }
 
 // Creates one durable Session for an installed Agent definition.
@@ -187,8 +209,8 @@ message TurnTimelineItemV1 {
   optional SuspensionViewV1 suspension = 7;
   // Whether display content was explicitly truncated.
   bool content_truncated = 8;
-  // Tag 9 is reserved for H3 activities.
-  reserved 9;
+  // Latest public state of each committed Agent activity.
+  repeated HostActivityV1 activities = 9;
 }
 
 // Bounded ascending page of complete Turn projections.
