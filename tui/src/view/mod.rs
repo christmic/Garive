@@ -11,6 +11,7 @@ use ratatui::{
 
 mod conversation;
 mod overlay;
+pub(crate) mod presentation;
 mod primitives;
 mod style;
 

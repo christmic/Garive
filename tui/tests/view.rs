@@ -11,6 +11,7 @@ mod input;
 mod view;
 
 use application::{AppModel, BootState, FocusTarget, Overlay, TimelineItem, TimelineRole};
+use garive_host_client::SuspensionView;
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
@@ -54,6 +55,7 @@ fn standard_frame_has_navigation_timeline_and_safe_text() {
         stable_key: "answer".into(),
         position: 7,
         role: TimelineRole::Agent,
+        tone: Default::default(),
         text: "answer\u{1b}[31m\u{2066}x\u{2069}".into(),
     });
     let standard = frame(&model, 120, 18);
@@ -73,6 +75,29 @@ fn overlay_is_rendered_above_without_mutating_model() {
     let rendered = frame(&model, 80, 16);
     assert!(rendered.contains("Quit Garive?"));
     assert_eq!(format!("{model:?}"), before);
+}
+
+#[test]
+fn suspension_is_a_structured_action_card_not_raw_json() {
+    let model = AppModel {
+        overlay: Some(Overlay::Suspension),
+        suspension: Some(SuspensionView {
+            suspension_id: "suspension-1".into(),
+            session_version: 2,
+            kind: "approval_required".into(),
+            prompt_schema: "garive.public-suspension-prompt.v1".into(),
+            prompt_json: r#"{"schema_version":1,"title_key":"approval.title","message_text":"Create one file.","action_label_key":"approval.allow"}"#.into(),
+            prompt_digest: "0".repeat(64),
+            response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+            response_schema_digest: Some("1".repeat(64)),
+        }),
+        ..Default::default()
+    };
+    let rendered = frame(&model, 100, 24);
+    assert!(rendered.contains("Approval required"));
+    assert!(rendered.contains("Create one file."));
+    assert!(rendered.contains("Enter true or false."));
+    assert!(!rendered.contains("title_key"));
 }
 
 #[test]
@@ -153,6 +178,7 @@ fn agent_markdown_is_structured_and_terminal_safe() {
         stable_key: "markdown".into(),
         position: 1,
         role: TimelineRole::Agent,
+        tone: Default::default(),
         text: "## Result\n\n- **done**\n- `cargo test`\n\n> <script>bad</script>\u{1b}[2J".into(),
     });
 

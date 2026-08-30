@@ -32,6 +32,7 @@ fn representative_render_and_editor_latency_stay_interactive() {
             } else {
                 TimelineRole::Status
             },
+            tone: Default::default(),
             text: format!(
                 "Bounded timeline row {position}: Unicode 界 and **safe Markdown** remain visible."
             ),
