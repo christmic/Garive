@@ -48,13 +48,13 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         }
     };
     let mut config = config;
-    if config.theme == crate::Theme::System {
+    if !config.theme_explicit {
         config.theme = preferences.theme;
     }
-    if config.mouse == crate::MouseMode::Auto {
+    if !config.mouse_explicit {
         config.mouse = preferences.mouse;
     }
-    if !config.reduced_motion {
+    if !config.reduced_motion_explicit {
         config.reduced_motion = preferences.reduced_motion;
     }
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;

@@ -30,11 +30,36 @@ fn parses_the_complete_explicit_launch_contract() {
     assert_eq!(config.definition.as_deref(), Some("definition-1"));
     assert_eq!(config.state_dir, Some(PathBuf::from("/tmp/garive-state")));
     assert_eq!(config.theme, Theme::Mono);
+    assert!(config.theme_explicit);
     assert!(config.screen_reader);
     assert!(config.reduced_motion);
+    assert!(config.reduced_motion_explicit);
     assert_eq!(config.mouse, MouseMode::Off);
+    assert!(config.mouse_explicit);
     assert!(config.ephemeral);
     assert!(config.no_prompt_history);
+}
+
+#[test]
+fn omitted_and_explicit_auto_values_remain_distinguishable() {
+    let omitted = parse_launch_config(["garive-tui", "--host", "http://127.0.0.1:4317/"]).unwrap();
+    assert_eq!(omitted.theme, Theme::System);
+    assert!(!omitted.theme_explicit);
+    assert_eq!(omitted.mouse, MouseMode::Auto);
+    assert!(!omitted.mouse_explicit);
+
+    let explicit = parse_launch_config([
+        "garive-tui",
+        "--host",
+        "http://127.0.0.1:4317/",
+        "--theme",
+        "system",
+        "--mouse",
+        "auto",
+    ])
+    .unwrap();
+    assert!(explicit.theme_explicit);
+    assert!(explicit.mouse_explicit);
 }
 
 #[test]

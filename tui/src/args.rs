@@ -52,12 +52,18 @@ pub struct LaunchConfig {
     pub state_dir: Option<PathBuf>,
     /// Color preference for this process.
     pub theme: Theme,
+    /// Whether `--theme` was present and therefore overrides saved state.
+    pub theme_explicit: bool,
     /// Whether to use the linear accessible presentation.
     pub screen_reader: bool,
     /// Whether to suppress nonessential animation.
     pub reduced_motion: bool,
+    /// Whether reduced motion was explicitly requested for this process.
+    pub reduced_motion_explicit: bool,
     /// Mouse capture preference for this process.
     pub mouse: MouseMode,
+    /// Whether `--mouse` was present and therefore overrides saved state.
+    pub mouse_explicit: bool,
     /// Whether to disable all local presentation writes.
     pub ephemeral: bool,
     /// Whether to disable prompt-history writes.
@@ -111,10 +117,13 @@ where
         session: raw.session,
         definition: raw.definition,
         state_dir: raw.state_dir,
-        theme: raw.theme,
+        theme: raw.theme.unwrap_or_default(),
+        theme_explicit: raw.theme.is_some(),
         screen_reader: raw.screen_reader,
         reduced_motion: raw.reduced_motion,
-        mouse: raw.mouse,
+        reduced_motion_explicit: raw.reduced_motion,
+        mouse: raw.mouse.unwrap_or_default(),
+        mouse_explicit: raw.mouse.is_some(),
         ephemeral: raw.ephemeral,
         no_prompt_history: raw.no_prompt_history,
     })
@@ -135,14 +144,14 @@ struct RawArgs {
     definition: Option<String>,
     #[arg(long)]
     state_dir: Option<PathBuf>,
-    #[arg(long, value_enum, default_value_t)]
-    theme: Theme,
+    #[arg(long, value_enum)]
+    theme: Option<Theme>,
     #[arg(long)]
     screen_reader: bool,
     #[arg(long)]
     reduced_motion: bool,
-    #[arg(long, value_enum, default_value_t)]
-    mouse: MouseMode,
+    #[arg(long, value_enum)]
+    mouse: Option<MouseMode>,
     #[arg(long)]
     ephemeral: bool,
     #[arg(long)]
