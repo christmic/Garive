@@ -99,7 +99,11 @@ the same clean Git revision:
 
 ```sh
 python3 desktop/release/build-release-materials.py \
-  target/universal-apple-darwin/release/bundle/dmg/Garive_0.1.0_universal.dmg
+  target/universal-apple-darwin/release/bundle/dmg/Garive_0.1.0_universal.dmg \
+  --updater-archive target/universal-apple-darwin/release/bundle/macos/Garive.app.tar.gz \
+  --updater-signature target/universal-apple-darwin/release/bundle/macos/Garive.app.tar.gz.sig \
+  --update-manifest target/desktop-release/latest.json \
+  --updater-config target/release-config/updater.json
 ```
 
 The generator reruns the bundle audit, requires exactly the `arm64` and
@@ -108,7 +112,9 @@ license inventory, `SHA256SUMS`, provenance, and rollback boundary under
 `target/desktop-release/<digest-prefix>`. It rejects dirty revisions,
 symlinks, external packages/output, undeclared dependency licenses, digest
 mismatches, and overwrites. Pass `--mode release` only for the signed and
-notarized candidate because that mode invokes every public release gate.
+notarized candidate because that mode invokes every public release gate and
+requires all four mutually bound updater inputs. Their exact digests and
+public archive URL are included in provenance and `SHA256SUMS`.
 
 Publication additionally requires the update manifest/signature, SBOM, license
 inventory, SHA-256 checksum publication, rollback instructions, and a clean-Mac
