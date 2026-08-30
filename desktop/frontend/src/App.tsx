@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   type HostSessionSummary,
@@ -7,7 +7,7 @@ import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state
 import { Icon, type IconName } from "./ui/Icon";
 import { SetupFlow } from "./setup/SetupFlow";
 
-type Screen = "work" | "agents" | "settings";
+type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
 
 const suggestions = [
@@ -31,7 +31,7 @@ const visualCapabilities = {
   configured: visualTestMode !== "setup",
   agent_definition_id: "garive-work",
   multi_turn: true,
-  durable_navigation: false,
+  durable_navigation: visualTestMode !== "setup",
   activity: false,
   setup: visualTestMode === "setup",
   workspaces: false,
@@ -42,7 +42,20 @@ export function App() {
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
   const [recents, setRecents] = useState<readonly HostSessionSummary[]>([]);
+  const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const composer = useRef<HTMLTextAreaElement>(null);
+
+  const refreshRecents = useCallback(async () => {
+    const sessions = await getRecentSessions();
+    setRecents(sessions);
+    const titles = await Promise.all(sessions.map(async (session) => {
+      try {
+        const timeline = await getSessionTimeline(session.session_id);
+        return [session.session_id, timeline.items[0]?.user_text ?? ""] as const;
+      } catch { return [session.session_id, ""] as const; }
+    }));
+    setRecentTitles(Object.fromEntries(titles));
+  }, []);
 
   useEffect(() => {
     if (visualTest) {
@@ -53,11 +66,11 @@ export function App() {
       .then((capabilities) => {
         dispatch({ type: "capabilities_loaded", capabilities });
         if (capabilities.durable_navigation) {
-          void getRecentSessions().then(setRecents).catch(() => setRecents([]));
+          void refreshRecents().catch(() => setRecents([]));
         }
       })
       .catch(() => dispatch({ type: "capabilities_failed" }));
-  }, []);
+  }, [refreshRecents]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
@@ -67,6 +80,7 @@ export function App() {
         requestAnimationFrame(() => composer.current?.focus());
       }
       if (event.key === ",") { event.preventDefault(); setScreen("settings"); }
+      if (event.key.toLowerCase() === "k") { event.preventDefault(); setScreen("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault(); dispatch({ type: "inspector_toggled" });
       }
@@ -101,7 +115,7 @@ export function App() {
       const result = await runAgentTurn(definition, input, state.sessionId);
       dispatch({ type: "submission_succeeded", input, result });
       if (state.capabilities?.durable_navigation) {
-        void getRecentSessions().then(setRecents).catch(() => undefined);
+        void refreshRecents().catch(() => undefined);
       }
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
@@ -133,14 +147,16 @@ export function App() {
         </button>
         <nav className="nav-stack">
           <NavItem icon="work" label="Work" selected={screen === "work"} onClick={() => setScreen("work")} />
-          <NavItem icon="search" label="Search" disabled hint="Requires H2" />
+          <NavItem icon="search" label="Search" selected={screen === "search"}
+            disabled={!state.capabilities?.durable_navigation} hint="Search durable work (⌘K)"
+            onClick={() => setScreen("search")} />
         </nav>
         <div className="sidebar-section">
           <div className="section-label"><span>Recents</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">Live</span>}</div>
           {recents.length > 0 ? recents.map((recent) => (
             <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
-              <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentLabel(recent)}</span>
+              <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentTitles[recent.session_id] || recentLabel(recent)}</span>
               <small>{recent.latest_turn_state ? terminalCopy(recent.latest_turn_state) : "Empty"}</small>
             </button>
           )) : state.messages.length > 0 ? (
@@ -164,7 +180,7 @@ export function App() {
 
       <main className="main-surface">
         <header className="topbar" data-tauri-drag-region>
-          <div className="topbar-title"><span>{screen === "work" ? title : screen === "agents" ? "Agents" : "Settings"}</span>
+          <div className="topbar-title"><span>{screen === "work" ? title : screen === "search" ? "Search" : screen === "agents" ? "Agents" : "Settings"}</span>
             {screen === "work" && <span className="local-badge"><span />Local</span>}
             {visualTest && <span className="local-badge qa-badge">QA preview</span>}
           </div>
@@ -177,7 +193,8 @@ export function App() {
         </header>
 
         {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit} startSuggestion={startSuggestion} dispatch={dispatch} />
-          : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
+          : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
+            : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
             : <SettingsScreen capabilities={state.capabilities} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
@@ -252,9 +269,39 @@ function Timeline({ state }: { state: WorkState }) {
 function Inspector({ state, dispatch }: { state: WorkState; dispatch: WorkDispatch }) {
   return <aside className="inspector" aria-label="Work inspector"><header><div className="inspector-tabs"><button className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>Activity</button><button className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>Artifacts</button></div>
     <button className="icon-button" type="button" aria-label="Close inspector" onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
-    {state.inspectorTab === "activity" ? <div className="inspector-body"><div className="inspector-empty"><Icon name="activity" /><h2>{state.phase === "submitting" ? "Turn in progress" : "Committed activity"}</h2><p>{state.capabilities?.activity ? "Runtime activity appears here." : "Detailed activity arrives with the H3 committed projection. Garive will not invent steps from animations or logs."}</p></div></div>
+    {state.inspectorTab === "activity" ? <div className="inspector-body"><CommittedActivity state={state} /></div>
       : <div className="inspector-body"><div className="inspector-empty"><Icon name="file" /><h2>No artifacts yet</h2><p>Verified files and deliverables will appear here when the artifact capability is installed.</p></div></div>}
   </aside>;
+}
+
+function CommittedActivity({ state }: { state: WorkState }) {
+  const turns = state.messages.filter((message) => message.role === "assistant");
+  if (!turns.length && state.phase !== "submitting") return <div className="inspector-empty"><Icon name="activity" /><h2>No committed Turns yet</h2><p>Durable Turn states appear here after work begins.</p></div>;
+  return <div className="activity-list"><div className="activity-intro"><h2>Turn activity</h2><p>Only states committed by the local Runtime are shown.</p></div>
+    {turns.map((turn, index) => <div className="activity-row" key={turn.id}><span className={`activity-status ${turn.terminal ?? "running"}`}><Icon name={turn.terminal === "completed" ? "check" : "warning"} /></span>
+      <div><strong>Turn {index + 1}</strong><small>{terminalCopy(turn.terminal)}</small></div></div>)}
+    {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>Current Turn</strong><small>Working</small></div></div>}
+    {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />Tool-level details stay hidden until the H3 committed projection is installed.</p>}
+  </div>;
+}
+
+function SearchScreen({ recents, titles, onOpen }: {
+  recents: readonly HostSessionSummary[];
+  titles: Readonly<Record<string, string>>;
+  onOpen: (sessionId: string) => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const results = recents.filter((recent) => {
+    const searchable = `${titles[recent.session_id] ?? ""} ${recent.definition_id}`.toLocaleLowerCase();
+    return searchable.includes(query.trim().toLocaleLowerCase());
+  });
+  return <section className="search-page"><div className="search-heading"><p className="eyebrow">DURABLE HISTORY</p><h1>Find your work</h1><p>Search the first request from recent local Sessions. No cloud index is created.</p></div>
+    <div className="search-box"><Icon name="search" /><input autoFocus aria-label="Search durable work"
+      value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search recent work…" /><kbd>⌘K</kbd></div>
+    <div className="search-results" aria-live="polite">{results.length ? results.map((recent) => <button type="button" key={recent.session_id} onClick={() => void onOpen(recent.session_id)}>
+      <span className="search-result-icon"><Icon name="work" /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {recent.turn_count === 1 ? "Turn" : "Turns"} · {terminalCopy(recent.latest_turn_state)}</small></span><Icon name="chevron" /></button>)
+      : <div className="search-empty"><Icon name="search" /><h2>{query ? "No matching work" : "No durable work yet"}</h2><p>{query ? "Try a different word from the original request." : "Completed Sessions will become searchable here."}</p></div>}</div>
+  </section>;
 }
 
 function SetupRequired() { return <StatusCard icon="shield" title="Connect the local Runtime" body="Garive found no Desktop configuration. The secure guided setup is not installed in this build yet; add desktop-v1.json and its credential to the macOS Keychain, then restart." action="View setup status" />; }
