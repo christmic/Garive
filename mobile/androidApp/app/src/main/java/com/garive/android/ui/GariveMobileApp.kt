@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.garive.mobile.application.MobileWorkController
+import com.garive.mobile.host.MobileWakeRoute
 import com.garive.mobile.model.MobileAgentCard
 import com.garive.mobile.model.MobileDestination
 import com.garive.mobile.model.MobileWorkState
@@ -46,6 +47,8 @@ import kotlinx.coroutines.launch
 internal fun GariveMobileApp(
     origin: String,
     controller: MobileWorkController,
+    wakeRoute: MobileWakeRoute?,
+    onWakeConsumed: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     var state by remember(controller) { mutableStateOf(controller.state()) }
@@ -54,7 +57,17 @@ internal fun GariveMobileApp(
     var confirmCancel by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(controller) { state = controller.boot() }
+    LaunchedEffect(controller, wakeRoute) {
+        state = controller.boot()
+        wakeRoute?.let { route ->
+            state = if (route.destination == "session" && route.sessionId != null) {
+                controller.openSession(route.sessionId!!)
+            } else {
+                controller.selectDestination(MobileDestination.SETTINGS)
+            }
+            onWakeConsumed()
+        }
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         if (state.connection.name != "CONNECTING") scope.launch { state = controller.refresh() }
     }
