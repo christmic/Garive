@@ -228,7 +228,12 @@ is a scheduled/release gate after the shorter deterministic harness passes.
 |---|---|---|
 | macOS arm64 | workspace build/test | Apple Terminal plus one of iTerm2/WezTerm/Kitty; tmux |
 | Linux x86_64 | workspace build/test | xterm-compatible PTY; tmux; `TERM=dumb` refusal/linear fallback |
-| Windows x86_64 | MSVC build/test | Windows Terminal ConPTY; signal-equivalent restore |
+| Windows x86_64 | MSVC build/test; source-level all-target check and strict Clippy are necessary but not sufficient | Windows Terminal ConPTY; ACL execution; signal-equivalent restore |
+
+The current Windows source-level result is pinned in
+[`../../docs/evidence/tui-windows-cross-build-2026-08-30.md`](../../docs/evidence/tui-windows-cross-build-2026-08-30.md).
+It compiles and lints every TUI target but does not close native linking,
+execution, ACL, or ConPTY rows.
 
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
@@ -249,7 +254,8 @@ Executable scans fail on:
   preference diagnostics;
 - unbounded channel/collection/history/undo/reconnect loops;
 - terminal setup without paired teardown and injected-failure tests;
-- unsafe code, missing public docs, ignored relevant tests, or banned phrases.
+- unsafe code outside the single audited Windows persistence FFI boundary,
+  missing public docs, ignored relevant tests, or banned phrases.
 
 ## Verification commands
 

@@ -272,6 +272,26 @@ created with owner-only permissions. Unix directories use `0700` and files
 `0600`; Windows uses a current-user-only ACL. A path with broader effective
 access is rejected for pending commands and prompt history.
 
+The Windows root is `%LOCALAPPDATA%\Garive\tui`. Before terminal acquisition,
+the persistence adapter reads the current process-token SID and creates each
+missing private directory or file with a protected, non-inherited DACL whose
+only ACE grants that SID full control. Opening an existing object verifies by
+handle that:
+
+1. it is the expected file or directory kind and not a reparse point;
+2. its owner equals the current process-token SID;
+3. its DACL is protected from parent inheritance; and
+4. its ACL bytes equal the canonical single-current-SID ACL for that object
+   kind.
+
+Every existing ancestor below the selected private path is checked for reparse
+points before creating descendants. ACL-less filesystems and objects that
+cannot be inspected with `READ_CONTROL` fail closed. Windows replacement uses
+same-volume `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING` and
+`MOVEFILE_WRITE_THROUGH`; a new temporary file receives and passes the same ACL
+check before replacement. Unix keeps `fsync` plus same-directory rename and
+parent-directory sync.
+
 Every state mutation acquires an OS advisory lock on a sibling lock file,
 reads and validates the latest revision, writes canonical JSON to a new
 same-directory temporary file, flushes file contents, renames atomically, then

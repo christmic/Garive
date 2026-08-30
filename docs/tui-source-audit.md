@@ -29,6 +29,7 @@ the focused TUI Specs linked below.
 | OpenAI Codex | Git `16fbfe557446a1af94da81e1144029ccc1311ad0` | Local official public source from `openai/codex` | Apache-2.0; implementation evidence |
 | Claude Code | Official repository Git `681a8be245e7759a405e276b16ae69ea6b75076f`, tag `v2.1.228`; installed binary `2.1.231` | Official repository does not contain the shipping TUI implementation | Product and public-interface evidence only |
 | Claude Code unpacked study | Git `3da94d5e5f2b99c9d82b0d8f09448b04775cd41f`, package claim `2.1.88` | Third-party extraction; README declares 108 missing modules and non-commercial restrictions | Corroboration only; no code or distinctive text may be copied |
+| Microsoft Win32 security/file APIs | Microsoft Learn pages retrieved 2026-08-30 | Official platform contract | Primary evidence for the Windows persistence boundary |
 
 The two Apache repositories may inform implementation structure, but Garive
 still authors its own types and code against its Host contract. The unpacked
@@ -188,6 +189,24 @@ legally restricted, so all findings below are corroborating observations.
 
 No Claude Code source is copied. A behavior is admitted only when Garive or an
 Apache implementation independently supports the same conclusion.
+
+## Windows persistence primary-source audit
+
+The Windows backend was designed from the Win32 contract rather than inferred
+from Unix modes or Rust API names:
+
+| Official source | Confirmed fact | Garive decision |
+|---|---|---|
+| [File Security and Access Rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights) | A file/directory can receive a security descriptor at creation; a null descriptor inherits its parent's ACL. | Every Garive private object receives an explicit descriptor; parent inheritance is not trusted. |
+| [Security Descriptor String Format](https://learn.microsoft.com/en-us/windows/win32/secauthz/security-descriptor-string-format) and [ConvertStringSecurityDescriptorToSecurityDescriptorW](https://learn.microsoft.com/en-us/windows/win32/api/sddl/nf-sddl-convertstringsecuritydescriptortosecuritydescriptorw) | `D:P` denotes a protected DACL; conversion returns a self-relative descriptor released with `LocalFree`. | Build one canonical protected DACL for the current token SID and own the returned allocation with a drop guard. |
+| [GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo) | A handle opened with `READ_CONTROL` can return owner/DACL pointers within one descriptor; the descriptor is released with `LocalFree`. | Validate owner and exact DACL from the already-open object handle, not from display metadata. |
+| [CreateFile symbolic-link behavior](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew) | `FILE_FLAG_OPEN_REPARSE_POINT` opens the link object rather than silently following it; directory handles require `FILE_FLAG_BACKUP_SEMANTICS`. | Reject reparse-point targets and ancestors before admitting state. |
+| [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw) | `MOVEFILE_REPLACE_EXISTING` replaces a file subject to ACL checks; `MOVEFILE_WRITE_THROUGH` waits for the move to reach disk. | Use a flushed, ACL-validated same-directory temporary file and a write-through replacement. |
+
+The backend does not map `0700`/`0600` to a broad Builtin Users or
+Authenticated Users ACE, does not repair a hostile existing ACL, and does not
+follow junctions for convenience. Administrator ownership privileges remain an
+operating-system authority and are not represented as ordinary Garive access.
 
 ## Cross-source decisions
 

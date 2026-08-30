@@ -49,12 +49,16 @@ Useful launch options:
 The Host/SQLite ledger is the only durable conversation authority. Local files
 contain preferences, bounded drafts, prompt history, and exact pending-command
 recovery envelopes only. Unix state directories/files are enforced as
-`0700`/`0600`; `--ephemeral` requires confirmation before mutations.
+`0700`/`0600`. Windows state uses a protected current-user-only ACL under
+`%LOCALAPPDATA%\Garive\tui`. `--ephemeral` requires confirmation before
+mutations.
 
 The verified native target is currently macOS arm64 with an xterm-compatible
-PTY. Linux and Windows source/build/native terminal support remain outside the
-verified claim until their named compatibility gates run; the current private
-state-store implementation intentionally fails compilation on non-Unix targets.
+PTY. The complete Windows target now passes source-level all-target check and
+strict Clippy, including its private-state backend. Windows native linking,
+ACL execution, and ConPTY interaction remain outside the verified claim until
+their named native gates run. Linux build and native PTY evidence also remain
+open.
 
 ## Verify
 

@@ -8,9 +8,10 @@ Host, and it rebuilds conversation state from Host read models after restart.
 
 The currently verified native environment is macOS arm64 with an
 xterm-compatible pseudo-terminal. The full-screen client requires interactive
-stdin and stderr. Linux and Windows native terminal behavior is not yet a
-supported claim; the secure local-state implementation currently compiles only
-on Unix.
+stdin and stderr. The complete Windows target passes source-level all-target
+check and strict Clippy, but Windows native linking, ACL execution, and ConPTY
+behavior are not yet a supported claim. Linux build and native terminal
+behavior also remain unverified.
 
 The TUI does not start a Runtime, select provider credentials, or read the
 Runtime database. A configured Runtime Host must already be listening on an
@@ -211,10 +212,10 @@ accept that the durable outcome may remain unknown.
 
 ## Local state and privacy
 
-By default, state is stored under
-`$XDG_STATE_HOME/garive/tui`, or `~/.local/state/garive/tui` when
-`XDG_STATE_HOME` is absent. Use an absolute `--state-dir` for an operator or
-test override.
+On Unix, state is stored under `$XDG_STATE_HOME/garive/tui`, or
+`~/.local/state/garive/tui` when `XDG_STATE_HOME` is absent. On Windows it is
+stored under `%LOCALAPPDATA%\Garive\tui`. Use an absolute `--state-dir` for an
+operator or test override.
 
 | Path | Stored content |
 |---|---|
@@ -225,9 +226,12 @@ test override.
 | `quarantine/` | Invalid local files moved aside with opaque names. |
 
 Unix directories are required to be owner-only `0700`; files are `0600`.
-Unsafe permissions make local state unavailable instead of weakening privacy.
-Writes use advisory locks, same-directory temporary files, fsync, atomic rename,
-and directory sync where supported.
+Windows directories and files use a protected DACL granting full control only
+to the current process-token SID. Existing objects must have that owner and
+exact ACL; reparse points in the private path are rejected. Unsafe permissions
+make local state unavailable instead of weakening privacy. Writes use advisory
+locks, same-directory temporary files, file flush, atomic replacement, and
+directory sync or write-through metadata moves where the platform supports it.
 
 The Runtime/Ledger remains the only durable owner of Sessions, Turns,
 conversation, activity, suspension, and terminal outcomes. Diagnostics exclude
@@ -274,8 +278,10 @@ rejected; use screen-reader mode only from an interactive terminal.
 absolute state path, duplicate options, and unexpected positional arguments.
 Supplied values are deliberately omitted from the error.
 
-**`local state is unavailable or unsafe`**: verify ownership and `0700`/`0600`
-permissions, remove no files while another process holds the state locks, and
+**`local state is unavailable or unsafe`**: on Unix, verify ownership and
+`0700`/`0600` permissions. On Windows, verify that the path is not a symlink or
+junction and that its protected ACL grants only the current account full
+control. Remove no files while another process holds the state locks, and
 inspect only the content-free diagnostics. Corrupt records are quarantined
 automatically when safe atomic rename succeeds.
 
@@ -313,4 +319,3 @@ The normative design set begins at
 [`../../spec/design/tui-product-spec-set.md`](../../spec/design/tui-product-spec-set.md).
 The pinned competitive source audit is
 [`../tui-source-audit.md`](../tui-source-audit.md).
-
