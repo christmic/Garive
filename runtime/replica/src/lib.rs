@@ -7,6 +7,7 @@ mod core_bridge;
 mod delegation_runtime;
 mod effect_batch_facts;
 mod effect_batch_runtime;
+mod effect_batch_sqlite;
 mod live_host;
 mod local_composition;
 mod local_recovery;
@@ -67,6 +68,7 @@ pub use effect_batch_runtime::{
     ConcurrentExecutorDispatch, ConcurrentExecutorPort, EffectBatchDispatcher,
     EffectBatchPublisher, EffectBatchReport, EffectBatchRuntimeLimits, EffectCancellation,
 };
+pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
 pub use live_host::{
     CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
     InstalledAgent, LiveHost, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer,

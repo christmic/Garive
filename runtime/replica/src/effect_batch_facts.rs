@@ -52,7 +52,7 @@ pub fn plan_effect_batch_admission(
     for (invocation, digest) in invocations.iter().zip(plan.ordered_prepared_digests()) {
         validate_invocation(invocation, digest)?;
         let prepared = &invocation.prepared;
-        facts.push(fact(
+        facts.push(batch_fact(
             context,
             &child_id(plan.plan_digest(), invocation.invocation_id.as_str(), "prepared"),
             "effect.prepared",
@@ -71,7 +71,7 @@ pub fn plan_effect_batch_admission(
                 "max_result_bytes":prepared.max_result_bytes().ok_or(BatchRuntimeError::InvalidBinding)?,
             }),
         )?);
-        facts.push(fact(
+        facts.push(batch_fact(
             context,
             &child_id(plan.plan_digest(), invocation.invocation_id.as_str(), "authorized"),
             "effect.authorized",
@@ -85,7 +85,7 @@ pub fn plan_effect_batch_admission(
             }),
         )?);
     }
-    facts.push(fact(
+    facts.push(batch_fact(
         context,
         &format!("fact-{}", sha256(format!("{}:plan", plan.plan_digest()).as_bytes())),
         "execution.effect_batch_planned",
@@ -123,7 +123,7 @@ fn validate_invocation(
     }
 }
 
-fn fact(
+pub(crate) fn batch_fact(
     context: &EffectBatchAdmissionContext,
     id: &str,
     kind: &str,
@@ -148,13 +148,13 @@ fn fact(
     })
 }
 
-fn content(value: &Value) -> Result<Value, BatchRuntimeError> {
+pub(crate) fn content(value: &Value) -> Result<Value, BatchRuntimeError> {
     let canonical =
         CanonicalPayload::from_value(value).map_err(|_| BatchRuntimeError::InvalidBinding)?;
     Ok(json!({"digest":canonical.sha256(),"inline_utf8":canonical.as_json()}))
 }
 
-fn child_id(plan: &str, invocation: &str, kind: &str) -> String {
+pub(crate) fn child_id(plan: &str, invocation: &str, kind: &str) -> String {
     format!(
         "fact-{}",
         sha256(format!("{plan}:{invocation}:{kind}").as_bytes())
