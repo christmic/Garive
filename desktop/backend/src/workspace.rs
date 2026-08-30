@@ -288,9 +288,31 @@ impl DesktopWorkspaceService {
                 needs_reauthorization += 1;
             }
         }
+        let revoked = record_map
+            .values()
+            .filter(|record| record.revoked)
+            .map(|record| (record.workspace_id.clone(), record.bookmark_ref.clone()))
+            .collect::<Vec<_>>();
+        let mut cleaned_revocations = false;
+        for (workspace_id, bookmark_ref) in revoked {
+            if persistence.store.delete(&bookmark_ref).is_ok() {
+                record_map.remove(&workspace_id);
+                cleaned_revocations = true;
+            }
+        }
+        if cleaned_revocations {
+            write_manifest(
+                &persistence.manifest_path,
+                record_map.values().cloned().collect(),
+            )?;
+        }
         let now = unix_seconds()?;
         let mut restored = BTreeMap::new();
-        for record in record_map.values().cloned() {
+        for record in record_map
+            .values()
+            .filter(|record| !record.revoked)
+            .cloned()
+        {
             let recovered = (|| {
                 let bytes = persistence.store.load(&record.bookmark_ref)?;
                 #[cfg(target_os = "macos")]
@@ -389,6 +411,7 @@ impl DesktopWorkspaceService {
             .map_err(|_| DesktopWorkspaceError::Unavailable)?;
         Ok(records
             .values()
+            .filter(|record| !record.revoked)
             .map(|record| DesktopWorkspaceAuthorization {
                 schema_version: 1,
                 workspace_id: record.workspace_id.clone(),
@@ -424,6 +447,9 @@ impl DesktopWorkspaceService {
             .get(workspace_id)
             .cloned()
             .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        if record.revoked {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
         let (canonical_root, metadata) = validated_root(selected)?;
         let identity = file_identity(&metadata);
         if identity.device != record.device || identity.file != record.file {
@@ -496,7 +522,8 @@ impl DesktopWorkspaceService {
             return Err(error);
         }
         let restored_count = active.len();
-        let needs_reauthorization_count = records.len().saturating_sub(restored_count);
+        let durable_active_count = records.values().filter(|record| !record.revoked).count();
+        let needs_reauthorization_count = durable_active_count.saturating_sub(restored_count);
         drop(records);
         drop(active);
         self.set_recovery_status(
@@ -559,6 +586,7 @@ impl DesktopWorkspaceService {
             .lock()
             .map_err(|_| DesktopWorkspaceError::Unavailable)?
             .values()
+            .filter(|record| !record.revoked)
             .find(|record| {
                 record.device == selected_identity.device && record.file == selected_identity.file
             })
@@ -628,6 +656,7 @@ impl DesktopWorkspaceService {
                     bookmark_ref: reference.clone(),
                     device: selected_identity.device,
                     file: selected_identity.file,
+                    revoked: false,
                 },
             );
         }

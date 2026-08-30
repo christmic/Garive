@@ -86,6 +86,8 @@ pub(crate) struct WorkspaceManifestRecord {
     pub bookmark_ref: String,
     pub device: u64,
     pub file: u64,
+    #[serde(default)]
+    pub revoked: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -108,7 +110,7 @@ pub(crate) fn read_manifest(
     }
     let manifest: WorkspaceManifest =
         serde_json::from_slice(&bytes).map_err(|_| DesktopWorkspaceError::Unavailable)?;
-    if manifest.schema_version != 1 || manifest.workspaces.len() > 16 {
+    if !matches!(manifest.schema_version, 1 | 2) || manifest.workspaces.len() > 16 {
         return Err(DesktopWorkspaceError::BoundExceeded);
     }
     for record in &manifest.workspaces {
@@ -128,7 +130,7 @@ pub(crate) fn write_manifest(
         validate_record(record)?;
     }
     let bytes = serde_json::to_vec(&WorkspaceManifest {
-        schema_version: 1,
+        schema_version: 2,
         workspaces: records,
     })
     .map_err(|_| DesktopWorkspaceError::Unavailable)?;
@@ -197,11 +199,26 @@ mod tests {
             bookmark_ref: "bookmark-456".into(),
             device: 7,
             file: 9,
+            revoked: false,
         };
         write_manifest(&path, vec![record.clone()]).unwrap();
         let encoded = fs::read_to_string(&path).unwrap();
         assert!(!encoded.contains(directory.path().to_string_lossy().as_ref()));
         assert_eq!(read_manifest(&path).unwrap(), vec![record]);
+    }
+
+    #[test]
+    fn legacy_active_records_migrate_without_broadening_authority() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(DESKTOP_WORKSPACE_MANIFEST_FILE);
+        fs::write(&path, br#"{"schema_version":1,"workspaces":[{"schema_version":1,"workspace_id":"workspace-123","display_name":"Project","grant_revision":1,"bookmark_ref":"bookmark-456","device":7,"file":9}]}"#).unwrap();
+        let records = read_manifest(&path).unwrap();
+        assert_eq!(records.len(), 1);
+        assert!(!records[0].revoked);
+        write_manifest(&path, records).unwrap();
+        assert!(fs::read_to_string(path)
+            .unwrap()
+            .starts_with("{\"schema_version\":2,"));
     }
 
     #[test]
