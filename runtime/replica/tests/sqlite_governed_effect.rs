@@ -2,8 +2,8 @@ use std::{path::PathBuf, sync::Arc};
 
 use futures::executor::block_on;
 use garive_core::{
-    AgentOutcome, ExecutionReport, GovernedEffectPort, GovernedSuspensionBinding, SuspensionReason,
-    UsageSummary,
+    AgentOutcome, AgentToolCapabilities, ExecutionReport, GovernedEffectPort,
+    GovernedSuspensionBinding, SuspensionReason, ToolPreparationPort, UsageSummary,
 };
 use garive_ledger::{
     CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
@@ -15,17 +15,18 @@ use garive_llm::{
 use garive_runtime::{
     derive_runtime_recovery, plan_core_terminal, plan_f0_safety_decision,
     plan_f0_sandbox_admission, plan_model_prepared, plan_model_started, plan_model_terminal,
-    reconstruct_suspended_turn, recover_f0_prepared, ActivityProjectionLimits, AuthorityDecision,
-    AuthorityFuture, AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand,
-    CoreTerminalContext, EffectRecoveryPosition, ExecutorDispatch, ExecutorFuture, ExecutorPort,
-    F0EffectAdmissionContext, F0GovernanceContext, F0RecoveryContentPort, F0RecoveryError,
-    F0SafetyDecisionContext, GovernedEffectConfig, HostClock, HostReadLimits,
-    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
-    InteractionInputRepresentation, LiveHost, LiveHostLimits, ModelLifecycleContext,
+    reconstruct_suspended_turn, recover_f0_prepared, recover_local_dispatches_with_f0,
+    ActivityProjectionLimits, AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest,
+    ContinuationInput, ContinueTurnCommand, CoreTerminalContext, EffectRecoveryPosition,
+    ExecutorDispatch, ExecutorFuture, ExecutorPort, F0EffectAdmissionContext, F0GovernanceContext,
+    F0RecoveryContentPort, F0RecoveryError, F0SafetyDecisionContext, GovernedEffectConfig,
+    HostClock, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits, LocalF0Governance,
+    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError, ModelLifecycleContext,
     PreparedExecution, RuntimeCommandError, RuntimeCommandId, SafetyDecisionV1, SafetyDisposition,
-    SafetyEvaluation, SafetyFuture, SafetyPort, SandboxAdmission, SandboxAdmissionPort,
-    SandboxAdmissionRequest, SandboxBindingV1, SqliteGovernedEffectPort, SqliteLedger,
-    TurnDispatchError, TurnDispatcher,
+    SafetyEvaluation, SafetyFuture, SafetyInteraction, SafetyPort, SandboxAdmission,
+    SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1, SqliteGovernedEffectPort,
+    SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
@@ -38,6 +39,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
+#[derive(Clone, Copy)]
 enum Decision {
     Approve,
     Interaction,
@@ -145,6 +147,79 @@ struct NoReferencedContent;
 impl F0RecoveryContentPort for NoReferencedContent {
     fn resolve(&mut self, _: &str) -> Result<String, F0RecoveryError> {
         Err(F0RecoveryError::ContentUnavailable)
+    }
+}
+
+struct RecoveryPreparation;
+impl ToolPreparationPort for RecoveryPreparation {
+    fn prepare(
+        &self,
+        intent: &ToolIntent,
+    ) -> Result<garive_tools::PreparedToolCall, PreparationError> {
+        v3_catalog().prepare_v3(intent, &Resolver)
+    }
+}
+
+struct RecoverySafety(Decision);
+impl SafetyPort for RecoverySafety {
+    fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        let decision = self.0;
+        Box::pin(async move {
+            match decision {
+                Decision::Interaction => Ok(SafetyEvaluation {
+                    decision: SafetyDecisionV1::new(
+                        "safety-interaction",
+                        SafetyDisposition::InteractionRequired,
+                        request.invocation_id().clone(),
+                        request.prepared_digest(),
+                        None,
+                        request.effective_policy_revision(),
+                        Some("safety_interaction_required".into()),
+                    )
+                    .unwrap(),
+                    granted_requirements: None,
+                    interaction: Some(SafetyInteraction {
+                        kind: InteractionKind::Approval,
+                        prompt: json!({"schema_version":1,"title_key":"approval.title","action_label_key":"approval.allow"}),
+                        response_schema: json!({"type":"boolean"}),
+                        expiry_code: "none".into(),
+                    }),
+                }),
+                _ => AllowSafety("a").decide(request).await,
+            }
+        })
+    }
+}
+
+struct RecoveryFactory(Decision);
+impl LocalGovernedExecutionFactory for RecoveryFactory {
+    fn create(
+        &self,
+        _: &garive_runtime::CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        Ok(LocalGovernedExecution {
+            capabilities: AgentToolCapabilities {
+                definitions: vec![v3_definition()],
+            },
+            authority: Box::new(Authority { decision: self.0 }),
+            executor: Box::new(Executor {
+                mode: ExecutionMode::Success,
+                prepares: 0,
+                dispatches: 0,
+            }),
+            f0: Some(LocalF0Governance {
+                preparation: Box::new(RecoveryPreparation),
+                recovery_content: Box::new(NoReferencedContent),
+                safety: Box::new(RecoverySafety(self.0)),
+                sandbox: Box::new(LocalSandbox("1")),
+                context: F0GovernanceContext {
+                    actor_authority_reference: "actor".into(),
+                    goal_reference: None,
+                    plan_reference: None,
+                    effective_policy_revision: "policy-1".into(),
+                },
+            }),
+        })
     }
 }
 
@@ -779,6 +854,107 @@ fn changed_safety_or_sandbox_binding_never_dispatches_during_f0_resume() {
     }
 }
 
+#[test]
+fn local_startup_resumes_all_f0_cuts_then_restarts_with_consumed_iteration() {
+    for cut in 1..=5 {
+        let directory = tempdir().unwrap();
+        let mut setup = setup(&directory.path().join(format!("startup-{cut}.sqlite3")));
+        let prepared = v3_catalog()
+            .prepare_v3(
+                &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+                &Resolver,
+            )
+            .unwrap();
+        setup
+            .ledger
+            .commit(
+                setup.session.clone(),
+                setup.version,
+                f0_recovery_facts(&setup, &prepared)[..cut].to_vec(),
+            )
+            .unwrap();
+        let dispatches = recover_local_dispatches_with_f0(
+            &mut setup.ledger,
+            3,
+            timestamp(),
+            &RecoveryFactory(Decision::Approve),
+            1_024,
+        )
+        .unwrap();
+        assert_eq!(dispatches.len(), 1);
+        let snapshot = setup.ledger.load_turn(&setup.turn).unwrap();
+        assert_eq!(
+            snapshot
+                .facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == "effect.started")
+                .count(),
+            1
+        );
+        let replacement = snapshot
+            .facts
+            .iter()
+            .rfind(|fact| fact.kind.as_str() == "execution.started")
+            .unwrap();
+        assert_eq!(payload(replacement)["completed_iterations"], 1);
+        assert_eq!(
+            replacement.execution_id.as_ref(),
+            Some(&dispatches[0].execution_id)
+        );
+    }
+}
+
+#[test]
+fn local_startup_commits_one_bound_interaction_without_replacement_dispatch() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("startup-interaction.sqlite3"));
+    let prepared = v3_catalog()
+        .prepare_v3(
+            &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+            &Resolver,
+        )
+        .unwrap();
+    setup
+        .ledger
+        .commit(
+            setup.session.clone(),
+            setup.version,
+            f0_recovery_facts(&setup, &prepared)[..1].to_vec(),
+        )
+        .unwrap();
+
+    let dispatches = recover_local_dispatches_with_f0(
+        &mut setup.ledger,
+        3,
+        timestamp(),
+        &RecoveryFactory(Decision::Interaction),
+        1_024,
+    )
+    .unwrap();
+
+    let snapshot = setup.ledger.load_turn(&setup.turn).unwrap();
+    assert!(dispatches.is_empty());
+    for kind in [
+        "interaction.requested",
+        "execution.suspended",
+        "turn.suspended",
+    ] {
+        assert_eq!(
+            snapshot
+                .facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == kind)
+                .count(),
+            1,
+            "{kind}"
+        );
+    }
+    assert!(!snapshot
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "effect.started"));
+}
+
 fn f0_recovery_facts(
     Setup {
         turn, execution, ..
@@ -1150,7 +1326,11 @@ fn tool_catalog() -> ToolCatalog {
 }
 
 fn v3_catalog() -> ToolCatalog {
-    ToolCatalog::new([ToolDefinition::new_v3(
+    ToolCatalog::new([v3_definition()]).unwrap()
+}
+
+fn v3_definition() -> ToolDefinition {
+    ToolDefinition::new_v3(
         "read_file",
         "1",
         "Read one file.",
@@ -1161,7 +1341,6 @@ fn v3_catalog() -> ToolCatalog {
         "resolver-1",
         sandbox_requirements(),
     )
-    .unwrap()])
     .unwrap()
 }
 

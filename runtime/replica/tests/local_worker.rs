@@ -188,6 +188,13 @@ impl ToolPreparationPort for WritePreparation {
     }
 }
 
+struct NoRecoveryContent;
+impl garive_runtime::F0RecoveryContentPort for NoRecoveryContent {
+    fn resolve(&mut self, _: &str) -> Result<String, garive_runtime::F0RecoveryError> {
+        Err(garive_runtime::F0RecoveryError::ContentUnavailable)
+    }
+}
+
 struct AllowF0;
 impl SafetyPort for AllowF0 {
     fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
@@ -289,6 +296,7 @@ impl LocalGovernedExecutionFactory for GovernedFactory {
                 preparation: Box::new(WritePreparation(
                     ToolCatalog::new([governed_definition()]).unwrap(),
                 )),
+                recovery_content: Box::new(NoRecoveryContent),
                 safety: Box::new(AllowF0),
                 sandbox: Box::new(LocalF0Sandbox),
                 context: F0GovernanceContext {

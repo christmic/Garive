@@ -78,7 +78,7 @@ fn suspension_pair(
     let suspension_id = format!("suspension-{}", digest_text(source.fact_id.as_str()));
     let continuation = json!({"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""});
     let usage = json!({"input_tokens":{"kind":"unknown"},"output_tokens":{"kind":"unknown"},"source":"estimated"});
-    let completed_iterations = completed_iterations(snapshot, source)?;
+    let completed_iterations = recovered_completed_iterations(snapshot, source)?;
     let mut execution = fact(
         source,
         "execution.suspended",
@@ -150,7 +150,7 @@ fn recovery_bound_terminal(
         "execution.failed",
         json!({
             "reason":"corrupt_recovery_state","usage":usage,
-            "completed_iterations":completed_iterations(snapshot, execution)?
+            "completed_iterations":recovered_completed_iterations(snapshot, execution)?
         }),
         recorded_at,
     )?;
@@ -166,7 +166,7 @@ fn recovery_bound_terminal(
     Ok(vec![execution_fact, turn_fact])
 }
 
-fn completed_iterations(
+pub(crate) fn recovered_completed_iterations(
     snapshot: &TurnSnapshot,
     source: &DurableFact,
 ) -> Result<u64, RuntimeCommandError> {

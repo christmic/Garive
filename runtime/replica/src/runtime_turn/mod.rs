@@ -21,6 +21,7 @@ pub use recovery::{
     RuntimeRecoverySnapshot,
 };
 pub use recovery_facts::plan_recovery_action_facts;
+pub(crate) use recovery_facts::recovered_completed_iterations;
 pub use types::{
     CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand,
     DelegationContinuation, EffectiveRuntimeLimits, GetTurnQuery, InteractionContinuation,

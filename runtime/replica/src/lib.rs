@@ -111,7 +111,9 @@ pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
     ReconstructedLocalExecution,
 };
-pub use local_recovery::{recover_local_dispatches, LocalRecoveryError};
+pub use local_recovery::{
+    recover_local_dispatches, recover_local_dispatches_with_f0, LocalRecoveryError,
+};
 pub use local_worker::{
     local_dispatch_queue, LocalDispatchQueue, LocalExecutionWorker, LocalF0Governance,
     LocalGovernedExecution, LocalGovernedExecutionFactory, LocalTurnDispatcher,
@@ -160,7 +162,8 @@ pub use sandbox_facts::{
     F0EffectAdmissionContext, F0SafetyDecisionContext, PlannedF0EffectAdmission,
 };
 pub use sandbox_recovery::{
-    recover_f0_prepared, F0RecoveryContentPort, F0RecoveryError, RecoveredF0Prepared,
+    recover_f0_prepared, recover_f0_prepared_with_port, F0RecoveryContentPort, F0RecoveryError,
+    RecoveredF0Prepared,
 };
 pub use sandbox_runtime::{
     preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SafetyRequestV1, SandboxBindingV1,

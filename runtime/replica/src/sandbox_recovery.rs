@@ -1,5 +1,6 @@
 //! Reconstruction of one exact Prepared-v3 call from durable recovery state.
 
+use garive_core::ToolPreparationPort;
 use garive_ledger::{CanonicalPayload, TurnSnapshot};
 use garive_tools::{PreparedToolCall, ToolAccessResolver, ToolCatalog, ToolIntent};
 use serde::Serialize;
@@ -43,6 +44,39 @@ pub fn recover_f0_prepared(
     content: &mut dyn F0RecoveryContentPort,
     max_arguments_bytes: usize,
 ) -> Result<RecoveredF0Prepared, F0RecoveryError> {
+    recover_f0_prepared_inner(
+        turn,
+        invocation_id,
+        content,
+        max_arguments_bytes,
+        |intent| catalogue.prepare_v3(&intent, access_resolver),
+    )
+}
+
+/// Reconstructs Prepared-v3 through the same frozen port used by the live Core loop.
+pub fn recover_f0_prepared_with_port(
+    turn: &TurnSnapshot,
+    invocation_id: &str,
+    preparation: &dyn ToolPreparationPort,
+    content: &mut dyn F0RecoveryContentPort,
+    max_arguments_bytes: usize,
+) -> Result<RecoveredF0Prepared, F0RecoveryError> {
+    recover_f0_prepared_inner(
+        turn,
+        invocation_id,
+        content,
+        max_arguments_bytes,
+        |intent| preparation.prepare(&intent),
+    )
+}
+
+fn recover_f0_prepared_inner(
+    turn: &TurnSnapshot,
+    invocation_id: &str,
+    content: &mut dyn F0RecoveryContentPort,
+    max_arguments_bytes: usize,
+    prepare: impl FnOnce(ToolIntent) -> Result<PreparedToolCall, garive_tools::PreparationError>,
+) -> Result<RecoveredF0Prepared, F0RecoveryError> {
     if invocation_id.is_empty() || max_arguments_bytes == 0 {
         return Err(F0RecoveryError::InvalidBinding);
     }
@@ -67,16 +101,12 @@ pub fn recover_f0_prepared(
         content,
         max_arguments_bytes,
     )?;
-    let prepared = catalogue
-        .prepare_v3(
-            &ToolIntent::new(
-                text(&value, "model_call_id")?,
-                text(&value, "tool_name")?,
-                arguments,
-            ),
-            access_resolver,
-        )
-        .map_err(|_| F0RecoveryError::PreparationRejected)?;
+    let prepared = prepare(ToolIntent::new(
+        text(&value, "model_call_id")?,
+        text(&value, "tool_name")?,
+        arguments,
+    ))
+    .map_err(|_| F0RecoveryError::PreparationRejected)?;
     let access_digest = canonical_digest(
         prepared
             .invocation_accesses()

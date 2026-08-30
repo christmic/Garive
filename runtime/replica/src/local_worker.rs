@@ -16,9 +16,9 @@ use garive_llm::{ModelCancellation, ModelPort};
 use crate::{
     execute_durable_agent, execute_durable_agent_with_f0, execute_durable_model_only,
     reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
-    F0GovernanceContext, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
-    SafetyPort, SandboxAdmissionPort, SqliteLedger, TerminalPublicationError, TerminalPublisher,
-    TurnDispatchError, TurnDispatcher,
+    F0GovernanceContext, F0RecoveryContentPort, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalReconstructionError, SafetyPort, SandboxAdmissionPort, SqliteLedger,
+    TerminalPublicationError, TerminalPublisher, TurnDispatchError, TurnDispatcher,
 };
 
 /// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
@@ -139,6 +139,8 @@ pub struct LocalGovernedExecution {
 pub struct LocalF0Governance {
     /// Pure versioned Prepared-v3 resolver composition.
     pub preparation: Box<dyn ToolPreparationPort>,
+    /// Bounded resolver for opaque Prepared argument content during restart.
+    pub recovery_content: Box<dyn F0RecoveryContentPort>,
     /// Runtime Safety policy broker.
     pub safety: Box<dyn SafetyPort>,
     /// Runtime Sandbox selection and preflight broker.

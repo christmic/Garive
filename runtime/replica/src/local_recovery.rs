@@ -1,12 +1,19 @@
 //! Startup recovery coordinator for local model-only Turn dispatches.
 
+use futures::executor::block_on;
+use garive_core::{AgentOutcome, ExecutionReport, SuspensionReason, UsageSummary};
 use garive_ledger::{DurableFact, TurnSnapshot};
+use garive_llm::TokenCount;
+use garive_tools::{GovernedToolResult, InteractionKind, SuspensionRequirement};
 use serde_json::Value;
 
+use crate::runtime_turn::recovered_completed_iterations;
 use crate::{
-    derive_runtime_recovery, plan_recovery_action_facts, plan_recovery_restart,
-    select_runtime_recovery, CommittedTurn, EffectiveRuntimeLimits, RecoveryRestartCommand,
-    RuntimeCommandId, RuntimeRecoveryAction, SqliteLedger,
+    derive_runtime_recovery, plan_core_terminal, plan_recovery_action_facts, plan_recovery_restart,
+    recover_f0_prepared_with_port, select_runtime_recovery, CommittedTurn, CoreTerminalContext,
+    EffectiveRuntimeLimits, GovernedEffectConfig, LocalGovernedExecutionFactory,
+    RecoveryRestartCommand, RuntimeCommandId, RuntimeRecoveryAction, SqliteGovernedEffectPort,
+    SqliteLedger,
 };
 
 /// Stable secret-free local restart failure.
@@ -20,6 +27,8 @@ pub enum LocalRecoveryError {
     CorruptRecoveryState,
     /// Prepared-v3 recovery requires configured Safety and Sandbox brokers.
     F0GovernanceRequired,
+    /// Configured F0 dependencies could not prove or finish the same invocation.
+    F0RecoveryFailed,
 }
 impl LocalRecoveryError {
     /// Returns the stable operational code.
@@ -29,6 +38,7 @@ impl LocalRecoveryError {
             Self::DurabilityUnavailable => "durability_unavailable",
             Self::CorruptRecoveryState => "reconstruction_failed",
             Self::F0GovernanceRequired => "f0_governance_required",
+            Self::F0RecoveryFailed => "f0_recovery_failed",
         }
     }
 }
@@ -38,6 +48,34 @@ pub fn recover_local_dispatches(
     ledger: &mut SqliteLedger,
     max_recoveries: u64,
     recorded_at: &str,
+) -> Result<Vec<CommittedTurn>, LocalRecoveryError> {
+    recover_local_dispatches_inner(ledger, max_recoveries, recorded_at, None)
+}
+
+/// Applies startup recovery including Prepared-v3 broker continuation.
+pub fn recover_local_dispatches_with_f0(
+    ledger: &mut SqliteLedger,
+    max_recoveries: u64,
+    recorded_at: &str,
+    factory: &dyn LocalGovernedExecutionFactory,
+    max_arguments_bytes: usize,
+) -> Result<Vec<CommittedTurn>, LocalRecoveryError> {
+    if max_arguments_bytes == 0 {
+        return Err(LocalRecoveryError::InvalidConfiguration);
+    }
+    recover_local_dispatches_inner(
+        ledger,
+        max_recoveries,
+        recorded_at,
+        Some((factory, max_arguments_bytes)),
+    )
+}
+
+fn recover_local_dispatches_inner(
+    ledger: &mut SqliteLedger,
+    max_recoveries: u64,
+    recorded_at: &str,
+    f0: Option<(&dyn LocalGovernedExecutionFactory, usize)>,
 ) -> Result<Vec<CommittedTurn>, LocalRecoveryError> {
     if max_recoveries == 0 || !canonical_utc(recorded_at) {
         return Err(LocalRecoveryError::InvalidConfiguration);
@@ -94,7 +132,18 @@ pub fn recover_local_dispatches(
                     RuntimeRecoveryAction::ReevaluateEffectSafety
                     | RuntimeRecoveryAction::ResumeEffectAdmission
                     | RuntimeRecoveryAction::RevalidateAndDispatchEffect => {
-                        return Err(LocalRecoveryError::F0GovernanceRequired)
+                        let Some((factory, max_arguments_bytes)) = f0 else {
+                            return Err(LocalRecoveryError::F0GovernanceRequired);
+                        };
+                        resume_f0(
+                            ledger,
+                            &session_id,
+                            &turn_id,
+                            &snapshot,
+                            factory,
+                            max_arguments_bytes,
+                            recorded_at,
+                        )?;
                     }
                     RuntimeRecoveryAction::FailCorruptLedger => {
                         return Err(LocalRecoveryError::CorruptRecoveryState)
@@ -104,6 +153,127 @@ pub fn recover_local_dispatches(
         }
     }
     Ok(output)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resume_f0(
+    ledger: &mut SqliteLedger,
+    session_id: &garive_ledger::SessionId,
+    turn_id: &garive_ledger::TurnId,
+    snapshot: &TurnSnapshot,
+    factory: &dyn LocalGovernedExecutionFactory,
+    max_arguments_bytes: usize,
+    recorded_at: &str,
+) -> Result<(), LocalRecoveryError> {
+    let started = latest(snapshot, "execution.started")?;
+    let execution_id = started
+        .execution_id
+        .clone()
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let pending = snapshot
+        .facts
+        .iter()
+        .rfind(|fact| {
+            fact.execution_id.as_ref() == Some(&execution_id)
+                && fact.tool_invocation_id.is_some()
+                && matches!(
+                    fact.kind.as_str(),
+                    "effect.prepared"
+                        | "safety.decided"
+                        | "effect.authorized"
+                        | "sandbox.bound"
+                        | "sandbox.preflighted"
+                )
+        })
+        .and_then(|fact| fact.tool_invocation_id.as_ref())
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let committed = CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: turn_id.clone(),
+        execution_id: execution_id.clone(),
+        session_version: snapshot.session_version,
+        committed_position: snapshot.through_position,
+    };
+    let mut governed = factory
+        .create(&committed)
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
+    let mut f0 = governed
+        .f0
+        .take()
+        .ok_or(LocalRecoveryError::F0GovernanceRequired)?;
+    let recovered = recover_f0_prepared_with_port(
+        snapshot,
+        pending.as_str(),
+        f0.preparation.as_ref(),
+        f0.recovery_content.as_mut(),
+        max_arguments_bytes,
+    )
+    .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
+    if !governed.capabilities.definitions.iter().any(|definition| {
+        definition.name() == recovered.prepared.tool_name()
+            && definition.revision() == recovered.prepared.tool_revision()
+    }) {
+        return Err(LocalRecoveryError::CorruptRecoveryState);
+    }
+    let completed_iterations = recovered_completed_iterations(snapshot, started)
+        .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
+    let mut port = SqliteGovernedEffectPort::new(
+        ledger,
+        governed.authority.as_mut(),
+        governed.executor.as_mut(),
+        GovernedEffectConfig {
+            session_id: session_id.clone(),
+            expected_session_version: snapshot.session_version,
+            initial_through_position: snapshot.through_position,
+            turn_id: turn_id.clone(),
+            execution_id: execution_id.clone(),
+            recorded_at: recorded_at.into(),
+        },
+    )
+    .and_then(|port| port.with_f0_governance(f0.safety.as_mut(), f0.sandbox.as_mut(), f0.context))
+    .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
+    let result = block_on(port.resume_f0(snapshot, recovered))
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
+    let version = port
+        .session_version()
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
+    drop(port);
+    if let GovernedToolResult::Suspend(SuspensionRequirement::Interaction(interaction)) =
+        result.result
+    {
+        let reason = if interaction.kind == InteractionKind::Approval {
+            SuspensionReason::ApprovalRequired
+        } else {
+            SuspensionReason::ExternalInputRequired
+        };
+        let terminal = plan_core_terminal(
+            &CoreTerminalContext {
+                turn_id: turn_id.clone(),
+                execution_id,
+                recorded_at: recorded_at.into(),
+            },
+            &ExecutionReport {
+                outcome: AgentOutcome::Suspended {
+                    reason,
+                    partial_items: vec![],
+                    last_durable_position: result.through_position,
+                    governed_binding: result.suspension_binding,
+                },
+                completed_iterations: u32::try_from(completed_iterations)
+                    .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
+                usage: UsageSummary {
+                    input_tokens: TokenCount::Unknown,
+                    output_tokens: TokenCount::Unknown,
+                    estimated: true,
+                },
+            },
+        )
+        .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
+        ledger
+            .commit(session_id.clone(), version, terminal)
+            .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
+    }
+    Ok(())
 }
 
 fn commit_action(
@@ -157,7 +327,8 @@ fn restart_plan(
         lost_execution_id: execution_id,
         snapshot_digest: text(&value, "snapshot_digest")?.to_owned(),
         last_safe_position: snapshot.through_position,
-        completed_iterations: number(&value, "completed_iterations")?,
+        completed_iterations: recovered_completed_iterations(snapshot, started)
+            .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
         recovery_ordinal,
         limits: EffectiveRuntimeLimits {
             max_iterations: number_map(limits, "max_iterations")?,
