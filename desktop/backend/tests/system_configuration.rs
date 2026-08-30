@@ -18,7 +18,10 @@ use garive_llm::{
     ModelRequest, ModelStopReason, ModelUsage, TokenCount, UsageSource,
 };
 use garive_provider_profile::SecretValue;
-use garive_runtime::RuntimeHttpLimits;
+use garive_runtime::{
+    CommittedTurn, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
+    RuntimeHttpLimits,
+};
 use tempfile::tempdir;
 
 const FIXTURE: &[u8] = include_bytes!(concat!(
@@ -210,6 +213,36 @@ async fn file_provider_installs_and_runs_one_durable_turn() {
     assert_eq!(result.text, "configured durable answer");
     assert!(!result.session_id.is_empty());
     assert!(!format!("{result:?}").contains("fixture-secret-never-serialized"));
+}
+
+struct RejectingGovernedFactory;
+impl LocalGovernedExecutionFactory for RejectingGovernedFactory {
+    fn create(&self, _: &CommittedTurn) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        Err(LocalWorkerError::InvalidComposition)
+    }
+}
+
+#[tokio::test]
+async fn configured_state_routes_execution_through_its_governed_factory() {
+    let directory = tempdir().unwrap();
+    let document = directory.path().join("desktop-v1.json");
+    std::fs::write(&document, FIXTURE).unwrap();
+    let provider = FileDesktopConfigurationProvider::new(
+        document,
+        directory.path().to_owned(),
+        FixtureSecrets,
+        FixtureProfiles,
+    );
+    let state = DesktopState::governed(Arc::new(RejectingGovernedFactory));
+    assert!(state.install_from(&provider).unwrap());
+    assert_eq!(
+        state
+            .run_turn_isolated("definition-main".into(), "governed".into())
+            .await
+            .unwrap_err()
+            .code(),
+        "execution_failure"
+    );
 }
 
 #[test]

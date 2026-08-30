@@ -9,7 +9,7 @@ use garive_llm::ModelPort;
 use garive_runtime::{
     local_dispatch_queue, HostClock, HostContinuationInput, HostWorkspaceContextEntry,
     InstalledAgent, LiveHost, LiveHostLimits, LocalDispatchQueue, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, TurnCommandResponse,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, TurnCommandResponse,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -171,6 +171,21 @@ pub struct DesktopHost {
 impl DesktopHost {
     /// Constructs R1 entirely from Garive backend values without discovery.
     pub fn new(config: DesktopHostConfig) -> Result<Self, DesktopHostError> {
+        Self::construct(config, None)
+    }
+
+    /// Constructs R1 with an explicit per-Execution governed port factory.
+    pub fn new_governed(
+        config: DesktopHostConfig,
+        governed: Arc<dyn LocalGovernedExecutionFactory>,
+    ) -> Result<Self, DesktopHostError> {
+        Self::construct(config, Some(governed))
+    }
+
+    fn construct(
+        config: DesktopHostConfig,
+        governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
+    ) -> Result<Self, DesktopHostError> {
         if config.database_path.as_os_str().is_empty() || config.dispatch_capacity == 0 {
             return Err(DesktopHostError::InvalidConfiguration);
         }
@@ -185,9 +200,20 @@ impl DesktopHost {
             dispatcher,
         )
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-        let worker =
-            LocalExecutionWorker::new(&config.database_path, config.execution_policy, config.model)
-                .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+        let worker = match governed {
+            Some(factory) => LocalExecutionWorker::new_governed(
+                &config.database_path,
+                config.execution_policy,
+                config.model,
+                factory,
+            ),
+            None => LocalExecutionWorker::new(
+                &config.database_path,
+                config.execution_policy,
+                config.model,
+            ),
+        }
+        .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         Ok(Self {
             host,
             definition_id,
@@ -406,9 +432,18 @@ fn terminal(event: &str) -> Option<DesktopTerminal> {
 #[derive(Default)]
 pub struct DesktopState {
     host: std::sync::Mutex<Option<Arc<DesktopHost>>>,
+    governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
 }
 
 impl DesktopState {
+    /// Constructs installable state with explicit governed Execution ports.
+    pub fn governed(factory: Arc<dyn LocalGovernedExecutionFactory>) -> Self {
+        Self {
+            host: std::sync::Mutex::default(),
+            governed: Some(factory),
+        }
+    }
+
     /// Returns only capabilities the installed backend can currently prove.
     pub fn capabilities(&self) -> DesktopCapabilityManifest {
         let (configured, agent_definition_id, activity) =
@@ -441,8 +476,11 @@ impl DesktopState {
         let Some(config) = provider.load()? else {
             return Ok(false);
         };
-        let host =
-            DesktopHost::new(config).map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        let host = match &self.governed {
+            Some(factory) => DesktopHost::new_governed(config, factory.clone()),
+            None => DesktopHost::new(config),
+        }
+        .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
         self.install(host)
             .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
         Ok(true)
