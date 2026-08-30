@@ -14,6 +14,7 @@
 | Rust | `rustc 1.98.0 (88d9e12ae 2026-08-18)` |
 | Rust host | `aarch64-apple-darwin` |
 | PTY driver | Expect 5.45.4, shipping binary |
+| Multiplexer | tmux 3.7c, isolated socket, 120×28 pane |
 
 ## Passing gates
 
@@ -62,6 +63,29 @@ black, and Computer Use was not permitted to control Terminal or Codex. No PNG
 from that state is admitted as product evidence. The comprehensive real visual
 gallery therefore remains open rather than being replaced with ANSI output or
 synthetic images.
+
+## Native tmux acceptance
+
+The release shipping binary was launched inside a detached tmux 3.7c session
+with an isolated socket and a fixed 120×28 pane. It connected to production
+`LiveHost` backed by `/tmp` file SQLite, rendered the complete workspace, and
+submitted the exact CJK prompt `tmux native 你好`. The durable projection showed
+one completed Turn and the unique response `Churn event 0 committed.`.
+
+`Ctrl+P` opened the complete command palette above the live conversation.
+`Ctrl+Q` opened the durable-Session quit confirmation, and Enter exited the
+shipping binary with status 0. A shell wrapper recorded `stty -g` immediately
+before acquisition and after exit; the complete snapshots were identical:
+
+```text
+gfmt1:cflag=4b00:iflag=6b02:lflag=5cb:oflag=3:discard=f:dsusp=19:
+eof=4:eol=ff:eol2=ff:erase=7f:intr=3:kill=15:lnext=16:min=1:quit=1c:
+reprint=12:start=11:status=14:stop=13:susp=1a:time=0:werase=17:
+ispeed=9600:ospeed=9600
+```
+
+This closes the native macOS tmux row for revision `d907ea63`. It does not
+close physical Terminal/iTerm2-class window behavior or screenshots.
 
 ## Related performance gate
 

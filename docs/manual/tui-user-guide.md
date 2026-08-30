@@ -8,7 +8,8 @@ Host, and it rebuilds conversation state from Host read models after restart.
 
 The verified native environments are macOS arm64 and Linux arm64 with an
 xterm-compatible pseudo-terminal. Linux arm64 evidence includes the shipping
-binary and production Runtime/SQLite round trip. The full-screen client
+binary and production Runtime/SQLite round trip. macOS also has a verified
+tmux 3.7c production Host/SQLite/CJK/terminal-restoration run. The full-screen client
 requires interactive stdin and stderr. Windows passes source-level all-target
 check and strict Clippy, but native linking, ACL execution, and ConPTY remain
 open. Linux x86_64 also passes those source-level gates; its native execution,
