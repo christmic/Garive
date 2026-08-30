@@ -6,6 +6,10 @@ navigation, multiline Unicode editing, safe Markdown, H1 event follow with
 bounded reconnect, H2 timeline restore, H3 activity, typed suspension replies,
 exact idempotent retry, and private local presentation state.
 
+See the complete [TUI user guide](../docs/manual/tui-user-guide.md) for setup,
+workflows, every key and command, recovery, accessibility, privacy, and
+troubleshooting.
+
 ## Run
 
 Start a configured Runtime Host, then launch:
