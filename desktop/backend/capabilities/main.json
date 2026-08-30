@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-setup",
+  "description": "Allows the bundled main window to use Garive Desktop commands.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-get-setup-state",
+    "allow-get-setup-catalogue",
+    "allow-prepare-setup",
+    "allow-commit-setup",
+    "allow-cancel-setup",
+    "allow-restart-desktop",
+    "allow-run-agent-turn"
+  ]
+}

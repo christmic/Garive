@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { decodeHostTimelinePage, runAgentTurn } from "./host";
+import { readFileSync } from "node:fs";
+import {
+  cancelSetup, commitSetup, decodeHostTimelinePage, getSetupCatalogue, getSetupState, prepareSetup,
+  runAgentTurn,
+} from "./host";
 
 describe("desktop Host IPC", () => {
+  it("consumes the strict shared setup catalogue fixture", () => {
+    const fixture = JSON.parse(readFileSync(new URL(
+      "../../../../spec/fixtures/desktop/desktop-setup-v1.json", import.meta.url,
+    ), "utf8")) as {
+      schema_version: number; expected_profile_count: number; expected_preset_id: string;
+      limits: Record<string, number>; plan_cases: readonly { input: { preset_id: string } }[];
+    };
+    expect(fixture.schema_version).toBe(1);
+    expect(fixture.expected_profile_count).toBe(2);
+    expect(fixture.plan_cases.every((item) => item.input.preset_id === fixture.expected_preset_id)).toBe(true);
+    expect(Object.values(fixture.limits).every((limit) => limit > 0)).toBe(true);
+  });
+
   it("returns one typed embedded Runtime terminal", async () => {
     const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
     const expected = { session_id: "session-1", turn_id: "turn-1", execution_id: "execution-1",
@@ -41,5 +58,38 @@ describe("desktop Host IPC", () => {
     expect(decoded.items[0]?.activities[0]?.kind).toBe("future_kind");
     expect(decoded.items[0]?.completion_text).toBeUndefined();
     expect(decoded.items[0]?.activities[0]?.safe_code).toBeUndefined();
+  });
+
+  it("keeps setup credential in the write-only commit command", async () => {
+    const calls: string[] = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push(command);
+      if (command === "get_setup_catalogue") return { catalogue_revision: "catalogue-1" } as T;
+      if (command === "prepare_setup") return { plan_digest: "plan-1" } as T;
+      expect(args).toEqual({ planDigest: "plan-1", credential: "secret-once" });
+      return { restart_required: true } as T;
+    };
+    await getSetupState(async <T>(command: string) => {
+      calls.push(command);
+      return { state: "not_configured" } as T;
+    });
+    await getSetupCatalogue(invoke);
+    await prepareSetup({ schema_version: 1, caller_nonce: "nonce", catalogue_revision: "catalogue-1",
+      preset_id: "preset", profile_id: "profile", model_target_id: "target", model_id: "model",
+      deployment_id: "deployment", definition_id: "definition" }, invoke);
+    expect((await commitSetup("plan-1", "secret-once", invoke)).restart_required).toBe(true);
+    expect(calls).toEqual([
+      "get_setup_state", "get_setup_catalogue", "prepare_setup", "commit_setup",
+    ]);
+  });
+
+  it("cancels only one exact prepared setup plan", async () => {
+    const result = await cancelSetup("plan-1", async <T>(
+      command: string, args: Record<string, unknown>,
+    ) => {
+      expect({ command, args }).toEqual({ command: "cancel_setup", args: { planDigest: "plan-1" } });
+      return "cancelled" as T;
+    });
+    expect(result).toBe("cancelled");
   });
 });

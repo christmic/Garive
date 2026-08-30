@@ -49,6 +49,61 @@ export function decodeHostTimelinePage(raw: unknown): HostTimelinePage {
   };
 }
 
+export interface SetupProfile {
+  readonly profile_id: string; readonly display_name_key: string;
+  readonly endpoint_mode: "fixed" | "optional_override";
+  readonly model_mode: "exact_id"; readonly credential_label_key: string;
+  readonly supported_capabilities: readonly string[];
+}
+
+export interface SetupPreset {
+  readonly preset_id: string; readonly display_name_key: string;
+  readonly supported_profile_ids: readonly string[];
+}
+
+export interface SetupLimits {
+  readonly max_profiles: number; readonly max_text_bytes: number;
+  readonly max_endpoint_bytes: number; readonly max_secret_bytes: number;
+  readonly max_plan_count: number; readonly plan_lifetime_seconds: number;
+}
+
+export interface SetupCatalogue {
+  readonly schema_version: 1; readonly catalogue_revision: string;
+  readonly profiles: readonly SetupProfile[]; readonly presets: readonly SetupPreset[];
+  readonly limits: SetupLimits;
+}
+
+export interface SetupInput {
+  readonly schema_version: 1; readonly caller_nonce: string; readonly catalogue_revision: string;
+  readonly preset_id: string; readonly profile_id: string; readonly endpoint_override?: string;
+  readonly model_target_id: string; readonly model_id: string;
+  readonly deployment_id: string; readonly definition_id: string;
+}
+
+export interface SetupPlan {
+  readonly schema_version: 1; readonly setup_id: string; readonly caller_nonce: string;
+  readonly catalogue_revision: string; readonly effective_configuration_digest: string;
+  readonly expected_configuration_revision?: number;
+  readonly expected_configuration_digest?: string;
+  readonly expires_at: string;
+  readonly summary: Omit<SetupInput, "schema_version" | "caller_nonce" | "catalogue_revision"> & {
+    readonly endpoint_mode: "fixed" | "override";
+  };
+  readonly plan_digest: string;
+}
+
+export type SetupState =
+  | { readonly state: "not_configured" }
+  | { readonly state: "configured"; readonly restart_required: boolean }
+  | { readonly state: "invalid_configuration"; readonly code: string }
+  | { readonly state: "setup_recovering" };
+
+export interface SetupReceipt {
+  readonly schema_version: 1; readonly setup_id: string; readonly plan_digest: string;
+  readonly configuration_revision: number; readonly configuration_digest: string;
+  readonly restart_required: true; readonly receipt_digest: string;
+}
+
 function timelineItem(value: Record<string, unknown>): HostTimelineItem {
   return {
     turn_id: text(value.turn_id), started_position: position(value.started_position),
@@ -103,6 +158,42 @@ function boolean(value: unknown): boolean {
 function bytes(value: unknown): readonly number[] {
   const output = array(value); if (!output.every((item) => Number.isInteger(item) && Number(item) >= 0 && Number(item) <= 255)) throw new Error("invalid_host_value");
   return output as readonly number[];
+}
+
+export async function getSetupCatalogue(invoke: Invoke = tauriInvoke): Promise<SetupCatalogue> {
+  return invoke<SetupCatalogue>("get_setup_catalogue", {});
+}
+
+export async function getSetupState(invoke: Invoke = tauriInvoke): Promise<SetupState> {
+  return invoke<SetupState>("get_setup_state", {});
+}
+
+export async function prepareSetup(
+  input: SetupInput,
+  invoke: Invoke = tauriInvoke,
+): Promise<SetupPlan> {
+  return invoke<SetupPlan>("prepare_setup", { input });
+}
+
+export async function commitSetup(
+  planDigest: string,
+  credential: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<SetupReceipt> {
+  if (!planDigest || !credential) throw new Error("setup_credential_rejected");
+  return invoke<SetupReceipt>("commit_setup", { planDigest, credential });
+}
+
+export async function cancelSetup(
+  planDigest: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<"cancelled" | "already_committed"> {
+  if (!planDigest) throw new Error("setup_plan_stale");
+  return invoke<"cancelled" | "already_committed">("cancel_setup", { planDigest });
+}
+
+export async function restartDesktop(invoke: Invoke = tauriInvoke): Promise<void> {
+  await invoke<void>("restart_desktop", {});
 }
 
 /** Invokes one typed Turn against the backend-owned embedded R1 composition. */
