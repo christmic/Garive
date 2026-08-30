@@ -1,5 +1,8 @@
 package com.garive.android.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -223,6 +227,8 @@ internal fun SettingsScreen(
     openNotificationSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var diagnosticsCopied by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -278,6 +284,17 @@ internal fun SettingsScreen(
                 Text("Android · ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Garive · ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Connection · ${state.connection.name.lowercase()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(
+                    onClick = {
+                        context.getSystemService(Context.CLIPBOARD_SERVICE)
+                            .let { it as ClipboardManager }
+                            .setPrimaryClip(ClipData.newPlainText("Garive diagnostics", safeDiagnostics(state)))
+                        diagnosticsCopied = true
+                    },
+                    modifier = Modifier.padding(top = 10.dp),
+                ) {
+                    Text(if (diagnosticsCopied) "Diagnostics copied" else "Copy safe diagnostics")
+                }
             }
         }
         item {
@@ -293,6 +310,12 @@ internal fun SettingsScreen(
         item { Spacer(Modifier.height(100.dp)) }
     }
 }
+
+internal fun safeDiagnostics(state: MobileWorkState): String = listOf(
+    "Garive ${BuildConfig.VERSION_NAME}",
+    "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+    "Connection ${state.connection.name.lowercase()}",
+).joinToString("\n")
 
 @Composable
 private fun DestinationHeader(

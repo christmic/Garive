@@ -109,6 +109,7 @@ struct SettingsView: View {
     let state: MobileWorkState
     @Binding var theme: String
     @State private var confirmUnpair = false
+    @State private var diagnosticsCopied = false
 
     private var origin: String { model.credentials?.origin ?? "—" }
     private var host: String { URL(string: origin)?.host ?? "—" }
@@ -166,6 +167,12 @@ struct SettingsView: View {
 #endif
                     LabeledContent("Garive", value: version)
                     LabeledContent("Connection", value: state.connection.name.lowercased())
+                    Button(diagnosticsCopied ? "Diagnostics copied" : "Copy safe diagnostics") {
+#if os(iOS)
+                        UIPasteboard.general.string = diagnostics
+#endif
+                        diagnosticsCopied = true
+                    }
                 }
                 Section {
                     Button("Unpair this device", role: .destructive) { confirmUnpair = true }
@@ -191,6 +198,14 @@ struct SettingsView: View {
                 Text("This removes access from this phone. Agent work and history remain on your service.")
             }
         }
+    }
+
+    private var diagnostics: String {
+#if os(iOS)
+        return "Garive \(version)\niOS \(UIDevice.current.systemVersion)\nConnection \(state.connection.name.lowercased())"
+#else
+        return "Garive \(version)\nConnection \(state.connection.name.lowercased())"
+#endif
     }
 }
 

@@ -15,6 +15,7 @@ import com.garive.mobile.model.MobileWorkStatus
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 
 public class SessionsScreenTest {
     @get:Rule
@@ -51,6 +52,16 @@ public class SessionsScreenTest {
         )
 
         assertEquals("You\nCheck release\n\nAgent\nRelease is healthy", conversationTranscript(state))
+    }
+
+    @Test
+    public fun safeDiagnosticsExcludeServiceAndWorkContent(): Unit {
+        val state = MobileWorkState(connection = MobileConnectionState.SECURITY_ERROR, draft = "private work")
+        val copied = safeDiagnostics(state)
+
+        assertFalse(copied.contains("private work"))
+        assertFalse(copied.contains("http"))
+        assertFalse(copied.contains("session", ignoreCase = true))
     }
 
     private fun session(id: String, agent: String, status: MobileWorkStatus): MobileSessionCard =
