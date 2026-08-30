@@ -182,6 +182,10 @@ kind/state/code uses neutral localized text and enables no command.
   durable watermark/version, selected definition, and exact input bytes.
 - Draft input is trimmed only for empty validation; submitted bytes are not
   silently rewritten. The draft clears after a durable start response.
+- Native composers and both controllers admit at most 16,384 UTF-8 input bytes.
+  Their HTTP command envelope bound is 65,536 bytes, matching the configured
+  product Runtime Host and leaving serialization overhead outside the user's
+  input budget. UI and controller limits must never disagree.
 - Create + first Turn is a two-command workflow. If create succeeds and start
   is unknown, exact retry reuses the created Session and start identity.
 - Cancel binds the latest verified Turn and position. UI continues to show
@@ -357,6 +361,12 @@ the verified Session or Settings destination only after authenticated refresh.
 | protocol | Stop applying response, show security-safe error, require refresh. |
 | local_storage | Reset disposable preferences; preserve secure grant if valid. |
 | security | Stop remote calls, obscure sensitive decision UI, require re-pair. |
+
+Every non-authentication failure and local validation notice is rendered in an
+accessible native banner. Dismissing the banner clears presentation only; it
+does not clear a pending identity, editable draft, verified history, or any
+server fact. Unknown mutations keep their Retry exact and warned abandonment
+actions even if the stable notice itself was dismissed.
 
 Retries use capped exponential backoff with full jitter for reads/follow only.
 Mutations never retry automatically. Network restoration may trigger one
