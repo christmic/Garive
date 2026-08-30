@@ -37,6 +37,9 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
         )
         .await;
         assert_eq!(version["method"], "Browser.getVersion");
+        let create = reply(&mut socket, json!({"targetId":"target-1"})).await;
+        assert_eq!(create["method"], "Target.createTarget");
+        assert_eq!(create["params"]["url"], "about:blank");
         let attach = reply(&mut socket, json!({"sessionId":"target-session-1"})).await;
         assert_eq!(attach["method"], "Target.attachToTarget");
         assert_eq!(attach["params"]["flatten"], true);
@@ -64,7 +67,8 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
     let mut client = CdpClient::new(transport);
     let version = client.browser_version().await.expect("version");
     assert_eq!(version.protocol_version, "1.3");
-    let session = client.attach_target("target-1").await.expect("attach");
+    let target = client.create_blank_target().await.expect("create");
+    let session = client.attach_target(&target).await.expect("attach");
     client.enable_accessibility(&session).await.expect("enable");
     let tree = client
         .full_ax_tree(&session, Some("frame-1"), 64, 10, 4_096)

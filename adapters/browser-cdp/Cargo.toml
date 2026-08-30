@@ -14,5 +14,8 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 url.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lib]
 path = "src/lib.rs"

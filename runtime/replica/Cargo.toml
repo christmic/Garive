@@ -44,7 +44,7 @@ rustix.workspace = true
 garive-host-client = { path = "../../clients/host-rs" }
 garive-provider-profile = { path = "../../providers/profile" }
 serde_json.workspace = true
-tempfile = "3.27.0"
+tempfile.workspace = true
 
 [lib]
 path = "src/lib.rs"

@@ -99,6 +99,15 @@ impl CdpClient {
         bounded_text(&result, "sessionId", 4_096)
     }
 
+    /// Creates one blank page inside the dedicated managed-browser profile.
+    pub async fn create_blank_target(&mut self) -> Result<String, CdpTransportError> {
+        let result = self
+            .transport
+            .call("Target.createTarget", json!({"url":"about:blank"}), None)
+            .await?;
+        bounded_text(&result, "targetId", 4_096)
+    }
+
     /// Enables stable AX node identities for one flat target session.
     pub async fn enable_accessibility(
         &mut self,

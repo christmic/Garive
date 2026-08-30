@@ -16,7 +16,7 @@ adapter/browser revision in evidence and fails closed when a required command
 is unavailable. It never treats the online tip-of-tree document as a mutable
 runtime dependency.
 
-V1 admits only `Browser.getVersion`, flat `Target.attachToTarget`,
+V1 admits only `Browser.getVersion`, managed blank-page `Target.createTarget`, flat `Target.attachToTarget`,
 `Accessibility.enable|disable|getFullAXTree`, bounded Page navigation/history,
 and bounded Input key/mouse dispatch. A future semantic element operation may
 add a constrained typed builder, but v1 does not expose `Runtime.evaluate`,
@@ -71,6 +71,12 @@ the observation can pass the common bounds validator.
 - dispatch fault injection proves no blind replay after Started;
 - no bundled Chromium, ambient personal profile, environment configuration or
   Computer Use fallback.
+
+The first native baseline is automated as an explicit macOS ignored gate. It
+launches an installed Chrome with a temporary dedicated profile and random
+debugging port, reads that child process's capability endpoint, and proves
+version/create-blank-target/flat-attach/enable-Accessibility/non-empty-full-tree.
+This baseline does not satisfy the remaining page/action matrix by itself.
 
 ## Meta
 

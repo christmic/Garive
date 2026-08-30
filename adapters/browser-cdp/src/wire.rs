@@ -179,6 +179,7 @@ fn admitted_method(method: &str) -> bool {
         method,
         "Browser.getVersion"
             | "Target.attachToTarget"
+            | "Target.createTarget"
             | "Accessibility.enable"
             | "Accessibility.disable"
             | "Accessibility.getFullAXTree"
