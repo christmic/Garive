@@ -227,6 +227,30 @@ pub(crate) fn navigation_hit_test(model: &AppModel, column: u16, row: u16) -> Op
     session::rail_hit_test(model, column, row)
 }
 
+pub(crate) fn overlay_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
+    let overlay = model.overlay?;
+    overlay::geometry::selection_at(
+        model,
+        overlay,
+        Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
+        column,
+        row,
+    )
+}
+
+pub(crate) fn overlay_contains(model: &AppModel, column: u16, row: u16) -> bool {
+    let Some(overlay) = model.overlay else {
+        return false;
+    };
+    overlay::geometry::contains(
+        model,
+        overlay,
+        Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
+        column,
+        row,
+    )
+}
+
 fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     let colors = palette(theme);
     let title = if model.execution == ExecutionState::Suspended {

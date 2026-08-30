@@ -104,6 +104,9 @@ closing restores it when the target still exists. A blocking suspension or
 unknown-command overlay cannot be dismissed in a way that silently discards
 authority. It offers explicit defer, exact retry, or abandonment actions
 allowed by the state.
+Mouse events obey the same ownership. Wheel and click events inside a
+selectable overlay move or activate only its rendered rows; events outside the
+popup are consumed without scrolling the conversation or activating the rail.
 
 Focus is visible without relying on color. The focused composer uses a double
 border; navigation and conversation use an accent border plus a textual

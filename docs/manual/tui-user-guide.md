@@ -152,6 +152,10 @@ Host page. Session filtering matches the displayed Agent definition label or
 the opaque Session ID. Long result sets scroll with the selection, so the row
 that Enter will open remains visible. Prompt history is local convenience state
 and is not reconstructed from Host transcript content.
+When mouse capture is enabled, the wheel moves the selection while the pointer
+is over a selectable overlay and a left click activates the visibly hit row.
+Modal input never scrolls the conversation or opens a Session behind the
+overlay.
 
 ## Slash commands
 

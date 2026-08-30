@@ -12,19 +12,17 @@ use crate::{
 };
 
 use super::{
-    palette,
-    presentation::suspension_copy,
-    primitives::{centered_popup, key_hints, selection_window},
-    safe_text,
-    session::picker_line,
+    palette, presentation::suspension_copy, primitives::key_hints, safe_text, session::picker_line,
     style::Palette,
 };
+
+pub(super) mod geometry;
+
+use geometry::overlay_geometry;
 
 struct OverlaySpec {
     title: &'static str,
     content: Text<'static>,
-    height: u16,
-    width: u16,
 }
 
 pub(super) fn render_overlay(
@@ -35,13 +33,9 @@ pub(super) fn render_overlay(
     buffer: &mut Buffer,
 ) {
     let colors = palette(theme);
-    let maximum_height = area.height.saturating_sub(2);
-    let spec = overlay_spec(model, overlay, colors, maximum_height);
-    let popup = centered_popup(
-        area,
-        spec.width.min(area.width.saturating_sub(4)),
-        spec.height.min(area.height.saturating_sub(2)),
-    );
+    let geometry = overlay_geometry(model, overlay, area);
+    let spec = overlay_spec(model, overlay, colors, geometry.window);
+    let popup = geometry.popup;
     buffer.set_style(area, colors.modal_backdrop);
     Clear.render(popup, buffer);
     let block = Block::default()
@@ -50,13 +44,13 @@ pub(super) fn render_overlay(
         .border_type(BorderType::Rounded)
         .border_style(colors.overlay_border)
         .padding(Padding::new(2, 2, 1, 1));
-    let inner = block.inner(popup);
+    let inner = geometry.inner;
     Paragraph::new(spec.content)
         .block(block)
         .style(colors.normal)
         .wrap(Wrap { trim: false })
         .render(popup, buffer);
-    if let Some(row) = selection_row(model, overlay, popup.height) {
+    if let Some(row) = selection_row(model, overlay, geometry.window) {
         if row < inner.height {
             buffer.set_style(
                 Rect::new(inner.x, inner.y + row, inner.width, 1),
@@ -70,47 +64,28 @@ fn overlay_spec(
     model: &AppModel,
     overlay: Overlay,
     colors: Palette,
-    maximum_height: u16,
+    window: Option<(usize, usize)>,
 ) -> OverlaySpec {
     match overlay {
-        Overlay::CommandPalette => {
-            let height = (COMMAND_PALETTE.len() as u16 + 7).clamp(12, 22);
-            OverlaySpec {
-                title: " Command palette ",
-                content: palette_text(model, colors, height.min(maximum_height)),
-                height,
-                width: 74,
-            }
-        }
+        Overlay::CommandPalette => OverlaySpec {
+            title: " Command palette ",
+            content: palette_text(model, colors, window.unwrap_or((0, 0))),
+        },
         Overlay::Help => OverlaySpec {
             title: " Keyboard guide ",
             content: help_text(colors),
-            height: 10,
-            width: 62,
         },
-        Overlay::SessionPicker => {
-            let height = session_picker_height(model);
-            OverlaySpec {
-                title: " Switch session ",
-                content: session_picker_text(model, colors, height.min(maximum_height)),
-                height,
-                width: 62,
-            }
-        }
-        Overlay::PromptHistory => {
-            let height = history_height(model);
-            OverlaySpec {
-                title: " Prompt history ",
-                content: history_text(model, colors, height.min(maximum_height)),
-                height,
-                width: 62,
-            }
-        }
+        Overlay::SessionPicker => OverlaySpec {
+            title: " Switch session ",
+            content: session_picker_text(model, colors, window.unwrap_or((0, 0))),
+        },
+        Overlay::PromptHistory => OverlaySpec {
+            title: " Prompt history ",
+            content: history_text(model, colors, window.unwrap_or((0, 0))),
+        },
         Overlay::Suspension => OverlaySpec {
             title: " Action required ",
             content: suspension_text(model, colors),
-            height: 12,
-            width: 62,
         },
         Overlay::UnknownCommand => OverlaySpec {
             title: " Unknown command ",
@@ -122,8 +97,6 @@ fn overlay_spec(
                 &[("Enter", "exact retry"), ("A", "abandon local record")],
                 colors,
             ),
-            height: 7,
-            width: 62,
         },
         Overlay::ErrorDetails => OverlaySpec {
             title: " Status details ",
@@ -135,8 +108,6 @@ fn overlay_spec(
                 &[("Esc", "close")],
                 colors,
             ),
-            height: 7,
-            width: 62,
         },
         Overlay::EphemeralConfirmation => OverlaySpec {
             title: " Ephemeral mode ",
@@ -145,8 +116,6 @@ fn overlay_spec(
                 &[("Enter", "accept for this run"), ("Esc", "cancel")],
                 colors,
             ),
-            height: 7,
-            width: 62,
         },
         Overlay::QuitConfirmation => OverlaySpec {
             title: " Quit Garive? ",
@@ -155,53 +124,34 @@ fn overlay_spec(
                 &[("Enter", "quit"), ("Esc", "keep working")],
                 colors,
             ),
-            height: 7,
-            width: 62,
         },
     }
 }
 
-fn selection_row(model: &AppModel, overlay: Overlay, popup_height: u16) -> Option<u16> {
-    let (selection, window_start) = match overlay {
-        Overlay::CommandPalette => (
-            model.command_selection,
-            command_palette_window(model, popup_height).0,
-        ),
-        Overlay::SessionPicker => (
-            model.session_selection,
-            session_picker_window(model, popup_height).0,
-        ),
-        Overlay::PromptHistory => (
-            model.history_selection,
-            history_window(model, popup_height).0,
-        ),
+fn selection_row(
+    model: &AppModel,
+    overlay: Overlay,
+    window: Option<(usize, usize)>,
+) -> Option<u16> {
+    let selection = match overlay {
+        Overlay::CommandPalette => model.command_selection,
+        Overlay::SessionPicker => model.session_selection,
+        Overlay::PromptHistory => model.history_selection,
         _ => return None,
     };
+    let window_start = window?.0;
     u16::try_from(selection.checked_sub(window_start)?)
         .ok()?
         .checked_add(1)
 }
 
-fn session_picker_height(model: &AppModel) -> u16 {
-    u16::try_from(model.matching_sessions().count())
-        .unwrap_or(u16::MAX)
-        .saturating_add(7)
-        .clamp(8, 16)
-}
-
-fn list_capacity(popup_height: u16) -> usize {
-    usize::from(popup_height.saturating_sub(7))
-}
-
-fn session_picker_window(model: &AppModel, popup_height: u16) -> (usize, usize) {
-    let count = model.matching_sessions().count();
-    selection_window(count, model.session_selection, list_capacity(popup_height))
-}
-
-fn session_picker_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'static> {
+fn session_picker_text(
+    model: &AppModel,
+    colors: Palette,
+    (start, end): (usize, usize),
+) -> Text<'static> {
     let mut rows = vec![search_line("Filter", &model.session_filter, colors)];
     let matches = model.matching_sessions().collect::<Vec<_>>();
-    let (start, end) = session_picker_window(model, popup_height);
     rows.extend(
         matches[start..end]
             .iter()
@@ -236,25 +186,9 @@ fn session_picker_text(model: &AppModel, colors: Palette, popup_height: u16) -> 
     Text::from(rows)
 }
 
-fn history_height(model: &AppModel) -> u16 {
-    u16::try_from(model.matching_history().count())
-        .unwrap_or(u16::MAX)
-        .saturating_add(7)
-        .clamp(8, 16)
-}
-
-fn history_window(model: &AppModel, popup_height: u16) -> (usize, usize) {
-    selection_window(
-        model.matching_history().count(),
-        model.history_selection,
-        list_capacity(popup_height),
-    )
-}
-
-fn history_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'static> {
+fn history_text(model: &AppModel, colors: Palette, (start, end): (usize, usize)) -> Text<'static> {
     let mut rows = vec![search_line("Search", &model.history_filter, colors)];
     let matches = model.matching_history().collect::<Vec<_>>();
-    let (start, end) = history_window(model, popup_height);
     rows.extend(
         matches[start..end]
             .iter()
@@ -285,18 +219,9 @@ fn history_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'s
     Text::from(rows)
 }
 
-fn command_palette_window(model: &AppModel, popup_height: u16) -> (usize, usize) {
-    selection_window(
-        model.matching_command_indices().len(),
-        model.command_selection,
-        list_capacity(popup_height),
-    )
-}
-
-fn palette_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'static> {
+fn palette_text(model: &AppModel, colors: Palette, (start, end): (usize, usize)) -> Text<'static> {
     let mut rows = vec![search_line("Search", &model.command_filter, colors)];
     let matches = model.matching_command_indices();
-    let (start, end) = command_palette_window(model, popup_height);
     rows.extend(
         matches[start..end]
             .iter()

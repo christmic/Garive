@@ -1,14 +1,11 @@
-use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::time::Duration;
 
-use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize};
-use crate::view::navigation_hit_test;
-
 use super::app::RuntimeState;
+use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize};
 
 mod actions;
+mod mouse;
 mod navigation;
 
 pub(super) use actions::replay_pending;
@@ -34,33 +31,8 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
                 let _ = state.model.composer.insert(&text);
             }
         }
-        Event::Mouse(mouse) => handle_mouse(mouse, state),
+        Event::Mouse(event) => mouse::handle(event, state),
         Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(key, state),
-        _ => {}
-    }
-}
-
-fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
-    match mouse.kind {
-        MouseEventKind::ScrollUp => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_conversation_up(3)
-        }
-        MouseEventKind::ScrollDown => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_conversation_down(3)
-        }
-        MouseEventKind::Down(MouseButton::Left) => {
-            let Some(index) = navigation_hit_test(&state.model, mouse.column, mouse.row) else {
-                return;
-            };
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
-            if let Some(session) = state.model.sessions.get(index) {
-                state.model.session_selection = index;
-                state.model.navigation_selection = Some(session.session_id.clone());
-                state.load(session.session_id.clone());
-            }
-        }
         _ => {}
     }
 }
