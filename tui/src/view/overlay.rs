@@ -14,9 +14,10 @@ use crate::{
 use super::{
     palette,
     presentation::suspension_copy,
-    primitives::{centered_popup, key_hints},
-    safe_text, short_tail,
-    style::{session_state_style, Palette},
+    primitives::{centered_popup, key_hints, selection_window},
+    safe_text,
+    session::picker_line,
+    style::Palette,
 };
 
 struct OverlaySpec {
@@ -81,7 +82,7 @@ fn overlay_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> OverlayS
         Overlay::SessionPicker => OverlaySpec {
             title: " Switch session ",
             content: session_picker_text(model, colors),
-            height: (model.sessions.len() as u16 + 5).clamp(7, 16),
+            height: session_picker_height(model),
             width: 62,
         },
         Overlay::PromptHistory => OverlaySpec {
@@ -146,47 +147,40 @@ fn overlay_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> OverlayS
 }
 
 fn selection_row(model: &AppModel, overlay: Overlay) -> Option<u16> {
-    let selection = match overlay {
-        Overlay::CommandPalette => model.command_selection,
-        Overlay::SessionPicker => model.session_selection,
-        Overlay::PromptHistory => model.history_selection,
+    let (selection, window_start) = match overlay {
+        Overlay::CommandPalette => (model.command_selection, 0),
+        Overlay::SessionPicker => (model.session_selection, session_picker_window(model).0),
+        Overlay::PromptHistory => (model.history_selection, 0),
         _ => return None,
     };
-    u16::try_from(selection).ok()?.checked_add(1)
+    u16::try_from(selection.checked_sub(window_start)?)
+        .ok()?
+        .checked_add(1)
+}
+
+fn session_picker_height(model: &AppModel) -> u16 {
+    u16::try_from(model.matching_sessions().count())
+        .unwrap_or(u16::MAX)
+        .saturating_add(7)
+        .clamp(8, 16)
+}
+
+fn session_picker_window(model: &AppModel) -> (usize, usize) {
+    let count = model.matching_sessions().count();
+    let capacity = usize::from(session_picker_height(model).saturating_sub(7));
+    selection_window(count, model.session_selection, capacity)
 }
 
 fn session_picker_text(model: &AppModel, colors: Palette) -> Text<'static> {
-    let filter = model.session_filter.to_lowercase();
     let mut rows = vec![search_line("Filter", &model.session_filter, colors)];
+    let matches = model.matching_sessions().collect::<Vec<_>>();
+    let (start, end) = session_picker_window(model);
     rows.extend(
-        model
-            .sessions
+        matches[start..end]
             .iter()
-            .filter(|session| {
-                filter.is_empty()
-                    || session.session_id.to_lowercase().contains(&filter)
-                    || session.definition_id.to_lowercase().contains(&filter)
-            })
             .enumerate()
-            .map(|(index, session)| {
-                let marker = if index == model.session_selection {
-                    "›"
-                } else {
-                    " "
-                };
-                let state = session.latest_turn_state.as_deref().unwrap_or("new");
-                Line::from(vec![
-                    Span::styled(format!("{marker} "), colors.selected),
-                    Span::styled(
-                        format!(
-                            "{} · {}   ",
-                            super::short_id(&session.definition_id),
-                            short_tail(&session.session_id)
-                        ),
-                        colors.normal,
-                    ),
-                    Span::styled(state.to_owned(), session_state_style(state, colors)),
-                ])
+            .map(|(offset, session)| {
+                picker_line(session, start + offset == model.session_selection, colors)
             })
             .collect::<Vec<_>>(),
     );

@@ -34,6 +34,9 @@ not depend on the terminal default being light or dark.
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
+The shared Session identity/state presentation lives in `view/session.rs`; the
+rail and picker may change density, but cannot invent separate labels, glyphs,
+or state wording.
 
 ## Composite components
 
@@ -70,6 +73,8 @@ outranks page focus. Selection persists by stable model identity, not screen
 row. `Enter` activates the visible primary action; `Esc` closes, defers, or
 requests cancellation only as admitted by the current state. Footer hints are
 derived from that same routing decision.
+Bounded lists keep the selected item inside their visible window. The visual
+filter and the activation result set are the same ordered collection.
 
 ## Conformance
 

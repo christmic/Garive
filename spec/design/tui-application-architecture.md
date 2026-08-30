@@ -74,6 +74,7 @@ tui/src/
   view/
     mod.rs               root layout
     conversation.rs      timeline and scroll model
+    session.rs           shared Session row presentation
     composer.rs          editor and validation
     navigation.rs        Session/Agent navigation
     overlay.rs           help, command, Session, error, suspension overlays

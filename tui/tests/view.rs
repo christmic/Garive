@@ -11,7 +11,7 @@ mod input;
 mod view;
 
 use application::{AppModel, BootState, FocusTarget, Overlay, TimelineItem, TimelineRole};
-use garive_host_client::SuspensionView;
+use garive_host_client::{SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
@@ -169,6 +169,32 @@ fn searchable_overlays_show_only_matching_rows() {
 }
 
 #[test]
+fn session_picker_filter_and_selection_share_one_visible_result_set() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::SessionPicker),
+        session_filter: "needle-agent".into(),
+        sessions: vec![
+            session("session-hidden-000000", "other-agent"),
+            session("session-visible-000001", "needle-agent"),
+        ],
+        ..Default::default()
+    };
+    let filtered = frame(&model, 80, 24);
+    assert!(filtered.contains("needle-agent"));
+    assert!(filtered.contains("000001"));
+    assert!(!filtered.contains("000000"));
+
+    model.session_filter.clear();
+    model.sessions = (0..12)
+        .map(|index| session(&format!("session-{index:06}"), &format!("agent-{index:06}")))
+        .collect();
+    model.session_selection = 11;
+    let scrolled = frame(&model, 80, 24);
+    assert!(scrolled.contains("› agent-000011"));
+    assert!(!scrolled.contains("agent-000000"));
+}
+
+#[test]
 fn agent_markdown_is_structured_and_terminal_safe() {
     let mut model = AppModel {
         boot: BootState::Ready,
@@ -209,4 +235,19 @@ fn multiline_composer_keeps_the_cursor_inside_its_scrolled_viewport() {
     .unwrap();
     assert!(cursor.1 < area.height - 1);
     assert!(frame(&model, 40, 12).contains("five"));
+}
+
+fn session(id: &str, definition: &str) -> SessionSummary {
+    SessionSummary {
+        api_version: "v1".into(),
+        session_id: id.into(),
+        agent_instance_id: "agent-instance".into(),
+        definition_id: definition.into(),
+        definition_revision: "revision-1".into(),
+        opened_at: "2026-08-30T00:00:00Z".into(),
+        latest_position: 1,
+        latest_turn_id: Some("turn-1".into()),
+        latest_turn_state: Some("running".into()),
+        turn_count: 1,
+    }
 }
