@@ -270,13 +270,20 @@ impl ExecutorPort for WorkspaceExecutor {
                 }
             };
             let content = json!({
+                "artifact_contract":"garive.artifact.v1",
                 "artifact_id":format!("artifact-{}", &hex_digest(format!("{}:{}:{}", arguments.workspace_id, arguments.artifact_name, result.digest).as_bytes())[..32]),
+                "artifact_revision":1,
                 "workspace_id":arguments.workspace_id,
                 "grant_revision":self.attachments[&arguments.workspace_id].grant_revision,
                 "display_name":arguments.artifact_name,
                 "byte_size":result.byte_size,
                 "content_digest":result.digest,
                 "kind":artifact_kind(&arguments.artifact_name),
+                "mime_type":artifact_mime(&arguments.artifact_name),
+                "verification":"not_run",
+                "preview":if artifact_kind(&arguments.artifact_name) == "text" { "text" } else { "unavailable" },
+                "revealable":true,
+                "exportable":true,
             });
             Ok(ExecutionFact::Completed {
                 receipt: Some(effect_receipt(
@@ -485,6 +492,19 @@ fn artifact_kind(name: &str) -> &'static str {
     {
         Some("md" | "txt" | "json" | "csv") => "text",
         _ => "file",
+    }
+}
+
+fn artifact_mime(name: &str) -> &'static str {
+    match PathBuf::from(name)
+        .extension()
+        .and_then(|value| value.to_str())
+    {
+        Some("md") => "text/markdown",
+        Some("txt") => "text/plain",
+        Some("json") => "application/json",
+        Some("csv") => "text/csv",
+        _ => "application/octet-stream",
     }
 }
 

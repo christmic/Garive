@@ -454,10 +454,11 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
     let ledger = SqliteLedger::open(&database).unwrap();
     let session = SessionId::try_from(session_id.as_str()).unwrap();
     let watermark = ledger.session_watermark(&session).unwrap().unwrap();
-    let kinds = ledger
+    let facts = ledger
         .read_facts(&session, 0, watermark.max_position, None)
-        .unwrap()
-        .into_iter()
+        .unwrap();
+    let kinds = facts
+        .iter()
         .map(|fact| fact.kind.as_str().to_owned())
         .collect::<Vec<_>>();
     for required in [
@@ -467,6 +468,7 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
         "effect.started",
         "effect.receipt",
         "effect.completed",
+        "artifact.committed",
         "turn.completed",
     ] {
         assert!(
@@ -474,4 +476,15 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
             "missing {required}"
         );
     }
+    let completed_position = facts
+        .iter()
+        .find(|fact| fact.kind.as_str() == "effect.completed")
+        .unwrap()
+        .position;
+    let artifact = facts
+        .iter()
+        .find(|fact| fact.kind.as_str() == "artifact.committed")
+        .unwrap();
+    assert_eq!(artifact.position, completed_position + 1);
+    assert!(artifact.payload.as_json().contains("artifact-"));
 }
