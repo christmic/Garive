@@ -1,7 +1,8 @@
 use garive_ledger::{ExecutionId, TurnId};
 use garive_runtime::{
-    plan_f0_effect_admission, preflight_sandbox, F0EffectAdmissionContext, SafetyDecisionV1,
-    SafetyDisposition, SafetyRequestV1, SandboxBindingV1, SandboxPreflightError,
+    plan_f0_effect_admission, plan_f0_safety_decision, preflight_sandbox, F0EffectAdmissionContext,
+    F0SafetyDecisionContext, SafetyDecisionV1, SafetyDisposition, SafetyRequestV1,
+    SandboxBindingV1, SandboxPreflightError,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
@@ -114,6 +115,46 @@ fn denied_decision_never_reaches_executor_preflight() {
         ),
         Err(SandboxPreflightError::DecisionNotAllowed)
     );
+}
+
+#[test]
+fn denied_safety_is_durable_before_grant_and_has_no_constraints() {
+    let fixture = fixture("src", 4);
+    let request = SafetyRequestV1::new(
+        "request-denied",
+        fixture.invocation.clone(),
+        &fixture.prepared,
+        "actor",
+        None,
+        None,
+        "policy-v1",
+    )
+    .unwrap();
+    let denied = SafetyDecisionV1::new(
+        "decision-denied",
+        SafetyDisposition::Deny,
+        fixture.invocation,
+        fixture.prepared.input_digest(),
+        None,
+        "policy-v1",
+        Some("safety_denied".into()),
+    )
+    .unwrap();
+    let facts = plan_f0_safety_decision(
+        &F0SafetyDecisionContext {
+            turn_id: TurnId::try_from("turn").unwrap(),
+            execution_id: ExecutionId::try_from("execution").unwrap(),
+            recorded_at: "2026-08-31T00:00:00Z".into(),
+        },
+        &request,
+        &fixture.prepared,
+        &denied,
+    )
+    .unwrap();
+    let payload: Value = serde_json::from_str(facts[1].payload.as_json()).unwrap();
+    assert_eq!(payload["disposition"], "deny");
+    assert_eq!(payload["safe_code"], "safety_denied");
+    assert!(payload.get("constraints_digest").is_none());
 }
 
 #[test]

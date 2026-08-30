@@ -14,6 +14,17 @@ use crate::{
     SandboxBindingV1, SandboxPreflightError,
 };
 
+/// Durable ownership and time known when Safety evaluates Prepared-v3.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct F0SafetyDecisionContext {
+    /// Turn owning the invocation.
+    pub turn_id: TurnId,
+    /// Active Execution owning the invocation.
+    pub execution_id: ExecutionId,
+    /// RFC 3339 observation time supplied by Runtime.
+    pub recorded_at: String,
+}
+
 /// Frozen ownership, authority context and audit identities for one F0 admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct F0EffectAdmissionContext {
@@ -40,12 +51,12 @@ pub struct PlannedF0EffectAdmission {
 
 /// Plans Prepared-v3 and the exact allowed Safety decision before grant creation.
 pub fn plan_f0_safety_decision(
-    context: &F0EffectAdmissionContext,
+    context: &F0SafetyDecisionContext,
     request: &SafetyRequestV1,
     prepared: &PreparedToolCall,
     decision: &SafetyDecisionV1,
 ) -> Result<Vec<FactDraft>, SandboxPreflightError> {
-    validate_request(context, request, prepared, decision)?;
+    validate_request(&context.recorded_at, request, prepared, decision)?;
     let accesses = prepared
         .invocation_accesses()
         .ok_or(SandboxPreflightError::InvalidBinding)?;
@@ -62,14 +73,25 @@ pub fn plan_f0_safety_decision(
     let tool = ledger_tool(request)?;
     let mut safety = json!({
         "request_id":request.request_id(),"decision_id":decision.decision_id(),
-        "disposition":"allow","prepared_digest":prepared.input_digest(),
+        "disposition":safety_disposition(decision.disposition()),"prepared_digest":prepared.input_digest(),
         "tool_name":prepared.tool_name(),"tool_revision":prepared.tool_revision(),
         "actor_authority_reference":request.actor_authority_reference(),
         "exact_access_digest":access["digest"],
         "sandbox_requirements_digest":sandbox["digest"],
         "policy_revision":decision.policy_revision(),
-        "constraints_digest":decision.constraints_digest().ok_or(SandboxPreflightError::InvalidBinding)?,
     });
+    match decision.disposition() {
+        SafetyDisposition::Allow => {
+            safety["constraints_digest"] = json!(decision
+                .constraints_digest()
+                .ok_or(SandboxPreflightError::InvalidBinding)?);
+        }
+        SafetyDisposition::Deny | SafetyDisposition::InteractionRequired => {
+            safety["safe_code"] = json!(decision
+                .safe_code()
+                .ok_or(SandboxPreflightError::InvalidBinding)?);
+        }
+    }
     if let Some(value) = request.goal_reference() {
         safety["goal_reference"] = json!(value);
     }
@@ -78,7 +100,9 @@ pub fn plan_f0_safety_decision(
     }
     Ok(vec![
         fact(
-            context,
+            &context.turn_id,
+            &context.execution_id,
+            &context.recorded_at,
             &tool,
             "prepared",
             "effect.prepared",
@@ -93,7 +117,16 @@ pub fn plan_f0_safety_decision(
                 "sandbox_requirements":sandbox,"sandbox_requirements_digest":prepared.sandbox_requirements_digest().ok_or(SandboxPreflightError::InvalidBinding)?,
             }),
         )?,
-        fact(context, &tool, "safety", "safety.decided", 1, safety)?,
+        fact(
+            &context.turn_id,
+            &context.execution_id,
+            &context.recorded_at,
+            &tool,
+            "safety",
+            "safety.decided",
+            1,
+            safety,
+        )?,
     ])
 }
 
@@ -108,7 +141,11 @@ pub fn plan_f0_sandbox_admission(
     binding: &SandboxBindingV1,
     dispatch_attempt_id: &str,
 ) -> Result<PlannedF0EffectAdmission, SandboxPreflightError> {
-    validate_request(context, request, prepared, decision)?;
+    validate_context(context)?;
+    validate_request(&context.recorded_at, request, prepared, decision)?;
+    if decision.disposition() != SafetyDisposition::Allow {
+        return Err(SandboxPreflightError::DecisionNotAllowed);
+    }
     let execution = preflight_sandbox(
         request.invocation_id(),
         prepared,
@@ -126,7 +163,9 @@ pub fn plan_f0_sandbox_admission(
     let tool = ledger_tool(request)?;
     let facts = vec![
         fact(
-            context,
+            &context.turn_id,
+            &context.execution_id,
+            &context.recorded_at,
             &tool,
             "authorized",
             "effect.authorized",
@@ -138,7 +177,9 @@ pub fn plan_f0_sandbox_admission(
             }),
         )?,
         fact(
-            context,
+            &context.turn_id,
+            &context.execution_id,
+            &context.recorded_at,
             &tool,
             "bound",
             "sandbox.bound",
@@ -152,7 +193,9 @@ pub fn plan_f0_sandbox_admission(
             }),
         )?,
         fact(
-            context,
+            &context.turn_id,
+            &context.execution_id,
+            &context.recorded_at,
             &tool,
             "preflight",
             "sandbox.preflighted",
@@ -179,7 +222,16 @@ pub fn plan_f0_effect_admission(
     binding: &SandboxBindingV1,
     dispatch_attempt_id: &str,
 ) -> Result<PlannedF0EffectAdmission, SandboxPreflightError> {
-    let mut safety = plan_f0_safety_decision(context, request, prepared, decision)?;
+    let mut safety = plan_f0_safety_decision(
+        &F0SafetyDecisionContext {
+            turn_id: context.turn_id.clone(),
+            execution_id: context.execution_id.clone(),
+            recorded_at: context.recorded_at.clone(),
+        },
+        request,
+        prepared,
+        decision,
+    )?;
     let mut planned = plan_f0_sandbox_admission(
         context,
         request,
@@ -195,13 +247,12 @@ pub fn plan_f0_effect_admission(
 }
 
 fn validate_request(
-    context: &F0EffectAdmissionContext,
+    recorded_at: &str,
     request: &SafetyRequestV1,
     prepared: &PreparedToolCall,
     decision: &SafetyDecisionV1,
 ) -> Result<(), SandboxPreflightError> {
-    validate_context(context)?;
-    if decision.disposition() != SafetyDisposition::Allow
+    if chrono::DateTime::parse_from_rfc3339(recorded_at).is_err()
         || decision.invocation_id() != request.invocation_id()
         || decision.prepared_digest() != prepared.input_digest()
         || request.prepared_digest() != prepared.input_digest()
@@ -216,6 +267,14 @@ fn validate_request(
         Err(SandboxPreflightError::InvalidBinding)
     } else {
         Ok(())
+    }
+}
+
+const fn safety_disposition(value: SafetyDisposition) -> &'static str {
+    match value {
+        SafetyDisposition::Allow => "allow",
+        SafetyDisposition::Deny => "deny",
+        SafetyDisposition::InteractionRequired => "interaction_required",
     }
 }
 
@@ -235,8 +294,11 @@ fn validate_context(value: &F0EffectAdmissionContext) -> Result<(), SandboxPrefl
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fact(
-    context: &F0EffectAdmissionContext,
+    turn_id: &TurnId,
+    execution_id: &ExecutionId,
+    recorded_at: &str,
     tool: &LedgerToolId,
     suffix: &str,
     kind: &str,
@@ -252,15 +314,15 @@ fn fact(
             .as_str(),
         )
         .map_err(|_| SandboxPreflightError::InvalidBinding)?,
-        turn_id: Some(context.turn_id.clone()),
-        execution_id: Some(context.execution_id.clone()),
+        turn_id: Some(turn_id.clone()),
+        execution_id: Some(execution_id.clone()),
         model_request_id: None,
         tool_invocation_id: Some(tool.clone()),
         kind: FactKind::new(kind).map_err(|_| SandboxPreflightError::InvalidBinding)?,
         schema_version,
         payload: CanonicalPayload::from_value(&payload)
             .map_err(|_| SandboxPreflightError::InvalidBinding)?,
-        recorded_at: context.recorded_at.clone(),
+        recorded_at: recorded_at.into(),
     })
 }
 

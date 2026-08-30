@@ -170,8 +170,13 @@ impl SafetyDecisionV1 {
             SafetyDisposition::Allow => {
                 non_empty(value.constraints_digest.as_deref()) && value.safe_code.is_none()
             }
-            SafetyDisposition::Deny | SafetyDisposition::InteractionRequired => {
-                value.constraints_digest.is_none() && non_empty(value.safe_code.as_deref())
+            SafetyDisposition::Deny => {
+                value.constraints_digest.is_none()
+                    && value.safe_code.as_deref() == Some("safety_denied")
+            }
+            SafetyDisposition::InteractionRequired => {
+                value.constraints_digest.is_none()
+                    && value.safe_code.as_deref() == Some("safety_interaction_required")
             }
         };
         if value.decision_id.is_empty()
@@ -208,6 +213,10 @@ impl SafetyDecisionV1 {
 
     pub(crate) fn policy_revision(&self) -> &str {
         &self.policy_revision
+    }
+
+    pub(crate) fn safe_code(&self) -> Option<&str> {
+        self.safe_code.as_deref()
     }
 }
 

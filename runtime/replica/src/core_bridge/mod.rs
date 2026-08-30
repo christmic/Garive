@@ -38,7 +38,7 @@ pub use execution_types::{
 pub use governed_effect::SqliteGovernedEffectPort;
 pub use governed_effect_types::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
-    ExecutorDispatchError, ExecutorFuture, ExecutorPort, GovernedEffectConfig,
+    ExecutorDispatchError, ExecutorFuture, ExecutorPort, F0GovernanceContext, GovernedEffectConfig,
     GovernedRuntimePortError, PreparedExecution, SafetyFuture, SafetyPort, SandboxAdmission,
     SandboxAdmissionPort, SandboxAdmissionRequest,
 };

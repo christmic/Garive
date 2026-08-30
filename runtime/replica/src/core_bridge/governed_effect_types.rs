@@ -25,6 +25,19 @@ pub struct GovernedEffectConfig {
     pub recorded_at: String,
 }
 
+/// Runtime-owned policy identities required to evaluate every Prepared-v3 call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct F0GovernanceContext {
+    /// Authenticated actor-authority reference.
+    pub actor_authority_reference: String,
+    /// Optional active Goal revision reference.
+    pub goal_reference: Option<String>,
+    /// Optional adopted Plan revision reference.
+    pub plan_reference: Option<String>,
+    /// Exact effective Safety policy revision.
+    pub effective_policy_revision: String,
+}
+
 /// Full exact request presented to the frozen authority implementation.
 pub struct AuthorityRequest<'a> {
     /// Runtime-owned invocation identity.
