@@ -40,6 +40,7 @@ fn main() {
             "get_product_timeline",
             "create_product_session",
             "start_product_turn",
+            "start_product_turn_with_workspace_context",
             "cancel_product_turn",
             "continue_product_turn",
             "continue_product_approval",

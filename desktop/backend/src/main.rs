@@ -13,6 +13,16 @@ struct WorkspaceTurnCommand {
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ProductWorkspaceTurnCommand {
+    command_id: String,
+    session_id: String,
+    input: String,
+    workspace_id: String,
+    entry_ids: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ArtifactCommand {
     session_id: String,
     artifact_id: String,
@@ -633,6 +643,27 @@ async fn start_product_turn(
 }
 
 #[tauri::command]
+async fn start_product_turn_with_workspace_context(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    request: ProductWorkspaceTurnCommand,
+) -> Result<garive_desktop::DesktopTurnCommandReceipt, String> {
+    let context = workspaces
+        .read_context_files(&request.workspace_id, window.label(), &request.entry_ids)
+        .map_err(|error| error.code().to_owned())?;
+    state
+        .start_turn_with_context_detached(
+            request.command_id,
+            request.session_id,
+            request.input,
+            context,
+        )
+        .await
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn cancel_product_turn(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     command_id: String,
@@ -820,6 +851,7 @@ fn main() {
             get_product_timeline,
             create_product_session,
             start_product_turn,
+            start_product_turn_with_workspace_context,
             cancel_product_turn,
             continue_product_turn,
             continue_product_approval,

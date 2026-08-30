@@ -44,6 +44,7 @@
     "allow-get-product-timeline",
     "allow-create-product-session",
     "allow-start-product-turn",
+    "allow-start-product-turn-with-workspace-context",
     "allow-cancel-product-turn",
     "allow-continue-product-turn",
     "allow-continue-product-approval",

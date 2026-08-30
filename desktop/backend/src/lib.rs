@@ -335,6 +335,42 @@ impl DesktopHost {
             .map_err(|_| DesktopHostError::HostFailure)
     }
 
+    /// Starts or exactly replays one Turn with backend-resolved Workspace context.
+    pub fn start_turn_with_context_command(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        input: &str,
+        context: &[DesktopWorkspaceContextFile],
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        let first = context.first().ok_or(DesktopHostError::HostFailure)?;
+        if context.iter().any(|file| {
+            file.workspace_id != first.workspace_id || file.grant_revision != first.grant_revision
+        }) {
+            return Err(DesktopHostError::HostFailure);
+        }
+        let entries = context
+            .iter()
+            .map(|file| HostWorkspaceContextEntry {
+                entry_id: file.entry_id.clone(),
+                display_name: file.display_name.clone(),
+                kind: file.kind.into(),
+                content_digest: file.content_digest.clone(),
+                content_utf8: file.content_utf8.clone(),
+            })
+            .collect::<Vec<_>>();
+        self.host
+            .start_turn_with_workspace_context(
+                command_id,
+                session_id,
+                input,
+                &first.workspace_id,
+                first.grant_revision,
+                &entries,
+            )
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
     /// Requests cancellation at one exact client-observed durable prefix.
     pub fn cancel_turn_command(
         &self,
@@ -519,37 +555,11 @@ impl DesktopHost {
         input: &str,
         context: &[DesktopWorkspaceContextFile],
     ) -> Result<DesktopTurnResult, DesktopHostError> {
-        if definition_id != self.definition_id || context.is_empty() {
+        if definition_id != self.definition_id {
             return Err(DesktopHostError::HostFailure);
         }
-        let first = context.first().ok_or(DesktopHostError::HostFailure)?;
-        if context.iter().any(|file| {
-            file.workspace_id != first.workspace_id || file.grant_revision != first.grant_revision
-        }) {
-            return Err(DesktopHostError::HostFailure);
-        }
-        let entries = context
-            .iter()
-            .map(|file| HostWorkspaceContextEntry {
-                entry_id: file.entry_id.clone(),
-                display_name: file.display_name.clone(),
-                kind: file.kind.into(),
-                content_digest: file.content_digest.clone(),
-                content_utf8: file.content_utf8.clone(),
-            })
-            .collect::<Vec<_>>();
         let command_id = self.operations.command_id("turn-with-context")?;
-        let turn = self
-            .host
-            .start_turn_with_workspace_context(
-                &command_id,
-                session_id,
-                input,
-                &first.workspace_id,
-                first.grant_revision,
-                &entries,
-            )
-            .map_err(|_| DesktopHostError::HostFailure)?;
+        let turn = self.start_turn_with_context_command(&command_id, session_id, input, context)?;
         self.finish_turn(session_id.to_owned(), turn).await
     }
 
@@ -764,6 +774,35 @@ impl DesktopState {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
             let result = host.start_turn_command(&command_id, &session_id, &input);
+            let committed = result.is_ok();
+            let _ = sender.send(result);
+            if committed {
+                if let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    let _ = runtime.block_on(host.drive_next());
+                }
+            }
+        });
+        receiver
+            .await
+            .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Starts one caller-addressed contextual Turn and drives it after acknowledgement.
+    pub async fn start_turn_with_context_detached(
+        &self,
+        command_id: String,
+        session_id: String,
+        input: String,
+        context: Vec<DesktopWorkspaceContextFile>,
+    ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        let host = self.installed_host()?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let result =
+                host.start_turn_with_context_command(&command_id, &session_id, &input, &context);
             let committed = result.is_ok();
             let _ = sender.send(result);
             if committed {

@@ -526,8 +526,8 @@ async fn selected_workspace_text_reaches_the_embedded_runtime_without_frontend_c
     };
     state.attach_workspace(&session_id, &grant).unwrap();
     let result = state
-        .run_turn_with_context_isolated(
-            "definition-main".into(),
+        .start_turn_with_context_detached(
+            "client-context-1".into(),
             session_id.clone(),
             "summarize".into(),
             vec![DesktopWorkspaceContextFile {
@@ -543,8 +543,22 @@ async fn selected_workspace_text_reaches_the_embedded_runtime_without_frontend_c
         )
         .await
         .unwrap();
-    assert_eq!(result.terminal, DesktopTerminal::Completed);
     assert_eq!(result.session_id, session_id);
+    let mut completed = false;
+    for _ in 0..100 {
+        if let Ok(page) = state.event_page(&session_id, result.committed_position) {
+            if page
+                .events
+                .iter()
+                .any(|event| event.event == "turn.completed")
+            {
+                completed = true;
+                break;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    }
+    assert!(completed, "contextual Turn did not complete");
 }
 
 #[tokio::test]
