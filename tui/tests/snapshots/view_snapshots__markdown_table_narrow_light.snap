@@ -1,0 +1,11 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "markdown_table_narrow_preview(Theme::Light)"
+---
+"Surfa…" <fg=Some(Blue) bg=None +BOLD -NONE> | ": " <fg=Some(DarkGray) bg=None +NONE -NONE> | "macOS" <fg=Some(Black) bg=None +NONE -NONE>
+"State" <fg=Some(Blue) bg=None +BOLD -NONE> | ": " <fg=Some(DarkGray) bg=None +NONE -NONE> | "ready" <fg=Some(Black) bg=None +BOLD -NONE>
+"Owner" <fg=Some(Blue) bg=None +BOLD -NONE> | ": " <fg=Some(DarkGray) bg=None +NONE -NONE> | "TUI" <fg=Some(Black) bg=None +NONE -NONE>
+"···" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"Surfa…" <fg=Some(Blue) bg=None +BOLD -NONE> | ": " <fg=Some(DarkGray) bg=None +NONE -NONE> | "Other" <fg=Some(Black) bg=None +NONE -NONE>
+"State" <fg=Some(Blue) bg=None +BOLD -NONE> | ": " <fg=Some(DarkGray) bg=None +NONE -NONE> | "later" <fg=Some(Black) bg=None +NONE -NONE>
+"Owner" <fg=Some(Blue) bg=None +BOLD -NONE> | ": " <fg=Some(DarkGray) bg=None +NONE -NONE> | "roadmap" <fg=Some(Black) bg=None +NONE -NONE>

@@ -100,6 +100,11 @@ appears in its `CODE` header. Code that exceeds the conversation width ends in
 `…` instead of wrapping into an ambiguous gutter; tabs display as four spaces.
 Markdown links show both their label and bounded destination as inert terminal
 text, so the target remains inspectable even when OSC hyperlinks are disabled.
+Tables use a compact aligned grid when the conversation has room. In a narrow
+pane, Garive automatically changes each row into labeled `Header: Value`
+records, so columns do not disappear off-screen; bold, links, CJK text, and
+alignment remain readable. Resizing switches presentation without changing the
+response text copied by `/copy last`.
 
 ## First Session and first Turn
 

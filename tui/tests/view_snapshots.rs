@@ -37,6 +37,18 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     insta::assert_snapshot!("markdown_rich_dark", markdown_style_preview(Theme::Dark));
     insta::assert_snapshot!("markdown_rich_light", markdown_style_preview(Theme::Light));
     insta::assert_snapshot!("markdown_rich_mono", markdown_style_preview(Theme::Mono));
+    insta::assert_snapshot!(
+        "markdown_table_narrow_dark",
+        markdown_table_narrow_preview(Theme::Dark)
+    );
+    insta::assert_snapshot!(
+        "markdown_table_narrow_light",
+        markdown_table_narrow_preview(Theme::Light)
+    );
+    insta::assert_snapshot!(
+        "markdown_table_narrow_mono",
+        markdown_table_narrow_preview(Theme::Mono)
+    );
 
     let mut wide = model;
     wide.overlay = Some(Overlay::CommandPalette);
@@ -246,8 +258,17 @@ fn motion_frame(model: &AppModel, theme: Theme, tick: u64, width: u16, height: u
 }
 
 fn markdown_style_preview(theme: Theme) -> String {
-    const SOURCE: &str = "# Delivery\n\n**outer *inner* tail**\n\n3. inspect\n4. ship\n\n[Guide](https://garive.local/guide)\n\n```rust\nfn main() {}\n```";
-    view::markdown_preview(SOURCE, theme)
+    const SOURCE: &str = "# Delivery\n\n**outer *inner* tail**\n\n3. inspect\n4. ship\n\n[Guide](https://garive.local/guide)\n\n| Surface | State |\n|:--|--:|\n| macOS | **ready** |\n| Other | later |\n\n```rust\nfn main() {}\n```";
+    markdown_runs(view::markdown_preview(SOURCE, theme))
+}
+
+fn markdown_table_narrow_preview(theme: Theme) -> String {
+    const SOURCE: &str = "| Surface | State | Owner |\n|:--|--:|:--:|\n| macOS | **ready** | TUI |\n| Other | later | roadmap |";
+    markdown_runs(view::markdown_preview_at_width(SOURCE, theme, 20))
+}
+
+fn markdown_runs(lines: Vec<ratatui::text::Line<'static>>) -> String {
+    lines
         .into_iter()
         .map(|line| {
             line.spans

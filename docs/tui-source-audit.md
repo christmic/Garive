@@ -189,15 +189,25 @@ Codex `codex-rs/tui/src/markdown_render.rs:430-567` keeps inline styles in a
 stack, pairs every emphasis/strong/strikethrough/link start with a pop, records
 fenced-code language, and gives tables their own structured pipeline. Its
 `markdown_render_tests.rs:717-768` directly proves nested strong/emphasis and
-visible Web-link destinations. Grok Build independently separates Markdown
+visible Web-link destinations. Its `render_table_lines` and width-allocation
+path at `markdown_render.rs:1085-1670`, plus grid/record fallback tests at
+`markdown_render_tests.rs:1674-1792`, establish that a table needs a semantic
+model and an explicit narrow layout rather than delimiter text. Grok Build
+independently separates Markdown
 style, parsing, hyperlinks, code-block metadata, streaming, and syntax in
-`xai-grok-markdown/src/{style,parse,hyperlinks,output,streaming,syntax}.rs`.
+`xai-grok-markdown/src/{style,parse,hyperlinks,output,streaming,syntax}.rs`;
+its `buffers.rs:124+`, `parse.rs:1526+`, and `render.rs:1310+` directly model,
+constrain, and test table width.
 
 Garive adopts the bounded component boundaries that its transcript needs:
 compositional inline styles, visible sanitized link destinations, ordered-list
 indices, semantic fenced-code frames/language labels, and width-aware
-grapheme-safe code clipping. It does not copy either renderer, emit active OSC
-8 links, or import their large syntax/table systems.
+grapheme-safe code clipping. Garive's own `markdown_table.rs` bounds the model
+to 12 columns, 64 body rows, and 4,096 characters per cell; preserves styled
+spans and CommonMark alignment; allocates content-aware Unicode display widths;
+and deterministically transposes an undersized grid into labeled records. It
+does not copy either renderer, emit active OSC 8 links, or import their large
+syntax/table systems.
 
 ### Motion ownership
 

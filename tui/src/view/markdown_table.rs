@@ -349,11 +349,19 @@ fn plain(spans: &[Span<'static>]) -> String {
 }
 
 fn truncate(value: &str, width: usize) -> String {
+    if UnicodeWidthStr::width(value) <= width {
+        return value.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let content_width = width.saturating_sub(1);
     value
         .graphemes(true)
         .scan(0, |used, part| {
             *used += UnicodeWidthStr::width(part);
-            (*used <= width).then_some(part)
+            (*used <= content_width).then_some(part)
         })
+        .chain(std::iter::once("…"))
         .collect()
 }
