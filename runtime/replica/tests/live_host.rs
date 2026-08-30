@@ -535,8 +535,29 @@ fn interaction_continuation_validates_schema_and_representation_before_commit() 
         )
         .unwrap();
     assert_eq!(continued.committed_position, 12);
+    let restarted = LiveHost::new(
+        &harness.database,
+        installed(),
+        harness.host.limits(),
+        Arc::new(FixedClock),
+        harness.dispatcher.clone(),
+    )
+    .unwrap();
     assert_eq!(
-        harness.host.continue_turn(
+        restarted
+            .continue_turn(
+                "continue-interaction",
+                &session.session_id,
+                &started.turn_id,
+                "suspension-1",
+                4,
+                HostContinuationInput::Json(json_value),
+            )
+            .unwrap(),
+        continued
+    );
+    assert_eq!(
+        restarted.continue_turn(
             "continue-interaction",
             &session.session_id,
             &started.turn_id,
