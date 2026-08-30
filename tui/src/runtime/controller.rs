@@ -3,7 +3,9 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crate::{
     application::{ExecutionState, Overlay, TerminalSize},
     input::{parse_command, Command, CommandParse},
+    persistence::{now, PendingCommand, PendingKind},
 };
+use serde_json::{json, Value};
 
 use super::{app::RuntimeState, host};
 
@@ -27,7 +29,7 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     }
     if let Some(overlay) = state.model.overlay {
         match key.code {
-            KeyCode::Esc if overlay != Overlay::Suspension => state.model.overlay = None,
+            KeyCode::Esc if overlay != Overlay::UnknownCommand => state.model.overlay = None,
             KeyCode::Enter if overlay == Overlay::QuitConfirmation => {
                 state.model.quit_requested = true
             }
@@ -42,6 +44,12 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             KeyCode::Enter if overlay == Overlay::Suspension => {
                 state.model.overlay = None;
             }
+            KeyCode::Enter if overlay == Overlay::EphemeralConfirmation => {
+                state.ephemeral_confirmed = true;
+                state.model.overlay = None;
+            }
+            KeyCode::Enter if overlay == Overlay::UnknownCommand => retry_pending(state),
+            KeyCode::Char('a') if overlay == Overlay::UnknownCommand => state.abandon_pending(),
             _ => {}
         }
         return;
@@ -137,6 +145,12 @@ fn create_session(state: &mut RuntimeState) {
 }
 
 fn create_session_with(state: &mut RuntimeState, requested: Option<String>) {
+    if requested.is_none() && state.config.definition.is_none() && state.model.definitions.len() > 1
+    {
+        state.model.notice = Some("Choose an Agent with /new <definition-id>.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    }
     let definition = requested
         .or_else(|| state.config.definition.clone())
         .or_else(|| {
@@ -148,6 +162,29 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) {
         });
     if let Some(definition) = definition {
         let id = state.command_id("create");
+        if !state
+            .model
+            .definitions
+            .iter()
+            .any(|value| value.definition_id == definition)
+        {
+            state.model.notice = Some("That Agent definition is not installed.".into());
+            state.model.overlay = Some(Overlay::ErrorDetails);
+            return;
+        }
+        if !admit(
+            state,
+            id.clone(),
+            PendingKind::CreateSession,
+            None,
+            None,
+            None,
+            None,
+            None,
+            json!({"agent_definition_id": definition}),
+        ) {
+            return;
+        }
         host::create_session(state.client.clone(), id, definition, state.sender.clone());
     }
 }
@@ -180,20 +217,77 @@ fn submit(state: &mut RuntimeState) {
         state.model.selected_turn.clone(),
         state.model.suspension.clone(),
     ) {
-        host::continue_turn(
-            state.client.clone(),
-            id,
-            session,
-            turn,
-            suspension.suspension_id,
-            suspension.session_version,
-            text,
-            state.sender.clone(),
-        );
+        if suspension.response_schema_json.is_some() {
+            let Ok(input_json) = serde_json::from_str::<Value>(&text) else {
+                state.model.notice = Some("This request expects a valid JSON response.".into());
+                state.model.overlay = Some(Overlay::ErrorDetails);
+                return;
+            };
+            if !admit(
+                state,
+                id.clone(),
+                PendingKind::ContinueTurn,
+                Some(session.clone()),
+                Some(turn.clone()),
+                Some(suspension.suspension_id.clone()),
+                Some(suspension.session_version),
+                None,
+                json!({"input_json": input_json}),
+            ) {
+                return;
+            }
+            host::continue_turn_json(
+                state.client.clone(),
+                id,
+                session,
+                turn,
+                suspension.suspension_id,
+                suspension.session_version,
+                input_json,
+                state.sender.clone(),
+            );
+        } else {
+            if !admit(
+                state,
+                id.clone(),
+                PendingKind::ContinueTurn,
+                Some(session.clone()),
+                Some(turn.clone()),
+                Some(suspension.suspension_id.clone()),
+                Some(suspension.session_version),
+                None,
+                json!({"input": text}),
+            ) {
+                return;
+            }
+            host::continue_turn(
+                state.client.clone(),
+                id,
+                session,
+                turn,
+                suspension.suspension_id,
+                suspension.session_version,
+                text,
+                state.sender.clone(),
+            );
+        }
     } else if matches!(
         state.model.execution,
         ExecutionState::Idle | ExecutionState::Failed
     ) {
+        if !admit(
+            state,
+            id.clone(),
+            PendingKind::StartTurn,
+            Some(session.clone()),
+            None,
+            None,
+            None,
+            None,
+            json!({"text": text}),
+        ) {
+            return;
+        }
         host::start_turn(
             state.client.clone(),
             id,
@@ -237,10 +331,7 @@ fn execute_command(command: Command, state: &mut RuntimeState) {
                 Some("Mouse preference updated for the next terminal session.".into());
             state.model.overlay = Some(Overlay::ErrorDetails);
         }
-        Command::Retry => {
-            state.model.notice = Some("No recoverable pending command is loaded.".into());
-            state.model.overlay = Some(Overlay::ErrorDetails);
-        }
+        Command::Retry => retry_pending(state),
         Command::CopyLast | Command::CopySessionId => {
             state.model.notice =
                 Some("Clipboard integration is unavailable in this terminal.".into());
@@ -256,12 +347,145 @@ fn cancel(state: &mut RuntimeState) {
         state.model.selected_turn.clone(),
     ) {
         let id = state.command_id("cancel");
+        let position = state.model.observed_position.max(1);
+        if !admit(
+            state,
+            id.clone(),
+            PendingKind::CancelTurn,
+            Some(session.clone()),
+            Some(turn.clone()),
+            None,
+            None,
+            Some(position),
+            json!({"session_id": session, "requested_through_position": position}),
+        ) {
+            return;
+        }
         host::cancel_turn(
             state.client.clone(),
             id,
             session,
             turn,
-            state.model.observed_position.max(1),
+            position,
+            state.sender.clone(),
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn admit(
+    state: &mut RuntimeState,
+    command_id: String,
+    kind: PendingKind,
+    session_id: Option<String>,
+    turn_id: Option<String>,
+    suspension_id: Option<String>,
+    expected_session_version: Option<u64>,
+    requested_through_position: Option<u64>,
+    request_payload: Value,
+) -> bool {
+    state.admit_pending(PendingCommand {
+        schema_version: 1,
+        command_id,
+        kind,
+        session_id,
+        turn_id,
+        suspension_id,
+        expected_session_version,
+        requested_through_position,
+        request_payload,
+        request_digest: String::new(),
+        created_at: now(),
+    })
+}
+
+fn retry_pending(state: &mut RuntimeState) {
+    let Some(pending) = state.pending.clone() else {
+        state.model.notice = Some("No recoverable pending command is loaded.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    };
+    let text = pending
+        .request_payload
+        .get("text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    match pending.kind {
+        PendingKind::CreateSession => {
+            if let Some(definition) = pending
+                .request_payload
+                .get("agent_definition_id")
+                .and_then(Value::as_str)
+            {
+                host::create_session(
+                    state.client.clone(),
+                    pending.command_id,
+                    definition.into(),
+                    state.sender.clone(),
+                );
+            }
+        }
+        PendingKind::StartTurn => {
+            if let Some(session) = pending.session_id {
+                host::start_turn(
+                    state.client.clone(),
+                    pending.command_id,
+                    session,
+                    text,
+                    state.sender.clone(),
+                );
+            }
+        }
+        PendingKind::CancelTurn => {
+            if let (Some(session), Some(turn), Some(position)) = (
+                pending.session_id,
+                pending.turn_id,
+                pending.requested_through_position,
+            ) {
+                host::cancel_turn(
+                    state.client.clone(),
+                    pending.command_id,
+                    session,
+                    turn,
+                    position,
+                    state.sender.clone(),
+                );
+            }
+        }
+        PendingKind::ContinueTurn => retry_continuation(state, pending),
+    }
+}
+
+fn retry_continuation(state: &mut RuntimeState, pending: PendingCommand) {
+    let (Some(session), Some(turn), Some(suspension), Some(version)) = (
+        pending.session_id,
+        pending.turn_id,
+        pending.suspension_id,
+        pending.expected_session_version,
+    ) else {
+        return;
+    };
+    if let Some(input) = pending.request_payload.get("input").and_then(Value::as_str) {
+        host::continue_turn(
+            state.client.clone(),
+            pending.command_id,
+            session,
+            turn,
+            suspension,
+            version,
+            input.into(),
+            state.sender.clone(),
+        );
+    } else if let Some(input) = pending.request_payload.get("input_json") {
+        host::continue_turn_json(
+            state.client.clone(),
+            pending.command_id,
+            session,
+            turn,
+            suspension,
+            version,
+            input.clone(),
             state.sender.clone(),
         );
     }
