@@ -7,11 +7,11 @@ mod types;
 pub use http::{LiveHostServer, LiveHostServerError};
 pub use service::LiveHost;
 pub use types::{
-    ActivityProjectionLimits, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
-    HostActivity, HostClock, HostContinuationInput, HostEventPage, InstalledActivityCatalogue,
-    InstalledActivityDescriptor, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    SessionSummary, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelinePage,
+    ActivityProjectionLimits, AgentDefinitionPage, AgentDefinitionSummary, CommittedTurn,
+    CreateSessionResponse, HostActivity, HostClock, HostContinuationInput, HostEventPage,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHostError,
+    LiveHostEvent, LiveHostLimits, SessionPage, SessionSummary, SessionView, TurnCommandResponse,
+    TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
 pub(crate) use activity_projection::project_activities;

@@ -864,6 +864,74 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .unwrap();
     assert_eq!(started.status(), reqwest::StatusCode::OK);
 
+    let definitions: Value = client
+        .get(format!("{base}/v1/agent-definitions"))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap();
+    assert_eq!(definitions["api_version"], "v1");
+    assert_eq!(
+        definitions["definitions"][0]["definition_id"],
+        "definition-main"
+    );
+
+    let sessions: Value = client
+        .get(format!("{base}/v1/sessions?limit=8"))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap();
+    assert_eq!(sessions["api_version"], "v1");
+    assert_eq!(sessions["sessions"][0]["session_id"], session_id);
+
+    let session: Value = client
+        .get(format!("{base}/v1/sessions/{session_id}"))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap();
+    assert_eq!(session["session"]["session_id"], session_id);
+
+    let timeline: Value = client
+        .get(format!(
+            "{base}/v1/sessions/{session_id}/timeline?after_position=0&limit=8"
+        ))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap();
+    assert_eq!(timeline["api_version"], "v1");
+    assert_eq!(timeline["items"][0]["user_text"], "hello");
+
+    for path in [
+        "/v1/sessions?limit=0".to_owned(),
+        "/v1/sessions?limit=8&before=unsupported".to_owned(),
+        format!("/v1/sessions/{session_id}/timeline?after_position=0&limit=8&unknown=true"),
+    ] {
+        assert_eq!(
+            client
+                .get(format!("{base}{path}"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::BAD_REQUEST
+        );
+    }
+
     let response = client
         .get(format!(
             "{base}/v1/sessions/{session_id}/events?after_position=0"

@@ -20,7 +20,7 @@ use crate::{
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
     CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage, InstalledAgent,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary,
+    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, SessionView,
     TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
@@ -87,6 +87,18 @@ impl LiveHost {
         });
         sessions.truncate(limit);
         Ok(sessions)
+    }
+
+    /// Returns one exact restart-safe Session view.
+    pub fn get_session(&self, session: &str) -> Result<SessionView, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let summary = self.project_session(&ledger, &session_id)?;
+        Ok(SessionView {
+            api_version: "v1",
+            observed_max_position: summary.latest_position,
+            session: summary,
+        })
     }
 
     /// Returns complete durable Turns changed after a caller watermark.

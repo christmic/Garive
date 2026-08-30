@@ -204,6 +204,15 @@ pub struct AgentDefinitionSummary {
     pub capabilities: Vec<String>,
 }
 
+/// Bounded installed-Agent discovery response.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionPage {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Installed definitions visible to this Host.
+    pub definitions: Vec<AgentDefinitionSummary>,
+}
+
 /// One restart-safe durable Session navigation summary.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SessionSummary {
@@ -227,6 +236,29 @@ pub struct SessionSummary {
     pub latest_turn_state: Option<String>,
     /// Count of verified first-start Turns.
     pub turn_count: u64,
+}
+
+/// Reverse-opened bounded Session navigation response.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionPage {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Ordered durable Session summaries.
+    pub sessions: Vec<SessionSummary>,
+    /// Opaque next-page cursor; absent until cursor pagination is admitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_before: Option<String>,
+}
+
+/// One exact Session frozen at a durable watermark.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionView {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Requested durable Session summary.
+    pub session: SessionSummary,
+    /// Frozen maximum position used for the projection.
+    pub observed_max_position: u64,
 }
 
 /// One complete durable Turn projection for conversation restoration.

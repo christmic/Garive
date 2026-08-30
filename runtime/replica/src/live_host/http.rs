@@ -16,8 +16,8 @@ use serde::de::DeserializeOwned;
 use tokio::net::TcpListener;
 
 use super::{
-    validate_key, CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHost,
-    LiveHostError, LiveHostEvent, StartTurnBody,
+    validate_key, AgentDefinitionPage, CancelTurnBody, ContinueTurnBody, CreateSessionBody,
+    ErrorBody, LiveHost, LiveHostError, LiveHostEvent, SessionPage, StartTurnBody,
 };
 
 const IDEMPOTENCY_KEY: &str = "idempotency-key";
@@ -40,8 +40,11 @@ impl LiveHostServer {
             .map_err(LiveHostServerError::Io)?;
         let local_addr = listener.local_addr().map_err(LiveHostServerError::Io)?;
         let app = Router::new()
-            .route("/v1/sessions", post(create_session))
+            .route("/v1/agent-definitions", get(agent_definitions))
+            .route("/v1/sessions", get(list_sessions).post(create_session))
+            .route("/v1/sessions/:session_id", get(get_session))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
+            .route("/v1/sessions/:session_id/timeline", get(timeline))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
             .fallback(not_found)
@@ -68,6 +71,51 @@ impl LiveHostServer {
             .await
             .map_err(LiveHostServerError::Io)
     }
+}
+
+async fn agent_definitions(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
+    if query.is_some_and(|value| !value.is_empty()) {
+        return error_response(LiveHostError::InvalidRequest);
+    }
+    command_response(Ok(AgentDefinitionPage {
+        api_version: "v1",
+        definitions: host.agent_definitions(),
+    }))
+}
+
+async fn list_sessions(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
+    let limit = match parse_single_limit(query.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    command_response(host.list_sessions(limit).map(|sessions| SessionPage {
+        api_version: "v1",
+        sessions,
+        next_before: None,
+    }))
+}
+
+async fn get_session(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+    RawQuery(query): RawQuery,
+) -> Response {
+    if query.is_some_and(|value| !value.is_empty()) {
+        return error_response(LiveHostError::InvalidRequest);
+    }
+    command_response(host.get_session(&session_id))
+}
+
+async fn timeline(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+    RawQuery(query): RawQuery,
+) -> Response {
+    let (after_position, limit) = match parse_timeline_query(query.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    command_response(host.read_timeline(&session_id, after_position, limit))
 }
 
 /// Failure while constructing or serving the local Host listener.
@@ -273,6 +321,38 @@ fn parse_event_query(query: Option<&str>) -> Result<u64, LiveHostError> {
             raw.parse().map_err(|_| LiveHostError::InvalidRequest)
         }
     }
+}
+
+fn parse_single_limit(query: Option<&str>) -> Result<usize, LiveHostError> {
+    let value = query.ok_or(LiveHostError::InvalidRequest)?;
+    let raw = value
+        .strip_prefix("limit=")
+        .ok_or(LiveHostError::InvalidRequest)?;
+    if raw.is_empty() || raw.contains('&') {
+        return Err(LiveHostError::InvalidRequest);
+    }
+    raw.parse().map_err(|_| LiveHostError::InvalidRequest)
+}
+
+fn parse_timeline_query(query: Option<&str>) -> Result<(u64, usize), LiveHostError> {
+    let mut after_position = None;
+    let mut limit = None;
+    for pair in query.ok_or(LiveHostError::InvalidRequest)?.split('&') {
+        let (key, value) = pair.split_once('=').ok_or(LiveHostError::InvalidRequest)?;
+        match key {
+            "after_position" if after_position.is_none() => {
+                after_position = Some(value.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+            }
+            "limit" if limit.is_none() => {
+                limit = Some(value.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+            }
+            _ => return Err(LiveHostError::InvalidRequest),
+        }
+    }
+    Ok((
+        after_position.ok_or(LiveHostError::InvalidRequest)?,
+        limit.ok_or(LiveHostError::InvalidRequest)?,
+    ))
 }
 
 fn command_response<T: serde::Serialize>(result: Result<T, LiveHostError>) -> Response {
