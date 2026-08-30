@@ -186,6 +186,8 @@ pub struct DesktopCapabilityManifest {
     pub workspaces: bool,
     /// Whether bounded artifact projection and preview are installed.
     pub artifacts: bool,
+    /// Whether a bounded HTTPS update channel and verification key are installed.
+    pub updater: bool,
 }
 
 /// Stable secret-free embedded Desktop Host failure.
@@ -727,6 +729,7 @@ impl DesktopState {
             setup: false,
             workspaces: configured,
             artifacts: configured,
+            updater: false,
         }
     }
 

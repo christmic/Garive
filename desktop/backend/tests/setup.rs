@@ -387,6 +387,16 @@ fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
     assert!(permissions
         .iter()
         .any(|value| value == "core:webview:allow-set-webview-zoom"));
+    for updater_permission in [
+        "updater:allow-check",
+        "updater:allow-download",
+        "updater:allow-install",
+    ] {
+        assert!(permissions.iter().any(|value| value == updater_permission));
+    }
+    assert!(!permissions
+        .iter()
+        .any(|value| value == "updater:allow-download-and-install"));
     assert!(capability.get("remote").is_none());
     authorize_setup_window("main").unwrap();
     assert_eq!(

@@ -241,6 +241,7 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
     );
     assert!(state.capabilities().durable_navigation);
     assert!(state.capabilities().workspaces);
+    assert!(!state.capabilities().updater);
     let result = state
         .run_turn_isolated("definition-main".into(), "hello desktop".into())
         .await
@@ -470,6 +471,7 @@ async fn unconfigured_state_is_stable_and_secret_free() {
     let state = DesktopState::default();
     assert!(!state.capabilities().configured);
     assert!(state.capabilities().agent_definition_id.is_none());
+    assert!(!state.capabilities().updater);
     let error = state
         .run_turn("definition", "private input")
         .await

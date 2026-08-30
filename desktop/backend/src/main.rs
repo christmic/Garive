@@ -112,10 +112,13 @@ async fn resolve_turn_approval(
 
 #[tauri::command]
 fn get_desktop_capabilities(
+    app: tauri::AppHandle,
     state: tauri::State<'_, garive_desktop::DesktopState>,
 ) -> garive_desktop::DesktopCapabilityManifest {
     let mut capabilities = state.capabilities();
     capabilities.setup = true;
+    capabilities.updater =
+        garive_desktop::desktop_updater_configured(app.config().plugins.0.get("updater"));
     capabilities
 }
 
@@ -743,6 +746,7 @@ fn get_session_events(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .menu(garive_desktop::build_desktop_menu)
         .on_menu_event(|app, event| {
             if let Some(intent) = garive_desktop::DesktopMenuIntent::from_id(event.id().as_ref()) {
