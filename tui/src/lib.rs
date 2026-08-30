@@ -6,6 +6,7 @@
 mod application;
 mod args;
 mod input;
+mod persistence;
 mod runtime;
 mod view;
 
