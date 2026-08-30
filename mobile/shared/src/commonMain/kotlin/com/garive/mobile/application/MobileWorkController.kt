@@ -281,8 +281,11 @@ public class MobileWorkController(
 
     private fun applyFailure(error: HostClientException): MobileWorkState {
         val connection = when (error.code) {
-            HostClientError.INVALID_CONFIGURATION -> MobileConnectionState.SECURITY_ERROR
-            HostClientError.TRANSPORT_FAILURE, HostClientError.FOLLOW_DEADLINE -> MobileConnectionState.OFFLINE
+            HostClientError.INVALID_CONFIGURATION, HostClientError.ACTOR_FORBIDDEN,
+            HostClientError.DEVICE_REAUTH_REQUIRED -> MobileConnectionState.SECURITY_ERROR
+            HostClientError.AUTHENTICATION_REQUIRED -> MobileConnectionState.SIGNED_OUT
+            HostClientError.TRANSPORT_FAILURE, HostClientError.FOLLOW_DEADLINE,
+            HostClientError.RUNTIME_UNAVAILABLE -> MobileConnectionState.OFFLINE
             else -> viewState.connection
         }
         viewState = viewState.copy(connection = connection, refreshing = false, noticeCode = error.code.wireName)

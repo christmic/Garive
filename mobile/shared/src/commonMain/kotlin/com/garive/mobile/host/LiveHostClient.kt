@@ -278,8 +278,7 @@ public class LiveHostClient private constructor(
         val raw = bytes.decodeToString()
         if (response.status.value !in 200..299) {
             val code = runCatching { decodeObject(raw).optionalText("code") }.getOrDefault("")
-            fail(if (code in KNOWN_HOST_ERRORS) HostClientError.HOST_FAILURE else HostClientError.UNKNOWN_HOST_ERROR,
-                response.status.value)
+            fail(classifyServerError(code), response.status.value)
         }
         return decodeObject(raw)
     }
@@ -299,7 +298,18 @@ private val KNOWN_HOST_ERRORS: Set<String> = setOf(
     "precondition_failed", "durability_unavailable", "corrupt_state",
 )
 
-private fun validateBaseUrl(value: String, remote: Boolean): String {
+internal fun classifyServerError(code: String): HostClientError = when (code) {
+    "authentication_required" -> HostClientError.AUTHENTICATION_REQUIRED
+    "actor_forbidden" -> HostClientError.ACTOR_FORBIDDEN
+    "device_reauth_required" -> HostClientError.DEVICE_REAUTH_REQUIRED
+    "rate_limited" -> HostClientError.RATE_LIMITED
+    "runtime_unavailable" -> HostClientError.RUNTIME_UNAVAILABLE
+    "pairing_rejected" -> HostClientError.PAIRING_REJECTED
+    in KNOWN_HOST_ERRORS -> HostClientError.HOST_FAILURE
+    else -> HostClientError.UNKNOWN_HOST_ERROR
+}
+
+internal fun validateBaseUrl(value: String, remote: Boolean): String {
     val url = runCatching { Url(value) }.getOrElse { fail(HostClientError.INVALID_CONFIGURATION) }
     val loopback = url.host in setOf("localhost", "127.0.0.1", "::1")
     val validRemoteHost = url.host.isNotEmpty() && !loopback && ':' !in url.host &&
