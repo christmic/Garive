@@ -1,0 +1,20 @@
+{
+  "contract": "garive.plan-lifecycle-fixture",
+  "version": 1,
+  "definition": {
+    "canonical_json": "{\"agent_snapshot_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"bounds\":{\"duration_budget_ms\":60000,\"max_parallel_ready\":2,\"max_steps\":4,\"max_total_attempts\":6,\"token_budget\":10000},\"contract\":\"garive.plan-definition\",\"goal_definition_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"goal_id\":\"goal-1\",\"goal_revision\":2,\"plan_id\":\"plan-1\",\"plan_revision\":1,\"safety_policy_revision\":\"safety-v1\",\"steps\":[{\"completion_criteria\":[\"accepted\"],\"depends_on\":[],\"input_bindings\":[\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"max_attempts\":2,\"objective\":\"Complete prepare\",\"required_capabilities\":[{\"exact_revision\":\"catalogue-v1\",\"name\":\"tools\"}],\"step_id\":\"prepare\"},{\"completion_criteria\":[\"artifact\"],\"depends_on\":[\"prepare\"],\"input_bindings\":[\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"],\"max_attempts\":2,\"objective\":\"Complete deliver\",\"required_capabilities\":[{\"exact_revision\":\"catalogue-v1\",\"name\":\"tools\"}],\"step_id\":\"deliver\"}],\"tool_catalogue_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"version\":1}",
+    "digest": "a27b798f3f1f55b3f1bc5c757511d1b679e8bd8393523be6f461e32af6f93adc"
+  },
+  "valid_lifecycle": [
+    {"transition":"adopt","plan_state":"adopted","ready":["prepare"],"total_attempts":0},
+    {"transition":"claim","step_id":"prepare","plan_state":"adopted","ready":[],"total_attempts":0},
+    {"transition":"start","step_id":"prepare","plan_state":"running","ready":[],"total_attempts":1},
+    {"transition":"complete_step","step_id":"prepare","plan_state":"running","ready":["deliver"],"total_attempts":1},
+    {"transition":"claim","step_id":"deliver","plan_state":"running","ready":[],"total_attempts":1},
+    {"transition":"start","step_id":"deliver","plan_state":"running","ready":[],"total_attempts":2},
+    {"transition":"complete_step","step_id":"deliver","plan_state":"running","ready":[],"total_attempts":2},
+    {"transition":"complete","criteria_complete":true,"plan_state":"completed","ready":[],"total_attempts":2}
+  ],
+  "invalid_topologies": ["cycle", "unknown_dependency", "missing_criterion", "capability_out_of_scope"],
+  "invalid_transitions": ["claim_before_adopt", "start_without_claim", "complete_without_criteria", "terminal_reopen"]
+}
