@@ -74,10 +74,17 @@ At standard and wide sizes the screen has four regions:
 4. The composer and footer provide multiline editing, byte usage, and relevant
    shortcuts.
 
+The Session rail spans the workspace height, while the conversation, composer,
+and contextual shortcut footer stay aligned in one main column. The selected
+Session has a `▌` marker; state remains readable without color through `✓`
+completed, `●` running, `!` action required, `×` failed, and `■` stopped.
+
 At widths below 100 columns the Session rail is hidden and the conversation
-uses the available width. At very wide sizes the conversation column is
-centered. Below 20 columns or 8 rows the client displays `Need 20×8`; the draft
-and viewport state remain intact while the terminal is resized back.
+uses the available width. At very wide sizes the main column is centered and
+capped to a readable measure. A focused composer has a double border. Opening a
+picker or palette visibly dims the workspace and highlights the selected row.
+Below 20 columns or 8 rows the client displays `Need 20×8`; the draft and
+viewport state remain intact while the terminal is resized back.
 
 The header connection states are connecting, online, disconnected,
 reconnecting, and unavailable. Turn states are ready, running, action required,

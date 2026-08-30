@@ -1,17 +1,16 @@
 ---
 source: tui/tests/view_snapshots.rs
-assertion_line: 27
 expression: "frame(&wide, Theme::Light, 160, 28)"
 ---
   GARIVE  research-age  /  Session session-alph                                                                                           ● online  ·  running
 
- Sessions 2                      │       Conversation
+ Sessions 2                      │       Conversation · ● live
                                  │        ╭─ YOU #2
- ▸ New session · 123456          │        │╭ Command palette ───────────────────────────────────────────────────────╮
-   completed  ·  3 turns         │        ╰│                                                                        │
-                                 │         │  Search: type to search                                                │
-   New session · 987654          │         │  › /new         Create session                                         │
-   running  ·  1 turns           │         │    /sessions    Switch session                                         │
+ ▌ research-age · 123456         │        │╭ Command palette ───────────────────────────────────────────────────────╮
+   ✓ completed  ·  3 turns       │        ╰│                                                                        │
+                                 │         │  Search  type to search                                                │
+   research-age · 987654         │         │  › /new         Create session                                         │
+   ● running  ·  1 turn          │         │    /sessions    Switch session                                         │
                                  │        ◆│    /status      Connection details                                     │
                                  │         │    /retry       Retry unknown command  · no pending command            │
                                  │         │    /reconnect   Resume event stream                                    │
@@ -27,7 +26,7 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                  │         │                                                                        │
                                  │         ╰────────────────────────────────────────────────────────────────────────╯
                                  │      ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-╭ Message ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Ask a follow-up…                                                                                                                                             │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help                                                                                          18/4096 bytes
+                                 │      ╔ Compose ═══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+                                 │      ║ Ask a follow-up…                                                                                               ║
+  Ctrl+N new · Ctrl+S list       │      ╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
+                                 │        Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help                                             18 / 4096 B

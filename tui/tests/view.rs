@@ -11,7 +11,7 @@ mod input;
 mod view;
 
 use application::{AppModel, BootState, FocusTarget, Overlay, TimelineItem, TimelineRole};
-use ratatui::{buffer::Buffer, layout::Rect};
+use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
@@ -73,6 +73,29 @@ fn overlay_is_rendered_above_without_mutating_model() {
     let rendered = frame(&model, 80, 16);
     assert!(rendered.contains("Quit Garive?"));
     assert_eq!(format!("{model:?}"), before);
+}
+
+#[test]
+fn modal_hierarchy_dims_the_workspace_and_highlights_selection() {
+    let model = AppModel {
+        overlay: Some(Overlay::CommandPalette),
+        ..Default::default()
+    };
+    let area = Rect::new(0, 0, 100, 24);
+    let mut buffer = Buffer::empty(area);
+    let _ = view::render_cached(
+        &model,
+        Theme::Dark,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
+    assert!(buffer[(0, 0)].modifier.contains(Modifier::DIM));
+    let selected = (0..area.height)
+        .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+        .find(|&(x, y)| buffer[(x, y)].symbol() == "›")
+        .expect("selected command marker");
+    assert_ne!(buffer[selected].bg, buffer[(selected.0, selected.1 + 1)].bg);
 }
 
 #[test]

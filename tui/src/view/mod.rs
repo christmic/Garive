@@ -1,21 +1,27 @@
 use crate::{
-    application::{AppModel, BootState, ConnectionState, ExecutionState, TerminalSize},
+    application::{AppModel, BootState, ExecutionState, TerminalSize},
     Theme,
 };
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Padding, Paragraph, Widget, Wrap},
 };
 
 mod conversation;
 mod overlay;
+mod primitives;
+mod style;
 
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use overlay::render_overlay;
+use primitives::{centered_column, key_hints, status_chip};
+use style::{
+    connection_icon, connection_name, connection_style, execution_name, execution_style, palette,
+    session_state_icon, session_state_style,
+};
 
 pub(crate) fn render_cached(
     model: &AppModel,
@@ -35,32 +41,57 @@ pub(crate) fn render_cached(
             .render(area, buffer);
         return None;
     }
-    let composer_height = if area.height < 14 {
-        3
-    } else {
-        (model.composer.line_count() as u16 + 2).clamp(3, 7)
-    };
-    let vertical = Layout::default()
+    let frame = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(composer_height),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(area);
-    render_header(model, theme, vertical[0], buffer);
-    render_body(model, theme, vertical[1], buffer, cache);
-    render_composer(model, theme, vertical[2], buffer);
-    render_footer(model, theme, vertical[3], buffer);
+    render_header(model, theme, frame[0], buffer);
+    let composer = if area.width >= 100 {
+        let rail_width = if area.width >= 160 { 34 } else { 28 };
+        let workspace = Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)])
+            .split(frame[1]);
+        render_navigation(model, theme, workspace[0], buffer);
+        let content = if area.width >= 160 {
+            centered_column(workspace[1], 114)
+        } else {
+            workspace[1]
+        };
+        render_content(model, theme, content, buffer, cache)
+    } else {
+        render_content(model, theme, frame[1], buffer, cache)
+    };
     if let Some(overlay) = model.overlay {
         render_overlay(model, overlay, theme, area, buffer);
         None
     } else {
         (model.focus == crate::application::FocusTarget::Composer)
-            .then(|| composer_cursor(model, vertical[2]))
+            .then(|| composer_cursor(model, composer))
             .flatten()
     }
+}
+
+fn render_content(
+    model: &AppModel,
+    theme: Theme,
+    area: Rect,
+    buffer: &mut Buffer,
+    cache: &mut RenderCache,
+) -> Rect {
+    let composer_height = if area.height < 12 {
+        3
+    } else {
+        (model.composer.line_count() as u16 + 2).clamp(3, 7)
+    };
+    let rows = Layout::vertical([
+        Constraint::Min(1),
+        Constraint::Length(composer_height),
+        Constraint::Length(1),
+    ])
+    .split(area);
+    render_conversation(model, theme, rows[0], buffer, cache);
+    render_composer(model, theme, rows[1], buffer);
+    render_footer(model, theme, rows[2], buffer);
+    rows[1]
 }
 
 fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
@@ -92,49 +123,39 @@ fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer
     };
     identity.render(row[0], buffer);
     let status = if compact {
-        format!(
-            "{} {} ",
-            connection_icon(model.connection),
-            execution_name(model.execution)
-        )
+        vec![
+            status_chip(
+                connection_icon(model.connection),
+                connection_style(model.connection, colors),
+            ),
+            Span::styled(" · ", colors.header_text),
+            status_chip(
+                execution_name(model.execution),
+                execution_style(model.execution, colors),
+            ),
+        ]
     } else {
-        format!(
-            "{} {}  ·  {}  ",
-            connection_icon(model.connection),
-            connection_name(model.connection),
-            execution_name(model.execution)
-        )
+        vec![
+            status_chip(
+                &format!(
+                    "{} {}",
+                    connection_icon(model.connection),
+                    connection_name(model.connection)
+                ),
+                connection_style(model.connection, colors),
+            ),
+            Span::styled(" · ", colors.header_text),
+            status_chip(
+                execution_name(model.execution),
+                execution_style(model.execution, colors),
+            ),
+            Span::styled(" ", colors.header_text),
+        ]
     };
-    Line::from(vec![
-        Span::styled(connection_icon(model.connection), colors.connection),
-        Span::raw(status[connection_icon(model.connection).len()..].to_owned()),
-    ])
-    .alignment(Alignment::Right)
-    .style(colors.header_text)
-    .render(row[1], buffer);
-}
-
-fn render_body(
-    model: &AppModel,
-    theme: Theme,
-    area: Rect,
-    buffer: &mut Buffer,
-    cache: &mut RenderCache,
-) {
-    if area.width >= 100 {
-        let rail_width = if area.width >= 160 { 34 } else { 28 };
-        let horizontal =
-            Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)]).split(area);
-        render_navigation(model, theme, horizontal[0], buffer);
-        let conversation = if area.width >= 160 {
-            centered_horizontal(horizontal[1], 114)
-        } else {
-            horizontal[1]
-        };
-        render_conversation(model, theme, conversation, buffer, cache);
-    } else {
-        render_conversation(model, theme, area, buffer, cache);
-    }
+    Line::from(status)
+        .alignment(Alignment::Right)
+        .style(colors.header_text)
+        .render(row[1], buffer);
 }
 
 fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
@@ -155,6 +176,7 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
         .padding(Padding::new(1, 1, 1, 0));
     let inner = block.inner(area);
     block.render(area, buffer);
+    let regions = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).split(inner);
     let mut lines = Vec::new();
     if model.sessions.is_empty() {
         lines.push(Line::styled("No sessions yet", colors.muted));
@@ -164,11 +186,11 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
         for (index, session) in model
             .sessions
             .iter()
-            .take(inner.height.saturating_sub(3) as usize)
+            .take(regions[0].height.saturating_sub(1) as usize)
             .enumerate()
         {
             let selected = model.selected_session.as_deref() == Some(&session.session_id);
-            let marker = if selected { "▸" } else { " " };
+            let marker = if selected { "▌" } else { " " };
             let state = session.latest_turn_state.as_deref().unwrap_or("new");
             let style = if selected {
                 colors.selected
@@ -176,32 +198,53 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
                 colors.normal
             };
             lines.push(Line::styled(
-                format!("{marker} New session · {}", short_tail(&session.session_id)),
+                format!(
+                    "{marker} {} · {}",
+                    short_id(&session.definition_id),
+                    short_tail(&session.session_id)
+                ),
                 style,
             ));
-            lines.push(Line::styled(
-                format!("  {state}  ·  {} turns", session.turn_count),
-                colors.muted,
-            ));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {} {state}", session_state_icon(state)),
+                    session_state_style(state, colors),
+                ),
+                Span::styled(
+                    format!(
+                        "  ·  {} {}",
+                        session.turn_count,
+                        turn_label(session.turn_count)
+                    ),
+                    colors.muted,
+                ),
+            ]));
             if index + 1 < model.sessions.len() {
                 lines.push(Line::default());
             }
         }
     }
-    Paragraph::new(lines).render(inner, buffer);
+    Paragraph::new(lines).render(regions[0], buffer);
+    Line::styled(" Ctrl+N new · Ctrl+S list", colors.muted).render(regions[1], buffer);
 }
 
 fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     let colors = palette(theme);
     let title = if model.execution == ExecutionState::Suspended {
-        " Reply to request "
+        " Action response "
     } else {
-        " Message "
+        " Compose "
     };
     let block = Block::default()
         .title(Line::styled(title, colors.title))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(
+            if model.focus == crate::application::FocusTarget::Composer {
+                BorderType::Double
+            } else {
+                BorderType::Rounded
+            },
+        )
         .border_style(
             if model.focus == crate::application::FocusTarget::Composer {
                 colors.composer_border
@@ -213,7 +256,10 @@ fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buff
     let inner = block.inner(area);
     block.render(area, buffer);
     let text = if model.composer.text().is_empty() {
-        Text::from(Line::styled("›  Ask Garive anything…", colors.placeholder))
+        Text::from(Line::styled(
+            "›  Message Garive — / for commands",
+            colors.placeholder,
+        ))
     } else {
         Text::from(safe_text(model.composer.text()))
     };
@@ -228,18 +274,39 @@ fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buff
 fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     let colors = palette(theme);
     let cells = Layout::horizontal([Constraint::Min(1), Constraint::Length(14)]).split(area);
-    let hint = if area.width < 60 && model.execution == ExecutionState::Following {
-        " Esc cancel · ? help"
+    let hint = if let Some(notice) = model.notice.as_deref() {
+        Line::from(vec![
+            Span::styled(" ● ", colors.notice),
+            Span::styled(notice, colors.normal),
+        ])
+    } else if area.width < 60 && model.execution == ExecutionState::Following {
+        key_hints(&[("Esc", "cancel"), ("?", "help")], colors)
     } else if area.width < 60 {
-        " Enter send · ? help"
+        key_hints(&[("Enter", "send"), ("?", "help")], colors)
     } else if model.execution == ExecutionState::Following {
-        " Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help"
+        key_hints(
+            &[
+                ("Esc", "cancel"),
+                ("Ctrl+S", "sessions"),
+                ("Ctrl+P", "commands"),
+                ("?", "help"),
+            ],
+            colors,
+        )
     } else {
-        " Enter send   Ctrl+J newline   Ctrl+P commands   ? help"
+        key_hints(
+            &[
+                ("Enter", "send"),
+                ("Ctrl+J", "newline"),
+                ("Ctrl+P", "commands"),
+                ("?", "help"),
+            ],
+            colors,
+        )
     };
-    Line::styled(model.notice.as_deref().unwrap_or(hint), colors.muted).render(cells[0], buffer);
+    hint.render(cells[0], buffer);
     Line::styled(
-        format!("{}/4096 bytes ", model.composer.text().len()),
+        format!("{} / 4096 B ", model.composer.text().len()),
         colors.muted,
     )
     .alignment(Alignment::Right)
@@ -275,25 +342,6 @@ fn composer_visual_cursor(model: &AppModel, width: u16, height: u16) -> ((u16, u
     ((column, row), scroll)
 }
 
-fn centered(area: Rect, width: u16, height: u16) -> Rect {
-    Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y + area.height.saturating_sub(height) / 2,
-        width,
-        height,
-    )
-}
-
-fn centered_horizontal(area: Rect, width: u16) -> Rect {
-    let width = width.min(area.width);
-    Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y,
-        width,
-        area.height,
-    )
-}
-
 pub(super) fn safe_text(value: &str) -> String {
     value
         .chars()
@@ -316,28 +364,11 @@ fn short_id(value: &str) -> &str {
 fn short_tail(value: &str) -> &str {
     value.get(value.len().saturating_sub(6)..).unwrap_or(value)
 }
-fn connection_icon(value: ConnectionState) -> &'static str {
-    if value == ConnectionState::Online {
-        "●"
+pub(super) fn turn_label(count: u64) -> &'static str {
+    if count == 1 {
+        "turn"
     } else {
-        "○"
-    }
-}
-fn connection_name(value: ConnectionState) -> &'static str {
-    match value {
-        ConnectionState::Connecting => "connecting",
-        ConnectionState::Online => "online",
-        ConnectionState::Disconnected { .. } => "disconnected",
-        ConnectionState::Reconnecting { .. } => "reconnecting",
-        ConnectionState::Unavailable { .. } => "unavailable",
-    }
-}
-fn execution_name(value: ExecutionState) -> &'static str {
-    match value {
-        ExecutionState::Idle => "ready",
-        ExecutionState::Following => "running",
-        ExecutionState::Suspended => "action required",
-        ExecutionState::Failed => "failed",
+        "turns"
     }
 }
 fn empty_title(value: BootState) -> &'static str {
@@ -357,76 +388,4 @@ fn empty_detail(value: BootState) -> &'static str {
     }
 }
 
-struct Palette {
-    normal: Style,
-    muted: Style,
-    accent: Style,
-    title: Style,
-    badge: Style,
-    brand: Style,
-    header_text: Style,
-    header_background: Style,
-    connection: Style,
-    border: Style,
-    composer_border: Style,
-    overlay_border: Style,
-    selected: Style,
-    user: Style,
-    agent: Style,
-    activity: Style,
-    placeholder: Style,
-    empty_title: Style,
-}
-fn palette(theme: Theme) -> Palette {
-    let mono = theme == Theme::Mono;
-    let (accent, violet, surface, text, muted) = if theme == Theme::Light {
-        (
-            Color::Blue,
-            Color::Magenta,
-            Color::Rgb(235, 238, 244),
-            Color::Black,
-            Color::DarkGray,
-        )
-    } else if mono {
-        (
-            Color::Reset,
-            Color::Reset,
-            Color::Reset,
-            Color::Reset,
-            Color::DarkGray,
-        )
-    } else {
-        (
-            Color::Rgb(72, 202, 228),
-            Color::Rgb(189, 147, 249),
-            Color::Rgb(24, 28, 38),
-            Color::Rgb(232, 235, 242),
-            Color::Rgb(126, 134, 151),
-        )
-    };
-    let bold = Style::default().fg(accent).add_modifier(Modifier::BOLD);
-    Palette {
-        normal: Style::default().fg(text),
-        muted: Style::default().fg(muted),
-        accent: bold,
-        title: bold,
-        badge: Style::default().fg(violet),
-        brand: Style::default()
-            .fg(if mono { text } else { Color::Black })
-            .bg(accent)
-            .add_modifier(Modifier::BOLD),
-        header_text: Style::default().fg(text).bg(surface),
-        header_background: Style::default().bg(surface),
-        connection: Style::default().fg(if mono { text } else { Color::Green }),
-        border: Style::default().fg(muted),
-        composer_border: Style::default().fg(accent),
-        overlay_border: Style::default().fg(violet),
-        selected: Style::default().fg(accent).add_modifier(Modifier::BOLD),
-        user: Style::default().fg(violet).add_modifier(Modifier::BOLD),
-        agent: bold,
-        activity: Style::default().fg(if mono { text } else { Color::Yellow }),
-        placeholder: Style::default().fg(muted).add_modifier(Modifier::ITALIC),
-        empty_title: Style::default().fg(text).add_modifier(Modifier::BOLD),
-    }
-}
 mod markdown;

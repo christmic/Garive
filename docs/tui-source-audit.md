@@ -129,6 +129,12 @@ semantic render snapshots; Unicode-width-aware wrapping; and a PTY launch gate.
 It does not adopt image, voice, Mermaid, game, worktree, or foreign-session
 features because Garive has no admitted Host contracts for them.
 
+`app/status_blocks.rs` keeps queue, task, and usage presentation as pure,
+unit-tested formatting outside dispatch. Rows use stable status-first columns,
+short public descriptions, explicit empty states, and grouped summaries.
+Garive adopts that separation for public activity/status presentation, but not
+Grok-specific task, workflow, usage, or Agent data.
+
 ## Codex findings
 
 ### Event and terminal ownership
@@ -160,6 +166,22 @@ Garive adopts grapheme-aware cursor movement, bracketed paste as one edit,
 multiline drafts, bounded history, mode-specific key ownership, and snapshot
 coverage. Garive does not adopt Codex slash commands, attachments, shell mode,
 model selection, or approval shapes without corresponding Host authority.
+
+### Footer and visual hierarchy
+
+`codex-rs/tui/src/bottom_pane/footer.rs` explicitly separates pure footer
+rendering from `FooterMode` selection and higher-level quit/interrupt policy.
+Its documented single-line fallback keeps the most actionable instruction,
+shortens it before removal, and drops ambient context by width. Snapshots under
+`bottom_pane/snapshots/` verify status/composer fill, shortcut modes, and active
+Agent labels.
+
+Garive adopts context-owned footer modes, separately styled key hints, and
+deterministic width collapse. It adds a persistent full-height Session rail at
+standard widths, a capped main reading column, semantic connection/execution
+chips, modal background dimming, and reverse-video monochrome selection. Those
+choices are Garive-authored against its Host contracts; they are not copied
+product decoration.
 
 ### Session resume and protocol boundary
 

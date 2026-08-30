@@ -59,8 +59,12 @@ remote authentication remain unavailable until their owning slices exist.
 ```
 
 The frame has five semantic regions: header, navigation, conversation,
-composer, and footer. Overlays are centered or full-frame views above those
-regions; they never replace application state.
+composer, and footer. At standard and wide widths the Session rail spans the
+full workspace height while conversation, composer, and footer share one main
+column. The main column is capped at 114 cells and centered inside excess wide
+space, so prose and the composer keep the same readable measure. Overlays are
+centered or full-frame views above those regions; they never replace
+application state.
 
 ### Responsive modes
 
@@ -101,9 +105,11 @@ unknown-command overlay cannot be dismissed in a way that silently discards
 authority. It offers explicit defer, exact retry, or abandonment actions
 allowed by the state.
 
-Focus is visible without relying on color. The focused region has a double or
-accent border in full color and a textual marker in monochrome/screen-reader
-mode. Background Host events never steal focus. A newly committed suspension
+Focus is visible without relying on color. The focused composer uses a double
+border; navigation and conversation use an accent border plus a textual
+selection marker. A modal dims the workspace, preserves it as visible context,
+and gives its active row a background or terminal-native reverse style.
+Background Host events never steal focus. A newly committed suspension
 opens its prompt only when its Session is selected; otherwise the Session row
 shows an action-required badge and the terminal bell follows preference.
 
@@ -238,9 +244,11 @@ and help strings. Disabled commands remain discoverable with a safe reason.
 ## Session navigation
 
 Session rows show a bounded display label derived from committed public text,
-latest Turn state, last activity time, and action-required marker. Internal IDs
-are hidden until the details action. A missing title uses `New session` plus a
-short opaque suffix; it never exposes input by default.
+latest Turn state, last activity time, and action-required marker. Until a
+public title contract exists, the rail uses the public Agent definition label
+plus a short opaque Session suffix; it does not fabricate a repeated title or
+expose prompt text. State always has a non-color glyph (`✓`, `●`, `!`, `×`,
+`■`, or `○`) and text. Full opaque IDs remain hidden until the details action.
 
 The picker supports case-folded substring filtering over public label and
 opaque ID, keyboard/mouse selection, and incremental H2 page loading. Results
@@ -335,7 +343,12 @@ required for meaning. `NO_COLOR` selects monochrome unless an explicit CLI
 theme overrides it.
 
 - Every status has icon/text in addition to color.
-- Focus and selection remain visible in monochrome.
+- Focus and selection remain visible in monochrome; keycaps and selected rows
+  use terminal-native reverse video rather than assuming a dark background.
+- Header connection and execution chips are separate semantic spans, not one
+  color-coded status sentence.
+- The footer is contextual: notices and cancellation outrank editing hints;
+  hints collapse by width and render keys separately from their descriptions.
 - Reduced motion disables spinners and transition frames.
 - Screen-reader mode prints semantic blocks once and converts overlays to
   numbered prompts.
@@ -381,6 +394,7 @@ client-side imitation.
 
 ## See also
 
+- [`tui-visual-system.md`](tui-visual-system.md) — normative visual tokens and component states.
 - [`tui-application-architecture.md`](tui-application-architecture.md) — state/effect and terminal ownership.
 - [`host-read-model-v1.md`](host-read-model-v1.md) — Session/timeline/suspension public values.
 - [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — redacted activity semantics.
@@ -389,5 +403,5 @@ client-side imitation.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-08-31
 - Status: accepted

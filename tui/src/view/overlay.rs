@@ -11,7 +11,7 @@ use crate::{
     Theme,
 };
 
-use super::{centered, palette, safe_text, short_tail};
+use super::{palette, primitives::centered_popup, safe_text, short_tail};
 
 pub(super) fn render_overlay(
     model: &AppModel,
@@ -41,30 +41,49 @@ pub(super) fn render_overlay(
     } else {
         62
     };
-    let popup = centered(
+    let popup = centered_popup(
         area,
         popup_width.min(area.width.saturating_sub(4)),
         height.min(area.height.saturating_sub(2)),
     );
+    buffer.set_style(area, colors.modal_backdrop);
     Clear.render(popup, buffer);
+    let block = Block::default()
+        .title(Line::styled(title, colors.title))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(colors.overlay_border)
+        .padding(Padding::new(2, 2, 1, 1));
+    let inner = block.inner(popup);
     Paragraph::new(content)
-        .block(
-            Block::default()
-                .title(Line::styled(title, colors.title))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(colors.overlay_border)
-                .padding(Padding::new(2, 2, 1, 1)),
-        )
+        .block(block)
         .style(colors.normal)
         .wrap(Wrap { trim: false })
         .render(popup, buffer);
+    if let Some(row) = selection_row(model, overlay) {
+        if row < inner.height {
+            buffer.set_style(
+                Rect::new(inner.x, inner.y + row, inner.width, 1),
+                colors.selection_row,
+            );
+        }
+    }
+}
+
+fn selection_row(model: &AppModel, overlay: Overlay) -> Option<u16> {
+    let selection = match overlay {
+        Overlay::CommandPalette => model.command_selection,
+        Overlay::SessionPicker => model.session_selection,
+        Overlay::PromptHistory => model.history_selection,
+        _ => return None,
+    };
+    u16::try_from(selection).ok()?.checked_add(1)
 }
 
 fn session_picker_text(model: &AppModel) -> String {
     let filter = model.session_filter.to_lowercase();
     let mut rows = vec![format!(
-        "Filter: {}",
+        "Filter  {}",
         if model.session_filter.is_empty() {
             "type to search".into()
         } else {
@@ -76,7 +95,9 @@ fn session_picker_text(model: &AppModel) -> String {
             .sessions
             .iter()
             .filter(|session| {
-                filter.is_empty() || session.session_id.to_lowercase().contains(&filter)
+                filter.is_empty()
+                    || session.session_id.to_lowercase().contains(&filter)
+                    || session.definition_id.to_lowercase().contains(&filter)
             })
             .enumerate()
             .map(|(index, session)| {
@@ -86,7 +107,8 @@ fn session_picker_text(model: &AppModel) -> String {
                     " "
                 };
                 format!(
-                    "{marker} New session · {}   {}",
+                    "{marker} {} · {}   {}",
+                    super::short_id(&session.definition_id),
                     short_tail(&session.session_id),
                     session.latest_turn_state.as_deref().unwrap_or("new")
                 )
@@ -110,7 +132,7 @@ fn session_picker_text(model: &AppModel) -> String {
 fn history_text(model: &AppModel) -> String {
     let filter = model.history_filter.to_lowercase();
     let mut rows = vec![format!(
-        "Search: {}",
+        "Search  {}",
         if model.history_filter.is_empty() {
             "type to search".into()
         } else {
@@ -146,7 +168,7 @@ fn history_text(model: &AppModel) -> String {
 
 fn palette_text(model: &AppModel) -> String {
     let mut rows = vec![format!(
-        "Search: {}",
+        "Search  {}",
         if model.command_filter.is_empty() {
             "type to search".into()
         } else {
