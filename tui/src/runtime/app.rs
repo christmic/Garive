@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write};
 
 use crossterm::event::EventStream;
 use futures::StreamExt;
@@ -49,6 +49,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         config.reduced_motion = preferences.reduced_motion;
     }
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
+    if config.screen_reader {
+        return run_screen_reader(config, client, store, preferences, pending).await;
+    }
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
         TerminalOptions {
@@ -88,6 +91,122 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     }
     state.persist_presentation();
     guard.restore().map_err(map_terminal_error)
+}
+
+async fn run_screen_reader(
+    config: LaunchConfig,
+    client: LiveHostClient,
+    store: StateStore,
+    preferences: Preferences,
+    pending: Option<PendingCommand>,
+) -> Result<(), TuiError> {
+    let mut guard = TerminalGuard::acquire(
+        SystemTerminal::default(),
+        TerminalOptions {
+            screen_reader: true,
+        },
+    )
+    .map_err(map_terminal_error)?;
+    let (sender, mut receiver) = mpsc::channel(256);
+    let mut state = RuntimeState::new(config, client, sender, store, preferences, pending);
+    host::bootstrap(state.client.clone(), state.sender.clone());
+    let mut events = EventStream::new();
+    let mut emitted = 0;
+    let mut last_status = String::new();
+    write_linear("Garive. Connecting to durable workspace.")?;
+    loop {
+        emit_linear_changes(&state, &mut emitted, &mut last_status)?;
+        if state.model.quit_requested {
+            break;
+        }
+        tokio::select! {
+            event = events.next() => match event {
+                Some(Ok(event)) => handle_terminal(event, &mut state),
+                Some(Err(_)) | None => return Err(TuiError::TerminalIo),
+            },
+            message = receiver.recv() => match message {
+                Some(message) => handle_host(message, &mut state),
+                None => break,
+            },
+        }
+    }
+    if let Some(task) = state.follow.take() {
+        task.abort();
+    }
+    if let Some(task) = state.reconnect.take() {
+        task.abort();
+    }
+    state.persist_presentation();
+    write_linear("Garive exited. Terminal restored.")?;
+    guard.restore().map_err(map_terminal_error)
+}
+
+fn emit_linear_changes(
+    state: &RuntimeState,
+    emitted: &mut usize,
+    last_status: &mut String,
+) -> Result<(), TuiError> {
+    let status = format!(
+        "Connection {}. Turn {}.",
+        linear_connection(state.model.connection),
+        linear_execution(state.model.execution)
+    );
+    if *last_status != status {
+        write_linear(&status)?;
+        *last_status = status;
+    }
+    for item in state.model.timeline.iter().skip(*emitted) {
+        let role = match item.role {
+            TimelineRole::User => "You",
+            TimelineRole::Agent => "Garive",
+            TimelineRole::Status => "Activity",
+        };
+        write_linear(&format!("{role}: {}", linear_safe(&item.text)))?;
+    }
+    *emitted = state.model.timeline.len();
+    Ok(())
+}
+
+fn write_linear(value: &str) -> Result<(), TuiError> {
+    let mut stderr = io::stderr().lock();
+    writeln!(stderr, "{value}")
+        .and_then(|_| stderr.flush())
+        .map_err(|_| TuiError::TerminalIo)
+}
+
+fn linear_safe(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '\n' | '\t' => character,
+            value
+                if value.is_control()
+                    || matches!(value, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') =>
+            {
+                '�'
+            }
+            value => value,
+        })
+        .collect()
+}
+
+fn linear_connection(value: ConnectionState) -> &'static str {
+    match value {
+        ConnectionState::Connecting => "connecting",
+        ConnectionState::Online => "online",
+        ConnectionState::Disconnected { .. } => "disconnected",
+        ConnectionState::Reconnecting { .. } => "reconnecting",
+        ConnectionState::Unavailable { .. } => "unavailable",
+    }
+}
+
+fn linear_execution(value: ExecutionState) -> &'static str {
+    match value {
+        ExecutionState::Idle => "ready",
+        ExecutionState::Following => "running",
+        ExecutionState::Suspended => "action required",
+        ExecutionState::Failed => "failed",
+    }
 }
 
 pub(super) struct RuntimeState {
