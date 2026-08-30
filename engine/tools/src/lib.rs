@@ -7,6 +7,7 @@ mod access;
 mod basic_tools;
 mod batch;
 mod browser_tools;
+mod computer_tools;
 mod governed_outcome;
 mod governed_reducer;
 mod governed_types;
@@ -32,6 +33,10 @@ pub use batch::{
 pub use browser_tools::{
     BrowserPageScope, BuiltinT2BrowserCatalogue, T2_BROWSER_ACT, T2_BROWSER_NAVIGATE,
     T2_BROWSER_OBSERVE, T2_BROWSER_RESOLVER_REVISION, T2_BROWSER_TOOL_REVISION,
+};
+pub use computer_tools::{
+    BuiltinT2ComputerCatalogue, ComputerTargetScope, T2_COMPUTER_ACT, T2_COMPUTER_OBSERVE,
+    T2_COMPUTER_RESOLVER_REVISION, T2_COMPUTER_TOOL_REVISION,
 };
 pub use governed_outcome::{
     EffectState, ExecutionFact, GovernedAction, GovernedEffectFailure, GovernedFailureCode,
