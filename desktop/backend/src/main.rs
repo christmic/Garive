@@ -842,6 +842,10 @@ fn main() {
             restart_desktop,
             get_recent_sessions,
             get_session_timeline,
+            continue_agent_turn,
+            resolve_turn_approval,
+            run_agent_turn_with_workspace_context,
+            run_agent_turn,
             read_client_preferences,
             write_client_preferences,
             read_pending_command,
@@ -855,11 +859,7 @@ fn main() {
             cancel_product_turn,
             continue_product_turn,
             continue_product_approval,
-            get_session_events,
-            continue_agent_turn,
-            resolve_turn_approval,
-            run_agent_turn_with_workspace_context,
-            run_agent_turn
+            get_session_events
         ])
         .run(tauri::generate_context!())
         .expect("Garive desktop runtime failed");

@@ -372,7 +372,7 @@ fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
         true,
     );
     assert_eq!(handler_commands, build_commands);
-    assert_eq!(handler_commands.len(), 30);
+    assert_eq!(handler_commands.len(), 44);
     let expected: Vec<_> = build_commands
         .iter()
         .map(|command| format!("allow-{}", command.replace('_', "-")))
