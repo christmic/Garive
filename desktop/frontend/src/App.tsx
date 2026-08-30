@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -16,6 +17,7 @@ import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state
 import { Icon, type IconName } from "./ui/Icon";
 import { SetupFlow } from "./setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
+import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -150,6 +152,28 @@ export function App() {
       })
       .catch(() => dispatch({ type: "capabilities_failed" }));
   }, [refreshRecents]);
+
+  useEffect(() => {
+    if (visualTest) return;
+    let active = true;
+    let stop: (() => void) | undefined;
+    void listen<unknown>(DESKTOP_MENU_EVENT, (event) => {
+      const intent = decodeDesktopMenuIntent(event.payload);
+      if (intent === "desktop.new-work") {
+        dispatch({ type: "new_work" }); setSelectedContext(undefined);
+        setPreparedSessionId(undefined); setScreen("work");
+        requestAnimationFrame(() => composer.current?.focus());
+      } else if (intent === "desktop.search") setScreen("search");
+      else if (intent === "desktop.settings") setScreen("settings");
+      else if (intent === "desktop.toggle-inspector") {
+        dispatch({ type: "inspector_toggled" }); setScreen("work");
+      }
+    }).then((unlisten) => {
+      if (active) stop = unlisten;
+      else unlisten();
+    }).catch(() => undefined);
+    return () => { active = false; stop?.(); };
+  }, []);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
@@ -324,7 +348,7 @@ export function App() {
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
-        <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); }}>
+        <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
           <Icon name="plus" /><span>New work</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
