@@ -1,14 +1,22 @@
 use std::{
-    fs::{self, File, OpenOptions},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
+
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
 
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::{PromptHistoryEntry, StateError};
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+#[path = "file_io_windows.rs"]
+mod windows;
 
 pub(super) const MAX_FILE_BYTES: u64 = 2 * 1_024 * 1_024;
 const DIAGNOSTIC_GENERATIONS: usize = 4;
@@ -25,7 +33,7 @@ pub(super) fn atomic_write(root: &Path, relative: &str, bytes: &[u8]) -> Result<
         .write_all(bytes)
         .and_then(|_| file.sync_all())
         .map_err(|_| StateError::Unavailable)
-        .and_then(|_| fs::rename(&temporary, &destination).map_err(|_| StateError::Unavailable))
+        .and_then(|_| durable_rename(&temporary, &destination, true))
         .and_then(|_| sync_directory(destination.parent().unwrap_or(root)));
     if result.is_err() {
         let _ = fs::remove_file(temporary);
@@ -69,7 +77,7 @@ pub(super) fn quarantine(root: &Path, path: &Path, category: &str) -> Result<(),
     let target = root
         .join("quarantine")
         .join(format!("{category}-{}.json", Uuid::new_v4()));
-    fs::rename(path, target).map_err(|_| StateError::Unavailable)?;
+    durable_rename(path, &target, false)?;
     sync_directory(&root.join("quarantine"))
 }
 
@@ -153,26 +161,34 @@ pub(super) fn rotate_diagnostics(directory: &Path) -> Result<(), StateError> {
     for generation in (1..DIAGNOSTIC_GENERATIONS).rev() {
         let source = directory.join(format!("garive-tui.log.{generation}"));
         let target = directory.join(format!("garive-tui.log.{}", generation + 1));
-        match fs::rename(source, target) {
+        match durable_rename(&source, &target, false) {
             Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(StateError::Unavailable),
+            Err(StateError::Unavailable) if !source.exists() => {}
+            Err(error) => return Err(error),
         }
     }
     let active = directory.join("garive-tui.log");
     let first = directory.join("garive-tui.log.1");
-    match fs::rename(active, first) {
+    match durable_rename(&active, &first, false) {
         Ok(()) => sync_directory(directory),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(StateError::Unavailable),
+        Err(StateError::Unavailable) if !active.exists() => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
+#[cfg(not(windows))]
 pub(super) fn default_root() -> Option<PathBuf> {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
         .map(|base| base.join("garive/tui"))
+}
+
+#[cfg(windows)]
+pub(super) fn default_root() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map(|base| base.join("Garive").join("tui"))
 }
 
 pub(super) fn session_key(value: &str) -> String {
@@ -243,11 +259,31 @@ pub(super) fn private_append(path: &Path) -> Result<File, StateError> {
         .map_err(|_| StateError::Unavailable)
 }
 
-#[cfg(not(unix))]
-compile_error!("secure Garive TUI local state is currently implemented for Unix targets only");
+#[cfg(windows)]
+pub(super) use windows::{
+    create_private_directory, private_append, private_create_new, private_open,
+    validate_private_file_if_present,
+};
 
+#[cfg(unix)]
 pub(super) fn sync_directory(path: &Path) -> Result<(), StateError> {
     File::open(path)
         .and_then(|file| file.sync_all())
         .map_err(|_| StateError::Unavailable)
+}
+
+#[cfg(windows)]
+pub(super) fn sync_directory(_path: &Path) -> Result<(), StateError> {
+    // Windows metadata moves use MOVEFILE_WRITE_THROUGH in durable_rename.
+    Ok(())
+}
+
+#[cfg(unix)]
+fn durable_rename(source: &Path, target: &Path, _replace: bool) -> Result<(), StateError> {
+    fs::rename(source, target).map_err(|_| StateError::Unavailable)
+}
+
+#[cfg(windows)]
+fn durable_rename(source: &Path, target: &Path, replace: bool) -> Result<(), StateError> {
+    windows::durable_rename(source, target, replace)
 }
