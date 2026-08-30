@@ -70,6 +70,14 @@ SessionWorkspaceAttachmentV1 {
   access
   attached_at
 }
+
+WorkspaceRevocationReceiptV1 {
+  schema_version: 1
+  workspace_id
+  grant_revision
+  outcome: revoked | already_revoked
+  cleanup_pending
+}
 ```
 
 All identities are opaque lowercase random values bounded to 128 UTF-8 bytes.
@@ -288,6 +296,12 @@ invalidates entry/export capabilities, releases the security-scoped resource,
 and schedules bookmark deletion. It does not erase prior receipts or artifact
 provenance. Existing artifact bytes remain previewable only when backed by a
 separate committed artifact-store capability.
+
+Desktop first removes the process-local authority and atomically journals a
+private revoked tombstone in manifest schema v2. Keychain deletion then clears
+`cleanup_pending`; deletion failure does not reactivate authority. The tombstone
+remains path-free and bounded so a restart or repeated command can return
+`already_revoked` and retry cleanup without inventing a successful deletion.
 
 At startup, Runtime reconciles grant/bookmark journals before Agent mutation:
 
