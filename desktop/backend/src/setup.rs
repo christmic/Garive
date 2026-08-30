@@ -528,7 +528,11 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
     }
 
     /// Validates choices and returns a redacted immutable review plan.
-    pub fn prepare(&self, input: DesktopSetupInput) -> Result<DesktopSetupPlan, DesktopSetupError> {
+    pub fn prepare(
+        &self,
+        mut input: DesktopSetupInput,
+    ) -> Result<DesktopSetupPlan, DesktopSetupError> {
+        normalize_input(&mut input);
         validate_input(&input)?;
         let now = self.clock.unix_seconds()?;
         let input_digest = digest_value(
@@ -625,7 +629,10 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         plan_digest: &str,
         credential: &str,
     ) -> Result<DesktopSetupReceipt, DesktopSetupError> {
-        if plan_digest.len() != 64 || credential.is_empty() || credential.len() > MAX_SECRET_BYTES {
+        if !valid_digest(plan_digest) {
+            return Err(DesktopSetupError::PlanStale);
+        }
+        if credential.is_empty() || credential.len() > MAX_SECRET_BYTES {
             return Err(DesktopSetupError::CredentialRejected);
         }
         if let Some(receipt) = committed_receipt(&self.directory, plan_digest)? {
@@ -809,13 +816,41 @@ fn validate_input(input: &DesktopSetupInput) -> Result<(), DesktopSetupError> {
         || texts
             .iter()
             .any(|value| value.is_empty() || value.len() > MAX_TEXT_BYTES)
-        || input.endpoint_override.as_ref().is_some_and(|value| {
-            value.is_empty() || value.len() > MAX_ENDPOINT_BYTES || url::Url::parse(value).is_err()
-        })
+        || input
+            .endpoint_override
+            .as_ref()
+            .is_some_and(|value| !valid_endpoint(value))
     {
         return Err(DesktopSetupError::InputInvalid);
     }
     Ok(())
+}
+
+fn normalize_input(input: &mut DesktopSetupInput) {
+    input.caller_nonce = input.caller_nonce.trim().to_owned();
+    input.catalogue_revision = input.catalogue_revision.trim().to_owned();
+    input.preset_id = input.preset_id.trim().to_owned();
+    input.profile_id = input.profile_id.trim().to_owned();
+    input.endpoint_override = input
+        .endpoint_override
+        .take()
+        .map(|value| value.trim().to_owned());
+    input.model_target_id = input.model_target_id.trim().to_owned();
+    input.model_id = input.model_id.trim().to_owned();
+    input.deployment_id = input.deployment_id.trim().to_owned();
+    input.definition_id = input.definition_id.trim().to_owned();
+}
+
+fn valid_endpoint(value: &str) -> bool {
+    let Ok(endpoint) = url::Url::parse(value) else {
+        return false;
+    };
+    value.len() <= MAX_ENDPOINT_BYTES
+        && matches!(endpoint.scheme(), "http" | "https")
+        && endpoint.host_str().is_some()
+        && endpoint.username().is_empty()
+        && endpoint.password().is_none()
+        && endpoint.fragment().is_none()
 }
 
 fn digest_value(value: &Value) -> Result<String, DesktopSetupError> {
@@ -901,12 +936,6 @@ fn read_journal(directory: &std::path::Path) -> Result<Option<RecoveryJournal>, 
 }
 
 fn validate_journal(journal: &RecoveryJournal) -> Result<(), DesktopSetupError> {
-    let valid_digest = |value: &str| {
-        value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    };
     if journal.schema_version != 1
         || journal.setup_id.is_empty()
         || journal.configuration_revision == 0
@@ -918,6 +947,13 @@ fn validate_journal(journal: &RecoveryJournal) -> Result<(), DesktopSetupError> 
         return Err(DesktopSetupError::RecoveryFailed);
     }
     Ok(())
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn configuration_matches(

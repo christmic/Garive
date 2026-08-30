@@ -381,7 +381,17 @@ fn invalid_input_secret_and_replayed_commit_are_stable_and_idempotent() {
         service.prepare(invalid).unwrap_err().code(),
         "setup_input_invalid"
     );
+    let mut invalid_endpoint = input("invalid-endpoint");
+    invalid_endpoint.endpoint_override = Some("file:///private/model".into());
+    assert_eq!(
+        service.prepare(invalid_endpoint).unwrap_err().code(),
+        "setup_input_invalid"
+    );
     let plan = service.prepare(input("valid")).unwrap();
+    assert_eq!(
+        service.commit("not-a-digest", "secret").unwrap_err().code(),
+        "setup_plan_stale"
+    );
     assert_eq!(
         service.commit(&plan.plan_digest, "").unwrap_err().code(),
         "setup_credential_rejected"
@@ -390,6 +400,33 @@ fn invalid_input_secret_and_replayed_commit_are_stable_and_idempotent() {
     assert_eq!(
         service.commit(&plan.plan_digest, "secret").unwrap(),
         receipt
+    );
+}
+
+#[test]
+fn prepared_rotation_binds_exact_current_revision_and_digest() {
+    let directory = tempfile::tempdir().unwrap();
+    let service =
+        DesktopSetupService::new(directory.path().to_owned(), RecordingCredentials::default());
+    let first = service.prepare(input("binding-first")).unwrap();
+    let first_receipt = service.commit(&first.plan_digest, "first-secret").unwrap();
+    let second = service.prepare(input("binding-second")).unwrap();
+    assert_eq!(second.expected_configuration_revision, Some(1));
+    assert_eq!(
+        second.expected_configuration_digest.as_deref(),
+        Some(first_receipt.configuration_digest.as_str())
+    );
+    let path = directory.path().join("desktop-v1.json");
+    let changed = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("desktop-target", "changed-target");
+    std::fs::write(path, changed).unwrap();
+    assert_eq!(
+        service
+            .commit(&second.plan_digest, "second-secret")
+            .unwrap_err()
+            .code(),
+        "setup_plan_stale"
     );
 }
 
