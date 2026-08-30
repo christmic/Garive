@@ -48,6 +48,20 @@ values through the protected CI environment expected by Tauri. Build the
 `universal-apple-darwin` target and both bundles, then run:
 
 ```sh
+python3 desktop/release/build-updater-config.py \
+  --endpoint 'https://public.example/releases/{{target}}/{{arch}}/{{current_version}}' \
+  --public-key /protected/public/garive-updater.pub \
+  --output target/release-config/updater.json
+```
+
+The generator accepts one or two bounded public HTTPS channels and an exact
+Minisign public-key document. It rejects credentials, fragments, localhost/IP
+literals, symlinked or malformed keys, external output, and overwrites. Build
+with `tauri build --config target/release-config/updater.json`; the protected
+runner supplies `TAURI_SIGNING_PRIVATE_KEY` and its password without writing
+them to the overlay, source tree, logs, or evidence.
+
+```sh
 desktop/release/verify-macos-bundle.sh path/to/Garive.dmg release
 ```
 
