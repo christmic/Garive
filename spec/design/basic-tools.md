@@ -48,7 +48,8 @@ The exact revision-1 ceilings are frozen with the catalogue:
 | Surface | Ceiling |
 |---|---:|
 | file or search input file | 1,048,576 bytes |
-| buffered result | 1,048,576 bytes |
+| file content or process output | 1,048,576 bytes |
+| serialized result envelope | 2,097,152 bytes |
 | path | 4,096 Unicode scalars |
 | literal query | 4,096 Unicode scalars |
 | list entries or search matches | 4,096 |

@@ -6,19 +6,19 @@
     {
       "tool_name": "garive.workspace.read_text",
       "arguments": {"path":"src/lib.rs","max_bytes":4096},
-      "prepared_digest": "815868a19fe1d5b1719e99da0156514a7dc5d1622e3c981e352a881160ef89b1",
+      "prepared_digest": "26bcfacc0c1e8c06497927edff5008c20a71d44920c646a3ca01a4ae0ad952ca",
       "accesses": [{"namespace":"filesystem","resource_key":"src/lib.rs","mode":"read"}]
     },
     {
       "tool_name": "garive.workspace.list",
       "arguments": {"path":".","max_entries":10,"include_hidden":false},
-      "prepared_digest": "d9410a5e52d14431b39049d116890332f969793c09debba7a9dfa17c83bb5796",
+      "prepared_digest": "8e94755f0f582d0b934de45ca73c5d2717b6d69c6fb0eb71781d88f926fc0196",
       "accesses": [{"namespace":"filesystem","resource_key":".","mode":"read"}]
     },
     {
       "tool_name": "garive.workspace.search_text",
       "arguments": {"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096},
-      "prepared_digest": "153b93bc1816848c2c9db328b0bac5778f9104fd67bb34b89f35738aff439a87",
+      "prepared_digest": "2f1c6ea20723703b72b85552c947a6c66a7d97c512725050bf11c0a36f511fdd",
       "accesses": [{"namespace":"filesystem","resource_key":"src","mode":"read"}]
     },
     {
@@ -27,13 +27,13 @@
         "patch": "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-old\n+new\n*** End Patch",
         "expected_files": [{"path":"src/lib.rs","before_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]
       },
-      "prepared_digest": "9e9f4b7c4fce862683b9a2e05b371ece2cac268b717d54af116e2644f18d2989",
+      "prepared_digest": "911b4f07f6572fe81a6d870eafc10e3ec391fe9bffd741ccecdbd97e17df031a",
       "accesses": [{"namespace":"filesystem","resource_key":"src/lib.rs","mode":"write"}]
     },
     {
       "tool_name": "garive.process.run",
       "arguments": {"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","max_output_bytes":4096,"timeout_ms":30000},
-      "prepared_digest": "68401523245a61018910182da39d7297576615c313f84be7c568376419d58ed9",
+      "prepared_digest": "b56867de5950bacf8336df5091312b7633876459b3faf7f7d459557d771b49ef",
       "accesses": [
         {"namespace":"filesystem","resource_key":".","mode":"read"},
         {"namespace":"process","resource_key":"rust-toolchain","mode":"exclusive"}

@@ -27,12 +27,13 @@ pub const T1_APPLY_PATCH: &str = "garive.workspace.apply_patch";
 pub const T1_PROCESS_RUN: &str = "garive.process.run";
 
 const MAX_FILE_BYTES: u64 = 1_048_576;
-const MAX_RESULT_BYTES: u64 = 1_048_576;
+const MAX_RESULT_BYTES: u64 = 2_097_152;
 const MAX_PATCH_BYTES: u64 = 1_048_576;
 const MAX_EXPECTED_FILES: u64 = 128;
 const MAX_PROCESS_ARGUMENTS: u64 = 256;
 const MAX_ARGUMENT_BYTES: u64 = 32_768;
 const MAX_PROCESS_DURATION_MS: u64 = 300_000;
+const MAX_PROCESS_OUTPUT_BYTES: u64 = 1_048_576;
 
 /// Frozen five-tool catalogue for one effective Agent snapshot.
 #[derive(Clone, Debug)]
@@ -322,7 +323,7 @@ fn process_definition(
         T1_PROCESS_RUN,
         T1_TOOL_REVISION,
         "Run one configured executable lane without shell parsing.",
-        json!({"type":"object","properties":{"lane":{"type":"string","minLength":1,"maxLength":256},"argv":{"type":"array","minItems":1,"maxItems":MAX_PROCESS_ARGUMENTS,"items":{"type":"string","minLength":1,"maxLength":MAX_ARGUMENT_BYTES}},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"max_output_bytes":{"type":"integer","minimum":1,"maximum":MAX_RESULT_BYTES},"timeout_ms":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_DURATION_MS}},"required":["lane","argv","working_directory","max_output_bytes","timeout_ms"],"additionalProperties":false}),
+        json!({"type":"object","properties":{"lane":{"type":"string","minLength":1,"maxLength":256},"argv":{"type":"array","minItems":1,"maxItems":MAX_PROCESS_ARGUMENTS,"items":{"type":"string","minLength":1,"maxLength":MAX_ARGUMENT_BYTES}},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"max_output_bytes":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_OUTPUT_BYTES},"timeout_ms":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_DURATION_MS}},"required":["lane","argv","working_directory","max_output_bytes","timeout_ms"],"additionalProperties":false}),
         requirements.clone(),
         ReplayClass::NeverReplay,
         ToolAccessPolicyV1::new(

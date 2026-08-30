@@ -22,7 +22,7 @@ public const val T1_APPLY_PATCH: String = "garive.workspace.apply_patch"
 /** Exact bounded-process tool name. */
 public const val T1_PROCESS_RUN: String = "garive.process.run"
 
-private const val MAX_RESULT_BYTES: Long = 1_048_576
+private const val MAX_RESULT_BYTES: Long = 2_097_152
 private const val MAX_EXPECTED_FILES: Int = 128
 private const val MAX_PROCESS_DURATION_MS: Long = 300_000
 
