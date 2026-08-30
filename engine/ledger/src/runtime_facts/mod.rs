@@ -3,6 +3,7 @@
 mod artifact;
 mod delegation;
 mod effect;
+mod goal;
 mod knowledge;
 mod memory;
 mod model;
@@ -41,6 +42,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let delegation_family = kind.starts_with("delegation.");
     let workspace_family = kind.starts_with("workspace.");
     let artifact_family = kind.starts_with("artifact.");
+    let goal_family = kind.starts_with("goal.");
     let memory_session_scoped = matches!(
         kind,
         "memory.tombstoned"
@@ -68,6 +70,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !delegation_family
         && !workspace_family
         && !artifact_family
+        && !goal_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -76,7 +79,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     if fact.schema_version != 1 && !effect_prepared_v2 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
-    if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family || workspace_family)
+    if fact.turn_id.is_some()
+        != !(memory_session_scoped || scheduler_family || workspace_family || goal_family)
         || fact.execution_id.is_some()
             != (execution_family
                 || model_family
@@ -96,6 +100,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
     if artifact_family {
         artifact::validate(kind, object(&payload)?)?;
+    } else if goal_family {
+        goal::validate(kind, object(&payload)?)?;
     } else if workspace_family {
         workspace::validate(kind, object(&payload)?)?;
     } else if effect_prepared_v2 {
