@@ -13,13 +13,14 @@ use crate::{
 
 use super::{
     super::{controller::handle_terminal, host, SystemTerminal, TerminalGuard, TerminalOptions},
-    handle_host, map_terminal_error, shutdown_signal, RestoredState, RuntimeState,
+    handle_host, map_terminal_error, RestoredState, RuntimeState, ShutdownSignal,
 };
 
 pub(super) async fn run(
     config: LaunchConfig,
     client: LiveHostClient,
     restored: RestoredState,
+    mut shutdown: ShutdownSignal,
 ) -> Result<(), TuiError> {
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -37,8 +38,6 @@ pub(super) async fn run(
     let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
-    let shutdown = shutdown_signal();
-    tokio::pin!(shutdown);
     let mut interrupted = None;
     let mut emitted = 0;
     let mut last_status = String::new();
@@ -61,7 +60,7 @@ pub(super) async fn run(
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
-            signal = &mut shutdown => {
+            signal = shutdown.recv() => {
                 interrupted = Some(signal);
                 break;
             }

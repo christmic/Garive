@@ -85,8 +85,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         history,
         history_error,
     };
+    let mut shutdown = ShutdownSignal::new()?;
     if config.screen_reader {
-        return screen_reader::run(config, client, restored).await;
+        return screen_reader::run(config, client, restored, shutdown).await;
     }
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -100,16 +101,18 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if config.test_crash_hook == Some(crate::args::TestCrashHook::TerminalAcquiredPanic) {
         panic!("injected panic after terminal acquisition");
     }
-    let mut terminal =
-        Terminal::new(CrosstermBackend::new(io::stderr())).map_err(|_| TuiError::TerminalIo)?;
-    terminal.clear().map_err(|_| TuiError::TerminalIo)?;
+    let mut terminal = match Terminal::new(CrosstermBackend::new(io::stderr())) {
+        Ok(terminal) => terminal,
+        Err(_) => return Err(terminal_setup_failure(&mut guard, &mut shutdown).await),
+    };
+    if terminal.clear().is_err() {
+        return Err(terminal_setup_failure(&mut guard, &mut shutdown).await);
+    }
 
     let (sender, mut receiver) = mpsc::channel(256);
     let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
-    let shutdown = shutdown_signal();
-    tokio::pin!(shutdown);
     let mut interrupted = None;
     loop {
         draw(&mut terminal, &mut state)?;
@@ -125,7 +128,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
-            signal = &mut shutdown => {
+            signal = shutdown.recv() => {
                 interrupted = Some(signal);
                 break;
             }
@@ -140,22 +143,62 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
 }
 
-#[cfg(unix)]
-async fn shutdown_signal() -> i32 {
-    use tokio::signal::unix::{signal, SignalKind};
-
-    let mut interrupt = signal(SignalKind::interrupt()).expect("SIGINT handler");
-    let mut terminate = signal(SignalKind::terminate()).expect("SIGTERM handler");
-    tokio::select! {
-        _ = interrupt.recv() => 2,
-        _ = terminate.recv() => 15,
+async fn terminal_setup_failure(
+    guard: &mut TerminalGuard<SystemTerminal>,
+    shutdown: &mut ShutdownSignal,
+) -> TuiError {
+    let restored = guard.restore();
+    let signal = tokio::time::timeout(std::time::Duration::from_millis(50), shutdown.recv())
+        .await
+        .ok();
+    match (restored, signal) {
+        (_, Some(signal)) => TuiError::Interrupted(signal),
+        (Err(_), None) | (Ok(()), None) => TuiError::TerminalIo,
     }
 }
 
-#[cfg(not(unix))]
-async fn shutdown_signal() -> i32 {
-    let _ = tokio::signal::ctrl_c().await;
-    2
+#[cfg(unix)]
+pub(super) struct ShutdownSignal {
+    interrupt: tokio::signal::unix::Signal,
+    terminate: tokio::signal::unix::Signal,
+}
+
+#[cfg(unix)]
+impl ShutdownSignal {
+    fn new() -> Result<Self, TuiError> {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        Ok(Self {
+            interrupt: signal(SignalKind::interrupt()).map_err(|_| TuiError::TerminalIo)?,
+            terminate: signal(SignalKind::terminate()).map_err(|_| TuiError::TerminalIo)?,
+        })
+    }
+
+    async fn recv(&mut self) -> i32 {
+        tokio::select! {
+            _ = self.interrupt.recv() => 2,
+            _ = self.terminate.recv() => 15,
+        }
+    }
+}
+
+#[cfg(windows)]
+pub(super) struct ShutdownSignal {
+    interrupt: tokio::signal::windows::CtrlC,
+}
+
+#[cfg(windows)]
+impl ShutdownSignal {
+    fn new() -> Result<Self, TuiError> {
+        Ok(Self {
+            interrupt: tokio::signal::windows::ctrl_c().map_err(|_| TuiError::TerminalIo)?,
+        })
+    }
+
+    async fn recv(&mut self) -> i32 {
+        let _ = self.interrupt.recv().await;
+        2
+    }
 }
 
 fn draw(

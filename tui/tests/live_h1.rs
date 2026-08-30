@@ -141,6 +141,38 @@ fn termination_signal_restores_the_shipping_terminal() {
 }
 
 #[test]
+fn termination_before_the_first_frame_restores_the_shipping_terminal() {
+    for _ in 0..2 {
+        let temporary = tempfile::tempdir().unwrap();
+        let transcript = temporary.path().join("early-signal.log");
+        let status = Command::new("expect")
+            .env("TERM", "xterm-256color")
+            .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+            .env("GARIVE_TUI_LOG", &transcript)
+            .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+            .args(["-c", r#"
+                set timeout 5
+                log_file -noappend $env(GARIVE_TUI_LOG)
+                spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host http://127.0.0.1:9/ --state-dir "$GARIVE_TUI_STATE" --theme mono}
+                expect -exact "\033\[?1004h"
+                exec kill -TERM [exp_pid]
+                expect eof
+                catch wait result
+                if {[lindex $result 3] != 143} { exit 6 }
+            "#])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let text = fs::read_to_string(transcript).unwrap();
+        assert!(text.contains("\x1b[?1049h"));
+        assert!(text.contains("\x1b[?1049l"));
+        assert!(text.contains("\x1b[?2004l"));
+        assert!(text.contains("\x1b[?1004l"));
+        assert!(text.contains("\x1b[?25h"));
+    }
+}
+
+#[test]
 fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
     for _ in 0..2 {
         let (address, server) = empty_host();
