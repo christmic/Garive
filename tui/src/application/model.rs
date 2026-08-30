@@ -121,6 +121,7 @@ pub(crate) struct AppModel {
     pub(crate) definitions: Vec<AgentDefinitionSummary>,
     pub(crate) session_count: usize,
     pub(crate) sessions: Vec<SessionSummary>,
+    pub(crate) session_filter: String,
     pub(crate) session_selection: usize,
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,

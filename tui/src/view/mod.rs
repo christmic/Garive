@@ -246,14 +246,14 @@ fn render_overlay(
 ) {
     let colors = palette(theme);
     let (title, content, height) = match overlay {
-        Overlay::CommandPalette => (" Command palette ", "› /new          Create session\n  /sessions     Switch session\n  /status       Connection details\n  /reconnect    Resume event stream\n  /help         Keyboard guide\n  /quit         Exit safely", 10),
-        Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.", 10),
-        Overlay::SessionPicker => (" Switch session ", "↑/↓ select   Enter open   Esc close", (model.sessions.len() as u16 + 5).clamp(7, 16)),
-        Overlay::PromptHistory => (" Prompt history ", "No matching local prompts\n\nEsc close", 7),
-        Overlay::Suspension => (" Action required ", "The Agent needs your response.\nPress Enter, type your answer, then send.\n\nThis request remains durable if you leave.", 8),
-        Overlay::UnknownCommand => (" Unknown command ", "Nothing was sent to the Host.\nEdit the command or open Ctrl+P.", 7),
-        Overlay::ErrorDetails => (" Status details ", model.notice.as_deref().unwrap_or("No additional safe details."), 7),
-        Overlay::QuitConfirmation => (" Quit Garive? ", "Your Sessions stay durable in the Host.\n\nEnter  Quit     Esc  Keep working", 7),
+        Overlay::CommandPalette => (" Command palette ", "› /new          Create session\n  /sessions     Switch session\n  /status       Connection details\n  /reconnect    Resume event stream\n  /help         Keyboard guide\n  /quit         Exit safely".into(), 10),
+        Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
+        Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
+        Overlay::PromptHistory => (" Prompt history ", "No matching local prompts\n\nEsc close".into(), 7),
+        Overlay::Suspension => (" Action required ", suspension_text(model), 9),
+        Overlay::UnknownCommand => (" Unknown command ", model.notice.clone().unwrap_or_else(|| "Nothing was sent to the Host.\nEdit the command or open Ctrl+P.".into()), 7),
+        Overlay::ErrorDetails => (" Status details ", model.notice.clone().unwrap_or_else(|| "No additional safe details.".into()), 7),
+        Overlay::QuitConfirmation => (" Quit Garive? ", "Your Sessions stay durable in the Host.\n\nEnter  Quit     Esc  Keep working".into(), 7),
     };
     let popup = centered(
         area,
@@ -273,6 +273,48 @@ fn render_overlay(
         .style(colors.normal)
         .wrap(Wrap { trim: false })
         .render(popup, buffer);
+}
+
+fn session_picker_text(model: &AppModel) -> String {
+    let filter = model.session_filter.to_lowercase();
+    let mut rows = model
+        .sessions
+        .iter()
+        .enumerate()
+        .filter(|(_, session)| {
+            filter.is_empty() || session.session_id.to_lowercase().contains(&filter)
+        })
+        .map(|(index, session)| {
+            let marker = if index == model.session_selection {
+                "›"
+            } else {
+                " "
+            };
+            format!(
+                "{marker} New session · {}   {}",
+                short_tail(&session.session_id),
+                session.latest_turn_state.as_deref().unwrap_or("new")
+            )
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        rows.push("  No matching Sessions".into());
+    }
+    rows.push(String::new());
+    rows.push("↑/↓ select   Enter open   Esc close".into());
+    rows.join("\n")
+}
+
+fn suspension_text(model: &AppModel) -> String {
+    let prompt = model
+        .suspension
+        .as_ref()
+        .map(|value| value.prompt_json.as_str())
+        .unwrap_or("Action required");
+    format!(
+        "{}\n\nEnter  Reply now     Ctrl+Q  Leave safely",
+        safe_text(prompt)
+    )
 }
 
 fn composer_cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {

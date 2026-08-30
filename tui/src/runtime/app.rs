@@ -288,6 +288,7 @@ fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimelineItem>) {
             model.overlay = Some(Overlay::Suspension);
         }
     }
+    model.scroll_offset = model.timeline.len().saturating_sub(10);
 }
 
 fn map_terminal_error(error: TerminalError) -> TuiError {
