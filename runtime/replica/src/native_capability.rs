@@ -2,10 +2,13 @@
 
 use std::{future::Future, pin::Pin};
 
+use serde::Serialize;
+
 macro_rules! opaque_id {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
-        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+        #[serde(transparent)]
         pub struct $name(String);
 
         impl $name {
@@ -51,7 +54,8 @@ opaque_id!(
 );
 
 /// Exact target admitted to a native adapter.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "domain", rename_all = "snake_case")]
 pub enum NativeTarget {
     /// One page inside an explicit Browser session.
     Browser {
@@ -72,7 +76,8 @@ pub enum NativeTarget {
 }
 
 /// Sensitivity attached to a semantic field after Runtime redaction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NativeSensitivity {
     /// Ordinary content admitted to Core.
     Public,
@@ -83,7 +88,7 @@ pub enum NativeSensitivity {
 }
 
 /// One provider-neutral semantic node in parent-before-child order.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NativeSemanticNode {
     /// Snapshot-local reference.
     pub node_ref: NativeNodeRef,
@@ -104,7 +109,7 @@ pub struct NativeSemanticNode {
 }
 
 /// Bounds actually applied while collecting an observation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct NativeObservationBounds {
     /// Maximum semantic node count.
     pub max_nodes: u32,
@@ -113,7 +118,7 @@ pub struct NativeObservationBounds {
 }
 
 /// Immutable bounded observation stored before Core can use node references.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NativeObservationV1 {
     /// Exact observed target.
     pub target: NativeTarget,
@@ -184,7 +189,7 @@ impl NativeObservationV1 {
 }
 
 /// Snapshot-bound, already-authorized native adapter command.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NativeActionCommandV1 {
     /// Runtime action identity.
     pub action_id: NativeActionId,
@@ -199,7 +204,7 @@ pub struct NativeActionCommandV1 {
 }
 
 /// Adapter identity proven during non-dispatching preflight.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NativeAdapterBindingV1 {
     /// Stable adapter identity.
     pub adapter_id: String,
@@ -209,8 +214,22 @@ pub struct NativeAdapterBindingV1 {
     pub preflight_evidence_digest: String,
 }
 
+impl NativeAdapterBindingV1 {
+    /// Validates stable adapter identity and canonical evidence digest.
+    pub fn validate(&self) -> Result<(), NativeProtocolError> {
+        if self.adapter_id.is_empty()
+            || self.adapter_revision.is_empty()
+            || !sha256_digest(&self.preflight_evidence_digest)
+        {
+            Err(NativeProtocolError::InvalidBinding)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Trustworthy native terminal result returned after one dispatch.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NativeActionReceiptV1 {
     /// Exact action identity.
     pub action_id: NativeActionId,
@@ -224,6 +243,22 @@ pub struct NativeActionReceiptV1 {
     pub native_evidence_digest: String,
     /// Optional resulting observation identity.
     pub resulting_snapshot_id: Option<NativeSnapshotId>,
+}
+
+impl NativeActionReceiptV1 {
+    /// Validates adapter evidence and the closed terminal classification.
+    pub fn validate(&self) -> Result<(), NativeProtocolError> {
+        self.binding.validate()?;
+        if !matches!(
+            self.terminal_classification.as_str(),
+            "completed" | "failed"
+        ) || !sha256_digest(&self.native_evidence_digest)
+        {
+            Err(NativeProtocolError::ReceiptInvalid)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// Stable Runtime/adapter compatibility failures.
@@ -333,4 +368,8 @@ fn ordered_tokens(values: &[String]) -> bool {
 
 fn optional_len(value: &Option<String>) -> usize {
     value.as_ref().map_or(0, String::len)
+}
+
+fn sha256_digest(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
