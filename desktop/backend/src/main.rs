@@ -592,6 +592,25 @@ fn write_pending_command(
 }
 
 #[tauri::command]
+fn read_pending_update(
+    store: tauri::State<'_, garive_desktop::DesktopProductStore>,
+) -> Result<Option<Vec<u8>>, String> {
+    store
+        .read_update_pending()
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn write_pending_update(
+    store: tauri::State<'_, garive_desktop::DesktopProductStore>,
+    value: Option<Vec<u8>>,
+) -> Result<(), String> {
+    store
+        .write_update_pending(value.as_deref())
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn get_agent_definitions(
     state: tauri::State<'_, garive_desktop::DesktopState>,
 ) -> Result<garive_desktop::DesktopDefinitionPage, String> {
@@ -854,6 +873,8 @@ fn main() {
             write_client_preferences,
             read_pending_command,
             write_pending_command,
+            read_pending_update,
+            write_pending_update,
             get_agent_definitions,
             get_product_sessions,
             get_product_timeline,

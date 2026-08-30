@@ -35,6 +35,8 @@ fn main() {
             "write_client_preferences",
             "read_pending_command",
             "write_pending_command",
+            "read_pending_update",
+            "write_pending_update",
             "get_agent_definitions",
             "get_product_sessions",
             "get_product_timeline",

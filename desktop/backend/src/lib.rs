@@ -56,7 +56,10 @@ pub use garive_runtime::TurnCommandResponse as DesktopTurnCommandReceipt;
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
 /// Bounded H2/H3 timeline page exposed to product clients.
 pub use garive_runtime::TurnTimelinePageV1 as DesktopProductTimelinePage;
-pub use product_store::{DesktopProductStore, DesktopProductStoreError, MAX_PRODUCT_STORE_BYTES};
+pub use product_store::{
+    DesktopProductStore, DesktopProductStoreError, MAX_PRODUCT_STORE_BYTES,
+    MAX_UPDATE_PENDING_BYTES,
+};
 pub use setup::{
     authorize_setup_window, DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError,
     DesktopSetupInput, DesktopSetupLimits, DesktopSetupPlan, DesktopSetupPreset,

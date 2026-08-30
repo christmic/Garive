@@ -7,8 +7,11 @@ use std::{
 
 /// Maximum encoded bytes accepted for either disposable preferences or pending identity.
 pub const MAX_PRODUCT_STORE_BYTES: usize = 64 * 1024;
+/// Maximum encoded bytes accepted for the separate update reconciliation record.
+pub const MAX_UPDATE_PENDING_BYTES: usize = 256;
 const PREFERENCES_FILE: &str = "client-preferences-v1.json";
 const PENDING_FILE: &str = "pending-command-v1.json";
+const UPDATE_PENDING_FILE: &str = "pending-update-v1.json";
 
 /// Stable content-free failure from the Desktop product-local store.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,29 +53,51 @@ impl DesktopProductStore {
 
     /// Reads the exact preference document, or absence after first launch.
     pub fn read_preferences(&self) -> Result<Option<Vec<u8>>, DesktopProductStoreError> {
-        self.read(PREFERENCES_FILE)
+        self.read(PREFERENCES_FILE, MAX_PRODUCT_STORE_BYTES)
     }
 
     /// Atomically replaces the bounded preference document.
     pub fn write_preferences(&self, value: &[u8]) -> Result<(), DesktopProductStoreError> {
-        self.write(PREFERENCES_FILE, value)
+        self.write(PREFERENCES_FILE, value, MAX_PRODUCT_STORE_BYTES)
     }
 
     /// Reads the separately stored exact pending command record.
     pub fn read_pending(&self) -> Result<Option<Vec<u8>>, DesktopProductStoreError> {
-        self.read(PENDING_FILE)
+        self.read(PENDING_FILE, MAX_PRODUCT_STORE_BYTES)
     }
 
     /// Atomically replaces or explicitly clears the pending command record.
     pub fn write_pending(&self, value: Option<&[u8]>) -> Result<(), DesktopProductStoreError> {
+        self.write_optional(PENDING_FILE, value, MAX_PRODUCT_STORE_BYTES)
+    }
+
+    /// Reads the separately stored update reconciliation record.
+    pub fn read_update_pending(&self) -> Result<Option<Vec<u8>>, DesktopProductStoreError> {
+        self.read(UPDATE_PENDING_FILE, MAX_UPDATE_PENDING_BYTES)
+    }
+
+    /// Atomically replaces or clears the bounded update reconciliation record.
+    pub fn write_update_pending(
+        &self,
+        value: Option<&[u8]>,
+    ) -> Result<(), DesktopProductStoreError> {
+        self.write_optional(UPDATE_PENDING_FILE, value, MAX_UPDATE_PENDING_BYTES)
+    }
+
+    fn write_optional(
+        &self,
+        name: &str,
+        value: Option<&[u8]>,
+        maximum: usize,
+    ) -> Result<(), DesktopProductStoreError> {
         let _guard = self
             .gate
             .lock()
             .map_err(|_| DesktopProductStoreError::Unavailable)?;
         fs::create_dir_all(&self.directory).map_err(map_io)?;
-        let path = self.directory.join(PENDING_FILE);
+        let path = self.directory.join(name);
         match value {
-            Some(bytes) => write_atomic(&self.directory, &path, bytes),
+            Some(bytes) => write_atomic(&self.directory, &path, bytes, maximum),
             None => match fs::remove_file(path) {
                 Ok(()) => sync_directory(&self.directory),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -81,27 +106,36 @@ impl DesktopProductStore {
         }
     }
 
-    fn read(&self, name: &str) -> Result<Option<Vec<u8>>, DesktopProductStoreError> {
+    fn read(
+        &self,
+        name: &str,
+        maximum: usize,
+    ) -> Result<Option<Vec<u8>>, DesktopProductStoreError> {
         let _guard = self
             .gate
             .lock()
             .map_err(|_| DesktopProductStoreError::Unavailable)?;
         let path = self.directory.join(name);
         match fs::read(path) {
-            Ok(value) if value.len() <= MAX_PRODUCT_STORE_BYTES => Ok(Some(value)),
+            Ok(value) if value.len() <= maximum => Ok(Some(value)),
             Ok(_) => Err(DesktopProductStoreError::InvalidValue),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(map_io(error)),
         }
     }
 
-    fn write(&self, name: &str, value: &[u8]) -> Result<(), DesktopProductStoreError> {
+    fn write(
+        &self,
+        name: &str,
+        value: &[u8],
+        maximum: usize,
+    ) -> Result<(), DesktopProductStoreError> {
         let _guard = self
             .gate
             .lock()
             .map_err(|_| DesktopProductStoreError::Unavailable)?;
         fs::create_dir_all(&self.directory).map_err(map_io)?;
-        write_atomic(&self.directory, &self.directory.join(name), value)
+        write_atomic(&self.directory, &self.directory.join(name), value, maximum)
     }
 }
 
@@ -109,8 +143,9 @@ fn write_atomic(
     directory: &Path,
     destination: &Path,
     value: &[u8],
+    maximum: usize,
 ) -> Result<(), DesktopProductStoreError> {
-    if value.is_empty() || value.len() > MAX_PRODUCT_STORE_BYTES {
+    if value.is_empty() || value.len() > maximum {
         return Err(DesktopProductStoreError::InvalidValue);
     }
     let temporary = destination.with_extension("json.pending");

@@ -42,6 +42,8 @@
     "allow-write-client-preferences",
     "allow-read-pending-command",
     "allow-write-pending-command",
+    "allow-read-pending-update",
+    "allow-write-pending-update",
     "allow-get-agent-definitions",
     "allow-get-product-sessions",
     "allow-get-product-timeline",
