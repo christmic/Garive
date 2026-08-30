@@ -24,6 +24,7 @@ import {
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
+import { shouldSubmitComposer } from "./composer";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -32,16 +33,16 @@ interface SelectedContext {
   readonly entries: readonly WorkspaceEntry[];
 }
 
-const errorCopy: Record<string, string> = {
-  not_configured: "Finish Desktop setup before starting work.",
-  invalid_configuration: "The local configuration needs attention.",
-  host_failure: "Garive could not commit this request. Your draft is still here.",
-  execution_failure: "The local Runtime could not finish this Turn.",
-  projection_failure: "The result committed, but its public view is unavailable.",
-  workspace_capability_invalid: "That local folder or file selection is no longer available.",
-  workspace_unavailable: "Garive could not safely re-open the selected local file.",
-  workspace_bound_exceeded: "Select fewer or smaller text files for this Turn.",
-  desktop_unavailable: "The Desktop backend is unavailable. Restart Garive and try again.",
+const errorKeys: Record<string, MessageKey> = {
+  not_configured: "error.notConfigured",
+  invalid_configuration: "error.invalidConfiguration",
+  host_failure: "error.hostFailure",
+  execution_failure: "error.executionFailure",
+  projection_failure: "error.projectionFailure",
+  workspace_capability_invalid: "error.workspaceCapability",
+  workspace_unavailable: "error.workspaceUnavailable",
+  workspace_bound_exceeded: "error.workspaceBound",
+  desktop_unavailable: "error.desktopUnavailable",
 };
 
 const visualTestMode = new URLSearchParams(window.location.search).get("visual-test");
@@ -366,7 +367,7 @@ export function App() {
       <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
-        <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
+        <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
@@ -458,7 +459,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   t: (key: MessageKey) => string;
 }) {
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
-  if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={errorCopy.desktop_unavailable} />;
+  if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={t("error.desktopUnavailable")} />;
   if (!state.capabilities?.configured) {
     return state.capabilities?.setup ? <SetupFlow preview={visualTest} t={t} /> : <SetupRequired t={t} />;
   }
@@ -475,8 +476,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
       {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} t={t} />}
     </div>
-    {state.error && <div className="error-banner" role="alert"><Icon name="warning" /><span>{errorCopy[state.error] ?? "This work could not continue."}</span>
-      <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
+    {state.error && <div className="error-banner" role="alert"><Icon name="warning" /><span>{t(errorKeys[state.error] ?? "error.default")}</span>
+      <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label={t("error.dismiss")}><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
@@ -512,7 +513,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
           aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
           placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
-          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
+          onKeyDown={(event) => { if (shouldSubmitComposer({ key: event.key,
+            shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing })) {
+            event.preventDefault(); void submit();
+          } }} />
         <div className="composer-toolbar">
           <div className="composer-tools"><button type="button"
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
@@ -738,8 +742,8 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
   const [restoring, setRestoring] = useState<string>();
   const [confirmingRevocation, setConfirmingRevocation] = useState<string>();
   const [revoking, setRevoking] = useState<string>();
-  const [recoveryError, setRecoveryError] = useState<string>();
-  const [recoveryNotice, setRecoveryNotice] = useState<string>();
+  const [recoveryError, setRecoveryError] = useState<MessageKey>();
+  const [recoveryNotice, setRecoveryNotice] = useState<MessageKey>();
   const workspaceHeading = useRef<HTMLHeadingElement>(null);
   const loadWorkspaceHealth = useCallback(async () => {
     if (!capabilities?.workspaces) return;
@@ -762,7 +766,7 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
     void loadWorkspaceHealth().catch(() => { setWorkspaceRecovery({
       schema_version: 1, state: "index_unavailable", restored_count: 0,
       needs_reauthorization_count: 0,
-    }); setRecoveryError("Workspace recovery status is unavailable."); });
+    }); setRecoveryError("settings.workspace.statusUnavailable"); });
   }, [loadWorkspaceHealth]);
   const restoreAccess = async (workspace: WorkspaceAuthorization) => {
     setRestoring(workspace.workspace_id); setRecoveryError(undefined); setRecoveryNotice(undefined);
@@ -778,15 +782,13 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
       }
     } catch (error) {
       setRecoveryError(error instanceof Error && error.message === "workspace_capability_invalid"
-        ? "That is not the original Workspace folder. Choose the same folder to restore access."
-        : "Garive could not restore this folder safely.");
+        ? "settings.workspace.wrongFolder" : "settings.workspace.restoreError");
     } finally { setRestoring(undefined); }
   };
   const removeAccess = async (workspace: WorkspaceAuthorization) => {
     if (confirmingRevocation !== workspace.workspace_id) {
-      setConfirmingRevocation(workspace.workspace_id); setRecoveryNotice(
-        "Confirm removal. This immediately blocks future reads and outputs; prior receipts remain.",
-      );
+      setConfirmingRevocation(workspace.workspace_id);
+      setRecoveryNotice("settings.workspace.confirmNotice");
       return;
     }
     setRevoking(workspace.workspace_id); setRecoveryError(undefined); setRecoveryNotice(undefined);
@@ -800,14 +802,20 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
           needs_reauthorization_count: 0 });
       } else await loadWorkspaceHealth();
       setRecoveryNotice(receipt.cleanup_pending
-        ? "Access is revoked. Private Keychain cleanup will retry safely after restart."
-        : "Workspace access was removed.");
+        ? "settings.workspace.cleanupPending" : "settings.workspace.removed");
       requestAnimationFrame(() => workspaceHeading.current?.focus());
     } catch {
-      setRecoveryError("Garive could not durably revoke this Workspace. Access was not broadened.");
+      setRecoveryError("settings.workspace.revokeError");
     } finally { setRevoking(undefined); setConfirmingRevocation(undefined); }
   };
-  const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const;
+  const rows: readonly (readonly [MessageKey, boolean | undefined])[] = [
+    ["settings.runtime.multiTurn", capabilities?.multi_turn],
+    ["settings.runtime.recents", capabilities?.durable_navigation],
+    ["settings.runtime.activity", capabilities?.activity],
+    ["settings.runtime.setup", capabilities?.setup],
+    ["settings.runtime.workspaces", capabilities?.workspaces],
+    ["settings.runtime.artifacts", capabilities?.artifacts],
+  ];
   const recoveryReady = workspaceRecovery?.state === "ready";
   return <section className="content-page settings-page"><p className="eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.title")}</h1>
     <div className="settings-card"><h2>{t("settings.appearance.title")}</h2><p>{t("settings.appearance.description")}</p>
@@ -817,19 +825,19 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
     <div className="settings-card"><h2>{t("settings.language.title")}</h2><p>{t("settings.language.description")}</p>
       <div className="setting-row"><span>{t("settings.language.label")}</span><LocaleOptions value={preferences.locale} onChange={(locale) => setPreferences((current) => ({ ...current, locale }))} t={t} /></div>
     </div>
-    <div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div>
-    {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>Workspace access</h2><p>Folder access is restored from read-only bookmarks stored in macOS Keychain. No filesystem path enters this interface.</p><div className="setting-row"><span>Authorization recovery</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} restored` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} needs access` : "Index unavailable" : "Checking…"}</span></div>
-      {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `Read-only access · revision ${workspace.grant_revision}` : "Access expired · choose the original folder"}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">Active</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />Opening…</> : "Restore access"}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label="Remove Workspace access" disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />Removing…</> : confirmingRevocation === workspace.workspace_id ? "Confirm remove" : "Remove access"}</button></span></div>)}
-      {recoveryNotice && <div className="workspace-recovery-notice" role="status"><Icon name="shield" /><span>{recoveryNotice}</span></div>}
-      {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{recoveryError}</span></div>}
+    <div className="settings-card"><h2>{t("settings.runtime.title")}</h2><p>{t("settings.runtime.description")}</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{t(label)}</span><span className={available ? "state-chip ready" : "state-chip"}>{t(available ? "settings.runtime.available" : "settings.runtime.notInstalled")}</span></div>)}</div>
+    {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>{t("settings.workspace.title")}</h2><p>{t("settings.workspace.description")}</p><div className="setting-row"><span>{t("settings.workspace.recovery")}</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} ${t("settings.workspace.restored")}` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} ${t("settings.workspace.needsAccess")}` : t("settings.workspace.indexUnavailable") : t("settings.workspace.checking")}</span></div>
+      {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `${t("settings.workspace.readOnly")} ${workspace.grant_revision}` : t("settings.workspace.expired")}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">{t("settings.workspace.active")}</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.opening")}</> : t("settings.workspace.restore")}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label={t("settings.workspace.removeAria")} disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.removing")}</> : t(confirmingRevocation === workspace.workspace_id ? "settings.workspace.confirmRemove" : "settings.workspace.remove")}</button></span></div>)}
+      {recoveryNotice && <div className="workspace-recovery-notice" role="status"><Icon name="shield" /><span>{t(recoveryNotice)}</span></div>}
+      {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{t(recoveryError)}</span></div>}
     </div>}
-    <div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, bookmark data, or raw Runtime fact.</p></div></section>;
+    <div className="settings-card"><h2>{t("settings.privacy.title")}</h2><p>{t("settings.privacy.description")}</p></div></section>;
 }
 
 function ThemeOptions({ value, onChange, t }: {
   value: DesktopTheme; onChange: (value: DesktopTheme) => void; t: (key: MessageKey) => string;
 }) {
-  return <span className="preference-options" role="radiogroup" aria-label="Color theme">
+  return <span className="preference-options" role="radiogroup" aria-label={t("settings.theme.aria")}>
     {(["system", "light", "dark"] as const).map((theme) => <label className={value === theme ? "selected" : ""} key={theme}>
       <input className="sr-only" type="radio" name="desktop-theme" value={theme}
         checked={value === theme} onChange={() => onChange(theme)} />
@@ -841,7 +849,7 @@ function ThemeOptions({ value, onChange, t }: {
 function DensityOptions({ value, onChange, t }: {
   value: DesktopDensity; onChange: (value: DesktopDensity) => void; t: (key: MessageKey) => string;
 }) {
-  return <span className="preference-options" role="radiogroup" aria-label="Interface density">
+  return <span className="preference-options" role="radiogroup" aria-label={t("settings.density.aria")}>
     {(["comfortable", "compact"] as const).map((density) => <label className={value === density ? "selected" : ""} key={density}>
       <input className="sr-only" type="radio" name="desktop-density" value={density}
         checked={value === density} onChange={() => onChange(density)} />
@@ -864,7 +872,7 @@ function LocaleOptions({ value, onChange, t }: {
   </span>;
 }
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
-function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
+function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} aria-label={label} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
 function recentLabel(session: HostSessionSummary) {
   const opened = new Date(session.opened_at);

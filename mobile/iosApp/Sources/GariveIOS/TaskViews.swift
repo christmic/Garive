@@ -6,6 +6,7 @@ struct NewTaskView: View {
     @ObservedObject var model: MobileViewModel
     let agents: [MobileAgentCard]
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var definitionID = ""
     @State private var prompt = ""
 
@@ -13,9 +14,17 @@ struct NewTaskView: View {
         NavigationStack {
             Form {
                 Section("Agent") {
-                    Picker("Choose an agent", selection: $definitionID) {
-                        ForEach(agents, id: \.definitionId) { agent in
-                            Text(agent.displayName).tag(agent.definitionId)
+                    if dynamicTypeSize.isAccessibilitySize {
+                        Picker("Choose an agent", selection: $definitionID) {
+                            ForEach(agents, id: \.definitionId) { agent in
+                                Text(agent.displayName).tag(agent.definitionId)
+                            }
+                        }.pickerStyle(.inline)
+                    } else {
+                        Picker("Choose an agent", selection: $definitionID) {
+                            ForEach(agents, id: \.definitionId) { agent in
+                                Text(agent.displayName).tag(agent.definitionId)
+                            }
                         }
                     }
                 }
@@ -25,7 +34,7 @@ struct NewTaskView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("New remote task")
+            .navigationTitle(dynamicTypeSize.isAccessibilitySize ? "New task" : "New remote task")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -34,7 +43,7 @@ struct NewTaskView: View {
                 }
             }
             .onAppear { if definitionID.isEmpty { definitionID = agents.first?.definitionId ?? "" } }
-        }.presentationDetents([.medium, .large])
+        }.presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
     }
 
     private var selectedID: String { definitionID.isEmpty ? agents.first?.definitionId ?? "" : definitionID }

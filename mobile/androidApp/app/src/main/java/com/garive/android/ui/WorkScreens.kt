@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,7 +69,7 @@ internal fun WorkScreen(
             DestinationHeader("Work", "Your Agent command center", state.connection, onRefresh)
             Button(
                 onClick = onNewTask,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
                 shape = RoundedCornerShape(16.dp),
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
@@ -110,8 +113,8 @@ internal fun SessionsScreen(state: MobileWorkState, onOpen: (String) -> Unit, on
     ) {
         item {
             DestinationHeader("Sessions", "Durable work, ready anywhere", state.connection, onRefresh)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Working", "Needs you", "Done").forEach { label ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("All", "Working", "Needs you", "Done")) { label ->
                     AssistChip(onClick = { filter = label }, label = { Text(label) })
                 }
             }
@@ -133,6 +136,7 @@ internal fun SessionsScreen(state: MobileWorkState, onOpen: (String) -> Unit, on
 
 @Composable
 internal fun AgentsScreen(state: MobileWorkState, onStart: (MobileAgentCard) -> Unit, onRefresh: () -> Unit) {
+    val largeText = LocalDensity.current.fontScale >= 1.6f
     LazyColumn(
         modifier = Modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -146,7 +150,7 @@ internal fun AgentsScreen(state: MobileWorkState, onStart: (MobileAgentCard) -> 
                 modifier = Modifier.fillMaxWidth().clickable { onStart(agent) },
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)) {
                             Icon(
                                 Icons.Rounded.PlayArrow,
@@ -155,14 +159,27 @@ internal fun AgentsScreen(state: MobileWorkState, onStart: (MobileAgentCard) -> 
                                 modifier = Modifier.padding(10.dp),
                             )
                         }
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        if (!largeText) {
+                            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                Text(agent.displayName, style = MaterialTheme.typography.titleLarge)
+                                Text(
+                                    "Ready on your server",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = "Start with ${agent.displayName}")
+                    }
+                    if (largeText) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(agent.displayName, style = MaterialTheme.typography.titleLarge)
                             Text(
                                 "Ready on your server",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = "Start with ${agent.displayName}")
                     }
                     if (agent.capabilities.isNotEmpty()) {
                         Text(
@@ -210,7 +227,7 @@ internal fun SettingsScreen(origin: String, state: MobileWorkState, onSignOut: (
         item {
             OutlinedButton(
                 onClick = onSignOut,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                 shape = RoundedCornerShape(16.dp),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
@@ -256,32 +273,54 @@ private fun DestinationHeader(
 
 @Composable
 private fun WorkCard(session: MobileSessionCard, onOpen: (String) -> Unit) {
+    val largeText = LocalDensity.current.fontScale >= 1.6f
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, statusColor(session.status).copy(alpha = 0.28f)),
         modifier = Modifier.fillMaxWidth().clickable { onOpen(session.sessionId) },
     ) {
-        Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = statusColor(session.status).copy(alpha = 0.13f)) {
-                Icon(
-                    statusIcon(session.status),
-                    contentDescription = null,
-                    tint = statusColor(session.status),
-                    modifier = Modifier.padding(10.dp).size(22.dp),
-                )
+        if (largeText) {
+            Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    WorkStatusIcon(session.status)
+                    Spacer(Modifier.weight(1f))
+                    Icon(Icons.Rounded.ChevronRight, contentDescription = "Open Session")
+                }
+                WorkCardText(session)
             }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(session.agentName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${session.status.label()} · ${session.turnCount} ${if (session.turnCount == 1L) "turn" else "turns"}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+        } else {
+            Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+                WorkStatusIcon(session.status)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    WorkCardText(session)
+                }
+                Icon(Icons.Rounded.ChevronRight, contentDescription = "Open Session")
             }
-            Icon(Icons.Rounded.ChevronRight, contentDescription = "Open Session")
         }
     }
+}
+
+@Composable
+private fun WorkStatusIcon(status: MobileWorkStatus) {
+    Surface(shape = CircleShape, color = statusColor(status).copy(alpha = 0.13f)) {
+        Icon(
+            statusIcon(status),
+            contentDescription = null,
+            tint = statusColor(status),
+            modifier = Modifier.padding(10.dp).size(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun WorkCardText(session: MobileSessionCard) {
+    Text(session.agentName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Text(
+        "${session.status.label()} · ${session.turnCount} ${if (session.turnCount == 1L) "turn" else "turns"}",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable

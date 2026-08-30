@@ -130,22 +130,53 @@ private struct SessionSection: View {
 struct SessionRow: View {
     let session: MobileSessionCard
     let open: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 14) {
-                Circle().fill(statusColor.opacity(0.18)).frame(width: 44, height: 44)
-                    .overlay(Image(systemName: statusIcon).foregroundStyle(statusColor))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(session.agentName).font(.headline).foregroundStyle(.primary)
-                    Text("\(session.turnCount) turns · \(shortID)").font(.caption).foregroundStyle(.secondary)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            statusMark
+                            Spacer()
+                            disclosure
+                        }
+                        sessionIdentity
+                        StatusBadge(status: session.status.name.lowercased())
+                    }
+                } else {
+                    HStack(spacing: 14) {
+                        statusMark
+                        sessionIdentity
+                        Spacer(minLength: 8)
+                        StatusBadge(status: session.status.name.lowercased())
+                        disclosure
+                    }
                 }
-                Spacer()
-                StatusBadge(status: session.status.name.lowercased())
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
             .padding(16).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 18))
         }.buttonStyle(.plain)
+    }
+
+    private var statusMark: some View {
+        Circle().fill(statusColor.opacity(0.18)).frame(width: 44, height: 44)
+            .overlay(Image(systemName: statusIcon).foregroundStyle(statusColor))
+            .accessibilityHidden(true)
+    }
+
+    private var sessionIdentity: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(session.agentName).font(.headline).foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("\(session.turnCount) turns · \(shortID)").font(.caption).foregroundStyle(.secondary)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var disclosure: some View {
+        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            .accessibilityHidden(true)
     }
 
     private var shortID: String { String(session.sessionId.prefix(8)) }
@@ -157,7 +188,8 @@ struct StatusBadge: View {
     let status: String
     var body: some View {
         Text(status.replacingOccurrences(of: "_", with: " "))
-            .font(.caption2.weight(.semibold)).textCase(.uppercase).padding(.horizontal, 9).padding(.vertical, 5)
+            .font(.caption2.weight(.semibold)).textCase(.uppercase).lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false).padding(.horizontal, 9).padding(.vertical, 5)
             .background(color.opacity(0.14), in: Capsule()).foregroundStyle(color)
     }
     private var color: Color {

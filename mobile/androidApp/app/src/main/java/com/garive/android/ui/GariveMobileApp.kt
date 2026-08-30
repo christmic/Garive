@@ -3,7 +3,10 @@ package com.garive.android.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
@@ -32,6 +35,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -56,6 +61,7 @@ internal fun GariveMobileApp(
     var selectedAgent by remember { mutableStateOf<MobileAgentCard?>(null) }
     var confirmCancel by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val showNavigationLabels = LocalDensity.current.fontScale < 1.6f
 
     LaunchedEffect(controller, wakeRoute) {
         state = controller.boot()
@@ -87,11 +93,17 @@ internal fun GariveMobileApp(
             bottomBar = {
                 NavigationBar {
                     navigationItems.forEach { item ->
+                        val label: (@Composable () -> Unit)? = if (showNavigationLabels) {
+                            { Text(item.label, maxLines = 1, overflow = TextOverflow.Clip) }
+                        } else {
+                            null
+                        }
                         NavigationBarItem(
                             selected = state.destination == item.destination,
                             onClick = { state = controller.selectDestination(item.destination) },
-                            icon = { Icon(item.icon, contentDescription = null) },
-                            label = { Text(item.label) },
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = label,
+                            alwaysShowLabel = showNavigationLabels,
                         )
                     }
                 }
@@ -180,7 +192,10 @@ private fun NewTaskSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Start remote work", style = MaterialTheme.typography.headlineSmall)
