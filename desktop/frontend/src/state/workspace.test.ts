@@ -33,4 +33,17 @@ describe("Desktop work state", () => {
     expect(state.draft).toBe("private outcome");
     expect(state.error).toBe("not_configured");
   });
+
+  it("restores a conversation only from a durable timeline", () => {
+    const state = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
+      api_version: "v1", session_id: "session-old", scanned_through_position: 7,
+      observed_max_position: 7, has_more: false, items: [{
+        turn_id: "turn-old", started_position: 2, latest_position: 7,
+        state: "completed", user_text: "Recover this", completion_text: "Recovered",
+        content_truncated: false,
+      }],
+    } });
+    expect(state.sessionId).toBe("session-old");
+    expect(state.messages.map((message) => message.text)).toEqual(["Recover this", "Recovered"]);
+  });
 });

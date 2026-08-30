@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { getDesktopCapabilities, runAgentTurn } from "./ipc/host";
+import {
+  getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+  type HostSessionSummary,
+} from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import { Icon, type IconName } from "./ui/Icon";
 
@@ -37,6 +40,7 @@ const visualCapabilities = {
 export function App() {
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
+  const [recents, setRecents] = useState<readonly HostSessionSummary[]>([]);
   const composer = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -45,7 +49,12 @@ export function App() {
       return;
     }
     void getDesktopCapabilities()
-      .then((capabilities) => dispatch({ type: "capabilities_loaded", capabilities }))
+      .then((capabilities) => {
+        dispatch({ type: "capabilities_loaded", capabilities });
+        if (capabilities.durable_navigation) {
+          void getRecentSessions().then(setRecents).catch(() => setRecents([]));
+        }
+      })
       .catch(() => dispatch({ type: "capabilities_failed" }));
   }, []);
 
@@ -90,6 +99,9 @@ export function App() {
     try {
       const result = await runAgentTurn(definition, input, state.sessionId);
       dispatch({ type: "submission_succeeded", input, result });
+      if (state.capabilities?.durable_navigation) {
+        void getRecentSessions().then(setRecents).catch(() => undefined);
+      }
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
     }
@@ -98,6 +110,16 @@ export function App() {
   const startSuggestion = (text: string) => {
     dispatch({ type: "draft_changed", value: text });
     requestAnimationFrame(() => composer.current?.focus());
+  };
+
+  const openRecent = async (sessionId: string) => {
+    setScreen("work");
+    try {
+      const timeline = await getSessionTimeline(sessionId);
+      dispatch({ type: "session_loaded", timeline });
+    } catch (cause) {
+      dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "projection_failure" });
+    }
   };
 
   return (
@@ -114,11 +136,17 @@ export function App() {
         </nav>
         <div className="sidebar-section">
           <div className="section-label"><span>Recents</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">Live</span>}</div>
-          {state.messages.length > 0 ? (
+          {recents.length > 0 ? recents.map((recent) => (
+            <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
+              type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
+              <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentLabel(recent)}</span>
+              <small>{recent.latest_turn_state ? terminalCopy(recent.latest_turn_state) : "Empty"}</small>
+            </button>
+          )) : state.messages.length > 0 ? (
             <button className="recent-item selected" type="button" onClick={() => setScreen("work")}>
               <span>{title}</span><small>{state.phase === "submitting" ? "Working" : "Completed"}</small>
             </button>
-          ) : <p className="sidebar-empty">Your current work appears here.</p>}
+          ) : <p className="sidebar-empty">Durable work will appear here.</p>}
         </div>
         <div className="sidebar-section library">
           <div className="section-label">Library</div>
@@ -231,4 +259,10 @@ function AgentsScreen({ definition }: { definition?: string }) { return <section
 function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabilities"] }) { const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const; return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1><div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div><div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, or raw Runtime fact.</p></div></section>; }
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
 function NavItem({ icon, label, selected, disabled, hint, onClick }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>Soon</small>}</button>; }
-function terminalCopy(terminal?: "completed" | "suspended" | "stopped" | "failed") { return terminal === "completed" ? "Completed" : terminal === "suspended" ? "Needs input" : terminal === "stopped" ? "Stopped" : terminal === "failed" ? "Failed" : "Working"; }
+function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed") { return terminal === "completed" ? "Completed" : terminal === "suspended" ? "Needs input" : terminal === "stopped" ? "Stopped" : terminal === "failed" ? "Failed" : "Working"; }
+function recentLabel(session: HostSessionSummary) {
+  const opened = new Date(session.opened_at);
+  return Number.isNaN(opened.valueOf())
+    ? "Durable work"
+    : `Work · ${opened.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}

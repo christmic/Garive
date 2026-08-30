@@ -1,4 +1,4 @@
-import type { DesktopCapabilities, HostResult } from "../ipc/host";
+import type { DesktopCapabilities, HostResult, HostTimelinePage } from "../ipc/host";
 
 export type BootState = "loading" | "ready" | "unavailable";
 export type WorkPhase = "idle" | "submitting";
@@ -30,6 +30,7 @@ export type WorkEvent =
   | { readonly type: "submission_started" }
   | { readonly type: "submission_succeeded"; readonly input: string; readonly result: HostResult }
   | { readonly type: "submission_failed"; readonly code: string }
+  | { readonly type: "session_loaded"; readonly timeline: HostTimelinePage }
   | { readonly type: "new_work" }
   | { readonly type: "inspector_toggled" }
   | { readonly type: "inspector_selected"; readonly tab: InspectorTab }
@@ -77,6 +78,15 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
     }
     case "submission_failed":
       return { ...state, phase: "idle", error: event.code };
+    case "session_loaded":
+      return {
+        ...state,
+        phase: "idle",
+        sessionId: event.timeline.session_id,
+        messages: timelineMessages(event.timeline),
+        draft: "",
+        error: undefined,
+      };
     case "new_work":
       return {
         ...initialWorkState,
@@ -90,6 +100,23 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
     case "error_dismissed":
       return { ...state, error: undefined };
   }
+}
+
+function timelineMessages(timeline: HostTimelinePage): readonly WorkMessage[] {
+  return timeline.items.flatMap((item) => {
+    const user: WorkMessage = {
+      id: `user-${item.turn_id}`,
+      role: "user",
+      text: item.user_text,
+    };
+    if (item.state === "running") return [user];
+    return [user, {
+      id: item.turn_id,
+      role: "assistant",
+      text: item.completion_text ?? "",
+      terminal: item.state,
+    } satisfies WorkMessage];
+  });
 }
 
 export function canSubmit(state: WorkState): boolean {
