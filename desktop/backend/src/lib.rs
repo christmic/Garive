@@ -447,15 +447,33 @@ impl DesktopHost {
             .map_err(|_| DesktopHostError::ProjectionFailure)
     }
 
-    async fn drive_next(&self) -> Result<(), DesktopHostError> {
+    /// Returns a clone of the public H1 service for an explicitly bound loopback adapter.
+    pub fn live_host(&self) -> LiveHost {
+        self.host.clone()
+    }
+
+    /// Drives at most one committed local dispatch without blocking when the queue is empty.
+    pub async fn drive_pending(&self) -> Result<bool, DesktopHostError> {
         let attempt = self.operations.execution_attempt()?;
-        self.queue
+        match self
+            .queue
             .lock()
             .await
             .try_run_next(&self.worker, &attempt)
             .await
-            .map(|_| ())
-            .map_err(|_| DesktopHostError::ExecutionFailure)
+        {
+            Ok(_) => Ok(true),
+            Err(garive_runtime::LocalWorkerError::QueueEmpty) => Ok(false),
+            Err(_) => Err(DesktopHostError::ExecutionFailure),
+        }
+    }
+
+    async fn drive_next(&self) -> Result<(), DesktopHostError> {
+        if self.drive_pending().await? {
+            Ok(())
+        } else {
+            Err(DesktopHostError::ExecutionFailure)
+        }
     }
 
     /// Creates one empty durable Session before attaching selected context.
