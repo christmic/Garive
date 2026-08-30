@@ -29,6 +29,8 @@ public data class StepProgress(public val state: StepState, public val attempts:
 /** One requested pure Plan/step transition after Runtime validation. */
 public sealed interface PlanTransition {
     /** Adopt a valid proposal. */ public data object Adopt : PlanTransition
+    /** Adopt with Runtime-verified completed steps from a prior revision. */
+    public data class AdoptWithCarryForward(public val stepIds: Set<PlanStepId>) : PlanTransition
     /** Reject a proposal. */ public data object Reject : PlanTransition
     /** Suspend Plan-level dispatch. */ public data object Suspend : PlanTransition
     /** Resume Plan-level dispatch. */ public data object Resume : PlanTransition
@@ -69,6 +71,7 @@ public class PlanSnapshot private constructor(
         return when (transition) {
             PlanTransition.Adopt -> if (state == PlanState.PROPOSED) updated(PlanState.ADOPTED, progress).refresh()
             else invalid()
+            is PlanTransition.AdoptWithCarryForward -> carryForward(transition.stepIds)
             PlanTransition.Reject -> if (state == PlanState.PROPOSED) success(updated(PlanState.REJECTED, progress)) else invalid()
             PlanTransition.Suspend -> if (state == PlanState.RUNNING) success(updated(PlanState.SUSPENDED, progress)) else invalid()
             PlanTransition.Resume -> if (state == PlanState.SUSPENDED) updated(PlanState.RUNNING, progress).refresh()
@@ -101,6 +104,18 @@ public class PlanSnapshot private constructor(
             active >= definition.bounds.maxParallelReady || progress[stepId]?.state != StepState.READY
         ) return failure(PlanErrorCode.STEP_NOT_READY)
         return replace(stepId, StepState.READY, StepState.CLAIMED)
+    }
+
+    private fun carryForward(stepIds: Set<PlanStepId>): PlanResult<PlanSnapshot> {
+        if (state != PlanState.PROPOSED || stepIds.any { id ->
+                definition.step(id)?.dependsOn?.all(stepIds::contains) != true
+            }
+        ) return invalid()
+        val next = progress.mapValues { (id, value) ->
+            if (id in stepIds) value.copy(state = StepState.COMPLETED) else value
+        }
+        val nextState = if (stepIds.isEmpty()) PlanState.ADOPTED else PlanState.RUNNING
+        return updated(nextState, next).refresh()
     }
 
     private fun start(stepId: PlanStepId): PlanResult<PlanSnapshot> {

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -79,6 +79,8 @@ impl StepProgress {
 pub enum PlanTransition {
     /// Adopt a valid proposal.
     Adopt,
+    /// Adopt with Runtime-verified completed steps from a prior revision.
+    AdoptWithCarryForward(BTreeSet<PlanStepId>),
     /// Reject a proposal.
     Reject,
     /// Suspend Plan-level dispatch.
@@ -185,6 +187,33 @@ impl PlanSnapshot {
         match transition {
             PlanTransition::Adopt if self.state == PlanState::Proposed => {
                 next.state = PlanState::Adopted;
+                next.refresh_ready();
+            }
+            PlanTransition::AdoptWithCarryForward(carried) if self.state == PlanState::Proposed => {
+                if carried.iter().any(|id| {
+                    self.definition
+                        .steps()
+                        .iter()
+                        .find(|step| step.step_id() == id)
+                        .is_none_or(|step| !step.depends_on().is_subset(&carried))
+                }) {
+                    return Err(PlanError::new(PlanErrorCode::PlanTransitionInvalid));
+                }
+                for id in carried {
+                    next.steps
+                        .get_mut(&id)
+                        .ok_or_else(|| PlanError::new(PlanErrorCode::PlanTransitionInvalid))?
+                        .state = StepState::Completed;
+                }
+                next.state = if next
+                    .steps
+                    .values()
+                    .any(|progress| progress.state == StepState::Completed)
+                {
+                    PlanState::Running
+                } else {
+                    PlanState::Adopted
+                };
                 next.refresh_ready();
             }
             PlanTransition::Reject if self.state == PlanState::Proposed => {

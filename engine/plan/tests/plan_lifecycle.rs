@@ -106,6 +106,33 @@ fn never_started_claim_can_expire_but_started_attempt_cannot_replay() {
     );
 }
 
+#[test]
+fn carry_forward_adopts_only_dependency_closed_completed_steps() {
+    let prepare = id("prepare");
+    let deliver = id("deliver");
+    let carried = PlanSnapshot::new(definition(2, 4, 2))
+        .apply(PlanTransition::AdoptWithCarryForward(BTreeSet::from([
+            prepare.clone(),
+        ])))
+        .unwrap();
+    assert_eq!(carried.state(), PlanState::Running);
+    assert_eq!(
+        carried.step(&prepare).unwrap().state(),
+        StepState::Completed
+    );
+    assert_eq!(carried.step(&prepare).unwrap().attempts(), 0);
+    assert_eq!(carried.ready_steps(), vec![&deliver]);
+    assert_eq!(
+        PlanSnapshot::new(definition(2, 4, 2))
+            .apply(PlanTransition::AdoptWithCarryForward(BTreeSet::from([
+                deliver,
+            ])))
+            .unwrap_err()
+            .code(),
+        PlanErrorCode::PlanTransitionInvalid
+    );
+}
+
 fn definition(parallel: u32, total_attempts: u32, step_attempts: u32) -> PlanDefinitionV1 {
     build(
         vec![

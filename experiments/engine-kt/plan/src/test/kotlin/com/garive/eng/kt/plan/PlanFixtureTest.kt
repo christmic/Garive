@@ -11,6 +11,21 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 public class PlanFixtureTest {
+    @Test
+    public fun carryForwardRequiresClosedDependencies(): Unit {
+        val definition = definition()
+        val prepare = id("prepare")
+        val deliver = id("deliver")
+        val carried = assertIs<PlanResult.Success<PlanSnapshot>>(
+            PlanSnapshot.create(definition).apply(PlanTransition.AdoptWithCarryForward(setOf(prepare))),
+        ).value
+        assertEquals(PlanState.RUNNING, carried.state)
+        assertEquals(StepState.COMPLETED, carried.step(prepare)?.state)
+        assertEquals(listOf(deliver), carried.readySteps())
+        assertIs<PlanResult.Failure>(
+            PlanSnapshot.create(definition).apply(PlanTransition.AdoptWithCarryForward(setOf(deliver))),
+        )
+    }
     private val fixture by lazy {
         val root = Path.of(System.getProperty("garive.repo.root"))
         Json.parseToJsonElement(root.resolve("spec/fixtures/agent/plan-lifecycle-v1.json").readText()).jsonObject
