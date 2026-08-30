@@ -135,6 +135,12 @@ garive://pair?origin=https%3A%2F%2Fagent.example.com&code=...&exp=...&name=...
 
 ![iOS Work 首页](assets/mobile/ios-02-work.png)
 
+深色模式与超大字体同样保留完整任务身份、状态和可操作目标：
+
+![Android 深色模式与 200% 字体 Work](assets/mobile/android-10-a11y-dark-work.png)
+
+![iOS 深色模式与辅助功能超大字体 Work](assets/mobile/ios-08-a11y-dark-work.png)
+
 Work 按处理优先级分组：
 
 1. **Needs you**：Agent 正在等待审批或输入，应优先处理。
@@ -149,6 +155,12 @@ Work 按处理优先级分组：
 ![Android 新建任务](assets/mobile/android-05-new-task.png)
 
 ![iOS 新建任务](assets/mobile/ios-05-new-task.png)
+
+超大字体下，新建任务会改用可滚动/展开布局，所有 Agent、Outcome 和提交控制仍可到达：
+
+![Android 深色模式与 200% 字体新建任务](assets/mobile/android-11-a11y-dark-new-task.png)
+
+![iOS 深色模式与辅助功能超大字体新建任务](assets/mobile/ios-09-a11y-dark-new-task.png)
 
 1. 在 Work 点击 **New task**，或从 Agents 选择一个 Agent。
 2. 明确核对 Agent 名称；默认选择只是便利，不会改变服务端权限。
@@ -225,13 +237,23 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 - `runtime_unavailable` 表示 Gateway 暂时无法连接 loopback Runtime；读取可稍后重试，写操作
   必须保留原命令身份。
 
+![Android 离线但保留已验证历史](assets/mobile/android-12-offline.png)
+
+实际离线验证中，停止 Host 后刷新会显示 **Offline · verified history**，并继续保留最后一次已验证
+的会话投影；Host 恢复后再次刷新回到 **Server connected**。离线投影只用于查看，不能把本地状态
+当作新的服务端事实。
+
 ## 12. Settings 与解除配对
 
 ![Android Settings](assets/mobile/android-07-settings.png)
 
 ![iOS Settings](assets/mobile/ios-07-settings.png)
 
-Settings 显示当前配对服务和通知状态。选择 **Unpair this device** 时：
+Settings 显示当前配对服务、已验证 host、设备与构建诊断、通知入口和外观主题。主题可选择
+**System / Light / Dark**，会在本机持久化；通知按钮进入系统级通知设置，不在应用内伪造授权
+状态。诊断信息不包含授权、Session ID、私有路径或请求正文。
+
+选择 **Unpair this device** 时：
 
 1. 应用先删除本机 Keychain/Keystore 中的授权；
 2. 再尽力注销推送并调用自撤销接口；
@@ -265,10 +287,13 @@ Settings 显示当前配对服务和通知状态。选择 **Unpair this device**
 本手册中的截图来自实际运行的原生 SwiftUI/Compose 应用、共享 KMP 控制器和实时 HTTP Host，
 不是设计稿或静态 mock。为了让状态可重复，截图使用了仅在 Debug 构建可启用的 loopback
 walkthrough Host；Release 构建无法进入该模式。审批、新建、刷新、取消及状态回读均通过真实
-客户端协议执行。
+客户端协议执行。深色模式证据同时使用 Android `font_scale=2.0` 和 iOS
+`accessibility-extra-large`；Android 在空间不足时切换为图标底栏，但四个目标仍向无障碍服务暴露
+Work、Sessions、Agents、Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程、Swift 测试、iOS Simulator 构建与界面流程。正式远程发布仍必须在受信任公网 TLS、
+界面流程、Swift 测试、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的离线历史回退。
+正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
 当作生产网络发布证明。
