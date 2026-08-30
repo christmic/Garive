@@ -29,10 +29,12 @@ public class MobileWorkController(
     private val identities: CommandIdentitySource,
     private val pageLimit: Int = 64,
     private val maxInputBytes: Int = 4_096,
+    private val persistence: MobileWorkPersistence = EphemeralMobileWorkPersistence,
 ) {
     private val lock: Mutex = Mutex()
     private var viewState: MobileWorkState = MobileWorkState()
     private var pendingOperation: PendingOperation? = null
+    private var restoredPending: Boolean = false
 
     init {
         require(pageLimit > 0 && maxInputBytes > 0)
@@ -43,6 +45,7 @@ public class MobileWorkController(
 
     /** Loads installed Agents, durable Sessions, and the selected timeline. */
     public suspend fun boot(): MobileWorkState = lock.withLock {
+        restorePendingLocked()
         viewState = viewState.copy(connection = MobileConnectionState.CONNECTING, refreshing = true)
         refreshLocked()
     }
@@ -95,6 +98,7 @@ public class MobileWorkController(
             startCommandId = identities.nextId(),
         )
         pendingOperation = operation
+        savePending(persistence, operation)
         runPendingLocked(operation)
     }
 
@@ -105,6 +109,7 @@ public class MobileWorkController(
             ?: return@withLock notice("validation_session_required")
         val operation = PendingOperation.Start(sessionId, text, identities.nextId())
         pendingOperation = operation
+        savePending(persistence, operation)
         runPendingLocked(operation)
     }
 
@@ -124,6 +129,7 @@ public class MobileWorkController(
             identities.nextId(),
         )
         pendingOperation = operation
+        savePending(persistence, operation)
         runPendingLocked(operation)
     }
 
@@ -147,6 +153,7 @@ public class MobileWorkController(
             identities.nextId(),
         )
         pendingOperation = operation
+        savePending(persistence, operation)
         runPendingLocked(operation)
     }
 
@@ -176,6 +183,7 @@ public class MobileWorkController(
     /** Clears the current non-secret presentation after native credential removal. */
     public fun signOut(): MobileWorkState {
         pendingOperation = null
+        clearPending(persistence)
         viewState = MobileWorkState(connection = MobileConnectionState.SIGNED_OUT)
         return viewState
     }
@@ -208,6 +216,7 @@ public class MobileWorkController(
                         .also {
                             operation.sessionId = it
                             viewState = viewState.copy(pendingCommand = operation.publicValue())
+                            savePending(persistence, operation)
                         }
                     host.startTurn(operation.startCommandId, sessionId, operation.text)
                     viewState = viewState.copy(
@@ -243,6 +252,7 @@ public class MobileWorkController(
             if (sessionId != null) loadTimelineLocked(sessionId)
             loadNavigationLocked()
             pendingOperation = null
+            clearPending(persistence)
             viewState = viewState.copy(
                 connection = MobileConnectionState.ONLINE,
                 pendingCommand = null,
@@ -252,8 +262,14 @@ public class MobileWorkController(
             throw error
         } catch (error: HostClientException) {
             applyFailure(error)
-            if (error.code !in setOf(HostClientError.TRANSPORT_FAILURE, HostClientError.FOLLOW_DEADLINE)) {
+            if (error.code !in setOf(
+                    HostClientError.TRANSPORT_FAILURE,
+                    HostClientError.FOLLOW_DEADLINE,
+                    HostClientError.RUNTIME_UNAVAILABLE,
+                )
+            ) {
                 pendingOperation = null
+                clearPending(persistence)
                 viewState = viewState.copy(pendingCommand = null)
             }
         }
@@ -282,6 +298,19 @@ public class MobileWorkController(
         else -> null
     }
 
+    private fun restorePendingLocked(): Unit {
+        if (restoredPending) return
+        restoredPending = true
+        pendingOperation = restorePending(persistence, maxInputBytes)
+        pendingOperation?.let { operation ->
+            viewState = viewState.copy(
+                selectedSessionId = operation.sessionId,
+                draft = operation.payload().orEmpty(),
+                pendingCommand = operation.publicValue(),
+            )
+        }
+    }
+
     private fun applyFailure(error: HostClientException): MobileWorkState {
         val connection = when (error.code) {
             HostClientError.INVALID_CONFIGURATION, HostClientError.ACTOR_FORBIDDEN,
@@ -298,57 +327,5 @@ public class MobileWorkController(
     private fun notice(code: String): MobileWorkState {
         viewState = viewState.copy(noticeCode = code)
         return viewState
-    }
-}
-
-private sealed class PendingOperation {
-    abstract val sessionId: String?
-    abstract fun publicValue(): MobilePendingCommand
-
-    class CreateAndStart(
-        val definitionId: String,
-        val text: String,
-        val createCommandId: String,
-        val startCommandId: String,
-        override var sessionId: String? = null,
-    ) : PendingOperation() {
-        override fun publicValue(): MobilePendingCommand = MobilePendingCommand(
-            if (sessionId == null) "create" else "start",
-            if (sessionId == null) createCommandId else startCommandId,
-            sessionId,
-            null,
-        )
-    }
-
-    class Start(
-        override val sessionId: String,
-        val text: String,
-        val commandId: String,
-    ) : PendingOperation() {
-        override fun publicValue(): MobilePendingCommand =
-            MobilePendingCommand("start", commandId, sessionId, null)
-    }
-
-    class Cancel(
-        override val sessionId: String,
-        val turnId: String,
-        val position: Long,
-        val commandId: String,
-    ) : PendingOperation() {
-        override fun publicValue(): MobilePendingCommand =
-            MobilePendingCommand("cancel", commandId, sessionId, turnId)
-    }
-
-    class Continue(
-        override val sessionId: String,
-        val turnId: String,
-        val suspensionId: String,
-        val sessionVersion: Long,
-        val input: String,
-        val inputJson: Boolean,
-        val commandId: String,
-    ) : PendingOperation() {
-        override fun publicValue(): MobilePendingCommand =
-            MobilePendingCommand("continue", commandId, sessionId, turnId)
     }
 }
