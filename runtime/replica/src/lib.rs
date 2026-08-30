@@ -146,7 +146,7 @@ pub use native_capability::{
     NativeSnapshotId, NativeTarget, WindowId,
 };
 pub use native_cdp::{
-    map_cdp_ax_tree, map_cdp_ax_tree_with_binding, CdpClickTarget, CdpObservationContext,
+    map_cdp_ax_tree, map_cdp_ax_tree_with_binding, CdpElementTarget, CdpObservationContext,
     CdpSnapshotBindingV1, MappedCdpObservation,
 };
 pub use native_executor::{NativeCapabilityExecutor, T2_NATIVE_EXECUTOR_ID};

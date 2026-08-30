@@ -44,9 +44,9 @@ struct CdpBoundNode {
     actions: BTreeSet<String>,
 }
 
-/// Exact adapter-private mechanics selected for one semantic click.
+/// Exact adapter-private mechanics selected for one semantic element action.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CdpClickTarget {
+pub struct CdpElementTarget {
     /// Current backend DOM node identity, never exposed to Core.
     pub backend_dom_node_id: u64,
     /// Optional owning frame identity.
@@ -61,7 +61,58 @@ impl CdpSnapshotBindingV1 {
         expected_snapshot_id: &NativeSnapshotId,
         target_revision: &str,
         node_ref: &NativeNodeRef,
-    ) -> Result<CdpClickTarget, NativeProtocolError> {
+    ) -> Result<CdpElementTarget, NativeProtocolError> {
+        self.resolve_element(
+            target,
+            expected_snapshot_id,
+            target_revision,
+            node_ref,
+            "click",
+        )
+    }
+
+    /// Resolves text insertion only under exact binding and declared action support.
+    pub fn resolve_type_text(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+        node_ref: &NativeNodeRef,
+    ) -> Result<CdpElementTarget, NativeProtocolError> {
+        self.resolve_element(
+            target,
+            expected_snapshot_id,
+            target_revision,
+            node_ref,
+            "type_text",
+        )
+    }
+
+    /// Resolves clear only under exact binding and declared action support.
+    pub fn resolve_clear(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+        node_ref: &NativeNodeRef,
+    ) -> Result<CdpElementTarget, NativeProtocolError> {
+        self.resolve_element(
+            target,
+            expected_snapshot_id,
+            target_revision,
+            node_ref,
+            "clear",
+        )
+    }
+
+    fn resolve_element(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+        node_ref: &NativeNodeRef,
+        action: &str,
+    ) -> Result<CdpElementTarget, NativeProtocolError> {
         if target != &self.target {
             return Err(NativeProtocolError::TargetNotAdmitted);
         }
@@ -72,10 +123,10 @@ impl CdpSnapshotBindingV1 {
             .nodes
             .get(node_ref)
             .ok_or(NativeProtocolError::NodeStale)?;
-        if !node.actions.contains("click") {
+        if !node.actions.contains(action) {
             return Err(NativeProtocolError::ActionUnsupported);
         }
-        Ok(CdpClickTarget {
+        Ok(CdpElementTarget {
             backend_dom_node_id: node
                 .backend_dom_node_id
                 .ok_or(NativeProtocolError::ActionUnsupported)?,

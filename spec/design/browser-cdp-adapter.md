@@ -83,8 +83,9 @@ Text insertion resolves an exact editable node, focuses it with `DOM.focus`,
 then sends one bounded UTF-8 `Input.insertText`; it never reads or writes the
 clipboard. Clear focuses the same node, executes the closed `selectAll` editor
 command and dispatches one Backspace down/up pair. These typed adapter
-operations are not dispatchable from Runtime until their exact
-target/snapshot/revision/node/action resolvers are present.
+operations have separate exact target/snapshot/revision/node/action resolvers.
+They are not product-dispatchable until the concrete CDP `NativeAdapterPort`
+composition owns their binding lifetime and receipt path.
 
 ## Acceptance
 
@@ -108,8 +109,9 @@ controls. It also clicks the form button through the typed adapter operation
 using an unexposed backend identity and observes the resulting AX-name change.
 The same gate inserts Unicode text and clears the textbox, observing both AX
 states. Runtime separately proves the exact click binding gate; text-action
-binding remains open. This baseline does not satisfy the remaining
-frame/action/fault matrix by itself.
+binding now passes the same exact gate. Concrete port composition remains open.
+This baseline does not satisfy the remaining frame/action/fault matrix by
+itself.
 
 ## Meta
 

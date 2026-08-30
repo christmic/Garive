@@ -106,13 +106,19 @@ fn mapping_rejects_missing_or_cyclic_parent_evidence() {
 }
 
 #[test]
-fn private_binding_resolves_click_only_for_the_exact_snapshot_node_and_revision() {
+fn private_binding_resolves_only_the_exact_snapshot_node_revision_and_action() {
     let mut button = node("button-cdp", Some("root-cdp"), "button", false);
     button.backend_dom_node_id = Some(42);
+    let mut textbox = node("textbox-cdp", Some("root-cdp"), "textbox", false);
+    textbox.backend_dom_node_id = Some(43);
     let mapped = map_cdp_ax_tree_with_binding(
         context(),
         &CdpAxTree {
-            nodes: vec![button, node("root-cdp", None, "RootWebArea", false)],
+            nodes: vec![
+                button,
+                textbox,
+                node("root-cdp", None, "RootWebArea", false),
+            ],
         },
     )
     .expect("mapped observation");
@@ -126,6 +132,14 @@ fn private_binding_resolves_click_only_for_the_exact_snapshot_node_and_revision(
         .expect("button")
         .node_ref
         .clone();
+    let textbox_ref = mapped
+        .observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "textbox")
+        .expect("textbox")
+        .node_ref
+        .clone();
     assert_eq!(
         mapped
             .binding
@@ -133,6 +147,28 @@ fn private_binding_resolves_click_only_for_the_exact_snapshot_node_and_revision(
             .expect("click target")
             .backend_dom_node_id,
         42
+    );
+    assert_eq!(
+        mapped
+            .binding
+            .resolve_type_text(&target, &snapshot, "revision-1", &textbox_ref)
+            .expect("type target")
+            .backend_dom_node_id,
+        43
+    );
+    assert_eq!(
+        mapped
+            .binding
+            .resolve_clear(&target, &snapshot, "revision-1", &textbox_ref)
+            .expect("clear target")
+            .backend_dom_node_id,
+        43
+    );
+    assert_eq!(
+        mapped
+            .binding
+            .resolve_type_text(&target, &snapshot, "revision-1", &button_ref),
+        Err(NativeProtocolError::ActionUnsupported)
     );
     assert_eq!(
         mapped.binding.resolve_click(
