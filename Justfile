@@ -156,11 +156,14 @@ tui-runtime-e2e:
 tui-pty:
     cargo test -p garive-tui --test live_h1
 
+tui-bench:
+    cargo test -p garive-tui --test performance -- --nocapture
+
 tui-boundaries:
     @if rg -n 'OPENAI_API_KEY|ANTHROPIC_API_KEY|rusqlite|garive_runtime|std::env::var[^;]*(HOST|ENDPOINT|MODEL|DATABASE)' tui/src; then echo 'TUI production code crossed a configuration or Runtime boundary' >&2; exit 1; fi
     cargo clippy -p garive-tui --lib -- -D warnings
 
-tui: tui-unit tui-snapshots tui-contract tui-persistence tui-runtime-e2e tui-pty tui-boundaries
+tui: tui-unit tui-snapshots tui-contract tui-persistence tui-runtime-e2e tui-pty tui-bench tui-boundaries
     cargo test -p garive-tui
 
 rust:
