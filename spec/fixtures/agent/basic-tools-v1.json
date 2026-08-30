@@ -17,8 +17,8 @@
     },
     {
       "tool_name": "garive.workspace.search_text",
-      "arguments": {"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096},
-      "prepared_digest": "2f1c6ea20723703b72b85552c947a6c66a7d97c512725050bf11c0a36f511fdd",
+      "arguments": {"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096,"max_nodes":100},
+      "prepared_digest": "fd5124d8261082cefc334fc1918bb9992187762451e94737d84947c6ce57323a",
       "accesses": [{"namespace":"filesystem","resource_key":"src","mode":"read"}]
     },
     {
@@ -66,7 +66,7 @@
     },
     {
       "tool_name": "garive.workspace.search_text",
-      "arguments": {"path":".","query":"","case_sensitive":true,"max_matches":1,"max_file_bytes":1},
+      "arguments": {"path":".","query":"","case_sensitive":true,"max_matches":1,"max_file_bytes":1,"max_nodes":1},
       "error": "arguments_schema_mismatch"
     }
   ]

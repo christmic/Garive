@@ -6,7 +6,7 @@ use garive_ledger::CanonicalPayload;
 use garive_tools::{
     AccessMode, AccessNamespace, BuiltinT1Catalogue, EffectReceipt, ExecutionCapability,
     ExecutionFact, InvocationGrant, PreparedToolCall, ReceiptId, ReplayClass,
-    TerminalClassification, ToolIntent, ToolInvocationId, T1_LIST, T1_READ_TEXT,
+    TerminalClassification, ToolIntent, ToolInvocationId, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT,
 };
 use rustix::{
     fd::OwnedFd,
@@ -120,6 +120,15 @@ enum Operation {
         include_hidden: bool,
         result_bound: u64,
     },
+    Search {
+        path: String,
+        query: String,
+        case_sensitive: bool,
+        max_matches: usize,
+        max_file_bytes: u64,
+        max_nodes: usize,
+        result_bound: u64,
+    },
 }
 
 fn operation(
@@ -186,6 +195,24 @@ fn operation(
                 .ok_or_else(|| "invalid T1 hidden policy".to_owned())?,
             result_bound,
         }),
+        T1_SEARCH_TEXT => Ok(Operation::Search {
+            path,
+            query: arguments
+                .get("query")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid T1 search query".to_owned())?
+                .to_owned(),
+            case_sensitive: arguments
+                .get("case_sensitive")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| "invalid T1 search case policy".to_owned())?,
+            max_matches: usize::try_from(number(&arguments, "max_matches")?)
+                .map_err(|_| "invalid T1 match bound")?,
+            max_file_bytes: number(&arguments, "max_file_bytes")?,
+            max_nodes: usize::try_from(number(&arguments, "max_nodes")?)
+                .map_err(|_| "invalid T1 node bound")?,
+            result_bound,
+        }),
         _ => Err("unsupported T1 workspace operation".into()),
     }
 }
@@ -221,6 +248,24 @@ fn execute(root: OwnedFd, operation: Operation) -> Result<Value, WorkspaceExecut
             include_hidden,
             result_bound,
         } => list(root, &path, max_entries, include_hidden, result_bound),
+        Operation::Search {
+            path,
+            query,
+            case_sensitive,
+            max_matches,
+            max_file_bytes,
+            max_nodes,
+            result_bound,
+        } => search(
+            root,
+            &path,
+            &query,
+            case_sensitive,
+            max_matches,
+            max_file_bytes,
+            max_nodes,
+            result_bound,
+        ),
     }
 }
 
@@ -230,7 +275,7 @@ fn read_text(
     max_bytes: u64,
     result_bound: u64,
 ) -> Result<Value, WorkspaceExecutionError> {
-    let file = open_exact(root, path, false)?;
+    let file = open_target(root, path)?;
     if FileType::from_raw_mode(fstat(&file).map_err(map_errno)?.st_mode) != FileType::RegularFile {
         return Err(WorkspaceExecutionError::PathTypeMismatch);
     }
@@ -258,7 +303,11 @@ fn list(
     include_hidden: bool,
     result_bound: u64,
 ) -> Result<Value, WorkspaceExecutionError> {
-    let directory = open_exact(root, path, true)?;
+    let directory = open_target(root, path)?;
+    if FileType::from_raw_mode(fstat(&directory).map_err(map_errno)?.st_mode) != FileType::Directory
+    {
+        return Err(WorkspaceExecutionError::PathTypeMismatch);
+    }
     let mut stream = Dir::new(directory).map_err(map_errno)?;
     let mut smallest = BinaryHeap::<(String, &'static str)>::new();
     let mut eligible = 0usize;
@@ -306,18 +355,292 @@ fn list(
     )
 }
 
-fn open_exact(
+#[allow(clippy::too_many_arguments)]
+fn search(
     root: OwnedFd,
     path: &str,
-    directory_expected: bool,
-) -> Result<OwnedFd, WorkspaceExecutionError> {
+    query: &str,
+    case_sensitive: bool,
+    max_matches: usize,
+    max_file_bytes: u64,
+    max_nodes: usize,
+    result_bound: u64,
+) -> Result<Value, WorkspaceExecutionError> {
+    let target = open_target(root, path)?;
+    let target_type = FileType::from_raw_mode(fstat(&target).map_err(map_errno)?.st_mode);
+    let mut state = SearchState::new(
+        query,
+        case_sensitive,
+        max_matches,
+        max_file_bytes,
+        max_nodes,
+    );
+    match target_type {
+        FileType::RegularFile => state.scan_file(target, path),
+        FileType::Directory => state.walk_directory(target, path)?,
+        _ => return Err(WorkspaceExecutionError::PathTypeMismatch),
+    }
+    bounded_result(
+        json!({
+            "matches":state.matches,
+            "files_scanned":state.files_scanned,
+            "skipped":{
+                "access_denied":state.skipped_access,
+                "non_utf8_content":state.skipped_utf8,
+                "result_bound_exceeded":state.skipped_bound
+            },
+            "truncated":state.total_matches > max_matches
+        }),
+        result_bound,
+        WorkspaceExecutionError::SearchBoundExceeded,
+    )
+}
+
+struct SearchState<'a> {
+    query: &'a str,
+    case_sensitive: bool,
+    max_matches: usize,
+    max_file_bytes: u64,
+    max_nodes: usize,
+    nodes: usize,
+    matches: Vec<Value>,
+    total_matches: usize,
+    files_scanned: usize,
+    skipped_access: usize,
+    skipped_utf8: usize,
+    skipped_bound: usize,
+}
+
+impl<'a> SearchState<'a> {
+    fn new(
+        query: &'a str,
+        case_sensitive: bool,
+        max_matches: usize,
+        max_file_bytes: u64,
+        max_nodes: usize,
+    ) -> Self {
+        Self {
+            query,
+            case_sensitive,
+            max_matches,
+            max_file_bytes,
+            max_nodes,
+            nodes: 0,
+            matches: Vec::new(),
+            total_matches: 0,
+            files_scanned: 0,
+            skipped_access: 0,
+            skipped_utf8: 0,
+            skipped_bound: 0,
+        }
+    }
+
+    fn walk_directory(
+        &mut self,
+        directory: OwnedFd,
+        path: &str,
+    ) -> Result<(), WorkspaceExecutionError> {
+        let entries = self.directory_entries(&directory)?;
+        let mut stack = vec![SearchFrame {
+            directory,
+            path: path.to_owned(),
+            entries,
+            next: 0,
+        }];
+        loop {
+            let Some(frame) = stack.last_mut() else {
+                return Ok(());
+            };
+            let Some(entry) = frame.entries.get(frame.next).cloned() else {
+                stack.pop();
+                continue;
+            };
+            frame.next += 1;
+            let child_path = if frame.path == "." {
+                entry.name.clone()
+            } else {
+                format!("{}/{}", frame.path, entry.name)
+            };
+            match entry.kind {
+                FileType::Directory => {
+                    let child = openat(
+                        &frame.directory,
+                        entry.name.as_str(),
+                        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                        Mode::empty(),
+                    )
+                    .map_err(map_errno)?;
+                    let entries = self.directory_entries(&child)?;
+                    stack.push(SearchFrame {
+                        directory: child,
+                        path: child_path,
+                        entries,
+                        next: 0,
+                    });
+                }
+                FileType::RegularFile => {
+                    match openat(
+                        &frame.directory,
+                        entry.name.as_str(),
+                        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                        Mode::empty(),
+                    ) {
+                        Ok(file) => self.scan_file(file, &child_path),
+                        Err(_) => self.skipped_access = self.skipped_access.saturating_add(1),
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn directory_entries(
+        &mut self,
+        directory: &OwnedFd,
+    ) -> Result<Vec<SearchEntry>, WorkspaceExecutionError> {
+        let mut stream = Dir::read_from(directory).map_err(map_errno)?;
+        let mut output = Vec::new();
+        while let Some(entry) = stream.next() {
+            let entry = entry.map_err(map_errno)?;
+            let name = entry.file_name().to_bytes();
+            if matches!(name, b"." | b"..") {
+                continue;
+            }
+            self.nodes = self.nodes.saturating_add(1);
+            if self.nodes > self.max_nodes {
+                return Err(WorkspaceExecutionError::SearchBoundExceeded);
+            }
+            let name = std::str::from_utf8(name)
+                .map_err(|_| WorkspaceExecutionError::AccessDenied)?
+                .to_owned();
+            let stat = statat(
+                stream.fd().map_err(map_errno)?,
+                entry.file_name(),
+                AtFlags::SYMLINK_NOFOLLOW,
+            )
+            .map_err(map_errno)?;
+            output.push(SearchEntry {
+                name,
+                kind: FileType::from_raw_mode(stat.st_mode),
+            });
+        }
+        output.sort_by(|left, right| left.name.cmp(&right.name));
+        Ok(output)
+    }
+
+    fn scan_file(&mut self, file: OwnedFd, path: &str) {
+        let Ok(stat) = fstat(&file) else {
+            self.skipped_access = self.skipped_access.saturating_add(1);
+            return;
+        };
+        if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
+            return;
+        }
+        let mut bytes = Vec::new();
+        if File::from(file)
+            .take(self.max_file_bytes.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
+            self.skipped_access = self.skipped_access.saturating_add(1);
+            return;
+        }
+        if bytes.len() as u64 > self.max_file_bytes {
+            self.skipped_bound = self.skipped_bound.saturating_add(1);
+            return;
+        }
+        let Ok(text) = String::from_utf8(bytes) else {
+            self.skipped_utf8 = self.skipped_utf8.saturating_add(1);
+            return;
+        };
+        self.files_scanned = self.files_scanned.saturating_add(1);
+        for (line_index, line) in text.lines().enumerate() {
+            for byte_offset in literal_offsets(line, self.query, self.case_sensitive) {
+                self.total_matches = self.total_matches.saturating_add(1);
+                if self.matches.len() < self.max_matches {
+                    let scalar_offset = line[..byte_offset].chars().count();
+                    self.matches.push(json!({
+                        "path":path,
+                        "line":line_index + 1,
+                        "column":scalar_offset + 1,
+                        "preview":preview(line, scalar_offset)
+                    }));
+                }
+            }
+        }
+    }
+}
+
+struct SearchFrame {
+    directory: OwnedFd,
+    path: String,
+    entries: Vec<SearchEntry>,
+    next: usize,
+}
+
+#[derive(Clone)]
+struct SearchEntry {
+    name: String,
+    kind: FileType,
+}
+
+fn literal_offsets(line: &str, query: &str, case_sensitive: bool) -> Vec<usize> {
+    let line_bytes = line.as_bytes();
+    let query_bytes = query.as_bytes();
+    let mut output = Vec::new();
+    let mut offset = 0usize;
+    while offset + query_bytes.len() <= line_bytes.len() {
+        let end = offset + query_bytes.len();
+        let equal = line.is_char_boundary(offset)
+            && line.is_char_boundary(end)
+            && line_bytes[offset..end]
+                .iter()
+                .zip(query_bytes)
+                .all(|(left, right)| {
+                    left == right
+                        || (!case_sensitive
+                            && left.is_ascii()
+                            && right.is_ascii()
+                            && left.eq_ignore_ascii_case(right))
+                });
+        if equal {
+            output.push(offset);
+            offset = end;
+        } else {
+            offset += line[offset..]
+                .chars()
+                .next()
+                .map(char::len_utf8)
+                .unwrap_or(1);
+        }
+    }
+    output
+}
+
+fn preview(line: &str, match_scalar: usize) -> String {
+    const LIMIT: usize = 256;
+    const BEFORE: usize = 96;
+    let scalars = line.chars().collect::<Vec<_>>();
+    if scalars.len() <= LIMIT {
+        return line.to_owned();
+    }
+    let start = match_scalar.saturating_sub(BEFORE);
+    let end = (start + LIMIT).min(scalars.len());
+    let mut output = String::new();
+    if start != 0 {
+        output.push('…');
+    }
+    output.extend(&scalars[start..end]);
+    if end != scalars.len() {
+        output.push('…');
+    }
+    output
+}
+
+fn open_target(root: OwnedFd, path: &str) -> Result<OwnedFd, WorkspaceExecutionError> {
     let mut current = root;
     if path == "." {
-        return if directory_expected {
-            Ok(current)
-        } else {
-            Err(WorkspaceExecutionError::PathTypeMismatch)
-        };
+        return Ok(current);
     }
     let mut components = path.split('/').peekable();
     while let Some(component) = components.next() {
@@ -328,7 +651,7 @@ fn open_exact(
         let flags = OFlags::RDONLY
             | OFlags::NOFOLLOW
             | OFlags::CLOEXEC
-            | if !last || directory_expected {
+            | if !last {
                 OFlags::DIRECTORY
             } else {
                 OFlags::empty()
@@ -372,6 +695,7 @@ enum WorkspaceExecutionError {
     NonUtf8Content,
     ResultBoundExceeded,
     EntryBoundExceeded,
+    SearchBoundExceeded,
 }
 
 impl WorkspaceExecutionError {
@@ -383,6 +707,7 @@ impl WorkspaceExecutionError {
             Self::NonUtf8Content => "non_utf8_content",
             Self::ResultBoundExceeded => "result_bound_exceeded",
             Self::EntryBoundExceeded => "entry_bound_exceeded",
+            Self::SearchBoundExceeded => "search_bound_exceeded",
         }
     }
 }

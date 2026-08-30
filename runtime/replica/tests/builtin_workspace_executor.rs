@@ -5,7 +5,7 @@ use std::os::unix::fs::symlink;
 use garive_runtime::{BuiltinWorkspaceExecutor, ExecutorDispatch, ExecutorPort};
 use garive_tools::{
     BuiltinT1Catalogue, ExecutionFact, GrantId, InvocationGrant, TerminalClassification,
-    ToolIntent, ToolInvocationId, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT,
+    ToolIntent, ToolInvocationId, T1_APPLY_PATCH, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -139,8 +139,11 @@ async fn list_is_raw_name_sorted_bounded_and_never_follows_links() {
 fn executor_rejects_unimplemented_or_mixed_prepared_bindings_before_started() {
     let directory = tempdir().unwrap();
     let prepared = prepare(
-        T1_SEARCH_TEXT,
-        r#"{"path":".","query":"x","case_sensitive":true,"max_matches":1,"max_file_bytes":1}"#,
+        T1_APPLY_PATCH,
+        &format!(
+            r#"{{"patch":"*** Begin Patch\n*** Update File: file\n@@\n-a\n+b\n*** End Patch","expected_files":[{{"path":"file","before_digest":"{}"}}]}}"#,
+            "a".repeat(64)
+        ),
     );
     let invocation = ToolInvocationId::new("search-call").unwrap();
     let search_grant = grant(&invocation, &prepared);
@@ -159,6 +162,65 @@ fn executor_rejects_unimplemented_or_mixed_prepared_bindings_before_started() {
     assert!(executor
         .prepare(&read_invocation, &read, &read_grant)
         .is_err());
+}
+
+#[tokio::test]
+async fn search_walks_in_raw_path_order_with_exact_columns_and_skip_counts() {
+    let directory = tempdir().unwrap();
+    std::fs::write(directory.path().join("a.txt"), "Needle alpha\né needle z").unwrap();
+    std::fs::write(directory.path().join("b.txt"), "needle").unwrap();
+    std::fs::write(directory.path().join("binary"), [0xff]).unwrap();
+    std::fs::write(directory.path().join("large"), "x".repeat(100)).unwrap();
+    std::fs::create_dir(directory.path().join("nested")).unwrap();
+    std::fs::write(directory.path().join("nested/c.txt"), "needle").unwrap();
+    symlink("a.txt", directory.path().join("link")).unwrap();
+
+    let result = run_completed(
+        directory.path(),
+        T1_SEARCH_TEXT,
+        r#"{"path":".","query":"needle","case_sensitive":false,"max_matches":2,"max_file_bytes":64,"max_nodes":20}"#,
+    )
+    .await;
+    assert_eq!(
+        result,
+        json!({
+            "matches":[
+                {"path":"a.txt","line":1,"column":1,"preview":"Needle alpha"},
+                {"path":"a.txt","line":2,"column":3,"preview":"é needle z"}
+            ],
+            "files_scanned":3,
+            "skipped":{"access_denied":0,"non_utf8_content":1,"result_bound_exceeded":1},
+            "truncated":true
+        })
+    );
+}
+
+#[tokio::test]
+async fn search_preview_and_node_bound_are_deterministic() {
+    let directory = tempdir().unwrap();
+    let line = format!("{}needle{}", "x".repeat(120), "y".repeat(200));
+    std::fs::write(directory.path().join("long.txt"), line).unwrap();
+    let result = run_completed(
+        directory.path(),
+        T1_SEARCH_TEXT,
+        r#"{"path":".","query":"needle","case_sensitive":true,"max_matches":1,"max_file_bytes":4096,"max_nodes":1}"#,
+    )
+    .await;
+    assert_eq!(result["matches"][0]["column"], 121);
+    let preview = result["matches"][0]["preview"].as_str().unwrap();
+    assert!(preview.starts_with('…') && preview.ends_with('…'));
+    assert!(preview.contains("needle"));
+
+    std::fs::write(directory.path().join("second.txt"), "needle").unwrap();
+    assert_eq!(
+        run_failure(
+            directory.path(),
+            T1_SEARCH_TEXT,
+            r#"{"path":".","query":"needle","case_sensitive":true,"max_matches":1,"max_file_bytes":4096,"max_nodes":1}"#,
+        )
+        .await,
+        "search_bound_exceeded"
+    );
 }
 
 fn prepare(name: &str, arguments: &str) -> garive_tools::PreparedToolCall {

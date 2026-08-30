@@ -53,6 +53,7 @@ The exact revision-1 ceilings are frozen with the catalogue:
 | path | 4,096 Unicode scalars |
 | literal query | 4,096 Unicode scalars |
 | list entries or search matches | 4,096 |
+| search traversal nodes | 10,000 |
 | patch text | 1,048,576 Unicode scalars |
 | patch targets | 128 |
 | process argv entries | 256 |
@@ -116,11 +117,18 @@ returns the first bounded prefix with `truncated: true`; omission is explicit.
 ## `garive.workspace.search_text@1`
 
 Input requires `path`, non-empty literal `query`, `case_sensitive`,
-`max_matches`, `max_file_bytes`. V1 has no regex or glob grammar. The access is
+`max_matches`, `max_file_bytes`, and `max_nodes`. V1 has no regex or glob
+grammar. The access is
 one rooted `Filesystem(path, Read)` declaration; `path = "."` explicitly
 selects the workspace root. The executor recursively
 walks only real directories beneath the opened capability, never follows
 links, and applies the per-file and total output bounds.
+
+`max_nodes` counts every non-dot directory entry visited, including links and
+non-regular files. Exceeding it returns `search_bound_exceeded` without a
+partial observation; it is not a truncation signal. Case-insensitive matching
+folds ASCII letters only and compares every non-ASCII UTF-8 byte exactly.
+Occurrences are non-overlapping and advance left to right.
 
 Matches are ordered by path raw UTF-8 bytes, then one-based line, then one-based
 Unicode scalar column. Result:
@@ -129,13 +137,21 @@ Unicode scalar column. Result:
 {
   "matches":[{"path":"src/lib.rs","line":4,"column":9,"preview":"..."}],
   "files_scanned":3,
+  "skipped":{"access_denied":0,"non_utf8_content":0,"result_bound_exceeded":0},
   "truncated":false
 }
 ```
 
-Unreadable, non-UTF-8 or over-bound files are counted in a bounded `skipped`
-summary by safe reason code. Their raw errors are not exposed. Search sees one
-consistent open-by-component traversal, not a workspace snapshot guarantee.
+Unreadable, non-UTF-8 or over-bound files are counted in the fixed `skipped`
+summary above. Links and non-regular objects are intentionally ignored rather
+than counted as attempted files. Their raw errors are not exposed. Search sees
+one consistent open-by-component traversal, not a workspace snapshot
+guarantee.
+
+`preview` is the complete logical line when it has at most 256 Unicode
+scalars. Longer lines expose a 256-scalar window beginning at most 96 scalars
+before the first matched scalar; a leading or trailing Unicode ellipsis marks
+omitted content. The reported column always addresses the original line.
 
 ## `garive.workspace.apply_patch@1`
 

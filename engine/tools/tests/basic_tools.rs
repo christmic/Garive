@@ -48,7 +48,7 @@ fn read_list_and_search_resolve_exact_workspace_access() {
         ),
         (
             T1_SEARCH_TEXT,
-            r#"{"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096}"#,
+            r#"{"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096,"max_nodes":100}"#,
             "src",
         ),
     ] {

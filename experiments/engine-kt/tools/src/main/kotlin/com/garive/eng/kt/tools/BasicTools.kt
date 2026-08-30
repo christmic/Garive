@@ -168,7 +168,7 @@ private fun listDefinition(policy: String): ToolDefinition = fileDefinition(
 private fun searchDefinition(policy: String): ToolDefinition = fileDefinition(
     T1_SEARCH_TEXT,
     "Search bounded workspace text for one literal query.",
-    schema("""{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"query":{"type":"string","minLength":1,"maxLength":4096},"case_sensitive":{"type":"boolean"},"max_matches":{"type":"integer","minimum":1,"maximum":4096},"max_file_bytes":{"type":"integer","minimum":1,"maximum":1048576}},"required":["path","query","case_sensitive","max_matches","max_file_bytes"],"additionalProperties":false}"""),
+    schema("""{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"query":{"type":"string","minLength":1,"maxLength":4096},"case_sensitive":{"type":"boolean"},"max_matches":{"type":"integer","minimum":1,"maximum":4096},"max_file_bytes":{"type":"integer","minimum":1,"maximum":1048576},"max_nodes":{"type":"integer","minimum":1,"maximum":10000}},"required":["path","query","case_sensitive","max_matches","max_file_bytes","max_nodes"],"additionalProperties":false}"""),
     ReplayClass.READ_ONLY,
     listOf(ExecutionCapability.FILESYSTEM_READ),
     listOf(AccessMode.READ),

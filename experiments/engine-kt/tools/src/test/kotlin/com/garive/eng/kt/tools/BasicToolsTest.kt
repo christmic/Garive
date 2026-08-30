@@ -31,7 +31,7 @@ class BasicToolsTest {
             Triple(T1_LIST, """{"path":".","max_entries":10,"include_hidden":false}""", "."),
             Triple(
                 T1_SEARCH_TEXT,
-                """{"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096}""",
+                """{"path":"src","query":"needle","case_sensitive":true,"max_matches":10,"max_file_bytes":4096,"max_nodes":100}""",
                 "src",
             ),
         ).forEach { (name, arguments, key) ->

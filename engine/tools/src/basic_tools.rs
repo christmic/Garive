@@ -34,6 +34,7 @@ const MAX_PROCESS_ARGUMENTS: u64 = 256;
 const MAX_ARGUMENT_BYTES: u64 = 32_768;
 const MAX_PROCESS_DURATION_MS: u64 = 300_000;
 const MAX_PROCESS_OUTPUT_BYTES: u64 = 1_048_576;
+const MAX_SEARCH_NODES: u64 = 10_000;
 
 /// Frozen five-tool catalogue for one effective Agent snapshot.
 #[derive(Clone, Debug)]
@@ -244,7 +245,7 @@ fn search_definition(policy_revision: &str) -> Result<ToolDefinition, Preparatio
     file_definition(
         T1_SEARCH_TEXT,
         "Search bounded workspace text for one literal query.",
-        json!({"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"query":{"type":"string","minLength":1,"maxLength":4096},"case_sensitive":{"type":"boolean"},"max_matches":{"type":"integer","minimum":1,"maximum":4096},"max_file_bytes":{"type":"integer","minimum":1,"maximum":MAX_FILE_BYTES}},"required":["path","query","case_sensitive","max_matches","max_file_bytes"],"additionalProperties":false}),
+        json!({"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"query":{"type":"string","minLength":1,"maxLength":4096},"case_sensitive":{"type":"boolean"},"max_matches":{"type":"integer","minimum":1,"maximum":4096},"max_file_bytes":{"type":"integer","minimum":1,"maximum":MAX_FILE_BYTES},"max_nodes":{"type":"integer","minimum":1,"maximum":MAX_SEARCH_NODES}},"required":["path","query","case_sensitive","max_matches","max_file_bytes","max_nodes"],"additionalProperties":false}),
         ReplayClass::ReadOnly,
         [ExecutionCapability::FilesystemRead],
         [AccessMode::Read],
