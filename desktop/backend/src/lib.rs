@@ -14,6 +14,7 @@ use garive_runtime::{
 use serde::Serialize;
 use tokio::sync::Mutex;
 
+mod artifact_export;
 mod setup;
 mod system_configuration;
 mod system_provider;
@@ -21,6 +22,10 @@ mod workspace;
 mod workspace_bookmark;
 mod workspace_execution;
 
+pub use artifact_export::{
+    DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
+    DesktopArtifactExportTarget,
+};
 /// Immutable committed Artifact projection exposed to Desktop clients.
 pub use garive_runtime::HostArtifact as DesktopArtifact;
 /// Bounded committed Artifact page exposed to Desktop clients.
