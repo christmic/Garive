@@ -320,6 +320,12 @@ only at first use after an in-product explanation. Denial/revocation produces a
 typed unsupported state without affecting other Agent capabilities. Screen
 capture is skipped when semantic observation suffices.
 
+The native package exposes a side-effect-free permission inspector first:
+`AXIsProcessTrusted()` and `CGPreflightScreenCaptureAccess()` report current
+posture but never request trust. Prompting APIs may be called only by a later
+explicit product interaction. Automation permission is target-specific and is
+not inferred from Accessibility or Screen Recording posture.
+
 Screenshots are cropped to admitted displays/windows, redact protected regions
 before persistence, have explicit byte/pixel/retention bounds and never appear
 in telemetry. Clipboard is not read or written in v1. Microphone/camera are not
