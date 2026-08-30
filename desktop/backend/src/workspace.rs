@@ -25,6 +25,7 @@ const MAX_CONTEXT_FILES: usize = 8;
 const MAX_CONTEXT_FILE_BYTES: usize = 48 * 1_024;
 const MAX_CONTEXT_TOTAL_BYTES: usize = 60 * 1_024;
 const MAX_ARTIFACT_PREVIEW_BYTES: usize = 64 * 1_024;
+const MAX_ARTIFACT_CONTENT_BYTES: usize = 256 * 1_024;
 const WORKSPACE_LIFETIME_SECONDS: u64 = 1_800;
 
 /// Opaque path-free public view of one process-local Workspace selection.
@@ -118,6 +119,21 @@ pub struct DesktopArtifactPreview {
     pub content_utf8: String,
     /// Whether content was deliberately truncated.
     pub truncated: bool,
+}
+
+/// Backend-only digest-verified committed Artifact content.
+///
+/// Deliberately does not implement `Serialize`; bytes cannot cross typed Desktop IPC.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopArtifactContent {
+    bytes: Vec<u8>,
+}
+
+impl DesktopArtifactContent {
+    /// Consumes the backend-only value for an explicit governed operation such as export.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
 }
 
 /// Path-free aggregate health of durable Workspace authorization recovery.
@@ -755,6 +771,40 @@ impl DesktopWorkspaceService {
         content_digest: &str,
         owner_window: &str,
     ) -> Result<DesktopArtifactPreview, DesktopWorkspaceError> {
+        let content = self.read_committed_artifact(
+            artifact_id,
+            revision,
+            workspace_id,
+            display_name,
+            content_digest,
+            owner_window,
+        )?;
+        if content.bytes.len() > MAX_ARTIFACT_PREVIEW_BYTES {
+            return Err(DesktopWorkspaceError::BoundExceeded);
+        }
+        let content_utf8 = String::from_utf8(content.bytes)
+            .map_err(|_| DesktopWorkspaceError::CapabilityInvalid)?;
+        Ok(DesktopArtifactPreview {
+            schema_version: 1,
+            artifact_id: artifact_id.into(),
+            revision,
+            kind: "text",
+            content_utf8,
+            truncated: false,
+        })
+    }
+
+    /// Reads exact digest-verified Artifact bytes for backend-only governed operations.
+    #[allow(clippy::too_many_arguments)]
+    pub fn read_committed_artifact(
+        &self,
+        artifact_id: &str,
+        revision: u64,
+        workspace_id: &str,
+        display_name: &str,
+        content_digest: &str,
+        owner_window: &str,
+    ) -> Result<DesktopArtifactContent, DesktopWorkspaceError> {
         if artifact_id.is_empty()
             || revision == 0
             || display_name.is_empty()
@@ -782,7 +832,7 @@ impl DesktopWorkspaceService {
             .metadata()
             .map_err(|_| DesktopWorkspaceError::Unavailable)?;
         if !metadata.is_file()
-            || metadata.len() > MAX_ARTIFACT_PREVIEW_BYTES as u64
+            || metadata.len() > MAX_ARTIFACT_CONTENT_BYTES as u64
             || metadata.file_type().is_symlink()
         {
             return Err(DesktopWorkspaceError::BoundExceeded);
@@ -793,16 +843,7 @@ impl DesktopWorkspaceService {
         if hex_digest(&bytes) != content_digest {
             return Err(DesktopWorkspaceError::Unavailable);
         }
-        let content_utf8 =
-            String::from_utf8(bytes).map_err(|_| DesktopWorkspaceError::CapabilityInvalid)?;
-        Ok(DesktopArtifactPreview {
-            schema_version: 1,
-            artifact_id: artifact_id.into(),
-            revision,
-            kind: "text",
-            content_utf8,
-            truncated: false,
-        })
+        Ok(DesktopArtifactContent { bytes })
     }
 
     fn resolve_root_descriptor(
