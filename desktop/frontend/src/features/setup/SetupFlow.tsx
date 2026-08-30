@@ -23,6 +23,23 @@ const DEFAULT_API: SetupFlowApi = {
   restart: restartDesktop,
 };
 
+const PREVIEW_API: SetupFlowApi = {
+  catalogue: async () => ({ schema_version: 1, catalogue_revision: "preview-1",
+    profiles: [{ profile_id: "openai-responses", display_name_key: "setup.profile.openai",
+      endpoint_mode: "optional_override", model_mode: "exact_id",
+      credential_label_key: "setup.credential.connection", supported_capabilities: ["text"] }],
+    presets: [{ preset_id: "balanced", display_name_key: "setup.preset.balanced",
+      supported_profile_ids: ["openai-responses"] }],
+    limits: { max_profiles: 2, max_text_bytes: 256, max_endpoint_bytes: 2048,
+      max_secret_bytes: 16384, max_plan_count: 16, plan_lifetime_seconds: 900 } }),
+  prepare: async (input) => ({ schema_version: 1, setup_id: "preview-setup",
+    caller_nonce: input.caller_nonce, catalogue_revision: input.catalogue_revision,
+    effective_configuration_digest: "a".repeat(64), expires_at: "2030-01-01T00:00:00Z",
+    summary: { ...input, endpoint_mode: input.endpoint_override ? "override" : "fixed" },
+    plan_digest: "b".repeat(64) }),
+  commit: async () => undefined, cancel: async () => undefined, restart: async () => undefined,
+};
+
 const ERROR_COPY: Readonly<Record<string, string>> = {
   setup_not_allowed: "This window is not allowed to change Desktop configuration.",
   setup_input_invalid: "Review the setup values and their limits.",
@@ -35,14 +52,17 @@ const ERROR_COPY: Readonly<Record<string, string>> = {
 
 /** Renders the three-step first-run or reconfiguration flow without reading secrets or config. */
 export function SetupFlow({
-  api = DEFAULT_API,
+  api,
   nonce = () => crypto.randomUUID(),
   reconfigure = false,
+  preview = false,
 }: {
   api?: SetupFlowApi;
   nonce?: () => string;
   reconfigure?: boolean;
+  preview?: boolean;
 }) {
+  const boundary = api ?? (preview ? PREVIEW_API : DEFAULT_API);
   const [catalogue, setCatalogue] = useState<SetupCatalogue>();
   const [stage, setStage] = useState<Stage>("details");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -56,7 +76,7 @@ export function SetupFlow({
 
   useEffect(() => {
     let active = true;
-    void api.catalogue().then((loaded) => {
+    void boundary.catalogue().then((loaded) => {
       if (!active) return;
       setCatalogue(loaded);
       setValues({ preset: loaded.presets[0]?.preset_id ?? "", profile: loaded.profiles[0]?.profile_id ?? "" });
@@ -65,9 +85,9 @@ export function SetupFlow({
       active = false;
       const digest = livePlan.current;
       livePlan.current = undefined;
-      if (digest) void api.cancel(digest);
+      if (digest) void boundary.cancel(digest);
     };
-  }, [api]);
+  }, [boundary]);
 
   const valid = useMemo(() => catalogue !== undefined && [
     values.preset, values.profile, values.target, values.model, values.deployment, values.definition,
@@ -86,7 +106,7 @@ export function SetupFlow({
       deployment_id: values.deployment!.trim(), definition_id: values.definition!.trim(),
     };
     try {
-      const prepared = await api.prepare(input);
+      const prepared = await boundary.prepare(input);
       setPlan(prepared); livePlan.current = prepared.plan_digest; setStage("review");
     } catch (cause) { setError(errorCode(cause)); }
     finally { setBusy(false); }
@@ -97,7 +117,7 @@ export function SetupFlow({
     const submitted = credential;
     setBusy(true); setError("");
     try {
-      await api.commit(plan.plan_digest, submitted);
+      await boundary.commit(plan.plan_digest, submitted);
       livePlan.current = undefined; clearCredential(); setStage("ready");
     } catch (cause) {
       clearCredential(); setError(errorCode(cause));
@@ -108,7 +128,7 @@ export function SetupFlow({
   const back = () => {
     const digest = livePlan.current;
     livePlan.current = undefined;
-    if (digest) void api.cancel(digest);
+    if (digest) void boundary.cancel(digest);
     clearCredential(); setPlan(undefined); setError(""); setStage("details");
   };
 
@@ -144,7 +164,7 @@ export function SetupFlow({
       <p className="field-note">Write-only. This value is cleared after every commit attempt.</p>
       <div className="setup-actions"><button type="button" onClick={back}>Back</button><button className="primary" type="button" disabled={!credential || busy} onClick={() => void commit()}>{busy ? "Committing…" : "Commit configuration"}</button></div></div>}
 
-    {stage === "ready" && <div className="setup-ready"><p>The new immutable configuration is committed. Restart to construct Runtime from it.</p><button className="primary" type="button" onClick={() => void api.restart()}>Restart Garive</button></div>}
+    {stage === "ready" && <div className="setup-ready"><p>The new immutable configuration is committed. Restart to construct Runtime from it.</p><button className="primary" type="button" onClick={() => void boundary.restart()}>Restart Garive</button></div>}
     {error && <p className="setup-error" role="alert">{ERROR_COPY[error] ?? "Setup could not continue."}</p>}
   </section></main>;
 

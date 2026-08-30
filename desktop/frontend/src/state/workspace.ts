@@ -1,0 +1,153 @@
+import type { DesktopCapabilities, HostActivity, HostArtifact, HostArtifactPage, HostResult, HostSuspension, HostTimelinePage, WorkspaceAttachment } from "../ipc/host";
+
+export type BootState = "loading" | "ready" | "unavailable";
+export type WorkPhase = "idle" | "submitting";
+export type InspectorTab = "activity" | "artifacts";
+
+export interface WorkMessage {
+  readonly id: string;
+  readonly role: "user" | "assistant";
+  readonly text: string;
+  readonly terminal?: HostResult["terminal"];
+  readonly suspension?: HostSuspension;
+}
+
+export interface WorkState {
+  readonly boot: BootState;
+  readonly capabilities?: DesktopCapabilities;
+  readonly phase: WorkPhase;
+  readonly sessionId?: string;
+  readonly messages: readonly WorkMessage[];
+  readonly activities: readonly HostActivity[];
+  readonly artifacts: readonly HostArtifact[];
+  readonly workspaces: readonly WorkspaceAttachment[];
+  readonly draft: string;
+  readonly error?: string;
+  readonly inspectorOpen: boolean;
+  readonly inspectorTab: InspectorTab;
+}
+
+export type WorkEvent =
+  | { readonly type: "capabilities_loaded"; readonly capabilities: DesktopCapabilities }
+  | { readonly type: "capabilities_failed" }
+  | { readonly type: "draft_changed"; readonly value: string }
+  | { readonly type: "submission_started" }
+  | { readonly type: "submission_succeeded"; readonly input: string; readonly result: HostResult }
+  | { readonly type: "submission_failed"; readonly code: string }
+  | { readonly type: "session_loaded"; readonly timeline: HostTimelinePage }
+  | { readonly type: "artifacts_loaded"; readonly page: HostArtifactPage }
+  | { readonly type: "workspaces_loaded"; readonly sessionId: string;
+    readonly workspaces: readonly WorkspaceAttachment[] }
+  | { readonly type: "new_work" }
+  | { readonly type: "inspector_toggled" }
+  | { readonly type: "inspector_selected"; readonly tab: InspectorTab }
+  | { readonly type: "error_dismissed" };
+
+export const initialWorkState: WorkState = {
+  boot: "loading",
+  phase: "idle",
+  messages: [],
+  activities: [],
+  artifacts: [],
+  workspaces: [],
+  draft: "",
+  inspectorOpen: false,
+  inspectorTab: "activity",
+};
+
+/** Pure Desktop work-state reducer; durable truth enters only through IPC results. */
+export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
+  switch (event.type) {
+    case "capabilities_loaded":
+      return { ...state, boot: "ready", capabilities: event.capabilities };
+    case "capabilities_failed":
+      return { ...state, boot: "unavailable", error: "desktop_unavailable" };
+    case "draft_changed":
+      return { ...state, draft: event.value, error: undefined };
+    case "submission_started":
+      return { ...state, phase: "submitting", error: undefined };
+    case "submission_succeeded": {
+      const ordinal = state.messages.length;
+      return {
+        ...state,
+        phase: "idle",
+        sessionId: event.result.session_id,
+        draft: "",
+        error: undefined,
+        messages: [
+          ...state.messages,
+          { id: `user-${ordinal}`, role: "user", text: event.input },
+          {
+            id: event.result.turn_id,
+            role: "assistant",
+            text: event.result.text,
+            terminal: event.result.terminal,
+          },
+        ],
+      };
+    }
+    case "submission_failed":
+      return { ...state, phase: "idle", error: event.code };
+    case "session_loaded":
+      return {
+        ...state,
+        phase: "idle",
+        sessionId: event.timeline.session_id,
+        messages: timelineMessages(event.timeline),
+        activities: event.timeline.items.flatMap((item) => item.activities),
+        artifacts: [],
+        workspaces: [],
+        draft: "",
+        error: undefined,
+      };
+    case "artifacts_loaded":
+      return event.page.session_id === state.sessionId
+        ? { ...state, artifacts: event.page.items }
+        : state;
+    case "workspaces_loaded":
+      return event.sessionId === state.sessionId
+        ? { ...state, workspaces: event.workspaces }
+        : state;
+    case "new_work":
+      return {
+        ...initialWorkState,
+        boot: state.boot,
+        capabilities: state.capabilities,
+      };
+    case "inspector_toggled":
+      return { ...state, inspectorOpen: !state.inspectorOpen };
+    case "inspector_selected":
+      return { ...state, inspectorOpen: true, inspectorTab: event.tab };
+    case "error_dismissed":
+      return { ...state, error: undefined };
+  }
+}
+
+function timelineMessages(timeline: HostTimelinePage): readonly WorkMessage[] {
+  return timeline.items.flatMap((item) => {
+    const user: WorkMessage = {
+      id: `user-${item.turn_id}`,
+      role: "user",
+      text: item.user_text,
+    };
+    if (item.state === "running") return [user];
+    return [user, {
+      id: item.turn_id,
+      role: "assistant",
+      text: item.completion_text ?? "",
+      terminal: item.state,
+      suspension: item.suspension,
+    } satisfies WorkMessage];
+  });
+}
+
+export function canSubmit(state: WorkState): boolean {
+  const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
+  const resumable = !suspension || suspension.kind === "partial_output"
+    || suspension.kind === "external_input_required";
+  return state.boot === "ready"
+    && state.capabilities?.configured === true
+    && state.phase === "idle"
+    && resumable
+    && state.draft.trim().length > 0;
+}

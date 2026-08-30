@@ -1,1 +1,50 @@
-{"$schema":"https://schema.tauri.app/config/2","productName":"Garive","version":"0.1.0","identifier":"com.garive.desktop","build":{"beforeBuildCommand":"pnpm --dir ../frontend build","beforeDevCommand":"pnpm --dir ../frontend dev","devUrl":"http://127.0.0.1:1420","frontendDist":"../frontend/dist"},"app":{"windows":[{"label":"main","title":"Garive Agent","width":900,"height":640}],"security":{"csp":"default-src 'self'; style-src 'self'","capabilities":["main-setup"]}},"bundle":{"active":false,"icon":[]}}
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Garive",
+  "version": "0.1.0",
+  "identifier": "com.garive.desktop",
+  "build": {
+    "beforeBuildCommand": "pnpm --dir ../frontend build",
+    "beforeDevCommand": "pnpm --dir ../frontend dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Garive",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 820,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": { "x": 16, "y": 16 },
+        "acceptFirstMouse": true,
+        "tabbingIdentifier": "com.garive.desktop.main"
+      }
+    ],
+    "security": {
+      "freezePrototype": true,
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+      "capabilities": ["main-setup"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "Productivity",
+    "shortDescription": "A local-first agent for durable work.",
+    "longDescription": "Garive turns outcomes into inspectable work with a local embedded Runtime, durable Sessions, and explicit capability boundaries.",
+    "icon": ["icons/icon.png"],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "hardenedRuntime": true
+    }
+  }
+}

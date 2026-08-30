@@ -398,6 +398,202 @@ pub struct HostEventPage {
     pub observed_max_position: u64,
 }
 
+/// One installed immutable Agent definition visible to product clients.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionSummary {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable installed definition identity.
+    pub definition_id: String,
+    /// Immutable installed definition revision.
+    pub definition_revision: String,
+    /// Sorted stable public capabilities available to new Sessions.
+    pub capabilities: Vec<String>,
+}
+
+/// One restart-safe durable Session navigation summary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionSummary {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable durable Session identity.
+    pub session_id: String,
+    /// Runtime-owned Agent instance bound to the Session.
+    pub agent_instance_id: String,
+    /// Immutable definition identity captured when the Session opened.
+    pub definition_id: String,
+    /// Immutable definition revision captured when the Session opened.
+    pub definition_revision: String,
+    /// Validated RFC 3339 timestamp of the Session open fact.
+    pub opened_at: String,
+    /// Frozen last durable position observed for the Session.
+    pub latest_position: u64,
+    /// Most recently started Turn identity, when present.
+    pub latest_turn_id: Option<String>,
+    /// Public lifecycle of the most recently started Turn, when present.
+    pub latest_turn_state: Option<String>,
+    /// Count of verified first-start Turns.
+    pub turn_count: u64,
+}
+
+/// Durable path-free Workspace attachment projected for one Session.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostWorkspaceAttachment {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Opaque Workspace capability identity.
+    pub workspace_id: String,
+    /// Bounded backend-approved display label.
+    pub display_name: String,
+    /// Exact Workspace grant revision bound at commit.
+    pub grant_revision: u64,
+    /// Narrow access posture admitted by V1.
+    pub access: String,
+    /// Durable source position of the attachment.
+    pub attached_position: u64,
+}
+
+/// Durable path-free receipt for one exact Session Workspace detach command.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostWorkspaceDetachment {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Opaque detached Workspace identity.
+    pub workspace_id: String,
+    /// Expected grant revision bound by the command.
+    pub grant_revision: u64,
+    /// Idempotent terminal result.
+    pub outcome: String,
+    /// Durable source position of the receipt fact.
+    pub detached_position: u64,
+}
+
+/// Immutable user-visible projection of one committed Artifact revision.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct HostArtifact {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable Artifact identity.
+    pub artifact_id: String,
+    /// Immutable revision number.
+    pub revision: u64,
+    /// Owning Session.
+    pub session_id: String,
+    /// Owning Turn.
+    pub turn_id: String,
+    /// Bounded display label.
+    pub display_name: String,
+    /// Safe coarse kind.
+    pub kind: String,
+    /// Verified declared MIME type.
+    pub mime_type: String,
+    /// Exact committed byte count.
+    pub byte_size: u64,
+    /// SHA-256 digest of committed bytes.
+    pub content_digest: String,
+    /// Durable Artifact fact position.
+    pub committed_position: u64,
+    /// Verification posture.
+    pub verification: String,
+    /// Safe preview posture.
+    pub preview: String,
+    /// Optional opaque Workspace backing identity.
+    pub workspace_id: Option<String>,
+    /// Whether an active backing grant may be revealed.
+    pub revealable: bool,
+    /// Whether an explicit export flow is supported.
+    pub exportable: bool,
+}
+
+/// One bounded fixed-prefix Artifact page.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HostArtifactPage {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session.
+    pub session_id: String,
+    /// Ascending immutable Artifact revisions.
+    pub items: Vec<HostArtifact>,
+    /// Highest durable position scanned.
+    pub scanned_through_position: u64,
+    /// Fixed maximum position observed for this page.
+    pub observed_max_position: u64,
+    /// Whether another page remains.
+    pub has_more: bool,
+}
+
+/// Backend-supplied selected Workspace text admitted with one Turn command.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostWorkspaceContextEntry {
+    /// Opaque entry capability identity.
+    pub entry_id: String,
+    /// Bounded presentation-only file label.
+    pub display_name: String,
+    /// Exact coarse content kind; V1 admits text only.
+    pub kind: String,
+    /// SHA-256 digest of the exact UTF-8 content.
+    pub content_digest: String,
+    /// Exact bounded UTF-8 content; never a frontend response value.
+    pub content_utf8: String,
+}
+
+/// One complete durable Turn projection for conversation restoration.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelineItem {
+    /// Stable durable Turn identity.
+    pub turn_id: String,
+    /// Position of the verified first-start fact.
+    pub started_position: u64,
+    /// Frozen latest position that changed this Turn.
+    pub latest_position: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Trusted user text bound to the first start.
+    pub user_text: String,
+    /// Redacted committed response projection when completed.
+    pub completion_text: Option<String>,
+    /// Restart-safe continuation coordinates when the Turn is suspended.
+    pub suspension: Option<TurnSuspensionView>,
+    /// Whether bounded display content was truncated.
+    pub content_truncated: bool,
+    /// Latest committed H3 state for each activity owned by this Turn.
+    pub activities: Vec<HostActivity>,
+}
+
+/// Minimal restart-safe continuation coordinates for Desktop presentation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnSuspensionView {
+    /// Exact durable suspension identity.
+    pub suspension_id: String,
+    /// Optimistic Session version required by continuation.
+    pub session_version: u64,
+    /// Stable public suspension kind.
+    pub kind: String,
+}
+
+/// One ascending bounded page of complete durable Turn projections.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelinePage {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Session owning every returned Turn.
+    pub session_id: String,
+    /// Ascending complete Turn projections.
+    pub items: Vec<TurnTimelineItem>,
+    /// Durable scan cursor for the next request.
+    pub scanned_through_position: u64,
+    /// Frozen maximum durable position used for this projection.
+    pub observed_max_position: u64,
+    /// Whether another bounded timeline page remains.
+    pub has_more: bool,
+}
+
 /// Stable Host command/query failure with no secret or implementation text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveHostError {

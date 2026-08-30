@@ -126,6 +126,7 @@ pub(crate) struct SessionProjection {
     model_digests: BTreeMap<ModelRequestId, String>,
     tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
     tool_digests: BTreeMap<ToolInvocationId, String>,
+    artifacts: BTreeSet<(String, u64)>,
     tool_contract_versions: BTreeMap<ToolInvocationId, u32>,
     tool_result_bytes: BTreeMap<ToolInvocationId, u64>,
     tool_batch_plans: BTreeMap<ToolInvocationId, String>,
@@ -143,6 +144,7 @@ pub(crate) struct SessionProjection {
     turns_started_in_commit: BTreeSet<TurnId>,
     turns_suspended_in_commit: BTreeSet<TurnId>,
     turns_terminal_in_commit: BTreeSet<TurnId>,
+    tools_completed_in_commit: BTreeSet<ToolInvocationId>,
 }
 
 impl SessionProjection {
@@ -197,6 +199,7 @@ impl SessionProjection {
             "effect.started" => self.transition_tool(fact, InvocationState::Started),
             "effect.receipt" => self.transition_tool(fact, InvocationState::Receipt),
             "effect.completed" => self.transition_tool(fact, InvocationState::Completed),
+            "artifact.committed" => self.commit_artifact(fact),
             "effect.failed" => self.transition_tool(fact, InvocationState::Failed),
             "effect.denied" => self.transition_tool(fact, InvocationState::Denied),
             "effect.uncertain" => self.transition_tool(fact, InvocationState::Uncertain),
@@ -735,12 +738,38 @@ impl SessionProjection {
             .get_mut(tool)
             .expect("validated tool remains present")
             .1 = next;
+        if next == InvocationState::Completed {
+            self.tools_completed_in_commit.insert(tool.clone());
+        }
         if next == InvocationState::Started && self.tool_contract_versions.get(tool) == Some(&2) {
             let digest = self.tool_batch_plans.get(tool).expect("validated plan");
             self.effect_batches
                 .get_mut(digest)
                 .expect("validated plan")
                 .next_start += 1;
+        }
+        Ok(())
+    }
+
+    fn commit_artifact(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let tool = required(&fact.tool_invocation_id)?;
+        let execution = required(&fact.execution_id)?;
+        if !self.tools_completed_in_commit.contains(tool)
+            || !matches!(self.tools.get(tool), Some((owner, InvocationState::Completed)) if owner == execution)
+        {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let value = payload(fact)?;
+        if self.tool_receipts.get(tool).map(String::as_str) != Some(text(&value, "receipt_id")?) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let key = (
+            text(&value, "artifact_id")?.to_owned(),
+            unsigned(&value, "revision")?,
+        );
+        if !self.artifacts.insert(key) {
+            return Err(LedgerError::InvalidTransition);
         }
         Ok(())
     }
@@ -1000,6 +1029,7 @@ impl SessionProjection {
         self.turns_started_in_commit.clear();
         self.turns_suspended_in_commit.clear();
         self.turns_terminal_in_commit.clear();
+        self.tools_completed_in_commit.clear();
     }
 
     fn request_delegation(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {

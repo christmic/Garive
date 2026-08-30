@@ -11,16 +11,18 @@ mod types;
 pub use http::{LiveHostServer, LiveHostServerError};
 pub use service::LiveHost;
 pub use types::{
-    ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn,
-    CreateSessionResponse, HostActivity, HostClock, HostContinuationInput, HostEventPage,
-    HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
-    LiveHostError, LiveHostEvent, LiveHostLimits, SessionPageV1, SessionSummaryV1, SessionViewV1,
-    SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnTimelineItemV1,
-    TurnTimelinePageV1,
+    ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
+    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostActivity, HostArtifact,
+    HostArtifactPage, HostClock, HostContinuationInput, HostEventPage, HostReadLimits,
+    HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHostError,
+    LiveHostEvent, LiveHostLimits, SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1,
+    SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
 };
 
 pub(crate) use activity_projection::project_activities;
-pub(crate) use projection::project_fact;
+pub(crate) use projection::{completion_text, project_fact};
 pub(crate) use service::validate_key;
 pub(crate) use types::{
     CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHostState,

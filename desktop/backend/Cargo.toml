@@ -10,26 +10,34 @@ publish = false
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+base64.workspace = true
 chrono.workspace = true
 garive-core = { path = "../../engine/core" }
+garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }
 garive-provider-profile = { path = "../../providers/profile" }
 garive-runtime = { path = "../../runtime/replica" }
+garive-tools = { path = "../../engine/tools" }
 serde.workspace = true
 serde_json.workspace = true
 serde_jcs.workspace = true
 sha2.workspace = true
 tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "2.7.2"
 tokio.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 zeroize.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+garive-macos-bookmark = { path = "../macos-bookmark" }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.4", features = ["fs"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }

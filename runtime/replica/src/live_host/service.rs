@@ -1,4 +1,9 @@
-use std::{fmt::Write, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write,
+    path::Path,
+    sync::Arc,
+};
 
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
@@ -18,10 +23,13 @@ use crate::{
 };
 
 use super::{
-    project_activities, project_fact, AgentDefinitionPageV1, AgentDefinitionSummaryV1,
-    CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
-    HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState,
-    SessionPageV1, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
+    completion_text, project_activities, project_fact, AgentDefinitionPageV1,
+    AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
+    HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionPageV1,
+    SessionSummary, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -283,6 +291,331 @@ impl LiveHost {
         self.state.limits
     }
 
+    /// Returns bounded installed-Agent discovery without granting new authority.
+    pub fn agent_definitions(&self) -> Vec<AgentDefinitionSummary> {
+        vec![AgentDefinitionSummary {
+            api_version: "v1",
+            definition_id: self.state.installed.definition_id.clone(),
+            definition_revision: self.state.installed.definition_revision.clone(),
+            capabilities: Vec::new(),
+        }]
+    }
+
+    /// Returns restart-safe Sessions ordered by open time and identity descending.
+    pub fn recent_sessions(&self, limit: usize) -> Result<Vec<SessionSummary>, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let ledger = self.ledger()?;
+        let mut sessions = ledger
+            .list_sessions()
+            .map_err(map_sqlite)?
+            .into_iter()
+            .map(|session_id| self.project_session(&ledger, &session_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        sessions.sort_by(|left, right| {
+            right
+                .opened_at
+                .cmp(&left.opened_at)
+                .then_with(|| right.session_id.cmp(&left.session_id))
+        });
+        sessions.truncate(limit);
+        Ok(sessions)
+    }
+
+    /// Durably attaches one path-free Workspace grant to a Session.
+    pub fn attach_workspace(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        workspace_id: &str,
+        display_name: &str,
+        grant_revision: u64,
+        access: &str,
+    ) -> Result<HostWorkspaceAttachment, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_key(workspace_id)?;
+        validate_text(display_name, 128)?;
+        if grant_revision == 0 || !matches!(access, "enumerate" | "read_write") {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "workspace.attached")
+        {
+            let payload: WorkspaceAttached = decode_payload(fact)?;
+            if payload.command_id == idempotency_key {
+                if payload.workspace_id != workspace_id
+                    || payload.display_name != display_name
+                    || payload.grant_revision != grant_revision
+                    || payload.access != access
+                {
+                    return Err(LiveHostError::CommandConflict);
+                }
+                return Ok(workspace_attachment(&session_id, &payload, fact.position));
+            }
+        }
+        reject_other_command(&facts, idempotency_key)?;
+        let payload = serde_json::json!({
+            "command_id":idempotency_key,
+            "workspace_id":workspace_id,
+            "display_name":display_name,
+            "grant_revision":grant_revision,
+            "access":access,
+        });
+        let fact = FactDraft {
+            fact_id: FactId::try_from(
+                format!("workspace-{}", digest(idempotency_key.as_bytes())).as_str(),
+            )
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new("workspace.attached").map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&payload)
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        let committed = ledger
+            .commit(session_id.clone(), watermark.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        let position = *committed
+            .positions
+            .last()
+            .ok_or(LiveHostError::DurabilityUnavailable)?;
+        let payload: WorkspaceAttached =
+            serde_json::from_value(payload).map_err(|_| LiveHostError::CorruptState)?;
+        Ok(workspace_attachment(&session_id, &payload, position))
+    }
+
+    /// Returns the latest durable attachment for each opaque Workspace ID.
+    pub fn session_workspaces(
+        &self,
+        session: &str,
+    ) -> Result<Vec<HostWorkspaceAttachment>, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let mut attached = BTreeMap::new();
+        for fact in &facts {
+            match fact.kind.as_str() {
+                "workspace.attached" => {
+                    let payload: WorkspaceAttached = decode_payload(fact)?;
+                    attached.insert(
+                        payload.workspace_id.clone(),
+                        workspace_attachment(&session_id, &payload, fact.position),
+                    );
+                }
+                "workspace.detached" => {
+                    let payload: WorkspaceDetached = decode_payload(fact)?;
+                    attached.remove(&payload.workspace_id);
+                }
+                _ => {}
+            }
+        }
+        Ok(attached.into_values().collect())
+    }
+
+    /// Durably detaches one opaque Workspace grant from a Session.
+    pub fn detach_workspace(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        workspace_id: &str,
+        grant_revision: u64,
+    ) -> Result<HostWorkspaceDetachment, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_key(workspace_id)?;
+        if grant_revision == 0 {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "workspace.detached")
+        {
+            let payload: WorkspaceDetached = decode_payload(fact)?;
+            if payload.command_id == idempotency_key {
+                if payload.workspace_id != workspace_id || payload.grant_revision != grant_revision
+                {
+                    return Err(LiveHostError::CommandConflict);
+                }
+                return Ok(workspace_detachment(&session_id, &payload, fact.position));
+            }
+        }
+        reject_other_command(&facts, idempotency_key)?;
+        let active = self.session_workspaces(session)?;
+        let outcome = match active.iter().find(|item| item.workspace_id == workspace_id) {
+            Some(item) if item.grant_revision == grant_revision => "detached",
+            Some(_) => return Err(LiveHostError::CommandConflict),
+            None => "already_detached",
+        };
+        let payload = serde_json::json!({
+            "command_id":idempotency_key,
+            "workspace_id":workspace_id,
+            "grant_revision":grant_revision,
+            "outcome":outcome,
+        });
+        let fact = FactDraft {
+            fact_id: FactId::try_from(
+                format!("workspace-detach-{}", digest(idempotency_key.as_bytes())).as_str(),
+            )
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new("workspace.detached").map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&payload)
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        let committed = ledger
+            .commit(session_id.clone(), watermark.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        let position = *committed
+            .positions
+            .last()
+            .ok_or(LiveHostError::DurabilityUnavailable)?;
+        let payload: WorkspaceDetached =
+            serde_json::from_value(payload).map_err(|_| LiveHostError::CorruptState)?;
+        Ok(workspace_detachment(&session_id, &payload, position))
+    }
+
+    /// Projects one bounded fixed-prefix page of immutable Artifact revisions.
+    pub fn list_artifacts(
+        &self,
+        session: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<HostArtifactPage, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, after_position, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let mut items = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "artifact.committed")
+            .map(|fact| artifact_projection(&session_id, fact))
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more = items.len() > limit;
+        items.truncate(limit);
+        let scanned_through_position = items
+            .last()
+            .map_or(watermark.max_position, |item| item.committed_position);
+        Ok(HostArtifactPage {
+            api_version: "v1",
+            session_id: session_id.as_str().into(),
+            items,
+            scanned_through_position,
+            observed_max_position: watermark.max_position,
+            has_more,
+        })
+    }
+
+    /// Returns complete durable Turns changed after a caller watermark.
+    pub fn read_timeline(
+        &self,
+        session: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<TurnTimelinePage, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if after_position > watermark.max_position {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
+        if let (Some(catalogue), Some(limits)) = (
+            self.state.installed.public_activity_catalogue.as_ref(),
+            self.state.limits.activity,
+        ) {
+            let mut activities = project_activities(&facts, catalogue, limits)?.by_turn;
+            for item in &mut items {
+                item.activities = activities.remove(&item.turn_id).unwrap_or_default();
+                if let Some(position) = item
+                    .activities
+                    .iter()
+                    .map(|activity| activity.source_position)
+                    .max()
+                {
+                    item.latest_position = item.latest_position.max(position);
+                }
+            }
+            if !activities.is_empty() {
+                return Err(LiveHostError::CorruptState);
+            }
+        }
+        for item in items.iter_mut().filter(|item| item.state == "suspended") {
+            let turn_id = identity::<TurnId>(&item.turn_id)?;
+            let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite_query)?;
+            let suspended = reconstruct_suspended_turn(&snapshot).map_err(map_runtime)?;
+            item.suspension = Some(TurnSuspensionView {
+                suspension_id: suspended.suspension_id,
+                session_version: suspended.session_version,
+                kind: suspension_kind(suspended.suspension_kind).into(),
+            });
+        }
+        items.retain(|item| item.latest_position > after_position);
+        let has_more = items.len() > limit;
+        items.truncate(limit);
+        let scanned_through_position = items
+            .last()
+            .map_or(watermark.max_position, |item| item.latest_position);
+        Ok(TurnTimelinePage {
+            api_version: "v1",
+            session_id: session_id.as_str().to_owned(),
+            items,
+            scanned_through_position,
+            observed_max_position: watermark.max_position,
+            has_more,
+        })
+    }
+
     /// Creates or exactly replays one durable Session creation command.
     pub fn create_session(
         &self,
@@ -401,6 +734,111 @@ impl LiveHost {
             .execution_id
             .clone()
             .ok_or(LiveHostError::CorruptState)?;
+        let committed = commit_planned_turn(
+            &mut ledger,
+            session_id.clone(),
+            binding.session_version,
+            &plan,
+        )
+        .map_err(map_runtime)?;
+        let last = last_position(&committed.positions)?;
+        if committed.disposition == CommitDisposition::Committed {
+            let _ = self.state.dispatcher.dispatch(&CommittedTurn {
+                session_id: session_id.clone(),
+                turn_id: plan.turn_id.clone(),
+                execution_id: execution_id.clone(),
+                session_version: committed.session_version,
+                committed_position: last,
+            });
+        }
+        Ok(turn_response(
+            &session_id,
+            &plan.turn_id,
+            Some(&execution_id),
+            last,
+        ))
+    }
+
+    /// Atomically commits selected Workspace text and the Turn that consumes it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_turn_with_workspace_context(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        trusted_input: &str,
+        workspace_id: &str,
+        grant_revision: u64,
+        entries: &[HostWorkspaceContextEntry],
+    ) -> Result<TurnCommandResponse, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(trusted_input, self.state.limits.max_command_bytes)?;
+        let payload = workspace_context_payload(
+            idempotency_key,
+            workspace_id,
+            grant_revision,
+            entries,
+            self.state.limits.max_command_bytes,
+        )?;
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let attached = self.session_workspaces(session)?.into_iter().any(|value| {
+            value.workspace_id == workspace_id && value.grant_revision == grant_revision
+        });
+        if !attached {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        if let Some(response) = self.replay_contextual_start(
+            &facts,
+            &session_id,
+            idempotency_key,
+            trusted_input,
+            &payload,
+        )? {
+            return Ok(response);
+        }
+        let recorded_at = self.recorded_at()?;
+        let mut plan = plan_start_turn(
+            &StartTurnCommand {
+                command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
+                session_id: session_id.clone(),
+                agent_instance_id: binding.agent_instance_id,
+                definition_id: binding.definition_id,
+                definition_revision: binding.definition_revision,
+                snapshot_digest: binding.snapshot_digest,
+                trusted_input: trusted_input.to_owned(),
+                limits: self.state.installed.runtime_limits,
+                recorded_at: recorded_at.clone(),
+            },
+            binding.max_position,
+        )
+        .map_err(map_runtime)?;
+        let execution_id = plan
+            .execution_id
+            .clone()
+            .ok_or(LiveHostError::CorruptState)?;
+        plan.facts.insert(
+            0,
+            FactDraft {
+                fact_id: FactId::try_from(
+                    format!("workspace-context-{}", digest(idempotency_key.as_bytes())).as_str(),
+                )
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+                turn_id: None,
+                execution_id: None,
+                model_request_id: None,
+                tool_invocation_id: None,
+                kind: FactKind::new("workspace.context_selected")
+                    .map_err(|_| LiveHostError::InvalidRequest)?,
+                schema_version: 1,
+                payload: CanonicalPayload::from_value(&payload)
+                    .map_err(|_| LiveHostError::InvalidRequest)?,
+                recorded_at,
+            },
+        );
         let committed = commit_planned_turn(
             &mut ledger,
             session_id.clone(),
@@ -674,6 +1112,60 @@ impl LiveHost {
             .map_err(|_| LiveHostError::InvalidRequest)
     }
 
+    fn project_session(
+        &self,
+        ledger: &SqliteLedger,
+        session_id: &SessionId,
+    ) -> Result<SessionSummary, LiveHostError> {
+        let binding = self.load_session(ledger, session_id)?;
+        let facts = ledger
+            .read_facts(session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let opened_at = facts
+            .first()
+            .ok_or(LiveHostError::CorruptState)?
+            .recorded_at
+            .clone();
+        chrono::DateTime::parse_from_rfc3339(&opened_at)
+            .map_err(|_| LiveHostError::CorruptState)?;
+        let mut turns: Vec<(TurnId, String)> = Vec::new();
+        for fact in &facts {
+            let Some(turn_id) = fact.turn_id.as_ref() else {
+                continue;
+            };
+            match fact.kind.as_str() {
+                "turn.started" => {
+                    let started: StartedCommand = decode_payload(fact)?;
+                    if started.kind == "start" {
+                        turns.push((turn_id.clone(), "running".into()));
+                    } else if turns.last().map(|turn| &turn.0) != Some(turn_id) {
+                        return Err(LiveHostError::CorruptState);
+                    } else {
+                        turns.last_mut().ok_or(LiveHostError::CorruptState)?.1 = "running".into();
+                    }
+                }
+                "turn.suspended" => set_latest_turn_state(&mut turns, turn_id, "suspended")?,
+                "turn.completed" => set_latest_turn_state(&mut turns, turn_id, "completed")?,
+                "turn.stopped" => set_latest_turn_state(&mut turns, turn_id, "stopped")?,
+                "turn.failed" => set_latest_turn_state(&mut turns, turn_id, "failed")?,
+                _ => {}
+            }
+        }
+        let latest = turns.last();
+        Ok(SessionSummary {
+            api_version: "v1",
+            session_id: session_id.as_str().to_owned(),
+            agent_instance_id: binding.agent_instance_id.as_str().to_owned(),
+            definition_id: binding.definition_id.as_str().to_owned(),
+            definition_revision: binding.definition_revision.as_str().to_owned(),
+            opened_at,
+            latest_position: binding.max_position,
+            latest_turn_id: latest.map(|turn| turn.0.as_str().to_owned()),
+            latest_turn_state: latest.map(|turn| turn.1.clone()),
+            turn_count: turns.len() as u64,
+        })
+    }
+
     fn load_session(
         &self,
         ledger: &SqliteLedger,
@@ -733,6 +1225,12 @@ impl LiveHost {
             reject_other_command(&facts, command_id)?;
             return Ok(None);
         };
+        if facts
+            .get(index.saturating_sub(1))
+            .is_some_and(|fact| fact.kind.as_str() == "workspace.context_selected")
+        {
+            return Err(LiveHostError::CommandConflict);
+        }
         if started.kind != "start"
             || started.definition_id != self.state.installed.definition_id
             || started.definition_revision != self.state.installed.definition_revision
@@ -742,6 +1240,36 @@ impl LiveHost {
             return Err(LiveHostError::CommandConflict);
         }
         replay_started_batch(session_id, &facts, index, ReplayInput::Start(input), None)
+    }
+
+    fn replay_contextual_start(
+        &self,
+        facts: &[DurableFact],
+        session_id: &SessionId,
+        command_id: &str,
+        input: &str,
+        expected_context: &serde_json::Value,
+    ) -> Result<Option<TurnCommandResponse>, LiveHostError> {
+        let Some((index, started)) = find_started(facts, command_id)? else {
+            reject_other_command(facts, command_id)?;
+            return Ok(None);
+        };
+        let context_index = index.checked_sub(1).ok_or(LiveHostError::CommandConflict)?;
+        let context = facts
+            .get(context_index)
+            .filter(|fact| fact.kind.as_str() == "workspace.context_selected")
+            .ok_or(LiveHostError::CommandConflict)?;
+        let actual_context: serde_json::Value = decode_payload(context)?;
+        if &actual_context != expected_context
+            || started.kind != "start"
+            || started.definition_id != self.state.installed.definition_id
+            || started.definition_revision != self.state.installed.definition_revision
+            || started.snapshot_digest != self.state.installed.snapshot_digest
+            || started.trusted_input_digest != digest(input.as_bytes())
+        {
+            return Err(LiveHostError::CommandConflict);
+        }
+        replay_started_batch(session_id, facts, index, ReplayInput::Start(input), None)
     }
 
     fn replay_continue(
@@ -815,6 +1343,226 @@ struct SessionBinding {
     snapshot_digest: String,
     session_version: u64,
     max_position: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceAttached {
+    command_id: String,
+    workspace_id: String,
+    display_name: String,
+    grant_revision: u64,
+    access: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceDetached {
+    command_id: String,
+    workspace_id: String,
+    grant_revision: u64,
+    outcome: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtifactCommitted {
+    artifact_id: String,
+    revision: u64,
+    receipt_id: String,
+    display_name: String,
+    kind: String,
+    mime_type: String,
+    byte_size: u64,
+    content_digest: String,
+    verification: String,
+    preview: String,
+    workspace_id: String,
+    revealable: bool,
+    exportable: bool,
+}
+
+fn artifact_projection(
+    session_id: &SessionId,
+    fact: &DurableFact,
+) -> Result<HostArtifact, LiveHostError> {
+    let payload: ArtifactCommitted = decode_payload(fact)?;
+    let _receipt_id = payload.receipt_id;
+    Ok(HostArtifact {
+        api_version: "v1",
+        artifact_id: payload.artifact_id,
+        revision: payload.revision,
+        session_id: session_id.as_str().into(),
+        turn_id: fact
+            .turn_id
+            .as_ref()
+            .ok_or(LiveHostError::CorruptState)?
+            .as_str()
+            .into(),
+        display_name: payload.display_name,
+        kind: payload.kind,
+        mime_type: payload.mime_type,
+        byte_size: payload.byte_size,
+        content_digest: payload.content_digest,
+        committed_position: fact.position,
+        verification: payload.verification,
+        preview: payload.preview,
+        workspace_id: Some(payload.workspace_id),
+        revealable: payload.revealable,
+        exportable: payload.exportable,
+    })
+}
+
+fn workspace_attachment(
+    session_id: &SessionId,
+    payload: &WorkspaceAttached,
+    position: u64,
+) -> HostWorkspaceAttachment {
+    HostWorkspaceAttachment {
+        api_version: "v1",
+        session_id: session_id.as_str().to_owned(),
+        workspace_id: payload.workspace_id.clone(),
+        display_name: payload.display_name.clone(),
+        grant_revision: payload.grant_revision,
+        access: payload.access.clone(),
+        attached_position: position,
+    }
+}
+
+fn workspace_detachment(
+    session_id: &SessionId,
+    payload: &WorkspaceDetached,
+    position: u64,
+) -> HostWorkspaceDetachment {
+    HostWorkspaceDetachment {
+        api_version: "v1",
+        session_id: session_id.as_str().into(),
+        workspace_id: payload.workspace_id.clone(),
+        grant_revision: payload.grant_revision,
+        outcome: payload.outcome.clone(),
+        detached_position: position,
+    }
+}
+
+fn set_latest_turn_state(
+    turns: &mut [(TurnId, String)],
+    turn_id: &TurnId,
+    state: &str,
+) -> Result<(), LiveHostError> {
+    let latest = turns.last_mut().ok_or(LiveHostError::CorruptState)?;
+    if &latest.0 != turn_id {
+        return Err(LiveHostError::CorruptState);
+    }
+    latest.1 = state.to_owned();
+    Ok(())
+}
+
+fn project_timeline(
+    facts: &[DurableFact],
+    max_text_bytes: usize,
+) -> Result<Vec<TurnTimelineItem>, LiveHostError> {
+    let mut items = Vec::new();
+    for fact in facts {
+        let Some(turn_id) = fact.turn_id.as_ref() else {
+            continue;
+        };
+        match fact.kind.as_str() {
+            "turn.started" => {
+                let started: StartedCommand = decode_payload(fact)?;
+                if started.kind == "start" {
+                    items.push(TurnTimelineItem {
+                        turn_id: turn_id.as_str().to_owned(),
+                        started_position: fact.position,
+                        latest_position: fact.position,
+                        state: "running".into(),
+                        user_text: String::new(),
+                        completion_text: None,
+                        suspension: None,
+                        content_truncated: false,
+                        activities: Vec::new(),
+                    });
+                } else {
+                    let item = timeline_item(&mut items, turn_id)?;
+                    item.latest_position = fact.position;
+                    item.state = "running".into();
+                    item.completion_text = None;
+                    item.suspension = None;
+                }
+            }
+            "turn.input" => {
+                let input: TurnInput = decode_payload(fact)?;
+                if input.input_kind == "trusted_user" {
+                    if digest(input.content.inline_utf8.as_bytes()) != input.content.digest {
+                        return Err(LiveHostError::CorruptState);
+                    }
+                    let (text, truncated) =
+                        bounded_text(&input.content.inline_utf8, max_text_bytes);
+                    let item = timeline_item(&mut items, turn_id)?;
+                    item.user_text = text;
+                    item.content_truncated |= truncated;
+                    item.latest_position = fact.position;
+                }
+            }
+            "turn.suspended" | "turn.stopped" | "turn.failed" => {
+                let state = fact.kind.as_str().trim_start_matches("turn.");
+                let item = timeline_item(&mut items, turn_id)?;
+                item.latest_position = fact.position;
+                item.state = state.into();
+                if state != "suspended" {
+                    item.suspension = None;
+                }
+            }
+            "turn.completed" => {
+                let (text, truncated) = bounded_text(&completion_text(fact)?, max_text_bytes);
+                let item = timeline_item(&mut items, turn_id)?;
+                item.latest_position = fact.position;
+                item.state = "completed".into();
+                item.completion_text = Some(text);
+                item.suspension = None;
+                item.content_truncated |= truncated;
+            }
+            _ => {}
+        }
+    }
+    if items.iter().any(|item| item.user_text.is_empty()) {
+        return Err(LiveHostError::CorruptState);
+    }
+    Ok(items)
+}
+
+fn timeline_item<'a>(
+    items: &'a mut [TurnTimelineItem],
+    turn_id: &TurnId,
+) -> Result<&'a mut TurnTimelineItem, LiveHostError> {
+    items
+        .iter_mut()
+        .rev()
+        .find(|item| item.turn_id == turn_id.as_str())
+        .ok_or(LiveHostError::CorruptState)
+}
+
+fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_owned(), false);
+    }
+    let boundary = value
+        .char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index <= max_bytes)
+        .last()
+        .unwrap_or(0);
+    (value[..boundary].to_owned(), true)
+}
+
+fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {
+    match kind {
+        RuntimeSuspensionKind::ApprovalRequired => "approval_required",
+        RuntimeSuspensionKind::ExternalInputRequired => "external_input_required",
+        RuntimeSuspensionKind::OperatorReconciliation => "operator_reconciliation",
+        RuntimeSuspensionKind::ResourceUnavailable => "resource_unavailable",
+        RuntimeSuspensionKind::PartialOutput => "partial_output",
+        RuntimeSuspensionKind::DelegationPending => "delegation_pending",
+    }
 }
 
 struct ContinueReplay<'a> {
@@ -966,7 +1714,12 @@ fn reject_other_command(facts: &[DurableFact], command_id: &str) -> Result<(), L
     for fact in facts {
         if !matches!(
             fact.kind.as_str(),
-            "session.opened" | "turn.started" | "turn.cancel_requested"
+            "session.opened"
+                | "turn.started"
+                | "turn.cancel_requested"
+                | "workspace.attached"
+                | "workspace.detached"
+                | "workspace.context_selected"
         ) {
             continue;
         }
@@ -980,6 +1733,51 @@ fn reject_other_command(facts: &[DurableFact], command_id: &str) -> Result<(), L
         }
     }
     Ok(())
+}
+
+fn workspace_context_payload(
+    command_id: &str,
+    workspace_id: &str,
+    grant_revision: u64,
+    entries: &[HostWorkspaceContextEntry],
+    max_bytes: usize,
+) -> Result<serde_json::Value, LiveHostError> {
+    validate_key(workspace_id)?;
+    if grant_revision == 0 || entries.is_empty() || entries.len() > 8 {
+        return Err(LiveHostError::InvalidRequest);
+    }
+    let mut identities = BTreeSet::new();
+    let mut total = 0usize;
+    let mut values = Vec::with_capacity(entries.len());
+    for entry in entries {
+        validate_key(&entry.entry_id)?;
+        validate_text(&entry.display_name, 128)?;
+        if entry.kind != "text"
+            || entry.content_digest != digest(entry.content_utf8.as_bytes())
+            || !identities.insert(entry.entry_id.as_str())
+        {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        total = total
+            .checked_add(entry.content_utf8.len())
+            .filter(|value| *value <= max_bytes.min(60 * 1_024))
+            .ok_or(LiveHostError::InvalidRequest)?;
+        values.push(serde_json::json!({
+            "entry_id":entry.entry_id,
+            "display_name":entry.display_name,
+            "kind":entry.kind,
+            "content":{
+                "digest":entry.content_digest,
+                "inline_utf8":entry.content_utf8,
+            },
+        }));
+    }
+    Ok(serde_json::json!({
+        "command_id":command_id,
+        "workspace_id":workspace_id,
+        "grant_revision":grant_revision,
+        "entries":values,
+    }))
 }
 
 fn validate_installed(

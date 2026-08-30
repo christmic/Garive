@@ -1,5 +1,6 @@
 //! Strict C6 durable Runtime payload-v1 validation.
 
+mod artifact;
 mod delegation;
 mod effect;
 mod knowledge;
@@ -9,6 +10,7 @@ mod scheduler;
 mod skill;
 mod turn;
 mod values;
+mod workspace;
 
 use serde_json::Value;
 
@@ -37,6 +39,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let knowledge_family = kind.starts_with("knowledge.");
     let scheduler_family = kind.starts_with("schedule.");
     let delegation_family = kind.starts_with("delegation.");
+    let workspace_family = kind.starts_with("workspace.");
+    let artifact_family = kind.starts_with("artifact.");
     let memory_session_scoped = matches!(
         kind,
         "memory.tombstoned"
@@ -61,6 +65,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !knowledge_family
         && !scheduler_family
         && !delegation_family
+        && !workspace_family
+        && !artifact_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -69,7 +75,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     if fact.schema_version != 1 && !effect_prepared_v2 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
-    if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family)
+    if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family || workspace_family)
         || fact.execution_id.is_some()
             != (execution_family
                 || model_family
@@ -78,15 +84,20 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
                 || rejection
                 || memory_family && !memory_session_scoped
                 || knowledge_family
-                || delegation_family)
+                || delegation_family
+                || artifact_family)
         || fact.model_request_id.is_some() != (model_family || rejection)
-        || fact.tool_invocation_id.is_some() != effect_family
+        || fact.tool_invocation_id.is_some() != (effect_family || artifact_family)
     {
         return Err(LedgerError::InvalidFact);
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if effect_prepared_v2 {
+    if artifact_family {
+        artifact::validate(kind, object(&payload)?)?;
+    } else if workspace_family {
+        workspace::validate(kind, object(&payload)?)?;
+    } else if effect_prepared_v2 {
         effect::validate_prepared_v2(object(&payload)?)?;
     } else if delegation_family {
         delegation::validate(kind, object(&payload)?)?;

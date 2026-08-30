@@ -16,7 +16,8 @@ use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, Respon
 use garive_provider_openai::build_profile as build_openai_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
-    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
+    ActivityProjectionLimits, EffectiveRuntimeLimits, HostClock, InstalledActivityCatalogue,
+    InstalledActivityDescriptor, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
     LocalExecutionPolicy, RuntimeHttpLimits, RuntimeModelHttpTransport,
 };
 use uuid::Uuid;
@@ -218,7 +219,13 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
                 event_poll_interval_ms: config.host.event_poll_interval_ms,
-                activity: None,
+                activity: config.host.activity.map(|limits| ActivityProjectionLimits {
+                    max_activities_per_turn: limits.max_activities_per_turn,
+                    max_activity_facts: limits.max_activity_facts,
+                    max_label_bytes: limits.max_label_bytes,
+                    max_activity_id_bytes: limits.max_activity_id_bytes,
+                    max_encoded_bytes_per_turn: limits.max_encoded_bytes_per_turn,
+                }),
             },
             execution_policy,
             dispatch_capacity: config.dispatch_capacity,
@@ -245,7 +252,23 @@ fn installed_agent(config: &DesktopSystemConfiguration) -> InstalledAgent {
             max_output_tokens: config.installed_agent.max_output_tokens,
             deadline_budget_ms: config.installed_agent.deadline_budget_ms,
         },
-        public_activity_catalogue: None,
+        public_activity_catalogue: config
+            .installed_agent
+            .public_activity_catalogue
+            .as_ref()
+            .map(|catalogue| InstalledActivityCatalogue {
+                schema_version: catalogue.schema_version,
+                catalogue_revision: catalogue.catalogue_revision.clone(),
+                descriptors: catalogue
+                    .descriptors
+                    .iter()
+                    .map(|item| InstalledActivityDescriptor {
+                        tool_name: item.tool_name.clone(),
+                        tool_revision: item.tool_revision.clone(),
+                        label_key: item.label_key.clone(),
+                    })
+                    .collect(),
+            }),
     }
 }
 

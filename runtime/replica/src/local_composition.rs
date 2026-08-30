@@ -15,7 +15,8 @@ use garive_llm::{
     ModelCapability, ModelInputContent, ModelInputItem, ModelOutputSettings, ModelRole,
     ModelTargetId,
 };
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -126,27 +127,57 @@ pub fn reconstruct_local_start(
         .read_facts(&committed.session_id, 0, committed.committed_position, None)
         .map_err(|_| LocalReconstructionError::DurabilityUnavailable)?;
     let opened = exactly_one(&facts, |fact| fact.kind.as_str() == "session.opened")?;
-    let started = exactly_one(&facts, |fact| {
-        fact.turn_id.as_ref() == Some(&committed.turn_id) && fact.kind.as_str() == "turn.started"
-    })?;
-    let input = exactly_one(&facts, |fact| {
-        fact.turn_id.as_ref() == Some(&committed.turn_id) && fact.kind.as_str() == "turn.input"
-    })?;
     let execution = exactly_one(&facts, |fact| {
         fact.turn_id.as_ref() == Some(&committed.turn_id)
             && fact.execution_id.as_ref() == Some(&committed.execution_id)
             && fact.kind.as_str() == "execution.started"
     })?;
     let opened_payload = payload(opened)?;
+    let started = facts
+        .iter()
+        .filter(|fact| {
+            fact.turn_id.as_ref() == Some(&committed.turn_id)
+                && fact.kind.as_str() == "turn.started"
+                && fact.position < execution.position
+        })
+        .max_by_key(|fact| fact.position)
+        .ok_or(LocalReconstructionError::ReconstructionFailed)?;
     let started_payload = payload(started)?;
+    let workspace_context = workspace_context_candidate(
+        &facts,
+        started,
+        &started_payload,
+        committed.session_id.as_str(),
+    )?;
+    let is_start = started_payload["kind"] == "start";
+    let input = facts
+        .iter()
+        .filter(|fact| {
+            fact.turn_id.as_ref() == Some(&committed.turn_id)
+                && fact.kind.as_str() == "turn.input"
+                && if is_start {
+                    fact.position > started.position && fact.position < execution.position
+                } else {
+                    fact.position < started.position
+                }
+        })
+        .max_by_key(|fact| fact.position)
+        .ok_or(LocalReconstructionError::ReconstructionFailed)?;
     let input_payload = payload(input)?;
     let execution_payload = payload(execution)?;
     let trusted_input = text(&input_payload, &["content", "inline_utf8"])?;
     let trusted_digest = text(&input_payload, &["content", "digest"])?;
-    if input_payload["input_kind"] != "trusted_user"
+    let valid_input = if is_start {
+        input_payload["input_kind"] == "trusted_user"
+            && started_payload["trusted_input_digest"] == trusted_digest
+    } else {
+        matches!(
+            input_payload["input_kind"].as_str(),
+            Some("external_input" | "interaction_string" | "interaction_json")
+        ) && input_payload["suspension_id"] == started_payload["prior_suspension_id"]
+    };
+    if !valid_input
         || digest(trusted_input.as_bytes()) != trusted_digest
-        || started_payload["kind"] != "start"
-        || started_payload["trusted_input_digest"] != trusted_digest
         || opened_payload["agent_instance_id"] != started_payload["agent_instance_id"]
         || opened_payload["definition_id"] != started_payload["definition_id"]
         || opened_payload["definition_revision"] != started_payload["definition_revision"]
@@ -158,7 +189,7 @@ pub fn reconstruct_local_start(
     let completed_iterations =
         u32::try_from(number(&execution_payload, &["completed_iterations"])?)
             .map_err(|_| LocalReconstructionError::ReconstructionFailed)?;
-    let recovery_ordinal = number(&execution_payload, &["recovery_ordinal"])?;
+    number(&execution_payload, &["recovery_ordinal"])?;
     let last_safe_position = number(&execution_payload, &["through_position"])?;
     let max_iterations = number(&execution_payload, &["limits", "max_iterations"])?;
     let max_iterations = u32::try_from(max_iterations)
@@ -173,6 +204,7 @@ pub fn reconstruct_local_start(
         session_id: committed.session_id.as_str().to_owned(),
         position: input.position,
         text: trusted_input.to_owned(),
+        workspace_context,
     };
     let frozen_input = optional_number(&execution_payload, &["limits", "max_input_tokens"])?;
     let max_total_tokens = match (frozen_input, frozen_output) {
@@ -207,22 +239,18 @@ pub fn reconstruct_local_start(
             &started_payload,
             "definition_revision",
         )?)?,
-        entry: if recovery_ordinal == 0 {
+        entry: if is_start {
             AgentEntry::Start {
                 trusted_input: trusted_input.to_owned(),
             }
         } else {
             AgentEntry::Continue {
-                resume_input: ResumeInput::ResourceReady,
+                resume_input: ResumeInput::ExternalInput(trusted_input.to_owned()),
             }
         },
         cursor: AgentCursor {
             completed_iterations,
-            last_durable_position: if recovery_ordinal == 0 {
-                0
-            } else {
-                last_safe_position
-            },
+            last_durable_position: if is_start { 0 } else { last_safe_position },
         },
         context_request: ContextRequest {
             session_id: committed.session_id.as_str().to_owned(),
@@ -279,6 +307,7 @@ pub struct LocalInputContext {
     session_id: String,
     position: u64,
     text: String,
+    workspace_context: Option<ContextCandidate>,
 }
 impl ContextPort for LocalInputContext {
     fn read_candidates(
@@ -300,14 +329,113 @@ impl ContextPort for LocalInputContext {
             session_id: self.session_id.clone(),
             position: self.position,
         };
-        Ok(vec![ContextCandidate {
+        let input = ContextCandidate {
             fact_ref: reference,
             kind: CandidateKind::UserInput,
             retention: Retention::Required,
             visibility: Visibility::Visible,
             items: vec![item],
-        }])
+        };
+        let mut candidates = Vec::with_capacity(2);
+        if let Some(workspace) = &self.workspace_context {
+            if workspace.fact_ref.session_id != request.session_id
+                || workspace.fact_ref.position == 0
+                || workspace.fact_ref.position >= self.position
+            {
+                return Err(ContextPortError::PortFailure);
+            }
+            candidates.push(workspace.clone());
+        }
+        candidates.push(input);
+        Ok(candidates)
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceContextPayload {
+    command_id: String,
+    workspace_id: String,
+    grant_revision: u64,
+    entries: Vec<WorkspaceContextEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceContextEntry {
+    entry_id: String,
+    display_name: String,
+    kind: String,
+    content: WorkspaceInlineContent,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceInlineContent {
+    digest: String,
+    inline_utf8: String,
+}
+
+fn workspace_context_candidate(
+    facts: &[DurableFact],
+    started: &DurableFact,
+    started_payload: &Value,
+    session_id: &str,
+) -> Result<Option<ContextCandidate>, LocalReconstructionError> {
+    let Some(candidate) = facts
+        .iter()
+        .find(|fact| fact.position.checked_add(1) == Some(started.position))
+        .filter(|fact| fact.kind.as_str() == "workspace.context_selected")
+    else {
+        return Ok(None);
+    };
+    let value: WorkspaceContextPayload = serde_json::from_value(payload(candidate)?)
+        .map_err(|_| LocalReconstructionError::ReconstructionFailed)?;
+    if value.command_id != text_value(started_payload, "command_id")?
+        || value.workspace_id.is_empty()
+        || value.grant_revision == 0
+        || value.entries.is_empty()
+    {
+        return Err(LocalReconstructionError::ReconstructionFailed);
+    }
+    let items = value
+        .entries
+        .into_iter()
+        .map(|entry| {
+            if entry.entry_id.is_empty()
+                || entry.display_name.is_empty()
+                || entry.kind != "text"
+                || digest(entry.content.inline_utf8.as_bytes()) != entry.content.digest
+            {
+                return Err(LocalReconstructionError::ReconstructionFailed);
+            }
+            Ok(ModelInputItem::Message {
+                role: ModelRole::User,
+                content: vec![ModelInputContent::Text(
+                    json!({
+                        "type":"garive.workspace_file",
+                        "workspace_id":value.workspace_id,
+                        "grant_revision":value.grant_revision,
+                        "entry_id":entry.entry_id,
+                        "display_name":entry.display_name,
+                        "content_digest":entry.content.digest,
+                        "content":entry.content.inline_utf8,
+                    })
+                    .to_string(),
+                )],
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(ContextCandidate {
+        fact_ref: FactRef {
+            session_id: session_id.to_owned(),
+            position: candidate.position,
+        },
+        kind: CandidateKind::Knowledge,
+        retention: Retention::Required,
+        visibility: Visibility::Purposes(BTreeSet::from([ContextPurpose::Inference])),
+        items,
+    }))
 }
 
 fn validate_explicit(

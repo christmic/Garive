@@ -410,9 +410,11 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             &receipt_id,
         );
         let validation = reducer.clone().apply_execution(fact.clone());
+        let artifact = artifact_commit_payload(&fact, receipt(&fact));
         if binding_valid.is_err()
             || matches!(validation, GovernedAction::Fail(_))
             || receipt(&fact).is_none()
+            || artifact.is_err()
         {
             return self.commit_uncertain(
                 &invocation_id,
@@ -427,7 +429,12 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             receipt(&fact).expect("checked receipt"),
             &fact,
         )?;
-        self.commit_terminal(&invocation_id, prepared, &fact)?;
+        self.commit_terminal(
+            &invocation_id,
+            prepared,
+            &fact,
+            artifact.expect("checked artifact"),
+        )?;
         let action = reducer.apply_execution(fact);
         let GovernedAction::Observation(observation) = action else {
             return Err(GovernedRuntimePortError::InvalidBinding);
@@ -472,6 +479,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
         invocation_id: &ToolInvocationId,
         prepared: &PreparedToolCall,
         fact: &ExecutionFact,
+        artifact: Option<Value>,
     ) -> Result<u64, GovernedRuntimePortError> {
         let receipt = receipt(fact).ok_or(GovernedRuntimePortError::InvalidBinding)?;
         let (kind, payload) = match fact {
@@ -501,7 +509,11 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             _ => return Err(GovernedRuntimePortError::InvalidBinding),
         };
         let durable = self.fact_for_tool(invocation_id, kind, payload)?;
-        self.commit(vec![durable])
+        let mut facts = vec![durable];
+        if let Some(payload) = artifact {
+            facts.push(self.fact_for_tool(invocation_id, "artifact.committed", payload)?);
+        }
+        self.commit(facts)
     }
 
     fn commit_uncertain(
@@ -728,6 +740,96 @@ fn content_binding(value: &Value) -> Result<Value, GovernedRuntimePortError> {
     let canonical = CanonicalPayload::from_value(value)
         .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
     Ok(json!({"digest":canonical.sha256(),"inline_utf8":canonical.as_json()}))
+}
+
+fn artifact_commit_payload(
+    fact: &ExecutionFact,
+    receipt: Option<&EffectReceipt>,
+) -> Result<Option<Value>, GovernedRuntimePortError> {
+    let ExecutionFact::Completed { content, .. } = fact else {
+        return Ok(None);
+    };
+    let Some(object) = content.as_object() else {
+        return Ok(None);
+    };
+    if object.get("artifact_contract").and_then(Value::as_str) != Some("garive.artifact.v1") {
+        return Ok(None);
+    }
+    let required = [
+        "artifact_contract",
+        "artifact_id",
+        "artifact_revision",
+        "workspace_id",
+        "grant_revision",
+        "display_name",
+        "byte_size",
+        "content_digest",
+        "kind",
+        "mime_type",
+        "verification",
+        "preview",
+        "revealable",
+        "exportable",
+    ];
+    if object.len() != required.len() || required.iter().any(|key| !object.contains_key(*key)) {
+        return Err(GovernedRuntimePortError::InvalidBinding);
+    }
+    let text = |key: &str| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or(GovernedRuntimePortError::InvalidBinding)
+    };
+    let artifact_id = text("artifact_id")?;
+    let workspace_id = text("workspace_id")?;
+    let display_name = text("display_name")?;
+    let content_digest = text("content_digest")?;
+    let kind = text("kind")?;
+    let mime_type = text("mime_type")?;
+    let verification = text("verification")?;
+    let preview = text("preview")?;
+    let revision = object
+        .get("artifact_revision")
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0)
+        .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+    let byte_size = object
+        .get("byte_size")
+        .and_then(Value::as_u64)
+        .filter(|value| *value <= 256 * 1_024)
+        .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+    if !artifact_id.starts_with("artifact-")
+        || !workspace_id.starts_with("workspace-")
+        || display_name.len() > 128
+        || content_digest.len() != 64
+        || !content_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || !matches!(kind, "text" | "file")
+        || !matches!(verification, "not_run" | "passed" | "failed" | "partial")
+        || !matches!(preview, "unavailable" | "text")
+        || !object.get("revealable").is_some_and(Value::is_boolean)
+        || !object.get("exportable").is_some_and(Value::is_boolean)
+    {
+        return Err(GovernedRuntimePortError::InvalidBinding);
+    }
+    let receipt = receipt.ok_or(GovernedRuntimePortError::InvalidBinding)?;
+    Ok(Some(json!({
+        "artifact_id":artifact_id,
+        "revision":revision,
+        "receipt_id":receipt.receipt_id.as_str(),
+        "display_name":display_name,
+        "kind":kind,
+        "mime_type":mime_type,
+        "byte_size":byte_size,
+        "content_digest":content_digest,
+        "verification":verification,
+        "preview":preview,
+        "workspace_id":workspace_id,
+        "revealable":object["revealable"],
+        "exportable":object["exportable"],
+    })))
 }
 
 fn action_result(action: GovernedAction) -> GovernedToolResult {

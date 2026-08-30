@@ -16,6 +16,7 @@ members = [
     "clients/host-rs",
     "cli",
     "desktop/backend",
+    "desktop/macos-bookmark",
     "engine/config",
     "engine/core",
     "engine/creativity",
