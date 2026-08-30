@@ -261,8 +261,12 @@ new page identities and remain unavailable until policy admits them.
 
 A Desktop session freezes an admitted application identifier set, window
 selection policy, display scope, input permission posture, screenshot policy
-and resource limits. On macOS, application identity is the code-signed bundle
-identity plus process audit token; a bundle-name string alone is insufficient.
+and resource limits. On macOS, an admitted application target binds its dynamic
+code-signing identity plus a broker-private process-instance identity. The
+broker revalidates both immediately before observation or input; a bundle name,
+bundle identifier, or reusable PID alone is insufficient. XPC caller identity
+is a distinct boundary authenticated from the connection's audit token by the
+operating system as specified below.
 
 Observation enumerates only admitted applications/windows. The Accessibility
 tree exposes bounded role, label, value summary, enabled/focused/selected state,
@@ -338,6 +342,23 @@ Approval of one button/node/snapshot does not authorize another.
 
 ## Permissions and privacy
 
+### macOS XPC caller admission
+
+The packaged native service accepts only the already-authorized Garive backend.
+Garive system configuration supplies one exact code-signing requirement; the
+service does not discover it from an environment variable or infer it from a
+process name. The requirement is non-empty, at most 4,096 UTF-8 bytes, valid
+Security requirement syntax, and cannot be the broad `always` expression.
+
+Before activating its listener, the service installs that requirement with
+`NSXPCListener.setConnectionCodeSigningRequirement`. macOS evaluates it against
+the connecting peer identity carried by XPC before calling the listener
+delegate. The delegate additionally requires a positive peer PID, the exact
+configured effective user and the exact configured login audit-session ID.
+Those public connection facts are correlation and scope checks; they do not
+replace the system code-signing decision and PID is never an authority by
+itself. A rejected connection receives no exported Computer Use object.
+
 macOS Accessibility, Screen Recording and Automation permissions are requested
 only at first use after an in-product explanation. Denial/revocation produces a
 typed unsupported state without affecting other Agent capabilities. Screen
@@ -399,6 +420,13 @@ automatically. Observation itself may retry under the same bounded scope.
 - fault injection before/after Started/receipt/result proving no blind replay;
 - packaged-app tests on clean macOS with hardened runtime, entitlements and
   first-use System Settings flows.
+
+The initial Swift package gate validates prompt-free permission mapping and the
+XPC caller admission policy. Its real anonymous-listener test derives the test
+process's designated requirement, installs it at the listener, admits the exact
+same-user/audit-session peer, and completes one exported-object round trip.
+Packaged service identity and rejection from a separately signed process remain
+release evidence, not a claim of this package-level gate.
 
 ## Meta
 
