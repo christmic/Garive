@@ -48,3 +48,7 @@ The complete active increment is indexed by
 [`design/agent-product-increment-spec-set.md`](design/agent-product-increment-spec-set.md);
 its repository dependency order is also maintained in
 [`design/core-agent-plan.md`](design/core-agent-plan.md#next-accepted-increments).
+The complete terminal product is indexed by
+[`design/tui-product-spec-set.md`](design/tui-product-spec-set.md), including
+its source audit, architecture, interaction, communication/persistence, and
+competitive verification contracts.

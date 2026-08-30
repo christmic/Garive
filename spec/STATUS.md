@@ -63,7 +63,7 @@ planned without reopening a narrower completed row.
 | H3 | Public Agent activity projection | accepted | accepted | missing | missing | missing | active | Add D0 snapshot v2 public label catalogue plus redacted committed interaction/effect snapshots/events before claiming the activity surface. |
 | R1 | Local Runtime composition | accepted | accepted | documented | implemented | verified | done | Keep explicit configuration, fixed-prefix reconstruction, post-commit queue, real protocol flow, bounded shutdown and process-kill recovery gates green. |
 | A-CLI | CLI shell | accepted | accepted | documented | implemented | partial | active | Replace the scripted TCP fixture with one Runtime H1 E2E after the API-version emitter fix; retain create/reuse, terminal, identity and exit-code coverage. |
-| A-TUI | TUI shell | accepted | accepted | documented | implemented | partial | active | Replace the scripted TCP fixture with one Runtime H1 E2E after the API-version emitter fix; retain ordered durable event/cursor rendering coverage. |
+| A-TUI | Resident terminal product | accepted | accepted | documented | partial | partial | active | Follow the T0-T7 TUI Spec DAG: close H1-F/H2/H3 dependencies, then reducer/terminal/editor/render/persistence/live flows, repeated Runtime+PTY E2E, and measured competitive quality gates. |
 | A-WEB | Web shell | accepted | accepted | documented | implemented | verified | done | Keep strict injectable HTTP/SSE, all H1 mutations, shared reducer fixture and production TypeScript build green. |
 | A-DESKTOP | Tauri/React shell | accepted | accepted | documented | implemented | verified | done | Keep embedded R1, typed IPC, backend-only configured startup and temporary-SQLite/real-protocol loops green. |
 | A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | implemented | verified | done | Keep strict document parsing, injected secret/profile registries, OS credential resolution and configured startup gates green. |
@@ -106,6 +106,7 @@ planned without reopening a narrower completed row.
 - [`design/agent-platform-delivery.md`](design/agent-platform-delivery.md) — platform acceptance contract.
 - [`design/agent-capability-spec-set.md`](design/agent-capability-spec-set.md) — draft post-H1 capability review set.
 - [`design/agent-product-increment-spec-set.md`](design/agent-product-increment-spec-set.md) — complete active increment contract/fixture coverage.
+- [`design/tui-product-spec-set.md`](design/tui-product-spec-set.md) — complete resident TUI contract and competitive delivery DAG.
 - [`design/desktop-system-configuration.md`](design/desktop-system-configuration.md) — backend-only Desktop configuration contract.
 - [`../.agents/testing.md`](../.agents/testing.md) — evidence levels and repository gates.
 - [`AGENTS.md`](AGENTS.md) — Spec admission and schema rules.
