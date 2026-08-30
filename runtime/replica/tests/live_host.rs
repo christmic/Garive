@@ -67,6 +67,21 @@ impl Harness {
     }
 
     fn with_read_limits(event_batch_size: u64, h3: bool, read_limits: HostReadLimits) -> Self {
+        let activity = h3.then_some(ActivityProjectionLimits {
+            max_activities_per_turn: 8,
+            max_activity_facts: 64,
+            max_label_bytes: 128,
+            max_activity_id_bytes: 128,
+            max_encoded_bytes_per_turn: 8_192,
+        });
+        Self::with_limits(event_batch_size, activity, read_limits)
+    }
+
+    fn with_limits(
+        event_batch_size: u64,
+        activity: Option<ActivityProjectionLimits>,
+        read_limits: HostReadLimits,
+    ) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("host.sqlite3");
         let dispatcher = Arc::new(VerifyingDispatcher {
@@ -74,7 +89,7 @@ impl Harness {
             committed: Mutex::new(Vec::new()),
         });
         let mut installed = installed();
-        installed.public_activity_catalogue = h3.then(activity_catalogue);
+        installed.public_activity_catalogue = activity.map(|_| activity_catalogue());
         let host = LiveHost::new_with_read_limits(
             &database,
             installed,
@@ -82,13 +97,7 @@ impl Harness {
                 max_command_bytes: 4_096,
                 event_batch_size,
                 event_poll_interval_ms: 10,
-                activity: h3.then_some(ActivityProjectionLimits {
-                    max_activities_per_turn: 8,
-                    max_activity_facts: 64,
-                    max_label_bytes: 128,
-                    max_activity_id_bytes: 128,
-                    max_encoded_bytes_per_turn: 8_192,
-                }),
+                activity,
             },
             read_limits,
             Arc::new(FixedClock),
@@ -157,6 +166,65 @@ fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
         .unwrap();
     assert_eq!(
         fact_bound.host.get_session(&session.session_id),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+}
+
+#[test]
+fn h3_query_bounds_return_read_bound_exceeded_without_partial_views() {
+    let harness = Harness::with_limits(
+        64,
+        Some(ActivityProjectionLimits {
+            max_activities_per_turn: 8,
+            max_activity_facts: 64,
+            max_label_bytes: 128,
+            max_activity_id_bytes: 128,
+            max_encoded_bytes_per_turn: 1,
+        }),
+        HostReadLimits::PRODUCT_DEFAULT,
+    );
+    let session = harness
+        .host
+        .create_session("create-h3-bound", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-h3-bound", &session.session_id, "hello")
+        .unwrap();
+    let session_id = SessionId::try_from(session.session_id.as_str()).unwrap();
+    SqliteLedger::open(&harness.database)
+        .unwrap()
+        .commit(
+            session_id,
+            2,
+            vec![FactDraft {
+                fact_id: FactId::try_from("prepared-h3-bound").unwrap(),
+                turn_id: Some(garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap()),
+                execution_id: Some(
+                    garive_ledger::ExecutionId::try_from(started.execution_id.as_str()).unwrap(),
+                ),
+                model_request_id: None,
+                tool_invocation_id: Some(ToolInvocationId::try_from("tool-h3-bound").unwrap()),
+                kind: FactKind::new("effect.prepared").unwrap(),
+                schema_version: 1,
+                payload: CanonicalPayload::from_value(&serde_json::json!({
+                    "prepared_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "tool_name":"private_reader_v9",
+                    "tool_revision":"1",
+                    "replay_class":"read_only",
+                    "model_call_id":"call-h3-bound"
+                }))
+                .unwrap(),
+                recorded_at: NOW.into(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        harness.host.get_timeline(&session.session_id, 0, 4),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+    assert_eq!(
+        harness.host.read_event_page(&session.session_id, 0),
         Err(LiveHostError::ReadBoundExceeded)
     );
 }
