@@ -261,10 +261,15 @@ Settings 显示当前配对服务、已验证 host、设备与构建诊断、通
 
 选择 **Unpair this device** 时：
 
-1. 应用先删除本机 Keychain/Keystore 中的授权；
-2. 再尽力注销推送并调用自撤销接口；
-3. 即使当时离线，本机授权也不会恢复；
-4. 下次使用必须重新完成一次性配对。
+1. 应用先显示二次确认，并说明服务端工作和历史不会被删除；
+2. 确认后，应用先删除本机 Keychain/Keystore 中的授权；
+3. 再尽力注销推送并调用自撤销接口；
+4. 即使当时离线，本机授权也不会恢复；
+5. 下次使用必须重新完成一次性配对。
+
+![Android 解除配对二次确认](assets/mobile/android-14-unpair-confirmation.png)
+
+![iOS 解除配对二次确认](assets/mobile/ios-11-unpair-confirmation.png)
 
 管理员也可使用设备 ID 撤销单台设备。撤销、授权到期或 Gateway 重启后，客户端会收到统一的
 `authentication_required` 并要求重新配对。
@@ -298,9 +303,9 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Work、Sessions、Agents、Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（3 条）、Swift 测试（5 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+界面流程（4 条）、Swift 测试（5 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
-本机设备身份密钥会轮换。当前手册包含 23 张实际运行截图。
+本机设备身份密钥会轮换。当前手册包含 25 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
