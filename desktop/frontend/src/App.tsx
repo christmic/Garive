@@ -32,17 +32,15 @@ import { nextDesktopZoom } from "./zoom";
 import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
 import type { AppIntent } from "./state/controller";
+import {
+  classifyTask, filterAndOrderTasks, summarizeTasks, type RecentTask, type TaskFilter,
+} from "./taskPresentation";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
 interface SelectedContext {
   readonly grant: WorkspaceGrant;
   readonly entries: readonly WorkspaceEntry[];
-}
-interface RecentItem {
-  readonly session_id: string; readonly definition_id?: string; readonly opened_at?: string;
-  readonly latest_turn_state?: "running" | "completed" | "suspended" | "stopped" | "failed";
-  readonly turn_count?: number;
 }
 
 const errorKeys: Record<string, MessageKey> = {
@@ -105,8 +103,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
   const desktop = client === "desktop";
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
-  const [recents, setRecents] = useState<readonly RecentItem[]>([]);
+  const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
+  const [commandOpen, setCommandOpen] = useState(false);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
@@ -115,6 +114,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
     window.matchMedia("(prefers-color-scheme: dark)").matches);
   const locale = resolveDesktopLocale(preferences.locale);
   const t = useMemo(() => createTranslator(locale), [locale]);
+  const taskSummary = useMemo(() => summarizeTasks(recents), [recents]);
+  const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
+    [recentTitles, recents]);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
@@ -242,6 +244,24 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
   useEffect(() => {
     if (visualTest) {
       dispatch({ type: "capabilities_loaded", capabilities: visualCapabilities });
+      if (visualTestMode === "queue") {
+        const previewRecents: readonly RecentTask[] = [{ session_id: "queue-approval",
+          definition_id: "garive-work", opened_at: "2026-08-31T00:10:00Z",
+          latest_turn_state: "suspended", turn_count: 3 }, { session_id: "queue-running",
+          definition_id: "garive-work", opened_at: "2026-08-31T00:09:00Z",
+          latest_turn_state: "running", turn_count: 2 }, { session_id: "queue-failed",
+          definition_id: "garive-work", opened_at: "2026-08-31T00:08:00Z",
+          latest_turn_state: "failed", turn_count: 1 }, { session_id: "queue-complete",
+          definition_id: "garive-work", opened_at: "2026-08-31T00:07:00Z",
+          latest_turn_state: "completed", turn_count: 4 }];
+        setRecents(previewRecents); setRecentTitles({
+          "queue-approval": "Approve the launch decision memo",
+          "queue-running": "Synthesize customer research into themes",
+          "queue-failed": "Prepare the quarterly operating review",
+          "queue-complete": "Draft the partner onboarding brief",
+        });
+        setCommandOpen(true);
+      }
       if (visualTestMode === "approval") dispatch({ type: "session_loaded", timeline: {
         api_version: "v1", session_id: "visual-session", scanned_through_position: 12,
         observed_max_position: 12, has_more: false, items: [{
@@ -315,7 +335,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
         event.preventDefault(); beginNewWork();
       }
       if (event.key === ",") { event.preventDefault(); setScreen("settings"); }
-      if (event.key.toLowerCase() === "k") { event.preventDefault(); setScreen("search"); }
+      if (event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen(true); }
       if (event.key.toLowerCase() === "f") { event.preventDefault(); setScreen("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault(); dispatch({ type: "inspector_toggled" });
@@ -389,6 +409,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
 
   const retryPending = () => product.dispatch({ type: "retry_pending",
     sessionId: product.view?.selectedSessionId });
+  const reconnect = () => {
+    const sessionId = product.current()?.selectedSessionId;
+    if (sessionId) product.dispatch({ type: "reconnect", sessionId });
+  };
 
   const openContext = async () => {
     try {
@@ -489,7 +513,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
   const effectiveTheme = preferences.theme === "system"
     ? systemDark ? "dark" : "light" : preferences.theme;
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
-    <div className="app-shell" inert={Boolean(pickerGrant)} aria-hidden={Boolean(pickerGrant)}>
+    <div className="app-shell" inert={Boolean(pickerGrant) || commandOpen}
+      aria-hidden={Boolean(pickerGrant) || commandOpen}>
       <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
@@ -503,12 +528,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
             onClick={() => setScreen("search")} />
         </nav>
         <div className="sidebar-section">
-          <div className="section-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">{t("shell.live")}</span>}</div>
-          {recents.length > 0 ? recents.map((recent) => (
+          <div className="section-label"><span>{t("nav.recents")}</span>{taskSummary.attention > 0
+            ? <span className="attention-count" aria-label={`${taskSummary.attention} ${t("tasks.attention")}`}>{taskSummary.attention}</span>
+            : !state.capabilities?.durable_navigation && <span className="beta-tag">{t("shell.live")}</span>}</div>
+          {orderedRecents.length > 0 ? orderedRecents.slice(0, 6).map((recent) => (
             <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
               <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentTitles[recent.session_id] || recentLabel(recent)}</span>
-              <small>{recent.latest_turn_state ? terminalCopy(recent.latest_turn_state, t) : t("shell.empty")}</small>
+              <small><TaskStateDot task={recent} />{taskStateCopy(recent, t)}</small>
             </button>
           )) : state.messages.length > 0 ? (
             <button className="recent-item selected" type="button" onClick={() => setScreen("work")}>
@@ -537,6 +564,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
+            <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}
+              aria-label={t("command.open")}><Icon name="search" /><span>{t("command.open")}</span><kbd>⌘K</kbd></button>
             {screen === "work" && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
@@ -546,7 +575,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
 
         {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit}
           startSuggestion={startSuggestion} dispatch={workDispatch} context={selectedContext}
-          cancelTurn={cancelTurn} retryPending={retryPending}
+          cancelTurn={cancelTurn} retryPending={retryPending} reconnect={reconnect}
           openContext={openContext} authorizeOutputs={authorizeOutputs}
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
@@ -565,17 +594,25 @@ export function App({ client = "desktop", webCapabilities, createProductPort }: 
         setSelectedContext({ grant: pickerGrant, entries }); setPickerGrant(undefined);
         requestAnimationFrame(() => composer.current?.focus());
       }} />}
+    {commandOpen && <CommandCenter recents={orderedRecents} titles={recentTitles}
+      onClose={() => setCommandOpen(false)} onNewWork={() => { setCommandOpen(false); beginNewWork(); }}
+      onSearch={() => { setCommandOpen(false); setScreen("search"); }}
+      onSettings={() => { setCommandOpen(false); setScreen("settings"); }}
+      onToggleInspector={() => { setCommandOpen(false); setScreen("work");
+        dispatch({ type: "inspector_toggled" }); }}
+      onOpen={(sessionId) => { setCommandOpen(false); void openRecent(sessionId); }} t={t} />}
   </div>;
 }
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
   authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
-  approvalAction, cancelTurn, retryPending, t }: {
+  approvalAction, cancelTurn, retryPending, reconnect, t }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
   cancelTurn: () => Promise<void>;
   retryPending: () => void;
+  reconnect: () => void;
   startSuggestion: (text: string) => void;
   dispatch: WorkDispatch;
   context?: SelectedContext;
@@ -602,13 +639,20 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const approvalWorkspace = state.workspaces.find((workspace) => workspace.access === "read_write")
     ?? state.workspaces[0];
 
+  const disconnected = state.execution === "disconnected";
+  const reconnecting = state.execution === "reconnecting";
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
       {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} t={t} />}
     </div>
-    {state.error && <div className="error-banner" role="alert"><Icon name="warning" /><span>{t(errorKeys[state.error] ?? "error.default")}</span>
-      {state.error === "mutation_outcome_unknown" && <button type="button" onClick={retryPending}>{t("workspace.retry")}</button>}
-      <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label={t("error.dismiss")}><Icon name="close" /></button></div>}
+    {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
+      ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
+      <Icon name={reconnecting ? "activity" : "warning"} /><span>{reconnecting ? t("connection.reconnecting")
+        : disconnected ? t("connection.disconnected") : t(errorKeys[state.error!] ?? "error.default")}</span>
+      {disconnected && <button className="error-action" type="button" onClick={reconnect}>{t("connection.reconnect")}</button>}
+      {state.error === "mutation_outcome_unknown" && <button className="error-action" type="button" onClick={retryPending}>{t("workspace.retry")}</button>}
+      {state.error && <button type="button" onClick={() => dispatch({ type: "error_dismissed" })}
+        aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
@@ -658,8 +702,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <span className="access-pill"><Icon name="shield" />{needsInput ? t("work.composer.resume")
               : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
                 : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></div>
-          {state.phase === "submitting" && <button className="secondary-button" type="button"
-            onClick={() => void cancelTurn()}>Request stop</button>}
+          {state.phase === "submitting" && !reconnecting && <button className="secondary-button" type="button"
+            onClick={() => void cancelTurn()}>{t("work.composer.requestStop")}</button>}
           <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
             {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
           </button>
@@ -843,23 +887,77 @@ function activityIcon(state: string): IconName {
 }
 
 function SearchScreen({ recents, titles, onOpen, t }: {
-  recents: readonly RecentItem[];
+  recents: readonly RecentTask[];
   titles: Readonly<Record<string, string>>;
   onOpen: (sessionId: string) => Promise<void>;
   t: (key: MessageKey) => string;
 }) {
   const [query, setQuery] = useState("");
-  const results = recents.filter((recent) => {
-    const searchable = `${titles[recent.session_id] ?? ""} ${recent.definition_id}`.toLocaleLowerCase();
-    return searchable.includes(query.trim().toLocaleLowerCase());
-  });
+  const [filter, setFilter] = useState<TaskFilter>("all");
+  const results = filterAndOrderTasks(recents, filter, query, titles);
   return <section className="search-page"><div className="search-heading"><p className="eyebrow">{t("search.eyebrow")}</p><h1>{t("search.title")}</h1><p>{t("search.description")}</p></div>
     <div className="search-box"><Icon name="search" /><input autoFocus aria-label={t("search.label")}
-      value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search.placeholder")} /><kbd>⌘K</kbd></div>
+      value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search.placeholder")} /><kbd>⌘F</kbd></div>
+    <div className="task-filters" role="group" aria-label={t("tasks.filterAria")}>
+      {(["all", "attention", "active", "completed"] as const).map((value) => <button type="button"
+        className={filter === value ? "selected" : ""} aria-pressed={filter === value}
+        onClick={() => setFilter(value)} key={value}>{t(`tasks.${value}`)}</button>)}
+    </div>
     <div className="search-results" aria-live="polite">{results.length ? results.map((recent) => <button type="button" key={recent.session_id} onClick={() => void onOpen(recent.session_id)}>
       <span className="search-result-icon"><Icon name="work" /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {t(recent.turn_count === 1 ? "search.turn" : "search.turns")} · {terminalCopy(recent.latest_turn_state, t)}</small></span><Icon name="chevron" /></button>)
       : <div className="search-empty"><Icon name="search" /><h2>{t(query ? "search.noMatch" : "search.noWork")}</h2><p>{t(query ? "search.tryDifferent" : "search.completedHint")}</p></div>}</div>
   </section>;
+}
+
+function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettings,
+  onToggleInspector, onOpen, t }: {
+  recents: readonly RecentTask[]; titles: Readonly<Record<string, string>>;
+  onClose: () => void; onNewWork: () => void; onSearch: () => void; onSettings: () => void;
+  onToggleInspector: () => void; onOpen: (sessionId: string) => void;
+  t: (key: MessageKey) => string;
+}) {
+  const [query, setQuery] = useState("");
+  const dialog = useRef<HTMLElement>(null);
+  const matches = filterAndOrderTasks(recents, "all", query, titles).slice(0, 8);
+  const actions = query ? [] : [
+    { icon: "plus" as IconName, label: t("nav.newWork"), hint: "⌘N", run: onNewWork },
+    { icon: "search" as IconName, label: t("command.searchAll"), hint: "⌘F", run: onSearch },
+    { icon: "panel" as IconName, label: t("shell.toggleInspector"), hint: "⌘⇧A", run: onToggleInspector },
+    { icon: "settings" as IconName, label: t("nav.settings"), hint: "⌘,", run: onSettings },
+  ];
+  const handleKeys = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+    const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>("input, button") ?? [])]
+      .filter((element) => !element.hasAttribute("disabled"));
+    if (event.key === "ArrowDown" && event.target instanceof HTMLInputElement && focusable[1]) {
+      event.preventDefault(); focusable[1].focus(); return;
+    }
+    if (event.key !== "Tab" || !focusable.length) return;
+    const first = focusable[0]!; const last = focusable.at(-1)!;
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+  return <div className="command-backdrop" role="presentation" onMouseDown={(event) => {
+    if (event.target === event.currentTarget) onClose();
+  }}><section ref={dialog} className="command-center" role="dialog" aria-modal="true"
+      aria-label={t("command.title")} onKeyDown={handleKeys}>
+      <div className="command-search"><Icon name="search" /><input autoFocus value={query}
+        aria-label={t("command.searchLabel")} placeholder={t("command.placeholder")}
+        onChange={(event) => setQuery(event.target.value)} /><kbd>esc</kbd></div>
+      <div className="command-scroll">
+        {actions.length > 0 && <div className="command-group"><p>{t("command.actions")}</p>{actions.map((action) =>
+          <button type="button" aria-label={action.label} onClick={action.run} key={action.label}><span className="command-icon"><Icon name={action.icon} /></span>
+            <strong>{action.label}</strong><kbd>{action.hint}</kbd></button>)}</div>}
+        <div className="command-group"><p>{query ? t("command.matches") : t("command.work")}</p>
+          {matches.map((task) => <button type="button" onClick={() => onOpen(task.session_id)} key={task.session_id}>
+            <span className={`command-icon task-${classifyTask(task)}`}><TaskStateDot task={task} /></span>
+            <span><strong>{titles[task.session_id] || recentLabel(task)}</strong><small>{taskStateCopy(task, t)}</small></span>
+            <Icon name="chevron" /></button>)}
+          {!matches.length && <div className="command-empty">{t("command.empty")}</div>}
+        </div>
+      </div>
+      <footer><span>{t("command.keyboardHint")}</span><span>{recents.length} {t("command.durable")}</span></footer>
+    </section></div>;
 }
 
 function SetupRequired({ t }: { t: (key: MessageKey) => string }) { return <StatusCard icon="shield" title={t("shell.setupRequired")} body={t("setup.unavailable")} />; }
@@ -1046,11 +1144,21 @@ function LocaleOptions({ value, onChange, t }: {
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
 function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} aria-label={label} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
-function admittedTurnState(value?: string): RecentItem["latest_turn_state"] {
+function TaskStateDot({ task }: { task: RecentTask }) {
+  return <span className={`task-state-dot ${classifyTask(task)}`} aria-hidden="true" />;
+}
+function taskStateCopy(task: RecentTask, t: (key: MessageKey) => string) {
+  const category = classifyTask(task);
+  return category === "attention" ? t("tasks.needsInput")
+    : category === "active" ? t("tasks.running")
+      : category === "failed" ? t("tasks.failed")
+        : category === "completed" ? terminalCopy(task.latest_turn_state, t) : t("tasks.ready");
+}
+function admittedTurnState(value?: string): RecentTask["latest_turn_state"] {
   return value === "running" || value === "completed" || value === "suspended"
     || value === "stopped" || value === "failed" ? value : undefined;
 }
-function recentLabel(session: RecentItem) {
+function recentLabel(session: RecentTask) {
   const opened = new Date(session.opened_at ?? "");
   return Number.isNaN(opened.valueOf())
     ? "Durable work"

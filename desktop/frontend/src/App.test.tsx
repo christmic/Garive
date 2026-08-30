@@ -107,4 +107,23 @@ describe("Desktop product experience", () => {
     fireEvent.keyDown(composer, { key: "Enter" });
     await waitFor(() => expect(commands).toContain("start_product_turn"));
   });
+
+  it("opens a keyboard-first command center and routes actions without losing work", async () => {
+    render(<App />);
+    await screen.findByText("What should we accomplish?");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "Garive command center" });
+    const commandSearch = screen.getByRole("textbox", { name: "Search commands and durable work" });
+    expect(commandSearch).toBeTruthy();
+    fireEvent.keyDown(commandSearch, { key: "ArrowDown" });
+    expect(screen.getByRole("button", { name: "New work" })).toBe(document.activeElement);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+    expect(dialog.isConnected).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Quick switcher" }));
+    expect(await screen.findByRole("dialog", { name: "Garive command center" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Garive command center" })).toBeNull();
+  });
 });
