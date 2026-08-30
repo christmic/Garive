@@ -1,4 +1,4 @@
-#if canImport(GariveShared)
+#if GARIVE_SHARED_AVAILABLE
 import SwiftUI
 #if os(iOS)
 import UIKit

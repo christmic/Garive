@@ -1,5 +1,6 @@
 import SwiftUI
 
+#if GARIVE_SHARED_AVAILABLE
 struct PairingView: View {
     @State private var origin = ""
     @State private var accessCode = ""
@@ -90,3 +91,4 @@ struct PairingView: View {
         }.padding(16).background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 16))
     }
 }
+#endif

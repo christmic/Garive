@@ -1,14 +1,17 @@
 package com.garive.android.ui
 
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasScrollAction
 import com.garive.mobile.model.MobileConnectionState
 import com.garive.mobile.model.MobileAgentCard
 import com.garive.mobile.model.MobileActivityItem
@@ -58,6 +61,22 @@ public class SessionsScreenTest {
         )
 
         assertEquals("You\nCheck release\n\nAgent\nRelease is healthy", conversationTranscript(state))
+    }
+
+    @Test
+    public fun agentResponseSeparatesProseAndScrollableFencedCode(): Unit {
+        val response = "Result is ready.\n\n```kotlin\nval nextStep = \"ship after physical-device admission\"\n```"
+        assertEquals(
+            listOf(
+                MobileResponseBlock.Prose("Result is ready."),
+                MobileResponseBlock.Code("kotlin", "val nextStep = \"ship after physical-device admission\""),
+            ),
+            parseMobileResponseBlocks(response),
+        )
+
+        compose.setContent { GariveTheme { MobileResponseText(response) } }
+        compose.onNodeWithText("Result is ready.").assertIsDisplayed()
+        compose.onNodeWithTag("Agent code block").assert(hasScrollAction())
     }
 
     @Test

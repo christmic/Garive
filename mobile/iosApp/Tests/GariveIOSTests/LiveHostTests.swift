@@ -190,3 +190,13 @@ func stableMobileNoticesUseActionableCopy() {
     #expect(mobileNoticeMessage("runtime_unavailable") == "Runtime unavailable. Verified history is still shown.")
     #expect(mobileNoticeMessage("validation_input_too_large") == "Outcome is over 16 KiB. Shorten it before sending.")
 }
+
+@Test
+func agentResponseSeparatesProseAndFencedCode() {
+    #expect(parseMobileResponseBlocks(
+        "Result is ready.\n\n```swift\nlet nextStep = \"ship after physical-device admission\"\n```"
+    ) == [
+        .prose("Result is ready."),
+        .code(language: "swift", text: "let nextStep = \"ship after physical-device admission\""),
+    ])
+}

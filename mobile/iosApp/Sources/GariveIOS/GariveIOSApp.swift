@@ -8,7 +8,7 @@ struct GariveIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-#if canImport(GariveShared)
+#if GARIVE_SHARED_AVAILABLE
             GariveRootView()
 #else
             ContentUnavailableView(

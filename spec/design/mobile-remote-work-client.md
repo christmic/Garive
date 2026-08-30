@@ -276,6 +276,10 @@ does not retain the local credential.
 - Navigation title uses Agent label; status sits beneath it.
 - Timeline bubbles distinguish user, Agent, system status, suspension, and
   activity. Activity is collapsed by default.
+- Committed Agent output recognizes only line-delimited triple-backtick fenced
+  code blocks. Prose stays literal selectable text; code uses a native
+  monospace surface with horizontal scrolling and an optional bounded language
+  label. Rendering never executes code or turns arbitrary output into authority.
 - Expanded Activity renders the public label and committed state plus an
   optional selectable stable safe code. Raw provider bodies, paths, arguments,
   and internal identifiers remain absent.

@@ -257,11 +257,7 @@ private fun TurnCard(turn: MobileTurnItem) {
                     )
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        turn.responseText.orEmpty(),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
+                    MobileResponseText(turn.responseText.orEmpty())
                     if (turn.contentTruncated) {
                         Text(
                             "Display content was safely bounded",

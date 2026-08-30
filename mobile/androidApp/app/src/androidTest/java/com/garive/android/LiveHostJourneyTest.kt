@@ -5,9 +5,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -111,6 +114,7 @@ public class LiveHostJourneyTest {
                     compose.onAllNodesWithText("Review the mobile interaction design.")
                         .fetchSemanticsNodes().isNotEmpty()
                 }
+                compose.onNodeWithTag("Agent code block").assert(hasScrollAction())
                 compose.onNodeWithContentDescription("Share conversation").performClick()
                 val chooserActivity = instrumentation.waitForMonitorWithTimeout(chooser, 3_000)
                 assertNotNull(chooserActivity)

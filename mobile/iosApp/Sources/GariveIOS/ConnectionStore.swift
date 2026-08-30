@@ -113,7 +113,7 @@ final class ConnectionStore {
 
 enum ConnectionStoreError: Error { case keychain(OSStatus), deviceKey }
 
-#if canImport(GariveShared)
+#if GARIVE_SHARED_AVAILABLE
 @preconcurrency import GariveShared
 
 final class UserDefaultsMobileWorkPersistence: NSObject, MobileWorkPersistence {

@@ -134,6 +134,7 @@ final class GariveIOSUITests: XCTestCase {
 
         let share = app.buttons["Share conversation"]
         XCTAssertTrue(share.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Agent code block"].exists)
         share.tap()
         XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.cells["Copy"].exists)

@@ -1,14 +1,16 @@
 {
   "schema_version": 1,
-  "android_source_digest": "49509178a84eef9c649989976e0e2d31fb31a15c10c7f6046a04f31d85d0622c",
-  "ios_source_digest": "3e436825347fcb8edd4d795c0c601175364768b0c42b4fccfbd8f33c97358645",
+  "android_source_digest": "7ffb153554dd070ed6709493f371e64c6fced9d49388d248358a0ac5ddb19c08",
+  "ios_source_digest": "f59dc1fd97aa6ebaa746dd16864a2efb8bd5ea71d14f643878dea4fee566bf22",
   "screenshots": {
-    "android-03-sessions.png": {"scenario": "Sessions list and visibly selected filters", "sha256": "460f843dc48b14b7d95d0a8bd60f194bf76e60b8aef1ee92e12c89618d62934c", "width": 320, "height": 640},
-    "android-05-new-task.png": {"scenario": "Expanded new task with first-visible controls", "sha256": "c52c19ba09f1162200dffdee94fa3525ac3169b156e94be48602f58a452ad259", "width": 320, "height": 640},
-    "android-06-approval.png": {"scenario": "Expanded safe Activity code and one-turn approval", "sha256": "27559d452e910926b8f16ccc12061e28b4fcba721ab50b21866d945dcbd858aa", "width": 320, "height": 640},
-    "android-09-steering.png": {"scenario": "Running conversation and committed-state composer", "sha256": "cd51cb849c9c6ce2b53db1c3fb869d1dd419592b9356ee603c621e35854df37c", "width": 320, "height": 640},
-    "ios-03-sessions.png": {"scenario": "Sessions list and filters", "sha256": "67e6a88870fd6fe3439cee93fc7447058e1055d668740e1ab60a8e656aebb269", "width": 1206, "height": 2622},
-    "ios-05-new-task.png": {"scenario": "Expanded new task and first-visible goal editor", "sha256": "00895e627897a84cd1bfea15f67b3873e4e6de68e1efcb7a00abc95d97fe8a66", "width": 1206, "height": 2622},
-    "ios-17-steering.png": {"scenario": "Running conversation and committed-state composer", "sha256": "54235d6623f711ed7a4f06a4f82157f19f640aa948dacf51782e146725a0fd76", "width": 1206, "height": 2622}
+    "android-03-sessions.png": {"scenario": "Sessions list and visibly selected filters", "sha256": "acdb3ed720706190c547a278d9117e67e2c9e1a57bcee982cbf9144ba62860f2", "width": 320, "height": 640},
+    "android-05-new-task.png": {"scenario": "Expanded new task with first-visible controls", "sha256": "b26ce5bec1d8e9246662083e939d927c5580be5e75d759f7c47cc92b477af847", "width": 320, "height": 640},
+    "android-06-approval.png": {"scenario": "Expanded safe Activity code and one-turn approval", "sha256": "9fd449bf7e4cf387580defd1d16ab5b22d32073752dda373f69599b86eb6ee1d", "width": 320, "height": 640},
+    "android-09-steering.png": {"scenario": "Running conversation and committed-state composer", "sha256": "d535f8c0d7403f757be3f28345276da71a1504dcd23ecc419f95d198c6c402f0", "width": 320, "height": 640},
+    "android-22-code-result.png": {"scenario": "Light conversation with selectable horizontally scrollable fenced code", "sha256": "18a8981c95f659bd7b060f045c9c4840218c8b4d30acc006015c803c9d3415a7", "width": 320, "height": 640},
+    "ios-03-sessions.png": {"scenario": "Sessions list and filters", "sha256": "50f5e3c87dfcbb2640802591ff46139b3b011cf7c43de1f09a6000cab788d339", "width": 1206, "height": 2622},
+    "ios-05-new-task.png": {"scenario": "Expanded new task and first-visible goal editor", "sha256": "ecd60b34e8b28d554a7cd4d34f93c5130ab65ad9dd7ab000e67143a8e8e672b9", "width": 1206, "height": 2622},
+    "ios-17-steering.png": {"scenario": "Running conversation and committed-state composer", "sha256": "712a2936a502e953aa9328731486a3787dcac7ae6d5bfb8e8073d5264759b82f", "width": 1206, "height": 2622},
+    "ios-18-code-result.png": {"scenario": "Light conversation with selectable horizontally scrollable fenced code", "sha256": "024a2a3588a8dd7ad2a80cd17ec833caff0070c8c8269e1e5e99baf657ea64af", "width": 1206, "height": 2622}
   }
 }

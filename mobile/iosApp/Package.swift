@@ -5,7 +5,11 @@ import PackageDescription
 let frameworkPath = "../shared/build/XCFrameworks/debug/GariveShared.xcframework"
 let hasShared = FileManager.default.fileExists(atPath: frameworkPath)
 var targets: [Target] = [
-    .executableTarget(name: "GariveIOS", dependencies: hasShared ? ["GariveShared"] : []),
+    .executableTarget(
+        name: "GariveIOS",
+        dependencies: hasShared ? ["GariveShared"] : [],
+        swiftSettings: hasShared ? [.define("GARIVE_SHARED_AVAILABLE")] : []
+    ),
     .testTarget(name: "GariveIOSTests", dependencies: ["GariveIOS"]),
 ]
 if hasShared { targets.append(.binaryTarget(name: "GariveShared", path: frameworkPath)) }

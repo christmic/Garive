@@ -1,4 +1,4 @@
-#if canImport(GariveShared)
+#if GARIVE_SHARED_AVAILABLE
 import SwiftUI
 @preconcurrency import GariveShared
 
@@ -287,7 +287,7 @@ private struct AssistantMessage: View {
                 .frame(width: 34, height: 34)
                 .background(GarivePalette.coral.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 10) {
-                Text(text).textSelection(.enabled).font(.body)
+                MobileResponseText(text: text)
                 if truncated {
                     Text("Display content was safely bounded").font(.caption).foregroundStyle(.secondary)
                 }

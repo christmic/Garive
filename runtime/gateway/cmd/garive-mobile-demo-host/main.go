@@ -60,7 +60,7 @@ func newDemoHost() *demoHost {
 		{ID: "release-approval", Definition: "mobile-orchestrator", State: "suspended", Position: 12, TurnID: "turn-approval", Turns: 3, UserText: "Finish the mobile release and verify every platform."},
 		{ID: "release-decline", Definition: "mobile-orchestrator", State: "suspended", Position: 10, TurnID: "turn-decline", Turns: 2, UserText: "Run the protected release action only if the mobile checks are approved."},
 		{ID: "runtime-monitor", Definition: "incident-responder", State: "running", Position: 8, TurnID: "turn-running", Turns: 2, UserText: "Monitor the production rollout and report anomalies."},
-		{ID: "design-review", Definition: "product-reviewer", State: "completed", Position: 16, TurnID: "turn-complete", Turns: 4, UserText: "Review the mobile interaction design.", Completion: "Review complete: navigation, typography, accessibility, and remote controls meet the accepted mobile specification."},
+		{ID: "design-review", Definition: "product-reviewer", State: "completed", Position: 16, TurnID: "turn-complete", Turns: 4, UserText: "Review the mobile interaction design.", Completion: "Review complete: navigation, typography, accessibility, and remote controls meet the accepted mobile specification.\n\n```swift\nlet releaseStatus = \"ready\"\nlet nextStep = \"ship after physical-device admission\"\n```"},
 	}}
 }
 
