@@ -264,7 +264,7 @@ fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer
     } else {
         " Enter send   Ctrl+J newline   Ctrl+P commands   ? help"
     };
-    Line::styled(hint, colors.muted).render(cells[0], buffer);
+    Line::styled(model.notice.as_deref().unwrap_or(hint), colors.muted).render(cells[0], buffer);
     Line::styled(
         format!("{}/4096 bytes ", model.composer.text().len()),
         colors.muted,

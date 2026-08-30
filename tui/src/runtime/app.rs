@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    collections::BTreeMap,
+    io::{self, Write},
+};
 
 use crossterm::event::EventStream;
 use futures::StreamExt;
@@ -108,12 +111,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             }
         }
     }
-    if let Some(task) = state.follow.take() {
-        task.abort();
-    }
-    if let Some(task) = state.reconnect.take() {
-        task.abort();
-    }
+    state.stop_tasks();
     state.persist_presentation();
     guard.restore().map_err(map_terminal_error)?;
     interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
@@ -162,12 +160,7 @@ async fn run_screen_reader(
             }
         }
     }
-    if let Some(task) = state.follow.take() {
-        task.abort();
-    }
-    if let Some(task) = state.reconnect.take() {
-        task.abort();
-    }
+    state.stop_tasks();
     state.persist_presentation();
     write_linear("Garive exited. Terminal restored.")?;
     guard.restore().map_err(map_terminal_error)?;
@@ -276,6 +269,16 @@ pub(super) struct RuntimeState {
     pub(super) queued_prompt: Option<String>,
     pub(super) editing_suspension: Option<String>,
     snapshot_request: u64,
+    background_follows: BTreeMap<String, BackgroundFollow>,
+    follow_sequence: u64,
+}
+
+struct BackgroundFollow {
+    observed_position: u64,
+    attempt: u32,
+    sequence: u64,
+    follow: Option<JoinHandle<()>>,
+    reconnect: Option<JoinHandle<()>>,
 }
 
 struct RestoredState {
@@ -332,6 +335,8 @@ impl RuntimeState {
             queued_prompt: None,
             editing_suspension: None,
             snapshot_request: 0,
+            background_follows: BTreeMap::new(),
+            follow_sequence: 0,
         }
     }
 
@@ -348,13 +353,34 @@ impl RuntimeState {
     }
 
     pub(super) fn load(&mut self, session_id: String) {
-        if let Some(task) = self.follow.take() {
+        if self.model.selected_session.as_deref() != Some(&session_id) {
+            if matches!(
+                self.model.execution,
+                ExecutionState::Following | ExecutionState::Suspended
+            ) {
+                if let (Some(previous), Some(task)) =
+                    (self.model.selected_session.clone(), self.follow.take())
+                {
+                    self.add_background_follow(previous, self.model.observed_position, task);
+                }
+            } else if let Some(task) = self.follow.take() {
+                task.abort();
+            }
+        } else if let Some(task) = self.follow.take() {
             task.abort();
         }
         if let Some(task) = self.reconnect.take() {
             task.abort();
         }
         self.reconnect_attempt = 0;
+        if let Some(mut background) = self.background_follows.remove(&session_id) {
+            if let Some(task) = background.follow.take() {
+                task.abort();
+            }
+            if let Some(task) = background.reconnect.take() {
+                task.abort();
+            }
+        }
         self.persist_presentation();
         self.model.selected_session = Some(session_id.clone());
         self.preferences.selected_session_id = Some(session_id.clone());
@@ -372,6 +398,67 @@ impl RuntimeState {
             session_id,
             self.sender.clone(),
         );
+    }
+
+    fn add_background_follow(
+        &mut self,
+        session_id: String,
+        observed_position: u64,
+        task: JoinHandle<()>,
+    ) {
+        self.follow_sequence = self.follow_sequence.saturating_add(1);
+        if let Some(mut replaced) = self.background_follows.remove(&session_id) {
+            if let Some(previous) = replaced.follow.take() {
+                previous.abort();
+            }
+            if let Some(previous) = replaced.reconnect.take() {
+                previous.abort();
+            }
+        }
+        self.background_follows.insert(
+            session_id,
+            BackgroundFollow {
+                observed_position,
+                attempt: 0,
+                sequence: self.follow_sequence,
+                follow: Some(task),
+                reconnect: None,
+            },
+        );
+        if self.background_follows.len() > 4 {
+            let oldest = self
+                .background_follows
+                .iter()
+                .min_by_key(|(_, value)| value.sequence)
+                .map(|(key, _)| key.clone());
+            if let Some(oldest) = oldest {
+                if let Some(mut evicted) = self.background_follows.remove(&oldest) {
+                    if let Some(task) = evicted.follow.take() {
+                        task.abort();
+                    }
+                    if let Some(task) = evicted.reconnect.take() {
+                        task.abort();
+                    }
+                }
+            }
+        }
+    }
+
+    fn stop_tasks(&mut self) {
+        if let Some(task) = self.follow.take() {
+            task.abort();
+        }
+        if let Some(task) = self.reconnect.take() {
+            task.abort();
+        }
+        for background in self.background_follows.values_mut() {
+            if let Some(task) = background.follow.take() {
+                task.abort();
+            }
+            if let Some(task) = background.reconnect.take() {
+                task.abort();
+            }
+        }
     }
 
     pub(super) fn load_more_sessions(&mut self) {
@@ -738,7 +825,31 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 };
             }
         }
-        HostMessage::FollowEnded { .. } => {}
+        HostMessage::FollowEnded { session_id, code } => {
+            let Some(background) = state.background_follows.get_mut(&session_id) else {
+                return;
+            };
+            background.follow = None;
+            if matches!(
+                code,
+                HostClientErrorCode::InvalidEvent
+                    | HostClientErrorCode::EventOrderViolation
+                    | HostClientErrorCode::EventLimitExceeded
+            ) {
+                state.background_follows.remove(&session_id);
+                state.model.notice = Some(format!(
+                    "Background Session follow stopped: {}.",
+                    code.wire_name()
+                ));
+            } else if background.attempt < 5 {
+                background.attempt += 1;
+                background.reconnect = Some(host::schedule_reconnect(
+                    session_id,
+                    background.attempt,
+                    state.sender.clone(),
+                ));
+            }
+        }
         HostMessage::ReconnectDue {
             session_id,
             attempt,
@@ -754,7 +865,24 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.sender.clone(),
             ));
         }
-        HostMessage::ReconnectDue { .. } => {}
+        HostMessage::ReconnectDue {
+            session_id,
+            attempt,
+        } => {
+            let Some(background) = state.background_follows.get_mut(&session_id) else {
+                return;
+            };
+            if background.attempt != attempt {
+                return;
+            }
+            background.reconnect = None;
+            background.follow = Some(host::follow(
+                state.client.clone(),
+                session_id,
+                background.observed_position,
+                state.sender.clone(),
+            ));
+        }
         HostMessage::Failed { operation, error } => {
             let code = error.code;
             match operation {
@@ -815,9 +943,11 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
 }
 
 fn apply_event(event: HostEvent, state: &mut RuntimeState) {
-    if state.model.selected_session.as_deref() != Some(&event.session_id)
-        || event.position <= state.model.observed_position
-    {
+    if state.model.selected_session.as_deref() != Some(&event.session_id) {
+        apply_background_event(event, state);
+        return;
+    }
+    if event.position <= state.model.observed_position {
         return;
     }
     state.model.observed_position = event.position;
@@ -851,6 +981,62 @@ fn apply_event(event: HostEvent, state: &mut RuntimeState) {
     ) {
         let session = event.session_id;
         state.load(session);
+    }
+}
+
+fn apply_background_event(event: HostEvent, state: &mut RuntimeState) {
+    let Some(background) = state.background_follows.get_mut(&event.session_id) else {
+        return;
+    };
+    if event.position <= background.observed_position {
+        return;
+    }
+    background.observed_position = event.position;
+    background.attempt = 0;
+    let lifecycle = match event.event.as_str() {
+        "turn.started" => Some("running"),
+        "turn.suspended" => Some("suspended"),
+        "turn.completed" => Some("completed"),
+        "turn.failed" => Some("failed"),
+        "turn.stopped" => Some("stopped"),
+        _ => None,
+    };
+    if let Some(summary) = state
+        .model
+        .sessions
+        .iter_mut()
+        .find(|value| value.session_id == event.session_id)
+    {
+        summary.latest_position = summary.latest_position.max(event.position);
+        if !event.turn_id.is_empty() {
+            summary.latest_turn_id = Some(event.turn_id.clone());
+        }
+        if event.event == "turn.started" {
+            summary.turn_count = summary.turn_count.saturating_add(1);
+        }
+        if let Some(lifecycle) = lifecycle {
+            summary.latest_turn_state = Some(lifecycle.into());
+        }
+    }
+    if matches!(
+        event.event.as_str(),
+        "turn.suspended" | "turn.completed" | "turn.failed" | "turn.stopped"
+    ) {
+        let mut finished = state
+            .background_follows
+            .remove(&event.session_id)
+            .expect("background follow remains present");
+        if let Some(task) = finished.follow.take() {
+            task.abort();
+        }
+        if let Some(task) = finished.reconnect.take() {
+            task.abort();
+        }
+        state.model.notice = Some(if event.event == "turn.suspended" {
+            "A background Session requires action.".into()
+        } else {
+            "A background Session reached a terminal state.".into()
+        });
     }
 }
 

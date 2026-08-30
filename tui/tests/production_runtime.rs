@@ -45,6 +45,10 @@ impl TurnDispatcher for CompletingDispatcher {
             schedule_cancel_terminal(self.database.clone(), turn.clone(), usage);
             return Ok(());
         }
+        if call == 4 {
+            schedule_delayed_completion(self.database.clone(), turn.clone(), usage);
+            return Ok(());
+        }
         let outcome = if call == 1 {
             AgentOutcome::Suspended {
                 reason: SuspensionReason::PartialOutput,
@@ -88,6 +92,35 @@ impl TurnDispatcher for CompletingDispatcher {
             .map_err(|_| TurnDispatchError)?;
         Ok(())
     }
+}
+
+fn schedule_delayed_completion(database: PathBuf, turn: CommittedTurn, usage: UsageSummary) {
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(1_200));
+        let report = ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: "background completion".into(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        };
+        let facts = plan_core_terminal(
+            &CoreTerminalContext {
+                turn_id: turn.turn_id,
+                execution_id: turn.execution_id,
+                recorded_at: "2026-08-30T00:00:03Z".into(),
+            },
+            &report,
+        )
+        .unwrap();
+        SqliteLedger::open(&database)
+            .unwrap()
+            .commit(turn.session_id, turn.session_version, facts)
+            .unwrap();
+    });
 }
 
 fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: UsageSummary) {
@@ -175,8 +208,18 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         .unwrap()
         .list_sessions()
         .unwrap();
-    assert_eq!(sessions.len(), 1);
-    let session = sessions[0].clone();
+    assert_eq!(sessions.len(), 2);
+    let session = sessions
+        .iter()
+        .find(|session| {
+            host.get_timeline(session.as_str(), 0, 10)
+                .unwrap()
+                .items
+                .len()
+                == 3
+        })
+        .unwrap()
+        .clone();
     let timeline = host.get_timeline(session.as_str(), 0, 10).unwrap();
     assert_eq!(timeline.items[0].user_text, "hello durable tui");
     assert_eq!(
@@ -190,6 +233,13 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     );
     assert_eq!(timeline.items[2].user_text, "cancel this turn");
     assert_eq!(timeline.items[2].state, "stopped");
+    let background = sessions.iter().find(|value| **value != session).unwrap();
+    let background_timeline = host.get_timeline(background.as_str(), 0, 10).unwrap();
+    assert_eq!(background_timeline.items[0].user_text, "background task");
+    assert_eq!(
+        background_timeline.items[0].completion_text.as_deref(),
+        Some("background completion")
+    );
 
     let restart_log = temporary.path().join("restart.log");
     assert!(run_expect(address, &state, &restart_log, true));
@@ -241,6 +291,15 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             after 300
             send "\033"
             expect "stopped"
+            send "\016"
+            after 300
+            send "background task\r"
+            expect "background task"
+            send "\023"
+            expect "Switch session"
+            send "\r"
+            expect "cancel this turn"
+            expect "background Session reached a terminal state"
             send "\021"
             send "\r"
             expect eof

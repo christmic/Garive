@@ -193,6 +193,9 @@ impl StateStore {
         };
         let path = root.join("prompt-history.v1.jsonl");
         validate_private_file_if_present(&path)?;
+        if matches!(fs::metadata(&path), Err(error) if error.kind() == io::ErrorKind::NotFound) {
+            return Ok(Vec::new());
+        }
         match read_history_file(&path) {
             Ok(value) => Ok(value),
             Err(StateError::InvalidData) => {
