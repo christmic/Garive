@@ -102,10 +102,60 @@ public class MobileWorkControllerTest {
         assertEquals("device_reauth_required", state.noticeCode)
     }
 
+    @Test
+    public fun ambiguousStartSurvivesRestartWithExactIdentity(): Unit = runBlocking {
+        val persistence = MemoryMobileWorkPersistence()
+        val first = MobileWorkController(
+            FakeMobileHost(failFirstStart = true), identities(), persistence = persistence,
+        )
+        first.boot()
+
+        val unknown = first.startTask("definition-main", "Ship the mobile client")
+
+        assertEquals("command-2", unknown.pendingCommand?.commandId)
+        assertEquals("Ship the mobile client", persistence.payload)
+        val restoredHost = FakeMobileHost()
+        val restored = MobileWorkController(restoredHost, identities(), persistence = persistence)
+
+        val booted = restored.boot()
+
+        assertEquals("command-2", booted.pendingCommand?.commandId)
+        assertEquals("Ship the mobile client", booted.draft)
+        val retried = restored.retryExact()
+        assertEquals(listOf("command-2"), restoredHost.startCommandIds)
+        assertNull(retried.pendingCommand)
+        assertNull(persistence.record)
+        assertNull(persistence.payload)
+    }
+
+    @Test
+    public fun corruptPendingRecordClearsRecordAndPayloadOnly(): Unit = runBlocking {
+        val persistence = MemoryMobileWorkPersistence(record = "{\"schema_version\":999}", payload = "private draft")
+        val controller = MobileWorkController(FakeMobileHost(), identities(), persistence = persistence)
+
+        val state = controller.boot()
+
+        assertNull(state.pendingCommand)
+        assertEquals("", state.draft)
+        assertNull(persistence.record)
+        assertNull(persistence.payload)
+        assertEquals(MobileConnectionState.ONLINE, state.connection)
+    }
+
     private fun identities(): CommandIdentitySource {
         var next = 0
         return CommandIdentitySource { "command-${++next}" }
     }
+}
+
+private class MemoryMobileWorkPersistence(
+    var record: String? = null,
+    var payload: String? = null,
+) : MobileWorkPersistence {
+    override fun readPendingRecord(): String? = record
+    override fun writePendingRecord(value: String?) { record = value }
+    override fun readPendingPayload(): String? = payload
+    override fun writePendingPayload(value: String?) { payload = value }
 }
 
 private class FakeMobileHost(
