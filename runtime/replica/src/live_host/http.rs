@@ -41,7 +41,7 @@ impl LiveHostServer {
         let local_addr = listener.local_addr().map_err(LiveHostServerError::Io)?;
         let app = Router::new()
             .route("/v1/agent-definitions", get(agent_definitions))
-            .route("/v1/sessions", post(create_session))
+            .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
             .route("/v1/turns/:operation", post(mutate_turn))
@@ -78,6 +78,18 @@ async fn agent_definitions(State(host): State<LiveHost>) -> Response {
 
 async fn session_view(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
     let result = tokio::task::spawn_blocking(move || host.get_session(&session_id))
+        .await
+        .map_err(|_| LiveHostError::DurabilityUnavailable)
+        .and_then(|result| result);
+    command_response(result)
+}
+
+async fn session_page(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
+    let (limit, before) = match parse_session_query(query.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    let result = tokio::task::spawn_blocking(move || host.list_sessions(limit, before.as_deref()))
         .await
         .map_err(|_| LiveHostError::DurabilityUnavailable)
         .and_then(|result| result);
@@ -287,6 +299,35 @@ fn parse_event_query(query: Option<&str>) -> Result<u64, LiveHostError> {
             raw.parse().map_err(|_| LiveHostError::InvalidRequest)
         }
     }
+}
+
+fn parse_session_query(query: Option<&str>) -> Result<(usize, Option<String>), LiveHostError> {
+    let query = query
+        .filter(|value| !value.is_empty())
+        .ok_or(LiveHostError::InvalidRequest)?;
+    let mut limit = None;
+    let mut before = None;
+    for pair in query.split('&') {
+        if let Some(raw) = pair.strip_prefix("limit=") {
+            if limit.is_some() || raw.is_empty() {
+                return Err(LiveHostError::InvalidRequest);
+            }
+            limit = Some(raw.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+        } else if let Some(raw) = pair.strip_prefix("before=") {
+            if before.is_some()
+                || raw.is_empty()
+                || !raw
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            {
+                return Err(LiveHostError::InvalidRequest);
+            }
+            before = Some(raw.to_owned());
+        } else {
+            return Err(LiveHostError::InvalidRequest);
+        }
+    }
+    Ok((limit.ok_or(LiveHostError::InvalidRequest)?, before))
 }
 
 fn command_response<T: serde::Serialize>(result: Result<T, LiveHostError>) -> Response {

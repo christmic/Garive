@@ -23,6 +23,7 @@ garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 axum.workspace = true
+base64.workspace = true
 chrono.workspace = true
 futures.workspace = true
 reqwest.workspace = true
@@ -37,7 +38,6 @@ tokio.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 garive-host-client = { path = "../../clients/host-rs" }
 garive-provider-profile = { path = "../../providers/profile" }
 serde_json.workspace = true

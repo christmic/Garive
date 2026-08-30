@@ -17,14 +17,14 @@ use crate::{
     StartTurnCommand,
 };
 
-use super::read_model;
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionPageV1,
     AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
     HostClock, HostContinuationInput, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
-    LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, SessionViewV1,
+    LiveHostEvent, LiveHostLimits, LiveHostState, SessionPageV1, SessionSummary, SessionViewV1,
     TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
+use super::{read_cursor, read_model};
 
 /// Durable local Host command service shared by in-process and HTTP clients.
 #[derive(Clone)]
@@ -130,6 +130,60 @@ impl LiveHost {
         Ok(view)
     }
 
+    /// Lists a reverse-opened page of verified durable Sessions.
+    pub fn list_sessions(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<SessionPageV1, LiveHostError> {
+        if limit == 0 || limit > self.state.read_limits.max_sessions {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let mut sessions = self
+            .ledger()?
+            .list_sessions()
+            .map_err(map_sqlite)?
+            .into_iter()
+            .map(|id| {
+                let session = self.get_session(id.as_str())?.session;
+                let opened = chrono::DateTime::parse_from_rfc3339(&session.opened_at)
+                    .map_err(|_| LiveHostError::CorruptState)?;
+                Ok((opened, session))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        sessions.sort_by(|(left_time, left), (right_time, right)| {
+            right_time
+                .cmp(left_time)
+                .then_with(|| right.session_id.cmp(&left.session_id))
+        });
+        let sessions = sessions
+            .into_iter()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        let start = before.map_or(Ok(0), |token| {
+            let key = read_cursor::decode(token, &self.state.installed, self.state.read_limits)?;
+            sessions
+                .iter()
+                .position(|item| item.opened_at == key.0 && item.session_id == key.1)
+                .map(|index| index + 1)
+                .ok_or(LiveHostError::InvalidRequest)
+        })?;
+        let end = start.saturating_add(limit).min(sessions.len());
+        let page_sessions = sessions[start..end].to_vec();
+        let next_before = (end < sessions.len())
+            .then(|| page_sessions.last())
+            .flatten()
+            .map(|item| read_cursor::encode(item, &self.state.installed, self.state.read_limits))
+            .transpose()?;
+        let page = SessionPageV1 {
+            api_version: "v1",
+            sessions: page_sessions,
+            next_before,
+        };
+        ensure_response_bound(&page, self.state.read_limits.max_response_bytes)?;
+        Ok(page)
+    }
+
     /// Returns explicit Host bounds used by HTTP parsing and event follow mode.
     pub fn limits(&self) -> LiveHostLimits {
         self.state.limits
@@ -146,7 +200,10 @@ impl LiveHost {
     }
 
     /// Returns restart-safe Sessions ordered by open time and identity descending.
-    pub fn list_sessions(&self, limit: usize) -> Result<Vec<SessionSummary>, LiveHostError> {
+    pub fn list_session_summaries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<SessionSummary>, LiveHostError> {
         if limit == 0 || limit > self.state.limits.event_batch_size as usize {
             return Err(LiveHostError::InvalidRequest);
         }
@@ -1170,6 +1227,21 @@ fn validate_installed(
         }
     }
     Ok(())
+}
+
+fn ensure_response_bound<T: serde::Serialize>(
+    value: &T,
+    max_bytes: usize,
+) -> Result<(), LiveHostError> {
+    if serde_json::to_vec(value)
+        .map_err(|_| LiveHostError::CorruptState)?
+        .len()
+        > max_bytes
+    {
+        Err(LiveHostError::ReadBoundExceeded)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), LiveHostError> {

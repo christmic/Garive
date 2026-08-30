@@ -227,7 +227,7 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
         harness.dispatcher,
     )
     .unwrap();
-    let sessions = restarted.list_sessions(2).unwrap();
+    let sessions = restarted.list_session_summaries(2).unwrap();
     assert_eq!(sessions.len(), 2);
     assert!(sessions[0].session_id > sessions[1].session_id);
     let active = sessions
@@ -246,7 +246,7 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
         .iter()
         .any(|summary| summary.session_id == second.session_id));
     assert_eq!(
-        restarted.list_sessions(0),
+        restarted.list_session_summaries(0),
         Err(LiveHostError::InvalidRequest)
     );
 }
@@ -275,6 +275,37 @@ fn session_view_tracks_first_starts_and_latest_lifecycle() {
     );
     assert_eq!(running.observed_max_position, started.committed_position);
     assert_eq!(running.session.opened_at, NOW);
+}
+
+#[test]
+fn session_pages_use_stable_checked_cursors() {
+    let harness = Harness::new(64);
+    let first = harness
+        .host
+        .create_session("page-a", "definition-main")
+        .unwrap();
+    let second = harness
+        .host
+        .create_session("page-b", "definition-main")
+        .unwrap();
+    let page_one = harness.host.list_sessions(1, None).unwrap();
+    assert_eq!(page_one.sessions.len(), 1);
+    assert_eq!(page_one.sessions[0].session_id, second.session_id);
+    let cursor = page_one.next_before.as_deref().unwrap();
+    let page_two = harness.host.list_sessions(1, Some(cursor)).unwrap();
+    assert_eq!(page_two.sessions[0].session_id, first.session_id);
+    assert!(page_two.next_before.is_none());
+
+    let mut corrupt = cursor.as_bytes().to_vec();
+    let last = corrupt.len() - 1;
+    corrupt[last] = if corrupt[last] == b'A' { b'B' } else { b'A' };
+    assert_eq!(
+        harness
+            .host
+            .list_sessions(1, std::str::from_utf8(&corrupt).ok())
+            .unwrap_err(),
+        LiveHostError::InvalidRequest
+    );
 }
 
 #[test]
@@ -901,6 +932,14 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     assert_eq!(session_view["api_version"], "v1");
     assert_eq!(session_view["session"]["turn_count"], 0);
     assert_eq!(session_view["observed_max_position"], 1);
+    let sessions = client
+        .get(format!("{base}/v1/sessions?limit=20"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sessions.status(), reqwest::StatusCode::OK);
+    let sessions: Value = serde_json::from_slice(&sessions.bytes().await.unwrap()).unwrap();
+    assert_eq!(sessions["sessions"].as_array().unwrap().len(), 1);
     let started = client
         .post(format!("{base}/v1/sessions/{session_id}/turns"))
         .header("idempotency-key", "start-http")
