@@ -9,6 +9,7 @@ import AppKit
 
 struct GariveRootView: View {
     @StateObject private var model = MobileViewModel()
+    @AppStorage("garive.theme") private var theme = "system"
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -22,12 +23,13 @@ struct GariveRootView: View {
                     model.pair(origin: $0, accessGrant: $1)
                 }
             } else if let state = model.state {
-                RemoteWorkspaceView(model: model, state: state)
+                RemoteWorkspaceView(model: model, state: state, theme: $theme)
             } else {
                 LoadingView(errorCode: model.errorCode, retry: model.refresh)
             }
         }
         .tint(GarivePalette.coral)
+        .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, model.state != nil { model.refresh() }
         }
@@ -60,6 +62,7 @@ private struct LoadingView: View {
 private struct RemoteWorkspaceView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
+    @Binding var theme: String
 
     var body: some View {
         TabView(selection: Binding(
@@ -72,7 +75,7 @@ private struct RemoteWorkspaceView: View {
                 .tabItem { Label("Sessions", systemImage: "rectangle.stack") }.tag("SESSIONS")
             NavigationStack { AgentsView(model: model, state: state) }
                 .tabItem { Label("Agents", systemImage: "cpu") }.tag("AGENTS")
-            NavigationStack { SettingsView(model: model, state: state) }
+            NavigationStack { SettingsView(model: model, state: state, theme: $theme) }
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag("SETTINGS")
         }
         .sheet(isPresented: $model.presentingNewTask) {
