@@ -52,6 +52,7 @@ fn revised(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "previous_definition_digest",
             "definition_digest",
             "definition",
+            "replacement_reason",
             "actor_reference",
         ],
         EMPTY,
@@ -69,6 +70,7 @@ fn revised(value: &Map<String, Value>) -> Result<(), LedgerError> {
     digest(value, "previous_definition_digest")?;
     digest(value, "definition_digest")?;
     content(value, "definition")?;
+    non_empty(value, "replacement_reason")?;
     non_empty(value, "actor_reference")
 }
 

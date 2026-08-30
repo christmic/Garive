@@ -70,6 +70,32 @@ impl GoalEvidenceV1 {
     pub const fn kind(&self) -> GoalEvidenceKind {
         self.kind
     }
+
+    /// Serializes an ordered evidence set for one durable content binding.
+    pub fn canonical_json(values: &[Self]) -> Result<String, GoalError> {
+        serde_jcs::to_string(values).map_err(|_| GoalError::new(GoalErrorCode::GoalInvalid))
+    }
+
+    /// Reconstructs and revalidates an exact canonical evidence set document.
+    pub fn list_from_canonical_json(json: &str) -> Result<Vec<Self>, GoalError> {
+        let raw: Vec<Self> =
+            serde_json::from_str(json).map_err(|_| GoalError::new(GoalErrorCode::GoalInvalid))?;
+        let mut values = Vec::with_capacity(raw.len());
+        for value in raw {
+            values.push(Self::new(
+                value.evidence_id,
+                value.criterion_id,
+                value.kind,
+                value.durable_reference,
+                value.evidence_digest,
+                value.observed_at_commit_version,
+            )?);
+        }
+        if Self::canonical_json(&values)? != json {
+            return Err(GoalError::new(GoalErrorCode::GoalInvalid));
+        }
+        Ok(values)
+    }
 }
 
 /// Closed durable Goal lifecycle state.

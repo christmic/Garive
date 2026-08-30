@@ -167,6 +167,11 @@ impl GoalBoundsV1 {
             duration_budget_ms,
         })
     }
+
+    /// Returns the hard limit on distinct attempts started from Draft.
+    pub const fn max_attempts(&self) -> u32 {
+        self.max_attempts
+    }
 }
 
 /// Closed success criterion set; all declared criteria must be satisfied.
@@ -244,7 +249,9 @@ impl GoalCriterion {
             } => !fact_kind.is_empty() && valid_digest(subject_digest),
             Self::ChildGoals { child_goal_ids, .. } => {
                 !child_goal_ids.is_empty()
-                    && child_goal_ids.iter().all(|value| !value.as_str().is_empty())
+                    && child_goal_ids
+                        .iter()
+                        .all(|value| !value.as_str().is_empty())
             }
         }
     }
@@ -317,6 +324,11 @@ impl GoalDefinitionV1 {
     /// Returns criteria in semantic declaration order.
     pub fn criteria(&self) -> &[GoalCriterion] {
         &self.criteria
+    }
+
+    /// Returns the immutable hard bounds for this revision.
+    pub const fn bounds(&self) -> &GoalBoundsV1 {
+        &self.bounds
     }
 
     /// Reconstructs and revalidates one exact canonical definition document.

@@ -25,13 +25,14 @@ private fun JsonObject.created() {
 }
 
 private fun JsonObject.revised() {
-    exact(setOf("command_id", "goal_id", "previous_revision", "revision", "previous_definition_digest", "definition_digest", "definition", "actor_reference"))
+    exact(setOf("command_id", "goal_id", "previous_revision", "revision", "previous_definition_digest", "definition_digest", "definition", "replacement_reason", "actor_reference"))
     common()
     val previous = ulong("previous_revision", true)
     require(previous != ULong.MAX_VALUE && previous + 1uL == ulong("revision"))
     digest("previous_definition_digest")
     digest("definition_digest")
     content("definition")
+    nonEmpty("replacement_reason")
     nonEmpty("actor_reference")
 }
 
