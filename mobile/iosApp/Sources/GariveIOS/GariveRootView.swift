@@ -65,20 +65,42 @@ private struct RemoteWorkspaceView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
     @Binding var theme: String
+    @State private var sidebarPresented = false
 
     var body: some View {
-        TabView(selection: Binding(
-            get: { state.destination.name },
-            set: { model.select(destination(for: $0)) }
-        )) {
-            NavigationStack { WorkView(model: model, state: state) }
-                .tabItem { Label("Work", systemImage: "sparkles") }.tag("WORK")
-            NavigationStack { SessionsView(model: model, state: state) }
-                .tabItem { Label("Sessions", systemImage: "rectangle.stack") }.tag("SESSIONS")
-            NavigationStack { AgentsView(model: model, state: state) }
-                .tabItem { Label("Agents", systemImage: "cpu") }.tag("AGENTS")
-            NavigationStack { SettingsView(model: model, state: state, theme: $theme) }
-                .tabItem { Label("Settings", systemImage: "gearshape") }.tag("SETTINGS")
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                NavigationStack {
+                    destinationView
+                        .toolbar {
+                            ToolbarItem(placement: .navigation) {
+                                Button { withAnimation(.snappy) { sidebarPresented = true } } label: {
+                                    Image(systemName: "line.3.horizontal")
+                                }.accessibilityLabel("Open navigation")
+                            }
+                        }
+                }
+                if sidebarPresented {
+                    Color.black.opacity(0.42).ignoresSafeArea()
+                        .onTapGesture { withAnimation(.snappy) { sidebarPresented = false } }
+                        .transition(.opacity)
+                    RemoteSidebar(
+                        model: model,
+                        state: state,
+                        host: remoteHost,
+                        close: { withAnimation(.snappy) { sidebarPresented = false } }
+                    )
+                    .frame(width: min(geometry.size.width * 0.86, 360))
+                    .transition(.move(edge: .leading))
+                }
+            }
+        }
+        .onAppear {
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--garive-walkthrough-sidebar") {
+                sidebarPresented = true
+            }
+#endif
         }
         .sheet(isPresented: $model.presentingNewTask) {
             NewTaskView(model: model, agents: state.agents)
@@ -91,6 +113,20 @@ private struct RemoteWorkspaceView: View {
         }
     }
 
+    @ViewBuilder private var destinationView: some View {
+        switch state.destination.name {
+        case "SESSIONS": SessionsView(model: model, state: state)
+        case "AGENTS": AgentsView(model: model, state: state)
+        case "SETTINGS": SettingsView(model: model, state: state, theme: $theme)
+        default: WorkView(model: model, state: state)
+        }
+    }
+
+    private var remoteHost: String {
+        guard let origin = model.credentials?.origin, let host = URL(string: origin)?.host else { return "service" }
+        return URL(string: origin)?.port.map { "\(host):\($0)" } ?? host
+    }
+
     private func destination(for name: String) -> MobileDestination {
         switch name {
         case "SESSIONS": .sessions
@@ -101,18 +137,81 @@ private struct RemoteWorkspaceView: View {
     }
 }
 
+private struct RemoteSidebar: View {
+    @ObservedObject var model: MobileViewModel
+    let state: MobileWorkState
+    let host: String
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Garive").font(.title2.bold()).padding(.top, 24)
+            HStack(spacing: 7) {
+                Circle().fill(GarivePalette.mint).frame(width: 7, height: 7)
+                Text("Remote · \(host)").font(.subheadline).foregroundStyle(.secondary)
+            }.padding(.bottom, 14)
+            destinationButton("Work", icon: "sparkles", destination: .work)
+            destinationButton("Sessions", icon: "rectangle.stack", destination: .sessions)
+            destinationButton("Agents", icon: "cpu", destination: .agents)
+            destinationButton("Settings", icon: "gearshape", destination: .settings)
+            Text("Recent").font(.headline).padding(.top, 24).padding(.bottom, 5)
+            ForEach(Array(state.sessions.prefix(5)), id: \.sessionId) { session in
+                Button {
+                    model.open(session.sessionId)
+                    close()
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(session.agentName).lineLimit(1).foregroundStyle(.primary)
+                        Text(session.status.name.lowercased().replacingOccurrences(of: "_", with: " "))
+                            .font(.caption).foregroundStyle(session.status == .needsInput ? GarivePalette.amber : .secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                }.buttonStyle(.plain)
+            }
+            Spacer()
+            Button { model.showNewTask(); close() } label: {
+                Label("New task", systemImage: "square.and.pencil")
+                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 12)
+            }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+        }
+        .padding(.horizontal, 20).padding(.bottom, 18)
+        .frame(maxHeight: .infinity)
+        .background(GarivePalette.ink.ignoresSafeArea())
+        .shadow(color: .black.opacity(0.28), radius: 24, x: 10)
+    }
+
+    private func destinationButton(_ title: String, icon: String, destination: MobileDestination) -> some View {
+        Button {
+            model.select(destination)
+            close()
+        } label: {
+            Label(title, systemImage: icon).font(.body.weight(.medium))
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).frame(height: 48)
+                .background(
+                    state.destination == destination ? GarivePalette.raised : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 13)
+                )
+        }.buttonStyle(.plain)
+    }
+}
+
 enum GarivePalette {
 #if os(iOS)
-    static let ink = Color(uiColor: .systemGroupedBackground)
-    static let panel = Color(uiColor: .secondarySystemGroupedBackground)
-    static let raised = Color(uiColor: .tertiarySystemGroupedBackground)
+    static let ink = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .black : UIColor(red: 0.984, green: 0.980, blue: 0.965, alpha: 1)
+    })
+    static let panel = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 0.07, alpha: 1) : UIColor(red: 1, green: 0.996, blue: 0.984, alpha: 1)
+    })
+    static let raised = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : UIColor(red: 0.941, green: 0.933, blue: 0.906, alpha: 1)
+    })
 #else
     static let ink = Color(nsColor: .windowBackgroundColor)
     static let panel = Color(nsColor: .controlBackgroundColor)
     static let raised = Color(nsColor: .underPageBackgroundColor)
 #endif
-    static let coral = Color(red: 1.0, green: 0.39, blue: 0.30)
-    static let mint = Color(red: 0.31, green: 0.84, blue: 0.66)
-    static let amber = Color(red: 1.0, green: 0.72, blue: 0.30)
+    static let coral = Color(red: 0.19, green: 0.37, blue: 0.81)
+    static let mint = Color(red: 0.15, green: 0.51, blue: 0.35)
+    static let amber = Color(red: 0.64, green: 0.41, blue: 0.09)
 }
 #endif

@@ -11,7 +11,7 @@ struct WorkView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 22) {
                 ConnectionBanner(state: state)
                 if !state.attention.isEmpty {
                     SessionSection(title: "Needs you", subtitle: "A decision is waiting", sessions: state.attention, model: model)
@@ -21,10 +21,11 @@ struct WorkView: View {
                 }
                 SessionSection(title: "Recent", subtitle: "Durable work you can reopen", sessions: state.recent, model: model)
                 if state.sessions.isEmpty { EmptyWorkView() }
-            }.padding(20)
+            }.padding(.horizontal, 20).padding(.vertical, 12)
         }
         .background(GarivePalette.ink)
-        .navigationTitle("Remote work")
+        .navigationTitle("Remote")
+        .compactNavigationTitle()
         .toolbar {
             ToolbarItem { Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") } }
             ToolbarItem { Button { model.showNewTask() } label: { Label("New task", systemImage: "plus") } }
@@ -67,6 +68,7 @@ struct SessionsView: View {
         }
         .scrollContentBackground(.hidden).background(GarivePalette.ink)
         .navigationTitle("Sessions").searchable(text: $search, prompt: "Agent or session")
+        .compactNavigationTitle()
         .toolbar { Button { model.showNewTask() } label: { Label("New task", systemImage: "plus") } }
         .refreshable { model.refresh() }
     }
@@ -107,7 +109,7 @@ struct AgentsView: View {
                     .padding(18).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
                 }
             }.padding(20)
-        }.background(GarivePalette.ink).navigationTitle("Agents")
+        }.background(GarivePalette.ink).navigationTitle("Agents").compactNavigationTitle()
     }
 }
 
@@ -187,6 +189,7 @@ struct SettingsView: View {
                 .id("unpair")
             }
             .scrollContentBackground(.hidden).background(GarivePalette.ink).navigationTitle("Settings")
+            .compactNavigationTitle()
             .onAppear {
                 guard walkthroughBottom else { return }
                 DispatchQueue.main.async { proxy.scrollTo("unpair", anchor: .bottom) }
@@ -224,9 +227,9 @@ private struct SessionSection: View {
 
     var body: some View {
         if !sessions.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(title).font(.title2.bold())
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 ForEach(sessions, id: \.sessionId) { session in
                     SessionRow(session: session) { model.open(session.sessionId) }
                 }
@@ -254,30 +257,26 @@ struct SessionRow: View {
                         StatusBadge(status: session.status.name.lowercased())
                     }
                 } else {
-                    HStack(alignment: .top, spacing: 14) {
-                        statusMark
-                        VStack(alignment: .leading, spacing: 9) {
-                            sessionIdentity
-                            StatusBadge(status: session.status.name.lowercased())
-                        }
+                    HStack(spacing: 12) {
+                        sessionIdentity
                         Spacer(minLength: 8)
-                        disclosure.padding(.top, 15)
+                        statusMark
                     }
                 }
             }
-            .padding(16).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 18))
+            .padding(.horizontal, 2).padding(.vertical, 10)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
     private var statusMark: some View {
-        Circle().fill(statusColor.opacity(0.18)).frame(width: 44, height: 44)
-            .overlay(Image(systemName: statusIcon).foregroundStyle(statusColor))
+        Circle().fill(statusColor).frame(width: dynamicTypeSize.isAccessibilitySize ? 14 : 9, height: dynamicTypeSize.isAccessibilitySize ? 14 : 9)
             .accessibilityHidden(true)
     }
 
     private var sessionIdentity: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(session.agentName).font(.headline).foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(session.agentName).font(.body).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("\(session.turnCount) turns · \(shortID)").font(.caption).foregroundStyle(.secondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -290,7 +289,6 @@ struct SessionRow: View {
     }
 
     private var shortID: String { String(session.sessionId.prefix(8)) }
-    private var statusIcon: String { session.status.name == "NEEDS_INPUT" ? "hand.raised.fill" : "bolt.fill" }
     private var statusColor: Color { session.status.name == "NEEDS_INPUT" ? GarivePalette.amber : GarivePalette.mint }
 }
 
@@ -315,7 +313,7 @@ private struct ConnectionBanner: View {
             Text(state.connection.name == "ONLINE" ? "Connected · server work continues" : "Reconnecting · showing durable state")
                 .font(.subheadline.weight(.medium))
             Spacer()
-        }.padding(13).background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 14))
+        }.padding(.vertical, 2)
     }
 }
 
@@ -327,6 +325,16 @@ private struct EmptyWorkView: View {
             Text("Choose an agent, give it a goal, then leave the work running on your service.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity).padding(.vertical, 46)
+    }
+}
+
+extension View {
+    @ViewBuilder func compactNavigationTitle() -> some View {
+#if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+#else
+        self
+#endif
     }
 }
 #endif
