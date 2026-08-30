@@ -16,7 +16,13 @@ use ratatui::{buffer::Buffer, layout::Rect};
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
     let mut buffer = Buffer::empty(area);
-    let _ = view::render(model, Theme::Mono, area, &mut buffer);
+    let _ = view::render_cached(
+        model,
+        Theme::Mono,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
     (0..height)
         .map(|y| {
             let line: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
@@ -74,11 +80,25 @@ fn only_the_composer_owns_the_terminal_cursor() {
     let mut model = AppModel::default();
     let area = Rect::new(0, 0, 100, 24);
     let mut buffer = Buffer::empty(area);
-    assert!(view::render(&model, Theme::Dark, area, &mut buffer).is_some());
+    assert!(view::render_cached(
+        &model,
+        Theme::Dark,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    )
+    .is_some());
 
     model.focus = FocusTarget::Conversation;
     let mut buffer = Buffer::empty(area);
-    assert!(view::render(&model, Theme::Dark, area, &mut buffer).is_none());
+    assert!(view::render_cached(
+        &model,
+        Theme::Dark,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    )
+    .is_none());
 }
 
 #[test]

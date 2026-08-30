@@ -38,11 +38,12 @@ fn representative_render_and_editor_latency_stay_interactive() {
         });
     }
     let area = Rect::new(0, 0, 120, 40);
+    let mut cache = view::RenderCache::default();
     let mut samples = Vec::new();
     for _ in 0..110 {
         let mut buffer = Buffer::empty(area);
         let started = Instant::now();
-        let _ = view::render(&model, Theme::Dark, area, &mut buffer);
+        let _ = view::render_cached(&model, Theme::Dark, area, &mut buffer, &mut cache);
         samples.push(started.elapsed().as_micros());
     }
     samples.drain(..10);

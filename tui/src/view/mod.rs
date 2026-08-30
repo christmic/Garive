@@ -5,6 +5,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap},
 };
+use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 
 use crate::{
@@ -16,11 +17,12 @@ use crate::{
 };
 use markdown::render_markdown;
 
-pub(crate) fn render(
+pub(crate) fn render_cached(
     model: &AppModel,
     theme: Theme,
     area: Rect,
     buffer: &mut Buffer,
+    cache: &mut RenderCache,
 ) -> Option<(u16, u16)> {
     if !(TerminalSize {
         width: area.width,
@@ -48,7 +50,7 @@ pub(crate) fn render(
         ])
         .split(area);
     render_header(model, theme, vertical[0], buffer);
-    render_body(model, theme, vertical[1], buffer);
+    render_body(model, theme, vertical[1], buffer, cache);
     render_composer(model, theme, vertical[2], buffer);
     render_footer(model, theme, vertical[3], buffer);
     if let Some(overlay) = model.overlay {
@@ -112,15 +114,21 @@ fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer
     .render(row[1], buffer);
 }
 
-fn render_body(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+fn render_body(
+    model: &AppModel,
+    theme: Theme,
+    area: Rect,
+    buffer: &mut Buffer,
+    cache: &mut RenderCache,
+) {
     if area.width >= 100 {
         let rail_width = if area.width >= 160 { 34 } else { 28 };
         let horizontal =
             Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)]).split(area);
         render_navigation(model, theme, horizontal[0], buffer);
-        render_conversation(model, theme, horizontal[1], buffer);
+        render_conversation(model, theme, horizontal[1], buffer, cache);
     } else {
-        render_conversation(model, theme, area, buffer);
+        render_conversation(model, theme, area, buffer, cache);
     }
 }
 
@@ -178,7 +186,13 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
     Paragraph::new(lines).render(inner, buffer);
 }
 
-fn render_conversation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+fn render_conversation(
+    model: &AppModel,
+    theme: Theme,
+    area: Rect,
+    buffer: &mut Buffer,
+    cache: &mut RenderCache,
+) {
     let colors = palette(theme);
     let block = Block::default()
         .borders(Borders::BOTTOM)
@@ -192,7 +206,7 @@ fn render_conversation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut 
         .padding(Padding::new(2, 2, 1, 0));
     let inner = block.inner(area);
     let window = (!model.timeline.is_empty())
-        .then(|| conversation_window(model, theme, inner.width, inner.height));
+        .then(|| conversation_window(model, theme, inner.width, inner.height, cache));
     let title = if model.viewport.newer_updates > 0 {
         format!(
             " Conversation · {} newer updates ",
@@ -234,6 +248,7 @@ fn conversation_window(
     theme: Theme,
     width: u16,
     height: u16,
+    cache: &mut RenderCache,
 ) -> ConversationWindow {
     let target_height = usize::from(height).saturating_add(4);
     let mut cells = VecDeque::new();
@@ -241,7 +256,7 @@ fn conversation_window(
     let mut measured_height: usize = 0;
     if model.viewport.follow_latest {
         for item in model.timeline.iter().rev() {
-            let cell = render_timeline_item(item, theme);
+            let cell = cache.render(item, width, theme);
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
             laid_out += 1;
@@ -262,7 +277,7 @@ fn conversation_window(
             })
             .unwrap_or(0);
         for item in model.timeline.iter().skip(start) {
-            let cell = render_timeline_item(item, theme);
+            let cell = cache.render(item, width, theme);
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_back(cell);
             laid_out += 1;
@@ -282,6 +297,105 @@ fn conversation_window(
         scroll,
         has_earlier: laid_out < model.timeline.len() || scroll > 0,
         laid_out,
+    }
+}
+
+const MAX_CACHED_CELLS: usize = 512;
+const MAX_CACHE_BYTES: usize = 4 * 1_024 * 1_024;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RenderCacheKey {
+    stable_key: String,
+    width: u16,
+    theme: u8,
+    content_digest: [u8; 32],
+}
+
+struct CachedCell {
+    key: RenderCacheKey,
+    lines: Vec<Line<'static>>,
+    bytes: usize,
+}
+
+#[derive(Default)]
+pub(crate) struct RenderCache {
+    cells: VecDeque<CachedCell>,
+    bytes: usize,
+    #[cfg(test)]
+    hits: usize,
+}
+
+impl RenderCache {
+    fn render(
+        &mut self,
+        item: &crate::application::TimelineItem,
+        width: u16,
+        theme: Theme,
+    ) -> Vec<Line<'static>> {
+        let key = RenderCacheKey {
+            stable_key: item.stable_key.clone(),
+            width,
+            theme: theme_key(theme),
+            content_digest: content_digest(item),
+        };
+        if let Some(index) = self.cells.iter().position(|cell| cell.key == key) {
+            let cell = self
+                .cells
+                .remove(index)
+                .expect("cache index came from lookup");
+            let lines = cell.lines.clone();
+            self.cells.push_back(cell);
+            #[cfg(test)]
+            {
+                self.hits += 1;
+            }
+            return lines;
+        }
+        let lines = render_timeline_item(item, theme);
+        let bytes = item.stable_key.len()
+            + lines
+                .iter()
+                .flat_map(|line| &line.spans)
+                .map(|span| span.content.len())
+                .sum::<usize>();
+        if bytes <= MAX_CACHE_BYTES {
+            while self.cells.len() >= MAX_CACHED_CELLS
+                || self.bytes.saturating_add(bytes) > MAX_CACHE_BYTES
+            {
+                let Some(evicted) = self.cells.pop_front() else {
+                    break;
+                };
+                self.bytes = self.bytes.saturating_sub(evicted.bytes);
+            }
+            self.bytes = self.bytes.saturating_add(bytes);
+            self.cells.push_back(CachedCell {
+                key,
+                lines: lines.clone(),
+                bytes,
+            });
+        }
+        lines
+    }
+}
+
+fn content_digest(item: &crate::application::TimelineItem) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(item.position.to_be_bytes());
+    digest.update([match item.role {
+        TimelineRole::User => 0,
+        TimelineRole::Agent => 1,
+        TimelineRole::Status => 2,
+    }]);
+    digest.update(item.text.as_bytes());
+    digest.finalize().into()
+}
+
+fn theme_key(theme: Theme) -> u8 {
+    match theme {
+        Theme::System => 0,
+        Theme::Dark => 1,
+        Theme::Light => 2,
+        Theme::Mono => 3,
     }
 }
 
@@ -758,8 +872,41 @@ mod tests {
             });
         }
 
-        let window = conversation_window(&model, Theme::Dark, 90, 30);
+        let window = conversation_window(&model, Theme::Dark, 90, 30, &mut RenderCache::default());
 
         assert!(window.laid_out < 30);
+    }
+
+    #[test]
+    fn rendered_cell_cache_keys_width_theme_and_content() {
+        let item = TimelineItem {
+            stable_key: "answer".into(),
+            position: 1,
+            role: TimelineRole::Agent,
+            text: "**cached** answer".into(),
+        };
+        let mut cache = RenderCache::default();
+        let first = cache.render(&item, 80, Theme::Dark);
+        assert_eq!(cache.hits, 0);
+        assert_eq!(cache.render(&item, 80, Theme::Dark), first);
+        assert_eq!(cache.hits, 1);
+        let _ = cache.render(&item, 100, Theme::Dark);
+        let _ = cache.render(&item, 80, Theme::Light);
+        let mut changed = item;
+        changed.text.push('!');
+        let _ = cache.render(&changed, 80, Theme::Dark);
+        assert_eq!(cache.hits, 1);
+
+        for position in 2..=520 {
+            let item = TimelineItem {
+                stable_key: format!("item-{position}"),
+                position,
+                role: TimelineRole::Status,
+                text: "bounded".into(),
+            };
+            let _ = cache.render(&item, 80, Theme::Dark);
+        }
+        assert_eq!(cache.cells.len(), MAX_CACHED_CELLS);
+        assert!(cache.bytes <= MAX_CACHE_BYTES);
     }
 }

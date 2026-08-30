@@ -119,7 +119,13 @@ fn item(key: &str, position: u64, role: TimelineRole, text: &str) -> TimelineIte
 fn frame(model: &AppModel, theme: Theme, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
     let mut buffer = Buffer::empty(area);
-    let _ = view::render(model, theme, area, &mut buffer);
+    let _ = view::render_cached(
+        model,
+        theme,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
     (0..height)
         .map(|y| {
             (0..width)

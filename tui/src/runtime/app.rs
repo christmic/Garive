@@ -283,6 +283,7 @@ pub(super) struct RuntimeState {
     pub(super) force_redraw: bool,
     pub(super) last_empty_ctrl_c: Option<Instant>,
     pub(super) retry_after_refresh: Option<String>,
+    render_cache: view::RenderCache,
 }
 
 struct BackgroundFollow {
@@ -352,6 +353,7 @@ impl RuntimeState {
             force_redraw: false,
             last_empty_ctrl_c: None,
             retry_after_refresh: None,
+            render_cache: view::RenderCache::default(),
         }
     }
 
@@ -665,9 +667,13 @@ fn draw(
                     height: area.height,
                 }),
             );
-            if let Some(cursor) =
-                view::render(&state.model, state.config.theme, area, frame.buffer_mut())
-            {
+            if let Some(cursor) = view::render_cached(
+                &state.model,
+                state.config.theme,
+                area,
+                frame.buffer_mut(),
+                &mut state.render_cache,
+            ) {
                 frame.set_cursor_position(cursor);
             }
         })
