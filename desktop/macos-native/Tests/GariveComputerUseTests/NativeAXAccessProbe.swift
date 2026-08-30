@@ -4,15 +4,18 @@ import ApplicationServices
 final class NativeAXAccessProbe: NativeAXAccessing {
     var windowElements: [AXUIElement]
     var semanticRoot: NativeAXSemanticSnapshotBuilder.Element
+    var semanticElements: [AXUIElement]
     private(set) var windowsCallCount = 0
     private(set) var semanticCallCount = 0
 
     init(
         windowElements: [AXUIElement],
-        semanticRoot: NativeAXSemanticSnapshotBuilder.Element
+        semanticRoot: NativeAXSemanticSnapshotBuilder.Element,
+        semanticElements: [AXUIElement] = []
     ) {
         self.windowElements = windowElements
         self.semanticRoot = semanticRoot
+        self.semanticElements = semanticElements
     }
 
     func windows(processIdentifier _: Int32) throws -> [AXUIElement] {
@@ -27,8 +30,8 @@ final class NativeAXAccessProbe: NativeAXAccessing {
     func semanticElement(
         root _: AXUIElement,
         bounds _: NativeAXObservationBounds
-    ) throws -> NativeAXSemanticSnapshotBuilder.Element {
+    ) throws -> NativeAXReadResult {
         semanticCallCount += 1
-        return semanticRoot
+        return NativeAXReadResult(root: semanticRoot, elements: semanticElements)
     }
 }

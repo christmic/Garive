@@ -6,5 +6,5 @@ protocol NativeAXAccessing: AnyObject {
     func semanticElement(
         root: AXUIElement,
         bounds: NativeAXObservationBounds
-    ) throws -> NativeAXSemanticSnapshotBuilder.Element
+    ) throws -> NativeAXReadResult
 }

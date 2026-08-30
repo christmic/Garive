@@ -46,17 +46,25 @@ public final class SystemNativeAXObserver {
     public func observe(
         window: NativeAXWindowBinding,
         bounds: NativeAXObservationBounds
-    ) throws -> NativeAXSemanticSnapshot {
+    ) throws -> NativeAXObservationBinding {
         guard window.ownerIdentifier == ObjectIdentifier(access) else {
             throw NativeAXObservationFailure.targetChanged
         }
         try requireAccess(to: window.applicationIdentity)
         try requireWindow(window)
-        let root = try access.semanticElement(root: window.element, bounds: bounds)
-        let snapshot = try NativeAXSemanticSnapshotBuilder.build(root: root, bounds: bounds)
+        let read = try access.semanticElement(root: window.element, bounds: bounds)
+        let snapshot = try NativeAXSemanticSnapshotBuilder.build(root: read.root, bounds: bounds)
+        guard read.elements.count == snapshot.nodes.count else {
+            throw NativeAXObservationFailure.invalidNativeData
+        }
         try requireCurrent(window.applicationIdentity)
         try requireWindow(window)
-        return snapshot
+        return NativeAXObservationBinding(
+            snapshot: snapshot,
+            window: window,
+            elements: read.elements,
+            ownerIdentifier: ObjectIdentifier(access)
+        )
     }
 
     private func requireAccess(

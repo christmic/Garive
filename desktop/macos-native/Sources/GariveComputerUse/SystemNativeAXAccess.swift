@@ -14,7 +14,7 @@ final class SystemNativeAXAccess: NativeAXAccessing {
     func semanticElement(
         root: AXUIElement,
         bounds: NativeAXObservationBounds
-    ) throws -> NativeAXSemanticSnapshotBuilder.Element {
+    ) throws -> NativeAXReadResult {
         var visited: [AXUIElement] = []
         var nodeCount = 0
         var textBytes = 0
@@ -60,22 +60,37 @@ final class SystemNativeAXAccess: NativeAXAccessing {
             )
         }
 
-        let semanticRoot = try readShallow(root)
-        var pending: [(native: AXUIElement, semantic: NativeAXSemanticSnapshotBuilder.Element)] = [
-            (root, semanticRoot),
+        var semanticRoot: NativeAXSemanticSnapshotBuilder.Element?
+        var nativeElements: [AXUIElement] = []
+        var pending: [(
+            native: AXUIElement,
+            parent: NativeAXSemanticSnapshotBuilder.Element?
+        )] = [
+            (root, nil),
         ]
         while let item = pending.popLast() {
+            let semantic = try readShallow(item.native)
+            if let parent = item.parent {
+                parent.children.append(semantic)
+            } else {
+                guard semanticRoot == nil else {
+                    throw NativeAXObservationFailure.invalidNativeData
+                }
+                semanticRoot = semantic
+            }
+            nativeElements.append(item.native)
             let nativeChildren = try elements(
                 attribute: kAXChildrenAttribute,
                 of: item.native
             )
-            for nativeChild in nativeChildren {
-                let semanticChild = try readShallow(nativeChild)
-                item.semantic.children.append(semanticChild)
-                pending.append((nativeChild, semanticChild))
+            for nativeChild in nativeChildren.reversed() {
+                pending.append((nativeChild, semantic))
             }
         }
-        return semanticRoot
+        guard let semanticRoot else {
+            throw NativeAXObservationFailure.invalidNativeData
+        }
+        return NativeAXReadResult(root: semanticRoot, elements: nativeElements)
     }
 
     private func value(attribute: String, of element: AXUIElement) throws -> Any? {

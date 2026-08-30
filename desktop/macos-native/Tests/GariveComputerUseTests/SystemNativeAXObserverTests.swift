@@ -27,7 +27,8 @@ func revalidatesExactAXWindow() throws {
     let nativeWindow = AXUIElementCreateApplication(7_001)
     let access = NativeAXAccessProbe(
         windowElements: [nativeWindow],
-        semanticRoot: .init(role: "AXWindow", label: "Bound")
+        semanticRoot: .init(role: "AXWindow", label: "Bound"),
+        semanticElements: [nativeWindow]
     )
     let observer = SystemNativeAXObserver(
         access: access,
@@ -40,8 +41,9 @@ func revalidatesExactAXWindow() throws {
     )
     let bounds = try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
 
-    let snapshot = try observer.observe(window: binding, bounds: bounds)
-    #expect(snapshot.nodes.first?.label == "Bound")
+    let observation = try observer.observe(window: binding, bounds: bounds)
+    #expect(observation.snapshot.nodes.first?.label == "Bound")
+    #expect(observation.nodeCount == 1)
     #expect(access.semanticCallCount == 1)
 
     access.windowElements = [AXUIElementCreateApplication(7_002)]
