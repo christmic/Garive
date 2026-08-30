@@ -27,6 +27,18 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
     public fun prepareV2(
         intent: ToolIntent,
         resolver: ToolAccessResolver,
+    ): ToolContractResult<PreparedToolCall> = prepareAccessible(intent, resolver, false)
+
+    /** Prepares one v3 call bound to exact resources and F0 requirements. */
+    public fun prepareV3(
+        intent: ToolIntent,
+        resolver: ToolAccessResolver,
+    ): ToolContractResult<PreparedToolCall> = prepareAccessible(intent, resolver, true)
+
+    private fun prepareAccessible(
+        intent: ToolIntent,
+        resolver: ToolAccessResolver,
+        requireSandbox: Boolean,
     ): ToolContractResult<PreparedToolCall> {
         val validated = validateIntent(intent)
         val (definition, arguments, normalized) = when (validated) {
@@ -34,6 +46,10 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
             is ToolContractResult.Failure -> return validated
         }
         val policy = definition.accessPolicy ?: return failure(PreparationErrorCode.EFFECT_ACCESS_INVALID)
+        val sandbox = definition.sandboxRequirements
+        if (requireSandbox != (sandbox != null)) {
+            return failure(PreparationErrorCode.SANDBOX_REQUIREMENT_INVALID)
+        }
         if (resolver.revision != definition.accessResolverRevision) {
             return failure(PreparationErrorCode.EFFECT_ACCESS_INVALID)
         }
@@ -61,27 +77,40 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
                 ),
             )
         })
+        val sandboxDigest = when (val result = sandbox?.digest()) {
+            is ToolContractResult.Success -> result.value
+            is ToolContractResult.Failure -> return result
+            null -> null
+        }
+        val version = if (sandbox == null) 2 else 3
+        val additions = mutableMapOf<String, JsonElement>(
+            "access_policy_revision" to JsonPrimitive(policy.policyRevision),
+            "access_resolver_revision" to JsonPrimitive(resolver.revision),
+            "invocation_accesses" to accessJson,
+            "max_result_bytes" to JsonPrimitive(policy.maxResultBytes),
+        )
+        if (sandbox != null && sandboxDigest != null) {
+            additions["sandbox_requirements"] = sandbox.canonicalJson()
+            additions["sandbox_requirements_digest"] = JsonPrimitive(sandboxDigest)
+        }
         val preimage = preparedPreimage(
             definition,
             arguments,
-            2,
-            mapOf(
-                "access_policy_revision" to JsonPrimitive(policy.policyRevision),
-                "access_resolver_revision" to JsonPrimitive(resolver.revision),
-                "invocation_accesses" to accessJson,
-                "max_result_bytes" to JsonPrimitive(policy.maxResultBytes),
-            ),
+            version,
+            additions,
         )
         return prepared(
             intent,
             definition,
             normalized,
             preimage,
-            2,
+            version,
             policy.policyRevision,
             resolver.revision,
             accesses,
             policy.maxResultBytes,
+            sandbox,
+            sandboxDigest,
         )
     }
 
@@ -130,6 +159,8 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
         resolverRevision: String?,
         accesses: InvocationAccessSet?,
         maxResultBytes: Long?,
+        sandboxRequirements: SandboxRequirementsV1? = null,
+        sandboxRequirementsDigest: String? = null,
     ): ToolContractResult<PreparedToolCall> {
         val canonicalPreimage = canonicalize(preimage.toString())
             ?: return failure(PreparationErrorCode.NON_CANONICAL_VALUE)
@@ -147,6 +178,8 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
                 resolverRevision,
                 accesses,
                 maxResultBytes,
+                sandboxRequirements,
+                sandboxRequirementsDigest,
             ),
         )
     }

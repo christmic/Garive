@@ -119,9 +119,15 @@ public class ToolDefinition private constructor(
     public val accessPolicy: ToolAccessPolicyV1?,
     /** Frozen trusted resolver revision, absent for C4 v1 definitions. */
     public val accessResolverRevision: String?,
+    /** Frozen F0 profile, present only for Prepared v3 definitions. */
+    public val sandboxRequirements: SandboxRequirementsV1?,
 ) {
     /** Prepared Call contract version selected by this exact definition. */
-    public val preparedContractVersion: Int = if (accessPolicy == null) 1 else 2
+    public val preparedContractVersion: Int = when {
+        sandboxRequirements != null -> 3
+        accessPolicy != null -> 2
+        else -> 1
+    }
 
     public companion object {
         /** Validates and constructs one Portable Tool Schema v1 definition. */
@@ -134,7 +140,7 @@ public class ToolDefinition private constructor(
             replayClass: ReplayClass,
         ): ToolContractResult<ToolDefinition> {
             return createInternal(
-                name, revision, description, inputSchema, requirements, replayClass, null, null, false,
+                name, revision, description, inputSchema, requirements, replayClass, null, null, null, false,
             )
         }
 
@@ -158,8 +164,39 @@ public class ToolDefinition private constructor(
             replayClass,
             accessPolicy,
             accessResolverRevision,
+            null,
             true,
         )
+
+        /** Constructs a Prepared v3 definition with exact access and F0 controls. */
+        @Suppress("LongParameterList")
+        public fun createV3(
+            name: String,
+            revision: String,
+            description: String,
+            inputSchema: JsonElement,
+            requirements: ExecutionRequirements,
+            replayClass: ReplayClass,
+            accessPolicy: ToolAccessPolicyV1,
+            accessResolverRevision: String,
+            sandboxRequirements: SandboxRequirementsV1,
+        ): ToolContractResult<ToolDefinition> {
+            if (sandboxRequirements.validateFor(requirements.capabilities) is ToolContractResult.Failure) {
+                return failure(PreparationErrorCode.SANDBOX_REQUIREMENT_INVALID)
+            }
+            return createInternal(
+                name,
+                revision,
+                description,
+                inputSchema,
+                requirements,
+                replayClass,
+                accessPolicy,
+                accessResolverRevision,
+                sandboxRequirements,
+                true,
+            )
+        }
 
         @Suppress("LongParameterList")
         private fun createInternal(
@@ -171,6 +208,7 @@ public class ToolDefinition private constructor(
             replayClass: ReplayClass,
             accessPolicy: ToolAccessPolicyV1?,
             accessResolverRevision: String?,
+            sandboxRequirements: SandboxRequirementsV1?,
             v2AccessProof: Boolean,
         ): ToolContractResult<ToolDefinition> {
             if (name.isEmpty() || revision.isEmpty() || description.isEmpty()) {
@@ -196,6 +234,7 @@ public class ToolDefinition private constructor(
                     replayClass,
                     accessPolicy,
                     accessResolverRevision,
+                    sandboxRequirements,
                 ),
             )
         }
@@ -228,6 +267,10 @@ public data class PreparedToolCall(
     public val invocationAccesses: InvocationAccessSet?,
     /** V2 result buffer charge, absent for v1. */
     public val maxResultBytes: Long?,
+    /** V3 F0 enforcement profile, absent for earlier contracts. */
+    public val sandboxRequirements: SandboxRequirementsV1?,
+    /** V3 canonical profile digest, absent for earlier contracts. */
+    public val sandboxRequirementsDigest: String?,
 )
 
 internal fun failure(code: PreparationErrorCode): ToolContractResult.Failure =

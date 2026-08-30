@@ -47,20 +47,28 @@ public class SandboxRequirementsV1 private constructor(
 
     /** Returns lowercase SHA-256 over the RFC 8785 canonical profile. */
     public fun digest(): ToolContractResult<String> = runCatching {
-        val value = JsonObject(
-            buildMap {
-                put("contract", JsonPrimitive("garive.sandbox-requirements"))
-                put("version", JsonPrimitive(1))
-                put("controls", JsonArray(controls.map { JsonPrimitive(it.wireName) }))
-                maxProcesses?.let { put("max_processes", JsonPrimitive(it)) }
-                put("max_open_files", JsonPrimitive(maxOpenFiles))
-            },
-        )
-        MessageDigest.getInstance("SHA-256").digest(JsonCanonicalizer(value.toString()).encodedUTF8)
+        MessageDigest.getInstance("SHA-256").digest(JsonCanonicalizer(canonicalJson().toString()).encodedUTF8)
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }.fold(
         onSuccess = { ToolContractResult.Success(it) },
         onFailure = { failure(PreparationErrorCode.NON_CANONICAL_VALUE) },
+    )
+
+    /** Revalidates this frozen profile against one exact Tool capability set. */
+    public fun validateFor(capabilities: List<ExecutionCapability>): ToolContractResult<Unit> =
+        when (create(capabilities, controls, maxProcesses, maxOpenFiles)) {
+            is ToolContractResult.Success -> ToolContractResult.Success(Unit)
+            is ToolContractResult.Failure -> failure(PreparationErrorCode.SANDBOX_REQUIREMENT_INVALID)
+        }
+
+    internal fun canonicalJson(): JsonObject = JsonObject(
+        buildMap {
+            put("contract", JsonPrimitive("garive.sandbox-requirements"))
+            put("version", JsonPrimitive(1))
+            put("controls", JsonArray(controls.map { JsonPrimitive(it.wireName) }))
+            maxProcesses?.let { put("max_processes", JsonPrimitive(it)) }
+            put("max_open_files", JsonPrimitive(maxOpenFiles))
+        },
     )
 
     public companion object {

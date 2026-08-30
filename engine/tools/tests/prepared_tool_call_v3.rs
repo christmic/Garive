@@ -24,6 +24,11 @@ impl ToolAccessResolver for PathResolver {
 
 #[test]
 fn prepared_v3_binds_exact_sandbox_profile_and_digest() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/sandbox-safety-v1.json"
+    ))
+    .unwrap();
+    let expected = &fixture["prepared_v3"];
     let catalog = ToolCatalog::new([definition(filesystem_profile())]).unwrap();
     let prepared = catalog
         .prepare_v3(
@@ -35,12 +40,12 @@ fn prepared_v3_binds_exact_sandbox_profile_and_digest() {
     assert_eq!(prepared.contract_version(), 3);
     assert_eq!(
         prepared.sandbox_requirements_digest(),
-        Some("ee3658a7b9788d184f0f97b9b611826416cf546b0786a775f9ba339c18d9e611")
+        expected["sandbox_requirements_digest"].as_str()
     );
     assert_eq!(prepared.sandbox_requirements().unwrap().max_open_files(), 8);
     assert_eq!(
         prepared.input_digest(),
-        "0d6963a29b9d4b8f4d7a46300d541977f46f77694e894106aa6369ec18240051"
+        expected["prepared_digest"].as_str().unwrap()
     );
 }
 

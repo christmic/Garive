@@ -63,6 +63,12 @@ The profile is part of Tool Definition revision identity and the Prepared Call
 digest amendment. Adding or removing a control therefore creates a different
 tool revision/digest and requires new authorization.
 
+F0 definitions use Prepared Call v3. V3 retains every v2 field and adds the
+complete `sandbox_requirements` canonical value plus its independently
+verified `sandbox_requirements_digest` to the v3 digest preimage. A v3
+definition cannot be prepared through a v1/v2 entry point; unknown or missing
+profiles fail before authorization.
+
 ## Safety request and decision
 
 Runtime constructs this request from authenticated and committed state:

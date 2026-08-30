@@ -42,5 +42,14 @@
     "executor_max_open_files": 8,
     "covered": true,
     "reverse_covered": false
+  },
+  "prepared_v3": {
+    "tool_name": "read_file",
+    "tool_revision": "read-file-v3",
+    "arguments_json": "{\"path\":\"src/lib.rs\"}",
+    "access_policy_revision": "read-policy-v1",
+    "access_resolver_revision": "path-resolver-v1",
+    "sandbox_requirements_digest": "ee3658a7b9788d184f0f97b9b611826416cf546b0786a775f9ba339c18d9e611",
+    "prepared_digest": "0d6963a29b9d4b8f4d7a46300d541977f46f77694e894106aa6369ec18240051"
   }
 }
