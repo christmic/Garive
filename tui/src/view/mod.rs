@@ -282,10 +282,8 @@ fn session_picker_text(model: &AppModel) -> String {
     let mut rows = model
         .sessions
         .iter()
+        .filter(|session| filter.is_empty() || session.session_id.to_lowercase().contains(&filter))
         .enumerate()
-        .filter(|(_, session)| {
-            filter.is_empty() || session.session_id.to_lowercase().contains(&filter)
-        })
         .map(|(index, session)| {
             let marker = if index == model.session_selection {
                 "›"

@@ -70,7 +70,7 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             }
             KeyCode::Down if overlay == Overlay::SessionPicker => {
                 state.model.session_selection = (state.model.session_selection + 1)
-                    .min(state.model.sessions.len().saturating_sub(1))
+                    .min(matching_sessions(state).len().saturating_sub(1))
             }
             KeyCode::Enter if overlay == Overlay::SessionPicker => select_session(state),
             KeyCode::Up if overlay == Overlay::PromptHistory => {
@@ -197,15 +197,24 @@ fn select_history(state: &mut RuntimeState) {
 }
 
 fn select_session(state: &mut RuntimeState) {
-    let selected = state
-        .model
-        .sessions
+    let selected = matching_sessions(state)
         .get(state.model.session_selection)
-        .map(|item| item.session_id.clone());
+        .cloned();
     state.model.overlay = None;
     if let Some(id) = selected {
         state.load(id);
     }
+}
+
+fn matching_sessions(state: &RuntimeState) -> Vec<String> {
+    let filter = state.model.session_filter.to_lowercase();
+    state
+        .model
+        .sessions
+        .iter()
+        .filter(|session| filter.is_empty() || session.session_id.to_lowercase().contains(&filter))
+        .map(|session| session.session_id.clone())
+        .collect()
 }
 
 fn create_session(state: &mut RuntimeState) {
@@ -371,6 +380,7 @@ fn execute_command(command: Command, state: &mut RuntimeState) {
         Command::New { definition } => create_session_with(state, definition),
         Command::Sessions { filter } => {
             state.model.session_filter = filter.unwrap_or_default();
+            state.model.session_selection = 0;
             state.model.overlay = Some(Overlay::SessionPicker);
         }
         Command::Help => state.model.overlay = Some(Overlay::Help),
