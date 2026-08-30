@@ -61,6 +61,27 @@ async fn continue_agent_turn(
 }
 
 #[tauri::command]
+async fn resolve_turn_approval(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    turn_id: String,
+    suspension_id: String,
+    session_version: u64,
+    approved: bool,
+) -> Result<garive_desktop::DesktopTurnResult, String> {
+    state
+        .continue_approval_isolated(
+            session_id,
+            turn_id,
+            suspension_id,
+            session_version,
+            approved,
+        )
+        .await
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn get_desktop_capabilities(
     state: tauri::State<'_, garive_desktop::DesktopState>,
 ) -> garive_desktop::DesktopCapabilityManifest {
@@ -362,6 +383,7 @@ fn main() {
             get_recent_sessions,
             get_session_timeline,
             continue_agent_turn,
+            resolve_turn_approval,
             run_agent_turn_with_workspace_context,
             run_agent_turn
         ])

@@ -351,6 +351,43 @@ impl DesktopHost {
         session_version: u64,
         input: &str,
     ) -> Result<DesktopTurnResult, DesktopHostError> {
+        self.continue_turn_with_input(
+            session_id,
+            turn_id,
+            suspension_id,
+            session_version,
+            HostContinuationInput::String(input),
+        )
+        .await
+    }
+
+    /// Resolves one exact durable approval with a typed boolean response.
+    pub async fn continue_approval(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        session_version: u64,
+        approved: bool,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        self.continue_turn_with_input(
+            session_id,
+            turn_id,
+            suspension_id,
+            session_version,
+            HostContinuationInput::Json(if approved { "true" } else { "false" }),
+        )
+        .await
+    }
+
+    async fn continue_turn_with_input(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        session_version: u64,
+        input: HostContinuationInput<'_>,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
         let command_id = self.operations.command_id("continue")?;
         let turn = self
             .host
@@ -360,7 +397,7 @@ impl DesktopHost {
                 turn_id,
                 suspension_id,
                 session_version,
-                HostContinuationInput::String(input),
+                input,
             )
             .map_err(|_| DesktopHostError::HostFailure)?;
         self.finish_turn(session_id.to_owned(), turn).await
@@ -663,6 +700,33 @@ impl DesktopState {
                 &suspension_id,
                 session_version,
                 &input,
+            ))
+        })
+        .await
+        .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Resolves one restart-safe approval on an isolated executor.
+    pub async fn continue_approval_isolated(
+        &self,
+        session_id: String,
+        turn_id: String,
+        suspension_id: String,
+        session_version: u64,
+        approved: bool,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        let host = self.installed_host()?;
+        tokio::task::spawn_blocking(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+            runtime.block_on(host.continue_approval(
+                &session_id,
+                &turn_id,
+                &suspension_id,
+                session_version,
+                approved,
             ))
         })
         .await
