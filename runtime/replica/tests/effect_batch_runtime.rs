@@ -8,6 +8,8 @@ use std::{
 use garive_ledger::{
     CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
 };
+#[cfg(unix)]
+use garive_runtime::ConfinedFileReadExecutor;
 use garive_runtime::{
     plan_effect_batch_admission, reconstruct_effect_batch_recovery, AuthorizedBatchInvocation,
     BatchRuntimeError, BatchTerminal, CancellationEvidence, ConcurrentExecutorDispatch,
@@ -45,6 +47,10 @@ impl ToolAccessResolver for Resolver {
 }
 
 fn prepared(index: usize) -> garive_tools::PreparedToolCall {
+    prepared_path(index, &format!("src/{index}"))
+}
+
+fn prepared_path(index: usize, path: &str) -> garive_tools::PreparedToolCall {
     let definition = ToolDefinition::new_v2(
         format!("read_{index}"),
         "revision-v2",
@@ -71,7 +77,7 @@ fn prepared(index: usize) -> garive_tools::PreparedToolCall {
             &ToolIntent::new(
                 format!("call-{index}"),
                 format!("read_{index}"),
-                format!(r#"{{"path":"src/{index}"}}"#),
+                format!(r#"{{"path":"{path}"}}"#),
             ),
             &Resolver,
         )
@@ -80,28 +86,29 @@ fn prepared(index: usize) -> garive_tools::PreparedToolCall {
 
 fn invocations(count: usize) -> Vec<AuthorizedBatchInvocation> {
     (0..count)
-        .map(|index| {
-            let prepared = prepared(index);
-            let invocation_id = ToolInvocationId::new(format!("invocation-{index}")).unwrap();
-            let grant = InvocationGrant::new(
-                GrantId::new(format!("grant-{index}")).unwrap(),
-                invocation_id.clone(),
-                prepared.input_digest(),
-                prepared.tool_name(),
-                prepared.tool_revision(),
-                prepared.requirements().clone(),
-                "a".repeat(64),
-                "authority-v1",
-            )
-            .unwrap();
-            AuthorizedBatchInvocation {
-                invocation_id,
-                prepared,
-                grant,
-                receipt_id: format!("receipt-{index}"),
-            }
-        })
+        .map(|index| authorized(prepared(index), index))
         .collect()
+}
+
+fn authorized(prepared: garive_tools::PreparedToolCall, index: usize) -> AuthorizedBatchInvocation {
+    let invocation_id = ToolInvocationId::new(format!("invocation-{index}")).unwrap();
+    let grant = InvocationGrant::new(
+        GrantId::new(format!("grant-{index}")).unwrap(),
+        invocation_id.clone(),
+        prepared.input_digest(),
+        prepared.tool_name(),
+        prepared.tool_revision(),
+        prepared.requirements().clone(),
+        "a".repeat(64),
+        "authority-v1",
+    )
+    .unwrap();
+    AuthorizedBatchInvocation {
+        invocation_id,
+        prepared,
+        grant,
+        receipt_id: format!("receipt-{index}"),
+    }
 }
 
 fn limits(timeout_ms: u64) -> EffectBatchRuntimeLimits {
@@ -466,6 +473,62 @@ async fn shared_capacity_has_a_separate_bounded_queue_timeout() {
     assert_eq!(error, BatchRuntimeError::QueueTimeout);
     assert!(publisher.events.is_empty());
     first.await.unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn confined_executor_rejects_symlinks_and_non_exact_case() {
+    use std::os::unix::fs::symlink;
+
+    let directory = tempdir().unwrap();
+    let root = directory.path().join("workspace");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/inside.txt"), "inside").unwrap();
+    std::fs::write(root.join("src/Exact.txt"), "case").unwrap();
+    std::fs::write(directory.path().join("outside.txt"), "secret").unwrap();
+    symlink("../../outside.txt", root.join("src/link.txt")).unwrap();
+    let executor = ConfinedFileReadExecutor::new(&root, "confined-v1").unwrap();
+
+    let inside = confined_dispatch(
+        &executor,
+        authorized(prepared_path(10, "src/inside.txt"), 10),
+    )
+    .await;
+    assert!(matches!(
+        inside,
+        ExecutionFact::Completed { content, .. } if content == json!({"text":"inside"})
+    ));
+
+    for invocation in [
+        authorized(prepared_path(11, "src/link.txt"), 11),
+        authorized(prepared_path(12, "src/exact.txt"), 12),
+    ] {
+        assert!(matches!(
+            confined_dispatch(&executor, invocation).await,
+            ExecutionFact::Failed { code, .. } if code == "access_denied"
+        ));
+    }
+}
+
+#[cfg(unix)]
+async fn confined_dispatch(
+    executor: &ConfinedFileReadExecutor,
+    invocation: AuthorizedBatchInvocation,
+) -> ExecutionFact {
+    let execution = executor.prepare(&invocation).unwrap();
+    executor
+        .dispatch(
+            ConcurrentExecutorDispatch {
+                invocation_id: invocation.invocation_id,
+                prepared: invocation.prepared,
+                grant: invocation.grant,
+                execution,
+                receipt_id: invocation.receipt_id,
+            },
+            EffectCancellation::default(),
+        )
+        .await
+        .unwrap()
 }
 
 #[test]
