@@ -95,7 +95,7 @@ func (sender *apnsSender) Send(ctx context.Context, registration PushRegistratio
 	payload, _ := json.Marshal(map[string]any{
 		"aps": map[string]any{
 			"content-available": 1,
-			"alert": map[string]string{"title": "Garive update", "body": "Open Garive to refresh verified server state"},
+			"alert":             map[string]string{"title": "Garive update", "body": "Open Garive to refresh verified server state"},
 		},
 		"garive": hint,
 	})
