@@ -137,6 +137,6 @@ pub use scheduler_runtime::{
 };
 pub use sqlite_ledger::{
     ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryRepositoryCommitError,
-    ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger,
-    SqliteLedgerError,
+    MemoryRepositoryImportCommitError, ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest,
+    SessionWatermark, SqliteLedger, SqliteLedgerError,
 };

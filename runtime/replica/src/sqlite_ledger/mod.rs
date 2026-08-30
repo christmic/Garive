@@ -14,6 +14,7 @@ mod memory_control_integrity;
 mod memory_control_operations;
 mod memory_export;
 mod memory_repository;
+mod memory_repository_import;
 mod migrations;
 mod schedule_lease;
 mod storage;
@@ -61,6 +62,17 @@ pub enum MemoryRepositoryCommitError {
     Ledger(SqliteLedgerError),
     /// Fact-to-repository decoding, precondition, or projection failure.
     Repository(crate::MemoryRepositoryError),
+}
+
+/// Ledger, repository, or M2-journal failure from one fact-backed import transaction.
+#[derive(Debug)]
+pub enum MemoryRepositoryImportCommitError {
+    /// Session Ledger validation, concurrency, integrity, or storage failure.
+    Ledger(SqliteLedgerError),
+    /// Fact-backed repository availability, integrity, concurrency, or authority failure.
+    Repository(crate::MemoryRepositoryError),
+    /// Canonical M2 command, replay, journal, or receipt failure.
+    Control(crate::MemoryControlRuntimeError),
 }
 
 impl SqliteLedger {
@@ -142,6 +154,87 @@ impl SqliteLedger {
         transaction
             .commit()
             .map_err(|_| crate::MemoryControlRuntimeError::PersistenceFailed)?;
+        Ok(receipt)
+    }
+
+    /// Atomically commits normal M0/M1 facts, fact-backed projection changes, and one M2 receipt.
+    pub fn commit_memory_repository_import(
+        &mut self,
+        context: &crate::MemoryRepositoryImportContext,
+        grant: &crate::MemoryControlGrant,
+        command: &crate::MemoryImportCommand,
+        planned: crate::PlannedMemoryRepositoryImport,
+    ) -> Result<crate::MemoryImportReceipt, MemoryRepositoryImportCommitError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryImportCommitError::Ledger)?;
+        if let Some(receipt) = memory_control::replay(&transaction, command)
+            .map_err(MemoryRepositoryImportCommitError::Control)?
+        {
+            transaction
+                .commit()
+                .map_err(SqliteLedgerError::from)
+                .map_err(MemoryRepositoryImportCommitError::Ledger)?;
+            return Ok(receipt);
+        }
+        let previous = memory_control_integrity::namespace_revision(
+            &transaction,
+            &command.plan().namespace_id,
+        )
+        .map_err(MemoryRepositoryImportCommitError::Control)?
+        .ok_or(crate::MemoryRepositoryError::Stale)
+        .map_err(MemoryRepositoryImportCommitError::Repository)?;
+        if previous != command.plan().expected_repository_revision
+            || previous != command.plan().through_revision
+        {
+            return Err(MemoryRepositoryImportCommitError::Repository(
+                crate::MemoryRepositoryError::Stale,
+            ));
+        }
+        let committed = if command.plan().operations.is_empty() {
+            if !planned.facts.is_empty() {
+                return Err(MemoryRepositoryImportCommitError::Control(
+                    crate::MemoryControlRuntimeError::InvalidSnapshot,
+                ));
+            }
+            previous
+        } else {
+            let drafts = planned.facts;
+            let result = commit_transaction(
+                &transaction,
+                context.session_id.clone(),
+                context.expected_session_version,
+                drafts.clone(),
+            )
+            .map_err(MemoryRepositoryImportCommitError::Ledger)?;
+            let (observed, committed) = memory_repository_import::apply(
+                &transaction,
+                &context.session_id,
+                &result,
+                &drafts,
+                grant,
+                command,
+            )
+            .map_err(MemoryRepositoryImportCommitError::Control)?;
+            if observed != previous {
+                return Err(MemoryRepositoryImportCommitError::Repository(
+                    crate::MemoryRepositoryError::Stale,
+                ));
+            }
+            committed
+        };
+        let sequence =
+            memory_control_integrity::next_sequence(&transaction, &command.plan().namespace_id)
+                .map_err(MemoryRepositoryImportCommitError::Control)?;
+        let receipt =
+            memory_control::append_event(&transaction, command, sequence, previous, committed)
+                .map_err(MemoryRepositoryImportCommitError::Control)?;
+        transaction
+            .commit()
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryImportCommitError::Ledger)?;
         Ok(receipt)
     }
 

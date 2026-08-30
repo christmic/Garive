@@ -183,7 +183,7 @@ pub(super) fn commit_import(
     append_event(transaction, command, sequence, previous, committed)
 }
 
-fn replay(
+pub(super) fn replay(
     transaction: &Transaction<'_>,
     command: &MemoryImportCommand,
 ) -> Result<Option<MemoryImportReceipt>, MemoryControlRuntimeError> {
@@ -247,7 +247,7 @@ fn replay(
     Ok(Some(receipt))
 }
 
-fn append_event(
+pub(super) fn append_event(
     transaction: &Transaction<'_>,
     command: &MemoryImportCommand,
     sequence: u64,
