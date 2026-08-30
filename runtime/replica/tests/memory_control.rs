@@ -2,7 +2,9 @@
 mod support;
 
 use garive_memory::{prepare_memory_import, MemoryDocumentLimits, MemoryIdentityAllocation};
-use garive_runtime::{MemoryControlRuntimeError, MemoryImportCommand, SqliteLedger};
+use garive_runtime::{
+    MemoryControlRuntimeError, MemoryImportCommand, MemoryRepositoryStatus, SqliteLedger,
+};
 use support::*;
 use tempfile::tempdir;
 
@@ -64,6 +66,16 @@ fn atomic_import_replays_after_restart_and_erases_projection_content() {
         ledger
             .initialize_memory_control_namespace(&grant, "namespace-1", 7, &originals)
             .unwrap();
+        assert_eq!(
+            ledger
+                .open_memory_repository(
+                    &grant,
+                    "namespace-1",
+                    MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+                )
+                .unwrap(),
+            MemoryRepositoryStatus::Unavailable,
+        );
         let receipt = ledger.commit_memory_import(&grant, &command).unwrap();
         assert!(receipt.changed);
         assert_eq!(receipt.previous_repository_revision, 7);

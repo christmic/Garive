@@ -38,6 +38,22 @@ pub struct MemoryControlProjection {
     pub documents: Vec<MemoryControlDocument>,
 }
 
+/// Product-visible readiness of one configured fact-backed Memory repository.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MemoryRepositoryStatus {
+    /// One verified namespace projection is ready for bounded reads.
+    Ready {
+        /// Exact opaque namespace identity.
+        namespace_id: String,
+        /// Current non-zero repository revision.
+        repository_revision: u64,
+    },
+    /// No fact-backed repository is installed for the requested namespace.
+    Unavailable,
+    /// Durable facts and the current projection failed reconciliation.
+    Corrupt,
+}
+
 /// Atomic result of one fact-backed Memory repository write or exact replay.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MemoryRepositoryCommitResult {

@@ -131,6 +131,49 @@ impl SqliteLedger {
         memory_control::read_projection(&self.connection, grant, namespace_id, limits)
     }
 
+    /// Opens one production fact-backed repository without exposing adapter details.
+    pub fn open_memory_repository(
+        &self,
+        grant: &crate::MemoryControlGrant,
+        namespace_id: &str,
+        limits: garive_memory::MemoryDocumentLimits,
+    ) -> Result<crate::MemoryRepositoryStatus, crate::MemoryRepositoryError> {
+        if !grant.admits_action(namespace_id, crate::MemoryControlAction::Export) {
+            return Err(crate::MemoryRepositoryError::Unauthorized);
+        }
+        let mode = memory_control_integrity::namespace_source_mode(&self.connection, namespace_id)
+            .map_err(|_| crate::MemoryRepositoryError::Unavailable)?;
+        if mode.as_deref() != Some("fact_backed") {
+            return Ok(crate::MemoryRepositoryStatus::Unavailable);
+        }
+        match memory_control::read_projection(&self.connection, grant, namespace_id, limits) {
+            Ok(projection) => Ok(crate::MemoryRepositoryStatus::Ready {
+                namespace_id: projection.namespace_id,
+                repository_revision: projection.repository_revision,
+            }),
+            Err(_) => Ok(crate::MemoryRepositoryStatus::Corrupt),
+        }
+    }
+
+    /// Reads one verified production repository and refuses isolated M2 test state.
+    pub fn read_memory_repository_projection(
+        &self,
+        grant: &crate::MemoryControlGrant,
+        namespace_id: &str,
+        limits: garive_memory::MemoryDocumentLimits,
+    ) -> Result<crate::MemoryControlProjection, crate::MemoryRepositoryError> {
+        match self.open_memory_repository(grant, namespace_id, limits)? {
+            crate::MemoryRepositoryStatus::Ready { .. } => {
+                memory_control::read_projection(&self.connection, grant, namespace_id, limits)
+                    .map_err(|_| crate::MemoryRepositoryError::Corrupt)
+            }
+            crate::MemoryRepositoryStatus::Unavailable => {
+                Err(crate::MemoryRepositoryError::Unavailable)
+            }
+            crate::MemoryRepositoryStatus::Corrupt => Err(crate::MemoryRepositoryError::Corrupt),
+        }
+    }
+
     pub(crate) fn commit_memory_export_journal(
         &mut self,
         grant: &crate::MemoryControlGrant,

@@ -16,9 +16,9 @@ use garive_runtime::{
     plan_memory_tombstone, plan_memory_write, reconstruct_memory_repository_projection,
     reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryControlAction,
     MemoryControlGrant, MemoryControlRuntimeError, MemoryPrefix, MemoryRepositoryCommitError,
-    MemoryRepositoryError, MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext,
-    MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError, SqliteLedger,
-    SqliteLedgerError,
+    MemoryRepositoryError, MemoryRepositoryStatus, MemoryTombstoneContext, MemoryTombstoneReason,
+    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError,
+    SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -280,12 +280,25 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
     )
     .unwrap();
     let projection = ledger
-        .read_memory_control_projection(
+        .read_memory_repository_projection(
             &grant,
             "namespace",
             MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
         )
         .unwrap();
+    assert_eq!(
+        ledger
+            .open_memory_repository(
+                &grant,
+                "namespace",
+                MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+            )
+            .unwrap(),
+        MemoryRepositoryStatus::Ready {
+            namespace_id: "namespace".into(),
+            repository_revision: 1,
+        }
+    );
     assert_eq!(projection.repository_revision, 1);
     assert_eq!(projection.documents[0].content(), "dark mode\n");
     assert_eq!(
@@ -474,6 +487,16 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
             MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
         ),
         Err(MemoryControlRuntimeError::PersistenceFailed),
+    );
+    assert_eq!(
+        ledger
+            .open_memory_repository(
+                &grant,
+                "namespace",
+                MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+            )
+            .unwrap(),
+        MemoryRepositoryStatus::Corrupt,
     );
 }
 
