@@ -1215,11 +1215,14 @@ dependencies = [
  "garive-runtime",
  "keyring",
  "serde",
+ "serde_jcs",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tempfile",
  "tokio",
+ "url",
  "uuid",
 ]
 
