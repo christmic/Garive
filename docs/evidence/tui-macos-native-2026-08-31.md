@@ -76,6 +76,19 @@ all-target Clippy passed in 8.64 seconds and the release binary plus demo Host
 linked in 9.13 seconds. This exact rerun still does not substitute for a
 physical Terminal/iTerm-class window or admitted PNGs.
 
+Revision `effe08f0` then extracted the append-only screen-reader overlays into
+the shared view component layer. Command, Session, and prompt-history prompts
+now consume the same filtered ordering, selection-following window, and
+activation index as their visual overlays; Help names keyboard-only, newline,
+no-color/no-mouse, and OSC 52 fallbacks. `cargo test -p garive-tui -- --list`
+enumerated 94 cases. The complete package passed, including all six
+shipping-binary PTY cases and the filtered screen-reader command-to-Help flow;
+the production Runtime/file-SQLite/PTTY case completed in 69.44 seconds.
+Strict all-target Clippy completed in 11.71 seconds and the release binary plus
+demo Host linked in 13.82 seconds. Merge revision `f5d64c50` then passed the
+focused library, visual-model, and snapshot suites on `master` (11 + 19 + 7
+tests). Physical Terminal/iTerm-class validation and admitted PNGs remain open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
