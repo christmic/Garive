@@ -1314,6 +1314,81 @@ Garive's memory is **none of these**:
 > effect-layer + governance combination — none of which
 > any memory system today has.
 
+## Theory map — six foundational pillars
+
+The memory layer's design rests on **six theoretical
+pillars**. Each pillar answers a specific question; together
+they give the memory layer its properties (observable /
+computable / attributable / adaptive).
+
+| # | Pillar | Where it lives | What it gives |
+|---|--------|----------------|---------------|
+| **1** | **Beta-Bernoulli Bayesian update** | `R` in `conf = E × R × B × F` (angle ⑧) | **Confidence is a posterior, not a heuristic.** Prior `Beta(1, 1)` (uniform unknown); each outcome shifts the posterior by one count. `R = α / (α + β)` is the posterior mean. Closed-form; no sampling. |
+| **2** | **Survival analysis / censored data** | Right-censoring rule (angle ⑧) | **Recall that doesn't reach an outcome provides no information.** `recalled_not_used` and `ignored` are **censored** — they update neither `α` nor `β`. Without this rule, high-traffic memories are falsely penalised for "not being useful" — a death spiral. |
+| **3** | **Ebbinghaus / exponential decay** | `F` in `conf = E × R × B × F` (angle ⑧) | **Time alone doesn't kill memory.** `F = 1 − (now − last_verified) / F_max_age`; **last_verified is reset on every use**, so active memories stay fresh. Decay fires only on "not verified recently" — not "ancient". |
+| **4** | **Calibration theory (Platt / isotonic)** | Weekly regression on `recall.outcome` (angle ⑧) | **Absolute confidence is calibrated against the world.** The Beta-Binomial posterior gives the right shape; **the coefficients are fit against the historical outcome log.** A memory with `conf = 0.8` should empirically succeed ~80% of the time — Platt scaling or isotonic regression fits this. |
+| **5** | **Reciprocal Rank Fusion (RRF)** | Read paths, two-stage retrieval (angle ⑥) | **Failure modes of vector / FTS / recency are complementary.** RRF fuses ranked lists from multiple rankers without requiring score calibration. The constants `k_r` (Cormack k=60) dampen low-rank contributions. Closed-form math. |
+| **6** | **Case-based reasoning (Schank)** | Anomaly handling — scope narrowing (this round) | **Counter-examples teach the boundary.** A failure inside scope + similar context → falsify (β + 1). A failure outside scope → narrow the applicability, record the new failure as a boundary case. The fix adjusts the **applicability**, not the conclusion. |
+
+### What each pillar gives us — the design-load table
+
+| Pillar | Without it | With it |
+|--------|------------|---------|
+| **1. Beta-Bernoulli** | Confidence is a hand-tuned heuristic; it drifts as the bank grows. | Confidence is the **posterior of a Bayesian reliability model**; updates as outcomes accumulate. |
+| **2. Censored data** | "Recalled but not used" is treated as "useless"; popular memories get false-failure β. | Right-censored — no information → no update; memory's life is governed by **actual outcomes**, not by whether it got looked at. |
+| **3. Ebbinghaus** | Time-decays by age — old-but-still-useful memories lose weight. | Time-decays by `last_verified` — old-but-active memories stay fresh; stale memories get demoted. |
+| **4. Calibration (Platt)** | `conf = 0.8` is a number; we don't know if 0.8 means "succeeds 80%" or "succeeds 50%". | Weekly regression against the outcome log calibrates the absolute scale. **A `conf` value is a probability**, not a feeling. |
+| **5. RRF** | One ranker wins / one ranker loses; pick one. | Three rankers complement; one fused ranking. Closed-form math, no calibration between rankers required. |
+| **6. CBR (Schank)** | A failure = "the memory was wrong" → β + 1; no scope learned. | A failure can be "out of scope" → narrow applicability; the boundary sharpens with use. **Counter-examples teach rules**, not the other way around. |
+
+### The pillars interlock — one feeds the next
+
+```
+   case-based reasoning          ← the failure tells us WHERE
+            ↑
+            │ (counter-examples sharpen the rule's boundary)
+            │
+   Beta-Bernoulli               ← the failure updates reliability
+            ↑
+            │ (each success/failure shifts the posterior)
+            │
+   Platt / isotonic calibration  ← the posterior's ABSOLUTE scale
+            ↑
+            │ (the regression against observed outcomes)
+            │
+   Ebbinghaus decay              ← time alone is not decay
+            ↑
+            │ (last_verified drives F, not "since creation")
+            │
+   censored data               ← "wasn't recalled" isn't "useless"
+            ↑
+            │ (right-censoring protects high-traffic memories)
+            │
+   RRF                          ← multiple rankers, fused
+            ↑
+            │ (complementary failure modes — vector / FTS / recency)
+            │
+   recall-event / recall-apply / recall-outcome
+        ← the THREE-ROW chain is the unit of evidence
+```
+
+> **Each pillar fixes a defect that the previous one
+> exposes.** Beta-Bernoulli without calibration → abstract
+> scores; calibration without censored data → false β on
+> un-recalled entries; Ebbinghaus without right-censoring →
+> "ancient" bias; etc. The pillars interlock — each is
+> load-bearing because it answers a question the previous
+> pillar raises.
+
+### What this means for new contributors
+
+When in doubt about a memory-layer design choice, **name
+the pillar** it answers. If the choice isn't answering a
+specific question from this map, it's either over- or
+under-engineered. The pillars are the **checklist** for the
+memory layer's design correctness — not a suggestion, a
+**contract**.
+
 ## Cross-references
 
 - `loop.md` "Two protocols" — recall is one of the
