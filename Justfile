@@ -161,7 +161,7 @@ tui-pty:
 tui-bench:
     cargo test -p garive-tui --test performance -- --nocapture
     cargo bench -p garive-tui --bench release_baseline
-    cargo build --release -p garive-tui --bin garive-tui --example release_process_baseline
+    cargo build --release -p garive-tui --bin garive-tui --example visual_demo_host --example release_process_baseline
     cargo run --release -p garive-tui --example release_process_baseline
 
 tui-boundaries:

@@ -1,16 +1,11 @@
 //! Repeated outer-process release baseline for the first interactive TUI frame.
 
 use std::{
-    io::{Read, Write},
-    net::{SocketAddr, TcpListener},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
-    process::Command,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    process::{Child, Command, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::Serialize;
@@ -49,13 +44,13 @@ struct Distribution {
 fn main() {
     let tui = release_tui_path();
     assert!(tui.is_file(), "build the release garive-tui binary first");
-    let (host, shutdown, server) = empty_host();
     let temporary = tempfile::tempdir().unwrap();
+    let (host, mut server) = start_runtime_host(temporary.path());
     let runs = (0..RUNS)
         .map(|run| measure_run(&tui, host, temporary.path(), run))
         .collect::<Vec<_>>();
-    shutdown.store(true, Ordering::SeqCst);
-    server.join().unwrap();
+    server.kill().unwrap();
+    server.wait().unwrap();
     for run in &runs {
         assert!(
             run.p95_us < 150_000,
@@ -84,7 +79,7 @@ fn main() {
                 ],
             ),
             terminal_backend: "shipping binary under expect PTY",
-            host_backend: "bounded loopback H1 boot fixture",
+            host_backend: "production LiveHost with file SQLite",
             samples_per_run: SAMPLES,
         },
         runs,
@@ -148,54 +143,42 @@ fn measure_start(tui: &Path, host: SocketAddr, root: &Path, run: usize, sample: 
 }
 
 fn release_tui_path() -> PathBuf {
+    release_example_path("garive-tui", false)
+}
+
+fn release_example_path(name: &str, example: bool) -> PathBuf {
     std::env::current_exe()
         .unwrap()
         .parent()
         .unwrap()
-        .parent()
-        .unwrap()
-        .join("garive-tui")
+        .join(if example { name } else { "../garive-tui" })
 }
 
-fn empty_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
+fn start_runtime_host(root: &Path) -> (SocketAddr, Child) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let stop = shutdown.clone();
-    let server = thread::spawn(move || {
-        while !stop.load(Ordering::SeqCst) {
-            match listener.accept() {
-                Ok((mut socket, _)) => {
-                    socket.set_nonblocking(false).unwrap();
-                    respond(&mut socket);
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(1));
-                }
-                Err(error) => panic!("loopback Host failed: {error}"),
-            }
+    drop(listener);
+    let host = release_example_path("visual_demo_host", true);
+    assert!(host.is_file(), "build the release visual_demo_host first");
+    let child = Command::new(host)
+        .arg(root.join("runtime.sqlite"))
+        .arg(address.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if TcpStream::connect(address).is_ok() {
+            break;
         }
-    });
-    (address, shutdown, server)
-}
-
-fn respond(socket: &mut std::net::TcpStream) {
-    let mut request = [0; 8_192];
-    let read = socket.read(&mut request).unwrap();
-    let request = String::from_utf8_lossy(&request[..read]);
-    let body = if request.contains("GET /v1/agent-definitions ") {
-        r#"{"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"benchmark","definition_revision":"v1","capabilities":[]}]}"#
-    } else if request.contains("GET /v1/sessions?") {
-        r#"{"api_version":"v1","sessions":[],"next_before":null}"#
-    } else {
-        return;
-    };
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    socket.write_all(response.as_bytes()).unwrap();
+        assert!(
+            Instant::now() < deadline,
+            "Runtime Host did not become ready"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    (address, child)
 }
 
 fn percentile(samples: &[u64], percentile: usize) -> u64 {
