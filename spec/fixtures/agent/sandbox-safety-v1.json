@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "name": "filesystem_read",
+      "capabilities": ["filesystem_read"],
+      "controls": ["resource_limits", "symlink_containment", "filesystem_scope"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "canonical_controls": ["filesystem_scope", "symlink_containment", "resource_limits"],
+      "digest": "ee3658a7b9788d184f0f97b9b611826416cf546b0786a775f9ba339c18d9e611"
+    }
+  ],
+  "invalid_profiles": [
+    {
+      "name": "missing_symlink_control",
+      "capabilities": ["filesystem_read"],
+      "controls": ["filesystem_scope", "resource_limits"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "expected_code": "sandbox_requirement_invalid"
+    },
+    {
+      "name": "process_without_ceiling",
+      "capabilities": ["process"],
+      "controls": ["process_containment", "structured_arguments", "environment_allowlist", "resource_limits"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "expected_code": "sandbox_requirement_invalid"
+    },
+    {
+      "name": "duplicate_control",
+      "capabilities": ["filesystem_read"],
+      "controls": ["filesystem_scope", "symlink_containment", "resource_limits", "resource_limits"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "expected_code": "sandbox_requirement_invalid"
+    }
+  ],
+  "coverage": {
+    "requested_max_open_files": 16,
+    "executor_max_open_files": 8,
+    "covered": true,
+    "reverse_covered": false
+  }
+}

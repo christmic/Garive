@@ -1,12 +1,24 @@
 package com.garive.eng.kt.tools
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class SandboxRequirementsTest {
+    private val fixture: JsonObject = Json.parseToJsonElement(
+        File(System.getProperty("garive.repo.root"), "spec/fixtures/agent/sandbox-safety-v1.json").readText(),
+    ).jsonObject
+
     @Test
     fun filesystemProfileRequiresEveryControl() {
         val result = SandboxRequirementsV1.create(
@@ -33,6 +45,29 @@ class SandboxRequirementsTest {
         )
     }
 
+    @Test
+    fun sharedFixtureHasCanonicalProfileAndFailures() {
+        assertEquals(1, fixture.getValue("schema_version").jsonPrimitive.int)
+        val profile = fixture.getValue("profiles").jsonArray.single().jsonObject
+        val value = profileFromJson(profile)
+        assertEquals(
+            profile.getValue("canonical_controls").jsonArray.map { it.jsonPrimitive.content },
+            assertIs<ToolContractResult.Success<SandboxRequirementsV1>>(value).value.controls.map { it.wireName },
+        )
+        assertEquals(
+            profile.getValue("digest").jsonPrimitive.content,
+            assertIs<ToolContractResult.Success<String>>(
+                assertIs<ToolContractResult.Success<SandboxRequirementsV1>>(value).value.digest(),
+            ).value,
+        )
+        fixture.getValue("invalid_profiles").jsonArray.forEach {
+            assertEquals(
+                PreparationErrorCode.SANDBOX_REQUIREMENT_INVALID,
+                assertIs<ToolContractResult.Failure>(profileFromJson(it.jsonObject)).error.code,
+            )
+        }
+    }
+
     private fun filesystemProfile(maxOpenFiles: Int): SandboxRequirementsV1 =
         assertIs<ToolContractResult.Success<SandboxRequirementsV1>>(
             SandboxRequirementsV1.create(
@@ -46,4 +81,20 @@ class SandboxRequirementsTest {
                 maxOpenFiles,
             ),
         ).value
+
+    private fun profileFromJson(value: JsonObject): ToolContractResult<SandboxRequirementsV1> =
+        SandboxRequirementsV1.create(
+            value.getValue("capabilities").jsonArray.map {
+                when (it.jsonPrimitive.content) {
+                    "filesystem_read" -> ExecutionCapability.FILESYSTEM_READ
+                    "process" -> ExecutionCapability.PROCESS
+                    else -> error("unknown fixture capability")
+                }
+            },
+            value.getValue("controls").jsonArray.map {
+                SandboxControl.entries.single { control -> control.wireName == it.jsonPrimitive.content }
+            },
+            value["max_processes"]?.jsonPrimitive?.contentOrNull?.toInt(),
+            value.getValue("max_open_files").jsonPrimitive.int,
+        )
 }
