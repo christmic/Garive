@@ -40,8 +40,24 @@ unpromoted numeric policies and mechanisms in this document remain research.
 | Vector / FTS / recency | Versioned Runtime candidate ports | Admitted as replaceable ports; no fusion formula or backend is selected by M1. |
 | Menu / detail push-pull | M1 committed recall products plus C2 derive | Implemented under shared item and UTF-8 budgets. |
 | Reality feedback | M1 obligation and observation facts | Implemented; model citations alone are never verification. |
+| `recall.event` / `recall.apply` / `recall.outcome` | `memory.recall_recorded` / `memory.obligation_opened` / `memory.observation_recorded` | Implemented as one attributable durable chain; these prose aliases are not additional stores or fact kinds. |
+| Success / failure / censored | M1 `Verified` / in-scope `Falsified` / no conclusive observation | Portable truth remains `EvidenceTally {verified, falsified, neutral}`. Greek-letter counters are explanatory notation only. |
+| Memory error / context mismatch | in-scope falsification / out-of-scope neutral observation plus optional narrowing Candidate | Implemented. A mismatch never edits scope in place or counts as falsification. |
+| Three swimlanes / feedback loops | Runtime orchestration over committed facts and rebuildable projections | Conceptual view only; it adds no side channel, schedule, database, or direct write authority. |
 | Risk-action lesson recall | Future Governance × Memory contract | Research until an exact purpose, authority, redaction, durable fact, and `AskUser` integration Spec is accepted. |
 | Numeric schedules, percentages, thresholds, decay and fusion weights | Versioned measured policy | Research until reproducible evaluation admits exact values. |
+
+### Maturity rule for formulas and diagrams
+
+The formulas, framework comparisons, timing examples and diagrams below are a
+research notebook. They describe hypotheses worth evaluating, not defaults.
+In particular, Beta priors, RRF constants, query-expansion counts, top-K values,
+similarity thresholds, freshness equations, ranker calibration, hourly/daily/
+weekly schedules and a physically separate `memory.db` are **not accepted
+configuration**. A production implementation must name a versioned policy,
+freeze its inputs in the effective D0 snapshot, commit its result before use,
+and pass a reproducible quality/privacy/recovery evaluation. Where an example
+conflicts with M0/M1/M2, the focused Spec wins.
 
 ## ① Location + classification — what memory IS
 
@@ -430,7 +446,7 @@ Each retrieval method has its own blind spot:
 sets. Each method's hits are unioned with the others; the
 fusion reranks.
 
-### RRF (Reciprocal Rank Fusion) — the formula
+### RRF (Reciprocal Rank Fusion) — research candidate
 
 For query `q`, each ranker returns a ranked list:
 
@@ -442,12 +458,12 @@ RRF(q, entry) = Σ_r  weight_r / (k_r + rank_r(entry))
 - `weight_r` is the ranker's weight (calibrated; default 1.0 each)
 - `k_r` is a constant per ranker that dampens the contribution of low-rank items (Cormack's constant k=60 is the canonical default)
 
-The fused ranking is `RRF_score(q, entry)` summed across all
-rankers. Top-k is the **k entries with the highest fused
-RRF score**. This is **closed-form math** — no LLM in the
-loop during fusion.
+The fused ranking would be `RRF_score(q, entry)` summed across all rankers.
+This is a useful deterministic candidate, but the weights, constants, source
+rankers and tie-breaks require a versioned Runtime policy and evaluation before
+they can replace M1's admitted integer baseline.
 
-### Two-stage — coarse + fine
+### Two-stage — research candidate
 
 The four-stage pipeline:
 
@@ -468,7 +484,7 @@ recall is cheap and recall-oriented (high recall); rerank
 is expensive and precision-oriented. The two together give
 the best of both.
 
-### Query expansion — multiple phrasings
+### Query expansion — research candidate
 
 A single query often misses relevant entries because the
 phrasing doesn't match the entry's wording. **Query
@@ -488,21 +504,22 @@ for q' in expansions + [query]:
 top_k = rrf_fuse(results, k=K)
 ```
 
-The `llm_expand` is **lightweight** — the LLM is asked to
+The proposed `llm_expand` is **narrowly scoped** — the LLM is asked to
 produce "3 different ways a user might phrase this query",
 not to extract anything substantive. The expansion is **the
 LLM's** contribution; the **retrieval and ranking** are pure
 math.
 
-If query expansion is too expensive, a **zero-LLM fallback**:
+This is not a built-in secondary model and has no implicit fallback. A future
+policy must use the ordinary configured model/Provider boundary or an explicit
+deterministic port, with its revision and output committed. One research option:
 use the entry's known metadata — `mtype`, `confidence`,
 `last_verified`, `source_session` keywords — as expanded
 query forms. **Pure math**, no LLM.
 
 ### Recall surface — the menu (always-on)
 
-The recall menu is the **single thing** the framework injects
-into the surface every turn:
+The recall menu is the discoverability product the framework may offer to C2:
 
 ```
 <memory_menu scope="user=abc">
@@ -520,8 +537,8 @@ into the surface every turn:
 ```
 
 - Compact (titles + meta only — no full body in the menu)
-- High-confidence items first
-- Sorted by `mtype` × `last_used`
+- Ordered by the frozen M1 selection policy
+- Retained or dropped by C2 under the shared item and UTF-8 budgets
 
 The **menu's only job** is to make recall possible: the
 agent sees **what's available** and decides **whether to pull**.
@@ -529,26 +546,24 @@ Detail is on demand (recall tool / knowledge lookups).
 
 ### Read-path audit — three observation rows per recall
 
-Every read goes through the three-way observability
-contract (angle ⑧):
+An admitted recall/application/outcome chain maps to existing durable facts:
 
 | Row | Captures |
 |-----|----------|
-| `recall.event` | Which entries were retrieved, fused RRF score, `E × R × B × F` per entry |
-| `recall.apply` | Which entries the model actually cited (`[mem:xxx]`) in its reply |
-| `recall.outcome` | Did the cited entry match reality? → β +1 / -1 / censored |
+| `recall.event` | `memory.recall_recorded`: frozen request, selected revisions, exact integer score components and truncation. |
+| `recall.apply` | `memory.obligation_opened`: an exact committed application fact, expected outcome, scope and attribution revision. Citation text alone is insufficient. |
+| `recall.outcome` | `memory.observation_recorded`: typed reality evidence and `Verified`, in/out-of-scope `Falsified`, or `Neutral`. |
 
-The `recall.outcome` row is the **weekly calibration input**
-for `R` (Beta-Binomial) and for the ranker weights.
+These facts are eligible inputs to a separately versioned calibration job. No
+weekly schedule, Bayesian model or ranker mutation is implied by the chain.
 
 ### Recall quality — measured by the feedback loop, not by offline eval
 
-Recall precision is **not** measured by a separate
-benchmark. It is **measured by the same feedback loop** that
-calibrates `R` — the chain
+Production feedback and pinned evaluation are complementary. The first detects
+real-world outcomes; the second makes policy changes reproducible. The chain is
 
 ```
-recall.event → recall.apply → recall.outcome → β update → conf recompute → ranker weight recalibrate
+memory.recall_recorded → memory.obligation_opened → memory.observation_recorded
 ```
 
 **The link** is the unit of evidence:
@@ -557,9 +572,9 @@ recall.event → recall.apply → recall.outcome → β update → conf recomput
 |-----------|---------|--------------|
 | `event` only | The model was shown the entry but did not cite it | **Censored** — no signal |
 | `event + apply` (no outcome yet) | The model cited it but the world hasn't checked | **Pending** — outcome arrives |
-| `event + apply + outcome.success` | The model cited it AND the world confirmed | **Confirmed** — β +1 |
-| `event + apply + outcome.failure` | The model cited it AND the world contradicted | **Falsified** — β +1 (failure counts) |
-| `event + apply + outcome.conflict` | Cited entry contradicted another cited entry | **Conflict** — both entries lose β, high-conf wins on recall |
+| `event + apply + outcome.success` | The applied revision was reality-verified | Increment exact `verified`. |
+| `event + apply + outcome.failure` | Reality falsified the revision in its declared scope | Increment exact `falsified`. |
+| `event + apply + out-of-scope/uncertain` | Attribution is mismatch or inconclusive | Increment exact `neutral`; mismatch may propose a narrower Candidate. |
 
 The chain's **density** is the signal:
 
@@ -568,11 +583,10 @@ The chain's **density** is the signal:
 - Low density → recall is failing on that pattern; the
   query expansion + ranker weights need adjustment.
 
-> **The loop is the metric.** Offline recall-precision@k
-> benchmarks are a **snapshot**; the production feedback
-> chain is a **stream**. The stream is the ground truth —
-> the snapshot is for catching regressions when the stream
-> drifts.
+> **The durable chain is evidence, not automatically a metric.** A metric must
+> publish its eligibility rule, exact integer numerator/denominator, policy
+> revision and corpus/window binding. Production observations cannot replace
+> pinned regression and privacy evaluation.
 
 ### Beta as indirect calibration
 
@@ -815,7 +829,7 @@ recall event ──→ "X memory items retrieved; conf ∈ [low, high]"
                        │
                   reality gate runs (real event matches?)
                        │
-                  β + 1 (success)  or  β − 1 (failure)
+                  verified + 1  or  falsified + 1
                        │
                   conf recomputed via formula
                        │
@@ -824,12 +838,12 @@ recall event ──→ "X memory items retrieved; conf ∈ [low, high]"
 
 Three **observability points** are mandatory:
 
-1. **Recall-side** — which entries were retrieved, with
-   conf. `recall.event` row in memory.db.
+1. **Recall-side** — which entries were retrieved under the frozen policy.
+   Durable `memory.recall_recorded` fact.
 2. **Apply-side** — which entries the model actually used
    (`[mem:abc]` citation). `recall.apply` row.
-3. **Output-side** — which β updates happen, against which
-   sessions. `recall.outcome` row.
+3. **Output-side** — which exact evidence-tally update happened, against which
+   obligation. Durable observation plus lifecycle facts.
 
 The `recall.outcome` row is what feeds the `β` recalibration
 loop — **directly attributable** to the recall event + the
@@ -1314,7 +1328,7 @@ Garive's memory is **none of these**:
 > effect-layer + governance combination — none of which
 > any memory system today has.
 
-## Theory map — six foundational pillars
+## Theory map — six research foundations
 
 The memory layer's design rests on **six theoretical
 pillars**. Each pillar answers a specific question; together
@@ -1325,7 +1339,7 @@ computable / attributable / adaptive).
 |---|--------|----------------|---------------|
 | **1** | **Beta-Bernoulli Bayesian update** | `R` in `conf = E × R × B × F` (angle ⑧) | **Confidence is a posterior, not a heuristic.** Prior `Beta(1, 1)` (uniform unknown); each outcome shifts the posterior by one count. `R = α / (α + β)` is the posterior mean. Closed-form; no sampling. |
 | **2** | **Survival analysis / censored data** | Right-censoring rule (angle ⑧) | **Recall that doesn't reach an outcome provides no information.** `recalled_not_used` and `ignored` are **censored** — they update neither `α` nor `β`. Without this rule, high-traffic memories are falsely penalised for "not being useful" — a death spiral. |
-| **3** | **Ebbinghaus / exponential decay** | `F` in `conf = E × R × B × F` (angle ⑧) | **Time alone doesn't kill memory.** `F = 1 − (now − last_verified) / F_max_age`; **last_verified is reset on every use**, so active memories stay fresh. Decay fires only on "not verified recently" — not "ancient". |
+| **3** | **Ebbinghaus / freshness research** | Candidate `F` component (angle ⑧) | Time alone must not tombstone a memory. Only an admitted reality-backed verification may advance `last_verified`; use alone is not verification. The equation remains evaluation-gated. |
 | **4** | **Calibration theory (Platt / isotonic)** | Weekly regression on `recall.outcome` (angle ⑧) | **Absolute confidence is calibrated against the world.** The Beta-Binomial posterior gives the right shape; **the coefficients are fit against the historical outcome log.** A memory with `conf = 0.8` should empirically succeed ~80% of the time — Platt scaling or isotonic regression fits this. |
 | **5** | **Reciprocal Rank Fusion (RRF)** | Read paths, two-stage retrieval (angle ⑥) | **Failure modes of vector / FTS / recency are complementary.** RRF fuses ranked lists from multiple rankers without requiring score calibration. The constants `k_r` (Cormack k=60) dampen low-rank contributions. Closed-form math. |
 | **6** | **Case-based reasoning (Schank)** | Anomaly handling — scope narrowing (this round) | **Counter-examples teach the boundary.** A failure inside scope + similar context → falsify (β + 1). A failure outside scope → narrow the applicability, record the new failure as a boundary case. The fix adjusts the **applicability**, not the conclusion. |
@@ -1382,20 +1396,16 @@ computable / attributable / adaptive).
 
 ### What this means for new contributors
 
-When in doubt about a memory-layer design choice, **name
-the pillar** it answers. If the choice isn't answering a
-specific question from this map, it's either over- or
-under-engineered. The pillars are the **checklist** for the
-memory layer's design correctness — not a suggestion, a
-**contract**.
+When evaluating a memory-layer mechanism, name the research question it
+answers and the evidence needed to admit it. This map is a hypothesis checklist;
+M0/M1/M2 and later focused Specs are the contracts.
 
 ## End-to-end flow — three swimlanes + three feedback loops
 
-The whole memory system is **sourced from the ledger**.
-Every entry in `memory.db` traces back to a `source_session`
-+ `source_seq`. The pipeline runs **three swimlanes** that
-share **three feedback loops**. The conversation hot path
-contains **only one sync action** — the recall lookup.
+The whole memory system is backed by exact durable provenance. Every admitted
+revision binds durable fact references; Runtime's repository projection is
+rebuildable state, not a second truth database. The pipeline below is a logical
+view of three concerns and proposed feedback loops, not an execution topology.
 
 ### The swimlanes
 
@@ -1406,7 +1416,7 @@ contains **only one sync action** — the recall lookup.
 │                                                                         │
 │   ┌─────────────┐   ┌───────────────┐   ┌────────────────┐             │
 │   │ exit_summary│   │ session-end   │   │ user "记住 X" │             │
-│   │ hot-capture │   │ light extract │   │ direct write   │             │
+│   │ hot-capture │   │ light extract │   │ authorised cmd │             │
 │   │ (lessons)   │   │ (episodes)    │   │ (user_declared)│             │
 │   └─────┬───────┘   └───────┬───────┘   └───────┬────────┘             │
 │         └─────────────────┬┴───────────────────┘                       │
@@ -1419,7 +1429,7 @@ contains **only one sync action** — the recall lookup.
 │              └──────────────┬───────────────┘                        │
 │                             │                                          │
 │              candidate → evidence-bound (E=0 rejected)            │
-│              confidence seeded (Beta(1,1))                       │
+│              exact EvidenceTally + lifecycle initialised          │
 │              scope, source_session, source_seq attached             │
 │                             │                                          │
 └─────────────────────────────┼────────────────────────────────────────┘
@@ -1438,7 +1448,7 @@ contains **only one sync action** — the recall lookup.
                     └──────────────┬──────────────────┘
                               │
                               │  recall (turn-start)
-                              │  push: menu (every turn)
+                              │  menu candidate (when requested)
                               │  pull: detail on demand
                               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1453,7 +1463,7 @@ contains **only one sync action** — the recall lookup.
 │         └────────────┴─────────────┘                  │            │
 │                           ▼                           │            │
 │                  ┌────────────────┐                   │            │
-│                  │  surface       │  <──  menu push every turn │
+│                  │  surface       │  <──  menu retained by C2 │
 │                  │  (model sees) │                  │            │
 │                  └────────────────┘                   │            │
 │                                                       │            │
@@ -1483,7 +1493,7 @@ contains **only one sync action** — the recall lookup.
 │                                                                         │
 │   ┌────────────────────────────────────────────────────────────────┐ │
 │   │  Per-entry → recall.outcome row →  β update →  conf recompute    │ │
-│   │  Per-ranker → weekly regression →  ranker weights              │ │
+│   │  Per-policy → versioned evaluation → candidate policy evidence │ │
 │   └────────────────────────────────────────────────────────────────┘ │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -1502,7 +1512,7 @@ contains **only one sync action** — the recall lookup.
                                           │
                                           └──> next recall uses new conf
      
-     ┌─── distillation-loop (hour/daily, async) ────────────┐
+     ┌─── distillation-loop (configured trigger, async) ────┐
      │                                                       │
      │  dream watermark ─────> episode distil ─────> facts/lessons │
      │                              │                            │
@@ -1511,7 +1521,7 @@ contains **only one sync action** — the recall lookup.
      │                              └──> audit report            │
      └────────────────────────────────────────────────────────┘
 
-     ┌─── calibration-loop (weekly, async) ──────────────────┐
+     ┌─── calibration-loop (evaluation-gated, async) ────────┐
      │                                                       │
      │  outcome log ─────> Platt / isotonic regression      │
      │                              │                            │
@@ -1521,32 +1531,32 @@ contains **only one sync action** — the recall lookup.
      └────────────────────────────────────────────────────────┘
 ```
 
-### The conversation hot path contains **only one sync action**
+### The conversation hot path preserves one context-admission boundary
 
-- The model sees the memory menu injected into the surface
-  every turn. **This is the entire sync cost.**
+- Runtime may commit one bounded menu/detail product per admitted iteration;
+  C2 decides whether it reaches the surface under shared bounds.
 - Detail pull (when the agent decides to recall a specific
   entry) is part of `memory_search` tool — also **tool
   call**, not a separate sync channel.
 - `verify`, `distillation`, `calibration`, `promotion` —
   **all** async, all off the hot path.
 
-The conversation is **never** waiting for memory. The
-memory system is what makes this possible — recall happens,
-but the *update* of memory doesn't gate the model.
+Asynchronous observation and maintenance never rewrite or block a completed
+Turn. A configured recall port may still perform bounded work before its result
+is committed and offered to C2; the system does not claim zero latency.
 
 ### Coupling between swimlanes
 
 | From | To | What flows | When |
 |------|----|-----------|------|
 | **Swimlane 1** (generation) | Memory bank | New entries → candidate pool | On trigger |
-| Memory bank | **Swimlane 2** (conversation) | recall menu → surface | Every turn |
+| Memory bank | **Swimlane 2** (conversation) | committed recall candidate → C2 | When requested by the frozen snapshot |
 | **Swimlane 2** | **Swimlane 3** (observation) | `[mem:abc]` citation → outcome link | Per use |
 | **Swimlane 3** | Memory bank | β update + state transition | Per outcome |
 | **Swimlane 1** | Memory bank → knowledge base | graduation | When verified |
 
-All three coupling points exist — **no others**. The rest
-is fully decoupled.
+These are the principal semantic flows. Runtime also owns authorization,
+configuration, durable commit, recovery, erasure and Knowledge receipts.
 
 ### What each piece of the diagram protects
 
@@ -1558,10 +1568,9 @@ is fully decoupled.
 - **Observation lane** — outcome judgement; **no user
   required**; the three-way observability chain is the unit
   of evidence.
-- **Memory bank** — the four-state machine (`candidate` /
-  `active` / `cold` / `archived`) plus the `graduated` /
-  `superseded` / `retired` edges + the per-type quota +
-  distillation tower.
+- **Memory bank** — the five-state machine (`candidate` /
+  `active` / `cold` / `archived` / `promoted`), orthogonal M0
+  supersession/tombstone, explicit quotas and distillation policies.
 
 ### What this is **not**
 
@@ -1596,6 +1605,6 @@ is fully decoupled.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: **mixed maturity** — M0/M1 are implemented and verified; M2 is
-  accepted and active. Knowledge-graph structure, representative longitudinal
+- Status: **mixed maturity** — M0 and M1-A through M1-G are verified; M1-H and
+  M2 remain accepted and active. Knowledge-graph structure, representative longitudinal
   quality, and unpromoted numeric/mechanism proposals remain research.

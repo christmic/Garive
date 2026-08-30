@@ -66,6 +66,8 @@ D0 H3 catalogue -> H3 wire -> H3 Runtime projection -----+-> UX-A controller
 A-DESKTOP-C -> A-DESKTOP-C2 backend/setup ---------------------^
 
 C5b declaration/digest -> shared planner -> Runtime dispatcher/evidence
+
+M1-G committed recall -> M1-H attributable application/outcome chain
 ```
 
 H2 and H3 wire changes coordinate in one additive Host v1 tag review. H3
@@ -89,15 +91,16 @@ or native-UI enforcement.
 | 2 | H1-F | Fix exact API version and typed schema-validated continuation. | Existing fixtures plus real Runtime-Host/client E2E and restart replay. |
 | 3 | M2-A/B | Canonical snapshot parser/projector and pure import planner. | Complete Rust/Kotlin semantic and canonical vectors. |
 | 4 | C5b-A | Prepared v2 declaration/resolver/conflict planner. | Rust/Kotlin graph/plan vectors and sequential differential properties. |
-| 5 | H2/H3-W | D0 public activity catalogue, additive Proto and generated consumer mappings. | Snapshot-digest fixture, tag audit, Rust/KMP/TypeScript presence and unknown-value round trips. |
-| 6 | M2-C | Runtime file capability and SQLite control transaction. | Symlink/bound tests plus crash/replay matrix. |
-| 7 | C5b-R | Bounded read dispatcher and ordered durable publication. | Completion-permutation, timeout/cancel/restart and confined-executor tests. |
-| 8 | H2/H3-R | Fixed-prefix read/activity projection and SSE extension. | SQLite restart/concurrency/corruption/redaction matrices. |
-| 9 | A-DESKTOP-C2 | Staged setup/rotation backend and first-run UI. | Credential-store, crash recovery, redaction and configured restart E2E. |
-| 10 | UX-A | Pure application controller and persistence adapter. | Shared scenarios across TypeScript and KMP. |
-| 11 | UX-B | Desktop reference product. | Embedded Runtime restart E2E and accessibility scenarios. |
-| 12 | M2-D | Desktop Memory file capability, review and control workflow. | Product E2E over M2-C and the Desktop controller. |
-| 13 | UX-C | Web and native Android/iOS presentation. | Same-host Web E2E, controller fixtures, API 37/iOS builds and UI scenarios. |
+| 5 | M1-H | Recall-fact-bound application/outcome chain and exact quality reduction. | Rust/Kotlin chain fixture, fixed-prefix membership, restart corruption and content-free integer evidence. |
+| 6 | H2/H3-W | D0 public activity catalogue, additive Proto and generated consumer mappings. | Snapshot-digest fixture, tag audit, Rust/KMP/TypeScript presence and unknown-value round trips. |
+| 7 | M2-C | Runtime file capability and SQLite control transaction. | Symlink/bound tests plus crash/replay matrix. |
+| 8 | C5b-R | Bounded read dispatcher and ordered durable publication. | Completion-permutation, timeout/cancel/restart and confined-executor tests. |
+| 9 | H2/H3-R | Fixed-prefix read/activity projection and SSE extension. | SQLite restart/concurrency/corruption/redaction matrices. |
+| 10 | A-DESKTOP-C2 | Staged setup/rotation backend and first-run UI. | Credential-store, crash recovery, redaction and configured restart E2E. |
+| 11 | UX-A | Pure application controller and persistence adapter. | Shared scenarios across TypeScript and KMP. |
+| 12 | UX-B | Desktop reference product. | Embedded Runtime restart E2E and accessibility scenarios. |
+| 13 | M2-D | Desktop Memory file capability, review and control workflow. | Product E2E over M2-C and the Desktop controller. |
+| 14 | UX-C | Web and native Android/iOS presentation. | Same-host Web E2E, controller fixtures, API 37/iOS builds and UI scenarios. |
 
 An order entry is a dependency-safe default, not permission to combine unrelated
 changes. Repository small-batch and status-evidence rules still apply.
