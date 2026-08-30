@@ -47,6 +47,19 @@ fn selection_replacement_and_forward_delete_are_grapheme_safe() {
 }
 
 #[test]
+fn selection_can_be_cleared_without_mutating_the_draft() {
+    let mut editor = EditorState::new(128);
+    editor.insert("abc界").unwrap();
+    editor.move_left(true);
+    assert!(editor.has_selection());
+
+    editor.clear_selection();
+
+    assert!(!editor.has_selection());
+    assert_eq!(editor.text(), "abc界");
+}
+
+#[test]
 fn terminal_controls_and_bidi_overrides_never_enter_the_model() {
     let mut editor = EditorState::new(128);
     for value in ["secret\u{1b}[31m", "left\u{202e}right"] {

@@ -230,9 +230,13 @@ impl EditorState {
         self.text.graphemes(true).count()
     }
 
-    fn has_selection(&self) -> bool {
+    pub(crate) fn has_selection(&self) -> bool {
         self.selection_anchor
             .is_some_and(|anchor| anchor != self.cursor_grapheme)
+    }
+
+    pub(crate) fn clear_selection(&mut self) {
+        self.selection_anchor = None;
     }
 
     fn selection_bytes(&self) -> (usize, usize) {

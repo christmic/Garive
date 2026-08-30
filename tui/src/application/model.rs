@@ -192,4 +192,14 @@ impl AppModel {
     pub(crate) fn follow_latest(&mut self) {
         self.viewport = ViewportState::default();
     }
+
+    pub(crate) fn jump_to_oldest(&mut self) {
+        let Some(first) = self.timeline.first() else {
+            return;
+        };
+        self.viewport.follow_latest = false;
+        self.viewport.anchor_key = Some(first.stable_key.clone());
+        self.viewport.source_line = 0;
+        self.viewport.newer_updates = 0;
+    }
 }

@@ -1,6 +1,7 @@
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+use std::time::Duration;
 
 use crate::{
     application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize},
@@ -82,6 +83,12 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                     state.model.session_selection += 1;
                 }
             }
+            KeyCode::Tab if overlay == Overlay::SessionPicker => {
+                cycle_session_selection(state, false)
+            }
+            KeyCode::BackTab if overlay == Overlay::SessionPicker => {
+                cycle_session_selection(state, true)
+            }
             KeyCode::Enter if overlay == Overlay::SessionPicker => select_session(state),
             KeyCode::Up if overlay == Overlay::PromptHistory => {
                 state.model.history_selection = state.model.history_selection.saturating_sub(1)
@@ -119,14 +126,26 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
     }
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
+            KeyCode::Char('c') => handle_ctrl_c(state),
             KeyCode::Char('n') => {
                 create_session(state);
             }
-            KeyCode::Char('s') => state.dispatch(AppAction::OverlayOpened(Overlay::SessionPicker)),
+            KeyCode::Char('s') => open_session_picker(state),
             KeyCode::Char('p') => state.dispatch(AppAction::OverlayOpened(Overlay::CommandPalette)),
             KeyCode::Char('r') => state.dispatch(AppAction::OverlayOpened(Overlay::PromptHistory)),
             KeyCode::Char('j') => {
                 let _ = state.model.composer.insert("\n");
+            }
+            KeyCode::Char('l') if state.model.focus == FocusTarget::Conversation => {
+                state.force_redraw = true;
+            }
+            KeyCode::Home => {
+                state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
+                state.model.jump_to_oldest();
+            }
+            KeyCode::End => {
+                state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
+                state.model.follow_latest();
             }
             KeyCode::Char('z') => {
                 state.model.composer.undo();
@@ -139,6 +158,8 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         return;
     }
     match key.code {
+        KeyCode::Tab => cycle_focus(state, key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::BackTab => cycle_focus(state, true),
         KeyCode::Char('?') if state.model.composer.text().is_empty() => {
             state.dispatch(AppAction::OverlayOpened(Overlay::Help))
         }
@@ -184,16 +205,77 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             .model
             .composer
             .move_line_end(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            let _ = state.model.composer.insert("\n");
+        }
         KeyCode::Enter => submit(state),
-        KeyCode::PageUp => state
-            .model
-            .scroll_conversation_up(conversation_page_cells(state)),
-        KeyCode::PageDown => state
-            .model
-            .scroll_conversation_down(conversation_page_cells(state)),
-        KeyCode::End => state.model.follow_latest(),
+        KeyCode::PageUp => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
+            state
+                .model
+                .scroll_conversation_up(conversation_page_cells(state));
+        }
+        KeyCode::PageDown => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
+            state
+                .model
+                .scroll_conversation_down(conversation_page_cells(state));
+        }
+        KeyCode::End if state.model.focus == FocusTarget::Conversation => {
+            state.model.follow_latest()
+        }
         KeyCode::Esc if state.model.execution == ExecutionState::Following => cancel(state),
         _ => {}
+    }
+}
+
+fn cycle_focus(state: &mut RuntimeState, backwards: bool) {
+    let next = next_focus(
+        state.model.terminal_size.width,
+        state.model.focus,
+        backwards,
+    );
+    state.dispatch(AppAction::FocusChanged(next));
+}
+
+fn next_focus(width: u16, current: FocusTarget, backwards: bool) -> FocusTarget {
+    match (width >= 100, backwards, current) {
+        (true, false, FocusTarget::Navigation) => FocusTarget::Conversation,
+        (true, false, FocusTarget::Conversation) => FocusTarget::Composer,
+        (true, false, _) => FocusTarget::Navigation,
+        (true, true, FocusTarget::Navigation) => FocusTarget::Composer,
+        (true, true, FocusTarget::Conversation) => FocusTarget::Navigation,
+        (true, true, _) => FocusTarget::Conversation,
+        (false, false, FocusTarget::Conversation) => FocusTarget::Composer,
+        (false, false, _) => FocusTarget::Conversation,
+        (false, true, FocusTarget::Composer) => FocusTarget::Conversation,
+        (false, true, _) => FocusTarget::Composer,
+    }
+}
+
+fn handle_ctrl_c(state: &mut RuntimeState) {
+    if state.model.execution == ExecutionState::Following {
+        cancel(state);
+        return;
+    }
+    if state.model.composer.has_selection() {
+        state.model.composer.clear_selection();
+        state.last_empty_ctrl_c = None;
+    } else if !state.model.composer.text().is_empty() {
+        state.model.composer.clear();
+        state.last_empty_ctrl_c = None;
+    } else {
+        let now = std::time::Instant::now();
+        if state
+            .last_empty_ctrl_c
+            .is_some_and(|previous| now.duration_since(previous) <= Duration::from_millis(1_500))
+        {
+            state.last_empty_ctrl_c = None;
+            state.dispatch(AppAction::QuitRequested);
+        } else {
+            state.last_empty_ctrl_c = Some(now);
+            state.model.notice = Some("Press Ctrl+C again to quit.".into());
+        }
     }
 }
 
@@ -229,6 +311,39 @@ fn select_session(state: &mut RuntimeState) {
     if let Some(id) = selected {
         state.load(id);
     }
+}
+
+fn open_session_picker(state: &mut RuntimeState) {
+    state.model.session_filter.clear();
+    state.model.session_selection = state
+        .model
+        .selected_session
+        .as_deref()
+        .and_then(|selected| {
+            state
+                .model
+                .sessions
+                .iter()
+                .position(|session| session.session_id == selected)
+        })
+        .unwrap_or(0);
+    state.dispatch(AppAction::OverlayOpened(Overlay::SessionPicker));
+}
+
+fn cycle_session_selection(state: &mut RuntimeState, backwards: bool) {
+    let count = matching_sessions(state).len();
+    if count == 0 {
+        return;
+    }
+    state.model.session_selection = if backwards {
+        state
+            .model
+            .session_selection
+            .checked_sub(1)
+            .unwrap_or(count - 1)
+    } else {
+        (state.model.session_selection + 1) % count
+    };
 }
 
 fn matching_sessions(state: &RuntimeState) -> Vec<String> {
@@ -636,6 +751,31 @@ fn retry_continuation(state: &mut RuntimeState, pending: PendingCommand) {
                 input: host::ContinuationInput::Json(input.clone()),
             },
             state.sender.clone(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focus_cycle_matches_responsive_regions() {
+        assert_eq!(
+            next_focus(120, FocusTarget::Composer, false),
+            FocusTarget::Navigation
+        );
+        assert_eq!(
+            next_focus(120, FocusTarget::Navigation, false),
+            FocusTarget::Conversation
+        );
+        assert_eq!(
+            next_focus(80, FocusTarget::Composer, false),
+            FocusTarget::Conversation
+        );
+        assert_eq!(
+            next_focus(80, FocusTarget::Conversation, true),
+            FocusTarget::Composer
         );
     }
 }

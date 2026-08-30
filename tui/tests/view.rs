@@ -10,7 +10,7 @@ mod input;
 #[path = "../src/view/mod.rs"]
 mod view;
 
-use application::{AppModel, BootState, Overlay, TimelineItem, TimelineRole};
+use application::{AppModel, BootState, FocusTarget, Overlay, TimelineItem, TimelineRole};
 use ratatui::{buffer::Buffer, layout::Rect};
 
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
@@ -67,6 +67,18 @@ fn overlay_is_rendered_above_without_mutating_model() {
     let rendered = frame(&model, 80, 16);
     assert!(rendered.contains("Quit Garive?"));
     assert_eq!(format!("{model:?}"), before);
+}
+
+#[test]
+fn only_the_composer_owns_the_terminal_cursor() {
+    let mut model = AppModel::default();
+    let area = Rect::new(0, 0, 100, 24);
+    let mut buffer = Buffer::empty(area);
+    assert!(view::render(&model, Theme::Dark, area, &mut buffer).is_some());
+
+    model.focus = FocusTarget::Conversation;
+    let mut buffer = Buffer::empty(area);
+    assert!(view::render(&model, Theme::Dark, area, &mut buffer).is_none());
 }
 
 #[test]

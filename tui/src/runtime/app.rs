@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{self, Write},
+    time::Instant,
 };
 
 use crossterm::event::EventStream;
@@ -271,6 +272,8 @@ pub(super) struct RuntimeState {
     snapshot_request: u64,
     background_follows: BTreeMap<String, BackgroundFollow>,
     follow_sequence: u64,
+    pub(super) force_redraw: bool,
+    pub(super) last_empty_ctrl_c: Option<Instant>,
 }
 
 struct BackgroundFollow {
@@ -337,6 +340,8 @@ impl RuntimeState {
             snapshot_request: 0,
             background_follows: BTreeMap::new(),
             follow_sequence: 0,
+            force_redraw: false,
+            last_empty_ctrl_c: None,
         }
     }
 
@@ -637,6 +642,9 @@ fn draw(
     terminal: &mut Terminal<CrosstermBackend<io::Stderr>>,
     state: &mut RuntimeState,
 ) -> Result<(), TuiError> {
+    if std::mem::take(&mut state.force_redraw) {
+        terminal.clear().map_err(|_| TuiError::TerminalIo)?;
+    }
     terminal
         .draw(|frame| {
             let area = frame.area();

@@ -127,7 +127,10 @@ fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: Usage
     thread::spawn(move || {
         for _ in 0..200 {
             let ledger = SqliteLedger::open(&database).unwrap();
-            let snapshot = ledger.load_turn(&turn.turn_id).unwrap();
+            let Ok(snapshot) = ledger.load_turn(&turn.turn_id) else {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            };
             if snapshot
                 .facts
                 .iter()
@@ -240,6 +243,12 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         background_timeline.items[0].completion_text.as_deref(),
         Some("background completion")
     );
+    let preferences: serde_json::Value =
+        serde_json::from_slice(&fs::read(state.join("preferences.v1.json")).unwrap()).unwrap();
+    assert_eq!(
+        preferences["selected_session_id"].as_str(),
+        Some(session.as_str())
+    );
 
     let restart_log = temporary.path().join("restart.log");
     assert!(run_expect(address, &state, &restart_log, true));
@@ -289,7 +298,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect "answer after continuation"
             send "cancel this turn\r"
             after 300
-            send "\033"
+            send "\003"
             expect "stopped"
             send "\016"
             after 300
@@ -297,6 +306,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect "background task"
             send "\023"
             expect "Switch session"
+            send "\t"
             send "\r"
             expect "cancel this turn"
             expect "background Session reached a terminal state"

@@ -55,7 +55,9 @@ pub(crate) fn render(
         render_overlay(model, overlay, theme, area, buffer);
         None
     } else {
-        composer_cursor(model, vertical[2])
+        (model.focus == crate::application::FocusTarget::Composer)
+            .then(|| composer_cursor(model, vertical[2]))
+            .flatten()
     }
 }
 
@@ -130,7 +132,13 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
             Span::styled(format!("{} ", model.session_count), colors.badge),
         ]))
         .borders(Borders::RIGHT)
-        .border_style(colors.border)
+        .border_style(
+            if model.focus == crate::application::FocusTarget::Navigation {
+                colors.accent
+            } else {
+                colors.border
+            },
+        )
         .padding(Padding::new(1, 1, 1, 0));
     let inner = block.inner(area);
     block.render(area, buffer);
@@ -174,7 +182,13 @@ fn render_conversation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut 
     let colors = palette(theme);
     let block = Block::default()
         .borders(Borders::BOTTOM)
-        .border_style(colors.border)
+        .border_style(
+            if model.focus == crate::application::FocusTarget::Conversation {
+                colors.accent
+            } else {
+                colors.border
+            },
+        )
         .padding(Padding::new(2, 2, 1, 0));
     let inner = block.inner(area);
     let window = (!model.timeline.is_empty())
@@ -335,7 +349,13 @@ fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buff
         .title(Line::styled(title, colors.title))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(colors.composer_border)
+        .border_style(
+            if model.focus == crate::application::FocusTarget::Composer {
+                colors.composer_border
+            } else {
+                colors.border
+            },
+        )
         .padding(Padding::horizontal(1));
     let inner = block.inner(area);
     block.render(area, buffer);

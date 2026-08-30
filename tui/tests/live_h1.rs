@@ -26,7 +26,9 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
                 expect -exact "\033\[6n"
                 send "\033\[1;1R"
                 expect { "Garive" {} timeout { exit 2 } }
-                send "\021"
+                send "\003"
+                after 100
+                send "\003"
                 expect { "Garive?" {} timeout { exit 3 } }
                 send "\r"
                 expect { eof {} timeout { exit 4 } }
@@ -39,7 +41,7 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
     let output = fs::read(&transcript).unwrap();
     let text = String::from_utf8_lossy(&output);
     assert!(text.contains("Garive"));
-    assert!(text.contains("Quit"));
+    assert!(text.contains("Press Ctrl+C"));
     assert!(text.contains("Garive?"));
     assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
     assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
