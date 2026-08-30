@@ -188,12 +188,12 @@ struct FileIdentity {
 }
 
 /// Backend-only registry for opaque native Workspace selections.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct DesktopWorkspaceService {
-    active: Mutex<BTreeMap<String, PrivateWorkspace>>,
-    records: Mutex<BTreeMap<String, WorkspaceManifestRecord>>,
-    persistence: Option<WorkspacePersistence>,
-    recovery: Mutex<DesktopWorkspaceRecoveryStatus>,
+    active: Arc<Mutex<BTreeMap<String, PrivateWorkspace>>>,
+    records: Arc<Mutex<BTreeMap<String, WorkspaceManifestRecord>>>,
+    persistence: Option<Arc<WorkspacePersistence>>,
+    recovery: Arc<Mutex<DesktopWorkspaceRecoveryStatus>>,
 }
 
 struct WorkspacePersistence {
@@ -205,13 +205,13 @@ impl DesktopWorkspaceService {
     /// Constructs a service that persists native bookmark authority privately.
     pub fn durable(manifest_path: PathBuf, store: Arc<dyn DesktopWorkspaceBookmarkStore>) -> Self {
         Self {
-            active: Mutex::default(),
-            records: Mutex::default(),
-            persistence: Some(WorkspacePersistence {
+            active: Arc::default(),
+            records: Arc::default(),
+            persistence: Some(Arc::new(WorkspacePersistence {
                 manifest_path,
                 store,
-            }),
-            recovery: Mutex::default(),
+            })),
+            recovery: Arc::default(),
         }
     }
 

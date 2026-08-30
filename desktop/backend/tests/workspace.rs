@@ -56,6 +56,24 @@ fn selected_directory_becomes_an_owner_bound_path_free_capability() {
     );
 }
 
+#[test]
+fn cloned_service_shares_the_exact_authority_registry() {
+    let directory = tempfile::tempdir().unwrap();
+    let service = DesktopWorkspaceService::default();
+    let runtime_view = service.clone();
+    let grant = service.admit_selected(directory.path(), "main").unwrap();
+
+    assert_eq!(
+        runtime_view.verify(&grant.workspace_id, "main").unwrap(),
+        grant
+    );
+    runtime_view.revoke(&grant.workspace_id, "main").unwrap();
+    assert_eq!(
+        service.verify(&grant.workspace_id, "main").unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn native_bookmark_restores_the_same_opaque_workspace_after_process_rebuild() {
