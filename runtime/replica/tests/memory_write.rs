@@ -412,6 +412,54 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         .unwrap(),
         RuntimeCommandError::InvalidCommand,
     );
+    let current = reconstruct_memory_state(
+        &ledger,
+        &[MemoryPrefix {
+            session_id: session.clone(),
+            through_position: 10,
+        }],
+    )
+    .unwrap();
+    let tombstone = plan_memory_tombstone(
+        &MemoryTombstoneContext {
+            command_id: "forget-projection".into(),
+            recorded_at: "2026-08-29T00:00:03Z".into(),
+        },
+        &current,
+        &MemoryTombstone {
+            record_id: "record".into(),
+            revision_id: "revision-2".into(),
+        },
+        MemoryTombstoneReason::Policy,
+    )
+    .unwrap();
+    let tombstone = ledger
+        .commit_memory_tombstone(session.clone(), 3, tombstone)
+        .unwrap();
+    assert_eq!(tombstone.ledger.positions, vec![11]);
+    assert_eq!(tombstone.committed_repository_revision, 3);
+    let projection = ledger
+        .read_memory_control_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(projection.repository_revision, 3);
+    assert!(projection.documents.is_empty());
+    assert_eq!(
+        reconstruct_memory_repository_projection(
+            &ledger,
+            &[MemoryPrefix {
+                session_id: session.clone(),
+                through_position: 11,
+            }],
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap(),
+        projection,
+    );
     ledger
         .connection_for_test()
         .execute(

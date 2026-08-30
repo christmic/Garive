@@ -324,7 +324,7 @@ pub(super) fn replace_current(
     }
 }
 
-fn erase_record(
+pub(super) fn erase_record(
     transaction: &Transaction<'_>,
     namespace: &str,
     record: &str,

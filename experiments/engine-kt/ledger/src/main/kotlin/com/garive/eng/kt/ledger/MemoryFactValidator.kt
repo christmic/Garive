@@ -324,8 +324,8 @@ private fun JsonObject.superseded() {
 }
 
 private fun JsonObject.tombstoned() {
-    exact(setOf("command_id", "record_id", "revision_id", "reason"))
-    listOf("command_id", "record_id", "revision_id").forEach(::nonEmpty)
+    exact(setOf("command_id", "namespace_id", "record_id", "revision_id", "reason"))
+    listOf("command_id", "namespace_id", "record_id", "revision_id").forEach(::nonEmpty)
     enum("reason", setOf("expired", "superseded", "user_request", "policy", "corrupt_source"))
 }
 

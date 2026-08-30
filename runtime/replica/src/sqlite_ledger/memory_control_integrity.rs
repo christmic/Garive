@@ -187,6 +187,62 @@ pub(super) fn verify_repository_sources(
             return Err(MemoryControlRuntimeError::PersistenceFailed);
         }
     }
+    let (total, distinct, minimum, maximum): (i64, i64, Option<Vec<u8>>, Option<Vec<u8>>) =
+        connection
+            .query_row(
+                "SELECT COUNT(*),COUNT(DISTINCT repository_revision),MIN(repository_revision),MAX(repository_revision) FROM (\
+                 SELECT repository_revision FROM memory_control_sources WHERE namespace_id=?1 \
+                 UNION ALL SELECT repository_revision FROM memory_repository_transitions WHERE namespace_id=?1)",
+                [namespace_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    let revision = namespace_revision_connection(connection, namespace_id)?
+        .ok_or(MemoryControlRuntimeError::PersistenceFailed)?;
+    if total != distinct
+        || u64::try_from(total).ok() != Some(revision)
+        || minimum.as_deref().map(decode_u64).transpose()? != Some(1)
+        || maximum.as_deref().map(decode_u64).transpose()? != Some(revision)
+    {
+        return Err(MemoryControlRuntimeError::PersistenceFailed);
+    }
+    let mut transitions = connection.prepare(
+        "SELECT t.record_id,t.revision_id,t.transition_kind,t.payload_digest,f.kind,f.payload_json,f.payload_sha256 \
+         FROM memory_repository_transitions t JOIN ledger_facts f ON f.fact_id=t.fact_id \
+         WHERE t.namespace_id=?1 ORDER BY t.repository_revision",
+    ).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    let rows = transitions
+        .query_map([namespace_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        })
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    for row in rows {
+        let (record, revision, transition, digest, fact_kind, payload_json, fact_digest) =
+            row.map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        let payload: Value = serde_json::from_str(&payload_json)
+            .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        let expected_kind = match transition.as_str() {
+            "tombstone" => "memory.tombstoned",
+            "lifecycle" => "memory.lifecycle_transitioned",
+            _ => return Err(MemoryControlRuntimeError::PersistenceFailed),
+        };
+        if fact_kind != expected_kind
+            || digest != fact_digest
+            || payload.get("namespace_id").and_then(Value::as_str) != Some(namespace_id)
+            || payload.get("record_id").and_then(Value::as_str) != Some(record.as_str())
+            || payload.get("revision_id").and_then(Value::as_str) != Some(revision.as_str())
+        {
+            return Err(MemoryControlRuntimeError::PersistenceFailed);
+        }
+    }
     Ok(())
 }
 

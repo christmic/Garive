@@ -791,10 +791,16 @@ fn superseded(value: &Map<String, Value>) -> Result<(), LedgerError> {
 fn tombstoned(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
-        &["command_id", "record_id", "revision_id", "reason"],
+        &[
+            "command_id",
+            "namespace_id",
+            "record_id",
+            "revision_id",
+            "reason",
+        ],
         EMPTY,
     )?;
-    for key in ["command_id", "record_id", "revision_id"] {
+    for key in ["command_id", "namespace_id", "record_id", "revision_id"] {
         non_empty(value, key)?;
     }
     enumeration(

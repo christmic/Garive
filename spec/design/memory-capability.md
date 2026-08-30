@@ -176,7 +176,7 @@ The coordinated C6F amendment must define:
   sensitivity, confidence, retention digest;
 - `memory.rejected`: proposal ID and stable rejection code;
 - `memory.superseded`: exact old/new revision binding;
-- `memory.tombstoned`: record/revision and safe reason;
+- `memory.tombstoned`: namespace, record/revision and safe reason;
 - `memory.retrieval_recorded`: query digest, ordered returned bindings,
   fixed prefix, bounds and truncation.
 

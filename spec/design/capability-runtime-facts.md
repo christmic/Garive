@@ -109,6 +109,7 @@ memory.superseded.v1 {
 
 memory.tombstoned.v1 {
   command_id: CommandId
+  namespace_id: MemoryNamespaceId
   record_id: MemoryRecordId
   revision_id: MemoryRevisionId
   reason: "expired" | "superseded" | "user_request" |

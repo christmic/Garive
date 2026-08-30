@@ -155,6 +155,21 @@ CREATE TABLE memory_control_sources (
 ) STRICT;
 "#;
 
+const MIGRATION_6: &str = r#"
+CREATE TABLE memory_repository_transitions (
+    namespace_id TEXT NOT NULL REFERENCES memory_namespaces(namespace_id),
+    record_id TEXT NOT NULL,
+    revision_id TEXT NOT NULL,
+    transition_kind TEXT NOT NULL CHECK(transition_kind IN ('tombstone', 'lifecycle')),
+    fact_id TEXT NOT NULL UNIQUE REFERENCES ledger_facts(fact_id),
+    payload_digest TEXT NOT NULL CHECK(length(payload_digest) = 64),
+    repository_revision BLOB NOT NULL CHECK(length(repository_revision) = 8),
+    PRIMARY KEY(namespace_id, repository_revision)
+) STRICT;
+CREATE UNIQUE INDEX memory_source_by_repository_revision
+    ON memory_control_sources(namespace_id, repository_revision);
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -166,7 +181,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         [],
         |row| row.get(0),
     )?;
-    if version > 5 {
+    if version > 6 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -219,6 +234,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 5;
+    }
+    if version == 5 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_6)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;

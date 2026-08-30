@@ -229,6 +229,41 @@ impl SqliteLedger {
         })
     }
 
+    /// Atomically commits one M0 tombstone and erases the same current repository revision.
+    pub fn commit_memory_tombstone(
+        &mut self,
+        session_id: SessionId,
+        expected_session_version: u64,
+        planned: crate::PlannedMemoryTombstone,
+    ) -> Result<crate::MemoryRepositoryCommitResult, MemoryRepositoryCommitError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryCommitError::Ledger)?;
+        let draft = planned.fact;
+        let result = commit_transaction(
+            &transaction,
+            session_id,
+            expected_session_version,
+            vec![draft.clone()],
+        )
+        .map_err(MemoryRepositoryCommitError::Ledger)?;
+        let (previous_repository_revision, committed_repository_revision) =
+            memory_repository::apply_tombstone(&transaction, &result, &draft)
+                .map_err(crate::MemoryRepositoryError::from)
+                .map_err(MemoryRepositoryCommitError::Repository)?;
+        transaction
+            .commit()
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryCommitError::Ledger)?;
+        Ok(crate::MemoryRepositoryCommitResult {
+            ledger: result,
+            previous_repository_revision,
+            committed_repository_revision,
+        })
+    }
+
     /// Acquires or renews one latest-active Execution lease transactionally.
     pub fn acquire_execution_lease(
         &mut self,

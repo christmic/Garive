@@ -312,12 +312,21 @@ fn plan_memory_tombstone_inner(
     }
     let mut next_state = state.clone();
     next_state.tombstone(target).map_err(map_memory_error)?;
+    let namespace_id = next_state
+        .revisions()
+        .iter()
+        .find(|record| {
+            record.record_id() == target.record_id() && record.revision_id() == target.revision_id()
+        })
+        .map(|record| record.namespace_id().to_owned())
+        .ok_or(RuntimeCommandError::InvariantViolation)?;
     let fact = fact(
         "memory.tombstoned",
         &context.command_id,
         None,
         json!({
             "command_id": context.command_id,
+            "namespace_id": namespace_id,
             "record_id": target.record_id(),
             "revision_id": target.revision_id(),
             "reason": tombstone_reason(reason),

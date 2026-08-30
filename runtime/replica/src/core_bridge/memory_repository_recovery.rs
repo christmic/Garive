@@ -26,9 +26,11 @@ pub fn reconstruct_memory_repository_projection(
     let kinds = BTreeSet::from([
         FactKind::new("memory.committed").unwrap(),
         FactKind::new("memory.revision_classified").unwrap(),
+        FactKind::new("memory.tombstoned").unwrap(),
     ]);
     let mut commits = BTreeMap::new();
     let mut classifications = BTreeMap::new();
+    let mut transition_count = 0u64;
     for prefix in prefixes {
         for fact in ledger
             .read_facts(&prefix.session_id, 0, prefix.through_position, Some(&kinds))
@@ -37,6 +39,12 @@ pub fn reconstruct_memory_repository_projection(
             let value: Value = serde_json::from_str(fact.payload.as_json())
                 .map_err(|_| MemoryErrorCode::CorruptMemoryState)?;
             if text(&value, "namespace_id")? != namespace_id {
+                continue;
+            }
+            if fact.kind.as_str() == "memory.tombstoned" {
+                transition_count = transition_count
+                    .checked_add(1)
+                    .ok_or(MemoryErrorCode::CorruptMemoryState)?;
                 continue;
             }
             let key = (text(&value, "record_id")?, text(&value, "revision_id")?);
@@ -107,7 +115,9 @@ pub fn reconstruct_memory_repository_projection(
     });
     Ok(MemoryControlProjection {
         namespace_id: namespace_id.into(),
-        repository_revision: classifications.len() as u64,
+        repository_revision: (classifications.len() as u64)
+            .checked_add(transition_count)
+            .ok_or(MemoryErrorCode::CorruptMemoryState)?,
         documents,
     })
 }
