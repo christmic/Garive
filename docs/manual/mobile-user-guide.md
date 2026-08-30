@@ -198,6 +198,10 @@ Sessions 提供本地搜索，以及 **All**、**Working**、**Needs you** 和 *
 
 ![iOS Agents](assets/mobile/ios-04-agents.png)
 
+每张卡片的 **Details** 可展开查看并复制精确的 definition ID 和 revision，便于与管理员核对；
+日常列表只突出公开名称与能力。离线、授权失效、目标为空或输入超过 16 KiB 时，客户端会保留
+编辑内容但禁用远程提交，避免产生明知无法受理的命令。
+
 Agents 展示服务端已安装的 Agent、用途和可用状态。移动端只能选择服务端已经允许的定义，
 不能在本地伪造 Agent ID、模型或工具权限。
 
