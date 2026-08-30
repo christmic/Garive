@@ -201,12 +201,22 @@ impl LiveHost {
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
+        if after_position > watermark.max_position {
+            return Err(LiveHostError::InvalidRequest);
+        }
         if watermark.max_position > self.state.read_limits.max_facts as u64 {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
+        read_model::project_session(
+            &session_id,
+            watermark.max_position,
+            &facts,
+            &self.state.installed,
+            self.state.read_limits,
+        )?;
         let page = timeline_projection::project_timeline(
             &session_id,
             watermark.max_position,
