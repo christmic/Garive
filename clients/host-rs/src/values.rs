@@ -98,6 +98,134 @@ pub struct TurnCommandResponse {
     pub committed_position: u64,
 }
 
+/// One installed immutable Agent definition safe for discovery.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct AgentDefinitionSummary {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Immutable definition identity.
+    pub definition_id: String,
+    /// Immutable definition revision.
+    pub definition_revision: String,
+    /// Sorted stable public capability names.
+    pub capabilities: Vec<String>,
+}
+
+/// Bounded installed Agent definition result.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct AgentDefinitionPage {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Installed definitions in stable identity order.
+    pub definitions: Vec<AgentDefinitionSummary>,
+}
+
+/// Restart-safe summary of one durable Session prefix.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SessionSummary {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Stable Session identity.
+    pub session_id: String,
+    /// Runtime-owned Agent instance identity.
+    pub agent_instance_id: String,
+    /// Immutable definition identity.
+    pub definition_id: String,
+    /// Immutable definition revision.
+    pub definition_revision: String,
+    /// RFC 3339 opening time.
+    pub opened_at: String,
+    /// Frozen highest durable Session position.
+    pub latest_position: u64,
+    /// Most recently first-started Turn.
+    pub latest_turn_id: Option<String>,
+    /// Stable lifecycle of the latest Turn.
+    pub latest_turn_state: Option<String>,
+    /// Number of verified first-started Turns.
+    pub turn_count: u64,
+}
+
+/// Reverse-opened bounded page of durable Sessions.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SessionPage {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Session summaries in page order.
+    pub sessions: Vec<SessionSummary>,
+    /// Opaque cursor for the next older page.
+    pub next_before: Option<String>,
+}
+
+/// One exact Session summary at a frozen watermark.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SessionView {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Verified Session summary.
+    pub session: SessionSummary,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
+}
+
+/// Restart-safe coordinates and public schemas for one suspension.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SuspensionView {
+    /// Exact durable suspension identity.
+    pub suspension_id: String,
+    /// Session version required by continuation.
+    pub session_version: u64,
+    /// Stable suspension family.
+    pub kind: String,
+    /// Exact public prompt schema identity.
+    pub prompt_schema: String,
+    /// Canonical public prompt JSON.
+    pub prompt_json: String,
+    /// Lowercase SHA-256 of the prompt.
+    pub prompt_digest: String,
+    /// Canonical portable response schema when interactive.
+    pub response_schema_json: Option<String>,
+    /// Lowercase SHA-256 of the response schema.
+    pub response_schema_digest: Option<String>,
+}
+
+/// One complete Turn in a durable conversation timeline.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct TurnTimelineItem {
+    /// Stable Turn identity.
+    pub turn_id: String,
+    /// Position of the first Turn start.
+    pub started_position: u64,
+    /// Latest lifecycle or continuation position.
+    pub latest_position: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Verified first trusted-user input.
+    pub user_text: String,
+    /// Redacted committed completion text.
+    pub completion_text: Option<String>,
+    /// Current suspension coordinates.
+    pub suspension: Option<SuspensionView>,
+    /// Whether Runtime explicitly truncated display content.
+    pub content_truncated: bool,
+}
+
+/// Bounded page of complete durable Turn projections.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct TurnTimelinePage {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Complete changed Turns in latest-change order.
+    pub items: Vec<TurnTimelineItem>,
+    /// Highest durable position fully scanned.
+    pub scanned_through_position: u64,
+    /// Frozen Session watermark used by this response.
+    pub observed_max_position: u64,
+    /// Whether another bounded scan is required.
+    pub has_more: bool,
+}
+
 /// Stable safe client failure categories.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HostClientErrorCode {
