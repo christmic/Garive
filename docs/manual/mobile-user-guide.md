@@ -141,6 +141,12 @@ garive://pair?origin=https%3A%2F%2Fagent.example.com&code=...&exp=...&name=...
 
 ![iOS 深色模式与辅助功能超大字体 Work](assets/mobile/ios-08-a11y-dark-work.png)
 
+横屏手机与 iPad 会根据可用空间调整导航，但保持相同的任务优先级和入口：
+
+![Android 横屏 Work](assets/mobile/android-17-landscape-work.png)
+
+![iPad Work](assets/mobile/ios-12-ipad-work.png)
+
 Work 按处理优先级分组：
 
 1. **Needs you**：Agent 正在等待审批或输入，应优先处理。
@@ -321,7 +327,7 @@ Work、Sessions、Agents、Settings 语义标签。
 界面流程（5 条）、Swift 测试（6 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 27 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 29 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
