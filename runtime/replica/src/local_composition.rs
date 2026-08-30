@@ -126,27 +126,51 @@ pub fn reconstruct_local_start(
         .read_facts(&committed.session_id, 0, committed.committed_position, None)
         .map_err(|_| LocalReconstructionError::DurabilityUnavailable)?;
     let opened = exactly_one(&facts, |fact| fact.kind.as_str() == "session.opened")?;
-    let started = exactly_one(&facts, |fact| {
-        fact.turn_id.as_ref() == Some(&committed.turn_id) && fact.kind.as_str() == "turn.started"
-    })?;
-    let input = exactly_one(&facts, |fact| {
-        fact.turn_id.as_ref() == Some(&committed.turn_id) && fact.kind.as_str() == "turn.input"
-    })?;
     let execution = exactly_one(&facts, |fact| {
         fact.turn_id.as_ref() == Some(&committed.turn_id)
             && fact.execution_id.as_ref() == Some(&committed.execution_id)
             && fact.kind.as_str() == "execution.started"
     })?;
     let opened_payload = payload(opened)?;
+    let started = facts
+        .iter()
+        .filter(|fact| {
+            fact.turn_id.as_ref() == Some(&committed.turn_id)
+                && fact.kind.as_str() == "turn.started"
+                && fact.position < execution.position
+        })
+        .max_by_key(|fact| fact.position)
+        .ok_or(LocalReconstructionError::ReconstructionFailed)?;
     let started_payload = payload(started)?;
+    let is_start = started_payload["kind"] == "start";
+    let input = facts
+        .iter()
+        .filter(|fact| {
+            fact.turn_id.as_ref() == Some(&committed.turn_id)
+                && fact.kind.as_str() == "turn.input"
+                && if is_start {
+                    fact.position > started.position && fact.position < execution.position
+                } else {
+                    fact.position < started.position
+                }
+        })
+        .max_by_key(|fact| fact.position)
+        .ok_or(LocalReconstructionError::ReconstructionFailed)?;
     let input_payload = payload(input)?;
     let execution_payload = payload(execution)?;
     let trusted_input = text(&input_payload, &["content", "inline_utf8"])?;
     let trusted_digest = text(&input_payload, &["content", "digest"])?;
-    if input_payload["input_kind"] != "trusted_user"
+    let valid_input = if is_start {
+        input_payload["input_kind"] == "trusted_user"
+            && started_payload["trusted_input_digest"] == trusted_digest
+    } else {
+        matches!(
+            input_payload["input_kind"].as_str(),
+            Some("external_input" | "interaction_string" | "interaction_json")
+        ) && input_payload["suspension_id"] == started_payload["prior_suspension_id"]
+    };
+    if !valid_input
         || digest(trusted_input.as_bytes()) != trusted_digest
-        || started_payload["kind"] != "start"
-        || started_payload["trusted_input_digest"] != trusted_digest
         || opened_payload["agent_instance_id"] != started_payload["agent_instance_id"]
         || opened_payload["definition_id"] != started_payload["definition_id"]
         || opened_payload["definition_revision"] != started_payload["definition_revision"]
@@ -207,18 +231,18 @@ pub fn reconstruct_local_start(
             &started_payload,
             "definition_revision",
         )?)?,
-        entry: if recovery_ordinal == 0 {
+        entry: if is_start {
             AgentEntry::Start {
                 trusted_input: trusted_input.to_owned(),
             }
         } else {
             AgentEntry::Continue {
-                resume_input: ResumeInput::ResourceReady,
+                resume_input: ResumeInput::ExternalInput(trusted_input.to_owned()),
             }
         },
         cursor: AgentCursor {
             completed_iterations,
-            last_durable_position: if recovery_ordinal == 0 {
+            last_durable_position: if is_start && recovery_ordinal == 0 {
                 0
             } else {
                 last_safe_position

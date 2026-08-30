@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 use garive_core::{
@@ -10,9 +13,9 @@ use garive_desktop::{
     DesktopHost, DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
 };
 use garive_llm::{
-    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
-    ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage, TextMode,
-    TokenCount, UsageSource,
+    InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem,
+    ModelObserver, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage,
+    TextMode, TokenCount, UsageSource,
 };
 use garive_runtime::{
     EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
@@ -78,11 +81,49 @@ impl ModelPort for CompletingModel {
     }
 }
 
-#[tokio::test]
-async fn typed_ipc_core_runs_an_embedded_durable_agent() {
-    let directory = tempdir().expect("temp directory");
-    let host = DesktopHost::new(DesktopHostConfig {
-        database_path: directory.path().join("desktop.db"),
+struct SuspendingModel(AtomicU64);
+impl ModelPort for SuspendingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(InvokeOutcome::Interrupted {
+                    kind: InterruptionKind::OutputLimit,
+                    partial_items: vec![ModelItem::Text {
+                        text: "partial".into(),
+                    }],
+                    usage: usage(),
+                })
+            } else {
+                Ok(InvokeOutcome::Completed {
+                    items: vec![ModelItem::Text {
+                        text: "resumed answer".into(),
+                    }],
+                    usage: usage(),
+                    stop_reason: ModelStopReason::EndTurn,
+                })
+            }
+        })
+    }
+}
+
+fn usage() -> ModelUsage {
+    ModelUsage {
+        input_tokens: TokenCount::Known(3),
+        output_tokens: TokenCount::Known(4),
+        cache_read_tokens: None,
+        cache_write_tokens: None,
+        source: UsageSource::ProviderReported,
+    }
+}
+
+fn desktop_host(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHost {
+    DesktopHost::new(DesktopHostConfig {
+        database_path: database.to_owned(),
         installed_agent: InstalledAgent {
             definition_id: "definition-main".into(),
             definition_revision: "revision-1".into(),
@@ -123,10 +164,19 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
         },
         dispatch_capacity: 2,
         host_clock: Arc::new(FixedHostClock),
-        model: Arc::new(CompletingModel),
+        model,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     })
-    .expect("Desktop Host composition");
+    .expect("Desktop Host composition")
+}
+
+#[tokio::test]
+async fn typed_ipc_core_runs_an_embedded_durable_agent() {
+    let directory = tempdir().expect("temp directory");
+    let host = desktop_host(
+        &directory.path().join("desktop.db"),
+        Arc::new(CompletingModel),
+    );
     let state = DesktopState::default();
     state.install(host).expect("one install");
     assert_eq!(
@@ -170,6 +220,46 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
         timeline.items[1].completion_text.as_deref(),
         Some("desktop durable answer")
     );
+}
+
+#[tokio::test]
+async fn restart_safe_partial_output_can_resume_the_same_turn() {
+    let directory = tempdir().expect("temp directory");
+    let state = DesktopState::default();
+    state
+        .install(desktop_host(
+            &directory.path().join("suspended.db"),
+            Arc::new(SuspendingModel(AtomicU64::new(0))),
+        ))
+        .unwrap();
+    let first = state
+        .run_turn_isolated("definition-main".into(), "long outcome".into())
+        .await
+        .unwrap();
+    assert_eq!(first.terminal, DesktopTerminal::Suspended);
+    let timeline = state.session_timeline(&first.session_id, 0, 8).unwrap();
+    let suspension = timeline.items[0].suspension.as_ref().unwrap();
+    assert_eq!(suspension.kind, "partial_output");
+
+    let resumed = state
+        .continue_turn_isolated(
+            first.session_id.clone(),
+            first.turn_id.clone(),
+            suspension.suspension_id.clone(),
+            suspension.session_version,
+            "continue".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resumed.turn_id, first.turn_id);
+    assert_eq!(resumed.terminal, DesktopTerminal::Completed);
+    let restored = state.session_timeline(&first.session_id, 0, 8).unwrap();
+    assert_eq!(restored.items.len(), 1);
+    assert_eq!(
+        restored.items[0].completion_text.as_deref(),
+        Some("resumed answer")
+    );
+    assert!(restored.items[0].suspension.is_none());
 }
 
 #[tokio::test]
