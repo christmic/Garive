@@ -50,6 +50,7 @@ internal fun ConversationScreen(
     onCancel: () -> Unit,
     onContinue: () -> Unit,
     onRetry: () -> Unit,
+    onAbandonRetry: () -> Unit,
 ) {
     val latest = state.timeline.lastOrNull()
     Column(Modifier.fillMaxSize()) {
@@ -140,9 +141,14 @@ internal fun ConversationScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("Result unknown. Retry the exact command.", modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = onRetry) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = null)
-                        Text("Retry", modifier = Modifier.padding(start = 6.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        OutlinedButton(onClick = onRetry) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null)
+                            Text("Retry exact", modifier = Modifier.padding(start = 6.dp))
+                        }
+                        androidx.compose.material3.TextButton(onClick = onAbandonRetry) {
+                            Text("Forget retry")
+                        }
                     }
                 }
             }

@@ -66,6 +66,7 @@ internal fun GariveMobileApp(
     var selectedAgent by remember { mutableStateOf<MobileAgentCard?>(null) }
     var confirmCancel by remember { mutableStateOf(false) }
     var confirmUnpair by remember { mutableStateOf(false) }
+    var confirmAbandonRetry by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val showNavigationLabels = LocalDensity.current.fontScale < 1.6f
 
@@ -99,6 +100,7 @@ internal fun GariveMobileApp(
             onCancel = { confirmCancel = true },
             onContinue = { scope.launch { state = controller.continueLatest(state.draft.ifBlank { "approved" }) } },
             onRetry = { scope.launch { state = controller.retryExact() } },
+            onAbandonRetry = { confirmAbandonRetry = true },
         )
     } else {
         Scaffold(
@@ -196,6 +198,23 @@ internal fun GariveMobileApp(
                 confirmUnpair = false
                 controller.signOut()
                 onSignOut()
+            },
+        )
+    }
+
+    if (confirmAbandonRetry) {
+        AlertDialog(
+            onDismissRequest = { confirmAbandonRetry = false },
+            title = { Text("Forget exact retry?") },
+            text = { Text("The server may already have accepted this command. Refresh history before starting replacement work.") },
+            confirmButton = {
+                Button(onClick = {
+                    confirmAbandonRetry = false
+                    state = controller.abandonPending()
+                }) { Text("Forget retry") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { confirmAbandonRetry = false }) { Text("Keep retry") }
             },
         )
     }
