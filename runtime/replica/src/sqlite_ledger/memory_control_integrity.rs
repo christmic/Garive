@@ -187,29 +187,60 @@ pub(super) fn verify_repository_sources(
             return Err(MemoryControlRuntimeError::PersistenceFailed);
         }
     }
-    let (total, distinct, minimum, maximum): (i64, i64, Option<Vec<u8>>, Option<Vec<u8>>) =
+    let (distinct, minimum, maximum): (i64, Option<Vec<u8>>, Option<Vec<u8>>) =
         connection
             .query_row(
-                "SELECT COUNT(*),COUNT(DISTINCT repository_revision),MIN(repository_revision),MAX(repository_revision) FROM (\
+                "SELECT COUNT(DISTINCT repository_revision),MIN(repository_revision),MAX(repository_revision) FROM (\
                  SELECT repository_revision FROM memory_control_sources WHERE namespace_id=?1 \
                  UNION ALL SELECT repository_revision FROM memory_repository_transitions WHERE namespace_id=?1)",
                 [namespace_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
     let revision = namespace_revision_connection(connection, namespace_id)?
         .ok_or(MemoryControlRuntimeError::PersistenceFailed)?;
-    if total != distinct
-        || u64::try_from(total).ok() != Some(revision)
+    if u64::try_from(distinct).ok() != Some(revision)
         || minimum.as_deref().map(decode_u64).transpose()? != Some(1)
         || maximum.as_deref().map(decode_u64).transpose()? != Some(revision)
     {
         return Err(MemoryControlRuntimeError::PersistenceFailed);
     }
+    let mut operation_sets = connection
+        .prepare(
+            "SELECT repository_revision,COUNT(*),COUNT(DISTINCT operation_ordinal),\
+             MIN(operation_ordinal),MAX(operation_ordinal) FROM (\
+             SELECT repository_revision,operation_ordinal FROM memory_control_sources WHERE namespace_id=?1 \
+             UNION ALL SELECT repository_revision,operation_ordinal FROM memory_repository_transitions WHERE namespace_id=?1) \
+             GROUP BY repository_revision ORDER BY repository_revision",
+        )
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    let rows = operation_sets
+        .query_map([namespace_id], |row| {
+            Ok((
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Vec<u8>>(3)?,
+                row.get::<_, Vec<u8>>(4)?,
+            ))
+        })
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    for row in rows {
+        let (count, distinct_ordinals, minimum, maximum) =
+            row.map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        let count =
+            u64::try_from(count).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        if count == 0
+            || u64::try_from(distinct_ordinals).ok() != Some(count)
+            || decode_u64(&minimum)? != 0
+            || decode_u64(&maximum)?.checked_add(1) != Some(count)
+        {
+            return Err(MemoryControlRuntimeError::PersistenceFailed);
+        }
+    }
     let mut transitions = connection.prepare(
         "SELECT t.record_id,t.revision_id,t.transition_kind,t.payload_digest,f.kind,f.payload_json,f.payload_sha256 \
          FROM memory_repository_transitions t JOIN ledger_facts f ON f.fact_id=t.fact_id \
-         WHERE t.namespace_id=?1 ORDER BY t.repository_revision",
+         WHERE t.namespace_id=?1 ORDER BY t.repository_revision,t.operation_ordinal",
     ).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
     let rows = transitions
         .query_map([namespace_id], |row| {

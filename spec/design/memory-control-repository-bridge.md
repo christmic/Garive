@@ -83,6 +83,13 @@ Later lifecycle changes use the existing exact
 5. M2 import commits its journal event and applies the same projection
    transition path; it does not bypass M0/M1 invariants.
 
+Every changed operation is stored under the pair
+`(repository_revision, operation_ordinal)`. The ordinal is the zero-based index
+in the canonical M2 plan, or zero for an existing single-operation Runtime
+command. It never causes an additional revision advance. Independent recovery
+groups relevant facts by their Session Ledger atomic commit version, verifies
+the same ordered operation set, and counts each changed commit batch once.
+
 Direct writes, supersession, lifecycle maintenance, promotion, tombstone and
 erasure each have an explicit transition. Organisation-published state cannot
 be created or changed by M2 import. Learned content edited through M2 becomes a
@@ -121,14 +128,20 @@ filesystem path or frontend value can create it.
 Session, owning Turn/Execution, expected Session version and fixed through
 position, canonical observation time, one verified durable authorization-fact
 reference, user-authority receipt digest, retention-policy digest and
-classification-policy revision. The authorization fact must be inside the same
-fixed Session prefix. No frontend boolean, edited file, environment variable or
-implicit default can create authority.
+classification-policy revision. An import containing Erase additionally binds
+the configured erasure-policy revision and the canonical ordered 1–64 erasure
+targets. The authorization fact must be inside the same fixed Session prefix.
+No frontend boolean, edited file, environment variable or implicit default can
+create authority, erasure policy or storage targets.
 
 For each ordered Add/Supersede operation Runtime emits the existing
 `memory.proposed`, `memory.committed` and `memory.revision_classified` facts;
 the user confirmation fact is their evidence and authority receipt. Archive
-emits the existing lifecycle transition, and Erase emits the existing
+is admitted only from the exact current `Cold` lifecycle and emits its existing
+`Cold -> Archived` lifecycle transition. Its initial lifecycle anchor is the
+source `memory.committed` position with a zero evidence tally; every later tally
+and position is recovered from lifecycle facts, never from the edited document.
+Erase emits the existing
 namespace-bound tombstone plus erasure workflow. The whole ordered fact batch,
 M2 journal event and current-projection changes commit in one transaction.
 

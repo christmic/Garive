@@ -170,6 +170,36 @@ CREATE UNIQUE INDEX memory_source_by_repository_revision
     ON memory_control_sources(namespace_id, repository_revision);
 "#;
 
+const MIGRATION_7: &str = r#"
+DROP INDEX memory_source_by_repository_revision;
+ALTER TABLE memory_control_sources ADD COLUMN operation_ordinal BLOB NOT NULL
+    DEFAULT X'0000000000000000' CHECK(length(operation_ordinal) = 8);
+CREATE UNIQUE INDEX memory_source_by_repository_operation
+    ON memory_control_sources(namespace_id, repository_revision, operation_ordinal);
+
+CREATE TABLE memory_repository_transitions_v7 (
+    namespace_id TEXT NOT NULL REFERENCES memory_namespaces(namespace_id),
+    record_id TEXT NOT NULL,
+    revision_id TEXT NOT NULL,
+    transition_kind TEXT NOT NULL CHECK(transition_kind IN ('tombstone', 'lifecycle')),
+    fact_id TEXT NOT NULL UNIQUE REFERENCES ledger_facts(fact_id),
+    payload_digest TEXT NOT NULL CHECK(length(payload_digest) = 64),
+    repository_revision BLOB NOT NULL CHECK(length(repository_revision) = 8),
+    operation_ordinal BLOB NOT NULL DEFAULT X'0000000000000000'
+        CHECK(length(operation_ordinal) = 8),
+    PRIMARY KEY(namespace_id, repository_revision, operation_ordinal)
+) STRICT;
+INSERT INTO memory_repository_transitions_v7(
+    namespace_id,record_id,revision_id,transition_kind,fact_id,payload_digest,
+    repository_revision,operation_ordinal
+)
+SELECT namespace_id,record_id,revision_id,transition_kind,fact_id,payload_digest,
+       repository_revision,X'0000000000000000'
+FROM memory_repository_transitions;
+DROP TABLE memory_repository_transitions;
+ALTER TABLE memory_repository_transitions_v7 RENAME TO memory_repository_transitions;
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -181,7 +211,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         [],
         |row| row.get(0),
     )?;
-    if version > 6 {
+    if version > 7 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -245,6 +275,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 6;
+    }
+    if version == 6 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_7)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;
