@@ -89,6 +89,18 @@ demo Host linked in 13.82 seconds. Merge revision `f5d64c50` then passed the
 focused library, visual-model, and snapshot suites on `master` (11 + 19 + 7
 tests). Physical Terminal/iTerm-class validation and admitted PNGs remain open.
 
+Merge revision `8aa1db9f` then replaced the remaining local command-availability
+predicates with one typed command catalog. Visual command rows, linear
+screen-reader announcements, and Enter activation now consume the same context
+and safe unavailable reason; `/copy last` is no longer absent from the visual
+catalog. The exact merged revision enumerated 96 test cases and passed the
+complete package. Its six shipping-binary PTY cases completed in 41.35 seconds;
+the production Runtime/file-SQLite/PTTY case completed in 69.64 seconds and the
+screen-reader PTY proved the shared unavailable reason before opening Help.
+Strict all-target Clippy completed in 13.22 seconds, and the release shipping
+binary plus `visual_demo_host` linked in 1 minute 2 seconds. The physical-window
+and admitted-PNG rows remain open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
