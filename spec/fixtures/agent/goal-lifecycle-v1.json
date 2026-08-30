@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "definition": {
+    "goal_id": "goal-1",
+    "objective": "Ship the slice",
+    "criteria": [
+      {
+        "kind": "user_acceptance",
+        "criterion_id": "accepted",
+        "response_schema_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "scope": {
+      "session_id": "session-1",
+      "workspace_capability_ids": ["workspace-1"]
+    },
+    "bounds": {
+      "max_attempts": 3,
+      "max_plan_revisions": 4,
+      "max_child_goals": 2,
+      "token_budget": 10000,
+      "duration_budget_ms": 60000
+    },
+    "parent_goal_id": null,
+    "capability_references": [
+      {"name": "tools", "exact_revision": "catalogue-v1"}
+    ],
+    "definition_digest": "fa3b251bc520d2d66080f27ab1827b1c36e89c71a59f740e8570a77c8b42fe76"
+  },
+  "evidence": {
+    "evidence_id": "evidence-1",
+    "criterion_id": "accepted",
+    "kind": "user_acceptance",
+    "durable_reference": "interaction-1",
+    "evidence_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "observed_at_commit_version": 5
+  },
+  "valid_sequence": [
+    {"expected_revision": 1, "operation": "activate", "state": "active", "revision": 2},
+    {"expected_revision": 2, "operation": "suspend", "reason": "approval_required", "state": "suspended", "revision": 3},
+    {"expected_revision": 3, "operation": "activate", "state": "active", "revision": 4},
+    {"expected_revision": 4, "operation": "succeed", "state": "succeeded", "revision": 5}
+  ],
+  "invalid_cases": [
+    {"name": "stale_revision", "start": "draft", "expected_revision": 2, "operation": "activate", "expected_code": "goal_revision_conflict"},
+    {"name": "success_from_draft", "start": "draft", "expected_revision": 1, "operation": "succeed", "expected_code": "goal_transition_invalid"},
+    {"name": "success_without_evidence", "start": "active", "expected_revision": 2, "operation": "succeed_empty", "expected_code": "goal_evidence_insufficient"},
+    {"name": "reopen_terminal", "start": "succeeded", "expected_revision": 3, "operation": "activate", "expected_code": "goal_transition_invalid"}
+  ]
+}
