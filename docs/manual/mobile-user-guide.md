@@ -249,6 +249,12 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 
 ![iOS Settings](assets/mobile/ios-07-settings.png)
 
+诊断、外观和解除配对控制位于同一可滚动页面的下半部分：
+
+![Android Settings 外观、诊断与解除配对](assets/mobile/android-13-settings-controls.png)
+
+![iOS Settings 外观、诊断与解除配对](assets/mobile/ios-10-settings-controls.png)
+
 Settings 显示当前配对服务、已验证 host、设备与构建诊断、通知入口和外观主题。主题可选择
 **System / Light / Dark**，会在本机持久化；通知按钮进入系统级通知设置，不在应用内伪造授权
 状态。诊断信息不包含授权、Session ID、私有路径或请求正文。
@@ -292,7 +298,9 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Work、Sessions、Agents、Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程、Swift 测试、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的离线历史回退。
+界面流程（3 条）、Swift 测试（5 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
+本机设备身份密钥会轮换。当前手册包含 23 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
