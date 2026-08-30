@@ -36,6 +36,7 @@ pub struct RecordedMemoryRecall {
 pub struct MemoryHypothesisProjection {
     namespace_id: String,
     lifecycles: BTreeMap<(String, String), MemoryLifecycle>,
+    initial_states: BTreeMap<(String, String), HypothesisState>,
     open_obligations: BTreeMap<String, MemoryObligation>,
     recalls: Vec<RecordedMemoryRecall>,
 }
@@ -48,6 +49,12 @@ impl MemoryHypothesisProjection {
     /// Returns the latest exact lifecycle for a revision.
     pub fn lifecycle(&self, record_id: &str, revision_id: &str) -> Option<&MemoryLifecycle> {
         self.lifecycles.get(&(record_id.into(), revision_id.into()))
+    }
+    /// Returns the `from_state` asserted by the first durable transition.
+    pub fn initial_state(&self, record_id: &str, revision_id: &str) -> Option<HypothesisState> {
+        self.initial_states
+            .get(&(record_id.into(), revision_id.into()))
+            .copied()
     }
     /// Returns an obligation not yet closed by an atomic observation transition.
     pub fn open_obligation(&self, obligation_id: &str) -> Option<&MemoryObligation> {
@@ -179,6 +186,7 @@ pub fn reconstruct_memory_hypothesis_projection(
         )
     });
     let mut lifecycles: BTreeMap<(String, String), MemoryLifecycle> = BTreeMap::new();
+    let mut initial_states = BTreeMap::new();
     let mut matched = BTreeSet::new();
     for transition in transitions {
         if transition.cause_kind == "observation" {
@@ -205,6 +213,11 @@ pub fn reconstruct_memory_hypothesis_projection(
             {
                 return Err(MemoryErrorCode::CorruptMemoryState);
             }
+        } else if initial_states
+            .insert(key.clone(), transition.from_state)
+            .is_some()
+        {
+            return Err(MemoryErrorCode::CorruptMemoryState);
         }
         lifecycles.insert(key, transition.lifecycle);
     }
@@ -217,6 +230,7 @@ pub fn reconstruct_memory_hypothesis_projection(
     Ok(MemoryHypothesisProjection {
         namespace_id: namespace_id.into(),
         lifecycles,
+        initial_states,
         open_obligations: obligations,
         recalls,
     })

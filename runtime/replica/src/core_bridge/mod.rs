@@ -72,7 +72,10 @@ pub use memory_maintenance_projection::{
 };
 pub use memory_maintenance_recovery::reconstruct_memory_maintenance_projection;
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};
-pub use memory_repository_recovery::reconstruct_memory_repository_projection;
+pub use memory_repository_recovery::{
+    reconstruct_memory_repository, reconstruct_memory_repository_projection,
+    RecoveredMemoryRepository,
+};
 pub use memory_retrieval::{plan_memory_retrieval, MemoryRetrievalContext, PlannedMemoryRetrieval};
 pub use memory_write::{
     plan_classified_memory_write, plan_memory_tombstone, plan_memory_write, MemoryTombstoneContext,

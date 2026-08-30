@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use garive_ledger::{DurableFact, FactKind};
 use garive_memory::{
-    HypothesisState, MemoryAuthority, MemoryControlDocument, MemoryDocumentLimits, MemoryErrorCode,
-    MemoryScope, MemoryScopeClass, MemoryStatus, MemoryType,
+    EvidenceTally, HypothesisState, MemoryAuthority, MemoryControlDocument, MemoryDocumentLimits,
+    MemoryErrorCode, MemoryLifecycle, MemoryScope, MemoryScopeClass, MemoryStatus, MemoryType,
 };
 use serde_json::Value;
 
@@ -14,6 +14,21 @@ use super::{
     memory_recovery::{reconstruct_memory_state, MemoryPrefix},
 };
 
+/// Independently recovered repository view and exact lifecycle reducers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveredMemoryRepository {
+    /// Canonical active M2 projection.
+    pub projection: MemoryControlProjection,
+    lifecycles: BTreeMap<(String, String), MemoryLifecycle>,
+}
+
+impl RecoveredMemoryRepository {
+    /// Returns the complete lifecycle for one classified revision.
+    pub fn lifecycle(&self, record_id: &str, revision_id: &str) -> Option<&MemoryLifecycle> {
+        self.lifecycles.get(&(record_id.into(), revision_id.into()))
+    }
+}
+
 /// Independently rebuilds the canonical current repository from authorized fixed fact prefixes.
 pub fn reconstruct_memory_repository_projection(
     ledger: &SqliteLedger,
@@ -21,6 +36,17 @@ pub fn reconstruct_memory_repository_projection(
     namespace_id: &str,
     limits: MemoryDocumentLimits,
 ) -> Result<MemoryControlProjection, MemoryErrorCode> {
+    reconstruct_memory_repository(ledger, prefixes, namespace_id, limits)
+        .map(|recovered| recovered.projection)
+}
+
+/// Recovers both the visible repository and exact lifecycle state from fixed facts.
+pub fn reconstruct_memory_repository(
+    ledger: &SqliteLedger,
+    prefixes: &[MemoryPrefix],
+    namespace_id: &str,
+    limits: MemoryDocumentLimits,
+) -> Result<RecoveredMemoryRepository, MemoryErrorCode> {
     let state = reconstruct_memory_state(ledger, prefixes)?;
     let hypothesis = reconstruct_memory_hypothesis_projection(ledger, prefixes, namespace_id)?;
     let kinds = BTreeSet::from([
@@ -66,6 +92,7 @@ pub fn reconstruct_memory_repository_projection(
         return Err(MemoryErrorCode::CorruptMemoryState);
     }
     let mut documents = Vec::new();
+    let mut lifecycles = BTreeMap::new();
     for record in state.revisions() {
         if record.namespace_id() != namespace_id || record.status() != MemoryStatus::Active {
             continue;
@@ -87,10 +114,28 @@ pub fn reconstruct_memory_repository_projection(
             return Err(MemoryErrorCode::CorruptMemoryState);
         }
         let initial = lifecycle(text(classification, "lifecycle")?)?;
-        let lifecycle = hypothesis
-            .lifecycle(record.record_id(), record.revision_id())
-            .map(|value| value.state())
-            .unwrap_or(initial);
+        let initial_lifecycle = MemoryLifecycle::new(
+            initial,
+            EvidenceTally {
+                verified: 0,
+                falsified: 0,
+                neutral: 0,
+            },
+            commit_fact.position,
+            None,
+        )
+        .map_err(|_| MemoryErrorCode::CorruptMemoryState)?;
+        let lifecycle = match hypothesis.lifecycle(record.record_id(), record.revision_id()) {
+            Some(value)
+                if hypothesis.initial_state(record.record_id(), record.revision_id())
+                    == Some(initial)
+                    && value.last_observed_position() > commit_fact.position =>
+            {
+                value.clone()
+            }
+            Some(_) => return Err(MemoryErrorCode::CorruptMemoryState),
+            None => initial_lifecycle,
+        };
         let content = record
             .content()
             .inline_utf8()
@@ -104,25 +149,29 @@ pub fn reconstruct_memory_repository_projection(
                 record.kind(),
                 classified_scope,
                 owner,
-                lifecycle,
+                lifecycle.state(),
                 record.sensitivity(),
                 content,
                 limits,
             )
             .map_err(|_| MemoryErrorCode::CorruptMemoryState)?,
         );
+        lifecycles.insert(key, lifecycle);
     }
     documents.sort_by(|left, right| {
         left.record_ref()
             .record_id()
             .cmp(&right.record_ref().record_id())
     });
-    Ok(MemoryControlProjection {
-        namespace_id: namespace_id.into(),
-        repository_revision: (classifications.len() as u64)
-            .checked_add(transition_count)
-            .ok_or(MemoryErrorCode::CorruptMemoryState)?,
-        documents,
+    Ok(RecoveredMemoryRepository {
+        projection: MemoryControlProjection {
+            namespace_id: namespace_id.into(),
+            repository_revision: (classifications.len() as u64)
+                .checked_add(transition_count)
+                .ok_or(MemoryErrorCode::CorruptMemoryState)?,
+            documents,
+        },
+        lifecycles,
     })
 }
 

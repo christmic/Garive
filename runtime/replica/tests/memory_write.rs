@@ -13,12 +13,12 @@ use garive_memory::{
 };
 use garive_runtime::{
     authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
-    plan_memory_tombstone, plan_memory_write, reconstruct_memory_repository_projection,
-    reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryControlAction,
-    MemoryControlGrant, MemoryControlRuntimeError, MemoryPrefix, MemoryRepositoryCommitError,
-    MemoryRepositoryError, MemoryRepositoryStatus, MemoryTombstoneContext, MemoryTombstoneReason,
-    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError,
-    SqliteLedger, SqliteLedgerError,
+    plan_memory_tombstone, plan_memory_write, reconstruct_memory_repository,
+    reconstruct_memory_repository_projection, reconstruct_memory_state, verify_memory_evidence,
+    MemoryAccessGrant, MemoryControlAction, MemoryControlGrant, MemoryControlRuntimeError,
+    MemoryPrefix, MemoryRepositoryCommitError, MemoryRepositoryError, MemoryRepositoryStatus,
+    MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision,
+    MemoryWriteRejection, RuntimeCommandError, SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -582,6 +582,20 @@ fn lifecycle_fact_updates_canonical_current_and_rebuilds_from_the_same_prefix() 
         .unwrap();
     assert_eq!(projection.documents[0].lifecycle(), HypothesisState::Active);
     assert_eq!(projection.repository_revision, 2);
+    let recovered = reconstruct_memory_repository(
+        &ledger,
+        &[MemoryPrefix {
+            session_id: session.clone(),
+            through_position: 7,
+        }],
+        "namespace",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    let recovered_lifecycle = recovered.lifecycle("record", "revision-1").unwrap();
+    assert_eq!(recovered_lifecycle.state(), HypothesisState::Active);
+    assert_eq!(recovered_lifecycle.tally().verified, 1);
+    assert_eq!(recovered_lifecycle.last_observed_position(), 7);
     assert_eq!(
         reconstruct_memory_repository_projection(
             &ledger,
