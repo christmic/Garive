@@ -104,6 +104,12 @@ closing restores it when the target still exists. A blocking suspension or
 unknown-command overlay cannot be dismissed in a way that silently discards
 authority. It offers explicit defer, exact retry, or abandonment actions
 allowed by the state.
+For action overlays, key identity, visual keycap, spoken key name, action label,
+and semantic controller intent are one application-owned binding. Fullscreen
+and linear presenters may format that binding differently but cannot invent an
+action or alternate consequence. Explicit newlines in safe status text become
+real layout rows, and popup geometry reserves the wrapped body plus every
+action row.
 Mouse events obey the same ownership. Wheel and click events inside a
 selectable overlay move or activate only its rendered rows; events outside the
 popup are consumed without scrolling the conversation or activating the rail.

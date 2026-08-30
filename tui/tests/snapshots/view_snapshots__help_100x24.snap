@@ -7,19 +7,19 @@ expression: "frame(&help, Theme::Dark, 100, 24)"
  Sessions 2                │ Conversation · ● live
                            │  ╭─ YOU #2
  ▌ research-age · 123456   │  │  Summarize the release plan.
-   ✓ completed  ·  3 turns │  ╰─
-                           │
-   research-age · 9╭ Keyboard guide ────────────────────────────────────────────╮
-   ● running  ·  1 │                                                            │
-                   │    Enter send   Ctrl+J new line                            │
-                   │    Ctrl+N new Session   Ctrl+S Sessions                    │
-                   │    Ctrl+P commands   Ctrl+R prompt history                 │
-                   │    Esc cancel Turn   Ctrl+Q quit                           │
-                   │                                                            │
-                   │  Durable truth comes from the local Garive Host.           │
-                   │                                                            │
-                   ╰────────────────────────────────────────────────────────────╯
-                           │
+   ✓ completed╭ Keyboard guide ──────────────────────────────────────────────────────╮
+              │                                                                      │
+   research-ag│    Enter send   Ctrl+J new line                                      │
+   ● running  │    Ctrl+N new Session   Ctrl+S open Sessions                         │
+              │    Ctrl+P open commands   Ctrl+R open prompt history                 │
+              │    Esc cancel the running Turn   Ctrl+Q ask to quit                  │
+              │                                                                      │
+              │  Durable truth comes from the local Garive Host.                     │
+              │  No function keys are required. Color and mouse are optional.        │
+              │  Copy uses terminal OSC 52 support; otherwise select terminal text   │
+              │  manually.                                                           │
+              │                                                                      │
+              ╰──────────────────────────────────────────────────────────────────────╯
                            │
                            │────────────────────────────────────────────────────────────────────────
                            │╔ Compose ═════════════════════════════════════════════════════════════╗

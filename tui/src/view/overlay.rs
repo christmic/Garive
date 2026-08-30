@@ -6,13 +6,17 @@ use ratatui::{
 };
 
 use crate::{
-    application::{AppModel, Overlay},
+    application::{ActionOverlayBinding, AppModel, Overlay},
     input::COMMAND_PALETTE,
     Theme,
 };
 
 use super::{
-    palette, presentation::suspension_copy, primitives::key_hints, safe_text, session::picker_line,
+    palette,
+    presentation::{action_overlay_copy, suspension_copy, HELP_HINTS, HELP_NOTES},
+    primitives::key_hints,
+    safe_text,
+    session::picker_line,
     style::Palette,
 };
 
@@ -21,7 +25,7 @@ pub(super) mod geometry;
 use geometry::overlay_geometry;
 
 struct OverlaySpec {
-    title: &'static str,
+    title: String,
     content: Text<'static>,
 }
 
@@ -68,63 +72,36 @@ fn overlay_spec(
 ) -> OverlaySpec {
     match overlay {
         Overlay::CommandPalette => OverlaySpec {
-            title: " Command palette ",
+            title: " Command palette ".into(),
             content: palette_text(model, colors, window.unwrap_or((0, 0))),
         },
         Overlay::Help => OverlaySpec {
-            title: " Keyboard guide ",
+            title: " Keyboard guide ".into(),
             content: help_text(colors),
         },
         Overlay::SessionPicker => OverlaySpec {
-            title: " Switch session ",
+            title: " Switch session ".into(),
             content: session_picker_text(model, colors, window.unwrap_or((0, 0))),
         },
         Overlay::PromptHistory => OverlaySpec {
-            title: " Prompt history ",
+            title: " Prompt history ".into(),
             content: history_text(model, colors, window.unwrap_or((0, 0))),
         },
         Overlay::Suspension => OverlaySpec {
-            title: " Action required ",
+            title: " Action required ".into(),
             content: suspension_text(model, colors),
         },
-        Overlay::UnknownCommand => OverlaySpec {
-            title: " Unknown command ",
-            content: action_text(
-                model
-                    .notice
-                    .as_deref()
-                    .unwrap_or("Nothing was sent to the Host."),
-                &[("Enter", "exact retry"), ("A", "abandon local record")],
-                colors,
-            ),
-        },
-        Overlay::ErrorDetails => OverlaySpec {
-            title: " Status details ",
-            content: action_text(
-                model
-                    .notice
-                    .as_deref()
-                    .unwrap_or("No additional safe details."),
-                &[("Esc", "close")],
-                colors,
-            ),
-        },
-        Overlay::EphemeralConfirmation => OverlaySpec {
-            title: " Ephemeral mode ",
-            content: action_text(
-                "A lost response cannot be recovered after exit.",
-                &[("Enter", "accept for this run"), ("Esc", "cancel")],
-                colors,
-            ),
-        },
-        Overlay::QuitConfirmation => OverlaySpec {
-            title: " Quit Garive? ",
-            content: action_text(
-                "Your Sessions stay durable in the Host.",
-                &[("Enter", "quit"), ("Esc", "keep working")],
-                colors,
-            ),
-        },
+        Overlay::UnknownCommand
+        | Overlay::ErrorDetails
+        | Overlay::EphemeralConfirmation
+        | Overlay::QuitConfirmation => {
+            let copy = action_overlay_copy(model, overlay)
+                .expect("action overlay variants always have shared presentation");
+            OverlaySpec {
+                title: format!(" {} ", copy.title),
+                content: action_text(&copy.body, copy.hints, colors),
+            }
+        }
     }
 }
 
@@ -282,28 +259,38 @@ fn suspension_text(model: &AppModel, colors: Palette) -> Text<'static> {
 }
 
 fn help_text(colors: Palette) -> Text<'static> {
-    Text::from(vec![
-        key_hints(&[("Enter", "send"), ("Ctrl+J", "new line")], colors),
-        key_hints(&[("Ctrl+N", "new Session"), ("Ctrl+S", "Sessions")], colors),
-        key_hints(
-            &[("Ctrl+P", "commands"), ("Ctrl+R", "prompt history")],
-            colors,
-        ),
-        key_hints(&[("Esc", "cancel Turn"), ("Ctrl+Q", "quit")], colors),
-        Line::default(),
-        Line::styled(
-            "Durable truth comes from the local Garive Host.",
-            colors.muted,
-        ),
-    ])
+    let mut lines = HELP_HINTS
+        .chunks(2)
+        .map(|hints| {
+            let hints = hints
+                .iter()
+                .map(|hint| (hint.visual_key, hint.action))
+                .collect::<Vec<_>>();
+            key_hints(&hints, colors)
+        })
+        .collect::<Vec<_>>();
+    lines.push(Line::default());
+    lines.extend(
+        HELP_NOTES
+            .iter()
+            .map(|note| Line::styled((*note).to_owned(), colors.muted)),
+    );
+    Text::from(lines)
 }
 
-fn action_text(body: &str, actions: &[(&str, &str)], colors: Palette) -> Text<'static> {
-    Text::from(vec![
-        Line::styled(safe_text(body), colors.normal),
-        Line::default(),
-        key_hints(actions, colors),
-    ])
+fn action_text(body: &str, actions: &[ActionOverlayBinding], colors: Palette) -> Text<'static> {
+    let hints = actions
+        .iter()
+        .map(|hint| (hint.visual_key, hint.action))
+        .collect::<Vec<_>>();
+    let safe = safe_text(body);
+    let mut lines = safe
+        .split('\n')
+        .map(|line| Line::styled(line.to_owned(), colors.normal))
+        .collect::<Vec<_>>();
+    lines.push(Line::default());
+    lines.push(key_hints(&hints, colors));
+    Text::from(lines)
 }
 
 fn search_line(label: &str, value: &str, colors: Palette) -> Line<'static> {

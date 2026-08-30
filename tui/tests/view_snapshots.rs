@@ -31,6 +31,16 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     help.overlay = Some(Overlay::Help);
     insta::assert_snapshot!("help_100x24", frame(&help, Theme::Dark, 100, 24));
 
+    let mut recovery = product_model();
+    recovery.overlay = Some(Overlay::UnknownCommand);
+    recovery.notice = Some(
+        "A prior command has an unknown durable outcome. Review Host truth before retrying.".into(),
+    );
+    insta::assert_snapshot!(
+        "recovery_unknown_100x24",
+        frame(&recovery, Theme::Dark, 100, 24)
+    );
+
     let mut action = product_model();
     action.overlay = Some(Overlay::Suspension);
     action.suspension = Some(SuspensionView {

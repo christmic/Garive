@@ -1,7 +1,105 @@
 use garive_host_client::SuspensionView;
 use serde::Deserialize;
 
-use crate::{application::TimelineTone, input::describe_schema};
+use crate::{
+    application::{ActionOverlayBinding, AppModel, Overlay, TimelineTone},
+    input::describe_schema,
+};
+
+#[derive(Clone, Copy)]
+pub(crate) struct InteractionHint {
+    pub(crate) visual_key: &'static str,
+    pub(crate) spoken_key: &'static str,
+    pub(crate) action: &'static str,
+}
+
+pub(crate) struct ActionOverlayCopy {
+    pub(crate) title: &'static str,
+    pub(crate) body: String,
+    pub(crate) hints: &'static [ActionOverlayBinding],
+}
+
+pub(crate) const HELP_HINTS: &[InteractionHint] = &[
+    InteractionHint {
+        visual_key: "Enter",
+        spoken_key: "Enter",
+        action: "send",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+J",
+        spoken_key: "Control J",
+        action: "new line",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+N",
+        spoken_key: "Control N",
+        action: "new Session",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+S",
+        spoken_key: "Control S",
+        action: "open Sessions",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+P",
+        spoken_key: "Control P",
+        action: "open commands",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+R",
+        spoken_key: "Control R",
+        action: "open prompt history",
+    },
+    InteractionHint {
+        visual_key: "Esc",
+        spoken_key: "Escape",
+        action: "cancel the running Turn",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+Q",
+        spoken_key: "Control Q",
+        action: "ask to quit",
+    },
+];
+
+pub(crate) const HELP_NOTES: &[&str] = &[
+    "Durable truth comes from the local Garive Host.",
+    "No function keys are required. Color and mouse are optional.",
+    "Copy uses terminal OSC 52 support; otherwise select terminal text manually.",
+];
+
+pub(crate) fn action_overlay_copy(model: &AppModel, overlay: Overlay) -> Option<ActionOverlayCopy> {
+    let copy = match overlay {
+        Overlay::UnknownCommand => ActionOverlayCopy {
+            title: "Command result unknown",
+            body: model.notice.clone().unwrap_or_else(|| {
+                "Durable outcome is unknown; nothing will be inferred or replayed automatically."
+                    .into()
+            }),
+            hints: overlay.action_bindings()?,
+        },
+        Overlay::ErrorDetails => ActionOverlayCopy {
+            title: "Status details",
+            body: model
+                .notice
+                .clone()
+                .unwrap_or_else(|| "No additional safe details.".into()),
+            hints: overlay.action_bindings()?,
+        },
+        Overlay::EphemeralConfirmation => ActionOverlayCopy {
+            title: "Ephemeral mode",
+            body: "A lost mutation response cannot be recovered after exit.".into(),
+            hints: overlay.action_bindings()?,
+        },
+        Overlay::QuitConfirmation => ActionOverlayCopy {
+            title: "Quit Garive?",
+            body: "Your Sessions stay durable in the Host.".into(),
+            hints: overlay.action_bindings()?,
+        },
+        _ => return None,
+    };
+    Some(copy)
+}
 
 pub(crate) struct SuspensionCopy {
     pub(crate) title: &'static str,

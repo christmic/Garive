@@ -3,7 +3,11 @@ use crate::{
     input::COMMAND_PALETTE,
 };
 
-use super::{presentation::suspension_copy, primitives::selection_window, short_id, short_tail};
+use super::{
+    presentation::{action_overlay_copy, suspension_copy, HELP_HINTS, HELP_NOTES},
+    primitives::selection_window,
+    short_id, short_tail,
+};
 
 const LIST_CAPACITY: usize = 10;
 
@@ -24,15 +28,10 @@ pub(crate) fn overlay_text(model: &AppModel) -> String {
                 copy.title, copy.context, message, copy.guidance
             )
         }
-        Overlay::UnknownCommand => "Command result unknown. Press Enter for exact retry, or A to abandon the local recovery record.".into(),
-        Overlay::ErrorDetails => format!(
-            "Status details. {} Press Escape to close.",
-            model.notice.as_deref().unwrap_or("No safe details available.")
-        ),
-        Overlay::EphemeralConfirmation => "Ephemeral mode cannot recover a lost mutation response. Press Enter to accept for this run, or Escape to cancel.".into(),
-        Overlay::QuitConfirmation => {
-            "Quit Garive? Press Enter to quit, or Escape to keep working.".into()
-        }
+        Overlay::UnknownCommand
+        | Overlay::ErrorDetails
+        | Overlay::EphemeralConfirmation
+        | Overlay::QuitConfirmation => linear_action_overlay(model, overlay),
     };
     safe(&value)
 }
@@ -124,15 +123,26 @@ fn prompt_history(model: &AppModel) -> String {
 }
 
 fn help() -> String {
-    [
-        "Keyboard guide.",
-        "Enter sends. Control J is the portable newline when Shift Enter is unavailable.",
-        "Control S opens Sessions. Control P opens commands. Control R opens prompt history.",
-        "Control C cancels a running Turn. Control Q asks to quit. Escape closes a nonblocking prompt.",
-        "No function keys are required. Color and mouse are optional; every state and action has text and a keyboard control.",
-        "Copy uses terminal OSC 52 support; otherwise select terminal text manually.",
-    ]
-    .join(" ")
+    let actions = HELP_HINTS
+        .iter()
+        .map(|hint| format!("{}: {}.", hint.spoken_key, hint.action));
+    std::iter::once("Keyboard guide.".to_owned())
+        .chain(actions)
+        .chain(HELP_NOTES.iter().map(|note| (*note).to_owned()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn linear_action_overlay(model: &AppModel, overlay: Overlay) -> String {
+    let copy = action_overlay_copy(model, overlay)
+        .expect("action overlay variants always have shared presentation");
+    let guidance = copy
+        .hints
+        .iter()
+        .map(|hint| format!("Press {} to {}.", hint.spoken_key, hint.action))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("{}. {} {}", copy.title, copy.body, guidance)
 }
 
 fn window(total: usize, selected: usize) -> std::ops::Range<usize> {

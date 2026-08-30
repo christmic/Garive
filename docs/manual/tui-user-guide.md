@@ -220,7 +220,8 @@ unavailable and require a fresh snapshot.
 Every mutation is written to a private pending record before the Host call.
 Transport failure, deadline, process kill, or an invalid response retains that
 record because the durable result is unknown. On restart, the recovery overlay
-offers:
+is titled **Command result unknown**, shows the complete safe explanation even
+when it wraps across lines, and offers:
 
 - Enter: reload Host truth and replay the same command ID and byte-equivalent
   request;
@@ -228,6 +229,8 @@ offers:
 
 Abandonment does not cancel, roll back, or prove failure. Use it only when you
 accept that the durable outcome may remain unknown.
+The fullscreen card and screen-reader prompt announce the same two actions,
+and those labels come from the same bindings that handle Enter and `A`.
 
 ## Local state and privacy
 

@@ -46,6 +46,129 @@ impl Overlay {
     pub(crate) fn is_blocking(self) -> bool {
         matches!(self, Self::Suspension | Self::UnknownCommand)
     }
+
+    pub(crate) fn action_bindings(self) -> Option<&'static [ActionOverlayBinding]> {
+        match self {
+            Self::UnknownCommand => Some(UNKNOWN_RESULT_BINDINGS),
+            Self::ErrorDetails => Some(CLOSE_BINDINGS),
+            Self::EphemeralConfirmation => Some(EPHEMERAL_BINDINGS),
+            Self::QuitConfirmation => Some(QUIT_BINDINGS),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn action_for_key(self, key: ActionOverlayKey) -> Option<ActionOverlayIntent> {
+        self.action_bindings()?
+            .iter()
+            .find(|binding| binding.key == key)
+            .map(|binding| binding.intent)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ActionOverlayKey {
+    Enter,
+    Escape,
+    Character(char),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ActionOverlayIntent {
+    Close,
+    ConfirmQuit,
+    AcceptEphemeral,
+    ExactRetry,
+    AbandonPending,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ActionOverlayBinding {
+    pub(crate) key: ActionOverlayKey,
+    pub(crate) visual_key: &'static str,
+    pub(crate) spoken_key: &'static str,
+    pub(crate) action: &'static str,
+    pub(crate) intent: ActionOverlayIntent,
+}
+
+const UNKNOWN_RESULT_BINDINGS: &[ActionOverlayBinding] = &[
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Enter,
+        visual_key: "Enter",
+        spoken_key: "Enter",
+        action: "exact retry",
+        intent: ActionOverlayIntent::ExactRetry,
+    },
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Character('a'),
+        visual_key: "A",
+        spoken_key: "A",
+        action: "abandon local record",
+        intent: ActionOverlayIntent::AbandonPending,
+    },
+];
+const CLOSE_BINDINGS: &[ActionOverlayBinding] = &[ActionOverlayBinding {
+    key: ActionOverlayKey::Escape,
+    visual_key: "Esc",
+    spoken_key: "Escape",
+    action: "close",
+    intent: ActionOverlayIntent::Close,
+}];
+const EPHEMERAL_BINDINGS: &[ActionOverlayBinding] = &[
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Enter,
+        visual_key: "Enter",
+        spoken_key: "Enter",
+        action: "accept for this run",
+        intent: ActionOverlayIntent::AcceptEphemeral,
+    },
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Escape,
+        visual_key: "Esc",
+        spoken_key: "Escape",
+        action: "cancel",
+        intent: ActionOverlayIntent::Close,
+    },
+];
+const QUIT_BINDINGS: &[ActionOverlayBinding] = &[
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Enter,
+        visual_key: "Enter",
+        spoken_key: "Enter",
+        action: "quit",
+        intent: ActionOverlayIntent::ConfirmQuit,
+    },
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Escape,
+        visual_key: "Esc",
+        spoken_key: "Escape",
+        action: "keep working",
+        intent: ActionOverlayIntent::Close,
+    },
+];
+
+#[cfg(test)]
+mod overlay_binding_tests {
+    use super::*;
+
+    #[test]
+    fn every_action_overlay_binding_round_trips_to_its_controller_intent() {
+        for overlay in [
+            Overlay::UnknownCommand,
+            Overlay::ErrorDetails,
+            Overlay::EphemeralConfirmation,
+            Overlay::QuitConfirmation,
+        ] {
+            let bindings = overlay.action_bindings().expect("action bindings");
+            assert!(!bindings.is_empty());
+            for binding in bindings {
+                assert_eq!(overlay.action_for_key(binding.key), Some(binding.intent));
+                assert!(!binding.visual_key.is_empty());
+                assert!(!binding.spoken_key.is_empty());
+                assert!(!binding.action.is_empty());
+            }
+        }
+        assert!(Overlay::Help.action_bindings().is_none());
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

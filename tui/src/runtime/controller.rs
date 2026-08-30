@@ -2,7 +2,10 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::time::Duration;
 
 use super::app::RuntimeState;
-use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize};
+use crate::application::{
+    ActionOverlayIntent, ActionOverlayKey, AppAction, ExecutionState, FocusTarget, Overlay,
+    TerminalSize,
+};
 
 mod actions;
 mod mouse;
@@ -43,12 +46,24 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         return;
     }
     if let Some(overlay) = state.model.overlay {
+        if let Some(intent) =
+            action_overlay_key(key.code).and_then(|normalized| overlay.action_for_key(normalized))
+        {
+            match intent {
+                ActionOverlayIntent::Close => state.dispatch(AppAction::OverlayClosed),
+                ActionOverlayIntent::ConfirmQuit => state.dispatch(AppAction::QuitConfirmed),
+                ActionOverlayIntent::AcceptEphemeral => {
+                    state.ephemeral_confirmed = true;
+                    state.model.overlay = None;
+                }
+                ActionOverlayIntent::ExactRetry => retry_pending(state),
+                ActionOverlayIntent::AbandonPending => state.abandon_pending(),
+            }
+            return;
+        }
         match key.code {
             KeyCode::Esc if overlay != Overlay::UnknownCommand => {
                 state.dispatch(AppAction::OverlayClosed)
-            }
-            KeyCode::Enter if overlay == Overlay::QuitConfirmation => {
-                state.dispatch(AppAction::QuitConfirmed)
             }
             KeyCode::Up if overlay == Overlay::SessionPicker => {
                 state.model.session_selection = state.model.session_selection.saturating_sub(1)
@@ -122,12 +137,6 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                     .map(|value| value.suspension_id.clone());
                 state.model.overlay = None;
             }
-            KeyCode::Enter if overlay == Overlay::EphemeralConfirmation => {
-                state.ephemeral_confirmed = true;
-                state.model.overlay = None;
-            }
-            KeyCode::Enter if overlay == Overlay::UnknownCommand => retry_pending(state),
-            KeyCode::Char('a') if overlay == Overlay::UnknownCommand => state.abandon_pending(),
             _ => {}
         }
         return;
@@ -318,6 +327,15 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         }
         KeyCode::Enter => submit(state),
         _ => {}
+    }
+}
+
+fn action_overlay_key(key: KeyCode) -> Option<ActionOverlayKey> {
+    match key {
+        KeyCode::Enter => Some(ActionOverlayKey::Enter),
+        KeyCode::Esc => Some(ActionOverlayKey::Escape),
+        KeyCode::Char(character) => Some(ActionOverlayKey::Character(character)),
+        _ => None,
     }
 }
 
