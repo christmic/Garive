@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   listWorkspaceEntries, type WorkspaceEntry, type WorkspaceGrant,
 } from "../ipc/host";
@@ -29,6 +29,7 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const sheet = useRef<HTMLElement>(null);
   const current = levels.at(-1);
 
   const load = async (append = false) => {
@@ -49,9 +50,22 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
 
   useEffect(() => { void load(); }, [levels]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onCancel(); };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onCancel(); return; }
+      if (event.key !== "Tab") return;
+      const controls = [...(sheet.current?.querySelectorAll<HTMLElement>(
+        "button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex='-1'])",
+      ) ?? [])];
+      const first = controls[0]; const last = controls.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    window.addEventListener("keydown", containFocus);
+    return () => window.removeEventListener("keydown", containFocus);
   }, [onCancel]);
 
   const chosen = useMemo(
@@ -77,12 +91,12 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
   return <div className="workspace-scrim" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onCancel();
   }}>
-    <section className="workspace-sheet" role="dialog" aria-modal="true"
+    <section ref={sheet} className="workspace-sheet" role="dialog" aria-modal="true"
       aria-labelledby="workspace-title">
       <header>
         <div className="workspace-heading"><span><Icon name="work" /></span><div>
           <p className="eyebrow">ADD LOCAL CONTEXT</p>
-          <h2 id="workspace-title">Choose files from {grant.display_name}</h2>
+          <h2 id="workspace-title">Choose files from <bdi>{grant.display_name}</bdi></h2>
         </div></div>
         <button className="icon-button" type="button" aria-label="Close file picker"
           autoFocus onClick={onCancel}><Icon name="close" /></button>
@@ -93,7 +107,7 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
         <span title={current?.label}>{current?.label}</span>
         <small>{selected.size}/8 selected</small>
       </div>
-      <div className="workspace-list" aria-busy={loading}>
+      <div className="workspace-list" aria-label="Workspace files" aria-busy={loading}>
         {loading && !entries.length ? <div className="workspace-list-state"><span className="spinner" />Reading safe metadata…</div>
           : error ? <div className="workspace-list-state error"><Icon name="warning" />{error}<button type="button" onClick={() => void load()}>Retry</button></div>
             : entries.length ? entries.map((entry) => {
@@ -109,7 +123,7 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
                 </button>
                 {selectable && <label className="entry-check"><input type="checkbox"
                   checked={selected.has(entry.entry_id)} onChange={() => toggle(entry)}
-                  aria-label={`Select ${entry.display_name}`} /><span /></label>}
+                  aria-label="Select file as context" /><span /></label>}
               </div>;
             }) : <div className="workspace-list-state"><Icon name="file" />No eligible items in this folder.</div>}
         {cursor && !loading && <button className="workspace-more" type="button"

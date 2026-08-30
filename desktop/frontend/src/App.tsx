@@ -387,7 +387,8 @@ export function App() {
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
     </div>
     {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest}
-      onCancel={() => setPickerGrant(undefined)} onConfirm={(entries) => {
+      onCancel={() => { setPickerGrant(undefined);
+        requestAnimationFrame(() => composer.current?.focus()); }} onConfirm={(entries) => {
         setSelectedContext({ grant: pickerGrant, entries }); setPickerGrant(undefined);
         requestAnimationFrame(() => composer.current?.focus());
       }} />}
@@ -460,7 +461,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <Icon name="file" /><span><strong dir="auto">{entry.display_name}</strong>
               <small>{state.phase === "submitting" ? "Committing with Turn…" : context.grant.display_name}</small></span>
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
-              aria-label={`Remove ${entry.display_name}`}><Icon name="close" /></button>
+              aria-label="Remove selected context file"><Icon name="close" /></button>
           </span>)}</div>}
         <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
           aria-label={needsInput ? "Continue suspended work" : "Describe the outcome you want"}
@@ -515,10 +516,10 @@ function Timeline({ state }: { state: WorkState }) {
 }
 
 function Inspector({ state, dispatch }: { state: WorkState; dispatch: WorkDispatch }) {
-  return <aside className="inspector" aria-label="Work inspector"><header><div className="inspector-tabs"><button className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>Activity</button><button className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>Artifacts</button></div>
+  return <aside className="inspector" aria-label="Work inspector"><header><div className="inspector-tabs" role="tablist" aria-label="Inspector views"><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>Activity</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>Artifacts</button></div>
     <button className="icon-button" type="button" aria-label="Close inspector" onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
-    {state.inspectorTab === "activity" ? <div className="inspector-body"><CommittedActivity state={state} /></div>
-      : <div className="inspector-body"><ResultDeliverables state={state} /></div>}
+    {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} /></div>
+      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} /></div>}
   </aside>;
 }
 
