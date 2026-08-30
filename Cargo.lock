@@ -1623,6 +1623,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-plan"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "garive-proto"
 version = "0.1.0"
 dependencies = [

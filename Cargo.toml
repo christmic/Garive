@@ -28,6 +28,7 @@ members = [
     "engine/memory",
     "engine/multiagent",
     "engine/observability",
+    "engine/plan",
     "engine/proto",
     "engine/scheduler",
     "engine/skill",
