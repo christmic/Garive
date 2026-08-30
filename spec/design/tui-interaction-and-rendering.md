@@ -218,6 +218,9 @@ draft while the Session rail or conversation owns focus.
 The Session rail derives painting, keyboard visibility, and mouse hit-testing
 from one visible-window calculation. A pointer event outside an actually
 rendered Session row cannot activate a hidden Session.
+Every selectable overlay derives rendering, highlight position, and activation
+from one filtered result set and a terminal-height-aware visible window. Moving
+selection cannot leave the active row clipped below the popup.
 
 ## Slash commands
 

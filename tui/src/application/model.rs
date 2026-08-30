@@ -1,7 +1,7 @@
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::input::EditorState;
+use crate::input::{command_matches, EditorState, COMMAND_PALETTE};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -174,6 +174,22 @@ impl AppModel {
                 || session.session_id.to_lowercase().contains(&filter)
                 || session.definition_id.to_lowercase().contains(&filter)
         })
+    }
+
+    pub(crate) fn matching_history(&self) -> impl Iterator<Item = &String> {
+        let filter = self.history_filter.to_lowercase();
+        self.prompt_history
+            .iter()
+            .filter(move |text| filter.is_empty() || text.to_lowercase().contains(&filter))
+    }
+
+    pub(crate) fn matching_command_indices(&self) -> Vec<usize> {
+        COMMAND_PALETTE
+            .iter()
+            .enumerate()
+            .filter(|(_, (name, help))| command_matches(name, help, &self.command_filter))
+            .map(|(index, _)| index)
+            .collect()
     }
 
     pub(crate) fn switch_viewport(&mut self, session_id: &str) {

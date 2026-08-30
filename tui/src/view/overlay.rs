@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::{
     application::{AppModel, ExecutionState, Overlay},
-    input::{command_matches, COMMAND_PALETTE},
+    input::COMMAND_PALETTE,
     Theme,
 };
 
@@ -35,7 +35,8 @@ pub(super) fn render_overlay(
     buffer: &mut Buffer,
 ) {
     let colors = palette(theme);
-    let spec = overlay_spec(model, overlay, colors);
+    let maximum_height = area.height.saturating_sub(2);
+    let spec = overlay_spec(model, overlay, colors, maximum_height);
     let popup = centered_popup(
         area,
         spec.width.min(area.width.saturating_sub(4)),
@@ -55,7 +56,7 @@ pub(super) fn render_overlay(
         .style(colors.normal)
         .wrap(Wrap { trim: false })
         .render(popup, buffer);
-    if let Some(row) = selection_row(model, overlay) {
+    if let Some(row) = selection_row(model, overlay, popup.height) {
         if row < inner.height {
             buffer.set_style(
                 Rect::new(inner.x, inner.y + row, inner.width, 1),
@@ -65,32 +66,46 @@ pub(super) fn render_overlay(
     }
 }
 
-fn overlay_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> OverlaySpec {
+fn overlay_spec(
+    model: &AppModel,
+    overlay: Overlay,
+    colors: Palette,
+    maximum_height: u16,
+) -> OverlaySpec {
     match overlay {
-        Overlay::CommandPalette => OverlaySpec {
-            title: " Command palette ",
-            content: palette_text(model, colors),
-            height: (COMMAND_PALETTE.len() as u16 + 7).clamp(12, 22),
-            width: 74,
-        },
+        Overlay::CommandPalette => {
+            let height = (COMMAND_PALETTE.len() as u16 + 7).clamp(12, 22);
+            OverlaySpec {
+                title: " Command palette ",
+                content: palette_text(model, colors, height.min(maximum_height)),
+                height,
+                width: 74,
+            }
+        }
         Overlay::Help => OverlaySpec {
             title: " Keyboard guide ",
             content: help_text(colors),
             height: 10,
             width: 62,
         },
-        Overlay::SessionPicker => OverlaySpec {
-            title: " Switch session ",
-            content: session_picker_text(model, colors),
-            height: session_picker_height(model),
-            width: 62,
-        },
-        Overlay::PromptHistory => OverlaySpec {
-            title: " Prompt history ",
-            content: history_text(model, colors),
-            height: (model.prompt_history.len() as u16 + 5).clamp(7, 16),
-            width: 62,
-        },
+        Overlay::SessionPicker => {
+            let height = session_picker_height(model);
+            OverlaySpec {
+                title: " Switch session ",
+                content: session_picker_text(model, colors, height.min(maximum_height)),
+                height,
+                width: 62,
+            }
+        }
+        Overlay::PromptHistory => {
+            let height = history_height(model);
+            OverlaySpec {
+                title: " Prompt history ",
+                content: history_text(model, colors, height.min(maximum_height)),
+                height,
+                width: 62,
+            }
+        }
         Overlay::Suspension => OverlaySpec {
             title: " Action required ",
             content: suspension_text(model, colors),
@@ -146,11 +161,20 @@ fn overlay_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> OverlayS
     }
 }
 
-fn selection_row(model: &AppModel, overlay: Overlay) -> Option<u16> {
+fn selection_row(model: &AppModel, overlay: Overlay, popup_height: u16) -> Option<u16> {
     let (selection, window_start) = match overlay {
-        Overlay::CommandPalette => (model.command_selection, 0),
-        Overlay::SessionPicker => (model.session_selection, session_picker_window(model).0),
-        Overlay::PromptHistory => (model.history_selection, 0),
+        Overlay::CommandPalette => (
+            model.command_selection,
+            command_palette_window(model, popup_height).0,
+        ),
+        Overlay::SessionPicker => (
+            model.session_selection,
+            session_picker_window(model, popup_height).0,
+        ),
+        Overlay::PromptHistory => (
+            model.history_selection,
+            history_window(model, popup_height).0,
+        ),
         _ => return None,
     };
     u16::try_from(selection.checked_sub(window_start)?)
@@ -165,16 +189,19 @@ fn session_picker_height(model: &AppModel) -> u16 {
         .clamp(8, 16)
 }
 
-fn session_picker_window(model: &AppModel) -> (usize, usize) {
-    let count = model.matching_sessions().count();
-    let capacity = usize::from(session_picker_height(model).saturating_sub(7));
-    selection_window(count, model.session_selection, capacity)
+fn list_capacity(popup_height: u16) -> usize {
+    usize::from(popup_height.saturating_sub(7))
 }
 
-fn session_picker_text(model: &AppModel, colors: Palette) -> Text<'static> {
+fn session_picker_window(model: &AppModel, popup_height: u16) -> (usize, usize) {
+    let count = model.matching_sessions().count();
+    selection_window(count, model.session_selection, list_capacity(popup_height))
+}
+
+fn session_picker_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'static> {
     let mut rows = vec![search_line("Filter", &model.session_filter, colors)];
     let matches = model.matching_sessions().collect::<Vec<_>>();
-    let (start, end) = session_picker_window(model);
+    let (start, end) = session_picker_window(model, popup_height);
     rows.extend(
         matches[start..end]
             .iter()
@@ -209,18 +236,31 @@ fn session_picker_text(model: &AppModel, colors: Palette) -> Text<'static> {
     Text::from(rows)
 }
 
-fn history_text(model: &AppModel, colors: Palette) -> Text<'static> {
-    let filter = model.history_filter.to_lowercase();
+fn history_height(model: &AppModel) -> u16 {
+    u16::try_from(model.matching_history().count())
+        .unwrap_or(u16::MAX)
+        .saturating_add(7)
+        .clamp(8, 16)
+}
+
+fn history_window(model: &AppModel, popup_height: u16) -> (usize, usize) {
+    selection_window(
+        model.matching_history().count(),
+        model.history_selection,
+        list_capacity(popup_height),
+    )
+}
+
+fn history_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'static> {
     let mut rows = vec![search_line("Search", &model.history_filter, colors)];
+    let matches = model.matching_history().collect::<Vec<_>>();
+    let (start, end) = history_window(model, popup_height);
     rows.extend(
-        model
-            .prompt_history
+        matches[start..end]
             .iter()
-            .filter(|text| filter.is_empty() || text.to_lowercase().contains(&filter))
-            .take(10)
             .enumerate()
-            .map(|(index, text)| {
-                let marker = if index == model.history_selection {
+            .map(|(offset, text)| {
+                let marker = if start + offset == model.history_selection {
                     "›"
                 } else {
                     " "
@@ -245,20 +285,30 @@ fn history_text(model: &AppModel, colors: Palette) -> Text<'static> {
     Text::from(rows)
 }
 
-fn palette_text(model: &AppModel, colors: Palette) -> Text<'static> {
+fn command_palette_window(model: &AppModel, popup_height: u16) -> (usize, usize) {
+    selection_window(
+        model.matching_command_indices().len(),
+        model.command_selection,
+        list_capacity(popup_height),
+    )
+}
+
+fn palette_text(model: &AppModel, colors: Palette, popup_height: u16) -> Text<'static> {
     let mut rows = vec![search_line("Search", &model.command_filter, colors)];
+    let matches = model.matching_command_indices();
+    let (start, end) = command_palette_window(model, popup_height);
     rows.extend(
-        COMMAND_PALETTE
+        matches[start..end]
             .iter()
-            .filter(|(name, help)| command_matches(name, help, &model.command_filter))
             .enumerate()
-            .map(|(index, (name, help))| {
-                let marker = if index == model.command_selection {
+            .map(|(offset, index)| {
+                let (name, help) = COMMAND_PALETTE[*index];
+                let marker = if start + offset == model.command_selection {
                     "›"
                 } else {
                     " "
                 };
-                let disabled = match *name {
+                let disabled = match name {
                     "/new" if model.definitions.is_empty() => "  · no Agent installed",
                     "/retry" if !model.has_pending_command => "  · no pending command",
                     "/cancel" if model.execution != ExecutionState::Following => {
@@ -272,7 +322,7 @@ fn palette_text(model: &AppModel, colors: Palette) -> Text<'static> {
                 Line::from(vec![
                     Span::styled(format!("{marker} "), colors.selected),
                     Span::styled(format!("{name:<12} "), colors.accent),
-                    Span::styled((*help).to_owned(), colors.normal),
+                    Span::styled(help.to_owned(), colors.normal),
                     Span::styled(disabled.to_owned(), colors.muted),
                 ])
             })
