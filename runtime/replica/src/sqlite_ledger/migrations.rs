@@ -101,9 +101,11 @@ CREATE TABLE memory_control_revisions (
     namespace_id TEXT NOT NULL REFERENCES memory_namespaces(namespace_id),
     record_id TEXT NOT NULL CHECK(length(record_id) > 0),
     revision_id TEXT NOT NULL CHECK(length(revision_id) > 0),
-    document_markdown TEXT NOT NULL,
+    document_markdown TEXT,
     document_digest TEXT NOT NULL CHECK(length(document_digest) = 64),
     created_sequence BLOB NOT NULL CHECK(length(created_sequence) = 8),
+    erased_sequence BLOB CHECK(erased_sequence IS NULL OR length(erased_sequence) = 8),
+    CHECK((document_markdown IS NULL) = (erased_sequence IS NOT NULL)),
     PRIMARY KEY(namespace_id, record_id, revision_id)
 ) STRICT;
 
@@ -114,8 +116,12 @@ CREATE TABLE memory_control_current (
     lifecycle TEXT NOT NULL CHECK(lifecycle IN (
         'candidate', 'active', 'cold', 'archived', 'promoted', 'erased'
     )),
+    document_markdown TEXT,
+    document_digest TEXT CHECK(document_digest IS NULL OR length(document_digest) = 64),
     updated_sequence BLOB NOT NULL CHECK(length(updated_sequence) = 8),
     PRIMARY KEY(namespace_id, record_id),
+    CHECK((lifecycle = 'erased') = (document_markdown IS NULL)),
+    CHECK((document_markdown IS NULL) = (document_digest IS NULL)),
     FOREIGN KEY(namespace_id, record_id, revision_id)
         REFERENCES memory_control_revisions(namespace_id, record_id, revision_id)
 ) STRICT;

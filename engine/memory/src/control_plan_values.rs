@@ -116,7 +116,8 @@ pub enum MemoryImportOperation {
 }
 
 impl MemoryImportOperation {
-    pub(crate) fn record_id(&self) -> &str {
+    /// Returns the exact record identity targeted by this operation.
+    pub fn record_id(&self) -> &str {
         match self {
             Self::Add { record_id, .. }
             | Self::Supersede { record_id, .. }
