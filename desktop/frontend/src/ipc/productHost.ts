@@ -63,6 +63,17 @@ export async function startProductTurn(
   return turnReceipt(await invoke<unknown>("start_product_turn", { commandId, sessionId, input }), sessionId);
 }
 
+export async function startProductTurnWithWorkspaceContext(
+  commandId: string, sessionId: string, input: string, workspaceId: string,
+  entryIds: readonly string[], invoke: Invoke = tauriInvoke,
+): Promise<TurnCommandReceipt> {
+  [commandId, sessionId, input, workspaceId].forEach(required);
+  if (!entryIds.length || entryIds.some((entryId) => !entryId)) invalid();
+  return turnReceipt(await invoke<unknown>("start_product_turn_with_workspace_context", { request: {
+    commandId, sessionId, input, workspaceId, entryIds,
+  } }), sessionId);
+}
+
 export async function cancelProductTurn(
   commandId: string, sessionId: string, turnId: string, requestedThroughPosition: number,
   invoke: Invoke = tauriInvoke,

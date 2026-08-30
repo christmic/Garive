@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cancelProductTurn, createProductSession, getProductDefinitions, getProductEvents,
   getProductSessions, getProductTimeline, startProductTurn, continueProductApproval,
+  startProductTurnWithWorkspaceContext,
 } from "./productHost";
 
 describe("product Host IPC", () => {
@@ -33,6 +34,8 @@ describe("product Host IPC", () => {
     await startProductTurn("command-start", "session-1", "hello", invoke);
     await cancelProductTurn("command-cancel", "session-1", "turn-1", 6, invoke);
     await continueProductApproval("command-approval", "session-1", "turn-1", "suspension-1", 7, true, invoke);
+    await startProductTurnWithWorkspaceContext("command-context", "session-1", "summarize",
+      "workspace-1", ["entry-1"], invoke);
     expect(calls).toEqual([
       { command: "create_product_session", args: { commandId: "command-create", definitionId: "definition-1" } },
       { command: "start_product_turn", args: { commandId: "command-start", sessionId: "session-1", input: "hello" } },
@@ -40,6 +43,10 @@ describe("product Host IPC", () => {
         turnId: "turn-1", requestedThroughPosition: 6 } },
       { command: "continue_product_approval", args: { commandId: "command-approval", sessionId: "session-1",
         turnId: "turn-1", suspensionId: "suspension-1", sessionVersion: 7, approved: true } },
+      { command: "start_product_turn_with_workspace_context", args: { request: {
+        commandId: "command-context", sessionId: "session-1", input: "summarize",
+        workspaceId: "workspace-1", entryIds: ["entry-1"],
+      } } },
     ]);
   });
 

@@ -8,13 +8,13 @@ import {
   detachWorkspaceFromSession,
   getArtifactPreview, getDesktopCapabilities, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
   listWorkspaceAuthorizations, reauthorizeWorkspace,
-  revokeWorkspace, runAgentTurnWithWorkspaceContext, setDesktopMenuLocale,
-  commitArtifactExport,
+  revokeWorkspace, setDesktopMenuLocale, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostTimelinePage,
   type WorkspaceAuthorization,
   type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
+import { startProductTurnWithWorkspaceContext } from "./ipc/productHost";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import { Icon, type IconName } from "./ui/Icon";
 import { SetupFlow } from "./features/setup/SetupFlow";
@@ -313,10 +313,8 @@ export function App() {
             sessionId, suspensionId: suspended.suspensionId, input }) });
       } else if (selectedContext) {
         await attachWorkspaceToSession(sessionId, selectedContext.grant.workspace_id);
-        await runAgentTurnWithWorkspaceContext(
-          definition, sessionId, input, selectedContext.grant.workspace_id,
-          selectedContext.entries.map((entry) => entry.entry_id),
-        );
+        await startProductTurnWithWorkspaceContext(commandIdentity("context-turn"), sessionId, input,
+          selectedContext.grant.workspace_id, selectedContext.entries.map((entry) => entry.entry_id));
         product.dispatch({ type: "select_session", sessionId });
       } else {
         await issueStartTurn(product.dispatch, sessionId, input);
