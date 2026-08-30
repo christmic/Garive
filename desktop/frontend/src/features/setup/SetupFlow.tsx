@@ -3,6 +3,7 @@ import {
   cancelSetup, commitSetup, getSetupCatalogue, prepareSetup, restartDesktop,
   type SetupCatalogue, type SetupInput, type SetupPlan,
 } from "../../ipc/host";
+import { createTranslator, type MessageKey, type Translator } from "../../i18n";
 
 type Stage = "details" | "review" | "ready";
 
@@ -40,14 +41,14 @@ const PREVIEW_API: SetupFlowApi = {
   commit: async () => undefined, cancel: async () => undefined, restart: async () => undefined,
 };
 
-const ERROR_COPY: Readonly<Record<string, string>> = {
-  setup_not_allowed: "This window is not allowed to change Desktop configuration.",
-  setup_input_invalid: "Review the setup values and their limits.",
-  setup_plan_stale: "This review expired. Prepare a new setup plan.",
-  setup_plan_conflict: "These choices conflict with another setup attempt.",
-  setup_credential_rejected: "The credential could not be stored securely.",
-  setup_persistence_failed: "The local configuration could not be committed.",
-  setup_recovery_failed: "A prior setup attempt needs diagnostics before continuing.",
+const ERROR_KEYS: Readonly<Record<string, MessageKey>> = {
+  setup_not_allowed: "setup.error.notAllowed",
+  setup_input_invalid: "setup.error.invalid",
+  setup_plan_stale: "setup.error.stale",
+  setup_plan_conflict: "setup.error.conflict",
+  setup_credential_rejected: "setup.error.credential",
+  setup_persistence_failed: "setup.error.persistence",
+  setup_recovery_failed: "setup.error.recovery",
 };
 
 /** Renders the three-step first-run or reconfiguration flow without reading secrets or config. */
@@ -56,11 +57,13 @@ export function SetupFlow({
   nonce = () => crypto.randomUUID(),
   reconfigure = false,
   preview = false,
+  t = createTranslator("en"),
 }: {
   api?: SetupFlowApi;
   nonce?: () => string;
   reconfigure?: boolean;
   preview?: boolean;
+  t?: Translator;
 }) {
   const boundary = api ?? (preview ? PREVIEW_API : DEFAULT_API);
   const [catalogue, setCatalogue] = useState<SetupCatalogue>();
@@ -132,40 +135,40 @@ export function SetupFlow({
     clearCredential(); setPlan(undefined); setError(""); setStage("details");
   };
 
-  if (!catalogue) return <main className="setup-shell"><p role="status">Loading secure setup…</p>
-    {error && <p role="alert">{ERROR_COPY[error] ?? "Setup is unavailable."}</p>}</main>;
+  if (!catalogue) return <main className="setup-shell"><p role="status">{t("setup.loading")}</p>
+    {error && <p role="alert">{ERROR_KEYS[error] ? t(ERROR_KEYS[error]) : t("setup.unavailable")}</p>}</main>;
 
   return <main className="setup-shell"><section className="setup-card" aria-labelledby="setup-title">
-    <p className="eyebrow">LOCAL RUNTIME SETUP</p>
-    <h1 id="setup-title">{stage === "details" ? "Configure Garive" : stage === "review" ? "Review setup" : "Restart required"}</h1>
-    <p className="setup-lede">Credentials are submitted once to the operating-system store and are never readable from this app.</p>
-    {reconfigure && <p className="setup-warning" role="note">Changes require an explicit restart. The current Runtime remains immutable until then.</p>}
-    <ol className="setup-progress" aria-label="Setup progress"><li aria-current={stage === "details" ? "step" : undefined}>Connect</li><li aria-current={stage === "review" ? "step" : undefined}>Review</li><li aria-current={stage === "ready" ? "step" : undefined}>Restart</li></ol>
+    <p className="eyebrow">{t("setup.eyebrow")}</p>
+    <h1 id="setup-title">{t(`setup.title.${stage}`)}</h1>
+    <p className="setup-lede">{t("setup.lede")}</p>
+    {reconfigure && <p className="setup-warning" role="note">{t("setup.reconfigure")}</p>}
+    <ol className="setup-progress" aria-label={t("setup.progress")}><li aria-current={stage === "details" ? "step" : undefined}>{t("setup.step.connect")}</li><li aria-current={stage === "review" ? "step" : undefined}>{t("setup.step.review")}</li><li aria-current={stage === "ready" ? "step" : undefined}>{t("setup.step.restart")}</li></ol>
 
     {stage === "details" && <form onSubmit={(event) => { event.preventDefault(); void review(); }}>
       <div className="setup-grid">
-        <Select label="Runtime preset" value={values.preset} change={(preset) => update("preset", preset)} options={catalogue.presets.map((item) => [item.preset_id, label(item.display_name_key)])} />
-        <Select label="Connection profile" value={values.profile} change={(profile) => update("profile", profile)} options={catalogue.profiles.map((item) => [item.profile_id, label(item.display_name_key)])} />
-        <Field label="Model target" value={values.target} change={(value) => update("target", value)} />
-        <Field label="Model ID" value={values.model} change={(value) => update("model", value)} />
-        <Field label="Deployment" value={values.deployment} change={(value) => update("deployment", value)} />
-        <Field label="Agent definition" value={values.definition} change={(value) => update("definition", value)} />
+        <Select label={t("setup.field.preset")} value={values.preset} change={(preset) => update("preset", preset)} options={catalogue.presets.map((item) => [item.preset_id, label(item.display_name_key)])} />
+        <Select label={t("setup.field.profile")} value={values.profile} change={(profile) => update("profile", profile)} options={catalogue.profiles.map((item) => [item.profile_id, label(item.display_name_key)])} />
+        <Field label={t("setup.field.target")} value={values.target} change={(value) => update("target", value)} />
+        <Field label={t("setup.field.model")} value={values.model} change={(value) => update("model", value)} />
+        <Field label={t("setup.field.deployment")} value={values.deployment} change={(value) => update("deployment", value)} />
+        <Field label={t("setup.field.agent")} value={values.definition} change={(value) => update("definition", value)} />
       </div>
-      <button className="disclosure" type="button" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>Advanced endpoint override</button>
-      {advanced && <Field label="HTTPS endpoint" value={values.endpoint} change={(value) => update("endpoint", value)} />}
-      <div className="setup-actions"><button className="primary" disabled={!valid || busy} type="submit">{busy ? "Preparing…" : "Review setup"}</button></div>
+      <button className="disclosure" type="button" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{t("setup.advanced")}</button>
+      {advanced && <Field label={t("setup.field.endpoint")} value={values.endpoint} change={(value) => update("endpoint", value)} />}
+      <div className="setup-actions"><button className="primary" disabled={!valid || busy} type="submit">{t(busy ? "setup.preparing" : "setup.review")}</button></div>
     </form>}
 
     {stage === "review" && plan && <div><dl className="setup-summary">
-      <Summary name="Preset" value={label(catalogue.presets.find((item) => item.preset_id === plan.summary.preset_id)?.display_name_key ?? plan.summary.preset_id)} />
-      <Summary name="Profile" value={label(catalogue.profiles.find((item) => item.profile_id === plan.summary.profile_id)?.display_name_key ?? plan.summary.profile_id)} />
-      <Summary name="Model" value={plan.summary.model_id} /><Summary name="Agent" value={plan.summary.definition_id} />
-    </dl><label className="field">Credential<input ref={credentialRef} autoFocus type="password" autoComplete="new-password" value={credential} onChange={(event) => setCredential(event.target.value)} /></label>
-      <p className="field-note">Write-only. This value is cleared after every commit attempt.</p>
-      <div className="setup-actions"><button type="button" onClick={back}>Back</button><button className="primary" type="button" disabled={!credential || busy} onClick={() => void commit()}>{busy ? "Committing…" : "Commit configuration"}</button></div></div>}
+      <Summary name={t("setup.summary.preset")} value={label(catalogue.presets.find((item) => item.preset_id === plan.summary.preset_id)?.display_name_key ?? plan.summary.preset_id)} />
+      <Summary name={t("setup.summary.profile")} value={label(catalogue.profiles.find((item) => item.profile_id === plan.summary.profile_id)?.display_name_key ?? plan.summary.profile_id)} />
+      <Summary name={t("setup.summary.model")} value={plan.summary.model_id} /><Summary name={t("setup.summary.agent")} value={plan.summary.definition_id} />
+    </dl><label className="field">{t("setup.field.credential")}<input ref={credentialRef} autoFocus type="password" autoComplete="new-password" value={credential} onChange={(event) => setCredential(event.target.value)} /></label>
+      <p className="field-note">{t("setup.credential.note")}</p>
+      <div className="setup-actions"><button type="button" onClick={back}>{t("setup.back")}</button><button className="primary" type="button" disabled={!credential || busy} onClick={() => void commit()}>{t(busy ? "setup.committing" : "setup.commit")}</button></div></div>}
 
-    {stage === "ready" && <div className="setup-ready"><p>The new immutable configuration is committed. Restart to construct Runtime from it.</p><button className="primary" type="button" onClick={() => void boundary.restart()}>Restart Garive</button></div>}
-    {error && <p className="setup-error" role="alert">{ERROR_COPY[error] ?? "Setup could not continue."}</p>}
+    {stage === "ready" && <div className="setup-ready"><p>{t("setup.ready")}</p><button className="primary" type="button" onClick={() => void boundary.restart()}>{t("setup.restart")}</button></div>}
+    {error && <p className="setup-error" role="alert">{ERROR_KEYS[error] ? t(ERROR_KEYS[error]) : t("setup.error.default")}</p>}
   </section></main>;
 
   function update(key: string, value: string) { setValues((current) => ({ ...current, [key]: value })); }

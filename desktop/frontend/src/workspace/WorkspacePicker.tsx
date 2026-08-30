@@ -3,6 +3,7 @@ import {
   listWorkspaceEntries, type WorkspaceEntry, type WorkspaceGrant,
 } from "../ipc/host";
 import { Icon } from "../ui/Icon";
+import { createTranslator, type Translator } from "../i18n";
 
 interface DirectoryLevel { readonly entryId?: string; readonly label: string }
 
@@ -15,11 +16,13 @@ const previewEntries: readonly WorkspaceEntry[] = [
     display_name: "Reference.png", kind: "image", byte_size: 184320, selectable: true },
 ];
 
-export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }: {
+export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm,
+  t = createTranslator("en") }: {
   readonly grant: WorkspaceGrant;
   readonly preview?: boolean;
   readonly onCancel: () => void;
   readonly onConfirm: (entries: readonly WorkspaceEntry[]) => void;
+  readonly t?: Translator;
 }) {
   const [levels, setLevels] = useState<readonly DirectoryLevel[]>([
     { label: grant.display_name },
@@ -44,7 +47,7 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
       setEntries((existing) => append ? [...existing, ...page.entries] : page.entries);
       setCursor(page.next_cursor);
     } catch {
-      setError("This folder could not be read safely. Choose another Workspace or try again.");
+      setError(t("workspace.readError"));
     } finally { setLoading(false); }
   };
 
@@ -95,21 +98,21 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
       aria-labelledby="workspace-title">
       <header>
         <div className="workspace-heading"><span><Icon name="work" /></span><div>
-          <p className="eyebrow">ADD LOCAL CONTEXT</p>
-          <h2 id="workspace-title">Choose files from <bdi>{grant.display_name}</bdi></h2>
+          <p className="eyebrow">{t("workspace.eyebrow")}</p>
+          <h2 id="workspace-title">{t("workspace.choosePrefix")} <bdi>{grant.display_name}</bdi>{t("workspace.chooseSuffix")}</h2>
         </div></div>
-        <button className="icon-button" type="button" aria-label="Close file picker"
+        <button className="icon-button" type="button" aria-label={t("workspace.close")}
           autoFocus onClick={onCancel}><Icon name="close" /></button>
       </header>
       <div className="workspace-path">
         <button type="button" disabled={levels.length < 2} onClick={back}
-          aria-label="Back to parent folder">‹</button>
+          aria-label={t("workspace.back")}>‹</button>
         <span title={current?.label}>{current?.label}</span>
-        <small>{selected.size}/8 selected</small>
+        <small>{selected.size}/8 {t("workspace.selected")}</small>
       </div>
-      <div className="workspace-list" aria-label="Workspace files" aria-busy={loading}>
-        {loading && !entries.length ? <div className="workspace-list-state"><span className="spinner" />Reading safe metadata…</div>
-          : error ? <div className="workspace-list-state error"><Icon name="warning" />{error}<button type="button" onClick={() => void load()}>Retry</button></div>
+      <div className="workspace-list" aria-label={t("workspace.files")} aria-busy={loading}>
+        {loading && !entries.length ? <div className="workspace-list-state"><span className="spinner" />{t("workspace.reading")}</div>
+          : error ? <div className="workspace-list-state error"><Icon name="warning" />{error}<button type="button" onClick={() => void load()}>{t("workspace.retry")}</button></div>
             : entries.length ? entries.map((entry) => {
               const directory = entry.kind === "directory";
               const selectable = entry.selectable && entry.kind === "text";
@@ -118,31 +121,31 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm }:
                 <button className="entry-main" type="button"
                   disabled={!directory || !entry.selectable} onClick={() => enter(entry)}>
                   <span className="entry-icon"><Icon name={directory ? "archive" : "file"} /></span>
-                  <span><strong dir="auto">{entry.display_name}</strong><small>{entryCopy(entry)}</small></span>
+                  <span><strong dir="auto">{entry.display_name}</strong><small>{entryCopy(entry, t)}</small></span>
                   {directory && entry.selectable && <Icon name="chevron" />}
                 </button>
                 {selectable && <label className="entry-check"><input type="checkbox"
                   checked={selected.has(entry.entry_id)} onChange={() => toggle(entry)}
-                  aria-label="Select file as context" /><span /></label>}
+                  aria-label={t("workspace.select")} /><span /></label>}
               </div>;
-            }) : <div className="workspace-list-state"><Icon name="file" />No eligible items in this folder.</div>}
+            }) : <div className="workspace-list-state"><Icon name="file" />{t("workspace.empty")}</div>}
         {cursor && !loading && <button className="workspace-more" type="button"
-          onClick={() => void load(true)}>Load more</button>}
+          onClick={() => void load(true)}>{t("workspace.more")}</button>}
       </div>
-      <footer><p><Icon name="shield" />Only selected UTF-8 text goes directly from the Rust backend to Runtime.</p>
-        <div><button className="secondary-button" type="button" onClick={onCancel}>Cancel</button>
+      <footer><p><Icon name="shield" />{t("workspace.safety")}</p>
+        <div><button className="secondary-button" type="button" onClick={onCancel}>{t("workspace.cancel")}</button>
           <button className="primary-button" type="button" disabled={!chosen.length}
-            onClick={() => onConfirm(chosen)}>Add {chosen.length || ""} {chosen.length === 1 ? "file" : "files"}</button></div>
+            onClick={() => onConfirm(chosen)}>{t("workspace.add")} {chosen.length || ""} {t(chosen.length === 1 ? "workspace.file" : "workspace.filesPlural")}</button></div>
       </footer>
     </section>
   </div>;
 }
 
-function entryCopy(entry: WorkspaceEntry) {
-  if (!entry.selectable) return "Protected package";
-  if (entry.kind === "directory") return "Folder";
+function entryCopy(entry: WorkspaceEntry, t: Translator) {
+  if (!entry.selectable) return t("workspace.package");
+  if (entry.kind === "directory") return t("workspace.folder");
   const size = entry.byte_size == null ? "" : ` · ${formatBytes(entry.byte_size)}`;
-  return `${entry.kind === "text" ? "Text" : "Preview only"}${size}`;
+  return `${t(entry.kind === "text" ? "workspace.text" : "workspace.previewOnly")}${size}`;
 }
 function formatBytes(bytes: number) {
   return bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024
