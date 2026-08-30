@@ -149,6 +149,12 @@ transparency modes. The base palette uses neutral graphite surfaces, warm
 paper conversation, cobalt focus/action, green verified, amber attention, and
 red destructive/error. Color never carries state alone.
 
+Appearance exposes three explicit theme values (`system`, `light`, `dark`) and
+two density values (`comfortable`, `compact`). `system` follows live macOS
+appearance changes; either explicit theme overrides the system preference.
+Density changes information spacing without hiding controls, changing durable
+content, or weakening the minimum target and zoom requirements below.
+
 Spacing follows a 4 px base; normal controls are at least 32 px high and all
 pointer targets at least 44 x 44 CSS px where the layout permits. Corners use
 8 px controls, 12 px cards, and 18 px composer. Shadows are limited to overlays
@@ -282,6 +288,11 @@ Client storage may contain theme, density, rail/inspector size, draft text,
 last selected public Session, and dismissed education. It must not contain
 credentials, configuration values, paths, raw facts, hidden context, authority
 grants, artifact bytes, or invented durable state.
+
+The current appearance record is a maximum 256-byte, schema-versioned document
+with exactly `schema_version`, `theme`, and `density`. Unknown keys, versions,
+values, malformed JSON, or oversized records fail closed to `system` and
+`comfortable`; the client never partially admits a record.
 
 ## Security and privacy
 
