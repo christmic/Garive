@@ -28,6 +28,15 @@ type session struct {
 	Turns      int
 	UserText   string
 	Completion string
+	History    []turnSnapshot
+}
+
+type turnSnapshot struct {
+	ID         string
+	State      string
+	Position   int
+	UserText   string
+	Completion string
 }
 
 type demoHost struct {
@@ -118,6 +127,7 @@ func (d *demoHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			d.error(w, http.StatusBadRequest, "invalid_request")
 			return
 		}
+		item.archiveCurrent()
 		item.Turns++
 		item.TurnID = fmt.Sprintf("turn-%s-%d", item.ID, item.Turns)
 		item.UserText, item.State, item.Completion = body.Text, "running", ""
@@ -185,24 +195,43 @@ func summary(item *session) map[string]any {
 
 func (d *demoHost) timeline(w http.ResponseWriter, item *session) {
 	items := []any{}
+	for _, turn := range item.History {
+		items = append(items, timelineTurn(turn.ID, turn.State, turn.Position, turn.UserText, turn.Completion, false))
+	}
 	if item.TurnID != "" {
-		activityState, terminal := "running", false
-		switch item.State {
-		case "completed":
-			activityState, terminal = "completed", true
-		case "stopped":
-			activityState, terminal = "cancelled", true
-		}
-		turn := map[string]any{"turn_id": item.TurnID, "started_position": max(1, item.Position-2), "latest_position": item.Position, "state": item.State, "user_text": item.UserText, "content_truncated": false, "activities": []any{map[string]any{"api_version": "v1", "activity_id": "activity-" + item.TurnID, "kind": "work", "label_key": "agent.activity.verification", "state": activityState, "source_position": item.Position, "terminal": terminal}}}
-		if item.Completion != "" {
-			turn["completion_text"] = item.Completion
-		}
-		if item.State == "suspended" {
-			turn["suspension"] = map[string]any{"suspension_id": "suspension-release", "session_version": 3, "kind": "approval_required", "prompt_schema": "garive.public-suspension-prompt.v1", "prompt_json": promptJSON, "prompt_digest": promptDigest, "response_schema_json": responseJSON, "response_schema_digest": responseDigest}
-		}
-		items = append(items, turn)
+		items = append(items, timelineTurn(
+			item.TurnID, item.State, item.Position, item.UserText, item.Completion, item.State == "suspended",
+		))
 	}
 	d.write(w, map[string]any{"api_version": "v1", "session_id": item.ID, "items": items, "scanned_through_position": item.Position, "observed_max_position": item.Position, "has_more": false})
+}
+
+func (item *session) archiveCurrent() {
+	if item.TurnID == "" {
+		return
+	}
+	item.History = append(item.History, turnSnapshot{
+		ID: item.TurnID, State: item.State, Position: item.Position,
+		UserText: item.UserText, Completion: item.Completion,
+	})
+}
+
+func timelineTurn(id, state string, position int, userText, completion string, suspended bool) map[string]any {
+	activityState, terminal := "running", false
+	switch state {
+	case "completed":
+		activityState, terminal = "completed", true
+	case "stopped":
+		activityState, terminal = "cancelled", true
+	}
+	turn := map[string]any{"turn_id": id, "started_position": max(1, position-2), "latest_position": position, "state": state, "user_text": userText, "content_truncated": false, "activities": []any{map[string]any{"api_version": "v1", "activity_id": "activity-" + id, "kind": "work", "label_key": "agent.activity.verification", "state": activityState, "source_position": position, "terminal": terminal}}}
+	if completion != "" {
+		turn["completion_text"] = completion
+	}
+	if suspended {
+		turn["suspension"] = map[string]any{"suspension_id": "suspension-release", "session_version": 3, "kind": "approval_required", "prompt_schema": "garive.public-suspension-prompt.v1", "prompt_json": promptJSON, "prompt_digest": promptDigest, "response_schema_json": responseJSON, "response_schema_digest": responseDigest}
+	}
+	return turn
 }
 
 func (d *demoHost) find(id string) *session {
