@@ -17,7 +17,7 @@ pub(super) fn apply(
     operation: &MemoryImportOperation,
     sequence: u64,
 ) -> Result<(), MemoryControlRuntimeError> {
-    let document = matching_document(command, operation)?;
+    let document = command.document_for_operation(operation)?;
     if !grant.admits(
         &command.plan().namespace_id,
         MemoryControlAction::Import,
@@ -122,98 +122,6 @@ pub(super) fn apply(
                 sequence,
             )
         }
-    }
-}
-
-fn matching_document<'a>(
-    command: &'a MemoryImportCommand,
-    operation: &MemoryImportOperation,
-) -> Result<&'a MemoryControlDocument, MemoryControlRuntimeError> {
-    let matches = command
-        .documents()
-        .iter()
-        .filter(|document| {
-            let identity_matches = match (operation, document.record_ref()) {
-                (
-                    MemoryImportOperation::Add {
-                        source_draft_token, ..
-                    },
-                    MemoryRecordRef::New { draft_token },
-                ) => source_draft_token == draft_token,
-                (
-                    MemoryImportOperation::Supersede {
-                        record_id,
-                        expected_active_revision_id,
-                        authority,
-                        ..
-                    },
-                    MemoryRecordRef::Existing {
-                        record_id: document_record,
-                        revision_id,
-                    },
-                ) => {
-                    record_id == document_record
-                        && expected_active_revision_id == revision_id
-                        && *authority == document.authority()
-                        && !document.erase_requested()
-                }
-                (
-                    MemoryImportOperation::Archive {
-                        record_id,
-                        expected_active_revision_id,
-                        ..
-                    },
-                    MemoryRecordRef::Existing {
-                        record_id: document_record,
-                        revision_id,
-                    },
-                ) => {
-                    record_id == document_record
-                        && expected_active_revision_id == revision_id
-                        && document.lifecycle() == HypothesisState::Archived
-                        && !document.erase_requested()
-                }
-                (
-                    MemoryImportOperation::Erase {
-                        record_id,
-                        expected_active_revision_id,
-                        ..
-                    },
-                    MemoryRecordRef::Existing {
-                        record_id: document_record,
-                        revision_id,
-                    },
-                ) => {
-                    record_id == document_record
-                        && expected_active_revision_id == revision_id
-                        && document.erase_requested()
-                }
-                _ => false,
-            };
-            identity_matches && operation_document_digest(operation) == document.document_digest()
-        })
-        .collect::<Vec<_>>();
-    if matches.len() == 1 {
-        Ok(matches[0])
-    } else {
-        Err(MemoryControlRuntimeError::InvalidSnapshot)
-    }
-}
-
-fn operation_document_digest(operation: &MemoryImportOperation) -> &str {
-    match operation {
-        MemoryImportOperation::Add {
-            document_digest, ..
-        }
-        | MemoryImportOperation::Supersede {
-            document_digest, ..
-        }
-        | MemoryImportOperation::Archive {
-            document_digest, ..
-        }
-        | MemoryImportOperation::Erase {
-            document_digest, ..
-        } => document_digest,
     }
 }
 

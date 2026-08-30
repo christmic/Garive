@@ -7,7 +7,7 @@ use garive_ledger::{ExecutionId, SessionId, TurnId};
 use garive_memory::DurableFactReference;
 use garive_memory::{
     ContentBinding, MemoryAuthorizedScope, MemoryControlDocument, MemoryControlError,
-    MemoryImportPlan,
+    MemoryImportOperation, MemoryImportPlan, MemoryRecordRef,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -267,11 +267,100 @@ impl MemoryImportCommand {
     pub(crate) const fn plan(&self) -> &MemoryImportPlan {
         &self.plan
     }
-    pub(crate) fn documents(&self) -> &[MemoryControlDocument] {
-        &self.documents
-    }
     pub(crate) const fn max_id_bytes(&self) -> usize {
         self.max_id_bytes
+    }
+    pub(crate) fn document_for_operation(
+        &self,
+        operation: &MemoryImportOperation,
+    ) -> Result<&MemoryControlDocument, MemoryControlRuntimeError> {
+        let matches = self
+            .documents
+            .iter()
+            .filter(|document| {
+                let identity_matches = match (operation, document.record_ref()) {
+                    (
+                        MemoryImportOperation::Add {
+                            source_draft_token, ..
+                        },
+                        MemoryRecordRef::New { draft_token },
+                    ) => source_draft_token == draft_token,
+                    (
+                        MemoryImportOperation::Supersede {
+                            record_id,
+                            expected_active_revision_id,
+                            authority,
+                            ..
+                        },
+                        MemoryRecordRef::Existing {
+                            record_id: document_record,
+                            revision_id,
+                        },
+                    ) => {
+                        record_id == document_record
+                            && expected_active_revision_id == revision_id
+                            && *authority == document.authority()
+                            && !document.erase_requested()
+                    }
+                    (
+                        MemoryImportOperation::Archive {
+                            record_id,
+                            expected_active_revision_id,
+                            ..
+                        },
+                        MemoryRecordRef::Existing {
+                            record_id: document_record,
+                            revision_id,
+                        },
+                    ) => {
+                        record_id == document_record
+                            && expected_active_revision_id == revision_id
+                            && document.lifecycle() == garive_memory::HypothesisState::Archived
+                            && !document.erase_requested()
+                    }
+                    (
+                        MemoryImportOperation::Erase {
+                            record_id,
+                            expected_active_revision_id,
+                            ..
+                        },
+                        MemoryRecordRef::Existing {
+                            record_id: document_record,
+                            revision_id,
+                        },
+                    ) => {
+                        record_id == document_record
+                            && expected_active_revision_id == revision_id
+                            && document.erase_requested()
+                    }
+                    _ => false,
+                };
+                identity_matches
+                    && operation_document_digest(operation) == document.document_digest()
+            })
+            .collect::<Vec<_>>();
+        if matches.len() == 1 {
+            Ok(matches[0])
+        } else {
+            Err(MemoryControlRuntimeError::InvalidSnapshot)
+        }
+    }
+}
+
+fn operation_document_digest(operation: &MemoryImportOperation) -> &str {
+    match operation {
+        MemoryImportOperation::Add {
+            document_digest, ..
+        }
+        | MemoryImportOperation::Supersede {
+            document_digest, ..
+        }
+        | MemoryImportOperation::Archive {
+            document_digest, ..
+        }
+        | MemoryImportOperation::Erase {
+            document_digest, ..
+        } => document_digest,
     }
 }
 
