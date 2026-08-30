@@ -3,6 +3,8 @@
 use std::collections::BTreeSet;
 
 use garive_ledger::CommitResult;
+use garive_ledger::{ExecutionId, SessionId, TurnId};
+use garive_memory::DurableFactReference;
 use garive_memory::{
     ContentBinding, MemoryAuthorizedScope, MemoryControlDocument, MemoryControlError,
     MemoryImportPlan,
@@ -52,6 +54,79 @@ pub enum MemoryRepositoryStatus {
     Unavailable,
     /// Durable facts and the current projection failed reconciliation.
     Corrupt,
+}
+
+/// Runtime-frozen authority and durable coordinates for one fact-backed M2 import.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryRepositoryImportContext {
+    /// Session receiving the complete ordered fact batch.
+    pub session_id: SessionId,
+    /// Owning user-visible Turn.
+    pub turn_id: TurnId,
+    /// Owning disposable Execution.
+    pub execution_id: ExecutionId,
+    /// Exact optimistic Session version before import.
+    pub expected_session_version: u64,
+    /// Highest fixed fact position before import.
+    pub through_position: u64,
+    /// Canonical Runtime observation time.
+    pub recorded_at: String,
+    /// Verified user confirmation or approval fact inside the fixed prefix.
+    pub authorization_fact: DurableFactReference,
+    /// Verified receipt binding user-declared authority.
+    pub authority_receipt_digest: String,
+    /// Runtime-selected retention policy.
+    pub retention_policy_digest: String,
+    /// Runtime-selected M1 classification policy revision.
+    pub classification_policy_revision: String,
+}
+
+impl MemoryRepositoryImportContext {
+    /// Validates fixed-prefix ownership and every explicit policy binding.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        session_id: SessionId,
+        turn_id: TurnId,
+        execution_id: ExecutionId,
+        expected_session_version: u64,
+        through_position: u64,
+        recorded_at: impl Into<String>,
+        authorization_fact: DurableFactReference,
+        authority_receipt_digest: impl Into<String>,
+        retention_policy_digest: impl Into<String>,
+        classification_policy_revision: impl Into<String>,
+    ) -> Result<Self, MemoryRepositoryError> {
+        let value = Self {
+            session_id,
+            turn_id,
+            execution_id,
+            expected_session_version,
+            through_position,
+            recorded_at: recorded_at.into(),
+            authorization_fact,
+            authority_receipt_digest: authority_receipt_digest.into(),
+            retention_policy_digest: retention_policy_digest.into(),
+            classification_policy_revision: classification_policy_revision.into(),
+        };
+        if value.expected_session_version == 0
+            || value.through_position == 0
+            || value.authorization_fact.session_id() != value.session_id.as_str()
+            || value.authorization_fact.position() > value.through_position
+            || !valid_digest(&value.authority_receipt_digest)
+            || !valid_digest(&value.retention_policy_digest)
+            || !valid_identity(&value.classification_policy_revision)
+            || chrono::DateTime::parse_from_rfc3339(&value.recorded_at)
+                .ok()
+                .is_none_or(|time| {
+                    time.with_timezone(&chrono::Utc)
+                        .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+                        != value.recorded_at
+                })
+        {
+            return Err(MemoryRepositoryError::Unauthorized);
+        }
+        Ok(value)
+    }
 }
 
 /// Atomic result of one fact-backed Memory repository write or exact replay.
@@ -427,4 +502,11 @@ pub(crate) fn hex_sha256(bytes: &[u8]) -> String {
 
 fn valid_identity(value: &str) -> bool {
     !value.is_empty() && value.len() <= 128 && value.trim() == value
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }

@@ -109,13 +109,28 @@ open_memory_repository(context) -> Ready {namespace_id, revision}
                                  | Unavailable | Corrupt
 read_memory_repository(grant, limits) -> bounded projection
 prepare_memory_repository_import(source, grant, limits) -> exact M2 plan
-commit_memory_repository_import(command, confirmation) -> M2 receipt
+commit_memory_repository_import(context, command, confirmation) -> M2 receipt
 get_memory_control_command(command_id) -> Unknown | Committed {receipt}
 ```
 
 `context` is constructed by backend configuration from exact namespace,
 authorized prefixes, actor authority and scope grants. No environment lookup,
 filesystem path or frontend value can create it.
+
+`commit` context is a Runtime-constructed immutable binding containing the exact
+Session, owning Turn/Execution, expected Session version and fixed through
+position, canonical observation time, one verified durable authorization-fact
+reference, user-authority receipt digest, retention-policy digest and
+classification-policy revision. The authorization fact must be inside the same
+fixed Session prefix. No frontend boolean, edited file, environment variable or
+implicit default can create authority.
+
+For each ordered Add/Supersede operation Runtime emits the existing
+`memory.proposed`, `memory.committed` and `memory.revision_classified` facts;
+the user confirmation fact is their evidence and authority receipt. Archive
+emits the existing lifecycle transition, and Erase emits the existing
+namespace-bound tombstone plus erasure workflow. The whole ordered fact batch,
+M2 journal event and current-projection changes commit in one transaction.
 
 ## Stable failures
 

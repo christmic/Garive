@@ -102,7 +102,7 @@ pub use local_worker::{
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,
     MemoryImportCommand, MemoryImportReceipt, MemoryRepositoryCommitResult, MemoryRepositoryError,
-    MemoryRepositoryStatus,
+    MemoryRepositoryImportContext, MemoryRepositoryStatus,
 };
 pub use memory_export::{MemoryExportCommand, MemoryExportReceipt, MemoryExportTarget};
 pub use memory_export_io::export_memory_snapshot;

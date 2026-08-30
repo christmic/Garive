@@ -1,12 +1,49 @@
 #[path = "support/memory_control_values.rs"]
 mod support;
 
-use garive_memory::{prepare_memory_import, MemoryDocumentLimits, MemoryIdentityAllocation};
+use garive_ledger::{ExecutionId, SessionId, TurnId};
+use garive_memory::{
+    prepare_memory_import, DurableFactReference, MemoryDocumentLimits, MemoryIdentityAllocation,
+};
 use garive_runtime::{
-    MemoryControlRuntimeError, MemoryImportCommand, MemoryRepositoryStatus, SqliteLedger,
+    MemoryControlRuntimeError, MemoryImportCommand, MemoryRepositoryError,
+    MemoryRepositoryImportContext, MemoryRepositoryStatus, SqliteLedger,
 };
 use support::*;
 use tempfile::tempdir;
+
+#[test]
+fn fact_backed_import_context_requires_exact_prefix_authority_and_policies() {
+    let valid = MemoryRepositoryImportContext::new(
+        SessionId::try_from("session").unwrap(),
+        TurnId::try_from("turn").unwrap(),
+        ExecutionId::try_from("execution").unwrap(),
+        2,
+        7,
+        "2026-08-30T12:00:00Z",
+        DurableFactReference::new("session", 7, "confirmation", "a".repeat(64)).unwrap(),
+        "b".repeat(64),
+        "c".repeat(64),
+        "classification-v1",
+    )
+    .unwrap();
+    assert_eq!(valid.authorization_fact.position(), 7);
+    assert_eq!(
+        MemoryRepositoryImportContext::new(
+            SessionId::try_from("session").unwrap(),
+            TurnId::try_from("turn").unwrap(),
+            ExecutionId::try_from("execution").unwrap(),
+            2,
+            7,
+            "2026-08-30T12:00:00Z",
+            DurableFactReference::new("foreign", 7, "confirmation", "a".repeat(64)).unwrap(),
+            "b".repeat(64),
+            "c".repeat(64),
+            "classification-v1",
+        ),
+        Err(MemoryRepositoryError::Unauthorized),
+    );
+}
 
 #[test]
 fn atomic_import_replays_after_restart_and_erases_projection_content() {
