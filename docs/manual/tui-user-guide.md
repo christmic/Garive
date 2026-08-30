@@ -265,6 +265,10 @@ semantics apply.
 Because output is append-only, a long-running screen-reader session relies on
 the terminal's own scrollback. Clipboard escape requests and mouse capture are
 disabled.
+Filtered command, Session, and history prompts announce the selected numbered
+row from the same bounded result window that Enter activates. Help also states
+portable newline, keyboard-only, no-color, no-mouse, and OSC 52 fallback
+behavior.
 
 ## Safe exit and terminal restoration
 

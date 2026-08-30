@@ -368,7 +368,9 @@ theme overrides it.
   hints collapse by width and render keys separately from their descriptions.
 - Reduced motion disables spinners and transition frames.
 - Screen-reader mode prints semantic blocks once and converts overlays to
-  numbered prompts.
+  numbered prompts. Those prompts use the same filtered result ordering,
+  bounded selection-following window, and activation index as the visual
+  overlay.
 - Help describes alternatives when function keys, Shift+Enter, mouse, OSC 8,
   or color are unavailable.
 - Bidi controls, zero-width content, and terminal escapes cannot conceal

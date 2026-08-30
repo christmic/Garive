@@ -77,6 +77,7 @@ tui/src/
     conversation.rs      timeline and scroll model
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
+    linear.rs            screen-reader presentation components
     composer.rs          editor and validation
     navigation.rs        Session/Agent navigation
     overlay.rs           help, command, Session, error, suspension overlays

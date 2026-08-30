@@ -80,6 +80,8 @@ Bounded lists keep the selected item inside their visible window. The visual
 filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
+The linear screen-reader component uses that same filtered order and marks the
+selected numbered row explicitly; it cannot maintain a separate list model.
 
 ## Conformance
 
