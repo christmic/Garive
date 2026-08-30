@@ -1531,6 +1531,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-goal"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "garive-host-client"
 version = "0.1.0"
 dependencies = [

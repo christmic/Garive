@@ -21,6 +21,7 @@ members = [
     "engine/core",
     "engine/creativity",
     "engine/eval",
+    "engine/goal",
     "engine/knowledge",
     "engine/ledger",
     "engine/llm",
