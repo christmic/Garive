@@ -148,7 +148,8 @@ pub use runtime_turn::{
     RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };
 pub use sandbox_facts::{
-    plan_f0_effect_admission, F0EffectAdmissionContext, PlannedF0EffectAdmission,
+    plan_f0_effect_admission, plan_f0_safety_decision, plan_f0_sandbox_admission,
+    F0EffectAdmissionContext, PlannedF0EffectAdmission,
 };
 pub use sandbox_runtime::{
     preflight_sandbox, SafetyDecisionV1, SafetyDisposition, SafetyRequestV1, SandboxBindingV1,

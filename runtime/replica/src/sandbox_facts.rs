@@ -38,41 +38,14 @@ pub struct PlannedF0EffectAdmission {
     pub facts: Vec<FactDraft>,
 }
 
-/// Plans the complete allowed F0 chain without crossing the dispatch boundary.
-#[allow(clippy::too_many_arguments)]
-pub fn plan_f0_effect_admission(
+/// Plans Prepared-v3 and the exact allowed Safety decision before grant creation.
+pub fn plan_f0_safety_decision(
     context: &F0EffectAdmissionContext,
     request: &SafetyRequestV1,
     prepared: &PreparedToolCall,
-    grant: &InvocationGrant,
     decision: &SafetyDecisionV1,
-    binding: &SandboxBindingV1,
-    dispatch_attempt_id: &str,
-) -> Result<PlannedF0EffectAdmission, SandboxPreflightError> {
-    validate_context(context)?;
-    let invocation_id = request.invocation_id();
-    if decision.disposition() != SafetyDisposition::Allow
-        || decision.invocation_id() != invocation_id
-        || decision.prepared_digest() != prepared.input_digest()
-        || request.prepared_digest() != prepared.input_digest()
-        || request.tool_name() != prepared.tool_name()
-        || request.tool_revision() != prepared.tool_revision()
-        || request.sandbox_requirements_digest()
-            != prepared
-                .sandbox_requirements_digest()
-                .ok_or(SandboxPreflightError::InvalidBinding)?
-        || request.effective_policy_revision() != decision.policy_revision()
-    {
-        return Err(SandboxPreflightError::InvalidBinding);
-    }
-    let execution = preflight_sandbox(
-        invocation_id,
-        prepared,
-        grant,
-        decision,
-        binding,
-        dispatch_attempt_id,
-    )?;
+) -> Result<Vec<FactDraft>, SandboxPreflightError> {
+    validate_request(context, request, prepared, decision)?;
     let accesses = prepared
         .invocation_accesses()
         .ok_or(SandboxPreflightError::InvalidBinding)?;
@@ -80,21 +53,13 @@ pub fn plan_f0_effect_admission(
         .sandbox_requirements()
         .ok_or(SandboxPreflightError::InvalidBinding)?;
     let access = content(accesses)?;
-    if access["digest"] != request.exact_access_digest() {
+    let sandbox = content(requirements)?;
+    if access["digest"] != request.exact_access_digest()
+        || sandbox["digest"] != request.sandbox_requirements_digest()
+    {
         return Err(SandboxPreflightError::InvalidBinding);
     }
-    let sandbox = content(requirements)?;
-    let granted = content(&grant.granted_requirements)?;
-    let access_scope_digest = canonical_digest(binding.access_scope())?;
-    let enforcement_digest = binding
-        .enforcement()
-        .digest()
-        .map_err(|_| SandboxPreflightError::InvalidBinding)?;
-    let tool = LedgerToolId::try_from(invocation_id.as_str())
-        .map_err(|_| SandboxPreflightError::InvalidBinding)?;
-    let common = |suffix: &str, kind: &str, schema_version: u32, payload: Value| {
-        fact(context, &tool, suffix, kind, schema_version, payload)
-    };
+    let tool = ledger_tool(request)?;
     let mut safety = json!({
         "request_id":request.request_id(),"decision_id":decision.decision_id(),
         "disposition":"allow","prepared_digest":prepared.input_digest(),
@@ -111,8 +76,10 @@ pub fn plan_f0_effect_admission(
     if let Some(value) = request.plan_reference() {
         safety["plan_reference"] = json!(value);
     }
-    let facts = vec![
-        common(
+    Ok(vec![
+        fact(
+            context,
+            &tool,
             "prepared",
             "effect.prepared",
             3,
@@ -126,8 +93,41 @@ pub fn plan_f0_effect_admission(
                 "sandbox_requirements":sandbox,"sandbox_requirements_digest":prepared.sandbox_requirements_digest().ok_or(SandboxPreflightError::InvalidBinding)?,
             }),
         )?,
-        common("safety", "safety.decided", 1, safety)?,
-        common(
+        fact(context, &tool, "safety", "safety.decided", 1, safety)?,
+    ])
+}
+
+/// Plans Grant-v2, concrete binding and preflight after Safety is durable.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_f0_sandbox_admission(
+    context: &F0EffectAdmissionContext,
+    request: &SafetyRequestV1,
+    prepared: &PreparedToolCall,
+    grant: &InvocationGrant,
+    decision: &SafetyDecisionV1,
+    binding: &SandboxBindingV1,
+    dispatch_attempt_id: &str,
+) -> Result<PlannedF0EffectAdmission, SandboxPreflightError> {
+    validate_request(context, request, prepared, decision)?;
+    let execution = preflight_sandbox(
+        request.invocation_id(),
+        prepared,
+        grant,
+        decision,
+        binding,
+        dispatch_attempt_id,
+    )?;
+    let granted = content(&grant.granted_requirements)?;
+    let access_scope_digest = canonical_digest(binding.access_scope())?;
+    let enforcement_digest = binding
+        .enforcement()
+        .digest()
+        .map_err(|_| SandboxPreflightError::InvalidBinding)?;
+    let tool = ledger_tool(request)?;
+    let facts = vec![
+        fact(
+            context,
+            &tool,
             "authorized",
             "effect.authorized",
             2,
@@ -137,7 +137,9 @@ pub fn plan_f0_effect_admission(
                 "constraints_digest":grant.constraints_digest,"granted_requirements":granted,
             }),
         )?,
-        common(
+        fact(
+            context,
+            &tool,
             "bound",
             "sandbox.bound",
             1,
@@ -149,7 +151,9 @@ pub fn plan_f0_effect_admission(
                 "enforcement_digest":enforcement_digest,"effective_limits_digest":context.effective_limits_digest,
             }),
         )?,
-        common(
+        fact(
+            context,
+            &tool,
             "preflight",
             "sandbox.preflighted",
             1,
@@ -162,6 +166,62 @@ pub fn plan_f0_effect_admission(
         )?,
     ];
     Ok(PlannedF0EffectAdmission { execution, facts })
+}
+
+/// Plans the complete allowed F0 chain without crossing the dispatch boundary.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_f0_effect_admission(
+    context: &F0EffectAdmissionContext,
+    request: &SafetyRequestV1,
+    prepared: &PreparedToolCall,
+    grant: &InvocationGrant,
+    decision: &SafetyDecisionV1,
+    binding: &SandboxBindingV1,
+    dispatch_attempt_id: &str,
+) -> Result<PlannedF0EffectAdmission, SandboxPreflightError> {
+    let mut safety = plan_f0_safety_decision(context, request, prepared, decision)?;
+    let mut planned = plan_f0_sandbox_admission(
+        context,
+        request,
+        prepared,
+        grant,
+        decision,
+        binding,
+        dispatch_attempt_id,
+    )?;
+    safety.append(&mut planned.facts);
+    planned.facts = safety;
+    Ok(planned)
+}
+
+fn validate_request(
+    context: &F0EffectAdmissionContext,
+    request: &SafetyRequestV1,
+    prepared: &PreparedToolCall,
+    decision: &SafetyDecisionV1,
+) -> Result<(), SandboxPreflightError> {
+    validate_context(context)?;
+    if decision.disposition() != SafetyDisposition::Allow
+        || decision.invocation_id() != request.invocation_id()
+        || decision.prepared_digest() != prepared.input_digest()
+        || request.prepared_digest() != prepared.input_digest()
+        || request.tool_name() != prepared.tool_name()
+        || request.tool_revision() != prepared.tool_revision()
+        || request.sandbox_requirements_digest()
+            != prepared
+                .sandbox_requirements_digest()
+                .ok_or(SandboxPreflightError::InvalidBinding)?
+        || request.effective_policy_revision() != decision.policy_revision()
+    {
+        Err(SandboxPreflightError::InvalidBinding)
+    } else {
+        Ok(())
+    }
+}
+
+fn ledger_tool(request: &SafetyRequestV1) -> Result<LedgerToolId, SandboxPreflightError> {
+    LedgerToolId::try_from(request.invocation_id().as_str())
+        .map_err(|_| SandboxPreflightError::InvalidBinding)
 }
 
 fn validate_context(value: &F0EffectAdmissionContext) -> Result<(), SandboxPreflightError> {
