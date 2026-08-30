@@ -285,6 +285,24 @@ supported actions and geometry. Secure text fields expose no value. Garive's
 own credential/configuration surfaces and OS security prompts are protected
 targets unless a focused policy explicitly allows observation without input.
 
+The public macOS Accessibility SDK does not expose an AX window-number
+attribute or a public AX-to-`CGWindowID` conversion. Consequently the adapter
+must not treat a title, geometry, enumeration index or separately discovered
+CoreGraphics window as AX identity. The broker retains the exact enumerated
+`AXUIElement` behind an opaque Runtime window ID. Before and after observation
+it revalidates the signed application instance, re-enumerates that process's
+`AXWindows`, and requires CoreFoundation equality with the retained element.
+Bindings are local to one broker observer and cannot cross observer ownership.
+Restart, replacement, disappearance or a foreign binding fails as a changed
+target before any input.
+
+Native semantic projection is iterative and rejects cycles or duplicate AX
+objects. It enforces the caller's node and visible UTF-8 limits while reading,
+then emits a flat parent-before-child tree with one optional unique focus.
+Only the portable `press` and non-secure `set_value` capabilities are exposed;
+unknown native actions remain unavailable. Secure text values are never read,
+their value capability is withheld, and the result records native redaction.
+
 ### Computer Use tools
 
 ```text
