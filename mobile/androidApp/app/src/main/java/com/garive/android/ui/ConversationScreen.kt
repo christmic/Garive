@@ -1,6 +1,7 @@
 package com.garive.android.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -67,7 +68,7 @@ internal fun ConversationScreen(
 ) {
     val latest = state.timeline.lastOrNull()
     val agentName = state.sessions.firstOrNull { it.sessionId == state.selectedSessionId }?.agentName ?: "Agent work"
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Surface(color = MaterialTheme.colorScheme.background, shadowElevation = 1.dp) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),

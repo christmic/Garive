@@ -16,13 +16,13 @@ internal val GariveCoral = Color(0xFF315FCF)
 internal val GariveMint = Color(0xFF27825A)
 internal val GariveAmber = Color(0xFFA46816)
 internal val GariveFailure = Color(0xFFD85B63)
-internal val GariveInk = Color(0xFF111318)
-internal val GariveRaised = Color(0xFF1B1E25)
+internal val GariveInk = Color(0xFF000000)
+internal val GariveRaised = Color(0xFF111111)
 internal val GariveIvory = Color(0xFFF7F5EF)
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF8FAAFF),
-    onPrimary = Color(0xFF102657),
+    primary = Color(0xFF4F7CF7),
+    onPrimary = Color.White,
     secondary = Color(0xFF70D5A7),
     tertiary = Color(0xFFE7B46C),
     error = GariveFailure,
@@ -30,7 +30,7 @@ private val DarkColors = darkColorScheme(
     onBackground = GariveIvory,
     surface = GariveRaised,
     onSurface = GariveIvory,
-    surfaceVariant = Color(0xFF272A31),
+    surfaceVariant = Color(0xFF1C1C1E),
     onSurfaceVariant = Color(0xFFC2C3C8),
     outline = Color(0xFF4C4F58),
 )

@@ -81,14 +81,6 @@ internal fun WorkScreen(
     ) {
         item {
             DestinationHeader("Work", "Your Agent command center", state.connection, onRefresh)
-            Button(
-                onClick = onNewTask,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Text("New task", modifier = Modifier.padding(start = 8.dp))
-            }
         }
         if (state.sessions.isEmpty()) {
             item { EmptyWork(onNewTask) }
@@ -342,11 +334,11 @@ private fun DestinationHeader(
     connection: MobileConnectionState,
     onRefresh: (() -> Unit)?,
 ) {
-    Spacer(Modifier.height(20.dp))
+    Spacer(Modifier.height(14.dp))
     Row(verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.displaySmall)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
         if (onRefresh != null) {
             FilledIconButton(onClick = onRefresh) {
@@ -365,16 +357,15 @@ private fun DestinationHeader(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
         )
     }
-    Spacer(Modifier.height(14.dp))
+    Spacer(Modifier.height(10.dp))
 }
 
 @Composable
 private fun WorkCard(session: MobileSessionCard, onOpen: (String) -> Unit) {
     val largeText = LocalDensity.current.fontScale >= 1.6f
     Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, statusColor(session.status).copy(alpha = 0.28f)),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Transparent,
         modifier = Modifier.fillMaxWidth().clickable { onOpen(session.sessionId) },
     ) {
         if (largeText) {
@@ -387,7 +378,7 @@ private fun WorkCard(session: MobileSessionCard, onOpen: (String) -> Unit) {
                 WorkCardText(session)
             }
         } else {
-            Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 6.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                 WorkStatusIcon(session.status)
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     WorkCardText(session)
@@ -400,12 +391,12 @@ private fun WorkCard(session: MobileSessionCard, onOpen: (String) -> Unit) {
 
 @Composable
 private fun WorkStatusIcon(status: MobileWorkStatus) {
-    Surface(shape = CircleShape, color = statusColor(status).copy(alpha = 0.13f)) {
+    Surface(shape = CircleShape, color = Color.Transparent) {
         Icon(
             statusIcon(status),
             contentDescription = null,
             tint = statusColor(status),
-            modifier = Modifier.padding(10.dp).size(22.dp),
+            modifier = Modifier.padding(5.dp).size(20.dp),
         )
     }
 }

@@ -4,14 +4,18 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PeopleAlt
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -21,11 +25,17 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,10 +46,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.rememberDrawerState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.garive.mobile.application.MobileWorkController
@@ -52,6 +61,7 @@ import com.garive.mobile.preferences.Theme
 import kotlinx.coroutines.launch
 
 /** Connected Android product shell backed only by the shared controller. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GariveMobileApp(
     origin: String,
@@ -71,7 +81,7 @@ internal fun GariveMobileApp(
     var confirmAbandonRetry by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val showNavigationLabels = LocalDensity.current.fontScale < 1.6f
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
 
     LaunchedEffect(controller, wakeRoute) {
         state = controller.boot()
@@ -114,27 +124,104 @@ internal fun GariveMobileApp(
             onAbandonRetry = { confirmAbandonRetry = true },
         )
     } else {
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    navigationItems.forEach { item ->
-                        val label: (@Composable () -> Unit)? = if (showNavigationLabels) {
-                            { Text(item.label, maxLines = 1, overflow = TextOverflow.Clip) }
-                        } else {
-                            null
-                        }
-                        NavigationBarItem(
-                            selected = state.destination == item.destination,
-                            onClick = { state = controller.selectDestination(item.destination) },
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = label,
-                            alwaysShowLabel = showNavigationLabels,
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            drawerContent = {
+                ModalDrawerSheet(
+                    modifier = Modifier.width(300.dp).fillMaxHeight(),
+                    drawerContainerColor = MaterialTheme.colorScheme.background,
+                ) {
+                    Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp, vertical = 24.dp)) {
+                        Text("Garive", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 14.dp))
+                        Text(
+                            "Remote · ${origin.remoteHost()}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                         )
+                        navigationItems.forEach { item ->
+                            NavigationDrawerItem(
+                                label = { Text(item.label) },
+                                selected = state.destination == item.destination,
+                                icon = { Icon(item.icon, contentDescription = null) },
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                onClick = {
+                                    state = controller.selectDestination(item.destination)
+                                    scope.launch { drawerState.close() }
+                                },
+                            )
+                        }
+                        Text(
+                            "Recent",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(start = 14.dp, top = 24.dp, bottom = 8.dp),
+                        )
+                        state.sessions.take(4).forEach { session ->
+                            NavigationDrawerItem(
+                                label = {
+                                    Column {
+                                        Text(session.agentName, maxLines = 1)
+                                        Text(
+                                            session.status.label(),
+                                            color = statusColor(session.status),
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    }
+                                },
+                                selected = state.selectedSessionId == session.sessionId,
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                onClick = {
+                                    scope.launch {
+                                        state = controller.openSession(session.sessionId)
+                                        drawerState.close()
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             },
-        ) { padding ->
-            Column(Modifier.padding(padding)) {
+        ) {
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text("Remote", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    origin.remoteHost(),
+                                    color = if (state.connection == MobileConnectionState.ONLINE) {
+                                        GariveMint
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Rounded.Menu, contentDescription = "Open navigation")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                selectedAgent = state.agents.firstOrNull()
+                                state = controller.beginTask()
+                                showNewTask = true
+                            }) { Icon(Icons.Rounded.Add, contentDescription = "New task") }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                    )
+                },
+            ) { padding ->
+                Column(Modifier.padding(padding)) {
                 when (state.destination) {
                     MobileDestination.WORK -> WorkScreen(
                         state,
@@ -174,6 +261,7 @@ internal fun GariveMobileApp(
                 if (state.refreshing && state.sessions.isEmpty()) {
                     CircularProgressIndicator(modifier = Modifier.padding(24.dp))
                 }
+            }
             }
         }
     }
@@ -331,3 +419,5 @@ private val navigationItems = listOf(
 )
 
 private const val MAX_MOBILE_INPUT_BYTES = 16_384
+
+private fun String.remoteHost(): String = removePrefix("https://").removePrefix("http://").substringBefore('/').ifBlank { "service" }
