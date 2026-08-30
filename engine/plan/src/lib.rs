@@ -8,7 +8,10 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod lifecycle;
 mod topology;
+
+pub use lifecycle::{PlanSnapshot, PlanState, PlanTransition, StepProgress, StepState};
 
 const DEFINITION_CONTRACT: &str = "garive.plan-definition";
 const CONTRACT_VERSION: u8 = 1;
@@ -213,6 +216,11 @@ impl PlanStepV1 {
     pub const fn completion_criteria(&self) -> &BTreeSet<String> {
         &self.completion_criteria
     }
+
+    /// Returns the hard attempt limit for this step.
+    pub const fn max_attempts(&self) -> u32 {
+        self.max_attempts
+    }
 }
 
 /// Immutable canonical Plan revision content.
@@ -323,6 +331,11 @@ impl PlanDefinitionV1 {
     /// Returns steps in semantic declaration/tie-break order.
     pub fn steps(&self) -> &[PlanStepV1] {
         &self.steps
+    }
+
+    /// Returns immutable revision bounds.
+    pub const fn bounds(&self) -> &PlanBoundsV1 {
+        &self.bounds
     }
 
     /// Returns lowercase SHA-256 over the RFC 8785 definition.
