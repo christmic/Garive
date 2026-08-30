@@ -292,6 +292,16 @@ PTY tests passed. Strict all-target/all-feature Clippy passed with warnings
 denied; formatting and diff checks were clean. This is semantic-buffer and real
 PTY evidence, not a physical Terminal/iTerm2-class screenshot.
 
+Merge revision `1d1da7af` routes composer mouse placement and selection through
+the shared Unicode layout. On native macOS arm64, 11 editor, 42 view, 24
+snapshot/boundary, and all ten shipping-binary PTY tests passed. The added
+`100x24` mono Expect PTY enables SGR mouse capture, types `a界b`, presses before
+`界`, drags through `b`, observes reverse-video selection, types `X`, and
+observes `aX`. Normal quit emits mouse disable and alternate-screen restore.
+Strict all-target/all-feature Clippy passed with warnings denied; formatting
+and diff checks were clean. This remains executable PTY evidence rather than a
+physical-window screenshot.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

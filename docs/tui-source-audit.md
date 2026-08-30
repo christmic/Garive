@@ -152,12 +152,28 @@ Garive adopts the component and ownership pattern, not Grok's commands,
 previews, MRU ranking, or ACP/tool registry. Garive's smaller catalog is
 static, exact-prefix filtered, and bounded to five visible rows.
 
-The same pinned tree's `xai-ratatui-textarea/src/editor.rs:44-105` gives every
+The same pinned tree's
+`crates/codegen/xai-ratatui-textarea/src/editor.rs:44-105` gives every
 directional movement an explicit selection-collapse edge. Tests at
 `textarea_tests.rs:6437-6615` distinguish plain grapheme arrows, which stop at
 the chosen edge, from word/vertical/Home/End movements, which continue from
 that edge. Garive adopts this interaction invariant in its smaller editor
 model, not Grok's textarea implementation, keymap, kill ring, or mouse grammar.
+
+For mouse selection, the pinned Grok textarea directly implements
+Down/Drag/Up routing in
+`crates/codegen/xai-ratatui-textarea/src/textarea.rs:1157-1375`, and
+its tests at `textarea_tests.rs:4056-4198` bind cursor placement, drag anchors,
+selection persistence, and replacement-ready ranges. Grok's
+`crates/codegen/xai-grok-pager/src/app/agent_view/selection.rs:376-410`
+separately preserves prompt ownership for Drag/Up after the pointer leaves the
+prompt. At their pinned revisions, Codex explicitly drops mouse events in
+`codex-rs/tui/src/tui/event_stream.rs:189-250`, while
+Pi's editor has no mouse handler (its `stdin-buffer.ts:102-110` only frames SGR
+sequences). Garive therefore authors its own smaller grapheme/cell hit test and
+focus-cancel lifecycle; it adopts only the directly observed down/drag/up
+ownership invariant, not Grok's multi-click, clipboard, element, or accelerated
+edge-scroll behavior.
 
 ## Codex findings
 

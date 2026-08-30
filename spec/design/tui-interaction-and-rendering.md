@@ -198,6 +198,16 @@ edge and then performs that movement. This rule is independent of which end is
 the anchor and prevents backwards selections from producing asymmetric cursor
 jumps.
 
+With mouse capture enabled, left-button down inside the composer's text
+viewport places the cursor and anchors a drag. Left drag extends the same
+grapheme selection used by Shift movement; release commits the endpoint and
+ends capture. Drag events remain composer-owned after the pointer leaves the
+viewport and clamp to its nearest visible insertion point. A new press or
+terminal focus loss cancels transient drag ownership. Modal and inline-command
+hit regions retain higher priority, and composer border/padding never places a
+cursor. Mouse coordinates are interpreted by the composer's shared wrapped
+layout rather than by controller-owned row math.
+
 The editor accepts newline, tab-as-spaces, and printable Unicode. C0/C1 control
 characters other than newline/tab are rejected. Bidi isolate characters may be
 retained in the request but render with a visible safety marker; bidi override

@@ -208,6 +208,11 @@ When mouse capture is enabled, the wheel moves the selection while the pointer
 is over a selectable overlay and a left click activates the visibly hit row.
 Modal input never scrolls the conversation or opens a Session behind the
 overlay.
+Click inside composer text to place the cursor. Hold the left button and drag
+to select complete displayed characters; releasing leaves the selection ready
+for replacement or keyboard movement. Dragging just beyond the text viewport
+extends to its nearest visible insertion point. Borders and padding are inert,
+and switching terminal focus safely cancels an unfinished drag.
 
 ## Slash commands
 

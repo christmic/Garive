@@ -347,6 +347,15 @@ and all nine shipping-binary macOS PTYs passed. Strict all-target/all-feature
 Clippy, formatting, and diff checks passed. These results are executable
 semantic and PTY evidence; they do not close the physical-window image gate.
 
+Merge revision `1d1da7af` adds composer mouse placement and drag selection
+through the shared layout hit test. Eleven editor tests bind anchor-preserving
+grapheme placement, 42 view tests bind whitespace wrapping and CJK double-cell
+hit points, and 24 snapshot/boundary tests remain green. All ten
+shipping-binary macOS PTYs pass. The added SGR-mouse PTY selects `界b`, observes
+mono reverse video, replaces the selection with `X` to produce `aX`, and proves
+mouse-capture plus alternate-screen restoration. Strict all-target/all-feature
+Clippy, formatting, and diff checks pass.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the
