@@ -230,7 +230,7 @@ stored in `docs/evidence/tui-release-churn-2026-08-31.json`.
 
 | Platform | Build gate | Native/PTY gate |
 |---|---|---|
-| macOS arm64 | native release build, full TUI test, and strict Clippy verified | automated xterm-compatible and `TERM=dumb` PTYs verified; physical Apple Terminal plus one of iTerm2/WezTerm/Kitty, tmux, and screenshot gallery remain open |
+| macOS arm64 | native release build, full TUI test, and strict Clippy verified | automated xterm-compatible and `TERM=dumb` PTYs plus tmux 3.7c verified; physical Apple Terminal plus one of iTerm2/WezTerm/Kitty and screenshot gallery remain open |
 | Linux arm64 | native workspace build/test verified | xterm-compatible automated PTY verified; physical emulator, tmux, and `TERM=dumb` remain open |
 | Linux x86_64 | workspace build/test; source-level all-target check and strict Clippy are necessary but not sufficient | xterm-compatible PTY; tmux; `TERM=dumb` refusal/linear fallback |
 | Windows x86_64 | MSVC build/test; source-level all-target check and strict Clippy are necessary but not sufficient | Windows Terminal ConPTY; ACL execution; signal-equivalent restore |
@@ -251,8 +251,9 @@ physical terminal, tmux, and `TERM=dumb` rows remain open.
 The current macOS arm64 candidate rerun is pinned in
 [`../../docs/evidence/tui-macos-native-2026-08-31.md`](../../docs/evidence/tui-macos-native-2026-08-31.md).
 It covers release linking, all 75 TUI tests, strict Clippy, production
-Runtime/file-SQLite/PTTY execution, and the automatic `TERM=dumb` accessible
-fallback. The locked login session prevented real-window screenshot admission.
+Runtime/file-SQLite/PTTY execution, the automatic `TERM=dumb` accessible
+fallback, and native tmux 3.7c with exact terminal restoration. The locked
+login session prevented real-window screenshot admission.
 
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
