@@ -62,6 +62,35 @@ fn hostile_permissions_and_invalid_preference_shape_are_rejected() {
     );
 }
 
+#[test]
+fn history_compacts_duplicates_ignores_torn_tail_and_quarantines_corruption() {
+    use std::io::Write;
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let store = StateStore::open(Some(root.clone()), false).unwrap();
+    let entry = PromptHistoryEntry {
+        schema_version: 1,
+        entry_id: "entry-1".into(),
+        session_id: "session-1".into(),
+        submitted_text: "hello".into(),
+        submitted_at: "2026-08-30T00:00:00Z".into(),
+    };
+    store.append_history(&entry).unwrap();
+    store.append_history(&entry).unwrap();
+    assert_eq!(store.load_history().unwrap().len(), 1);
+    let path = root.join("prompt-history.v1.jsonl");
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .write_all(b"{torn")
+        .unwrap();
+    assert_eq!(store.load_history().unwrap().len(), 1);
+    fs::write(&path, b"{corrupt}\n").unwrap();
+    assert_eq!(store.load_history(), Err(StateError::InvalidData));
+    assert_eq!(fs::read_dir(root.join("quarantine")).unwrap().count(), 1);
+}
+
 fn command(id: &str, text: &str) -> PendingCommand {
     PendingCommand {
         schema_version: 1,

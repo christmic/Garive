@@ -27,6 +27,10 @@ pub(crate) struct StateStore {
 }
 
 impl StateStore {
+    pub(crate) fn is_ephemeral(&self) -> bool {
+        self.root.is_none()
+    }
+
     pub(crate) fn open(
         override_root: Option<PathBuf>,
         ephemeral: bool,
@@ -124,6 +128,22 @@ impl StateStore {
         })
     }
 
+    pub(crate) fn load_history(&self) -> Result<Vec<PromptHistoryEntry>, StateError> {
+        let Some(root) = &self.root else {
+            return Ok(Vec::new());
+        };
+        let path = root.join("prompt-history.v1.jsonl");
+        validate_private_file_if_present(&path)?;
+        match read_history_file(&path) {
+            Ok(value) => Ok(value),
+            Err(StateError::InvalidData) => {
+                quarantine(root, &path, "prompt-history")?;
+                Err(StateError::InvalidData)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     pub(crate) fn append_history(&self, entry: &PromptHistoryEntry) -> Result<(), StateError> {
         entry.validate()?;
         let Some(root) = &self.root else {
@@ -132,12 +152,26 @@ impl StateStore {
         with_lock(root, "history.lock", || {
             let path = root.join("prompt-history.v1.jsonl");
             validate_private_file_if_present(&path)?;
-            let bytes = serde_jcs::to_vec(entry).map_err(|_| StateError::InvalidData)?;
-            let mut file = private_open_append(&path)?;
-            file.write_all(&bytes)
-                .and_then(|_| file.write_all(b"\n"))
-                .and_then(|_| file.sync_all())
-                .map_err(|_| StateError::Unavailable)
+            let mut entries = match fs::metadata(&path) {
+                Ok(_) => read_history_file(&path)?,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+                Err(_) => return Err(StateError::Unavailable),
+            };
+            if entries.last().is_some_and(|last| {
+                last.session_id == entry.session_id && last.submitted_text == entry.submitted_text
+            }) {
+                entries.pop();
+            }
+            entries.push(entry.clone());
+            if entries.len() > 500 {
+                entries.drain(..entries.len() - 500);
+            }
+            let mut bytes = history_bytes(&entries)?;
+            while bytes.len() as u64 > MAX_FILE_BYTES && !entries.is_empty() {
+                entries.remove(0);
+                bytes = history_bytes(&entries)?;
+            }
+            atomic_write(root, "prompt-history.v1.jsonl", &bytes)
         })
     }
 
@@ -190,6 +224,46 @@ fn atomic_write(root: &Path, relative: &str, bytes: &[u8]) -> Result<(), StateEr
         let _ = fs::remove_file(temporary);
     }
     result
+}
+
+fn read_history_file(path: &Path) -> Result<Vec<PromptHistoryEntry>, StateError> {
+    let bytes = fs::read(path).map_err(|_| StateError::Unavailable)?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(StateError::InvalidData);
+    }
+    let complete = bytes
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(&[][..], |index| &bytes[..index]);
+    if complete.is_empty() {
+        return Ok(Vec::new());
+    }
+    complete
+        .split(|byte| *byte == b'\n')
+        .map(|line| {
+            let value: PromptHistoryEntry =
+                serde_json::from_slice(line).map_err(|_| StateError::InvalidData)?;
+            value.validate()?;
+            Ok(value)
+        })
+        .collect()
+}
+
+fn history_bytes(entries: &[PromptHistoryEntry]) -> Result<Vec<u8>, StateError> {
+    let mut output = Vec::new();
+    for entry in entries {
+        output.extend(serde_jcs::to_vec(entry).map_err(|_| StateError::InvalidData)?);
+        output.push(b'\n');
+    }
+    Ok(output)
+}
+
+fn quarantine(root: &Path, path: &Path, category: &str) -> Result<(), StateError> {
+    let target = root
+        .join("quarantine")
+        .join(format!("{category}-{}.json", Uuid::new_v4()));
+    fs::rename(path, target).map_err(|_| StateError::Unavailable)?;
+    sync_directory(&root.join("quarantine"))
 }
 
 fn with_lock<T>(
@@ -269,17 +343,6 @@ fn private_open(path: &Path) -> Result<File, StateError> {
         .open(path)
         .map_err(|_| StateError::Unavailable)
 }
-#[cfg(unix)]
-fn private_open_append(path: &Path) -> Result<File, StateError> {
-    use std::os::unix::fs::OpenOptionsExt;
-    OpenOptions::new()
-        .append(true)
-        .create(true)
-        .mode(0o600)
-        .open(path)
-        .map_err(|_| StateError::Unavailable)
-}
-
 #[cfg(not(unix))]
 compile_error!("secure Garive TUI local state is currently implemented for Unix targets only");
 
