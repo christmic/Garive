@@ -13,12 +13,14 @@ tauri-build = { version = "2.6.3", features = [] }
 base64.workspace = true
 chrono.workspace = true
 garive-core = { path = "../../engine/core" }
+garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }
 garive-provider-profile = { path = "../../providers/profile" }
 garive-runtime = { path = "../../runtime/replica" }
+garive-tools = { path = "../../engine/tools" }
 serde.workspace = true
 serde_json.workspace = true
 serde_jcs.workspace = true

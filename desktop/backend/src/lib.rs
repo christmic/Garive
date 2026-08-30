@@ -19,6 +19,7 @@ mod system_configuration;
 mod system_provider;
 mod workspace;
 mod workspace_bookmark;
+mod workspace_execution;
 
 /// Durable path-free Workspace attachment exposed to Desktop clients.
 pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
@@ -50,6 +51,7 @@ pub use workspace_bookmark::{
     DesktopWorkspaceBookmarkStore, SystemDesktopWorkspaceBookmarkStore,
     DESKTOP_WORKSPACE_BOOKMARK_SERVICE, DESKTOP_WORKSPACE_MANIFEST_FILE,
 };
+pub use workspace_execution::DesktopWorkspaceExecutionFactory;
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.
 pub trait DesktopOperations: Send + Sync {

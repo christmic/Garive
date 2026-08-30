@@ -702,6 +702,26 @@ impl DesktopWorkspaceService {
         Ok(upgraded)
     }
 
+    pub(crate) fn resolve_write_root(
+        &self,
+        workspace_id: &str,
+        grant_revision: u64,
+        owner_window: &str,
+    ) -> Result<PathBuf, DesktopWorkspaceError> {
+        let grant = self.verify(workspace_id, owner_window)?;
+        if grant.access != "read_write" || grant.grant_revision != grant_revision {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        active
+            .get(workspace_id)
+            .map(|workspace| workspace.canonical_root.clone())
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)
+    }
+
     /// Revokes one exact capability and drops its private root immediately.
     pub fn revoke(
         &self,
