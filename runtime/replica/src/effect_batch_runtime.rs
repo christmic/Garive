@@ -297,6 +297,14 @@ fn validate_inputs(
             return Err(BatchRuntimeError::InvalidBinding);
         }
     }
+    if plan.steps().iter().any(|step| match step {
+        EffectBatchStep::ParallelReadGroup { intent_indexes } => {
+            intent_indexes.len() > limits.max_parallel_reads
+        }
+        EffectBatchStep::SequentialStep { .. } => false,
+    }) {
+        return Err(BatchRuntimeError::InvalidBinding);
+    }
     Ok(())
 }
 
