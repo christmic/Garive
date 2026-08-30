@@ -80,11 +80,15 @@ final class MobileViewModel: ObservableObject {
     }
 
     func signOut() {
+        let previous = credentials
         store.clear()
         state = controller?.signOut()
         controller = nil
         credentials = nil
         errorCode = nil
+        if let previous, let client = try? GatewayPairingClient(baseUrl: previous.origin, maxResponseBytes: 8_192) {
+            client.revoke(accessGrant: previous.accessGrant) { _ in }
+        }
     }
 
     private func connect(_ value: ConnectionCredentials, persist: Bool) {

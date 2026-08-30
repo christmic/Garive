@@ -65,6 +65,9 @@ private fun GariveRoot(store: AndroidConnectionStore) {
         ConnectedRoot(current) {
             store.clear()
             connection = null
+            scope.launch {
+                runCatching { GatewayPairingClient(current.origin).revoke(current.accessGrant) }
+            }
         }
     }
 }

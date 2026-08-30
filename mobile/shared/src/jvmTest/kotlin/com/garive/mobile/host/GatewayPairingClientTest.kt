@@ -73,5 +73,20 @@ public class GatewayPairingClientTest {
         assertFalse("must-not-leak" in error.toString())
     }
 
+    @Test
+    public fun revokesExactGrantOnDedicatedRoute(): Unit = runBlocking {
+        var path = ""
+        var authorization = ""
+        val engine = MockEngine { request ->
+            path = request.url.encodedPath
+            authorization = request.headers["Authorization"].orEmpty()
+            respond(content = "", status = HttpStatusCode.NoContent)
+        }
+        val client = GatewayPairingClient("https://agent.example.test/", 8_192, HttpClient(engine))
+        client.revoke("grant-at-least-twenty-characters")
+        assertEquals("/v1/mobile/grants/self:revoke", path)
+        assertEquals("Bearer grant-at-least-twenty-characters", authorization)
+    }
+
     private fun publicKey(): String = "A".repeat(43)
 }

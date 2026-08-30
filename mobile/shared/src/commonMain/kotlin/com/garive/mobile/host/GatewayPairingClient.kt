@@ -2,10 +2,12 @@ package com.garive.mobile.host
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.post
+import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CancellationException
@@ -91,6 +93,25 @@ public class GatewayPairingClient internal constructor(
             fail(HostClientError.INVALID_EVENT)
         }
         return PairingGrant(grant, deviceId, expiresAt)
+    }
+
+    /** Best-effort authenticated revocation used after native storage clears locally. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun revoke(accessGrant: String): Unit {
+        if (accessGrant.length !in 20..4_096 || accessGrant.any { it.code !in 0x21..0x7e }) {
+            fail(HostClientError.INVALID_COMMAND)
+        }
+        val response = try {
+            client.post {
+                url("$origin/v1/mobile/grants/self:revoke")
+                header(HttpHeaders.Authorization, "Bearer $accessGrant")
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            fail(HostClientError.TRANSPORT_FAILURE)
+        }
+        if (response.status.value != 204) fail(HostClientError.HOST_FAILURE, response.status.value)
     }
 }
 
