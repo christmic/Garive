@@ -7,6 +7,7 @@ mod audit;
 mod control_plan;
 mod control_plan_values;
 mod control_plane;
+mod control_snapshot_values;
 mod erasure;
 mod hypothesis;
 mod lifecycle;
@@ -31,6 +32,10 @@ pub use control_plan_values::{
 pub use control_plane::{
     parse_memory_document, MemoryControlDocument, MemoryControlError, MemoryDocumentLimits,
     MemoryRecordRef,
+};
+pub use control_snapshot_values::{
+    MemorySnapshot, MemorySnapshotEntry, MemorySnapshotFile, MemorySnapshotLimits,
+    MemorySnapshotManifest,
 };
 pub use erasure::{
     record_memory_erasure, ErasureDisposition, ErasureTargetKind, ErasureTargetStatus,
