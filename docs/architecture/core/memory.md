@@ -275,22 +275,91 @@ This is the **third application** of the kind philosophy:
 All three are append-only vocabularies. All three reject
 undeclared entries. The runtime **does not invent**.
 
-### Four write sources
+### Four write sources — by **value density**
 
-Memory is produced by **four sources**:
+Memory is produced by **four sources**, ordered by how
+**expensive** the failure is to lose (high value density
+first):
 
-| Source | Pipeline | Trigger |
-|--------|----------|---------|
-| **`dream` extraction** | `dream` watermark walks ledger, runs ADD/UPDATE/DELETE/NOOP four-decision per candidate, writes to memory | Background, scheduled |
-| **Explicit user statement** | "remember this" → direct insert | When user types it |
-| **`exit_summary` deposit** | Round-end → runways / plans → lessons | At every `agent_turn` end |
-| **Session-end flush** | Episode index → episodic memory entry | At session end |
+| Source | When | What it processes | Reason |
+|--------|------|--------------------|--------|
+| **Hot capture** | `exit_summary` fires | **Lessons** — failures, paths-don't-work, runways | Failure is the most expensive raw material — can't wait for batch processing; land immediately |
+| **Explicit user statement** | User types "remember this" | **User declaration** — preferences, rules, corrections | No extraction needed; write directly as `user_declared` |
+| **Session-end light extraction** | Turn / session end | **Episode index + salient facts** | Cheap and fast; guarantees every session yields an entry |
+| **dream deep distillation** | Scheduled batch (gated by ≥ `min_hours` since last + ≥ `min_sessions` new) | Episode → facts / lessons batch distillation | Heavy work accumulates; cheap model; batch-run |
 
-The **`dream` pipeline** is the load-bearing one — it does
-candidate → extract → dedupe → conflict-resolve → store, with
-**four decisions** (ADD / UPDATE / DELETE / NOOP) per candidate.
-The four-decision model is borrowed from **Mem0** (see
-angle ④).
+> **Principle: high-value-low-volume hot-captured;
+> low-value-high-volume batch-distilled.**
+
+### Who extracts — accuracy + confidence
+
+The extractor is a **new role** in the model-invoke
+machinery: `role = extractor`, with a **medium/cheap model**
+(by default — extraction is high-throughput). Extraction
+is **schema-constrained structured pulling**, not free-form
+generation.
+
+**Three pillars of accuracy:**
+
+1. **Evidence-mandatory** (anti-hallucination core):
+   Every extraction carries `source_session + source_seq`
+   range. Extractions **without an anchor are rejected**.
+   Same philosophy as `governance.judge`'s evidence and
+   `compaction.summary`'s structured fields: no anchor, no
+   entry.
+
+2. **Confidence-grading**: each entry carries a `confidence`
+   synthesised from three signals:
+   - **Evidence strength** — direct quote from the source >
+     inferred.
+   - **Reproduction count** — multiple sessions arriving at
+     the same conclusion → bump.
+   - **Use feedback** — recalled + helped success → bump;
+     recalled + linked to failure → drop.
+
+3. **Candidate-period regime** — new entries don't take
+   effect immediately. They enter as **candidate** (low
+   confidence, recallable but flagged "pending verification").
+   Promotion to `active` only after a successful use or
+   explicit user confirmation.
+
+> **"Extract wide, trust slow."** The admission gate is
+> open (four-triggers cover most signals); the trust gate is
+> strict (real-world use must validate).
+
+**Correlation is not solved at extraction time** — extraction
+catches **"remember"**, recall catches **"remembered"**.
+The write-side admission check uses only the three
+questions (does it generalise? is it stable? is it already
+present?) to filter obvious irrelevance.
+
+### Item state machine — promotion / demotion / archival
+
+```
+                  candidate ──验证成功──→ active ──长期未用──→ cold ──超期──→ archived
+                     │                    │                  │
+                     │                    ├──被证伪──────→ retired
+                     │                    └──superseded──→ superseded
+                     │
+                     ├──graduated────→ graduated (记忆条目变指针，指向知识页)
+                     │
+                  情景降权 (dream 蒸馏时)
+```
+
+| Transition | Trigger | Rule |
+|------------|---------|-------|
+| candidate → active | Successful use × 1, or user confirms | Active means "trusted for recall without a tag" |
+| active → cold | Attenuation mechanism / dream / audit | Normal decay — entry gets less recall priority |
+| cold → archived | N days unreferenced, **not** Lesson (Lesson exempt from auto-decay) | Compression: leave the recall pool but keep auditable history |
+| superseded | New fact invalidates the old | Old entry keeps history; flagged as superseded, not deleted |
+| graduated | Verified + consolidated, promoted to a knowledge page | Original entry becomes a pointer to the knowledge page; **memory is the raw-material library, knowledge is the graduation destination** |
+| 情景降权 | dream batch distillation | Episode down-weighted after distillation; lessons stay evergreen |
+
+> **Discipline:** every transition leaves a trail
+> (when, by what trigger). The memory's own history is
+> auditable.
+
+
 
 ## ④ External framework survey (what we borrow, what we don't)
 
@@ -327,18 +396,95 @@ commit-before-context and restart recovery. A future physically separate
 `memory.db` is an adapter choice, not an accepted domain boundary; it must first
 prove atomic coordination and recovery without a cross-database transaction.
 
-## ⑥ Read paths
+## ⑥ Read paths — four ways × five timings
 
-Recall is **one of `derive`'s injection paths** — the same
-slots `harness.feature` and the reminder channel use:
+### Four recall **ways** (the methods)
 
-- **When** — turn start (cold-scan episodic), intent-triggered
-  (hot-scan semantic + lessons), periodic (procedural
-  refresh)
-- **Budget** — `memory` share of the surface is bounded by
-  `MemoryTypeRegistry.recall_profile.budget`
-- **Two-stage retrieval** — bounded menu push followed by explicit detail pull
-- **Ranking** — exact deterministic score/tie-break policy plus a replayable
+| Way | What it solves |
+|-----|----------------|
+| **Vector semantic search** | Fuzzy recall — "the deployment issue from last time" |
+| **FTS keyword** | Exact terms — tool name, error string |
+| **Recency scan** | Recent context continuity — what's been on the surface lately |
+| **Menu index (always-on)** | Discoverability — framework injects a lightweight catalog so the agent knows **what's available** |
+
+### Ranking fusion
+
+```
+score = relevance × recency × importance × confidence
+       (capped, normalised, deterministic tie-break)
+```
+
+Top-k entries fill the **memory budget slice** of the
+surface (e.g. 10 % of window — exact value per
+`MemoryTypeRegistry.recall_profile`).
+
+### Five recall **timings**
+
+| Timing | Mechanism | Direction |
+|--------|-----------|-----------|
+| **Turn start** | `derive`'s memory injector — query is `user.msg + goal` | Framework **push** (menu + relevant top-k) |
+| **Turn mid** | Agent calls `memory-search` tool when needed | Agent **pull** (entry detail on demand) |
+| **Explicit ask** | User says "我们上次怎么定的" / agent asks | User-triggered / agent pull |
+| **Risk action** | `governance.judge` flags high-risk → recall same-class lessons → feed to `AskUser` context | **Governance × memory fusion** |
+| **dream** | Distillation reads memory entries | Internal |
+
+> **Risk-action recall is the governance × memory
+> fusion.** Before `AskUser`, the system queries "did this
+> kind of action ever go wrong before?" — if so, the
+> lesson is laid alongside the approval. **Approval goes
+> from "blind" to "informed"**.
+
+### Mixing push and pull — the menu/index trick
+
+The push half (menu index) keeps the memory's existence
+**always on the agent's radar** without forcing the full
+content onto the surface. The pull half lets the agent
+choose when the detail is relevant. This hybrid avoids the
+two pure-mode failure modes:
+
+- **Pure push** (everything on every surface) — bloats the
+  surface, dilutes attention, costs tokens.
+- **Pure pull** (tool-only) — the agent doesn't know what it
+> doesn't know; if it forgets to call the recall tool, the
+> memory is invisible.
+
+### Push/pull split by content type (re-stated for ⑥)
+
+| Content | Push? | Pull? | Why |
+|---------|-------|-------|-----|
+| Preferences (`user_declared`) | ✅ Every turn | — | Law must take effect unconditionally; can't rely on the agent "remembering to check" |
+| Memory menu (index) | ✅ Every turn | — | Discoverability — the agent sees the catalog, decides when to drill in |
+| Memory detail | — | ✅ On demand | Body is large; agent decides relevance |
+| Procedural (playbook) | partial — cached hint | ✅ On demand | Sometimes useful pre-loaded; full body on demand |
+
+## ⑧ Retrieval quality — five gates
+
+Memory's **delivered shape is "a hypothesis with epistemic
+tags"**, not "an assertion". Five gates ensure the recall
+contract holds; none of them alone is sufficient.
+
+| # | Gate | What it does |
+|---|------|--------------|
+| 1 | **Confidence gate** | Below threshold → don't inject; or inject with explicit `low-confidence` tag so the model downweights it |
+| 2 | **Freshness gate** | `facts` type — `last_verified` overdue → tag `stale` or re-verify before injecting (**Lesson exempt** — lesson semantics differ from fact) |
+| 3 | **Cognitive-transparent injection** | The injection format carries `source_session + source_seq + confidence + "may be outdated"`-style wording — model knows it's a witness, not a notary. The model self-weights; verifies when critical. |
+| 4 | **Post-use verification loop** | The recalled memory was acted on and reality disagreed (model looked for the file the memory said existed — file is not there). Contradiction captured → entry automatically downgraded to candidate, `confidence` recomputed, candidate re-verified. **Reality closes the loop on memory.** |
+| 5 | **Conflict presentation** | Two recalled memories contradict — **don't silently pick one**. High-confidence wins + flag the conflict, or present both. The agent makes the call; the runtime flags the tension. |
+
+### Three-party sharing — the shared accountability
+
+| Party | What it owns |
+|-------|--------------|
+| **Framework** (admission gates 1, 2, 5) | Confidence / freshness gate; conflict surfacing |
+| **Model** (using the memory) | Self-weighting; verifies when critical |
+| **Reality** (post-use loop, gate 4) | Closes the loop — the test that makes memory honest |
+
+**No single party guarantees accuracy** — and that's the
+whole point. **`agent_learned` is a falsifiable hypothesis**.
+It does not become law. The user's `user_declared` entries
+are the only law.
+
+
   exploration choice; no implicit vector/FTS dependency is part of M1
 
 ## ⑦ Maintenance policies — promotion + anti-bloat
@@ -407,14 +553,6 @@ of the memory lifecycle:
 
 Bloat is intercepted at **every** of the four gates, with exact decisions and
 bounds owned by M1 rather than prose defaults here.
-
-## ⑧ Retrieval quality
-
-"Stored but unrecalled = dead". "Recalled at the right time =
-useful". M1 pins a deterministic synthetic regression for menu/detail recall,
-exposure, evidence and scope behavior. Representative empirical quality,
-production thresholds, and a knowledge-graph comparison remain external
-evidence gates; synthetic conformance is not a product-quality claim.
 
 ## Landscape — three swimlanes + one extraction channel
 
