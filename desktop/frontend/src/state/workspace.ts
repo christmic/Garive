@@ -1,4 +1,4 @@
-import type { DesktopCapabilities, HostActivity, HostResult, HostSuspension, HostTimelinePage } from "../ipc/host";
+import type { DesktopCapabilities, HostActivity, HostArtifact, HostArtifactPage, HostResult, HostSuspension, HostTimelinePage } from "../ipc/host";
 
 export type BootState = "loading" | "ready" | "unavailable";
 export type WorkPhase = "idle" | "submitting";
@@ -19,6 +19,7 @@ export interface WorkState {
   readonly sessionId?: string;
   readonly messages: readonly WorkMessage[];
   readonly activities: readonly HostActivity[];
+  readonly artifacts: readonly HostArtifact[];
   readonly draft: string;
   readonly error?: string;
   readonly inspectorOpen: boolean;
@@ -33,6 +34,7 @@ export type WorkEvent =
   | { readonly type: "submission_succeeded"; readonly input: string; readonly result: HostResult }
   | { readonly type: "submission_failed"; readonly code: string }
   | { readonly type: "session_loaded"; readonly timeline: HostTimelinePage }
+  | { readonly type: "artifacts_loaded"; readonly page: HostArtifactPage }
   | { readonly type: "new_work" }
   | { readonly type: "inspector_toggled" }
   | { readonly type: "inspector_selected"; readonly tab: InspectorTab }
@@ -43,6 +45,7 @@ export const initialWorkState: WorkState = {
   phase: "idle",
   messages: [],
   activities: [],
+  artifacts: [],
   draft: "",
   inspectorOpen: false,
   inspectorTab: "activity",
@@ -88,9 +91,14 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
         sessionId: event.timeline.session_id,
         messages: timelineMessages(event.timeline),
         activities: event.timeline.items.flatMap((item) => item.activities),
+        artifacts: [],
         draft: "",
         error: undefined,
       };
+    case "artifacts_loaded":
+      return event.page.session_id === state.sessionId
+        ? { ...state, artifacts: event.page.items }
+        : state;
     case "new_work":
       return {
         ...initialWorkState,

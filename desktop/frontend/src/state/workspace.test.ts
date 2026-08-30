@@ -76,4 +76,24 @@ describe("Desktop work state", () => {
     expect(state.activities).toHaveLength(1);
     expect(state.activities[0]?.state).toBe("completed");
   });
+
+  it("admits Artifact projections only for the currently loaded Session", () => {
+    const loaded = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
+      api_version: "v1", session_id: "session-1", scanned_through_position: 1,
+      observed_max_position: 1, has_more: false, items: [],
+    } });
+    const artifact = { api_version: "v1" as const, artifact_id: "artifact-1", revision: 1,
+      session_id: "session-1", turn_id: "turn-1", display_name: "brief.md", kind: "document",
+      mime_type: "text/markdown", byte_size: 7, content_digest: "a".repeat(64),
+      committed_position: 9, verification: "not_run", preview: "text",
+      workspace_id: "workspace-1", revealable: true, exportable: true };
+    const stale = reduceWork(loaded, { type: "artifacts_loaded", page: { api_version: "v1",
+      session_id: "session-old", items: [artifact], scanned_through_position: 9,
+      observed_max_position: 9, has_more: false } });
+    expect(stale.artifacts).toEqual([]);
+    const current = reduceWork(loaded, { type: "artifacts_loaded", page: { api_version: "v1",
+      session_id: "session-1", items: [artifact], scanned_through_position: 9,
+      observed_max_position: 9, has_more: false } });
+    expect(current.artifacts).toEqual([artifact]);
+  });
 });

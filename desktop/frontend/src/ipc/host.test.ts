@@ -4,7 +4,7 @@ import {
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
   authorizeWorkspaceWrites, getWorkspaceRecoveryStatus, listWorkspaceAuthorizations,
-  reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
+  getArtifactPreview, listArtifacts, reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
   runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
@@ -63,6 +63,27 @@ describe("desktop Host IPC", () => {
     };
     expect(await getRecentSessions(12, invoke)).toEqual([{ session_id: "session-1" }]);
     expect((await getSessionTimeline("session-1", 0, 32, invoke)).session_id).toBe("session-1");
+  });
+
+  it("projects and previews one exact immutable Artifact without paths", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push({ command, args });
+      if (command === "list_artifacts") return { api_version: "v1", session_id: "session-1",
+        items: [{ artifact_id: "artifact-1", revision: 2, committed_position: 17 }],
+        scanned_through_position: 17, observed_max_position: 17, has_more: false } as T;
+      return { schema_version: 1, artifact_id: "artifact-1", revision: 2,
+        kind: "text", content_utf8: "verified", truncated: false } as T;
+    };
+    const page = await listArtifacts("session-1", 7, 12, invoke);
+    const preview = await getArtifactPreview("session-1", page.items[0], invoke);
+    expect(preview.content_utf8).toBe("verified");
+    expect(calls).toEqual([
+      { command: "list_artifacts", args: { sessionId: "session-1", afterPosition: 7, limit: 12 } },
+      { command: "get_artifact_preview", args: { sessionId: "session-1",
+        artifactId: "artifact-1", revision: 2, committedPosition: 17 } },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("/Users/");
   });
 
   it("keeps setup credential in the write-only commit command", async () => {

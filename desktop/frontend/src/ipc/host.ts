@@ -59,6 +59,29 @@ export interface HostTimelinePage {
   readonly has_more: boolean;
 }
 
+/** One immutable Artifact fact projected by the embedded Runtime. */
+export interface HostArtifact {
+  readonly api_version: "v1"; readonly artifact_id: string; readonly revision: number;
+  readonly session_id: string; readonly turn_id: string; readonly display_name: string;
+  readonly kind: string; readonly mime_type: string; readonly byte_size: number;
+  readonly content_digest: string; readonly committed_position: number;
+  readonly verification: string; readonly preview: "text" | "unavailable" | string;
+  readonly workspace_id?: string; readonly revealable: boolean; readonly exportable: boolean;
+}
+
+/** Bounded immutable Artifact projection page. */
+export interface HostArtifactPage {
+  readonly api_version: "v1"; readonly session_id: string; readonly items: readonly HostArtifact[];
+  readonly scanned_through_position: number; readonly observed_max_position: number;
+  readonly has_more: boolean;
+}
+
+/** Digest-verified content returned only for one exact Artifact revision. */
+export interface ArtifactPreview {
+  readonly schema_version: 1; readonly artifact_id: string; readonly revision: number;
+  readonly kind: "text"; readonly content_utf8: string; readonly truncated: boolean;
+}
+
 export interface SetupProfile {
   readonly profile_id: string; readonly display_name_key: string;
   readonly endpoint_mode: "fixed" | "optional_override";
@@ -164,6 +187,33 @@ export async function getSessionTimeline(
   if (!sessionId) throw new Error("invalid_request");
   return invoke<HostTimelinePage>("get_session_timeline", {
     sessionId, afterPosition, limit,
+  });
+}
+
+/** Restores immutable Artifacts without exposing backing filesystem paths. */
+export async function listArtifacts(
+  sessionId: string,
+  afterPosition = 0,
+  limit = 64,
+  invoke: Invoke = tauriInvoke,
+): Promise<HostArtifactPage> {
+  if (!sessionId || afterPosition < 0 || limit < 1 || limit > 64) {
+    throw new Error("invalid_request");
+  }
+  return invoke<HostArtifactPage>("list_artifacts", { sessionId, afterPosition, limit });
+}
+
+/** Requests a bounded preview using only backend-verified Artifact coordinates. */
+export async function getArtifactPreview(
+  sessionId: string,
+  artifact: Pick<HostArtifact, "artifact_id" | "revision" | "committed_position">,
+  invoke: Invoke = tauriInvoke,
+): Promise<ArtifactPreview> {
+  if (!sessionId || !artifact.artifact_id || artifact.revision < 1
+      || artifact.committed_position < 1) throw new Error("artifact_not_found");
+  return invoke<ArtifactPreview>("get_artifact_preview", {
+    sessionId, artifactId: artifact.artifact_id, revision: artifact.revision,
+    committedPosition: artifact.committed_position,
   });
 }
 
