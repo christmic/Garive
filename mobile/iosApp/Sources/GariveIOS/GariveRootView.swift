@@ -70,30 +70,39 @@ private struct RemoteWorkspaceView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let wide = geometry.size.width >= 700
             ZStack(alignment: .leading) {
-                NavigationStack {
-                    destinationView
-                        .safeAreaInset(edge: .top, spacing: 0) {
-                            if state.destination != .conversation,
-                               let code = state.noticeCode {
-                                MobileNoticeBanner(
-                                    code: code,
-                                    pending: state.pendingCommand != nil,
-                                    dismiss: model.dismissNotice,
-                                    retry: model.retryExact,
-                                    abandon: { confirmingAbandonRetry = true }
-                                )
+                HStack(spacing: 0) {
+                    if wide {
+                        RemoteSidebar(model: model, state: state, host: remoteHost, close: {})
+                            .frame(width: 300)
+                    }
+                    NavigationStack {
+                        destinationView
+                            .safeAreaInset(edge: .top, spacing: 0) {
+                                if state.destination != .conversation,
+                                   let code = state.noticeCode {
+                                    MobileNoticeBanner(
+                                        code: code,
+                                        pending: state.pendingCommand != nil,
+                                        dismiss: model.dismissNotice,
+                                        retry: model.retryExact,
+                                        abandon: { confirmingAbandonRetry = true }
+                                    )
+                                }
                             }
-                        }
-                        .toolbar {
-                            ToolbarItem(placement: .navigation) {
-                                Button { withAnimation(.snappy) { sidebarPresented = true } } label: {
-                                    Image(systemName: "line.3.horizontal")
-                                }.accessibilityLabel("Open navigation")
+                            .toolbar {
+                                if !wide {
+                                    ToolbarItem(placement: .navigation) {
+                                        Button { withAnimation(.snappy) { sidebarPresented = true } } label: {
+                                            Image(systemName: "line.3.horizontal")
+                                        }.accessibilityLabel("Open navigation")
+                                    }
+                                }
                             }
-                        }
+                    }
                 }
-                if sidebarPresented {
+                if sidebarPresented && !wide {
                     Color.black.opacity(0.42).ignoresSafeArea()
                         .onTapGesture { withAnimation(.snappy) { sidebarPresented = false } }
                         .transition(.opacity)

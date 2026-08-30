@@ -278,7 +278,8 @@ struct SessionRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(session.agentName).font(.body).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("\(session.turnCount) turns · \(shortID)").font(.caption).foregroundStyle(.secondary)
+            Text("\(session.turnCount) \(session.turnCount == 1 ? "turn" : "turns") · \(statusLabel)")
+                .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -288,7 +289,9 @@ struct SessionRow: View {
             .accessibilityHidden(true)
     }
 
-    private var shortID: String { String(session.sessionId.prefix(8)) }
+    private var statusLabel: String {
+        session.status.name.lowercased().replacingOccurrences(of: "_", with: " ")
+    }
     private var statusColor: Color { session.status.name == "NEEDS_INPUT" ? GarivePalette.amber : GarivePalette.mint }
 }
 
