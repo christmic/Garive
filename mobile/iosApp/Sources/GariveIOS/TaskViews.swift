@@ -62,7 +62,7 @@ struct NewTaskView: View {
                     Button("Cancel") { model.dismissNewTask(); dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") { model.start(definitionID: selectedID, text: prompt) }
+                    Button("Start on server") { model.start(definitionID: selectedID, text: prompt) }
                         .disabled(selectedID.isEmpty || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                             prompt.utf8.count > maxInputBytes || model.state?.connection != .online)
                 }

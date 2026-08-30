@@ -42,10 +42,20 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain assembleGariveSharedDebugXCFramework
 cd ../iosApp
 swift test
+xcodebuild test -project GariveIOS.xcodeproj -scheme GariveIOS \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,id=<simulator-udid>' \
+  CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO \
+  -only-testing:GariveIOSUITests
 xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
   -configuration Debug -sdk iphoneos ARCHS=arm64 \
   CODE_SIGNING_ALLOWED=NO clean build
 ```
+
+The two UI tests require `go run ./cmd/garive-mobile-demo-host` from
+`runtime/gateway/`. They launch the Debug-only walkthrough and exercise the
+Remote drawer, Sessions, new-task starters and enabled server submit control,
+plus collapsed Activity, approve/decline and cancellation confirmation.
 
 The Xcode target produces `Garive.app`, registers expiring `garive://pair`
 handoffs, and links the static XCFramework. Distribution still requires the
