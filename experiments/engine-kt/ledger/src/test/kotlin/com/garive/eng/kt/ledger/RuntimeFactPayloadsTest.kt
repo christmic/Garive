@@ -22,14 +22,21 @@ class RuntimeFactPayloadsTest {
     }
 
     @Test
-    fun `every C6 payload fixture is applied as v1`() {
+    fun `every C6 payload fixture is applied at its declared version`() {
         val cases = document.getValue("valid_cases").jsonArray
-        assertEquals(73, cases.size)
+        assertEquals(77, cases.size)
         cases.forEach { case ->
+            val value = case.jsonObject
+            val schema = value["schema_version"]?.jsonPrimitive?.content?.toUInt() ?: 1u
+            val expected = if (value.optional("expected_disposition") == "applied_v2") {
+                RuntimeFactDisposition.APPLIED_V2
+            } else {
+                RuntimeFactDisposition.APPLIED_V1
+            }
             assertEquals(
-                LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1),
-                validateRuntimeFact(fact(case.jsonObject)),
-                case.jsonObject.text("kind"),
+                LedgerResult.Success(expected),
+                validateRuntimeFact(fact(value, schema)),
+                value.text("kind"),
             )
         }
     }
@@ -38,7 +45,8 @@ class RuntimeFactPayloadsTest {
     fun `exact fields types and envelopes fail closed for every kind`() {
         document.getValue("valid_cases").jsonArray.forEach { element ->
             val case = element.jsonObject
-            val original = fact(case)
+            val schema = case["schema_version"]?.jsonPrimitive?.content?.toUInt() ?: 1u
+            val original = fact(case, schema)
             val payload = case.getValue("payload").jsonObject
             val first = payload.keys.first()
             assertInvalid(original.withPayload(JsonObject(payload - first)), "missing ${case.text("kind")}")
@@ -69,10 +77,11 @@ class RuntimeFactPayloadsTest {
             val (payload, changed) = corruptFirstDigest(case.getValue("payload"))
             if (changed) {
                 count += 1
-                assertInvalid(fact(case).withPayload(payload), case.text("kind"))
+                val schema = case["schema_version"]?.jsonPrimitive?.content?.toUInt() ?: 1u
+                assertInvalid(fact(case, schema).withPayload(payload), case.text("kind"))
             }
         }
-        assertEquals(56, count)
+        assertEquals(60, count)
     }
 
     @Test

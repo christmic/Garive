@@ -22,14 +22,44 @@ internal fun validateEffectFact(kind: String, value: JsonObject) {
     }
 }
 
+internal fun validateEffectPreparedV2(value: JsonObject) {
+    value.exact(
+        setOf(
+            "prepared_contract_version", "prepared_digest", "tool_name", "tool_revision",
+            "replay_class", "model_call_id", "access_policy_revision",
+            "access_resolver_revision", "invocation_accesses", "max_result_bytes",
+        ),
+    )
+    require(value.ulong("prepared_contract_version") == 2uL)
+    value.digest("prepared_digest")
+    value.identities(
+        "tool_name", "tool_revision", "model_call_id", "access_policy_revision",
+        "access_resolver_revision",
+    )
+    value.enum("replay_class", setOf("read_only", "idempotent", "receipt_recoverable", "never_replay"))
+    value.content("invocation_accesses")
+    value.ulong("max_result_bytes", nonzero = true)
+}
+
 private fun JsonObject.interactionRequested() {
-    exact(setOf("interaction_id", "suspension_id", "prepared_digest", "kind", "prompt", "response_schema_digest", "expiry_code"), setOf("response_schema"))
+    exact(
+        setOf(
+            "interaction_id",
+            "suspension_id",
+            "prepared_digest",
+            "kind",
+            "prompt",
+            "response_schema",
+            "response_schema_digest",
+            "expiry_code",
+        ),
+    )
     identities("interaction_id", "suspension_id")
     digests("prepared_digest", "response_schema_digest")
     enum("kind", setOf("approval", "external_input"))
     enum("expiry_code", setOf("none", "turn_deadline", "policy_deadline"))
     content("prompt")
-    optionalContent("response_schema")
+    content("response_schema")
 }
 
 private fun JsonObject.interactionResolved() {

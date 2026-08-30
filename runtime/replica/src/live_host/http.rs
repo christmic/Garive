@@ -186,25 +186,19 @@ async fn mutate_turn(
             )
         } else if let Some(turn_id) = operation.strip_suffix(":continue") {
             let body: ContinueTurnBody = decode_body(&host, body).await?;
-            match (body.input, body.input_json) {
-                (Some(input), None) => host.continue_turn(
-                    key,
-                    &body.session_id,
-                    turn_id,
-                    &body.suspension_id,
-                    body.expected_session_version,
-                    &input,
-                ),
-                (None, Some(input)) => host.continue_turn_json(
-                    key,
-                    &body.session_id,
-                    turn_id,
-                    &body.suspension_id,
-                    body.expected_session_version,
-                    &input,
-                ),
-                _ => Err(LiveHostError::InvalidRequest),
-            }
+            let input = match (&body.input, &body.input_json) {
+                (Some(value), None) => super::HostContinuationInput::String(value),
+                (None, Some(value)) => super::HostContinuationInput::Json(value),
+                _ => return Err(LiveHostError::InvalidRequest),
+            };
+            host.continue_turn(
+                key,
+                &body.session_id,
+                turn_id,
+                &body.suspension_id,
+                body.expected_session_version,
+                input,
+            )
         } else {
             Err(LiveHostError::InvalidRequest)
         }

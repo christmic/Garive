@@ -17,10 +17,10 @@ use garive_runtime::{
     reconstruct_suspended_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
     AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
     ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, HostClock,
-    HostReadLimits, InstalledAgent, LiveHost, LiveHostLimits, ModelLifecycleContext,
-    PreparedExecution, PublicToolActivityCatalogueV1, PublicToolActivityDescriptorV1,
-    RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort, SqliteLedger,
-    TurnDispatchError, TurnDispatcher,
+    HostReadLimits, InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits,
+    ModelLifecycleContext, PreparedExecution, PublicToolActivityCatalogueV1,
+    PublicToolActivityDescriptorV1, RuntimeCommandError, RuntimeCommandId,
+    SqliteGovernedEffectPort, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
@@ -401,8 +401,8 @@ fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
     assert_eq!(payload(suspended)["suspension_id"], suspension_id);
     let state = reconstruct_suspended_turn(&setup.ledger.load_turn(&setup.turn).unwrap()).unwrap();
     assert_eq!(
-        state.interaction.as_ref().unwrap().response_schema.as_ref(),
-        Some(&json!({"type":"boolean"}))
+        state.interaction.as_ref().unwrap().response_schema,
+        json!({"type":"boolean"})
     );
     let command = |input: &str| ContinueTurnCommand {
         command_id: RuntimeCommandId::new(format!("continue-{input}")).unwrap(),
@@ -410,18 +410,21 @@ fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
         turn_id: setup.turn.clone(),
         expected_suspension_id: state.suspension_id.clone(),
         expected_session_version: state.session_version,
-        continuation_input: ContinuationInput::ExternalInput(input.into()),
+        continuation_input: ContinuationInput::InteractionResponse {
+            canonical_json: input.into(),
+            representation: InteractionInputRepresentation::JsonField,
+        },
         interaction: state.interaction.clone(),
         recorded_at: timestamp().into(),
     };
     assert!(garive_runtime::plan_continue_turn(&command("true"), &state).is_ok());
     assert_eq!(
         garive_runtime::plan_continue_turn(&command("\"not boolean\""), &state),
-        Err(RuntimeCommandError::ContinuationMismatch)
+        Err(RuntimeCommandError::InvalidCommand)
     );
     assert_eq!(
         garive_runtime::plan_continue_turn(&command(" true"), &state),
-        Err(RuntimeCommandError::ContinuationMismatch)
+        Err(RuntimeCommandError::InvalidCommand)
     );
 }
 

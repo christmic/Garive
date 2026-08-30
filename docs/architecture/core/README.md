@@ -23,7 +23,7 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 | 1 | [`../system.md`](../system.md) | Product ownership and dependency direction. | accepted |
 | 2 | [`loop.md`](loop.md) | One bounded Agent execution; derive, assemble, invoke, prepare, and return. | mixed: C0–C6 accepted; later mechanisms research |
 | 3 | [`provider-adapter.md`](provider-adapter.md) | Protocol adapter, Provider, and Runtime ownership boundary. | accepted |
-| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | mixed: C4–C6 delivered; C5b accepted; later mechanisms research |
+| 4 | [`effect-layer.md`](effect-layer.md) | Prepared calls, authorization, execution, receipts, and uncertain-effect recovery. | mixed: C4–C6 and C5b-A delivered; C5b-R accepted; later mechanisms research |
 | 5 | [`ledger.md`](ledger.md) | Runtime-owned durable facts, projections, audit, and recovery. | mixed: L0/L1 accepted; later variants research |
 | 6 | [`compression.md`](compression.md) | Context-pressure estimation and compression policy. | research |
 | 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | mixed: admitted gates implemented; numeric research remains |

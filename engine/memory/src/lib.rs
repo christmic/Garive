@@ -4,8 +4,13 @@
 #![deny(missing_docs)]
 
 mod audit;
+mod control_plan;
+mod control_plan_values;
 mod control_plane;
+mod control_snapshot;
+mod control_snapshot_values;
 mod erasure;
+mod feedback_quality;
 mod hypothesis;
 mod lifecycle;
 mod maintenance;
@@ -21,12 +26,27 @@ pub use audit::{
     audit_memory, MemoryAuditAction, MemoryAuditEntry, MemoryAuditPolicy, MemoryAuditReport,
     MemoryContradiction,
 };
+pub use control_plan::prepare_memory_import;
+pub use control_plan_values::{
+    MemoryAuthorizedScope, MemoryCurrentEntry, MemoryIdentityAllocation, MemoryImportOperation,
+    MemoryImportPlan,
+};
 pub use control_plane::{
     parse_memory_document, MemoryControlDocument, MemoryControlError, MemoryDocumentLimits,
+    MemoryRecordRef,
+};
+pub use control_snapshot::{parse_memory_snapshot, project_memory_snapshot};
+pub use control_snapshot_values::{
+    MemorySnapshot, MemorySnapshotEntry, MemorySnapshotFile, MemorySnapshotLimits,
+    MemorySnapshotManifest,
 };
 pub use erasure::{
     record_memory_erasure, ErasureDisposition, ErasureTargetKind, ErasureTargetStatus,
     MemoryErasureReceipt, MemoryErasureRequest, MemoryErasureTarget, MemoryErasureTargetResult,
+};
+pub use feedback_quality::{
+    evaluate_recall_feedback_quality, RecallFeedbackOutcome, RecallFeedbackQualityRequest,
+    RecallFeedbackQualitySummary, RecallFeedbackRow,
 };
 pub use hypothesis::{
     import_m0_classification, ImportedMemoryClassification, MemoryAuthority,

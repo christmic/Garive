@@ -73,6 +73,28 @@ pub struct ContextPolicyCandidate {
     pub descriptor_digest: String,
 }
 
+/// One exact tool-to-public-label mapping used only by H3 projection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PublicToolActivityDescriptor {
+    /// Provider-neutral tool identity retained inside Runtime.
+    pub tool_name: String,
+    /// Exact immutable tool revision.
+    pub tool_revision: String,
+    /// Stable localization key exposed instead of the raw tool identity.
+    pub label_key: String,
+}
+
+/// Complete immutable H3 label catalogue included in snapshot v2.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PublicToolActivityCatalogue {
+    /// Exact catalogue schema version.
+    pub schema_version: u32,
+    /// Immutable installed catalogue revision.
+    pub catalogue_revision: String,
+    /// Canonically sorted unique mappings for every enabled tool.
+    pub descriptors: Vec<PublicToolActivityDescriptor>,
+}
+
 /// Frozen Runtime registry view used for one resolution attempt.
 #[derive(Clone, Debug)]
 pub struct ResolutionRegistry {
@@ -88,6 +110,8 @@ pub struct ResolutionRegistry {
     pub governance_policies: Vec<GovernancePolicyCandidate>,
     /// Exact context policy candidates.
     pub context_policies: Vec<ContextPolicyCandidate>,
+    /// Optional H3 catalogue admitted only by effective snapshot v2.
+    pub public_tool_activity_catalogue: Option<PublicToolActivityCatalogue>,
 }
 
 /// Product and actor ceilings applied without mutating the definition.
@@ -201,6 +225,9 @@ pub struct EffectiveAgentSnapshot {
     pub(crate) limits: EffectiveLimits,
     /// Required portable contract versions.
     pub(crate) contract_versions: BTreeMap<String, u64>,
+    /// Complete H3 public label catalogue for snapshot v2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) public_tool_activity_catalogue: Option<PublicToolActivityCatalogue>,
     /// Lowercase SHA-256 of the canonical snapshot preimage.
     pub(crate) snapshot_digest: String,
 }
@@ -254,6 +281,11 @@ impl EffectiveAgentSnapshot {
     /// Returns required portable contract versions.
     pub const fn contract_versions(&self) -> &BTreeMap<String, u64> {
         &self.contract_versions
+    }
+
+    /// Returns the H3 public label catalogue when snapshot v2 is installed.
+    pub const fn public_tool_activity_catalogue(&self) -> Option<&PublicToolActivityCatalogue> {
+        self.public_tool_activity_catalogue.as_ref()
     }
 
     /// Returns the canonical snapshot digest.

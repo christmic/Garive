@@ -30,6 +30,17 @@
       "expected_last_position": 5
     }
   ],
+  "typed_continuation_cases": [
+    {"name":"string-field","field":"input","value":"approved","normalized":"\"approved\"","input_kind":"interaction_string"},
+    {"name":"json-field","field":"input_json","value":"true","normalized":"true","input_kind":"interaction_json"}
+  ],
+  "invalid_typed_continuations": [
+    {"name":"absent","expected":"invalid_request"},
+    {"name":"dual","expected":"invalid_request"},
+    {"name":"non-canonical","value":" true","expected":"invalid_request"},
+    {"name":"schema-mismatch","value":"\"yes\"","expected":"invalid_request"},
+    {"name":"representation-change","expected":"command_conflict"}
+  ],
   "event_projection": [
     {"fact_position": 1, "fact": "session.opened", "event": "session.created"},
     {"fact_position": 2, "fact": "turn.started", "payload_kind": "start", "event": "turn.started"},

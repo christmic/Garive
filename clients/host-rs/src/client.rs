@@ -293,7 +293,7 @@ impl LiveHostClient {
         validate_owned_turn_response(value, session_id, turn_id)
     }
 
-    /// Continues one typed interaction using a structured JSON response.
+    /// Continues one typed interaction with exact RFC 8785 JSON text.
     pub async fn continue_turn_json(
         &self,
         command_id: &str,
@@ -301,13 +301,20 @@ impl LiveHostClient {
         turn_id: &str,
         suspension_id: &str,
         expected_session_version: u64,
-        input_json: &Value,
+        input_json: &str,
     ) -> Result<TurnCommandResponse, HostClientError> {
         if session_id.is_empty()
             || turn_id.is_empty()
             || suspension_id.is_empty()
             || expected_session_version == 0
         {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let parsed: Value = serde_json::from_str(input_json)
+            .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidCommand))?;
+        let canonical = serde_jcs::to_string(&parsed)
+            .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidCommand))?;
+        if canonical != input_json {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
         let path = format!("v1/turns/{}:continue", encode_segment(turn_id));
@@ -664,7 +671,7 @@ struct ContinueJsonCommand<'a> {
     session_id: &'a str,
     suspension_id: &'a str,
     expected_session_version: u64,
-    input_json: &'a Value,
+    input_json: &'a str,
 }
 
 fn validate_base_url(value: &str) -> Result<Url, HostClientError> {

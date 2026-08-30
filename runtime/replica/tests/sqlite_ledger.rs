@@ -108,6 +108,10 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
             .execute_batch(
                 "DROP TABLE execution_leases; \
                  DROP TABLE schedule_leases; \
+                 DROP TABLE memory_control_current; \
+                 DROP TABLE memory_control_revisions; \
+                 DROP TABLE memory_control_journal; \
+                 DROP TABLE memory_namespaces; \
                  DELETE FROM schema_migrations WHERE version >= 2;",
             )
             .unwrap();
@@ -120,7 +124,7 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let leases: u32 = migrated
             .connection_for_test()
             .query_row(
@@ -139,17 +143,26 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
             )
             .unwrap();
         assert_eq!(schedule_leases, 1);
+        let memory_tables: u32 = migrated
+            .connection_for_test()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name LIKE 'memory_%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(memory_tables, 4);
         migrated
             .connection_for_test()
             .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (4, ?1)",
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (5, ?1)",
                 ["2026-08-29T00:00:00Z"],
             )
             .unwrap();
     }
     assert!(matches!(
         SqliteLedger::open(path),
-        Err(SqliteLedgerError::UnsupportedSchema(4))
+        Err(SqliteLedgerError::UnsupportedSchema(5))
     ));
 }
 

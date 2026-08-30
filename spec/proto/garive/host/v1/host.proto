@@ -19,27 +19,27 @@ message HostEventV1 {
   string execution_id = 6;
   // Optional text carried by output events.
   string text = 7;
-  // Public Agent activity state for an H3 activity event.
+  // Committed redacted Agent activity state when this is an H3 event.
   HostActivityV1 activity = 8;
 }
 
-// One redacted committed Agent interaction or tool activity state.
+// One bounded redacted state in a committed Agent activity lifecycle.
 message HostActivityV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode the activity.
   string api_version = 1;
-  // Opaque activity identity scoped to the Session.
+  // Opaque activity identity scoped to its Session.
   string activity_id = 2;
-  // Stable public activity family or unknown future string.
+  // Stable activity class; unknown future values remain decodable.
   string kind = 3;
-  // Admitted localization key, never a raw tool name.
+  // Installed localization key; never a raw tool name.
   string label_key = 4;
-  // Stable public activity state.
+  // Stable lifecycle state; unknown future values remain decodable.
   string state = 5;
-  // Durable fact position that produced this state.
+  // Exact committed fact position producing this public state.
   uint64 source_position = 6;
-  // Authoritative terminal marker.
+  // Authoritative terminal marker for this public state.
   bool terminal = 7;
-  // Optional admitted stable failure or cancellation code.
+  // Optional admitted stable failure or decision code.
   optional string safe_code = 8;
 }
 
@@ -83,7 +83,7 @@ message ContinueTurnRequestV1 {
   uint64 expected_session_version = 3;
   // Trusted external input satisfying the suspension.
   string input = 4;
-  // Canonical RFC 8785 JSON for a typed interaction response.
+  // Exact RFC 8785 JSON text satisfying a typed interaction schema.
   optional string input_json = 5;
 }
 
@@ -107,124 +107,124 @@ message HostErrorV1 {
   string message = 2;
 }
 
-// One installed immutable Agent definition safe for client discovery.
+// One installed immutable Agent definition available for new Sessions.
 message AgentDefinitionSummaryV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode this definition.
   string api_version = 1;
-  // Immutable Agent definition identity.
+  // Stable installed immutable Agent definition identity.
   string definition_id = 2;
-  // Immutable Agent definition revision.
+  // Installed immutable definition revision.
   string definition_revision = 3;
-  // Sorted stable public capability names.
+  // Sorted stable public capabilities available to new Sessions.
   repeated string capabilities = 4;
 }
 
-// Bounded installed Agent definition result.
+// Bounded ordered installed-Agent discovery result.
 message AgentDefinitionPageV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode this page.
   string api_version = 1;
-  // Installed definitions in stable identity order.
+  // Bounded ordered definitions visible to this Host.
   repeated AgentDefinitionSummaryV1 definitions = 2;
 }
 
-// Restart-safe summary of one verified durable Session prefix.
+// Durable restart-safe Session navigation summary.
 message SessionSummaryV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode this summary.
   string api_version = 1;
   // Stable durable Session identity.
   string session_id = 2;
-  // Runtime-owned Agent instance identity.
+  // Runtime-owned Agent instance bound to the Session.
   string agent_instance_id = 3;
-  // Immutable Agent definition identity.
+  // Immutable definition identity captured when the Session opened.
   string definition_id = 4;
-  // Immutable Agent definition revision.
+  // Immutable definition revision captured when the Session opened.
   string definition_revision = 5;
-  // RFC 3339 opening time.
+  // Validated RFC 3339 timestamp of the Session open fact.
   string opened_at = 6;
-  // Frozen highest durable Session position.
+  // Frozen last durable position observed for the Session.
   uint64 latest_position = 7;
-  // Most recently first-started Turn.
+  // Most recently started Turn identity when the Session has a Turn.
   optional string latest_turn_id = 8;
-  // Stable lifecycle of the latest Turn.
+  // Public state of the most recently started Turn when present.
   optional string latest_turn_state = 9;
-  // Number of verified first-started Turns.
+  // Count of verified first-start Turn facts in this Session.
   uint64 turn_count = 10;
 }
 
-// Reverse-opened bounded page of durable Sessions.
+// Reverse-opened bounded Session navigation page.
 message SessionPageV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode this page.
   string api_version = 1;
-  // Session summaries in page order.
+  // Reverse-opened bounded Session summaries.
   repeated SessionSummaryV1 sessions = 2;
-  // Opaque cursor for the next older page.
+  // Opaque cursor for the next older page when one exists.
   optional string next_before = 3;
 }
 
-// One exact Session summary at a frozen watermark.
+// One exact Session summary frozen at an observed Ledger watermark.
 message SessionViewV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode this view.
   string api_version = 1;
-  // Verified Session summary.
+  // Exact requested durable Session summary.
   SessionSummaryV1 session = 2;
-  // Highest durable position included in this response.
+  // Frozen maximum durable position used for this projection.
   uint64 observed_max_position = 3;
 }
 
-// Exact durable coordinates and public schemas for one current suspension.
+// Restart-safe public continuation coordinates and redacted prompt.
 message SuspensionViewV1 {
-  // Exact durable suspension identity.
+  // Exact current durable suspension identity.
   string suspension_id = 1;
-  // Session version required by continuation.
+  // Optimistic Session version required for continuation.
   uint64 session_version = 2;
-  // Stable suspension family.
+  // Stable public suspension kind.
   string kind = 3;
-  // Exact public prompt schema identity.
+  // Stable schema identity for the redacted public prompt.
   string prompt_schema = 4;
-  // Canonical RFC 8785 public prompt JSON.
+  // Canonical RFC 8785 UTF-8 public prompt JSON.
   bytes prompt_json = 5;
   // Lowercase SHA-256 of prompt_json.
   string prompt_digest = 6;
-  // Canonical portable response schema when interactive.
+  // Canonical portable response schema when continuation is supported.
   optional bytes response_schema_json = 7;
-  // Lowercase SHA-256 of response_schema_json.
+  // Lowercase SHA-256 of response_schema_json when present.
   optional string response_schema_digest = 8;
 }
 
-// One complete Turn projected from a verified Session prefix.
+// One complete durable Turn projection; continuations update this item.
 message TurnTimelineItemV1 {
   // Stable durable Turn identity.
   string turn_id = 1;
-  // Position of the first Turn start.
+  // Position of the verified first-start fact.
   uint64 started_position = 2;
-  // Latest lifecycle or continuation position.
+  // Frozen latest position that changed this Turn.
   uint64 latest_position = 3;
   // Stable public lifecycle state.
   string state = 4;
-  // Exact verified first trusted-user input.
+  // Trusted user text bound to the first start.
   string user_text = 5;
-  // Redacted committed completion text.
+  // Redacted committed response projection when completed.
   optional string completion_text = 6;
-  // Current restart-safe suspension coordinates.
-  optional SuspensionViewV1 suspension = 7;
-  // Whether display content was explicitly truncated.
+  // Restart-safe continuation coordinates when suspended.
+  SuspensionViewV1 suspension = 7;
+  // Whether bounded user or completion display content was truncated.
   bool content_truncated = 8;
-  // Latest public state of each committed Agent activity.
+  // Latest committed public state of each activity owned by this Turn.
   repeated HostActivityV1 activities = 9;
 }
 
-// Bounded ascending page of complete Turn projections.
+// Ascending bounded complete-Turn projection page.
 message TurnTimelinePageV1 {
-  // Exact Host API version.
+  // Exact Host API version used to encode this page.
   string api_version = 1;
-  // Owning Session identity.
+  // Session owning every returned Turn.
   string session_id = 2;
-  // Complete changed Turns in first-start order.
+  // Ascending complete Turn projections.
   repeated TurnTimelineItemV1 items = 3;
-  // Highest durable position fully scanned.
+  // Durable scan cursor to use as the next after_position.
   uint64 scanned_through_position = 4;
-  // Frozen Session watermark used by this response.
+  // Frozen maximum durable position used for this projection.
   uint64 observed_max_position = 5;
-  // Whether another bounded scan is required.
+  // Whether another bounded timeline page remains.
   bool has_more = 6;
 }

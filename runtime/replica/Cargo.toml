@@ -34,7 +34,12 @@ serde_jcs.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 [dev-dependencies]
+base64.workspace = true
+garive-host-client = { path = "../../clients/host-rs" }
 garive-provider-profile = { path = "../../providers/profile" }
 serde_json.workspace = true
 tempfile = "3.27.0"

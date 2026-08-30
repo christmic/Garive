@@ -19,5 +19,6 @@ pub use snapshot::{
     CapabilityDescriptor, ContextPolicyCandidate, EffectiveAgentSnapshot,
     EffectiveCapabilitySnapshot, EffectiveGovernancePolicy, EffectiveLimits,
     GovernancePolicyCandidate, InstructionResource, ModelRoleCandidate, ProductPolicy,
-    ResolutionRegistry, ResolvedContextPolicy, ResolvedInstruction, ResolvedModelRole,
+    PublicToolActivityCatalogue, PublicToolActivityDescriptor, ResolutionRegistry,
+    ResolvedContextPolicy, ResolvedInstruction, ResolvedModelRole,
 };

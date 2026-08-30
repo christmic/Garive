@@ -13,6 +13,7 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("pty.log");
     let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", &transcript)
@@ -54,6 +55,7 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("linear.log");
     let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", &transcript)
@@ -93,6 +95,7 @@ fn termination_signal_restores_the_shipping_terminal() {
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("signal.log");
     let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", &transcript)
@@ -127,6 +130,7 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("resize.log");
     let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", &transcript)

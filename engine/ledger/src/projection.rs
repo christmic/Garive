@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
 
-use crate::{ExecutionId, FactDraft, LedgerError, ModelRequestId, ToolInvocationId, TurnId};
+use crate::{
+    CanonicalPayload, ExecutionId, FactDraft, LedgerError, ModelRequestId, ToolInvocationId, TurnId,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TurnState {
@@ -55,6 +57,12 @@ struct KnowledgeRecord {
     request_digest: String,
     dispatch_attempts: BTreeSet<String>,
     terminal: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EffectBatchRecord {
+    tools: Vec<ToolInvocationId>,
+    next_start: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,6 +126,10 @@ pub(crate) struct SessionProjection {
     model_digests: BTreeMap<ModelRequestId, String>,
     tools: BTreeMap<ToolInvocationId, (ExecutionId, InvocationState)>,
     tool_digests: BTreeMap<ToolInvocationId, String>,
+    tool_contract_versions: BTreeMap<ToolInvocationId, u32>,
+    tool_result_bytes: BTreeMap<ToolInvocationId, u64>,
+    tool_batch_plans: BTreeMap<ToolInvocationId, String>,
+    effect_batches: BTreeMap<String, EffectBatchRecord>,
     tool_grants: BTreeMap<ToolInvocationId, String>,
     tool_receipts: BTreeMap<ToolInvocationId, String>,
     tool_executors: BTreeMap<ToolInvocationId, (String, String)>,
@@ -172,6 +184,7 @@ impl SessionProjection {
             "execution.suspended" => self.transition_execution(fact, ExecutionState::Suspended),
             "execution.stopped" => self.transition_execution(fact, ExecutionState::Stopped),
             "execution.failed" => self.transition_execution(fact, ExecutionState::Failed),
+            "execution.effect_batch_planned" => self.plan_effect_batch(fact),
             "model.prepared" => self.prepare_model(fact),
             "model.started" => self.transition_model(fact, InvocationState::Started),
             "model.completed" => self.transition_model(fact, InvocationState::Completed),
@@ -543,6 +556,80 @@ impl SessionProjection {
             tool.clone(),
             text(&payload(fact)?, "prepared_digest")?.to_owned(),
         );
+        self.tool_contract_versions
+            .insert(tool.clone(), fact.schema_version);
+        if fact.schema_version == 2 {
+            self.tool_result_bytes.insert(
+                tool.clone(),
+                payload(fact)?
+                    .get("max_result_bytes")
+                    .and_then(Value::as_u64)
+                    .ok_or(LedgerError::InvalidFact)?,
+            );
+        }
+        Ok(())
+    }
+
+    fn plan_effect_batch(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        self.require_active_execution(fact)?;
+        let execution = required(&fact.execution_id)?;
+        let value = payload(fact)?;
+        let plan_digest = text(&value, "plan_digest")?.to_owned();
+        if self.effect_batches.contains_key(&plan_digest) {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let digests = content_value(&value, "ordered_prepared_digests")?
+            .as_array()
+            .cloned()
+            .ok_or(LedgerError::InvalidFact)?;
+        if digests.is_empty() {
+            return Err(LedgerError::InvalidTransition);
+        }
+        let mut tools = Vec::with_capacity(digests.len());
+        for digest in digests {
+            let digest = digest.as_str().ok_or(LedgerError::InvalidFact)?;
+            let matches: Vec<_> = self
+                .tools
+                .iter()
+                .filter(|(tool, (owner, state))| {
+                    owner == execution
+                        && *state == InvocationState::Authorized
+                        && self.tool_contract_versions.get(*tool) == Some(&2)
+                        && self.tool_digests.get(*tool).map(String::as_str) == Some(digest)
+                        && !self.tool_batch_plans.contains_key(*tool)
+                })
+                .map(|(tool, _)| tool.clone())
+                .collect();
+            let [tool] = matches.as_slice() else {
+                return Err(LedgerError::InvalidTransition);
+            };
+            tools.push(tool.clone());
+        }
+        if tools.iter().collect::<BTreeSet<_>>().len() != tools.len() {
+            return Err(LedgerError::InvalidTransition);
+        }
+        validate_batch_steps(
+            &content_value(&value, "steps")?,
+            &tools,
+            &self.tool_result_bytes,
+            value["max_parallel_reads"]
+                .as_u64()
+                .ok_or(LedgerError::InvalidFact)?,
+            value["max_buffered_result_bytes"]
+                .as_u64()
+                .ok_or(LedgerError::InvalidFact)?,
+        )?;
+        for tool in &tools {
+            self.tool_batch_plans
+                .insert(tool.clone(), plan_digest.clone());
+        }
+        self.effect_batches.insert(
+            plan_digest,
+            EffectBatchRecord {
+                tools,
+                next_start: 0,
+            },
+        );
         Ok(())
     }
 
@@ -633,11 +720,28 @@ impl SessionProjection {
         if !valid {
             return Err(LedgerError::InvalidTransition);
         }
+        if next == InvocationState::Started && self.tool_contract_versions.get(tool) == Some(&2) {
+            let plan = self
+                .tool_batch_plans
+                .get(tool)
+                .and_then(|digest| self.effect_batches.get(digest))
+                .ok_or(LedgerError::InvalidTransition)?;
+            if plan.tools.get(plan.next_start) != Some(tool) {
+                return Err(LedgerError::InvalidTransition);
+            }
+        }
         self.validate_effect_binding(tool, current, next, &payload)?;
         self.tools
             .get_mut(tool)
             .expect("validated tool remains present")
             .1 = next;
+        if next == InvocationState::Started && self.tool_contract_versions.get(tool) == Some(&2) {
+            let digest = self.tool_batch_plans.get(tool).expect("validated plan");
+            self.effect_batches
+                .get_mut(digest)
+                .expect("validated plan")
+                .next_start += 1;
+        }
         Ok(())
     }
 
@@ -1273,6 +1377,69 @@ fn payload(fact: &FactDraft) -> Result<Map<String, Value>, LedgerError> {
     let value: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
     value.as_object().cloned().ok_or(LedgerError::InvalidFact)
+}
+
+fn content_value(value: &Map<String, Value>, key: &str) -> Result<Value, LedgerError> {
+    let binding = value
+        .get(key)
+        .and_then(Value::as_object)
+        .ok_or(LedgerError::InvalidFact)?;
+    let canonical = CanonicalPayload::from_canonical_parts(
+        text(binding, "inline_utf8")?.to_owned(),
+        text(binding, "digest")?.to_owned(),
+    )
+    .map_err(|_| LedgerError::InvalidFact)?;
+    serde_json::from_str(canonical.as_json()).map_err(|_| LedgerError::InvalidFact)
+}
+
+fn validate_batch_steps(
+    value: &Value,
+    tools: &[ToolInvocationId],
+    result_bytes: &BTreeMap<ToolInvocationId, u64>,
+    max_parallel: u64,
+    max_buffered: u64,
+) -> Result<(), LedgerError> {
+    let steps = value.as_array().ok_or(LedgerError::InvalidFact)?;
+    let mut indexes = Vec::new();
+    for step in steps {
+        let step = step.as_object().ok_or(LedgerError::InvalidFact)?;
+        match text(step, "kind")? {
+            "sequential_step" if step.len() == 2 => indexes.push(
+                step.get("intent_index")
+                    .and_then(Value::as_u64)
+                    .ok_or(LedgerError::InvalidFact)? as usize,
+            ),
+            "parallel_read_group" if step.len() == 2 => {
+                let group = step
+                    .get("intent_indexes")
+                    .and_then(Value::as_array)
+                    .ok_or(LedgerError::InvalidFact)?;
+                if group.is_empty() || group.len() as u64 > max_parallel {
+                    return Err(LedgerError::InvalidTransition);
+                }
+                let mut bytes = 0u64;
+                for index in group {
+                    let index = index.as_u64().ok_or(LedgerError::InvalidFact)? as usize;
+                    bytes = bytes
+                        .checked_add(
+                            *result_bytes
+                                .get(tools.get(index).ok_or(LedgerError::InvalidTransition)?)
+                                .ok_or(LedgerError::InvalidTransition)?,
+                        )
+                        .ok_or(LedgerError::InvalidTransition)?;
+                    indexes.push(index);
+                }
+                if bytes > max_buffered {
+                    return Err(LedgerError::InvalidTransition);
+                }
+            }
+            _ => return Err(LedgerError::InvalidFact),
+        }
+    }
+    if indexes != (0..tools.len()).collect::<Vec<_>>() {
+        return Err(LedgerError::InvalidTransition);
+    }
+    Ok(())
 }
 
 fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, LedgerError> {

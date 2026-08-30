@@ -191,37 +191,50 @@ fn validate_continuation(
 ) -> Result<(&'static str, String), RuntimeCommandError> {
     match (&command.continuation_input, state.suspension_kind) {
         (
+            ContinuationInput::InteractionResponse {
+                canonical_json,
+                representation,
+            },
+            RuntimeSuspensionKind::ApprovalRequired | RuntimeSuspensionKind::ExternalInputRequired,
+        ) => {
+            let interaction = state
+                .interaction
+                .as_ref()
+                .ok_or(RuntimeCommandError::ContinuationMismatch)?;
+            if command.interaction.as_ref() != Some(interaction) {
+                return Err(RuntimeCommandError::ContinuationMismatch);
+            }
+            validate_digest(&interaction.prepared_digest)?;
+            validate_digest(&interaction.response_schema_digest)?;
+            let schema = CanonicalPayload::from_value(&interaction.response_schema)
+                .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+            if schema.sha256() != interaction.response_schema_digest {
+                return Err(RuntimeCommandError::InvalidCommand);
+            }
+            let response: Value = serde_json::from_str(canonical_json)
+                .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+            let normalized =
+                serde_jcs::to_string(&response).map_err(|_| RuntimeCommandError::InvalidCommand)?;
+            if normalized != *canonical_json
+                || (*representation == super::types::InteractionInputRepresentation::StringField
+                    && !response.is_string())
+                || !validate_portable_value(&interaction.response_schema, &response)
+                    .map_err(|_| RuntimeCommandError::InvalidCommand)?
+                    .is_empty()
+            {
+                return Err(RuntimeCommandError::InvalidCommand);
+            }
+            Ok((representation.input_kind(), normalized))
+        }
+        (
             ContinuationInput::ExternalInput(content),
-            RuntimeSuspensionKind::ApprovalRequired
-            | RuntimeSuspensionKind::ExternalInputRequired
-            | RuntimeSuspensionKind::PartialOutput,
+            RuntimeSuspensionKind::ExternalInputRequired | RuntimeSuspensionKind::PartialOutput,
         ) => {
             if command.interaction != state.interaction {
                 return Err(RuntimeCommandError::ContinuationMismatch);
             }
-            if let Some(interaction) = &state.interaction {
-                validate_digest(&interaction.prepared_digest)?;
-                validate_digest(&interaction.response_schema_digest)?;
-                let schema = interaction
-                    .response_schema
-                    .as_ref()
-                    .ok_or(RuntimeCommandError::CorruptLedger)?;
-                let canonical_schema = CanonicalPayload::from_value(schema)
-                    .map_err(|_| RuntimeCommandError::CorruptLedger)?;
-                if canonical_schema.sha256() != interaction.response_schema_digest {
-                    return Err(RuntimeCommandError::CorruptLedger);
-                }
-                let value: Value = serde_json::from_str(content)
-                    .map_err(|_| RuntimeCommandError::ContinuationMismatch)?;
-                let canonical_input = CanonicalPayload::from_value(&value)
-                    .map_err(|_| RuntimeCommandError::ContinuationMismatch)?;
-                if canonical_input.as_json() != content
-                    || !validate_portable_value(schema, &value)
-                        .map_err(|_| RuntimeCommandError::CorruptLedger)?
-                        .is_empty()
-                {
-                    return Err(RuntimeCommandError::ContinuationMismatch);
-                }
+            if state.interaction.is_some() {
+                return Err(RuntimeCommandError::ContinuationMismatch);
             }
             Ok(("external_input", content.clone()))
         }

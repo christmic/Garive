@@ -40,5 +40,12 @@
     {"status":503,"code":"durability_unavailable"},
     {"status":500,"code":"corrupt_state"}
   ],
+  "typed_continuation": {
+    "string_field":"input",
+    "json_field":"input_json",
+    "canonical_json":"{\"approved\":true}",
+    "non_canonical_json":"{ \"approved\": true }",
+    "non_canonical_error":"invalid_command"
+  },
   "failure_codes":["invalid_configuration","invalid_command","invalid_event","event_order_violation","event_limit_exceeded","host_failure","unknown_host_error","transport_failure","follow_deadline"]
 }

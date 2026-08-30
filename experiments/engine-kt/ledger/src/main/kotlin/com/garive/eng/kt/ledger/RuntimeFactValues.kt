@@ -28,9 +28,10 @@ internal fun JsonObject.optionalNonEmpty(key: String) {
 internal fun JsonObject.enum(key: String, allowed: Set<String>): String =
     text(key).also { require(it in allowed) }
 
-internal fun JsonObject.ulong(key: String, nonzero: Boolean = false) {
+internal fun JsonObject.ulong(key: String, nonzero: Boolean = false): ULong {
     val value = getValue(key).jsonPrimitive.content.toULongOrNull() ?: throw IllegalArgumentException()
     require(!nonzero || value != 0uL)
+    return value
 }
 
 internal fun JsonObject.optionalUlong(key: String) {

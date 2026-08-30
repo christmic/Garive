@@ -309,6 +309,21 @@ pub struct TurnCommandResponse {
     pub committed_position: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Exactly one public value representation supplied to a continuation command.
+pub enum HostContinuationInput<'a> {
+    /// Proto field 4 supplies a UTF-8 string value.
+    String(&'a str),
+    /// Proto field 5 supplies exact RFC 8785 JSON text.
+    Json(&'a str),
+}
+
+impl<'a> From<&'a str> for HostContinuationInput<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::String(value)
+    }
+}
+
 /// One replayable public event projected from an exact durable fact.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LiveHostEvent {
@@ -448,8 +463,10 @@ pub(crate) struct ContinueTurnBody {
     pub session_id: String,
     pub suspension_id: String,
     pub expected_session_version: u64,
+    #[serde(default)]
     pub input: Option<String>,
-    pub input_json: Option<serde_json::Value>,
+    #[serde(default)]
+    pub input_json: Option<String>,
 }
 
 #[derive(Serialize)]

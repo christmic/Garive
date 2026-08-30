@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "contract": "memory-control-plane-v1",
+  "document_vector": {
+    "canonical_markdown": "---\nschema_version: 1\nrecord_ref: existing.bWVtLTAx.cmV2LTA0\nauthority: user_declared\nmemory_type: semantic\nmemory_role: preference\nscope: agent_instance\nscope_owner_b64: YWdlbnQtMDE\nlifecycle: active\nsensitivity: ordinary\n---\nPrefer concise status updates.\n",
+    "record_id": "mem-01",
+    "revision_id": "rev-04",
+    "scope_owner_id": "agent-01",
+    "content_digest": "411cd9f46ada42de47a22cd022f1ffab04c0c123fd3dd4fb29075db0a8ad447a",
+    "document_digest": "b6f7618eb5cfd973bc81be24b63226d188d882ed0fafec8292c8e5b347566c01"
+  },
+  "snapshot_vector": {
+    "export_id": "export-1",
+    "namespace_id": "namespace-1",
+    "through_revision": 7,
+    "exported_at": "2026-08-30T12:00:00Z",
+    "ordered_record_ids": ["mem-a", "mem-b"],
+    "manifest_digest": "79bc86a14a215dd48e41496ce418ffb8719025f79b095a5da055faab8a4db341"
+  },
+  "plan_vector": {
+    "input_manifest_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "operation_order": ["supersede:mem-a", "supersede:mem-b", "archive:mem-c", "erase:mem-d", "add:mem-f"],
+    "counts": {"add": 1, "supersede": 2, "archive": 1, "erase": 1},
+    "plan_digest": "6a1d4227f53d3cd4e1b13b7fa9f4c40df320da2625d54caa79373da5aa546c50"
+  },
+  "failure_vectors": [
+    "noncanonical_base64url",
+    "unknown_or_duplicate_front_matter",
+    "noncanonical_manifest_json",
+    "manifest_or_document_digest_mismatch",
+    "traversal_or_case_fold_collision",
+    "symlink_or_hardlink_alias",
+    "entry_or_byte_bound",
+    "authority_or_metadata_change",
+    "stale_repository_or_revision"
+  ]
+}

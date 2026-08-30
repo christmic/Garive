@@ -12,16 +12,17 @@ use sha2::{Digest, Sha256};
 use crate::{
     commit_planned_turn, get_turn, plan_cancel_turn, plan_continue_turn, plan_start_turn,
     reconstruct_suspended_turn, CancelReason, CancelTurnCommand, ContinuationInput,
-    ContinueTurnCommand, GetTurnQuery, RuntimeCommandError, RuntimeCommandId,
-    RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger, SqliteLedgerError, StartTurnCommand,
+    ContinueTurnCommand, GetTurnQuery, InteractionInputRepresentation, RuntimeCommandError,
+    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger, SqliteLedgerError,
+    StartTurnCommand,
 };
 
 use super::{
     activity_projection, project_fact, read_cursor, read_model, timeline_projection,
     AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
-    HostClock, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent,
-    LiveHostLimits, LiveHostState, PublicToolActivityCatalogueV1, SessionPageV1, SessionViewV1,
-    TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
+    HostClock, HostContinuationInput, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
+    LiveHostEvent, LiveHostLimits, LiveHostState, PublicToolActivityCatalogueV1, SessionPageV1,
+    SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -490,68 +491,18 @@ impl LiveHost {
     }
 
     /// Continues one exact external-input suspension with a fresh Execution.
-    pub fn continue_turn(
+    pub fn continue_turn<'a>(
         &self,
         idempotency_key: &str,
         session: &str,
         turn: &str,
         suspension_id: &str,
         expected_session_version: u64,
-        input: &str,
+        input: impl Into<HostContinuationInput<'a>>,
     ) -> Result<TurnCommandResponse, LiveHostError> {
-        let json_string =
-            CanonicalPayload::from_value(&serde_json::Value::String(input.to_owned()))
-                .map_err(|_| LiveHostError::InvalidRequest)?;
-        self.continue_turn_inner(
-            idempotency_key,
-            session,
-            turn,
-            suspension_id,
-            expected_session_version,
-            Some(input),
-            json_string.as_json(),
-        )
-    }
-
-    /// Continues an interaction suspension with canonical schema-validated JSON.
-    pub fn continue_turn_json(
-        &self,
-        idempotency_key: &str,
-        session: &str,
-        turn: &str,
-        suspension_id: &str,
-        expected_session_version: u64,
-        input: &serde_json::Value,
-    ) -> Result<TurnCommandResponse, LiveHostError> {
-        let canonical =
-            CanonicalPayload::from_value(input).map_err(|_| LiveHostError::InvalidRequest)?;
-        self.continue_turn_inner(
-            idempotency_key,
-            session,
-            turn,
-            suspension_id,
-            expected_session_version,
-            None,
-            canonical.as_json(),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn continue_turn_inner(
-        &self,
-        idempotency_key: &str,
-        session: &str,
-        turn: &str,
-        suspension_id: &str,
-        expected_session_version: u64,
-        plain_input: Option<&str>,
-        json_input: &str,
-    ) -> Result<TurnCommandResponse, LiveHostError> {
+        let input = input.into();
         validate_key(idempotency_key)?;
-        validate_text(json_input, self.state.limits.max_command_bytes)?;
-        if let Some(input) = plain_input {
-            validate_text(input, self.state.limits.max_command_bytes)?;
-        }
+        validate_continuation_bytes(input, self.state.limits.max_command_bytes)?;
         let session_id = identity::<SessionId>(session)?;
         let turn_id = identity::<TurnId>(turn)?;
         let mut ledger = self.ledger()?;
@@ -563,8 +514,7 @@ impl LiveHost {
                 command_id: idempotency_key,
                 suspension_id,
                 expected_session_version,
-                plain_input,
-                json_input,
+                input,
             },
         )? {
             return Ok(response);
@@ -585,11 +535,7 @@ impl LiveHost {
         {
             return Err(LiveHostError::PreconditionFailed);
         }
-        let input = if state.interaction.is_some() {
-            json_input
-        } else {
-            plain_input.ok_or(LiveHostError::PreconditionFailed)?
-        };
+        let continuation_input = continuation_input(&state, input)?;
         let plan = plan_continue_turn(
             &ContinueTurnCommand {
                 command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
@@ -597,7 +543,7 @@ impl LiveHost {
                 turn_id: turn_id.clone(),
                 expected_suspension_id: suspension_id.to_owned(),
                 expected_session_version,
-                continuation_input: ContinuationInput::ExternalInput(input.to_owned()),
+                continuation_input,
                 interaction: state.interaction.clone(),
                 recorded_at: self.recorded_at()?,
             },
@@ -781,7 +727,7 @@ impl LiveHost {
         {
             return Err(LiveHostError::CommandConflict);
         }
-        replay_started_batch(session_id, &facts, index, input, None)
+        replay_started_batch(session_id, &facts, index, ReplayInput::Start(input), None)
     }
 
     fn replay_continue(
@@ -808,17 +754,11 @@ impl LiveHost {
         {
             return Err(LiveHostError::CommandConflict);
         }
-        let interaction = index >= 2 && facts[index - 2].kind.as_str() == "interaction.resolved";
-        let input = if interaction {
-            request.json_input
-        } else {
-            request.plain_input.ok_or(LiveHostError::CommandConflict)?
-        };
         replay_started_batch(
             session_id,
             &facts,
             index,
-            input,
+            ReplayInput::Continue(request.input),
             Some(request.suspension_id),
         )
     }
@@ -867,8 +807,7 @@ struct ContinueReplay<'a> {
     command_id: &'a str,
     suspension_id: &'a str,
     expected_session_version: u64,
-    plain_input: Option<&'a str>,
-    json_input: &'a str,
+    input: HostContinuationInput<'a>,
 }
 
 #[derive(Deserialize)]
@@ -895,6 +834,7 @@ struct StartedCommand {
 
 #[derive(Deserialize)]
 struct TurnInput {
+    input_kind: String,
     content: InlineContent,
     suspension_id: Option<String>,
 }
@@ -930,7 +870,7 @@ fn replay_started_batch(
     session_id: &SessionId,
     facts: &[DurableFact],
     started_index: usize,
-    input: &str,
+    input: ReplayInput<'_>,
     suspension_id: Option<&str>,
 ) -> Result<Option<TurnCommandResponse>, LiveHostError> {
     let started = facts
@@ -958,8 +898,9 @@ fn replay_started_batch(
         return Err(LiveHostError::CorruptState);
     }
     let payload: TurnInput = decode_payload(input_fact)?;
-    if payload.content.inline_utf8 != input
-        || payload.content.digest != digest(input.as_bytes())
+    let expected = replay_input(&payload.input_kind, input)?;
+    if payload.content.inline_utf8 != expected
+        || payload.content.digest != digest(expected.as_bytes())
         || payload.suspension_id.as_deref() != suspension_id
     {
         return Err(LiveHostError::CommandConflict);
@@ -978,6 +919,29 @@ fn replay_started_batch(
         Some(execution_id),
         execution.position,
     )))
+}
+
+#[derive(Clone, Copy)]
+enum ReplayInput<'a> {
+    Start(&'a str),
+    Continue(HostContinuationInput<'a>),
+}
+
+fn replay_input(kind: &str, input: ReplayInput<'_>) -> Result<String, LiveHostError> {
+    match (kind, input) {
+        ("trusted_user", ReplayInput::Start(value))
+        | ("external_input", ReplayInput::Continue(HostContinuationInput::String(value))) => {
+            Ok(value.to_owned())
+        }
+        ("interaction_string", ReplayInput::Continue(HostContinuationInput::String(value))) => {
+            serde_jcs::to_string(&serde_json::Value::String(value.to_owned()))
+                .map_err(|_| LiveHostError::InvalidRequest)
+        }
+        ("interaction_json", ReplayInput::Continue(HostContinuationInput::Json(value))) => {
+            canonical_json(value)
+        }
+        _ => Err(LiveHostError::CommandConflict),
+    }
 }
 
 fn decode_payload<T: for<'de> Deserialize<'de>>(fact: &DurableFact) -> Result<T, LiveHostError> {
@@ -1079,6 +1043,66 @@ fn validate_text(value: &str, maximum: usize) -> Result<(), LiveHostError> {
         Err(LiveHostError::InvalidRequest)
     } else {
         Ok(())
+    }
+}
+
+fn validate_continuation_bytes(
+    input: HostContinuationInput<'_>,
+    maximum: usize,
+) -> Result<(), LiveHostError> {
+    let value = match input {
+        HostContinuationInput::String(value) | HostContinuationInput::Json(value) => value,
+    };
+    if value.len() > maximum {
+        Err(LiveHostError::InvalidRequest)
+    } else {
+        Ok(())
+    }
+}
+
+fn continuation_input(
+    state: &crate::SuspendedTurnState,
+    input: HostContinuationInput<'_>,
+) -> Result<ContinuationInput, LiveHostError> {
+    if state.interaction.is_some() {
+        let (canonical_json, representation) = match input {
+            HostContinuationInput::String(value) => (
+                serde_jcs::to_string(&serde_json::Value::String(value.to_owned()))
+                    .map_err(|_| LiveHostError::InvalidRequest)?,
+                InteractionInputRepresentation::StringField,
+            ),
+            HostContinuationInput::Json(value) => (
+                canonical_json(value)?,
+                InteractionInputRepresentation::JsonField,
+            ),
+        };
+        Ok(ContinuationInput::InteractionResponse {
+            canonical_json,
+            representation,
+        })
+    } else if matches!(
+        state.suspension_kind,
+        RuntimeSuspensionKind::ExternalInputRequired | RuntimeSuspensionKind::PartialOutput
+    ) {
+        match input {
+            HostContinuationInput::String(value) => {
+                Ok(ContinuationInput::ExternalInput(value.to_owned()))
+            }
+            HostContinuationInput::Json(_) => Err(LiveHostError::InvalidRequest),
+        }
+    } else {
+        Err(LiveHostError::PreconditionFailed)
+    }
+}
+
+fn canonical_json(value: &str) -> Result<String, LiveHostError> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(value).map_err(|_| LiveHostError::InvalidRequest)?;
+    let canonical = serde_jcs::to_string(&parsed).map_err(|_| LiveHostError::InvalidRequest)?;
+    if canonical == value {
+        Ok(canonical)
+    } else {
+        Err(LiveHostError::InvalidRequest)
     }
 }
 

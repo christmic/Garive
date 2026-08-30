@@ -193,8 +193,14 @@ pub(crate) fn continue_turn(
     sender: mpsc::Sender<HostMessage>,
 ) {
     tokio::spawn(async move {
-        let result = match &request.input {
-            ContinuationInput::Text(input) => {
+        let canonical_json = match &request.input {
+            ContinuationInput::Json(input) => {
+                Some(serde_jcs::to_string(input).unwrap_or_else(|_| input.to_string()))
+            }
+            ContinuationInput::Text(_) => None,
+        };
+        let result = match (&request.input, canonical_json.as_deref()) {
+            (ContinuationInput::Text(input), _) => {
                 client
                     .continue_turn(
                         &request.command_id,
@@ -206,7 +212,7 @@ pub(crate) fn continue_turn(
                     )
                     .await
             }
-            ContinuationInput::Json(input) => {
+            (ContinuationInput::Json(_), Some(input)) => {
                 client
                     .continue_turn_json(
                         &request.command_id,
@@ -218,6 +224,7 @@ pub(crate) fn continue_turn(
                     )
                     .await
             }
+            (ContinuationInput::Json(_), None) => unreachable!("JSON input always has text"),
         };
         let submitted_text = match request.input {
             ContinuationInput::Text(value) => value,

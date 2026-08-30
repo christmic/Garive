@@ -20,6 +20,8 @@ use values::object;
 pub enum RuntimeFactDisposition {
     /// Known C6 fact kind with a valid schema-v1 payload and envelope.
     AppliedV1,
+    /// Known additive C5b fact kind with a valid schema-v2 payload and envelope.
+    AppliedV2,
     /// Unknown kind or newer schema retained only as an audit fact.
     Opaque,
 }
@@ -63,7 +65,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     {
         return Ok(RuntimeFactDisposition::Opaque);
     }
-    if fact.schema_version != 1 {
+    let effect_prepared_v2 = kind == "effect.prepared" && fact.schema_version == 2;
+    if fact.schema_version != 1 && !effect_prepared_v2 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
     if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family)
@@ -83,7 +86,9 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if delegation_family {
+    if effect_prepared_v2 {
+        effect::validate_prepared_v2(object(&payload)?)?;
+    } else if delegation_family {
         delegation::validate(kind, object(&payload)?)?;
     } else if scheduler_family {
         scheduler::validate(kind, object(&payload)?)?;
@@ -100,5 +105,9 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     } else {
         turn::validate(kind, object(&payload)?)?;
     }
-    Ok(RuntimeFactDisposition::AppliedV1)
+    Ok(if effect_prepared_v2 {
+        RuntimeFactDisposition::AppliedV2
+    } else {
+        RuntimeFactDisposition::AppliedV1
+    })
 }

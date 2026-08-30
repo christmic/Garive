@@ -326,7 +326,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
                         "prepared_digest":prepared.input_digest(),
                         "kind":interaction_kind(kind),
                         "prompt":content_binding(&prompt)?,
-                        "response_schema":content_binding(&response_schema)?,
+                        "response_schema":{"digest":schema.sha256(),"inline_utf8":schema.as_json()},
                         "response_schema_digest":schema.sha256(),
                         "expiry_code":expiry_code,
                     }),

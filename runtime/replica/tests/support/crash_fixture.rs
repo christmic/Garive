@@ -8,8 +8,8 @@ use garive_runtime::{
     plan_cancel_turn, plan_continue_turn, plan_schedule_claimed, plan_schedule_created,
     plan_start_turn, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
     ContinuationInput, ContinueTurnCommand, EffectiveRuntimeLimits, ExecutionLeaseRequest,
-    InteractionContinuation, InteractionExpiry, RuntimeCommandId, ScheduleLeaseRequest,
-    ScheduleLifecycleContext, SqliteLedger, StartTurnCommand,
+    InteractionContinuation, InteractionExpiry, InteractionInputRepresentation, RuntimeCommandId,
+    ScheduleLeaseRequest, ScheduleLifecycleContext, SqliteLedger, StartTurnCommand,
 };
 use garive_scheduler::{
     next_occurrence, MisfirePolicy, ScheduleDecision, ScheduleIntent, ScheduleSubject,
@@ -199,7 +199,10 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
                 turn_id: turn.clone(),
                 expected_suspension_id: "suspension".into(),
                 expected_session_version: version,
-                continuation_input: ContinuationInput::ExternalInput("true".into()),
+                continuation_input: ContinuationInput::InteractionResponse {
+                    canonical_json: "true".into(),
+                    representation: InteractionInputRepresentation::JsonField,
+                },
                 interaction: Some(InteractionContinuation {
                     execution_id: execution.clone(),
                     tool_invocation_id: ToolInvocationId::try_from("tool").unwrap(),
@@ -207,7 +210,7 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
                     prepared_digest: empty_digest().into(),
                     response_schema_digest:
                         "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553".into(),
-                    response_schema: Some(json!({"type":"boolean"})),
+                    response_schema: json!({"type":"boolean"}),
                     expiry: InteractionExpiry::None,
                 }),
                 recorded_at: "2026-08-29T00:00:02Z".into(),

@@ -29,6 +29,8 @@ public enum class PreparationErrorCode(public val wireName: String) {
     UNSUPPORTED_SCHEMA_KEYWORD("unsupported_schema_keyword"),
     /** Value cannot satisfy RFC 8785 canonicalization. */
     NON_CANONICAL_VALUE("non_canonical_value"),
+    /** C5b access declaration, key, resolver result, or policy is invalid. */
+    EFFECT_ACCESS_INVALID("effect_access_invalid"),
 }
 
 /** Deterministic JSON Schema assertion failure. */
@@ -111,7 +113,14 @@ public class ToolDefinition private constructor(
     public val inputSchema: JsonElement,
     public val requirements: ExecutionRequirements,
     public val replayClass: ReplayClass,
+    /** Frozen v2 policy, absent for C4 v1 definitions. */
+    public val accessPolicy: ToolAccessPolicyV1?,
+    /** Frozen trusted resolver revision, absent for C4 v1 definitions. */
+    public val accessResolverRevision: String?,
 ) {
+    /** Prepared Call contract version selected by this exact definition. */
+    public val preparedContractVersion: Int = if (accessPolicy == null) 1 else 2
+
     public companion object {
         /** Validates and constructs one Portable Tool Schema v1 definition. */
         public fun create(
@@ -122,15 +131,70 @@ public class ToolDefinition private constructor(
             requirements: ExecutionRequirements,
             replayClass: ReplayClass,
         ): ToolContractResult<ToolDefinition> {
+            return createInternal(
+                name, revision, description, inputSchema, requirements, replayClass, null, null, false,
+            )
+        }
+
+        /** Constructs a Prepared v2-capable definition with a frozen access contract. */
+        @Suppress("LongParameterList")
+        public fun createV2(
+            name: String,
+            revision: String,
+            description: String,
+            inputSchema: JsonElement,
+            requirements: ExecutionRequirements,
+            replayClass: ReplayClass,
+            accessPolicy: ToolAccessPolicyV1,
+            accessResolverRevision: String,
+        ): ToolContractResult<ToolDefinition> = createInternal(
+            name,
+            revision,
+            description,
+            inputSchema,
+            requirements,
+            replayClass,
+            accessPolicy,
+            accessResolverRevision,
+            true,
+        )
+
+        @Suppress("LongParameterList")
+        private fun createInternal(
+            name: String,
+            revision: String,
+            description: String,
+            inputSchema: JsonElement,
+            requirements: ExecutionRequirements,
+            replayClass: ReplayClass,
+            accessPolicy: ToolAccessPolicyV1?,
+            accessResolverRevision: String?,
+            v2AccessProof: Boolean,
+        ): ToolContractResult<ToolDefinition> {
             if (name.isEmpty() || revision.isEmpty() || description.isEmpty()) {
                 return failure(PreparationErrorCode.INVALID_TOOL_DEFINITION)
             }
             PortableSchema.validateDefinition(inputSchema)?.let { return ToolContractResult.Failure(it) }
-            if (replayClass == ReplayClass.READ_ONLY && requirements.capabilities.any { it != ExecutionCapability.FILESYSTEM_READ }) {
+            if (replayClass == ReplayClass.READ_ONLY && requirements.capabilities.any {
+                    it != ExecutionCapability.FILESYSTEM_READ && !(v2AccessProof && it == ExecutionCapability.NETWORK)
+                }
+            ) {
                 return failure(PreparationErrorCode.INVALID_TOOL_DEFINITION)
             }
+            if ((accessPolicy == null) != (accessResolverRevision == null) || accessResolverRevision == "") {
+                return failure(PreparationErrorCode.EFFECT_ACCESS_INVALID)
+            }
             return ToolContractResult.Success(
-                ToolDefinition(name, revision, description, inputSchema, requirements, replayClass),
+                ToolDefinition(
+                    name,
+                    revision,
+                    description,
+                    inputSchema,
+                    requirements,
+                    replayClass,
+                    accessPolicy,
+                    accessResolverRevision,
+                ),
             )
         }
     }
@@ -152,6 +216,16 @@ public data class PreparedToolCall(
     public val inputDigest: String,
     public val requirements: ExecutionRequirements,
     public val replayClass: ReplayClass,
+    /** Immutable Prepared Call contract version. */
+    public val contractVersion: Int,
+    /** V2 access policy revision, absent for v1. */
+    public val accessPolicyRevision: String?,
+    /** V2 trusted resolver revision, absent for v1. */
+    public val accessResolverRevision: String?,
+    /** V2 exact canonical accesses, absent for v1. */
+    public val invocationAccesses: InvocationAccessSet?,
+    /** V2 result buffer charge, absent for v1. */
+    public val maxResultBytes: Long?,
 )
 
 internal fun failure(code: PreparationErrorCode): ToolContractResult.Failure =
