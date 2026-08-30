@@ -40,7 +40,7 @@ describe("Desktop work state", () => {
       observed_max_position: 7, has_more: false, items: [{
         turn_id: "turn-old", started_position: 2, latest_position: 7,
         state: "completed", user_text: "Recover this", completion_text: "Recovered",
-        content_truncated: false,
+        content_truncated: false, activities: [],
       }],
     } });
     expect(state.sessionId).toBe("session-old");
@@ -54,11 +54,26 @@ describe("Desktop work state", () => {
       api_version: "v1", session_id: "session-1", scanned_through_position: 7,
       observed_max_position: 7, has_more: false, items: [{ turn_id: "turn-1",
         started_position: 2, latest_position: 7, state: "suspended", user_text: "start",
-        suspension: { suspension_id: "s-1", session_version: 3, kind }, content_truncated: false }],
+        suspension: { suspension_id: "s-1", session_version: 3, kind }, content_truncated: false,
+        activities: [] }],
     } });
     const partial = reduceWork(suspended("partial_output"), { type: "draft_changed", value: "continue" });
     const approval = reduceWork(suspended("approval_required"), { type: "draft_changed", value: "approve" });
     expect(canSubmit(partial)).toBe(true);
     expect(canSubmit(approval)).toBe(false);
+  });
+
+  it("restores only committed H3 activity from the durable timeline", () => {
+    const state = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
+      api_version: "v1", session_id: "session-h3", scanned_through_position: 9,
+      observed_max_position: 9, has_more: false, items: [{ turn_id: "turn-h3",
+        started_position: 2, latest_position: 9, state: "completed", user_text: "read",
+        completion_text: "done", content_truncated: false, activities: [{ api_version: "v1",
+          activity_id: "activity-1", kind: "tool", label_key: "agent.activity.read_file",
+          state: "completed", source_position: 8, terminal: true }],
+      }],
+    } });
+    expect(state.activities).toHaveLength(1);
+    expect(state.activities[0]?.state).toBe("completed");
   });
 });

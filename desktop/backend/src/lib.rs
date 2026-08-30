@@ -184,6 +184,10 @@ impl DesktopHost {
         })
     }
 
+    fn supports_activity(&self) -> bool {
+        self.host.limits().activity.is_some()
+    }
+
     /// Creates a Session and executes one Turn through the embedded durable loop.
     pub async fn run_turn(
         &self,
@@ -314,17 +318,22 @@ pub struct DesktopState {
 impl DesktopState {
     /// Returns only capabilities the installed backend can currently prove.
     pub fn capabilities(&self) -> DesktopCapabilityManifest {
-        let (configured, agent_definition_id) = self.host.lock().map_or((false, None), |slot| {
-            slot.as_ref().map_or((false, None), |host| {
-                (true, Some(host.definition_id.clone()))
-            })
-        });
+        let (configured, agent_definition_id, activity) =
+            self.host.lock().map_or((false, None, false), |slot| {
+                slot.as_ref().map_or((false, None, false), |host| {
+                    (
+                        true,
+                        Some(host.definition_id.clone()),
+                        host.supports_activity(),
+                    )
+                })
+            });
         DesktopCapabilityManifest {
             configured,
             agent_definition_id,
             multi_turn: configured,
             durable_navigation: configured,
-            activity: false,
+            activity,
             setup: false,
             workspaces: false,
             artifacts: false,

@@ -36,6 +36,14 @@ export interface HostTimelineItem {
   readonly state: "running" | "suspended" | "completed" | "stopped" | "failed";
   readonly user_text: string; readonly completion_text?: string;
   readonly suspension?: HostSuspension; readonly content_truncated: boolean;
+  readonly activities: readonly HostActivity[];
+}
+
+export interface HostActivity {
+  readonly api_version: "v1"; readonly activity_id: string;
+  readonly kind: "tool" | "interaction" | string; readonly label_key: string;
+  readonly state: string; readonly source_position: number; readonly terminal: boolean;
+  readonly safe_code?: string;
 }
 
 export interface HostSuspension {

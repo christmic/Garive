@@ -168,8 +168,9 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .activity-row small { margin-top: 2px; color: var(--muted); font-size: 10px; }
 .activity-status { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: var(--muted); background: rgba(45,43,35,.06); }
 .activity-status.completed { color: var(--green); background: rgba(39,130,90,.09); }
-.activity-status.suspended, .activity-status.stopped { color: var(--amber); background: rgba(164,104,22,.09); }
-.activity-status.failed { color: var(--red); background: rgba(183,71,62,.09); }
+.activity-status.running, .activity-status.authorized, .activity-status.prepared { color: var(--accent); background: rgba(49,95,207,.09); }
+.activity-status.suspended, .activity-status.stopped, .activity-status.attention_required { color: var(--amber); background: rgba(164,104,22,.09); }
+.activity-status.failed, .activity-status.denied, .activity-status.cancelled { color: var(--red); background: rgba(183,71,62,.09); }
 .activity-status svg { width: 13px; }
 .activity-status .spinner { width: 12px; height: 12px; border-color: rgba(49,95,207,.25); border-top-color: var(--accent); }
 .activity-gate { display: flex; gap: 7px; margin: 15px 0 0; color: var(--subtle); font-size: 10px; line-height: 1.45; }

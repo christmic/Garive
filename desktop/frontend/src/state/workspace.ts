@@ -1,4 +1,4 @@
-import type { DesktopCapabilities, HostResult, HostSuspension, HostTimelinePage } from "../ipc/host";
+import type { DesktopCapabilities, HostActivity, HostResult, HostSuspension, HostTimelinePage } from "../ipc/host";
 
 export type BootState = "loading" | "ready" | "unavailable";
 export type WorkPhase = "idle" | "submitting";
@@ -18,6 +18,7 @@ export interface WorkState {
   readonly phase: WorkPhase;
   readonly sessionId?: string;
   readonly messages: readonly WorkMessage[];
+  readonly activities: readonly HostActivity[];
   readonly draft: string;
   readonly error?: string;
   readonly inspectorOpen: boolean;
@@ -41,6 +42,7 @@ export const initialWorkState: WorkState = {
   boot: "loading",
   phase: "idle",
   messages: [],
+  activities: [],
   draft: "",
   inspectorOpen: false,
   inspectorTab: "activity",
@@ -85,6 +87,7 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
         phase: "idle",
         sessionId: event.timeline.session_id,
         messages: timelineMessages(event.timeline),
+        activities: event.timeline.items.flatMap((item) => item.activities),
         draft: "",
         error: undefined,
       };

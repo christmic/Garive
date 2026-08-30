@@ -118,7 +118,7 @@ export function App() {
       const result = suspended?.suspension && state.sessionId
         ? await continueAgentTurn(state.sessionId, suspended.id, suspended.suspension, input)
         : await runAgentTurn(definition, input, state.sessionId);
-      if (suspended || result.terminal === "suspended") {
+      if (suspended || result.terminal === "suspended" || state.capabilities?.activity) {
         dispatch({ type: "session_loaded", timeline: await getSessionTimeline(result.session_id) });
       } else {
         dispatch({ type: "submission_succeeded", input, result });
@@ -298,6 +298,17 @@ function ResultDeliverables({ state }: { state: WorkState }) {
 }
 
 function CommittedActivity({ state }: { state: WorkState }) {
+  if (state.capabilities?.activity && state.activities.length) {
+    const activities = [...state.activities].sort((left, right) =>
+      Number(right.state === "attention_required") - Number(left.state === "attention_required")
+        || left.source_position - right.source_position);
+    return <div className="activity-list"><div className="activity-intro"><h2>Committed activity</h2><p>Redacted lifecycle states verified by the local Runtime.</p></div>
+      {activities.map((activity) => <div className="activity-row" key={`${activity.kind}-${activity.activity_id}`}>
+        <span className={`activity-status ${activity.state}`}><Icon name={activityIcon(activity.state)} /></span>
+        <div><strong>{activityLabel(activity.label_key)}</strong><small>{activityState(activity.state)}</small></div>
+      </div>)}
+    </div>;
+  }
   const turns = state.messages.filter((message) => message.role === "assistant");
   if (!turns.length && state.phase !== "submitting") return <div className="inspector-empty"><Icon name="activity" /><h2>No committed Turns yet</h2><p>Durable Turn states appear here after work begins.</p></div>;
   return <div className="activity-list"><div className="activity-intro"><h2>Turn activity</h2><p>Only states committed by the local Runtime are shown.</p></div>
@@ -306,6 +317,30 @@ function CommittedActivity({ state }: { state: WorkState }) {
     {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>Current Turn</strong><small>Working</small></div></div>}
     {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />Tool-level details stay hidden until the H3 committed projection is installed.</p>}
   </div>;
+}
+
+function activityLabel(key: string) {
+  const labels: Record<string, string> = {
+    "agent.activity.read_file": "Read scoped file",
+    "agent.activity.write_file": "Write scoped file",
+    "agent.activity.approval": "Approval decision",
+    "agent.activity.external_input": "Requested input",
+    "agent.activity.tool_rejected": "Rejected tool request",
+  };
+  return labels[key] ?? "Agent activity";
+}
+function activityState(state: string) {
+  const labels: Record<string, string> = {
+    prepared: "Prepared", waiting_for_input: "Waiting for input", input_received: "Input received",
+    authorized: "Authorized", running: "Running", completed: "Completed", denied: "Denied",
+    failed: "Failed", cancelled: "Cancelled", attention_required: "Needs reconciliation",
+  };
+  return labels[state] ?? "Updated";
+}
+function activityIcon(state: string): IconName {
+  return state === "completed" || state === "input_received" ? "check"
+    : state === "running" || state === "authorized" || state === "prepared" ? "activity"
+      : "warning";
 }
 
 function SearchScreen({ recents, titles, onOpen }: {
