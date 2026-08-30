@@ -13,9 +13,23 @@ const MAX_PUBLIC_TEXT_BYTES: usize = 128;
 pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), LedgerError> {
     match kind {
         "workspace.attached" => attached(value),
+        "workspace.detached" => detached(value),
         "workspace.context_selected" => context_selected(value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn detached(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &["command_id", "workspace_id", "grant_revision", "outcome"],
+        EMPTY,
+    )?;
+    bounded_text(value, "command_id")?;
+    bounded_text(value, "workspace_id")?;
+    unsigned(value, "grant_revision", true)?;
+    enumeration(value, "outcome", &["detached", "already_detached"])?;
+    Ok(())
 }
 
 fn context_selected(value: &Map<String, Value>) -> Result<(), LedgerError> {

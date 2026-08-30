@@ -308,6 +308,38 @@ fn workspace_attachment_is_path_free_idempotent_and_restart_safe() {
         restarted.session_workspaces(&session.session_id).unwrap(),
         vec![attached]
     );
+    let detached = restarted
+        .detach_workspace(
+            "detach-workspace",
+            &session.session_id,
+            "workspace-opaque",
+            1,
+        )
+        .unwrap();
+    assert_eq!(detached.outcome, "detached");
+    assert_eq!(
+        restarted
+            .detach_workspace(
+                "detach-workspace",
+                &session.session_id,
+                "workspace-opaque",
+                1,
+            )
+            .unwrap(),
+        detached
+    );
+    let restarted_again = LiveHost::new(
+        &harness.database,
+        installed(),
+        restarted.limits(),
+        Arc::new(FixedClock),
+        harness.dispatcher,
+    )
+    .unwrap();
+    assert!(restarted_again
+        .session_workspaces(&session.session_id)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

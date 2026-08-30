@@ -25,8 +25,8 @@ use crate::{
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
     CreateSessionResponse, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
-    HostEventPage, HostWorkspaceAttachment, HostWorkspaceContextEntry, InstalledAgent,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary,
+    HostEventPage, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary,
     TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
@@ -186,17 +186,98 @@ impl LiveHost {
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
         let mut attached = BTreeMap::new();
-        for fact in facts
-            .iter()
-            .filter(|fact| fact.kind.as_str() == "workspace.attached")
-        {
-            let payload: WorkspaceAttached = decode_payload(fact)?;
-            attached.insert(
-                payload.workspace_id.clone(),
-                workspace_attachment(&session_id, &payload, fact.position),
-            );
+        for fact in &facts {
+            match fact.kind.as_str() {
+                "workspace.attached" => {
+                    let payload: WorkspaceAttached = decode_payload(fact)?;
+                    attached.insert(
+                        payload.workspace_id.clone(),
+                        workspace_attachment(&session_id, &payload, fact.position),
+                    );
+                }
+                "workspace.detached" => {
+                    let payload: WorkspaceDetached = decode_payload(fact)?;
+                    attached.remove(&payload.workspace_id);
+                }
+                _ => {}
+            }
         }
         Ok(attached.into_values().collect())
+    }
+
+    /// Durably detaches one opaque Workspace grant from a Session.
+    pub fn detach_workspace(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        workspace_id: &str,
+        grant_revision: u64,
+    ) -> Result<HostWorkspaceDetachment, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_key(workspace_id)?;
+        if grant_revision == 0 {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "workspace.detached")
+        {
+            let payload: WorkspaceDetached = decode_payload(fact)?;
+            if payload.command_id == idempotency_key {
+                if payload.workspace_id != workspace_id || payload.grant_revision != grant_revision
+                {
+                    return Err(LiveHostError::CommandConflict);
+                }
+                return Ok(workspace_detachment(&session_id, &payload, fact.position));
+            }
+        }
+        reject_other_command(&facts, idempotency_key)?;
+        let active = self.session_workspaces(session)?;
+        let outcome = match active.iter().find(|item| item.workspace_id == workspace_id) {
+            Some(item) if item.grant_revision == grant_revision => "detached",
+            Some(_) => return Err(LiveHostError::CommandConflict),
+            None => "already_detached",
+        };
+        let payload = serde_json::json!({
+            "command_id":idempotency_key,
+            "workspace_id":workspace_id,
+            "grant_revision":grant_revision,
+            "outcome":outcome,
+        });
+        let fact = FactDraft {
+            fact_id: FactId::try_from(
+                format!("workspace-detach-{}", digest(idempotency_key.as_bytes())).as_str(),
+            )
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new("workspace.detached").map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&payload)
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        let committed = ledger
+            .commit(session_id.clone(), watermark.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        let position = *committed
+            .positions
+            .last()
+            .ok_or(LiveHostError::DurabilityUnavailable)?;
+        let payload: WorkspaceDetached =
+            serde_json::from_value(payload).map_err(|_| LiveHostError::CorruptState)?;
+        Ok(workspace_detachment(&session_id, &payload, position))
     }
 
     /// Projects one bounded fixed-prefix page of immutable Artifact revisions.
@@ -1042,6 +1123,15 @@ struct WorkspaceAttached {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct WorkspaceDetached {
+    command_id: String,
+    workspace_id: String,
+    grant_revision: u64,
+    outcome: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ArtifactCommitted {
     artifact_id: String,
     revision: u64,
@@ -1102,6 +1192,21 @@ fn workspace_attachment(
         grant_revision: payload.grant_revision,
         access: payload.access.clone(),
         attached_position: position,
+    }
+}
+
+fn workspace_detachment(
+    session_id: &SessionId,
+    payload: &WorkspaceDetached,
+    position: u64,
+) -> HostWorkspaceDetachment {
+    HostWorkspaceDetachment {
+        api_version: "v1",
+        session_id: session_id.as_str().into(),
+        workspace_id: payload.workspace_id.clone(),
+        grant_revision: payload.grant_revision,
+        outcome: payload.outcome.clone(),
+        detached_position: position,
     }
 }
 
@@ -1378,6 +1483,8 @@ fn reject_other_command(facts: &[DurableFact], command_id: &str) -> Result<(), L
             "session.opened"
                 | "turn.started"
                 | "turn.cancel_requested"
+                | "workspace.attached"
+                | "workspace.detached"
                 | "workspace.context_selected"
         ) {
             continue;

@@ -249,6 +249,24 @@ pub struct HostWorkspaceAttachment {
     pub attached_position: u64,
 }
 
+/// Durable path-free receipt for one exact Session Workspace detach command.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostWorkspaceDetachment {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Opaque detached Workspace identity.
+    pub workspace_id: String,
+    /// Expected grant revision bound by the command.
+    pub grant_revision: u64,
+    /// Idempotent terminal result.
+    pub outcome: String,
+    /// Durable source position of the receipt fact.
+    pub detached_position: u64,
+}
+
 /// Immutable user-visible projection of one committed Artifact revision.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HostArtifact {
