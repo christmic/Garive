@@ -9,7 +9,7 @@ use editor::{EditError, EditorState};
 fn edits_extended_graphemes_without_splitting_bytes() {
     let mut editor = EditorState::new(128);
     editor.insert("a👨‍👩‍👧‍👦界").unwrap();
-    assert_eq!(editor.display_column(), 5);
+    assert_eq!(editor.cursor_grapheme(), 3);
     editor.move_left(false);
     assert!(editor.backspace());
     assert_eq!(editor.text(), "a界");
@@ -104,20 +104,14 @@ fn plain_arrows_collapse_selection_to_edges_without_extra_movement() {
 }
 
 #[test]
-fn word_and_vertical_moves_continue_from_the_directional_selection_edge() {
+fn word_moves_continue_from_the_directional_selection_edge() {
     let mut editor = EditorState::new(128);
     editor.insert("one two\nthree four").unwrap();
     editor.move_document_start(false);
     editor.move_word_right(true);
     editor.move_word_right(false);
-    assert_eq!(editor.cursor_line(), 1);
-    assert_eq!(editor.display_column(), 0);
-    assert!(!editor.has_selection());
-
-    editor.move_document_start(false);
-    editor.move_down(true);
-    editor.move_up(false);
-    assert_eq!(editor.cursor_line(), 0);
+    editor.insert("X").unwrap();
+    assert_eq!(editor.text(), "one two\nXthree four");
     assert!(!editor.has_selection());
 }
 
@@ -146,21 +140,15 @@ fn word_deletion_document_motion_and_tab_expansion_are_grapheme_safe() {
 }
 
 #[test]
-fn multiline_navigation_preserves_display_column_and_word_boundaries() {
+fn logical_line_and_word_navigation_preserve_grapheme_boundaries() {
     let mut editor = EditorState::new(100);
     editor.insert("ab 界\nx\nhello world").unwrap();
     editor.move_line_start(false);
-    assert_eq!(editor.display_column(), 0);
-    editor.move_up(false);
-    assert_eq!(editor.display_column(), 0);
+    assert_eq!(editor.cursor_grapheme(), 7);
     editor.move_line_end(false);
-    assert_eq!(editor.display_column(), 1);
-    editor.move_up(false);
-    assert_eq!(editor.display_column(), 1);
-    editor.move_word_right(false);
-    assert_eq!(editor.display_column(), 3);
+    assert_eq!(editor.cursor_grapheme(), 18);
     editor.move_word_left(false);
-    assert_eq!(editor.display_column(), 0);
-    editor.move_down(false);
-    assert_eq!(editor.display_column(), 0);
+    assert_eq!(editor.cursor_grapheme(), 13);
+    editor.move_word_left(false);
+    assert_eq!(editor.cursor_grapheme(), 7);
 }

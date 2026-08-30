@@ -1,5 +1,4 @@
 use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
 
 const MAX_UNDO_OPERATIONS: usize = 100;
 const MAX_UNDO_BYTES: usize = 256 * 1_024;
@@ -56,22 +55,6 @@ impl EditorState {
         &self.text
     }
 
-    pub(crate) fn display_column(&self) -> usize {
-        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
-        let line = self.text[..byte]
-            .rsplit_once('\n')
-            .map_or(&self.text[..byte], |v| v.1);
-        UnicodeWidthStr::width(line)
-    }
-
-    pub(crate) fn cursor_line(&self) -> usize {
-        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
-        self.text[..byte]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count()
-    }
-
     pub(crate) fn cursor_grapheme(&self) -> usize {
         self.cursor_grapheme
     }
@@ -82,8 +65,38 @@ impl EditorState {
         self.preferred_display_column = None;
     }
 
-    pub(crate) fn line_count(&self) -> usize {
-        self.text.bytes().filter(|byte| *byte == b'\n').count() + 1
+    pub(crate) fn visual_vertical_state(&self, direction: i8) -> (usize, Option<usize>) {
+        let Some(anchor) = self
+            .selection_anchor
+            .filter(|anchor| *anchor != self.cursor_grapheme)
+        else {
+            return (self.cursor_grapheme, self.preferred_display_column);
+        };
+        let edge = if direction < 0 {
+            anchor.min(self.cursor_grapheme)
+        } else {
+            anchor.max(self.cursor_grapheme)
+        };
+        (edge, None)
+    }
+
+    pub(crate) fn apply_visual_vertical_move(
+        &mut self,
+        target: usize,
+        preferred_column: usize,
+        direction: i8,
+        selecting: bool,
+    ) {
+        if !selecting {
+            self.collapse_selection(if direction < 0 {
+                SelectionEdge::Start
+            } else {
+                SelectionEdge::End
+            });
+        }
+        self.prepare_selection(selecting);
+        self.cursor_grapheme = target.min(self.grapheme_len());
+        self.preferred_display_column = Some(preferred_column);
     }
 
     pub(crate) fn insert(&mut self, value: &str) -> Result<(), EditError> {
@@ -151,14 +164,6 @@ impl EditorState {
         self.prepare_selection(selecting);
         self.cursor_grapheme = (self.cursor_grapheme + 1).min(self.grapheme_len());
         self.preferred_display_column = None;
-    }
-
-    pub(crate) fn move_up(&mut self, selecting: bool) {
-        self.move_vertical(-1, selecting);
-    }
-
-    pub(crate) fn move_down(&mut self, selecting: bool) {
-        self.move_vertical(1, selecting);
     }
 
     pub(crate) fn move_line_start(&mut self, selecting: bool) {
@@ -365,47 +370,6 @@ impl EditorState {
         self.selection_anchor = None;
         self.preferred_display_column = None;
         true
-    }
-
-    fn move_vertical(&mut self, direction: i8, selecting: bool) {
-        if !selecting {
-            self.collapse_selection(if direction < 0 {
-                SelectionEdge::Start
-            } else {
-                SelectionEdge::End
-            });
-        }
-        let current_line = self.cursor_line();
-        let line_count = self.line_count();
-        let target_line = if direction < 0 {
-            current_line.saturating_sub(1)
-        } else {
-            (current_line + 1).min(line_count.saturating_sub(1))
-        };
-        if target_line == current_line {
-            return;
-        }
-        self.prepare_selection(selecting);
-        let lines = self.text.split('\n').collect::<Vec<_>>();
-        let column = self
-            .preferred_display_column
-            .unwrap_or_else(|| self.display_column());
-        self.preferred_display_column = Some(column);
-        let prefix_graphemes = lines[..target_line]
-            .iter()
-            .map(|line| line.graphemes(true).count() + 1)
-            .sum::<usize>();
-        let mut width = 0;
-        let mut in_line = 0;
-        for grapheme in lines[target_line].graphemes(true) {
-            let next = width + UnicodeWidthStr::width(grapheme);
-            if next > column {
-                break;
-            }
-            width = next;
-            in_line += 1;
-        }
-        self.cursor_grapheme = prefix_graphemes + in_line;
     }
 
     fn checkpoint(&mut self) {

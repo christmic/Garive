@@ -320,14 +320,17 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
             .model
             .composer
             .move_right(key.modifiers.contains(KeyModifiers::SHIFT)),
-        KeyCode::Up => state
-            .model
-            .composer
-            .move_up(key.modifiers.contains(KeyModifiers::SHIFT)),
-        KeyCode::Down => state
-            .model
-            .composer
-            .move_down(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Up | KeyCode::Down => {
+            let direction = if key.code == KeyCode::Up { -1 } else { 1 };
+            let (target, preferred) =
+                crate::view::composer_vertical_target(&state.model, direction);
+            state.model.composer.apply_visual_vertical_move(
+                target,
+                preferred,
+                direction,
+                key.modifiers.contains(KeyModifiers::SHIFT),
+            );
+        }
         KeyCode::Home => state
             .model
             .composer

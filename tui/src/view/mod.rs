@@ -168,6 +168,12 @@ pub(crate) fn composer_hit_test(
     composer::selection_at(model, composer, column, row, clamp)
 }
 
+pub(crate) fn composer_vertical_target(model: &AppModel, direction: i8) -> (usize, usize) {
+    let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let area = content_rows(model, main_content_area(full))[1];
+    composer::vertical_target(&model.composer, area.width.saturating_sub(4), direction)
+}
+
 fn render_header(
     model: &AppModel,
     theme: Theme,

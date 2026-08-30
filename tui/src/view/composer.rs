@@ -188,29 +188,31 @@ impl EditorLayout {
     }
 
     fn visible_cursor(&self, height: u16) -> ((u16, u16), u16) {
-        let mut position = (0, 0);
+        let position = self.position_for(self.cursor);
+        let scroll = position.1.saturating_sub(height.saturating_sub(1));
+        (position, scroll)
+    }
+
+    fn position_for(&self, cursor: usize) -> (u16, u16) {
         for (row_index, row) in self.rows.iter().enumerate() {
             let next_start = self.rows.get(row_index + 1).map(|next| next.start);
-            if self.cursor >= row.start
-                && (self.cursor < row.end
-                    || (self.cursor == row.end && next_start != Some(self.cursor)))
+            if cursor >= row.start
+                && (cursor < row.end || (cursor == row.end && next_start != Some(cursor)))
             {
                 let column = row
                     .tokens
                     .iter()
-                    .take_while(|token| token.grapheme < self.cursor)
+                    .take_while(|token| token.grapheme < cursor)
                     .map(|token| token.width)
                     .sum::<u16>();
-                position = if column >= self.width {
+                return if column >= self.width {
                     (0, row_index.saturating_add(1) as u16)
                 } else {
                     (column, row_index as u16)
                 };
-                break;
             }
         }
-        let scroll = position.1.saturating_sub(height.saturating_sub(1));
-        (position, scroll)
+        (0, 0)
     }
 
     fn grapheme_at(&self, column: u16, row: u16) -> usize {
@@ -230,6 +232,67 @@ impl EditorLayout {
         }
         line.end
     }
+
+    fn vertical_target(
+        &self,
+        origin: usize,
+        preferred_column: Option<usize>,
+        direction: i8,
+    ) -> (usize, usize) {
+        let (current_column, current_row) = self.position_for(origin);
+        let preferred = preferred_column.unwrap_or(usize::from(current_column));
+        let visual_rows = self.visual_row_count();
+        let target_row = if direction < 0 {
+            current_row.saturating_sub(1)
+        } else {
+            current_row
+                .saturating_add(1)
+                .min(visual_rows.saturating_sub(1))
+        };
+        if target_row == current_row {
+            return (origin, preferred);
+        }
+        let target = self.vertical_grapheme_at(preferred, target_row);
+        (target, preferred)
+    }
+
+    fn visual_row_count(&self) -> u16 {
+        let rows = u16::try_from(self.rows.len()).unwrap_or(u16::MAX);
+        let continuation = self.rows.last().is_some_and(|row| {
+            row.tokens.iter().map(|token| token.width).sum::<u16>() >= self.width
+        });
+        rows.saturating_add(u16::from(continuation))
+    }
+
+    fn vertical_grapheme_at(&self, column: usize, row: u16) -> usize {
+        let Some(line) = self.rows.get(usize::from(row)) else {
+            return self.rows.last().map_or(0, |line| line.end);
+        };
+        let mut used = 0_usize;
+        for token in &line.tokens {
+            let next = used.saturating_add(usize::from(token.width));
+            if column < next {
+                return token.grapheme;
+            }
+            used = next;
+        }
+        if self
+            .rows
+            .get(usize::from(row).saturating_add(1))
+            .is_some_and(|next| next.start == line.end)
+        {
+            line.tokens
+                .last()
+                .map_or(line.start, |token| token.grapheme)
+        } else {
+            line.end
+        }
+    }
+}
+
+pub(super) fn vertical_target(editor: &EditorState, width: u16, direction: i8) -> (usize, usize) {
+    let (origin, preferred) = editor.visual_vertical_state(direction);
+    EditorLayout::new(editor, width.max(1)).vertical_target(origin, preferred, direction)
 }
 
 fn wrap_logical_line(
@@ -372,5 +435,36 @@ mod tests {
 
         editor.replace("12345").unwrap();
         assert_eq!(desired_height(&editor, 9), 4);
+    }
+
+    #[test]
+    fn visual_vertical_navigation_uses_wrapped_rows_and_sticky_column() {
+        let mut editor = EditorState::new(128);
+        editor.replace("hello world").unwrap();
+
+        let (target, preferred) = vertical_target(&editor, 8, -1);
+        assert_eq!((target, preferred), (5, 5));
+        editor.apply_visual_vertical_move(target, preferred, -1, false);
+        assert_eq!(editor.cursor_grapheme(), 5);
+
+        let (target, preferred) = vertical_target(&editor, 8, 1);
+        assert_eq!((target, preferred), (11, 5));
+        editor.apply_visual_vertical_move(target, preferred, 1, false);
+        assert_eq!(editor.cursor_grapheme(), 11);
+    }
+
+    #[test]
+    fn visual_vertical_navigation_handles_wide_cells_and_continuation_rows() {
+        let mut editor = EditorState::new(128);
+        editor.replace("ab界cd").unwrap();
+        let (target, preferred) = vertical_target(&editor, 4, -1);
+        assert_eq!((target, preferred), (2, 2));
+
+        editor.replace("12345").unwrap();
+        let (target, preferred) = vertical_target(&editor, 5, -1);
+        assert_eq!((target, preferred), (0, 0));
+        editor.apply_visual_vertical_move(target, preferred, -1, false);
+        let (target, preferred) = vertical_target(&editor, 5, 1);
+        assert_eq!((target, preferred), (5, 0));
     }
 }
