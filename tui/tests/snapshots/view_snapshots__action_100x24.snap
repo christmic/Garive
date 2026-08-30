@@ -1,0 +1,28 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "frame(&action, Theme::Dark, 100, 24)"
+---
+  GARIVE  research-age  /  Session session-alph                               ● online  ·  running
+
+ Sessions 2                │ Conversation · ● live
+                           │  ╭─ YOU #2
+ ▌ research-age · 123456   │  │  Summarize the release plan.
+   ✓ completed  ·  3 turns │  ╰─
+                   ╭ Action required ───────────────────────────────────────────╮
+   research-age · 9│                                                            │
+   ● running  ·  1 │  !  Approval required                                      │
+                   │  Review the public request before responding.              │
+                   │  Create one bounded local file.                            │
+                   │                                                            │
+                   │  Response                                                  │
+                   │  Enter true or false.                                      │
+                   │                                                            │
+                   │    Enter respond now   Ctrl+Q leave safely                 │
+                   │                                                            │
+                   ╰────────────────────────────────────────────────────────────╯
+                           │
+                           │────────────────────────────────────────────────────────────────────────
+                           │╔ Compose ═════════════════════════════════════════════════════════════╗
+                           │║ Ask a follow-up…                                                     ║
+  Ctrl+N new · Ctrl+S list │╚══════════════════════════════════════════════════════════════════════╝
+                           │  Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help   18 / 4096 B

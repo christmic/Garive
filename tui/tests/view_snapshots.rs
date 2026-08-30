@@ -14,7 +14,7 @@ use application::{
     AppModel, BootState, ConnectionState, ExecutionState, Overlay, TimelineItem, TimelineRole,
     TimelineTone,
 };
-use garive_host_client::{AgentDefinitionSummary, SessionSummary};
+use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect};
 
 #[test]
@@ -26,6 +26,24 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let mut wide = model;
     wide.overlay = Some(Overlay::CommandPalette);
     insta::assert_snapshot!("wide_palette_160x28", frame(&wide, Theme::Light, 160, 28));
+
+    let mut help = product_model();
+    help.overlay = Some(Overlay::Help);
+    insta::assert_snapshot!("help_100x24", frame(&help, Theme::Dark, 100, 24));
+
+    let mut action = product_model();
+    action.overlay = Some(Overlay::Suspension);
+    action.suspension = Some(SuspensionView {
+        suspension_id: "suspension-1".into(),
+        session_version: 2,
+        kind: "approval_required".into(),
+        prompt_schema: "garive.public-suspension-prompt.v1".into(),
+        prompt_json: r#"{"schema_version":1,"title_key":"approval.title","message_text":"Create one bounded local file.","action_label_key":"approval.allow"}"#.into(),
+        prompt_digest: "0".repeat(64),
+        response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+        response_schema_digest: Some("1".repeat(64)),
+    });
+    insta::assert_snapshot!("action_100x24", frame(&action, Theme::Dark, 100, 24));
 }
 
 #[test]
