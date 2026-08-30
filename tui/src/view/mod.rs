@@ -398,6 +398,16 @@ mod markdown;
 #[cfg(test)]
 #[allow(dead_code)]
 pub(crate) fn markdown_preview(source: &str, theme: Theme) -> Vec<Line<'static>> {
+    markdown_preview_at_width(source, theme, 80)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn markdown_preview_at_width(
+    source: &str,
+    theme: Theme,
+    width: u16,
+) -> Vec<Line<'static>> {
     let colors = palette(theme);
-    markdown::render_markdown(source, "", colors.normal, colors.agent, colors.muted, 80)
+    markdown::render_markdown(source, "", colors.normal, colors.agent, colors.muted, width)
 }

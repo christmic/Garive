@@ -123,10 +123,10 @@ fn tables_switch_between_styled_grid_and_narrow_records() {
         text(&records),
         vec![
             "   Name: 界面",
-            "   Stat: ready",
+            "   Sta…: ready",
             "   ···",
             "   Name: API",
-            "   Stat: idle",
+            "   Sta…: idle",
         ]
     );
     assert!(!text(&records).iter().any(|line| line.contains('│')));

@@ -7,6 +7,10 @@ expression: "markdown_style_preview(Theme::Mono)"
 "3. " <fg=Some(Reset) bg=None +BOLD -NONE> | "inspect" <fg=Some(Reset) bg=None +NONE -NONE>
 "4. " <fg=Some(Reset) bg=None +BOLD -NONE> | "ship" <fg=Some(Reset) bg=None +NONE -NONE>
 "Guide" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | " (" <fg=Some(DarkGray) bg=None +NONE -NONE> | "https://garive.local/guide" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"" <fg=Some(Reset) bg=None +BOLD -NONE> | "Surface" <fg=Some(Reset) bg=None +BOLD -NONE> | "" <fg=Some(Reset) bg=None +BOLD -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Reset) bg=None +BOLD -NONE> | "State" <fg=Some(Reset) bg=None +BOLD -NONE> | "" <fg=Some(Reset) bg=None +BOLD -NONE>
+"────────┼──────" <fg=Some(Reset) bg=None +BOLD -NONE>
+"" <fg=Some(Reset) bg=None +NONE -NONE> | "macOS" <fg=Some(Reset) bg=None +NONE -NONE> | "  " <fg=Some(Reset) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE> | "ready" <fg=Some(Reset) bg=None +BOLD -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE>
+"" <fg=Some(Reset) bg=None +NONE -NONE> | "Other" <fg=Some(Reset) bg=None +NONE -NONE> | "  " <fg=Some(Reset) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE> | "later" <fg=Some(Reset) bg=None +NONE -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE>
 "╭─ CODE" <fg=Some(Reset) bg=None +BOLD -NONE> | " · " <fg=Some(DarkGray) bg=None +NONE -NONE> | "rust" <fg=Some(Reset) bg=None +BOLD -NONE>
 "│ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "fn main() {}" <fg=Some(DarkGray) bg=None +NONE -NONE>
 "╰─" <fg=Some(DarkGray) bg=None +NONE -NONE>

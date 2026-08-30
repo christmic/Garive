@@ -52,7 +52,7 @@ sequences or schedule their own redraw loops.
 | Header | compact/full; connection chip; execution chip; safe identity |
 | Session rail | empty/populated; selected; terminal/running/action/failed; overflow |
 | Conversation | empty/live/scrolled/newer updates; user/Agent/activity/notice cells |
-| Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped code |
+| Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped code; responsive table grid/records |
 | Composer | idle/focused/frozen/action response; placeholder/draft/over-limit |
 | Context footer | idle/running/notice/recovery; tiny/full width collapse |
 | Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
@@ -107,6 +107,15 @@ their label and a bounded sanitized destination without emitting OSC 8.
 Fenced code uses one semantic frame, retains its first bounded language token,
 expands tabs to four cells for display, and clips by grapheme/display width with
 an explicit `…`; source text remains unchanged for copy.
+
+Markdown tables are one component with two presentations. When every column
+can retain at least six display cells, a compact content-aware grid uses bold
+headers, a semantic accent rule, muted separators, and declared left/center/
+right alignment. Below that boundary, each body row becomes a labeled record;
+`Header: Value` preserves cell emphasis and records are separated by muted
+`···`. Header labels truncate with `…`, never silently. Prefix and block-quote
+gutters are deducted before layout, and neither presentation may exceed its
+assigned display width.
 
 ## Conformance
 

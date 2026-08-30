@@ -318,6 +318,15 @@ grapheme-aware horizontal clipping with an explicit `…` overflow marker.
 Their theme-token presentation is deterministic; copy operates on source text,
 not clipped cells, language labels, or border glyphs.
 
+Tables are parsed into bounded header, row, cell, alignment, and styled-span
+state before presentation. At usable widths they render as a content-aware
+grid; if the column count cannot retain a six-cell minimum after separators,
+they transpose into `Header: Value` records instead of horizontally clipping
+or starving prose columns. The component admits at most 12 columns, 64 body
+rows, and 4,096 characters per cell. Overflow is explicit, Unicode display
+width and grapheme boundaries govern wrapping, and inline emphasis/link styles
+survive both layouts. Resize may switch layouts but cannot mutate copied source.
+
 Long unbroken graphemes clip safely. Wide and combining characters use the
 same display-width implementation as editor cursor placement. Tabs expand to
 four columns for display without changing copied text.
