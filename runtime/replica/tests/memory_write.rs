@@ -5,20 +5,23 @@ use garive_ledger::{
     FactKind, LedgerError, RuntimeFactDisposition, SessionId, TurnId,
 };
 use garive_memory::{
-    ContentBinding, DurableFactReference, HypothesisState, MemoryAuthority, MemoryAuthorityBinding,
-    MemoryAuthorizedScope, MemoryCommit, MemoryDocumentLimits, MemoryErrorCode, MemoryKind,
-    MemoryProposal, MemoryPurpose, MemoryQuery, MemoryRevisionClassification, MemoryRevisionScope,
-    MemoryScope, MemoryScopeClass, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone,
-    MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
+    prepare_memory_import, ContentBinding, DurableFactReference, HypothesisState, MemoryAuthority,
+    MemoryAuthorityBinding, MemoryAuthorizedScope, MemoryCommit, MemoryControlDocument,
+    MemoryDocumentLimits, MemoryErrorCode, MemoryIdentityAllocation, MemoryKind, MemoryProposal,
+    MemoryPurpose, MemoryQuery, MemoryRevisionClassification, MemoryRevisionScope, MemoryScope,
+    MemoryScopeClass, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
+    MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use garive_runtime::{
     authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
-    plan_memory_tombstone, plan_memory_write, reconstruct_memory_repository,
-    reconstruct_memory_repository_projection, reconstruct_memory_state, verify_memory_evidence,
-    MemoryAccessGrant, MemoryControlAction, MemoryControlGrant, MemoryControlRuntimeError,
-    MemoryPrefix, MemoryRepositoryCommitError, MemoryRepositoryError, MemoryRepositoryStatus,
-    MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision,
-    MemoryWriteRejection, RuntimeCommandError, SqliteLedger, SqliteLedgerError,
+    plan_memory_repository_import, plan_memory_tombstone, plan_memory_write,
+    reconstruct_memory_repository, reconstruct_memory_repository_projection,
+    reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryControlAction,
+    MemoryControlGrant, MemoryControlRuntimeError, MemoryImportCommand, MemoryPrefix,
+    MemoryRepositoryCommitError, MemoryRepositoryError, MemoryRepositoryImportContext,
+    MemoryRepositoryImportPolicy, MemoryRepositoryStatus, MemoryTombstoneContext,
+    MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection,
+    RuntimeCommandError, SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -161,6 +164,175 @@ fn classification_registry() -> MemoryTypeRegistry {
         ],
     )
     .unwrap()
+}
+
+#[test]
+fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
+    let directory = tempdir().unwrap();
+    let session = SessionId::try_from("session").unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("import-plan.sqlite3")).unwrap();
+    ledger.commit(session.clone(), 0, initial_facts()).unwrap();
+    let evidence = ledger.read_facts(&session, 0, 1, None).unwrap()[0]
+        .payload
+        .sha256()
+        .to_owned();
+    let source = proposal(None, "learned value", &evidence);
+    let classification = MemoryRevisionClassification::new(
+        MemoryKind::Preference,
+        MemoryAuthorityBinding::new(MemoryAuthority::AgentLearned, None).unwrap(),
+        MemoryRevisionScope::new(MemoryScopeClass::Session, "session", None).unwrap(),
+        HypothesisState::Candidate,
+        "classification-v1",
+        &classification_registry(),
+    )
+    .unwrap();
+    let planned = plan_classified_memory_write(
+        &context(3),
+        &MemoryState::default(),
+        &source,
+        commit("record", "revision-1", 5, None),
+        &session,
+        "classification",
+        &classification,
+    )
+    .unwrap();
+    ledger
+        .commit_classified_memory_write(
+            session.clone(),
+            1,
+            planned,
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    let original = MemoryControlDocument::from_repository_record(
+        "record",
+        "revision-1",
+        MemoryAuthority::AgentLearned,
+        MemoryType::Semantic,
+        MemoryKind::Preference,
+        MemoryScopeClass::Session,
+        "session",
+        HypothesisState::Candidate,
+        MemorySensitivity::Ordinary,
+        "learned value",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    let edited = MemoryControlDocument::from_repository_record(
+        "record",
+        "revision-1",
+        MemoryAuthority::UserDeclared,
+        MemoryType::Semantic,
+        MemoryKind::Preference,
+        MemoryScopeClass::Session,
+        "session",
+        HypothesisState::Active,
+        MemorySensitivity::Ordinary,
+        "user value",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    let current = vec![garive_memory::MemoryCurrentEntry {
+        record_id: "record".into(),
+        revision_id: "revision-1".into(),
+        authority: MemoryAuthority::AgentLearned,
+        memory_type: MemoryType::Semantic,
+        memory_role: MemoryKind::Preference,
+        scope: MemoryScopeClass::Session,
+        scope_owner_id: "session".into(),
+        lifecycle: HypothesisState::Candidate,
+        sensitivity: MemorySensitivity::Ordinary,
+        content_digest: original.content_digest(),
+    }];
+    let plan = prepare_memory_import(
+        "export",
+        "namespace",
+        1,
+        &"b".repeat(64),
+        1,
+        std::slice::from_ref(&edited),
+        &current,
+        &[MemoryAuthorizedScope {
+            scope: MemoryScopeClass::Session,
+            owner_id: "session".into(),
+        }],
+        &[MemoryIdentityAllocation::Supersede {
+            record_id: "record".into(),
+            revision_id: "revision-2".into(),
+        }],
+    )
+    .unwrap();
+    let command = MemoryImportCommand::new(
+        "import-command",
+        "import-receipt",
+        "import-event",
+        plan,
+        vec![edited],
+        128,
+    )
+    .unwrap();
+    let authorization = ledger.read_facts(&session, 2, 3, None).unwrap()[0].clone();
+    let context = MemoryRepositoryImportContext::new(
+        session.clone(),
+        TurnId::try_from("turn").unwrap(),
+        ExecutionId::try_from("execution").unwrap(),
+        2,
+        6,
+        vec![MemoryPrefix {
+            session_id: session,
+            through_position: 6,
+        }],
+        "2026-08-29T00:00:02Z",
+        DurableFactReference::new(
+            "session",
+            3,
+            authorization.fact_id.as_str(),
+            authorization.payload.sha256(),
+        )
+        .unwrap(),
+        "c".repeat(64),
+        MemoryRepositoryImportPolicy::new("d".repeat(64), "classification-v1", 10_000, None, None)
+            .unwrap(),
+    )
+    .unwrap();
+    let grant = MemoryControlGrant::new(
+        "namespace",
+        [MemoryControlAction::Import],
+        [MemoryAuthorizedScope {
+            scope: MemoryScopeClass::Session,
+            owner_id: "session".into(),
+        }],
+    )
+    .unwrap();
+    let planned = plan_memory_repository_import(
+        &ledger,
+        &context,
+        &command,
+        &grant,
+        &classification_registry(),
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        planned
+            .facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "memory.proposed",
+            "memory.committed",
+            "memory.revision_classified",
+            "memory.superseded",
+        ]
+    );
+    let active = planned
+        .next_state
+        .revisions()
+        .iter()
+        .find(|record| record.record_id() == "record" && record.status() == MemoryStatus::Active)
+        .unwrap();
+    assert_eq!(active.revision_id(), "revision-2");
 }
 
 #[test]
