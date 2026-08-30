@@ -32,13 +32,13 @@ async fn run(
     let session = client
         .create_session(&format!("create-{identity}"), definition_id)
         .await?;
-    let turn = client
+    client
         .start_turn(&format!("turn-{identity}"), &session.session_id, message)
         .await?;
     println!("┌─ Garive Agent ─────────────────────────┐");
     println!("│ Session: {}", session.session_id);
     let view = client
-        .follow_until_terminal_with(&session.session_id, turn.committed_position, |event| {
+        .follow_until_terminal_with(&session.session_id, 0, |event| {
             println!("│ {:>8}  {}", event.position, event.event);
         })
         .await?;

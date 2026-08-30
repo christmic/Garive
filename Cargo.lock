@@ -1427,7 +1427,12 @@ dependencies = [
 name = "garive-tui"
 version = "0.1.0"
 dependencies = [
+ "garive-core",
  "garive-host-client",
+ "garive-ledger",
+ "garive-llm",
+ "garive-runtime",
+ "tempfile",
  "tokio",
 ]
 
