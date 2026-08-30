@@ -46,4 +46,19 @@ describe("Desktop work state", () => {
     expect(state.sessionId).toBe("session-old");
     expect(state.messages.map((message) => message.text)).toEqual(["Recover this", "Recovered"]);
   });
+
+  it("admits only installed text suspension kinds through the composer", () => {
+    const suspended = (kind: "partial_output" | "approval_required") => reduceWork({
+      ...initialWorkState, boot: "ready", capabilities, draft: "continue",
+    }, { type: "session_loaded", timeline: {
+      api_version: "v1", session_id: "session-1", scanned_through_position: 7,
+      observed_max_position: 7, has_more: false, items: [{ turn_id: "turn-1",
+        started_position: 2, latest_position: 7, state: "suspended", user_text: "start",
+        suspension: { suspension_id: "s-1", session_version: 3, kind }, content_truncated: false }],
+    } });
+    const partial = reduceWork(suspended("partial_output"), { type: "draft_changed", value: "continue" });
+    const approval = reduceWork(suspended("approval_required"), { type: "draft_changed", value: "approve" });
+    expect(canSubmit(partial)).toBe(true);
+    expect(canSubmit(approval)).toBe(false);
+  });
 });

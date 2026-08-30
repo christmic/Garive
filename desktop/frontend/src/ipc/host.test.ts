@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
-  commitSetup, getSetupCatalogue, prepareSetup,
+  commitSetup, continueAgentTurn, getSetupCatalogue, prepareSetup,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -19,6 +19,19 @@ describe("desktop Host IPC", () => {
       definitionId: "definition-main", sessionId: "session-0", input: "hello",
     } }]);
     expect(result).toEqual(expected);
+  });
+
+  it("continues one exact durable text suspension", async () => {
+    const result = await continueAgentTurn("session-1", "turn-1", {
+      suspension_id: "suspension-1", session_version: 3, kind: "partial_output",
+    }, "continue", async <T>(command: string, args: Record<string, unknown>) => {
+      expect({ command, args }).toEqual({ command: "continue_agent_turn", args: {
+        sessionId: "session-1", turnId: "turn-1", suspensionId: "suspension-1",
+        sessionVersion: 3, input: "continue",
+      } });
+      return { terminal: "completed" } as T;
+    });
+    expect(result.terminal).toBe("completed");
   });
 
   it("loads a truthful capability snapshot", async () => {

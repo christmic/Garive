@@ -34,7 +34,14 @@ export interface HostSessionSummary {
 export interface HostTimelineItem {
   readonly turn_id: string; readonly started_position: number; readonly latest_position: number;
   readonly state: "running" | "suspended" | "completed" | "stopped" | "failed";
-  readonly user_text: string; readonly completion_text?: string; readonly content_truncated: boolean;
+  readonly user_text: string; readonly completion_text?: string;
+  readonly suspension?: HostSuspension; readonly content_truncated: boolean;
+}
+
+export interface HostSuspension {
+  readonly suspension_id: string; readonly session_version: number;
+  readonly kind: "approval_required" | "external_input_required" | "operator_reconciliation"
+    | "resource_unavailable" | "partial_output" | "delegation_pending";
 }
 
 /** Bounded durable conversation page. */
@@ -141,6 +148,26 @@ export async function runAgentTurn(
   return invoke<HostResult>("run_agent_turn", {
     definitionId,
     sessionId: sessionId ?? null,
+    input,
+  });
+}
+
+/** Continues one exact restart-safe text suspension. */
+export async function continueAgentTurn(
+  sessionId: string,
+  turnId: string,
+  suspension: HostSuspension,
+  input: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<HostResult> {
+  if (!sessionId || !turnId || !suspension.suspension_id || !input) {
+    throw new Error("invalid_command");
+  }
+  return invoke<HostResult>("continue_agent_turn", {
+    sessionId,
+    turnId,
+    suspensionId: suspension.suspension_id,
+    sessionVersion: suspension.session_version,
     input,
   });
 }

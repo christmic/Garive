@@ -1,4 +1,4 @@
-import type { DesktopCapabilities, HostResult, HostTimelinePage } from "../ipc/host";
+import type { DesktopCapabilities, HostResult, HostSuspension, HostTimelinePage } from "../ipc/host";
 
 export type BootState = "loading" | "ready" | "unavailable";
 export type WorkPhase = "idle" | "submitting";
@@ -9,6 +9,7 @@ export interface WorkMessage {
   readonly role: "user" | "assistant";
   readonly text: string;
   readonly terminal?: HostResult["terminal"];
+  readonly suspension?: HostSuspension;
 }
 
 export interface WorkState {
@@ -115,13 +116,18 @@ function timelineMessages(timeline: HostTimelinePage): readonly WorkMessage[] {
       role: "assistant",
       text: item.completion_text ?? "",
       terminal: item.state,
+      suspension: item.suspension,
     } satisfies WorkMessage];
   });
 }
 
 export function canSubmit(state: WorkState): boolean {
+  const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
+  const resumable = !suspension || suspension.kind === "partial_output"
+    || suspension.kind === "external_input_required";
   return state.boot === "ready"
     && state.capabilities?.configured === true
     && state.phase === "idle"
+    && resumable
     && state.draft.trim().length > 0;
 }

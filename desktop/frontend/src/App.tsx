@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
-  getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+  continueAgentTurn, getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   type HostSessionSummary,
 } from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
@@ -112,8 +112,15 @@ export function App() {
       return;
     }
     try {
-      const result = await runAgentTurn(definition, input, state.sessionId);
-      dispatch({ type: "submission_succeeded", input, result });
+      const suspended = [...state.messages].reverse().find((message) => message.suspension);
+      const result = suspended?.suspension && state.sessionId
+        ? await continueAgentTurn(state.sessionId, suspended.id, suspended.suspension, input)
+        : await runAgentTurn(definition, input, state.sessionId);
+      if (suspended || result.terminal === "suspended") {
+        dispatch({ type: "session_loaded", timeline: await getSessionTimeline(result.session_id) });
+      } else {
+        dispatch({ type: "submission_succeeded", input, result });
+      }
       if (state.capabilities?.durable_navigation) {
         void refreshRecents().catch(() => undefined);
       }
@@ -214,6 +221,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch }: {
   if (!state.capabilities?.configured) {
     return state.capabilities?.setup ? <SetupFlow preview={visualTest} /> : <SetupRequired />;
   }
+  const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
+  const needsInput = suspension?.kind === "partial_output" || suspension?.kind === "external_input_required";
+  const blockedSuspension = Boolean(suspension && !needsInput);
 
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
@@ -223,13 +233,14 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch }: {
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
-        <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting"}
-          aria-label="Describe the outcome you want" placeholder="Describe the outcome you want…"
+        <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+          aria-label={needsInput ? "Continue suspended work" : "Describe the outcome you want"}
+          placeholder={blockedSuspension ? "This suspension requires a governed action." : needsInput ? "Provide the input needed to continue…" : "Describe the outcome you want…"}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
         <div className="composer-toolbar">
           <div className="composer-tools"><button type="button" disabled title="Workspace attachments require opaque capabilities"><Icon name="paperclip" /><span>Add context</span></button>
-            <span className="access-pill"><Icon name="shield" />Local · text only</span></div>
+            <span className="access-pill"><Icon name="shield" />{needsInput ? "Resume exact suspension" : "Local · text only"}</span></div>
           <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label="Send work" onClick={() => void submit()}>
             {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
           </button>
