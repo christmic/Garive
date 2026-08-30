@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    fs::{self, File},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -187,6 +187,16 @@ struct PrivateEntry {
 struct FileIdentity {
     device: u64,
     file: u64,
+}
+
+pub(crate) struct WorkspaceWriteRoot {
+    pub(crate) directory: File,
+}
+
+impl WorkspaceWriteRoot {
+    pub(crate) fn directory(&self) -> &File {
+        &self.directory
+    }
 }
 
 /// Backend-only registry for opaque native Workspace selections.
@@ -707,7 +717,7 @@ impl DesktopWorkspaceService {
         workspace_id: &str,
         grant_revision: u64,
         owner_window: &str,
-    ) -> Result<PathBuf, DesktopWorkspaceError> {
+    ) -> Result<WorkspaceWriteRoot, DesktopWorkspaceError> {
         let grant = self.verify(workspace_id, owner_window)?;
         if grant.access != "read_write" || grant.grant_revision != grant_revision {
             return Err(DesktopWorkspaceError::CapabilityInvalid);
@@ -716,10 +726,33 @@ impl DesktopWorkspaceService {
             .active
             .lock()
             .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-        active
+        let workspace = active
             .get(workspace_id)
-            .map(|workspace| workspace.canonical_root.clone())
-            .ok_or(DesktopWorkspaceError::CapabilityInvalid)
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        #[cfg(unix)]
+        let directory = File::from(
+            rustix::fs::open(
+                &workspace.canonical_root,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::DIRECTORY
+                    | rustix::fs::OFlags::NOFOLLOW
+                    | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::Mode::empty(),
+            )
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?,
+        );
+        #[cfg(not(unix))]
+        let directory = File::open(&workspace.canonical_root)
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        if file_identity(
+            &directory
+                .metadata()
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?,
+        ) != workspace.identity
+        {
+            return Err(DesktopWorkspaceError::Unavailable);
+        }
+        Ok(WorkspaceWriteRoot { directory })
     }
 
     /// Revokes one exact capability and drops its private root immediately.

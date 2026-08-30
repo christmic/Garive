@@ -1,23 +1,27 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::File,
+    io::Write,
     path::PathBuf,
 };
 
 use garive_core::AgentToolCapabilities;
+use garive_ledger::CanonicalPayload;
 use garive_runtime::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, CommittedTurn,
     ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, LocalGovernedExecution,
     LocalGovernedExecutionFactory, LocalWorkerError, PreparedExecution, SqliteLedger,
 };
 use garive_tools::{
-    ExecutionCapability, ExecutionRequirements, InteractionKind, ReplayClass, ToolDefinition,
+    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
+    ReceiptId, ReplayClass, TerminalClassification, ToolDefinition,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::DesktopWorkspaceService;
+use crate::{workspace::WorkspaceWriteRoot, DesktopWorkspaceService};
 
 const WRITE_TOOL_REVISION: &str = "desktop.workspace.write-file.v1";
 const MAX_ARTIFACT_NAME_BYTES: usize = 128;
@@ -235,13 +239,56 @@ impl ExecutorPort for WorkspaceExecutor {
         })
     }
 
-    fn dispatch<'a>(&'a mut self, _: ExecutorDispatch<'a>) -> ExecutorFuture<'a> {
-        Box::pin(async { Err(ExecutorDispatchError::ExecutorStateUnknown) })
+    fn dispatch<'a>(&'a mut self, command: ExecutorDispatch<'a>) -> ExecutorFuture<'a> {
+        Box::pin(async move {
+            let arguments = arguments(command.prepared.normalized_arguments())
+                .map_err(|_| ExecutorDispatchError::ReceiptInvalid)?;
+            let root = self
+                .validate(&arguments)
+                .map_err(|_| ExecutorDispatchError::ReceiptInvalid)?;
+            let result = match atomic_create(&root, &arguments) {
+                Ok(result) => result,
+                Err(AtomicCreateError::NotCreated) => {
+                    let evidence = json!({"code":"artifact_not_created"});
+                    return Ok(ExecutionFact::Failed {
+                        receipt: Some(effect_receipt(
+                            &command,
+                            &evidence,
+                            TerminalClassification::Failed,
+                        )?),
+                        code: "artifact_not_created".into(),
+                        details: None,
+                        partial: None,
+                    });
+                }
+                Err(AtomicCreateError::StateUnknown) => {
+                    return Err(ExecutorDispatchError::ExecutorStateUnknown)
+                }
+            };
+            let content = json!({
+                "artifact_id":format!("artifact-{}", &hex_digest(format!("{}:{}:{}", arguments.workspace_id, arguments.artifact_name, result.digest).as_bytes())[..32]),
+                "workspace_id":arguments.workspace_id,
+                "grant_revision":arguments.grant_revision,
+                "display_name":arguments.artifact_name,
+                "byte_size":result.byte_size,
+                "content_digest":result.digest,
+                "kind":artifact_kind(&arguments.artifact_name),
+            });
+            Ok(ExecutionFact::Completed {
+                receipt: Some(effect_receipt(
+                    &command,
+                    &content,
+                    TerminalClassification::Completed,
+                )?),
+                content,
+                truncated: false,
+            })
+        })
     }
 }
 
 impl WorkspaceExecutor {
-    fn validate(&self, arguments: &WriteArguments) -> Result<PathBuf, String> {
+    fn validate(&self, arguments: &WriteArguments) -> Result<WorkspaceWriteRoot, String> {
         let attachment = self
             .attachments
             .get(&arguments.workspace_id)
@@ -259,6 +306,90 @@ impl WorkspaceExecutor {
             )
             .map_err(|_| "workspace_write_not_authorized".into())
     }
+}
+
+fn effect_receipt(
+    command: &ExecutorDispatch<'_>,
+    evidence: &Value,
+    classification: TerminalClassification,
+) -> Result<EffectReceipt, ExecutorDispatchError> {
+    Ok(EffectReceipt {
+        receipt_id: ReceiptId::new(command.receipt_id)
+            .map_err(|_| ExecutorDispatchError::ReceiptInvalid)?,
+        invocation_id: command.invocation_id.clone(),
+        prepared_digest: command.prepared.input_digest().into(),
+        grant_id: command.grant.grant_id.clone(),
+        executor_id: command.execution.executor_id.clone(),
+        executor_revision: command.execution.executor_revision.clone(),
+        terminal_classification: classification,
+        result_digest: CanonicalPayload::from_value(evidence)
+            .map_err(|_| ExecutorDispatchError::ReceiptInvalid)?
+            .sha256()
+            .into(),
+    })
+}
+
+struct WriteResult {
+    digest: String,
+    byte_size: usize,
+}
+
+#[derive(Debug)]
+enum AtomicCreateError {
+    NotCreated,
+    StateUnknown,
+}
+
+#[cfg(unix)]
+fn atomic_create(
+    root: &WorkspaceWriteRoot,
+    arguments: &WriteArguments,
+) -> Result<WriteResult, AtomicCreateError> {
+    use rustix::fs::{AtFlags, Mode, OFlags};
+
+    let temporary = format!(".garive-{}.tmp", Uuid::new_v4());
+    let descriptor = rustix::fs::openat(
+        root.directory(),
+        temporary.as_str(),
+        OFlags::CREATE | OFlags::EXCL | OFlags::WRONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::RUSR | Mode::WUSR,
+    )
+    .map_err(|_| AtomicCreateError::NotCreated)?;
+    let mut file = File::from(descriptor);
+    if file
+        .write_all(arguments.content_utf8.as_bytes())
+        .and_then(|()| file.sync_all())
+        .is_err()
+    {
+        let _ = rustix::fs::unlinkat(root.directory(), temporary.as_str(), AtFlags::empty());
+        return Err(AtomicCreateError::NotCreated);
+    }
+    if rustix::fs::linkat(
+        root.directory(),
+        temporary.as_str(),
+        root.directory(),
+        arguments.artifact_name.as_str(),
+        AtFlags::empty(),
+    )
+    .is_err()
+    {
+        let _ = rustix::fs::unlinkat(root.directory(), temporary.as_str(), AtFlags::empty());
+        return Err(AtomicCreateError::NotCreated);
+    }
+    let _ = rustix::fs::unlinkat(root.directory(), temporary.as_str(), AtFlags::empty());
+    rustix::fs::fsync(root.directory()).map_err(|_| AtomicCreateError::StateUnknown)?;
+    Ok(WriteResult {
+        digest: hex_digest(arguments.content_utf8.as_bytes()),
+        byte_size: arguments.content_utf8.len(),
+    })
+}
+
+#[cfg(not(unix))]
+fn atomic_create(
+    _: &WorkspaceWriteRoot,
+    _: &WriteArguments,
+) -> Result<WriteResult, AtomicCreateError> {
+    Err(AtomicCreateError::NotCreated)
 }
 
 fn arguments(value: &str) -> Result<WriteArguments, String> {
@@ -321,4 +452,79 @@ fn hex_digest(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn artifact_kind(name: &str) -> &'static str {
+    match PathBuf::from(name)
+        .extension()
+        .and_then(|value| value.to_str())
+    {
+        Some("md" | "txt" | "json" | "csv") => "text",
+        _ => "file",
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn arguments(name: &str, content: &str) -> WriteArguments {
+        WriteArguments {
+            workspace_id: "workspace-test".into(),
+            grant_revision: 2,
+            artifact_name: name.into(),
+            content_utf8: content.into(),
+        }
+    }
+
+    #[test]
+    fn descriptor_relative_create_is_atomic_and_never_overwrites() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = WorkspaceWriteRoot {
+            directory: File::open(directory.path()).unwrap(),
+        };
+        let request = arguments("result.md", "first");
+        let receipt = atomic_create(&root, &request).unwrap();
+        assert_eq!(receipt.byte_size, 5);
+        assert_eq!(
+            fs::read_to_string(directory.path().join("result.md")).unwrap(),
+            "first"
+        );
+
+        let replacement = arguments("result.md", "second");
+        assert!(matches!(
+            atomic_create(&root, &replacement),
+            Err(AtomicCreateError::NotCreated)
+        ));
+        assert_eq!(
+            fs::read_to_string(directory.path().join("result.md")).unwrap(),
+            "first"
+        );
+        assert!(fs::read_dir(directory.path()).unwrap().all(|entry| !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".garive-")));
+    }
+
+    #[test]
+    fn opened_workspace_descriptor_cannot_be_redirected_by_path_replacement() {
+        let parent = tempfile::tempdir().unwrap();
+        let selected = parent.path().join("selected");
+        let moved = parent.path().join("moved");
+        fs::create_dir(&selected).unwrap();
+        let root = WorkspaceWriteRoot {
+            directory: File::open(&selected).unwrap(),
+        };
+        fs::rename(&selected, &moved).unwrap();
+        fs::create_dir(&selected).unwrap();
+
+        atomic_create(&root, &arguments("bound.txt", "bound")).unwrap();
+        assert_eq!(
+            fs::read_to_string(moved.join("bound.txt")).unwrap(),
+            "bound"
+        );
+        assert!(!selected.join("bound.txt").exists());
+    }
 }

@@ -35,6 +35,9 @@ uuid.workspace = true
 garive-macos-bookmark = { path = "../macos-bookmark" }
 keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.4", features = ["fs"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
 

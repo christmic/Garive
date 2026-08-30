@@ -1218,6 +1218,7 @@ dependencies = [
  "garive-runtime",
  "garive-tools",
  "keyring",
+ "rustix",
  "serde",
  "serde_jcs",
  "serde_json",
