@@ -21,6 +21,15 @@ use ratatui::{buffer::Buffer, layout::Rect};
 fn responsive_product_frames_match_reviewed_snapshots() {
     let model = product_model();
     insta::assert_snapshot!("compact_40x12", frame(&model, Theme::Mono, 40, 12));
+    let mut wrapped = product_model();
+    wrapped
+        .composer
+        .replace("Composer grows with soft wrapping and keeps every visible row.")
+        .unwrap();
+    insta::assert_snapshot!(
+        "composer_soft_wrap_compact_mono_40x16",
+        frame(&wrapped, Theme::Mono, 40, 16)
+    );
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
     insta::assert_snapshot!(
         "motion_running_dark_100x24",

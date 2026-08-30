@@ -113,7 +113,7 @@ fn content_rows(model: &AppModel, area: Rect) -> std::rc::Rc<[Rect]> {
     let composer_height = if area.height < 12 {
         3
     } else {
-        (model.composer.line_count() as u16 + 2).clamp(3, 7)
+        composer::desired_height(&model.composer, area.width).clamp(3, 7)
     };
     Layout::vertical([
         Constraint::Min(1),

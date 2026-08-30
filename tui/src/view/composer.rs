@@ -62,6 +62,17 @@ pub(super) fn cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
     Some((area.x + 2 + column, area.y + 1 + row.saturating_sub(scroll)))
 }
 
+pub(super) fn desired_height(editor: &EditorState, area_width: u16) -> u16 {
+    let inner_width = area_width.saturating_sub(4);
+    if inner_width == 0 {
+        return 3;
+    }
+    let layout = EditorLayout::new(editor, inner_width);
+    let ((_, cursor_row), _) = layout.visible_cursor(u16::MAX);
+    let rows = u16::try_from(layout.rows.len()).unwrap_or(u16::MAX);
+    rows.max(cursor_row.saturating_add(1)).saturating_add(2)
+}
+
 pub(super) fn selection_at(
     model: &AppModel,
     area: Rect,
@@ -349,5 +360,17 @@ mod tests {
         assert_eq!(layout.grapheme_at(1, 1), 4);
         assert_eq!(layout.grapheme_at(4, 1), 6);
         assert_eq!(layout.grapheme_at(0, 9), 8);
+    }
+
+    #[test]
+    fn desired_height_counts_visual_rows_and_exact_width_cursor() {
+        let mut editor = EditorState::new(128);
+        assert_eq!(desired_height(&editor, 12), 3);
+
+        editor.replace("hello world").unwrap();
+        assert_eq!(desired_height(&editor, 12), 4);
+
+        editor.replace("12345").unwrap();
+        assert_eq!(desired_height(&editor, 9), 4);
     }
 }
