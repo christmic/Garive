@@ -378,7 +378,7 @@ adb shell am start -n com.garive.android/.MainActivity \
 ```
 
 也可以用一条门禁命令自动完成 Host 启停、ADB 端口转发，以及真实网络上的
-`create/start → cancel → 第二轮 append`：
+`create/start → cancel → 第二轮 append`，随后提交一次性审批并回读完成结果：
 
 ```text
 just mobile-android-live-ui \
@@ -432,9 +432,10 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（15 条，含严格配对链接、整应用 Work → Sessions → create/start → cancel → append 及
+界面流程（15 条加 2 条 opt-in 真实 Host journeys，含严格配对链接、整应用 Work → Sessions →
+create/start → cancel → append → approve 及
 Light → Dark 切换）、Swift 测试（9 条）、iOS Simulator XCUITest（4 条，含真实 loopback
-create/start → cancel → append 与 Light → Dark → System 切换）与构建，以及断开/恢复 Host 的
+create/start → cancel → append、一次性审批提交与 Light → Dark → System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
 输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 36 张实际运行截图。

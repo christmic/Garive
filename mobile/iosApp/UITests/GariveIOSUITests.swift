@@ -47,7 +47,7 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
-    func testConversationExposesBoundedDecisionAndCancelControls() throws {
+    func testConversationCommitsApprovalAndRevealsActivity() throws {
         let app = walkthroughApp("--garive-walkthrough-conversation")
         app.launch()
 
@@ -56,10 +56,11 @@ final class GariveIOSUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Activity · 1"].exists)
         app.buttons["Activity · 1"].tap()
         XCTAssertTrue(app.staticTexts["Verification"].waitForExistence(timeout: 2))
-
-        app.buttons["Stop current work"].tap()
-        XCTAssertTrue(app.buttons["Stop turn"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Committed work remains in the timeline."].exists)
+        app.buttons["Approve once"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Approved. The agent resumed on the server and completed the release checks."]
+                .waitForExistence(timeout: 8)
+        )
     }
 
     @MainActor

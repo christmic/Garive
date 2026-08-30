@@ -3,6 +3,8 @@ package com.garive.android
 import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -25,17 +27,9 @@ public class LiveHostJourneyTest {
 
     @Test
     public fun createsCancelsAndAppendsThroughTheLiveHost(): Unit {
-        assumeTrue(
-            "Run through `just mobile-android-live-ui` so the loopback Host and adb reverse are explicit.",
-            InstrumentationRegistry.getArguments().getString("gariveLiveHost") == "true",
-        )
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        context.getSharedPreferences("garive_mobile_pending_v1", Context.MODE_PRIVATE).edit().clear().commit()
-        val intent = Intent(context, MainActivity::class.java)
-            .putExtra("garive_walkthrough", true)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-        ActivityScenario.launch<MainActivity>(intent).use {
+        requireLiveHost()
+        val context = cleanContext()
+        ActivityScenario.launch<MainActivity>(walkthroughIntent(context)).use {
             compose.waitUntil(8_000) {
                 compose.onAllNodesWithText("Server connected").fetchSemanticsNodes().isNotEmpty()
             }
@@ -62,4 +56,39 @@ public class LiveHostJourneyTest {
             }
         }
     }
+
+    @Test
+    public fun commitsApprovalThroughTheLiveHost(): Unit {
+        requireLiveHost()
+        val context = cleanContext()
+        ActivityScenario.launch<MainActivity>(walkthroughIntent(context, "release-approval")).use {
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText("Approve once").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNode(hasText("Approve once") and hasClickAction()).performClick()
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText("Completed · server work continues").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.waitUntil(8_000) {
+                compose.onAllNodesWithText(
+                    "Approved. The agent resumed on the server and completed the release checks.",
+                ).fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+    }
+
+    private fun requireLiveHost(): Unit = assumeTrue(
+        "Run through `just mobile-android-live-ui` so the loopback Host and adb reverse are explicit.",
+        InstrumentationRegistry.getArguments().getString("gariveLiveHost") == "true",
+    )
+
+    private fun cleanContext(): Context = ApplicationProvider.getApplicationContext<Context>().also { context ->
+        context.getSharedPreferences("garive_mobile_pending_v1", Context.MODE_PRIVATE).edit().clear().commit()
+    }
+
+    private fun walkthroughIntent(context: Context, sessionId: String? = null): Intent =
+        Intent(context, MainActivity::class.java)
+            .putExtra("garive_walkthrough", true)
+            .apply { if (sessionId != null) putExtra("garive_walkthrough_session", sessionId) }
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }

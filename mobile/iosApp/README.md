@@ -57,7 +57,8 @@ The four UI tests require `go run ./cmd/garive-mobile-demo-host` from
 pairing fields, the Remote drawer, Sessions, new-task starters and enabled
 server submit control plus an actual loopback create/start, cancellation and
 second-Turn append in the opened Conversation, collapsed Activity, approve/decline and cancellation
-confirmation, safe diagnostics, notification entry, and confirmed unpair.
+confirmation, a committed real-Host `Approve once` result, safe diagnostics,
+notification entry, and confirmed unpair.
 The Settings journey additionally selects Light, Dark, and System and verifies
 the native segmented-control state after every change.
 Swift contract tests also require pairing links to pass the same shared remote
