@@ -288,6 +288,7 @@ impl RuntimeState {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             model.overlay = Some(Overlay::UnknownCommand);
         }
+        model.has_pending_command = pending.is_some();
         Self {
             config,
             client,
@@ -362,6 +363,7 @@ impl RuntimeState {
             return false;
         }
         self.pending = Some(pending);
+        self.model.has_pending_command = true;
         true
     }
 
@@ -377,6 +379,7 @@ impl RuntimeState {
                 return;
             }
         }
+        self.model.has_pending_command = false;
         self.model.overlay = None;
         if let Some(session) = self.model.selected_session.clone() {
             self.load(session);
@@ -422,6 +425,7 @@ impl RuntimeState {
             }
         }
         self.pending = None;
+        self.model.has_pending_command = false;
     }
 
     fn reject_pending(&mut self, code: HostClientErrorCode) {
@@ -432,6 +436,7 @@ impl RuntimeState {
             if let Some(pending) = self.pending.take() {
                 let _ = self.store.remove_pending(pending.session_id.as_deref());
             }
+            self.model.has_pending_command = false;
         } else if self.pending.is_some() {
             self.model.notice =
                 Some("The command outcome is unknown. Review /status or use exact /retry.".into());

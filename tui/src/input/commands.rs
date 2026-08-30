@@ -1,5 +1,16 @@
 use crate::args::{MouseMode, Theme};
 
+pub(crate) const COMMAND_PALETTE: [(&str, &str); 8] = [
+    ("/new", "Create session"),
+    ("/sessions", "Switch session"),
+    ("/status", "Connection details"),
+    ("/retry", "Retry unknown command"),
+    ("/reconnect", "Resume event stream"),
+    ("/cancel", "Cancel running turn"),
+    ("/help", "Keyboard guide"),
+    ("/quit", "Exit safely"),
+];
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
     New { definition: Option<String> },

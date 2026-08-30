@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::{
     application::{AppModel, BootState, ConnectionState, ExecutionState, Overlay, TimelineRole},
+    input::COMMAND_PALETTE,
     Theme,
 };
 
@@ -246,7 +247,7 @@ fn render_overlay(
 ) {
     let colors = palette(theme);
     let (title, content, height) = match overlay {
-        Overlay::CommandPalette => (" Command palette ", "› /new          Create session\n  /sessions     Switch session\n  /status       Connection details\n  /reconnect    Resume event stream\n  /help         Keyboard guide\n  /quit         Exit safely".into(), 10),
+        Overlay::CommandPalette => (" Command palette ", palette_text(model), 12),
         Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
         Overlay::PromptHistory => (" Prompt history ", history_text(model), (model.prompt_history.len() as u16 + 5).clamp(7, 16)),
@@ -328,6 +329,29 @@ fn history_text(model: &AppModel) -> String {
     }
     rows.push(String::new());
     rows.push("↑/↓ select   Enter restore   Esc close".into());
+    rows.join("\n")
+}
+
+fn palette_text(model: &AppModel) -> String {
+    let mut rows = COMMAND_PALETTE
+        .iter()
+        .enumerate()
+        .map(|(index, (name, help))| {
+            let marker = if index == model.command_selection {
+                "›"
+            } else {
+                " "
+            };
+            let disabled = match *name {
+                "/retry" if !model.has_pending_command => "  unavailable",
+                "/cancel" if model.execution != ExecutionState::Following => "  unavailable",
+                _ => "",
+            };
+            format!("{marker} {name:<12} {help}{disabled}")
+        })
+        .collect::<Vec<_>>();
+    rows.push(String::new());
+    rows.push("↑/↓ select   Enter run   Esc close".into());
     rows.join("\n")
 }
 

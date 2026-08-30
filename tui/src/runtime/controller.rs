@@ -4,7 +4,7 @@ use crossterm::event::{
 
 use crate::{
     application::{ExecutionState, Overlay, TerminalSize},
-    input::{parse_command, Command, CommandParse},
+    input::{parse_command, Command, CommandParse, COMMAND_PALETTE},
     persistence::{now, PendingCommand, PendingKind},
 };
 use serde_json::{json, Value};
@@ -81,6 +81,14 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                     .min(state.model.prompt_history.len().saturating_sub(1))
             }
             KeyCode::Enter if overlay == Overlay::PromptHistory => select_history(state),
+            KeyCode::Up if overlay == Overlay::CommandPalette => {
+                state.model.command_selection = state.model.command_selection.saturating_sub(1)
+            }
+            KeyCode::Down if overlay == Overlay::CommandPalette => {
+                state.model.command_selection =
+                    (state.model.command_selection + 1).min(COMMAND_PALETTE.len() - 1)
+            }
+            KeyCode::Enter if overlay == Overlay::CommandPalette => select_command(state),
             KeyCode::Enter if overlay == Overlay::Suspension => {
                 state.model.overlay = None;
             }
@@ -165,6 +173,14 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         }
         KeyCode::Esc if state.model.execution == ExecutionState::Following => cancel(state),
         _ => {}
+    }
+}
+
+fn select_command(state: &mut RuntimeState) {
+    let name = COMMAND_PALETTE[state.model.command_selection].0;
+    state.model.overlay = None;
+    if let CommandParse::Valid(command) = parse_command(name) {
+        execute_command(command, state);
     }
 }
 
