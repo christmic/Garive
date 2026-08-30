@@ -163,6 +163,19 @@ public class MobileWorkController(
         runPendingLocked(operation)
     }
 
+    /** Forgets one ambiguous retry identity without claiming that server work was undone. */
+    public fun abandonPending(): MobileWorkState {
+        val operation = pendingOperation ?: return notice("validation_retry_absent")
+        pendingOperation = null
+        clearPending(persistence)
+        viewState = viewState.copy(
+            draft = operation.payload() ?: viewState.draft,
+            pendingCommand = null,
+            noticeCode = "pending_retry_abandoned",
+        )
+        return viewState
+    }
+
     /** Follows the selected Session to a terminal and then reloads durable truth. */
     public suspend fun followSelectedUntilTerminal(): MobileWorkState = lock.withLock {
         val sessionId = viewState.selectedSessionId

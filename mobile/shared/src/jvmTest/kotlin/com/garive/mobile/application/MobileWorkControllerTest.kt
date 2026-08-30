@@ -142,6 +142,24 @@ public class MobileWorkControllerTest {
         assertEquals(MobileConnectionState.ONLINE, state.connection)
     }
 
+    @Test
+    public fun abandoningUnknownRetryClearsIdentityButKeepsEditableDraft(): Unit = runBlocking {
+        val persistence = MemoryMobileWorkPersistence()
+        val controller = MobileWorkController(
+            FakeMobileHost(failFirstStart = true), identities(), persistence = persistence,
+        )
+        controller.boot()
+        controller.startTask("definition-main", "Review before resubmitting")
+
+        val abandoned = controller.abandonPending()
+
+        assertNull(abandoned.pendingCommand)
+        assertEquals("Review before resubmitting", abandoned.draft)
+        assertEquals("pending_retry_abandoned", abandoned.noticeCode)
+        assertNull(persistence.record)
+        assertNull(persistence.payload)
+    }
+
     private fun identities(): CommandIdentitySource {
         var next = 0
         return CommandIdentitySource { "command-${++next}" }
