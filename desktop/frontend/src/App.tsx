@@ -5,6 +5,7 @@ import {
 } from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import { Icon, type IconName } from "./ui/Icon";
+import { SetupFlow } from "./setup/SetupFlow";
 
 type Screen = "work" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -24,15 +25,15 @@ const errorCopy: Record<string, string> = {
   desktop_unavailable: "The Desktop backend is unavailable. Restart Garive and try again.",
 };
 
-const visualTest = import.meta.env.DEV
-  && new URLSearchParams(window.location.search).has("visual-test");
+const visualTestMode = new URLSearchParams(window.location.search).get("visual-test");
+const visualTest = import.meta.env.DEV && visualTestMode !== null;
 const visualCapabilities = {
-  configured: true,
+  configured: visualTestMode !== "setup",
   agent_definition_id: "garive-work",
   multi_turn: true,
   durable_navigation: false,
   activity: false,
-  setup: false,
+  setup: visualTestMode === "setup",
   workspaces: false,
   artifacts: false,
 } as const;
@@ -193,7 +194,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch }: {
 }) {
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>Opening your workspace</h1><p>Recovering the local Runtime…</p></div>;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title="Garive could not start" body={errorCopy.desktop_unavailable} />;
-  if (!state.capabilities?.configured) return <SetupRequired />;
+  if (!state.capabilities?.configured) {
+    return state.capabilities?.setup ? <SetupFlow preview={visualTest} /> : <SetupRequired />;
+  }
 
   return <section className="work-surface">
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
