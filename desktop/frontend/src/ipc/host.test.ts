@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   cancelSetup, commitSetup, decodeHostTimelinePage, getSetupCatalogue, getSetupState, prepareSetup,
   runAgentTurn,
 } from "./host";
 
 describe("desktop Host IPC", () => {
+  it("consumes the strict shared setup catalogue fixture", () => {
+    const fixture = JSON.parse(readFileSync(new URL(
+      "../../../../spec/fixtures/desktop/desktop-setup-v1.json", import.meta.url,
+    ), "utf8")) as {
+      schema_version: number; expected_profile_count: number; expected_preset_id: string;
+      limits: Record<string, number>; plan_cases: readonly { input: { preset_id: string } }[];
+    };
+    expect(fixture.schema_version).toBe(1);
+    expect(fixture.expected_profile_count).toBe(2);
+    expect(fixture.plan_cases.every((item) => item.input.preset_id === fixture.expected_preset_id)).toBe(true);
+    expect(Object.values(fixture.limits).every((limit) => limit > 0)).toBe(true);
+  });
+
   it("returns one typed embedded Runtime terminal", async () => {
     const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
     const expected = { session_id: "session-1", turn_id: "turn-1", execution_id: "execution-1",

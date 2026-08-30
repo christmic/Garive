@@ -9,6 +9,7 @@ use garive_desktop::{
     SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
     OPENAI_RESPONSES_PROFILE_ID,
 };
+use serde::Deserialize;
 
 #[derive(Clone, Default)]
 struct RecordingCredentials(Arc<Mutex<Vec<(String, String)>>>);
@@ -72,6 +73,56 @@ impl SetupCommitFaults for FailAfter {
             Ok(())
         }
     }
+}
+
+struct FixtureIdentities {
+    setup_id: String,
+    credential_ref: String,
+}
+
+impl SetupIdentitySource for FixtureIdentities {
+    fn setup_id(&self) -> Result<String, DesktopSetupError> {
+        Ok(self.setup_id.clone())
+    }
+
+    fn credential_ref(&self) -> Result<String, DesktopSetupError> {
+        Ok(self.credential_ref.clone())
+    }
+}
+
+#[derive(Deserialize)]
+struct SetupFixture {
+    schema_version: u32,
+    catalogue_revision: String,
+    expected_profile_count: usize,
+    expected_preset_id: String,
+    limits: FixtureLimits,
+    plan_cases: Vec<FixturePlanCase>,
+    failure_codes: Vec<String>,
+    receipt_forbidden_fragments: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct FixtureLimits {
+    max_profiles: usize,
+    max_text_bytes: usize,
+    max_endpoint_bytes: usize,
+    max_secret_bytes: usize,
+    max_plan_count: usize,
+    plan_lifetime_seconds: i64,
+}
+
+#[derive(Deserialize)]
+struct FixturePlanCase {
+    name: String,
+    now_unix: i64,
+    setup_id: String,
+    credential_ref: String,
+    input: DesktopSetupInput,
+    expected_expires_at: String,
+    expected_endpoint_mode: String,
+    effective_configuration_digest: String,
+    plan_digest: String,
 }
 
 fn input(revision: &str) -> DesktopSetupInput {
@@ -220,6 +271,85 @@ fn every_staged_commit_crash_recovers_to_old_or_new_configuration() {
         .unwrap()
         .iter()
         .any(|(_, value)| value == "<deleted>"));
+}
+
+#[test]
+fn shared_setup_fixture_freezes_catalogue_plans_and_redaction() {
+    let fixture: SetupFixture = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/desktop/desktop-setup-v1.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture.schema_version, 1);
+    let sample = DesktopSetupService::new(
+        tempfile::tempdir().unwrap().path().to_owned(),
+        RecordingCredentials::default(),
+    )
+    .catalogue();
+    assert_eq!(sample.catalogue_revision, fixture.catalogue_revision);
+    assert_eq!(sample.profiles.len(), fixture.expected_profile_count);
+    assert_eq!(sample.presets[0].preset_id, fixture.expected_preset_id);
+    assert_eq!(
+        (
+            sample.limits.max_profiles,
+            sample.limits.max_text_bytes,
+            sample.limits.max_endpoint_bytes,
+            sample.limits.max_secret_bytes,
+            sample.limits.max_plan_count,
+            sample.limits.plan_lifetime_seconds
+        ),
+        (
+            fixture.limits.max_profiles,
+            fixture.limits.max_text_bytes,
+            fixture.limits.max_endpoint_bytes,
+            fixture.limits.max_secret_bytes,
+            fixture.limits.max_plan_count,
+            fixture.limits.plan_lifetime_seconds
+        ),
+    );
+    assert_eq!(
+        fixture.failure_codes,
+        [
+            "setup_input_invalid",
+            "setup_plan_stale",
+            "setup_plan_conflict",
+            "setup_credential_rejected",
+            "setup_persistence_failed",
+            "setup_recovery_failed",
+        ]
+    );
+
+    for case in fixture.plan_cases {
+        let directory = tempfile::tempdir().unwrap();
+        let service = DesktopSetupService::with_dependencies(
+            directory.path().to_owned(),
+            RecordingCredentials::default(),
+            FixedClock::at(case.now_unix),
+            Arc::new(FixtureIdentities {
+                setup_id: case.setup_id.clone(),
+                credential_ref: case.credential_ref,
+            }),
+            Arc::new(NoSetupCommitFaults),
+        );
+        let plan = service.prepare(case.input).unwrap();
+        assert_eq!(plan.setup_id, case.setup_id, "{}", case.name);
+        assert_eq!(plan.expires_at, case.expected_expires_at, "{}", case.name);
+        assert_eq!(
+            plan.summary.endpoint_mode, case.expected_endpoint_mode,
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            (&plan.effective_configuration_digest, &plan.plan_digest),
+            (&case.effective_configuration_digest, &case.plan_digest),
+            "{}",
+            case.name,
+        );
+        let receipt = service.commit(&plan.plan_digest, "fixture-secret").unwrap();
+        let encoded = serde_json::to_string(&receipt).unwrap();
+        for forbidden in &fixture.receipt_forbidden_fragments {
+            assert!(!encoded.contains(forbidden), "{}", case.name);
+        }
+    }
 }
 
 #[test]
