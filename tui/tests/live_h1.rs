@@ -114,6 +114,45 @@ fn termination_signal_restores_the_shipping_terminal() {
     assert!(text.contains("\x1b[?1004l"));
 }
 
+#[test]
+fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("resize.log");
+    let status = Command::new("expect")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            send "draft survives"
+            exec stty rows 7 columns 19 < $spawn_out(slave,name)
+            expect "Need 20"
+            exec stty rows 12 columns 40 < $spawn_out(slave,name)
+            expect "draft survives"
+            exec stty rows 28 columns 160 < $spawn_out(slave,name)
+            expect "draft survives"
+            send "\021"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("Need 20"));
+    assert!(text.contains("draft"));
+    assert!(text.contains("survives"));
+    assert!(text.contains("\x1b[?1049l"));
+}
+
 fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

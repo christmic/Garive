@@ -73,19 +73,36 @@ fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer
         .first()
         .map(|item| short_id(&item.definition_id))
         .unwrap_or("No agent");
-    let row = Layout::horizontal([Constraint::Min(1), Constraint::Length(28)]).split(area);
-    Line::from(vec![
-        Span::styled("  GARIVE ", colors.brand),
-        Span::styled(format!(" {definition}  /  {session}"), colors.header_text),
-    ])
-    .render(row[0], buffer);
-    Line::from(vec![
-        Span::styled(connection_icon(model.connection), colors.connection),
-        Span::raw(format!(
-            " {}  ·  {}  ",
+    let compact = area.width < 60;
+    let status_width = if compact { 16 } else { 28 };
+    let row =
+        Layout::horizontal([Constraint::Min(1), Constraint::Length(status_width)]).split(area);
+    let identity = if compact {
+        Line::styled("  GARIVE", colors.brand)
+    } else {
+        Line::from(vec![
+            Span::styled("  GARIVE ", colors.brand),
+            Span::styled(format!(" {definition}  /  {session}"), colors.header_text),
+        ])
+    };
+    identity.render(row[0], buffer);
+    let status = if compact {
+        format!(
+            "{} {} ",
+            connection_icon(model.connection),
+            execution_name(model.execution)
+        )
+    } else {
+        format!(
+            "{} {}  ·  {}  ",
+            connection_icon(model.connection),
             connection_name(model.connection),
             execution_name(model.execution)
-        )),
+        )
+    };
+    Line::from(vec![
+        Span::styled(connection_icon(model.connection), colors.connection),
+        Span::raw(status[connection_icon(model.connection).len()..].to_owned()),
     ])
     .alignment(Alignment::Right)
     .style(colors.header_text)
@@ -238,7 +255,11 @@ fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buff
 fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     let colors = palette(theme);
     let cells = Layout::horizontal([Constraint::Min(1), Constraint::Length(14)]).split(area);
-    let hint = if model.execution == ExecutionState::Following {
+    let hint = if area.width < 60 && model.execution == ExecutionState::Following {
+        " Esc cancel · ? help"
+    } else if area.width < 60 {
+        " Enter send · ? help"
+    } else if model.execution == ExecutionState::Following {
         " Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help"
     } else {
         " Enter send   Ctrl+J newline   Ctrl+P commands   ? help"
@@ -261,7 +282,11 @@ fn render_overlay(
 ) {
     let colors = palette(theme);
     let (title, content, height) = match overlay {
-        Overlay::CommandPalette => (" Command palette ", palette_text(model), 12),
+        Overlay::CommandPalette => (
+            " Command palette ",
+            palette_text(model),
+            (COMMAND_PALETTE.len() as u16 + 4).clamp(12, 18),
+        ),
         Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
         Overlay::PromptHistory => (" Prompt history ", history_text(model), (model.prompt_history.len() as u16 + 5).clamp(7, 16)),
