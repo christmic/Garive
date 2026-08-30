@@ -41,6 +41,7 @@ pub(crate) enum Overlay {
     Suspension,
     UnknownCommand,
     ErrorDetails,
+    EphemeralConfirmation,
     QuitConfirmation,
 }
 

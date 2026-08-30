@@ -2,6 +2,7 @@ use garive_host_client::{
     AgentDefinitionSummary, CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient,
     SessionSummary, SessionView, TurnCommandResponse, TurnTimelineItem,
 };
+use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 pub(crate) const PAGE_LIMIT: usize = 100;
@@ -29,7 +30,7 @@ pub(crate) enum HostMessage {
         session_id: String,
         code: HostClientErrorCode,
     },
-    Failed(HostClientErrorCode),
+    Failed(garive_host_client::HostClientError),
 }
 
 pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage>) {
@@ -45,7 +46,7 @@ pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage
                 definitions,
                 sessions,
             },
-            Err(error) => HostMessage::Failed(error.code),
+            Err(error) => HostMessage::Failed(error),
         };
         let _ = sender.send(message).await;
     });
@@ -79,7 +80,7 @@ pub(crate) fn load_snapshot(
                 items,
                 follow_position,
             },
-            Err(error) => HostMessage::Failed(error.code),
+            Err(error) => HostMessage::Failed(error),
         };
         let _ = sender.send(message).await;
     });
@@ -108,7 +109,7 @@ pub(crate) fn cancel_turn(
                 submitted_text: String::new(),
                 response,
             },
-            Err(error) => HostMessage::Failed(error.code),
+            Err(error) => HostMessage::Failed(error),
         };
         let _ = sender.send(message).await;
     });
@@ -141,7 +142,40 @@ pub(crate) fn continue_turn(
                 submitted_text: input,
                 response,
             },
-            Err(error) => HostMessage::Failed(error.code),
+            Err(error) => HostMessage::Failed(error),
+        };
+        let _ = sender.send(message).await;
+    });
+}
+
+pub(crate) fn continue_turn_json(
+    client: LiveHostClient,
+    command_id: String,
+    session_id: String,
+    turn_id: String,
+    suspension_id: String,
+    expected_session_version: u64,
+    input_json: Value,
+    sender: mpsc::Sender<HostMessage>,
+) {
+    tokio::spawn(async move {
+        let message = match client
+            .continue_turn_json(
+                &command_id,
+                &session_id,
+                &turn_id,
+                &suspension_id,
+                expected_session_version,
+                &input_json,
+            )
+            .await
+        {
+            Ok(response) => HostMessage::TurnAccepted {
+                session_id,
+                submitted_text: input_json.to_string(),
+                response,
+            },
+            Err(error) => HostMessage::Failed(error),
         };
         let _ = sender.send(message).await;
     });
@@ -156,7 +190,7 @@ pub(crate) fn create_session(
     tokio::spawn(async move {
         let message = match client.create_session(&command_id, &definition_id).await {
             Ok(value) => HostMessage::SessionCreated(value),
-            Err(error) => HostMessage::Failed(error.code),
+            Err(error) => HostMessage::Failed(error),
         };
         let _ = sender.send(message).await;
     });
@@ -176,7 +210,7 @@ pub(crate) fn start_turn(
                 submitted_text: text,
                 response,
             },
-            Err(error) => HostMessage::Failed(error.code),
+            Err(error) => HostMessage::Failed(error),
         };
         let _ = sender.send(message).await;
     });

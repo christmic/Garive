@@ -251,8 +251,9 @@ fn render_overlay(
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
         Overlay::PromptHistory => (" Prompt history ", "No matching local prompts\n\nEsc close".into(), 7),
         Overlay::Suspension => (" Action required ", suspension_text(model), 9),
-        Overlay::UnknownCommand => (" Unknown command ", model.notice.clone().unwrap_or_else(|| "Nothing was sent to the Host.\nEdit the command or open Ctrl+P.".into()), 7),
+        Overlay::UnknownCommand => (" Unknown command ", format!("{}\n\nEnter  Exact retry     A  Abandon local record", model.notice.as_deref().unwrap_or("Nothing was sent to the Host.")), 8),
         Overlay::ErrorDetails => (" Status details ", model.notice.clone().unwrap_or_else(|| "No additional safe details.".into()), 7),
+        Overlay::EphemeralConfirmation => (" Ephemeral mode ", "A lost response cannot be recovered after exit.\n\nEnter  Accept for this run     Esc  Cancel".into(), 7),
         Overlay::QuitConfirmation => (" Quit Garive? ", "Your Sessions stay durable in the Host.\n\nEnter  Quit     Esc  Keep working".into(), 7),
     };
     let popup = centered(
