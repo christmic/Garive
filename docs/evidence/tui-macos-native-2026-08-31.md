@@ -189,6 +189,27 @@ lists, code framing, tab expansion, CJK clipping, and terminal safety; reviewed
 dark/light/mono semantic style-run snapshots cover the rich component. These
 remain executable buffer evidence, not physical-window PNGs.
 
+TUI merge revision `3b2b0f2c` replaces delimiter-only Markdown tables with the
+bounded `markdown_table` component. It parses header, row, cell, alignment, and
+styled-span state; caps input at 12 columns, 64 body rows, and 4,096 characters
+per cell; allocates content-aware Unicode display widths for a semantic grid;
+and transposes undersized tables into labeled records without mutating copied
+Host source. Merge `741add34` freezes the six dark/light/mono wide-grid and
+narrow-record style-run snapshots plus the source audit, visual rules,
+interaction contract, and user guide.
+
+The exact merged macOS candidate `741add34` enumerated 128 test cases. All six
+shipping-binary PTYs passed in 41.46 seconds, the production Runtime/file-
+SQLite/PTTY flow in 77.19 seconds, and the complete package in 145.60 seconds.
+Strict all-target Clippy later passed on the containing current master
+`5fb523d5` in 8.91 seconds; release `garive-tui` plus `visual_demo_host` linked
+at the exact TUI candidate in 15.23 seconds. Unit and style-run assertions prove
+grid/record switching, declared alignment, bold-cell preservation, CJK display
+width, explicit label overflow, and maximum line width. The later Runtime and
+Desktop commits did not change TUI sources, and the repository was clean at
+`5fb523d5`. Physical Terminal/iTerm screenshots remain open and are not
+substituted with ANSI captures.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
