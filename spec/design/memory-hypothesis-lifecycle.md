@@ -22,6 +22,29 @@ contract; this document is normative where it proposes concrete mechanisms.
 
 Engine reads no environment, database, clock, network, embedding or random state.
 
+## Architecture vocabulary reconciliation
+
+The architecture deep-dive predates parts of this contract. The following
+mapping is exact; aliases do not add states, permissions, schedules, or hidden
+read paths:
+
+| Architecture phrase | M1 meaning |
+|---|---|
+| hot capture | asynchronous `ExitSummary` Candidate proposal |
+| explicit remember | authorized `ExplicitUserCommand`; wording alone proves no authority |
+| session-end memory | bounded `SessionEnd` Candidate or durable Noop |
+| dream | `ScheduledDistillation` over one exact prefix and watermark |
+| confidence | exact `EvidenceTally`; optional versioned display calibration only |
+| graduated | `Promoted` after an exact Knowledge publication receipt |
+| retired | no M1 state; use explicit Cold/Archived policy or M0 supersession/tombstone |
+| vector / FTS / recency | replaceable Runtime candidate ports before deterministic selection |
+| risk-action recall | outside M1 until a Governance × Memory Spec admits the full contract |
+
+Fixed clocks, percentages, fusion weights, confidence thresholds, automatic
+scope rewrites, and Thompson-style exploration are research. Stochastic
+exploration is permitted only under the frozen-request and committed-result
+rules below; no particular algorithm is selected here.
+
 ## Classification and M0 compatibility
 
 Classification has two independent axes:

@@ -20,7 +20,7 @@
 | ② | **Authority dual-source + ownership boundaries** | Whose memory, vs project knowledge; user vs agent authority |
 | ③ | **Distillation + write paths** | How memory is produced; the pyramid; the type registry |
 | ④ | **External framework survey** | Mem0 / Letta / Zep / codex CC lessons |
-| ⑤ | **Data model + storage** | Row shape + `memory.db` separate SQLite |
+| ⑤ | **Data model + storage** | Durable facts + rebuildable transactional projection |
 | ⑥ | **Read paths** | Recall into the surface |
 | ⑦ | **Maintenance policies** | ADD/UPDATE/DELETE/NOOP decisions |
 | ⑧ | **Retrieval quality** | Recency × relevance × importance ranking |
@@ -29,6 +29,19 @@ The 8 angles are **ordered**: each builds on the previous. All eight are
 explored here. Exact types, authority, lifecycle, retrieval, maintenance,
 quality evidence, and the audit/edit workflow live in M0, M1, and M2 Specs;
 unpromoted numeric policies and mechanisms in this document remain research.
+
+### Normative mapping for the deep-dive vocabulary
+
+| Design phrase | Accepted contract | Status |
+|---|---|---|
+| Four write sources | M1 `MemoryCandidateSource` | Implemented as bounded proposals; no source writes trusted Memory directly. |
+| Confidence | M1 `EvidenceTally` plus a versioned display calibration | Floating or composite confidence is not portable truth, authority, or a write permission. |
+| Candidate / active / cold / archived / graduated | M1 `HypothesisState`; graduated maps to `Promoted` | Implemented. Superseded/tombstoned remain orthogonal M0 revision states. |
+| Vector / FTS / recency | Versioned Runtime candidate ports | Admitted as replaceable ports; no fusion formula or backend is selected by M1. |
+| Menu / detail push-pull | M1 committed recall products plus C2 derive | Implemented under shared item and UTF-8 budgets. |
+| Reality feedback | M1 obligation and observation facts | Implemented; model citations alone are never verification. |
+| Risk-action lesson recall | Future Governance × Memory contract | Research until an exact purpose, authority, redaction, durable fact, and `AskUser` integration Spec is accepted. |
+| Numeric schedules, percentages, thresholds, decay and fusion weights | Versioned measured policy | Research until reproducible evaluation admits exact values. |
 
 ## ① Location + classification — what memory IS
 
@@ -43,7 +56,7 @@ is **persistent**.
 | Type | Content | Primary source | Lifetime |
 |------|---------|-----------------|----------|
 | **语义 / 偏好·事实 (semantic)** | User's stable facts and preferences: "use SDKMAN for Java", "reply in Chinese" | `dream` extraction, explicit user statement | Long, updated on contradiction |
-| **情景 (episodic)** | Which session did what — a light-weight index, not full text | Session-end auto-generation | Medium, down-weighted after `dream` distillation |
+| **情景 (episodic)** | Which session did what — a light-weight index, not full text | Session-end candidate source | Medium, down-weighted after admitted distillation |
 | **教训 (lessons)** | "This path didn't work because X" | `exit_summary`, user correction | Long (negative knowledge is the most valuable) |
 | **程序 (procedural / playbook)** | Reusable workflow: "diagnose cache misses in 5 steps" | Repeated successful tool sequences | Long, versioned, requires use-feedback |
 
@@ -57,28 +70,29 @@ failed approaches every session.
 
 ### Lifetime rules — each type has a different "death"
 
-- **Semantic** — never auto-expires; **updated** when
-  contradicted. "User moved from Mac to Linux" → new fact
-  supersedes old fact, but old fact stays in history.
-- **Episodic** — auto-compressed by `dream` distillation
-  (see angle ③).
-- **Lessons** — **never** auto-expires; expires only when
-  explicitly falsified ("later Y was fixed, this lesson
-  no longer applies"). Negative knowledge is the most
-  valuable — don't throw it away.
-- **Procedural** — versioned; expires when the underlying
-  tool chain changes (use-feedback: "tried this playbook,
-  it failed because tool X is gone").
+- **Semantic** — changes through an explicit versioned policy. When
+  contradicted, a new immutable revision may supersede the old one while
+  preserving its history; no extractor silently edits it in place.
+- **Episodic** — admitted scheduled distillation may propose condensed
+  candidates and an explicit maintenance policy may later cool/archive the
+  episode; distillation itself does not erase it.
+- **Lessons** — have no time-only tombstone. Falsification updates exact
+  evidence and an explicit policy may change lifecycle; user forget,
+  supersession, corruption handling, and legal erasure still apply.
+- **Procedural** — binds a toolchain revision. A toolchain change makes the
+  procedure eligible for an explicit fallback to Candidate/Cold; it is not
+  silently expired.
 
 ### Memory vs ledger — the boundary
 
-Memory is **separate** from the ledger:
+Memory is a distinct semantic/projection boundary, while Ledger facts remain
+the durability SSOT for admitted changes:
 
 | | Ledger | Memory |
 |---|---|---|
-| **Scope** | Session-scoped | **Agent-scoped** (cross-session) |
+| **Scope** | Session truth prefix | Authorized cross-session namespace and scope class |
 | **What it carries** | Everything that happened in this session | What **this agent** has learned across sessions |
-| **Mutation** | Append-only facts | Append-only revisions; lifecycle may archive, promote, supersede, or erase through receipts |
+| **Mutation** | Append-only facts | Immutable revisions plus receipted lifecycle, supersession, tombstone, and erasure facts |
 | **Discovery** | Sequential — replay the round | Search — query by similarity / time / scope |
 | **Schema** | Strict versioned fact catalog | Strict record/lifecycle contracts with extensible versioned type policy |
 
@@ -97,16 +111,15 @@ below. Each authority gets its own read path:
 
 | Content | Mechanism | Reason |
 |---------|-----------|--------|
-| **Preferences (`user_declared`)** | **Framework push** — `derive`'s injector, always on every turn | Law must take effect unconditionally; can't rely on agent "remembering to check"; preferences are small (dozens of entries), cheap to push |
+| **Preferences (`user_declared`)** | Bounded mandatory candidate when admitted by the exact snapshot | User authority is preserved without bypassing C2 hierarchy or budgets. |
 | **Memory (`agent_learned`)** | **Agent pull** — `memory_search` / `recall` tool; agent decides when to call | Memory is large and scenario-scoped; pushing all of it blows the context window; pull is the right shape |
 
 **The pull-mode catch**: agent doesn't know what it doesn't
 know. Pure tool-call recall fails because if the agent
 doesn't think to call the tool, the memory is invisible.
-**Fix: framework pushes a small "memory index" every turn**
-— a list of *what kinds exist* and *which recent entries
-matter*. The agent sees the menu and decides when to pull
-the details.
+**Fix: a committed bounded menu may enter C2** — a list of *what kinds exist*
+and *which admitted entries matter*. The agent sees the retained menu and
+decides when to request details; dropped references remain auditable.
 
 ### Write authority + read direction
 
@@ -117,8 +130,8 @@ different paths with different authority.
 
 | Who | Can write | Authority |
 |-----|-----------|-----------|
-| **User** | Explicit declarations / settings / corrections | `user_declared` — law |
-| **Agent** | Dream extraction, exit_summary, session-end flush | `agent_learned` — hypothesis |
+| **User** | Authenticated explicit declarations / settings / corrections | `user_declared` — law, after the Runtime receipt |
+| **Agent** | Distillation, exit-summary, and session-end proposals | `agent_learned` — hypothesis Candidate |
 
 If the agent **observes** something that looks like a
 preference ("user keeps asking for Chinese"), the correct
@@ -130,16 +143,14 @@ default?" → user confirms → becomes `user_declared`.
 
 | Content | Direction | Frequency | Budget |
 |---------|-----------|-----------|--------|
-| Preferences | **Push** (`derive` injector) | Every turn | Tens of entries; cheap |
-| Memory index | **Push** (small catalog) | Every turn | ~5 % of surface |
+| Preferences | **Push candidate** (`derive`) | Per admitted snapshot | Explicit item/byte bounds |
+| Memory index | **Push candidate** (small catalog) | At most one per Kernel iteration | Shared C2 item/byte bounds |
 | Memory detail | **Pull** (tool call) | Agent decides | Varies by query |
 
-The "menu injection" makes the memory's existence **always
-on the agent's radar** without forcing it onto the agent's
-context. The agent pulls the details when relevant. This
-hybrid is also the answer to the "pure tool call" failure
-mode — if the agent never calls the recall tool, the memory
-is still noticed via the menu.
+When C2 retains a menu candidate, Memory becomes discoverable without forcing
+full content onto the surface. The agent can pull details when relevant. This
+hybrid addresses the pure-tool-call failure mode while preserving one shared
+selection hierarchy and budget.
 
 ### Authority is not a confidence score
 
@@ -164,10 +175,11 @@ authority = agent_learned    # agent hypothesis (lessons, inferred facts, playbo
 authority = organisation_published # externally published, receipt required
 ```
 
-`user_declared` always wins over `agent_learned` at recall
-time. When a user corrects an agent's memory ("no, I don't
-use X anymore"), the correction **is itself** a `user_declared`
-entry — law overwrites hypothesis, with a complete audit trail.
+`user_declared` and `agent_learned` never collapse into one truth score. When a
+user corrects an agent hypothesis, Runtime must authenticate the correction
+before creating `user_declared` authority. Conflict remains explicit and Core
+derive preserves system/policy/current-input hierarchy with a complete audit
+trail.
 
 This is the **provenance philosophy** of `ledger.md`
 (per-kind producer field) applied to memory — every
@@ -218,12 +230,12 @@ tower**:
                  lessons + facts (few, essence)
                   ↑  dream distillation
                 episodes (many, raw material)
-                  ↑  each session auto-produces an episode entry
+                  ↑  session-end may propose a bounded episode candidate
               session ledger (truth, base of the memory tower)
 ```
 
-The base is **cheap** (every session produces one episodic
-entry); the top is **expensive** (playbooks are hand-curated).
+The base is high-volume (a session may produce an episodic candidate or Noop);
+the top is expensive (Knowledge publication is separately reviewed/receipted).
 The `dream` op is the **reboiler**: episodes become semantic +
 lessons; after distillation, episodes are down-weighted
 (details fade, conclusions remain).
@@ -231,40 +243,37 @@ lessons; after distillation, episodes are down-weighted
 **This structure directly drives storage / recall:**
 
 - **Top** (playbooks / lessons / facts) — small and **hot**
-  (always-on candidates for recall).
+  (eligible for bounded recall under the exact policy).
 - **Bottom** (episodes) — large and **cold** (lookup-on-demand).
 
 ### MemoryTypeRegistry — the kind philosophy, third application
 
 The same governance pattern that gave us the **kind registry**
 (`ledger.md`) and the **EventCatalog** (`loop.md`) gives us the
-**MemoryTypeRegistry** here — every memory type is registered,
-not extended.
+**MemoryTypeRegistry** here — every memory type and admitted policy revision is
+registered; arbitrary strings are rejected.
 
-```python
-class MemoryType:
-    kind:           str         # 'memory.fact' / 'memory.lesson' / 'memory.episode' / 'memory.playbook'
-    lifetime:       Lifetime    # retention + decay + retirement rules
-    distillation:   list[Transition]  # who can distil into what
-    recall_profile: RecallProfile   # default trigger + budget + rank
-    surface_kind:   str         # kind used when injected into surface
+```text
+MemoryTypeDescriptor {
+  type, allowed_roles, admitted_authorities,
+  lifecycle_policy_revision, recall_profile_revision,
+  retention_policy_revision, surface_kind
+}
 ```
 
 Per-type registration (one row in the table):
 
 | Field | What it declares | Example (`memory.lesson`) |
 |-------|------------------|-----------------------------|
-| `kind` | The schema / payload shape | `{situation, action, consequence, evidence[]}` |
-| `lifetime` | Retention + decay + retirement | "never auto-expires; falsified only by explicit override" |
-| `distillation` | Who can distil into what | "episodic → lesson on 3+ failures" |
-| `recall_profile` | Trigger / budget / rank | "trigger on task-type match; budget = 5 % of surface" |
-| `surface_kind` | How the entry shows up in the surface | `memory.lesson` (pinned, always-loaded) |
+| `type` | Closed portable classification | `Lesson` |
+| `allowed_roles` | Admitted M0 content roles | versioned exact set |
+| `admitted_authorities` | Authorities legal for this type | versioned exact set |
+| policy revisions | Lifecycle, recall, and retention implementations | immutable admitted identifiers |
+| `surface_kind` | How an admitted entry is typed for C2 | budgeted/selectable lesson envelope |
 
-> **Adding a new memory type = one table row + one policy.**
-> The runtime does not invent types that aren't registered.
-> The dispatch loop in angle ⑤ reads the table to decide
-> recall behaviour; the persistence layer reads it to apply
-> lifetime rules. Code stays stable; new types are config.
+Adding a memory type requires a versioned enum, descriptor, policies, and
+fixtures. A registry row selects admitted code; it cannot inject code or let
+Runtime invent an undeclared type.
 
 This is the **third application** of the kind philosophy:
 
@@ -277,51 +286,47 @@ undeclared entries. The runtime **does not invent**.
 
 ### Four write sources — by **value density**
 
-Memory is produced by **four sources**, ordered by how
+Memory candidates are produced by **four sources**, ordered by how
 **expensive** the failure is to lose (high value density
 first):
 
 | Source | When | What it processes | Reason |
 |--------|------|--------------------|--------|
-| **Hot capture** | `exit_summary` fires | **Lessons** — failures, paths-don't-work, runways | Failure is the most expensive raw material — can't wait for batch processing; land immediately |
-| **Explicit user statement** | User types "remember this" | **User declaration** — preferences, rules, corrections | No extraction needed; write directly as `user_declared` |
-| **Session-end light extraction** | Turn / session end | **Episode index + salient facts** | Cheap and fast; guarantees every session yields an entry |
-| **dream deep distillation** | Scheduled batch (gated by ≥ `min_hours` since last + ≥ `min_sessions` new) | Episode → facts / lessons batch distillation | Heavy work accumulates; cheap model; batch-run |
+| **Hot capture** | `exit_summary` fires | **Lessons** — failures, paths-don't-work, runways | Produces a bounded `ExitSummary` candidate promptly; authority and durability gates still apply asynchronously. |
+| **Explicit user statement** | User types "remember this" | **User declaration** — preferences, rules, corrections | Produces an authorized `ExplicitUserCommand`; it still passes retention, sensitivity, and revision checks. |
+| **Session-end light extraction** | Session end | **Episode index + salient facts** | Produces a bounded `SessionEnd` candidate or an explicit Noop; a session is not guaranteed to create a record. |
+| **dream deep distillation** | Explicit Runtime schedule | Episode → facts / lessons batch distillation | Produces `ScheduledDistillation` candidates over an exact prefix and watermark. Time/session thresholds have no accepted default. |
 
 > **Principle: high-value-low-volume hot-captured;
 > low-value-high-volume batch-distilled.**
 
 ### Who extracts — accuracy + confidence
 
-The extractor is a **new role** in the model-invoke
-machinery: `role = extractor`, with a **medium/cheap model**
-(by default — extraction is high-throughput). Extraction
-is **schema-constrained structured pulling**, not free-form
-generation.
+An extractor may use a neutral model role resolved by the immutable Agent
+Definition snapshot. The role, capabilities, model target, bounds, and
+extractor revision are explicit configuration; there is no built-in cheap or
+vendor-specific default. Extraction produces schema-constrained candidates,
+not trusted Memory revisions.
 
 **Three pillars of accuracy:**
 
 1. **Evidence-mandatory** (anti-hallucination core):
-   Every extraction carries `source_session + source_seq`
-   range. Extractions **without an anchor are rejected**.
+   Every automatic extraction carries ordered durable fact references inside
+   one authorized Session prefix. Extractions **without an anchor are rejected**.
    Same philosophy as `governance.judge`'s evidence and
    `compaction.summary`'s structured fields: no anchor, no
    entry.
 
-2. **Confidence-grading**: each entry carries a `confidence`
-   synthesised from three signals:
-   - **Evidence strength** — direct quote from the source >
-     inferred.
-   - **Reproduction count** — multiple sessions arriving at
-     the same conclusion → bump.
-   - **Use feedback** — recalled + helped success → bump;
-     recalled + linked to failure → drop.
+2. **Evidence grading**: portable state retains exact verified, falsified, and
+   neutral tallies plus durable evidence. A versioned calibration may derive a
+   display score. It cannot turn correlation, repetition, or model text into
+   authority.
 
 3. **Candidate-period regime** — new entries don't take
-   effect immediately. They enter as **candidate** (low
-   confidence, recallable but flagged "pending verification").
-   Promotion to `active` only after a successful use or
-   explicit user confirmation.
+   effect as ordinary recall immediately. Agent-learned entries enter as
+   **Candidate** and are eligible only when the exact recall request admits
+   Candidate exploration. A committed verified observation may activate them;
+   user confirmation remains a Runtime-authenticated observation, not model text.
 
 > **"Extract wide, trust slow."** The admission gate is
 > open (four-triggers cover most signals); the trust gate is
@@ -335,25 +340,22 @@ present?) to filter obvious irrelevance.
 
 ### Item state machine — promotion / demotion / archival
 
-```
-                  candidate ──验证成功──→ active ──长期未用──→ cold ──超期──→ archived
-                     │                    │                  │
-                     │                    ├──被证伪──────→ retired
-                     │                    └──superseded──→ superseded
-                     │
-                     ├──graduated────→ graduated (记忆条目变指针，指向知识页)
-                     │
-                  情景降权 (dream 蒸馏时)
+```text
+Candidate --Verified--> Active --Cool--> Cold --Archive--> Archived
+                         |             |
+                         +-------------+--Promote(receipt)--> Promoted
+
+M0 revision state independently becomes Superseded or Tombstoned.
 ```
 
 | Transition | Trigger | Rule |
 |------------|---------|-------|
-| candidate → active | Successful use × 1, or user confirms | Active means "trusted for recall without a tag" |
-| active → cold | Attenuation mechanism / dream / audit | Normal decay — entry gets less recall priority |
-| cold → archived | N days unreferenced, **not** Lesson (Lesson exempt from auto-decay) | Compression: leave the recall pool but keep auditable history |
-| superseded | New fact invalidates the old | Old entry keeps history; flagged as superseded, not deleted |
-| graduated | Verified + consolidated, promoted to a knowledge page | Original entry becomes a pointer to the knowledge page; **memory is the raw-material library, knowledge is the graduation destination** |
-| 情景降权 | dream batch distillation | Episode down-weighted after distillation; lessons stay evergreen |
+| Candidate → Active | Committed `Verified` observation | Ordinary recall eligibility; `AgentLearned` remains a falsifiable hypothesis. |
+| Active → Cold | Explicit `Cool` maintenance event | Down-ranked but still searchable. No time threshold is built in. |
+| Cold → Archived | Explicit `Archive` maintenance event | Excluded from menu/ordinary recall and available only to admitted detail queries. |
+| Active or Cold → Promoted | Exact Knowledge publication receipt | Excluded from normal recall while retaining the publication binding. |
+| M0 Superseded | A new immutable revision replaces the active revision | Preserves prior history; this is not an M1 lifecycle state. |
+| M0 Tombstoned | Authorized forget/retention/corruption path | Stops retrieval and starts separately receipted physical erasure where required. |
 
 > **Discipline:** every transition leaves a trail
 > (when, by what trigger). The memory's own history is
@@ -409,30 +411,26 @@ prove atomic coordination and recovery without a cross-database transaction.
 
 ### Ranking fusion
 
-```
-score = relevance × recency × importance × confidence
-       (capped, normalised, deterministic tie-break)
-```
-
-Top-k entries fill the **memory budget slice** of the
-surface (e.g. 10 % of window — exact value per
-`MemoryTypeRegistry.recall_profile`).
+The accepted baseline uses bounded integer relevance, recency, and importance
+components with a deterministic lexical tie-break. A multiplicative fusion,
+confidence factor, RRF/rerank stage, or fixed percentage of the context window
+requires its own versioned policy and evaluation evidence. Memory competes
+under the same C2 item and UTF-8 budgets as other durable candidates.
 
 ### Five recall **timings**
 
 | Timing | Mechanism | Direction |
 |--------|-----------|-----------|
-| **Turn start** | `derive`'s memory injector — query is `user.msg + goal` | Framework **push** (menu + relevant top-k) |
+| **Turn start** | C2 consumes a committed bounded recall product for the exact Turn prefix | Framework **push** within C2 budgets. |
 | **Turn mid** | Agent calls `memory-search` tool when needed | Agent **pull** (entry detail on demand) |
 | **Explicit ask** | User says "我们上次怎么定的" / agent asks | User-triggered / agent pull |
-| **Risk action** | `governance.judge` flags high-risk → recall same-class lessons → feed to `AskUser` context | **Governance × memory fusion** |
+| **Risk action** | Proposed: Governance requests a separately authorized lesson product for `AskUser` | Not admitted; requires a focused cross-capability Spec. |
 | **dream** | Distillation reads memory entries | Internal |
 
-> **Risk-action recall is the governance × memory
-> fusion.** Before `AskUser`, the system queries "did this
-> kind of action ever go wrong before?" — if so, the
-> lesson is laid alongside the approval. **Approval goes
-> from "blind" to "informed"**.
+Risk-action recall remains a useful design target, but Governance cannot read
+Memory through an implicit side channel. A future slice must bind the exact
+risk class, Memory purpose, namespace/scope grant, fixed prefix, redaction,
+durable recall fact, and `AskUser` presentation before dispatch.
 
 ### Mixing push and pull — the menu/index trick
 
@@ -452,8 +450,8 @@ two pure-mode failure modes:
 
 | Content | Push? | Pull? | Why |
 |---------|-------|-------|-----|
-| Preferences (`user_declared`) | ✅ Every turn | — | Law must take effect unconditionally; can't rely on the agent "remembering to check" |
-| Memory menu (index) | ✅ Every turn | — | Discoverability — the agent sees the catalog, decides when to drill in |
+| Preferences (`user_declared`) | bounded push | optional detail | May be mandatory candidates, but remain below system/policy/current input and inside C2 bounds. |
+| Memory menu (index) | bounded candidate | — | If retained by C2, the agent sees the catalog and may drill in. |
 | Memory detail | — | ✅ On demand | Body is large; agent decides relevance |
 | Procedural (playbook) | partial — cached hint | ✅ On demand | Sometimes useful pre-loaded; full body on demand |
 
@@ -465,17 +463,17 @@ contract holds; none of them alone is sufficient.
 
 | # | Gate | What it does |
 |---|------|--------------|
-| 1 | **Confidence gate** | Below threshold → don't inject; or inject with explicit `low-confidence` tag so the model downweights it |
-| 2 | **Freshness gate** | `facts` type — `last_verified` overdue → tag `stale` or re-verify before injecting (**Lesson exempt** — lesson semantics differ from fact) |
-| 3 | **Cognitive-transparent injection** | The injection format carries `source_session + source_seq + confidence + "may be outdated"`-style wording — model knows it's a witness, not a notary. The model self-weights; verifies when critical. |
-| 4 | **Post-use verification loop** | The recalled memory was acted on and reality disagreed (model looked for the file the memory said existed — file is not there). Contradiction captured → entry automatically downgraded to candidate, `confidence` recomputed, candidate re-verified. **Reality closes the loop on memory.** |
-| 5 | **Conflict presentation** | Two recalled memories contradict — **don't silently pick one**. High-confidence wins + flag the conflict, or present both. The agent makes the call; the runtime flags the tension. |
+| 1 | **Evidence/lifecycle gate** | Exact authority, scope, lifecycle, evidence tallies, and selection-policy revision determine eligibility; no floating threshold is portable truth. |
+| 2 | **Freshness gate** | Versioned Runtime policy may mark stale identities or request re-verification. Lessons are exempt from time-only tombstone, not from falsification or corruption. |
+| 3 | **Cognitive-transparent injection** | The committed product retains record/revision/authority/lifecycle and audit references. Any user-facing wording is a versioned presentation contract, not invented prompt text. |
+| 4 | **Post-use verification loop** | A durable obligation plus reality-backed observation updates the tally. Contradiction never auto-rewrites content or silently changes authority. |
+| 5 | **Conflict presentation** | Known conflicts remain explicit bounded evidence. Silent winner selection or a conflict UI needs an accepted policy/presentation contract. |
 
 ### Three-party sharing — the shared accountability
 
 | Party | What it owns |
 |-------|--------------|
-| **Framework** (admission gates 1, 2, 5) | Confidence / freshness gate; conflict surfacing |
+| **Framework** (admission gates 1, 2, 5) | Evidence/lifecycle and freshness policy; conflict surfacing |
 | **Model** (using the memory) | Self-weighting; verifies when critical |
 | **Reality** (post-use loop, gate 4) | Closes the loop — the test that makes memory honest |
 
@@ -484,9 +482,6 @@ whole point. **`agent_learned` is a falsifiable hypothesis**.
 It does not become law. The user's `user_declared` entries
 are the only law.
 
-
-  exploration choice; no implicit vector/FTS dependency is part of M1
-
 ## ⑦ Maintenance policies — promotion + anti-bloat
 
 ### Promotion channel — memory graduates to knowledge
@@ -494,28 +489,25 @@ are the only law.
 The four types are not peers; they're a **distillation tower**
 (see ③). The top of the tower (`playbooks`) is **hand-curated
 from proven memories** — a memory entry graduates to
-knowledge when it's been verified enough times.
+knowledge only through an accepted publication policy and exact receipt.
 
 ```
 memory entry (with verified durable fact evidence)
-    ↓  "verified N times, on stable topic"
-    ↓  promoted by dream or by user audit
+    ↓  accepted versioned promotion policy
+    ↓  separately authorized Knowledge proposal/publication
     ↓
 knowledge entry (in `engine.proj.md` / wiki / shared knowledge base)
     ↓
-original memory entry downgrades to "promoted_to: <knowledge-id>"
+original Memory lifecycle becomes Promoted with the receipt digest
 ```
 
 **Concrete example:**
 - `memory.lesson` — "SDK X has a caching bug" (with an exact verified fact
   reference for Session S42 position 317)
-- After N independent sessions reproduce the same lesson →
-  dream (or user audit) writes a `wiki:project/sdk-cache`
-  entry in the **project knowledge base** (per ② — agent
-  only references, doesn't own).
-- The original `memory.lesson` entry is **downgraded** to
-  `status = promoted_to: <wiki-id>` — kept for audit, but no
-  longer surfaces in recall.
+- A versioned policy may admit a Knowledge proposal after enough verified and
+  sufficiently few falsified observations. Knowledge still owns publication.
+- Only the committed publication receipt moves the original Memory lifecycle
+  to `Promoted`; normal recall excludes it while audit retains the binding.
 
 **Without this promotion channel**, memory and knowledge
 **duplicate the same fact** — two storage locations, each
@@ -525,8 +517,8 @@ library; knowledge is the graduation destination** — a
 
 ### Anti-bloat — six defenses
 
-The chronic disease of memory systems: every session
-produces memory → no discipline → infinite growth → recall
+The chronic disease of memory systems: unbounded candidate production without
+admission discipline causes growth → recall
 precision drops → inject cost rises → noise drowns signal.
 **Memory health = recall precision**, not entry count.
 
@@ -537,8 +529,8 @@ Six defenses:
 | 1 | **Distillation (debulk)** | Episodes distilled to conclusions; raw entries down-weighted. The tower structure IS the debulk. | `dream` watermark |
 | 2 | **Quota (hard ceiling)** | Explicit per-type count/byte caps force ongoing priority judgement. Numeric values are Runtime policy and require measured admission; they are not defaults in this design. | `MemoryTypeRegistry` retention policy |
 | 3 | **Admission filter (write gate)** | Three questions before entry: **can it generalise?** (no → reject, one-off detail); **is it stable?** (uncertain → defer + observe); **already present?** (dedup). Borrowed from Mem0's NOOP decision. | `dream` candidate → ADD/UPDATE/DELETE/NOOP pipeline |
-| 4 | **Use feedback (natural selection)** | Recalled and helped → boost score. Never recalled → slow decay. Recalled but linked to failure → downrank. Use it or lose it; entries earn their place. | Recalled entry's `confidence` adjusts based on outcome |
-| 5 | **Memory lint (periodic audit)** | Scheduled task: find duplicates, find contradictions (two memory entries conflict — pick one), find expired (`last_verified` over threshold → flag), find low-score. Output an **audit report** — the user is the ultimate curator. | Scheduled cron job + user-visible report |
+| 4 | **Use feedback (natural selection)** | Reality-backed observations update exact tallies; policy may later cool or reactivate an entry. Missing use alone is not evidence. | Obligation/observation facts + versioned lifecycle policy |
+| 5 | **Memory lint (periodic audit)** | Bounded audit reports duplicates, supplied contradictions, stale and low-use identities without choosing a winner or mutating state. | Scheduled audit + user-visible report |
 | 6 | **Forgetting right (first-class)** | Delete and `redaction` are equivalent first-class operations. "Forget this" must be legal — both for hygiene (low-quality memory) and privacy (user's right to be forgotten). | `memory.delete(entry_id)` |
 
 **The total principle**: four gates, each at a different stage
@@ -571,9 +563,9 @@ the rest is fully decoupled.
 │   query = msg + goal │    │                      │    │                      │
 │       ↓             │    │                      │    │                      │
 │  Memory recall      │    │                      │    │                      │
-│   top-K (4-way + RRF │    │                      │    │                      │
-│   + gate + Thompson │    │                      │    │                      │
-│   sampling)         │    │                      │    │                      │
+│   committed bounded │    │                      │    │                      │
+│   selection-policy  │    │                      │    │                      │
+│   result             │    │                      │    │                      │
 │       ↓             │    │                      │    │                      │
 │  surface            │    │                      │    │                      │
 │       ↓             │    │                      │    │                      │
@@ -591,26 +583,26 @@ the rest is fully decoupled.
                                                           verify / falsify /
                                                           neutral
                                                                 ↓
-                                                        Beta (α, β) → conf
-                                                        recompute → state
-                                                        machine transition
+                                                        exact evidence tally
+                                                        → admitted lifecycle
+                                                        transition
                                                           ↓
                                                         usage record
-                                                        (weekly regression
-                                                         calibration)
+                                                        (optional versioned
+                                                         display calibration)
 
 ┌─────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │  Memory bank       │  │  Extraction channel   │  │  (same lanes above)   │
 │                    │  │                       │  │                        │
-│  active (hot —     │  │  4 triggers:          │  │                        │
+│  active (hot —     │  │  4 sources:           │  │                        │
 │   injects)         │  │  ① session-end        │  │                        │
-│  candidate (verif.  │  │    → extractor       │  │                        │
-│   bounty)          │  │  ② exit_summary       │  │                        │
+│  candidate (bounded │  │    → extractor       │  │                        │
+│   exploration)     │  │  ② exit_summary       │  │                        │
 │  cold (searchable)  │  │    → hot capture     │  │                        │
 │  archived (query    │  │  ③ user "记住 X"     │  │                        │
-│   only)             │  │    → direct write     │  │                        │
-│  (lessons exempt    │  │  ④ dream (hourly)    │  │                        │
-│   from decay)       │  │    → episode distill  │  │                        │
+│   only)             │  │    → authorized       │  │                        │
+│  (lessons: no       │  │  ④ scheduled         │  │                        │
+│   time-only delete) │  │    distillation       │  │                        │
 └─────────────────────┘  └──────────────────────┘  └──────────────────────┘
 ```
 
@@ -618,7 +610,7 @@ the rest is fully decoupled.
 
 | # | From | To | What flows |
 |---|------|----|-------------|
-| **①** | Conversation (turn loop) | Memory recall | `top-K` entries injected into `surface` (memory pushes its index every turn; agent pulls details on demand) |
+| **①** | Conversation (turn loop) | Memory recall | One committed bounded menu/detail product enters C2; retained and dropped references remain auditable. |
 | **②** | Conversation + Effect layer | Observation lane | Application signal — `model cited [mem:abc]` and `tool.result`/`verdict` |
 | **③** | Effect layer | Observation lane | Real-world results — `tool.result`/`error`/`test pass/fail` |
 
@@ -633,13 +625,13 @@ conversation never waits for memory.
 
 | When | Lane | What happens |
 |------|------|--------------|
-| **T0** | Conversation + Extraction | Method X fails during a session. `exit_summary` fires → extraction-channel **hot-captures** the lesson → enters `memory.lesson` as **candidate** (evidence + scope). Cheap verification runs in-line (e.g. error-signature reproducibility check). Unverifiable → stay candidate. |
-| **T1** | Conversation + Memory | Next session, similar task starts. `derive` recall fires → **Thompson sampling** lets the new lesson surface even with a low prior → injected into surface as `[mem:abc] pending-verification lesson: X fails under C due to Y`. Model switches to method Z, **cites `[mem:abc]`** to declare the avoidance. |
-| **T2** | Effect + Observation | Method Z **succeeds** → obligation ticket opens: "if X avoided Y, did Z succeed?" Event arrives → **level-1 deterministic verdict** (avoidance succeeded + substitute succeeded) → `α+1` → `conf ↑` → `candidate` → **`active`**. First full use closes the loop. |
-| **T3** | Conversation + Memory | A later **high-risk** action → `governance.judge` triggers an **informed-approval** flow → recall **the same lesson** into the approval context. User sees "you've avoided this before; confirm again". |
-| **T4** | Effect + Observation + Memory | The lesson applied in a new context, **fails** → attribution-loop check: was the failure in-scope? If **out of scope**, **don't falsify** — narrow scope to "applies to C1, not C2". The lesson becomes **more precise** (CBR theory). |
-| **T5** | Extraction + Memory | `dream` batch runs at hour boundary. Episodes distilled → lessons cited as distillation evidence → episodes down-weighted. Lessons stay evergreen. |
-| **T6** | Memory | Weekly **calibration loop**: "of memories with `conf = 0.8`, what was the actual success rate?" → regression re-calibrates the confidence mapping. |
+| **T0** | Conversation + Extraction | Method X fails. `ExitSummary` may asynchronously propose an evidence-bound `AgentLearned` lesson Candidate. It neither blocks nor rewrites the completed Turn. |
+| **T1** | Conversation + Memory | An explicit Candidate-exploration request may surface it under a frozen algorithm revision and seed. The committed product records identities and draws; ordinary recall excludes it. |
+| **T2** | Effect + Observation | A bounded obligation binds the application and expected outcome. Admitted reality evidence yields an exact verdict and tally update; a verified Candidate may transition to Active. |
+| **T3** | Governance + Memory | Risk-action recall is a proposed extension. It cannot enter `AskUser` until a focused Spec admits its purpose, grant, prefix, redaction, fact, and presentation. |
+| **T4** | Effect + Observation + Memory | In-scope failure is Falsified. Out-of-scope failure is Neutral and may propose a narrower Candidate; it never silently rewrites the original revision. |
+| **T5** | Extraction + Memory | Scheduled distillation consumes an exact Session prefix and watermark, then emits bounded candidates or Noops. No hourly default is implied. |
+| **T6** | Evaluation | A future versioned calibration may derive display-only scores from exact tallies. It cannot change authority, eligibility, or lifecycle by itself. |
 
 ## Our four moats — what makes this hard to copy
 
@@ -650,10 +642,10 @@ Garive is *where the updates come from*.
 
 | # | Moat | Why it's hard to copy |
 |---|-------|------------------------|
-| **1** | **Real-world reconciliation loop** — the **OutcomeObserver** captures *what actually happened in the world* (tool results, test pass/fail, error signatures) and feeds `β` to `dream` / promotion. Everyone else's memory updates from **dialogue** ("user said X"). Ours updates from **reality**. The confidence machine only works because reality is the input. |
-| **2** | **Lessons pipeline** — `exit_summary` + **hot-capture** + **risk-action recall** + **informed-approval**. ProgressGuardian + memory = closed loop. Other systems' memories have no place for "this failed". |
-| **3** | **Scope attribution (CBR-style narrowing)** — failure in scope → falsify, failure out of scope → narrow scope. The lesson gets **more precise** with use, not stale. Few product implementations. |
-| **4** | **Explore-exploit math for recall** — Thompson sampling + extract-time verification + candidate-bounty. Recall is not just similarity top-K; it's a **bandit problem** with cold-start + exposure-bias corrections. |
+| **1** | **Real-world reconciliation loop** — the **OutcomeObserver** captures committed tool, test, effect, and authenticated correction evidence. Exact observations update tallies and lifecycle through admitted policy; dialogue or model citations alone never verify a hypothesis. |
+| **2** | **Lessons pipeline** — `ExitSummary` produces evidence-bound lesson candidates and the observation loop can test them. Risk-action recall remains a separately gated extension, not an implicit side channel. |
+| **3** | **Scope attribution (CBR-style narrowing)** — failure in scope is falsified; out-of-scope failure is neutral and may propose a narrower Candidate without mutating the original. |
+| **4** | **Replayable exploration** — candidate exploration freezes the selector revision and seed and commits identities/draws. Thompson sampling, numeric thresholds, and exposure-bias correction remain evaluation-gated policy candidates. |
 
 ## Honest gaps — where others are stronger
 
