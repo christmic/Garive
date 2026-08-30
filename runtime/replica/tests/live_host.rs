@@ -415,6 +415,17 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
         .load_turn(&garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap())
         .unwrap();
     let state = garive_runtime::reconstruct_suspended_turn(&snapshot).unwrap();
+    let timeline = harness
+        .host
+        .read_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    let suspension = timeline.items[0]
+        .suspension
+        .as_ref()
+        .expect("restart-safe suspension coordinates");
+    assert_eq!(suspension.suspension_id, state.suspension_id);
+    assert_eq!(suspension.session_version, 3);
+    assert_eq!(suspension.kind, "partial_output");
     let continued = harness
         .host
         .continue_turn(

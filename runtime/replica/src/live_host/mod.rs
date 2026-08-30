@@ -8,7 +8,8 @@ pub use service::LiveHost;
 pub use types::{
     AgentDefinitionSummary, CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput,
     HostEventPage, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, SessionSummary,
-    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnTimelineItem, TurnTimelinePage,
+    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
+    TurnTimelinePage,
 };
 
 pub(crate) use projection::{completion_text, project_fact};
