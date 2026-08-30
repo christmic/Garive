@@ -63,6 +63,19 @@ public class MobileWorkControllerTest {
         assertEquals("session-new", retried.selectedSessionId)
     }
 
+    @Test
+    public fun approvalUsesTypedCanonicalJson(): Unit = runBlocking {
+        val host = FakeMobileHost()
+        val controller = MobileWorkController(host, identities())
+        controller.boot()
+        controller.openSession("session-1")
+
+        controller.continueLatest("approved")
+
+        assertEquals("true", host.continuationInput)
+        assertEquals(true, host.continuationIsJson)
+    }
+
     private fun identities(): CommandIdentitySource {
         var next = 0
         return CommandIdentitySource { "command-${++next}" }
@@ -71,6 +84,8 @@ public class MobileWorkControllerTest {
 
 private class FakeMobileHost(private var failFirstStart: Boolean = false) : MobileHost {
     val startCommandIds: MutableList<String> = mutableListOf()
+    var continuationInput: String? = null
+    var continuationIsJson: Boolean? = null
     private var created: Boolean = false
 
     override suspend fun agentDefinitions(): AgentDefinitionPageV1 = AgentDefinitionPageV1(
@@ -138,7 +153,12 @@ private class FakeMobileHost(private var failFirstStart: Boolean = false) : Mobi
         suspensionId: String,
         expectedSessionVersion: Long,
         input: String,
-    ): TurnCommandResponseV1 = TurnCommandResponseV1(sessionId, turnId, "execution-2", 10)
+        inputJson: Boolean,
+    ): TurnCommandResponseV1 {
+        continuationInput = input
+        continuationIsJson = inputJson
+        return TurnCommandResponseV1(sessionId, turnId, "execution-2", 10)
+    }
 
     override suspend fun followUntilTerminal(sessionId: String, afterPosition: Long): HostView =
         HostView(cursor = 10, terminal = HostTerminalKind.COMPLETED, text = "done")

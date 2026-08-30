@@ -52,6 +52,7 @@ public interface MobileHost {
         suspensionId: String,
         expectedSessionVersion: Long,
         input: String,
+        inputJson: Boolean,
     ): TurnCommandResponseV1
 
     /** Follows committed events until a durable terminal. */

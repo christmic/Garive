@@ -136,12 +136,14 @@ public class MobileWorkController(
             ?: return@withLock notice("validation_turn_required")
         val decision = turn.decision
             ?: return@withLock notice("validation_decision_required")
+        val inputJson = decision.kind == "approval_required"
         val operation = PendingOperation.Continue(
             sessionId,
             turn.turnId,
             decision.suspensionId,
             decision.sessionVersion,
-            input,
+            if (inputJson) "true" else input,
+            inputJson,
             identities.nextId(),
         )
         pendingOperation = operation
@@ -231,6 +233,7 @@ public class MobileWorkController(
                     operation.suspensionId,
                     operation.sessionVersion,
                     operation.input,
+                    operation.inputJson,
                 )
             }
             val sessionId = when (operation) {
@@ -342,6 +345,7 @@ private sealed class PendingOperation {
         val suspensionId: String,
         val sessionVersion: Long,
         val input: String,
+        val inputJson: Boolean,
         val commandId: String,
     ) : PendingOperation() {
         override fun publicValue(): MobilePendingCommand =

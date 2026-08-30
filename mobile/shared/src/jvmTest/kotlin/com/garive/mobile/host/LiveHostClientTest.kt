@@ -232,7 +232,7 @@ public class LiveHostClientTest {
         val client = LiveHostClient("http://127.0.0.1:4317/", limits(), HttpClient(engine))
         client.cancelTurn("cancel-stable", "session-client", "turn-client", 9)
         client.continueTurn(
-            "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input",
+            "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input", false,
         )
         assertEquals(listOf("/v1/turns/turn-client:cancel", "/v1/turns/turn-client:continue"), paths)
     }

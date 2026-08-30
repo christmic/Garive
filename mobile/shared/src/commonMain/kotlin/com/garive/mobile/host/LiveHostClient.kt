@@ -166,6 +166,7 @@ public class LiveHostClient private constructor(
         suspensionId: String,
         expectedSessionVersion: Long,
         input: String,
+        inputJson: Boolean,
     ): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || turnId.isEmpty() || suspensionId.isEmpty() ||
             expectedSessionVersion <= 0 || input.isEmpty()
@@ -174,7 +175,8 @@ public class LiveHostClient private constructor(
             "/v1/turns/${turnId.encodeURLPathPart()}:continue", commandId, sessionId, turnId,
             buildJsonObject {
                 put("session_id", sessionId); put("suspension_id", suspensionId)
-                put("expected_session_version", expectedSessionVersion); put("input", input)
+                put("expected_session_version", expectedSessionVersion)
+                if (inputJson) put("input_json", input) else put("input", input)
             },
         )
     }
