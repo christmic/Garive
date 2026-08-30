@@ -1745,6 +1745,7 @@ dependencies = [
  "chrono",
  "futures",
  "garive-adapter-anthropic-messages",
+ "garive-adapter-browser-cdp",
  "garive-adapter-openai-responses",
  "garive-core",
  "garive-goal",
