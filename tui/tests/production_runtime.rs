@@ -273,8 +273,10 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
     let script = if restart {
         r#"
             set timeout 8
+            encoding system utf-8
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
+            fconfigure $spawn_id -encoding utf-8
             expect "You: hello durable"
             expect "耐久 tui"
             expect "Garive: answer from production runtime"
@@ -288,12 +290,13 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
     } else {
         r#"
             set timeout 8
+            encoding system utf-8
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            fconfigure $spawn_id -encoding utf-8
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "definition-m"
-            encoding system utf-8
             send -- "\033\[200~"
             send -- "hello durable\n\u8010\u4e45 tuX"
             send -- "\033\[201~"
