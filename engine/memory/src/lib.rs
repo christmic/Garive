@@ -7,6 +7,7 @@ mod audit;
 mod control_plan;
 mod control_plan_values;
 mod control_plane;
+mod control_snapshot;
 mod control_snapshot_values;
 mod erasure;
 mod hypothesis;
@@ -33,6 +34,7 @@ pub use control_plane::{
     parse_memory_document, MemoryControlDocument, MemoryControlError, MemoryDocumentLimits,
     MemoryRecordRef,
 };
+pub use control_snapshot::{parse_memory_snapshot, project_memory_snapshot};
 pub use control_snapshot_values::{
     MemorySnapshot, MemorySnapshotEntry, MemorySnapshotFile, MemorySnapshotLimits,
     MemorySnapshotManifest,
