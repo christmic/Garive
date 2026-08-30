@@ -4,9 +4,17 @@ fun firebaseValue(name: String): String {
     require(value.matches(Regex("[A-Za-z0-9:._-]*"))) { "$name contains unsupported characters" }
     return "\"$value\""
 }
+fun buildRevision(): String {
+    val value = System.getenv("GARIVE_BUILD_REVISION").orEmpty().ifEmpty { "development" }
+    require(value == "development" || value.matches(Regex("[0-9a-f]{40}"))) {
+        "GARIVE_BUILD_REVISION must be development or an exact lowercase Git revision"
+    }
+    return value
+}
 android { namespace = "com.garive.android"; compileSdk = 36
     defaultConfig { applicationId = "com.garive.android"; minSdk = 26; targetSdk = 36; versionCode = 1; versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["gariveBuildRevision"] = buildRevision()
         buildConfigField("String", "FIREBASE_APP_ID", firebaseValue("GARIVE_FIREBASE_APP_ID"))
         buildConfigField("String", "FIREBASE_API_KEY", firebaseValue("GARIVE_FIREBASE_API_KEY"))
         buildConfigField("String", "FIREBASE_PROJECT_ID", firebaseValue("GARIVE_FIREBASE_PROJECT_ID"))

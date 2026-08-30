@@ -182,6 +182,21 @@ mobile-android-live-ui go_bin="go" adb_bin="adb":
 mobile-evidence:
     python3 scripts/verify-mobile-evidence.py
 
+mobile-physical-contract:
+    python3 -m unittest scripts/test_mobile_physical_admission.py
+
+mobile-physical-preflight: mobile-physical-contract
+    python3 scripts/mobile_physical_admission.py preflight
+
+mobile-physical-begin evidence: mobile-physical-contract
+    python3 scripts/mobile_physical_admission.py begin --output "{{evidence}}"
+
+mobile-physical-record evidence platform step result code:
+    python3 scripts/mobile_physical_admission.py record --evidence "{{evidence}}" --platform "{{platform}}" --step "{{step}}" --result "{{result}}" --code "{{code}}"
+
+mobile-physical-verify evidence: mobile-physical-contract
+    python3 scripts/mobile_physical_admission.py verify --evidence "{{evidence}}"
+
 mobile-artifacts: mobile
     python3 scripts/verify-mobile-evidence.py --artifacts
 

@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application android:name=".push.GariveApplication" android:theme="@style/AppTheme" android:label="Garive" android:icon="@drawable/ic_garive"
         android:networkSecurityConfig="@xml/network_security_config">
+        <meta-data android:name="com.garive.build.REVISION" android:value="${gariveBuildRevision}" />
         <meta-data android:name="firebase_messaging_installation_id_enabled" android:value="true" />
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter>

@@ -16,6 +16,8 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>GariveBuildRevision</key>
+    <string>$(GARIVE_BUILD_REVISION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>CFBundleURLTypes</key>
