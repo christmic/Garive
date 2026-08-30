@@ -4,6 +4,8 @@
 #![deny(missing_docs)]
 
 mod audit;
+mod control_plan;
+mod control_plan_values;
 mod control_plane;
 mod erasure;
 mod hypothesis;
@@ -20,6 +22,11 @@ mod write;
 pub use audit::{
     audit_memory, MemoryAuditAction, MemoryAuditEntry, MemoryAuditPolicy, MemoryAuditReport,
     MemoryContradiction,
+};
+pub use control_plan::prepare_memory_import;
+pub use control_plan_values::{
+    MemoryAuthorizedScope, MemoryCurrentEntry, MemoryIdentityAllocation, MemoryImportOperation,
+    MemoryImportPlan,
 };
 pub use control_plane::{
     parse_memory_document, MemoryControlDocument, MemoryControlError, MemoryDocumentLimits,
