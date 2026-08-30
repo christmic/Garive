@@ -51,4 +51,9 @@ fn batch_runtime_uses_only_explicit_bounded_buffers_and_tasks() {
     assert!(runtime.contains("vec![None; invocations.len()]"));
     assert!(confined.contains("take(bound.saturating_add(1))"));
     assert!(!confined.contains("read_to_string("));
+    let planner = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engine/tools/src/batch.rs"),
+    )
+    .unwrap();
+    assert!(planner.contains("call.replay_class() == ReplayClass::ReadOnly"));
 }

@@ -782,7 +782,9 @@ The cache is **observable**:
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: **mixed maturity** — C4/C5/C6 and the C5b-A pure planner are
-  implemented and verified; C5b-R Runtime execution is accepted and active.
+- Status: **mixed maturity** — C4/C5/C6 and C5b deterministic read batches are
+  implemented and verified. C5b includes durable Prepared v2/plan admission,
+  bounded dispatch, ordered SQLite publication, exact restart reconstruction,
+  timeout/cancellation evidence, and a descriptor-confined Unix read executor.
   Streaming, speculative dispatch, adaptive concurrency,
   mutating parallelism, workspace snapshots, and caching remain research.

@@ -430,7 +430,7 @@ async fn terminal_durability_failure_stops_later_publication() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn shared_capacity_has_a_separate_bounded_queue_timeout() {
     let runtime_limits = EffectBatchRuntimeLimits {
         max_parallel_reads: 1,
