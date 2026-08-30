@@ -912,6 +912,22 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     assert_eq!(sessions["api_version"], "v1");
     assert_eq!(sessions["sessions"][0]["session_id"], session_id);
 
+    let wake_snapshot: Value = client
+        .get(format!("{base}/internal/mobile/wake-snapshot?limit=8"))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+        .unwrap();
+    assert_eq!(wake_snapshot["api_version"], "v1");
+    assert_eq!(wake_snapshot["observations"][0]["session_id"], session_id);
+    assert_eq!(wake_snapshot["observations"][0]["latest_position"], 4);
+    assert!(wake_snapshot["observations"][0]
+        .get("wake_category")
+        .is_none());
+
     let session: Value = client
         .get(format!("{base}/v1/sessions/{session_id}"))
         .send()
@@ -941,6 +957,7 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         "/v1/sessions?limit=0".to_owned(),
         "/v1/sessions?limit=8&before=unsupported".to_owned(),
         format!("/v1/sessions/{session_id}/timeline?after_position=0&limit=8&unknown=true"),
+        "/internal/mobile/wake-snapshot?limit=8&unknown=true".to_owned(),
     ] {
         assert_eq!(
             client

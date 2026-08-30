@@ -89,6 +89,58 @@ impl LiveHost {
         Ok(sessions)
     }
 
+    pub(crate) fn mobile_wake_page(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<super::MobileWakePage, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let ledger = self.ledger()?;
+        let mut sessions = ledger
+            .list_sessions()
+            .map_err(map_sqlite)?
+            .into_iter()
+            .map(|session_id| self.project_session(&ledger, &session_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        sessions.sort_by(|left, right| {
+            right
+                .opened_at
+                .cmp(&left.opened_at)
+                .then_with(|| right.session_id.cmp(&left.session_id))
+        });
+        let start = match before {
+            None => 0,
+            Some(cursor) => sessions
+                .iter()
+                .position(|session| session.session_id == cursor)
+                .map(|index| index + 1)
+                .ok_or(LiveHostError::InvalidRequest)?,
+        };
+        let end = start.saturating_add(limit).min(sessions.len());
+        let next_before =
+            (end < sessions.len() && end > start).then(|| sessions[end - 1].session_id.clone());
+        let observations = sessions[start..end]
+            .iter()
+            .map(|session| super::MobileWakeObservation {
+                session_id: session.session_id.clone(),
+                latest_position: session.latest_position,
+                wake_category: match session.latest_turn_state.as_deref() {
+                    Some("suspended") => Some("attention"),
+                    Some("completed") => Some("completed"),
+                    Some("failed") => Some("failed"),
+                    _ => None,
+                },
+            })
+            .collect();
+        Ok(super::MobileWakePage {
+            api_version: "v1",
+            observations,
+            next_before,
+        })
+    }
+
     /// Returns one exact restart-safe Session view.
     pub fn get_session(&self, session: &str) -> Result<SessionView, LiveHostError> {
         let session_id = identity::<SessionId>(session)?;

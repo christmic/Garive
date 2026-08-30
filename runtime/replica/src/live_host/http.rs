@@ -47,6 +47,7 @@ impl LiveHostServer {
             .route("/v1/sessions/:session_id/timeline", get(timeline))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
+            .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot))
             .fallback(not_found)
             .with_state(host);
         Ok(Self {
@@ -104,6 +105,14 @@ async fn get_session(
         return error_response(LiveHostError::InvalidRequest);
     }
     command_response(host.get_session(&session_id))
+}
+
+async fn mobile_wake_snapshot(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
+    let (limit, before) = match parse_wake_query(query.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    command_response(host.mobile_wake_page(limit, before.as_deref()))
 }
 
 async fn timeline(
@@ -353,6 +362,25 @@ fn parse_timeline_query(query: Option<&str>) -> Result<(u64, usize), LiveHostErr
         after_position.ok_or(LiveHostError::InvalidRequest)?,
         limit.ok_or(LiveHostError::InvalidRequest)?,
     ))
+}
+
+fn parse_wake_query(query: Option<&str>) -> Result<(usize, Option<String>), LiveHostError> {
+    let mut limit = None;
+    let mut before = None;
+    for pair in query.ok_or(LiveHostError::InvalidRequest)?.split('&') {
+        let (key, value) = pair.split_once('=').ok_or(LiveHostError::InvalidRequest)?;
+        match key {
+            "limit" if limit.is_none() => {
+                limit = Some(value.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+            }
+            "before" if before.is_none() && !value.is_empty() => {
+                validate_key(value)?;
+                before = Some(value.to_owned());
+            }
+            _ => return Err(LiveHostError::InvalidRequest),
+        }
+    }
+    Ok((limit.ok_or(LiveHostError::InvalidRequest)?, before))
 }
 
 fn command_response<T: serde::Serialize>(result: Result<T, LiveHostError>) -> Response {

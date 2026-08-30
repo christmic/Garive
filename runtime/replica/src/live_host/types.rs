@@ -250,6 +250,22 @@ pub struct SessionPage {
     pub next_before: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MobileWakeObservation {
+    pub session_id: String,
+    pub latest_position: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wake_category: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MobileWakePage {
+    pub api_version: &'static str,
+    pub observations: Vec<MobileWakeObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_before: Option<String>,
+}
+
 /// One exact Session frozen at a durable watermark.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SessionView {
