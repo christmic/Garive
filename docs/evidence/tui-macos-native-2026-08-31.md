@@ -101,6 +101,20 @@ Strict all-target Clippy completed in 13.22 seconds, and the release shipping
 binary plus `visual_demo_host` linked in 1 minute 2 seconds. The physical-window
 and admitted-PNG rows remain open.
 
+Merge revision `0fa1dda8` then unified non-list action overlays behind one
+typed application contract. Controller activation, visual popups, and linear
+screen-reader output now share the same action bindings and safe copy for
+unknown command results, status details, ephemeral confirmation, and quit.
+Explicitly multiline status details retain Host, Session, and Cursor rows, and
+popup geometry reserves space for every action after wrapping. The exact merged
+revision enumerated 103 test cases and passed the complete package in 135.56
+seconds. Its six shipping-binary PTY cases completed in 41.38 seconds, and its
+production Runtime/file-SQLite/PTTY case completed in 69.21 seconds. Strict
+all-target Clippy completed in 5.16 seconds; the release shipping binary plus
+`visual_demo_host` linked in 16.68 seconds. Reviewed Help and recovery snapshots
+cover the shared action copy, but remain semantic buffer evidence rather than
+real terminal PNGs. The physical-window and admitted-PNG rows remain open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
