@@ -202,9 +202,49 @@ final class MobileViewModel: ObservableObject {
             )
             self.controller = controller
             credentials = ConnectionCredentials(origin: origin, accessGrant: "walkthrough")
-            perform { callback in controller.boot(completionHandler: callback) }
+            let arguments = ProcessInfo.processInfo.arguments
+            let destination: MobileDestination? = if arguments.contains("--garive-walkthrough-sessions") {
+                .sessions
+            } else if arguments.contains("--garive-walkthrough-agents") {
+                .agents
+            } else if arguments.contains("--garive-walkthrough-settings") {
+                .settings
+            } else {
+                nil
+            }
+            bootWalkthrough(
+                controller,
+                destination: destination,
+                presentNewTask: arguments.contains("--garive-walkthrough-new-task")
+            )
         } catch {
             errorCode = "walkthrough_connection_failed"
+        }
+    }
+
+    private func bootWalkthrough(
+        _ controller: MobileWorkController,
+        destination: MobileDestination?,
+        presentNewTask: Bool
+    ) {
+        let transferredController = UnsafeTransfer(controller)
+        let transferredDestination = UnsafeTransfer(destination)
+        controller.boot { [weak self] value, error in
+            let transferredValue = UnsafeTransfer(value)
+            let failed = error != nil
+            Task { @MainActor in
+                guard let self else { return }
+                if let value = transferredValue.value { self.state = value }
+                if failed {
+                    self.errorCode = transferredController.value.state().noticeCode
+                        ?? "walkthrough_connection_failed"
+                    return
+                }
+                if let destination = transferredDestination.value {
+                    self.state = transferredController.value.selectDestination(destination: destination)
+                }
+                self.presentingNewTask = presentNewTask
+            }
         }
     }
 #endif
