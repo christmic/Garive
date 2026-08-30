@@ -252,6 +252,65 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
 }
 
 #[test]
+fn workspace_attachment_is_path_free_idempotent_and_restart_safe() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-workspace", "definition-main")
+        .unwrap();
+    let attached = harness
+        .host
+        .attach_workspace(
+            "attach-workspace",
+            &session.session_id,
+            "workspace-opaque",
+            "Briefs",
+            1,
+            "enumerate",
+        )
+        .unwrap();
+    assert_eq!(attached.display_name, "Briefs");
+    assert!(!serde_json::to_string(&attached).unwrap().contains('/'));
+    assert_eq!(
+        harness
+            .host
+            .attach_workspace(
+                "attach-workspace",
+                &session.session_id,
+                "workspace-opaque",
+                "Briefs",
+                1,
+                "enumerate",
+            )
+            .unwrap(),
+        attached
+    );
+    assert_eq!(
+        harness.host.attach_workspace(
+            "attach-workspace",
+            &session.session_id,
+            "workspace-other",
+            "Other",
+            1,
+            "enumerate",
+        ),
+        Err(LiveHostError::CommandConflict)
+    );
+    let restarted = LiveHost::new(
+        &harness.database,
+        installed(),
+        harness.host.limits(),
+        Arc::new(FixedClock),
+        harness.dispatcher.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        restarted.session_workspaces(&session.session_id).unwrap(),
+        vec![attached]
+    );
+}
+
+#[test]
 fn event_projection_advances_over_gaps_and_replays_terminal_text() {
     let harness = Harness::new(1);
     let session = harness

@@ -1,4 +1,4 @@
-use std::{fmt::Write, path::Path, sync::Arc};
+use std::{collections::BTreeMap, fmt::Write, path::Path, sync::Arc};
 
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
@@ -19,9 +19,10 @@ use crate::{
 
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
-    CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage, InstalledAgent,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary,
-    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
+    HostWorkspaceAttachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
+    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -87,6 +88,110 @@ impl LiveHost {
         });
         sessions.truncate(limit);
         Ok(sessions)
+    }
+
+    /// Durably attaches one path-free Workspace grant to a Session.
+    pub fn attach_workspace(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        workspace_id: &str,
+        display_name: &str,
+        grant_revision: u64,
+        access: &str,
+    ) -> Result<HostWorkspaceAttachment, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_key(workspace_id)?;
+        validate_text(display_name, 128)?;
+        if grant_revision == 0 || access != "enumerate" {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "workspace.attached")
+        {
+            let payload: WorkspaceAttached = decode_payload(fact)?;
+            if payload.command_id == idempotency_key {
+                if payload.workspace_id != workspace_id
+                    || payload.display_name != display_name
+                    || payload.grant_revision != grant_revision
+                    || payload.access != access
+                {
+                    return Err(LiveHostError::CommandConflict);
+                }
+                return Ok(workspace_attachment(&session_id, &payload, fact.position));
+            }
+        }
+        reject_other_command(&facts, idempotency_key)?;
+        let payload = serde_json::json!({
+            "command_id":idempotency_key,
+            "workspace_id":workspace_id,
+            "display_name":display_name,
+            "grant_revision":grant_revision,
+            "access":access,
+        });
+        let fact = FactDraft {
+            fact_id: FactId::try_from(
+                format!("workspace-{}", digest(idempotency_key.as_bytes())).as_str(),
+            )
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new("workspace.attached").map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&payload)
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        let committed = ledger
+            .commit(session_id.clone(), watermark.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        let position = *committed
+            .positions
+            .last()
+            .ok_or(LiveHostError::DurabilityUnavailable)?;
+        let payload: WorkspaceAttached =
+            serde_json::from_value(payload).map_err(|_| LiveHostError::CorruptState)?;
+        Ok(workspace_attachment(&session_id, &payload, position))
+    }
+
+    /// Returns the latest durable attachment for each opaque Workspace ID.
+    pub fn session_workspaces(
+        &self,
+        session: &str,
+    ) -> Result<Vec<HostWorkspaceAttachment>, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let mut attached = BTreeMap::new();
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "workspace.attached")
+        {
+            let payload: WorkspaceAttached = decode_payload(fact)?;
+            attached.insert(
+                payload.workspace_id.clone(),
+                workspace_attachment(&session_id, &payload, fact.position),
+            );
+        }
+        Ok(attached.into_values().collect())
     }
 
     /// Returns complete durable Turns changed after a caller watermark.
@@ -738,6 +843,32 @@ struct SessionBinding {
     snapshot_digest: String,
     session_version: u64,
     max_position: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceAttached {
+    command_id: String,
+    workspace_id: String,
+    display_name: String,
+    grant_revision: u64,
+    access: String,
+}
+
+fn workspace_attachment(
+    session_id: &SessionId,
+    payload: &WorkspaceAttached,
+    position: u64,
+) -> HostWorkspaceAttachment {
+    HostWorkspaceAttachment {
+        api_version: "v1",
+        session_id: session_id.as_str().to_owned(),
+        workspace_id: payload.workspace_id.clone(),
+        display_name: payload.display_name.clone(),
+        grant_revision: payload.grant_revision,
+        access: payload.access.clone(),
+        attached_position: position,
+    }
 }
 
 fn set_latest_turn_state(

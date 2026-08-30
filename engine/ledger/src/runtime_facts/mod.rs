@@ -9,6 +9,7 @@ mod scheduler;
 mod skill;
 mod turn;
 mod values;
+mod workspace;
 
 use serde_json::Value;
 
@@ -35,6 +36,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     let knowledge_family = kind.starts_with("knowledge.");
     let scheduler_family = kind.starts_with("schedule.");
     let delegation_family = kind.starts_with("delegation.");
+    let workspace_family = kind.starts_with("workspace.");
     let memory_session_scoped = matches!(
         kind,
         "memory.tombstoned"
@@ -59,6 +61,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         && !knowledge_family
         && !scheduler_family
         && !delegation_family
+        && !workspace_family
         && !rejection
     {
         return Ok(RuntimeFactDisposition::Opaque);
@@ -66,7 +69,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     if fact.schema_version != 1 {
         return Ok(RuntimeFactDisposition::Opaque);
     }
-    if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family)
+    if fact.turn_id.is_some() != !(memory_session_scoped || scheduler_family || workspace_family)
         || fact.execution_id.is_some()
             != (execution_family
                 || model_family
@@ -83,7 +86,9 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     let payload: Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| LedgerError::InvalidFact)?;
-    if delegation_family {
+    if workspace_family {
+        workspace::validate(kind, object(&payload)?)?;
+    } else if delegation_family {
         delegation::validate(kind, object(&payload)?)?;
     } else if scheduler_family {
         scheduler::validate(kind, object(&payload)?)?;

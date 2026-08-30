@@ -229,6 +229,26 @@ pub struct SessionSummary {
     pub turn_count: u64,
 }
 
+/// Durable path-free Workspace attachment projected for one Session.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostWorkspaceAttachment {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Opaque Workspace capability identity.
+    pub workspace_id: String,
+    /// Bounded backend-approved display label.
+    pub display_name: String,
+    /// Exact Workspace grant revision bound at commit.
+    pub grant_revision: u64,
+    /// Narrow access posture admitted by V1.
+    pub access: String,
+    /// Durable source position of the attachment.
+    pub attached_position: u64,
+}
+
 /// One complete durable Turn projection for conversation restoration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TurnTimelineItem {
