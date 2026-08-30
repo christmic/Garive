@@ -32,12 +32,7 @@ final class GariveAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.requestAuthorization(options: [.alert, .badge]) { granted, _ in
-            guard granted else { return }
-            Task { @MainActor in application.registerForRemoteNotifications() }
-        }
+        UNUserNotificationCenter.current().delegate = self
         return true
     }
 
@@ -72,5 +67,24 @@ final class GariveAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions { [.banner, .list] }
 
+}
+
+@MainActor
+enum MobilePushAuthorization {
+    static func requestAfterPairing() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge]) { granted, _ in
+            guard granted else { return }
+            Task { @MainActor in UIApplication.shared.registerForRemoteNotifications() }
+        }
+    }
+
+    static func resumeIfAuthorized() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized ||
+                    settings.authorizationStatus == .provisional ||
+                    settings.authorizationStatus == .ephemeral else { return }
+            Task { @MainActor in UIApplication.shared.registerForRemoteNotifications() }
+        }
+    }
 }
 #endif

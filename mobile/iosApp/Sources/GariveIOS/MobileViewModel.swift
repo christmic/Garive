@@ -168,6 +168,13 @@ final class MobileViewModel: ObservableObject {
             self.controller = controller
             credentials = value
             if persist { try store.save(value) }
+#if os(iOS)
+            if persist {
+                MobilePushAuthorization.requestAfterPairing()
+            } else {
+                MobilePushAuthorization.resumeIfAuthorized()
+            }
+#endif
             perform { callback in controller.boot(completionHandler: callback) }
         } catch {
             errorCode = "secure_connection_failed"
