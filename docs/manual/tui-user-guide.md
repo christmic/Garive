@@ -178,6 +178,9 @@ Up and Down move between those visible wrapped rows even when the draft has no
 newline. Repeated vertical moves keep the original screen column where the row
 has one and otherwise land at its nearest complete-character boundary; CJK and
 combining characters are never split.
+Home and End move to the current visible wrapped row's start or end; use
+Ctrl+Home and Ctrl+End for the whole draft. At a soft-wrap boundary, End stays
+on the visible row instead of unexpectedly jumping to the final logical line.
 When height permits, the composer grows from three to seven rows according to
 what is visibly wrapped, even if the draft contains no explicit newline. On an
 extremely short terminal it stays compact and scrolls internally so the

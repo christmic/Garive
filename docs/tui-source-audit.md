@@ -251,6 +251,15 @@ computes targets at the current composer width, while `EditorState` applies
 grapheme-indexed cursor and selection intent. No reference data structure or
 code is copied.
 
+Home/End is an explicit Garive product divergence. Codex
+`bottom_pane/textarea.rs:502-527,1371-1391` resolves beginning/end against
+newline-delimited logical lines. Pi
+`packages/tui/src/components/editor.ts:747-760,1461-1470` does the same against
+its current logical line. Garive instead applies its normative visual-line
+contract through the shared layout, while preserving `Ctrl+Home/End` for
+document boundaries. This behavior is Garive-authored to keep navigation and
+painted wraps consistent; it is not attributed to either reference product.
+
 ### Pi corroboration
 
 At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`

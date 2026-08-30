@@ -119,6 +119,9 @@ actual inner width, `EditorLayout` returns the visual-row target and preferred
 terminal-cell column, and the controller forwards that intent to
 `EditorState`. The editor owns directional selection collapse and mutation but
 does not duplicate responsive wrapping geometry.
+Home/End follows the identical request path for a visual-row edge. Modified
+`Ctrl+Home/End` bypasses presentation geometry and remains an editor-owned
+document-boundary operation.
 
 The title presenter is pure and returns only bounded product labels derived
 from typed connection/execution state plus a loaded Session ordinal. The

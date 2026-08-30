@@ -374,6 +374,15 @@ sequence across its soft wrap, inserts `X` at the first visual row's target,
 and proves normal terminal restoration. Strict all-target/all-feature Clippy,
 formatting, and diff checks passed.
 
+Merge revision `2dfceab6` closes Home/End against the same component geometry.
+Contracts cover whitespace soft wraps, wrapped-row starts and ends,
+directional selection edges, and exact-width empty continuation rows. After
+rebasing onto `3373e909`, all 11 editor, 46 view, 28 snapshot/boundary, and 12
+shipping-binary macOS PTY tests passed. The added `20x16` Expect case moves to
+the first visual row, sends a real End sequence, inserts `X` after
+`hello wonderful`, and proves it did not jump to the logical document end.
+Strict all-target/all-feature Clippy, formatting, and diff checks passed.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

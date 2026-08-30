@@ -55,6 +55,8 @@ terminal-cell column, and destinations clamp only at complete grapheme
 insertion points. Rendering, cursor placement, selection, scrolling, height,
 pointer hit testing, and vertical navigation therefore cannot disagree about
 where a row begins or ends.
+Home/End targets are component-owned visual-row edges from the same result;
+controllers may not reinterpret them as newline-delimited logical edges.
 At non-tiny heights the composer frame grows from three to at most seven rows
 using the layout's visual row count, including an exact-width cursor
 continuation row. It does not grow from logical newline count. Below the

@@ -192,6 +192,10 @@ shorter rows. A non-vertical edit or movement clears the preferred column.
 Exact-width continuation rows and double-cell graphemes obey the same rule.
 The controller requests a target from the composer at the actual responsive
 inner width, while `EditorState` alone applies selection and cursor mutation.
+Home and End use the same row membership. On a non-final wrapped row, End lands
+at the last insertion point that remains visibly on that row rather than the
+ambiguous start of the next row; an exact-width cursor continuation is its own
+empty visual row. `Ctrl+Home` and `Ctrl+End` remain document operations.
 
 | Operation | Required behavior |
 |---|---|

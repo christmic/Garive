@@ -322,6 +322,16 @@ all-target/all-feature Clippy passed with warnings denied; formatting and diff
 checks were clean. This is executable PTY evidence, not a physical-window
 Terminal/iTerm2-class screenshot.
 
+Merge revision `2dfceab6` routes Home/End through the shared visual layout. On
+native macOS arm64 after rebasing onto `3373e909`, all 11 editor, 46 view, 28
+snapshot/boundary, and 12 shipping-binary PTY tests passed. The new `20x16`
+Expect PTY types `hello wonderful world`, sends real Up and End sequences,
+inserts `X`, and observes `wonderfulX` at the first visible row's end rather
+than `worldX` at the document end. It exits normally and proves
+alternate-screen restoration. Strict all-target/all-feature Clippy passed with
+warnings denied; formatting and diff checks were clean. This remains
+executable PTY evidence, not a physical-window screenshot.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
