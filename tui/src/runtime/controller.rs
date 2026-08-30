@@ -22,7 +22,11 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
         Event::FocusLost => state.dispatch(AppAction::TerminalFocusChanged(false)),
         Event::Paste(text) => {
-            let _ = state.model.composer.insert(&text);
+            if state.composer_is_frozen() {
+                state.explain_frozen_composer();
+            } else {
+                let _ = state.model.composer.insert(&text);
+            }
         }
         Event::Mouse(mouse) => handle_mouse(mouse, state),
         Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(key, state),
@@ -166,7 +170,11 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             KeyCode::Char('p') => open_command_palette(state),
             KeyCode::Char('r') => open_prompt_history(state),
             KeyCode::Char('j') => {
-                let _ = state.model.composer.insert("\n");
+                if state.composer_is_frozen() {
+                    state.explain_frozen_composer();
+                } else {
+                    let _ = state.model.composer.insert("\n");
+                }
             }
             KeyCode::Char('l') if state.model.focus == FocusTarget::Conversation => {
                 state.force_redraw = true;
@@ -188,13 +196,39 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                 .composer
                 .move_document_end(key.modifiers.contains(KeyModifiers::SHIFT)),
             KeyCode::Char('z') => {
-                state.model.composer.undo();
+                if state.composer_is_frozen() {
+                    state.explain_frozen_composer();
+                } else {
+                    state.model.composer.undo();
+                }
             }
             KeyCode::Char('y') => {
-                state.model.composer.redo();
+                if state.composer_is_frozen() {
+                    state.explain_frozen_composer();
+                } else {
+                    state.model.composer.redo();
+                }
             }
             _ => {}
         }
+        return;
+    }
+    if state.composer_is_frozen()
+        && matches!(
+            key.code,
+            KeyCode::Char(_)
+                | KeyCode::Backspace
+                | KeyCode::Delete
+                | KeyCode::Enter
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Home
+                | KeyCode::End
+        )
+    {
+        state.explain_frozen_composer();
         return;
     }
     match key.code {
@@ -304,6 +338,10 @@ fn handle_ctrl_c(state: &mut RuntimeState) {
         cancel(state);
         return;
     }
+    if state.composer_is_frozen() {
+        state.explain_frozen_composer();
+        return;
+    }
     if state.model.composer.has_selection() {
         state.model.composer.clear_selection();
         state.last_empty_ctrl_c = None;
@@ -356,6 +394,11 @@ fn select_command(state: &mut RuntimeState) {
 }
 
 fn select_history(state: &mut RuntimeState) {
+    if state.composer_is_frozen() {
+        state.explain_frozen_composer();
+        state.model.overlay = None;
+        return;
+    }
     if let Some(text) = matching_history(state)
         .get(state.model.history_selection)
         .cloned()

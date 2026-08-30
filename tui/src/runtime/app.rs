@@ -552,6 +552,15 @@ impl RuntimeState {
             .or_else(|| self.pending.first())
     }
 
+    pub(super) fn composer_is_frozen(&self) -> bool {
+        pending_freezes_composer(&self.pending, self.model.selected_session.as_deref())
+    }
+
+    pub(super) fn explain_frozen_composer(&mut self) {
+        self.model.notice =
+            Some("This draft is frozen until the pending command reaches durable truth.".into());
+    }
+
     pub(super) fn abandon_pending(&mut self) {
         let Some(command_id) = self
             .pending_for_context()
@@ -653,6 +662,13 @@ impl RuntimeState {
         self.model.notice = Some(format!("Local recovery state: {code}"));
         self.model.overlay = Some(Overlay::ErrorDetails);
     }
+}
+
+fn pending_freezes_composer(pending: &[PendingCommand], selected: Option<&str>) -> bool {
+    pending.iter().any(|pending| {
+        pending.session_id.as_deref() == selected
+            || (selected.is_none() && pending.kind == PendingKind::CreateSession)
+    })
 }
 
 fn draw(
@@ -1248,6 +1264,25 @@ mod tests {
         model.follow_latest();
         assert!(model.viewport.follow_latest);
         assert_eq!(model.viewport.newer_updates, 0);
+    }
+
+    #[test]
+    fn only_the_pending_commands_for_the_active_context_freeze_composition() {
+        let pending = vec![PendingCommand {
+            schema_version: 1,
+            command_id: "command".into(),
+            kind: PendingKind::StartTurn,
+            session_id: Some("session-a".into()),
+            turn_id: None,
+            suspension_id: None,
+            expected_session_version: None,
+            requested_through_position: None,
+            request_payload: json!({"text":"private"}),
+            request_digest: "digest".into(),
+            created_at: "2026-08-30T00:00:00Z".into(),
+        }];
+        assert!(pending_freezes_composer(&pending, Some("session-a")));
+        assert!(!pending_freezes_composer(&pending, Some("session-b")));
     }
 
     fn turn(id: &str, position: u64) -> TurnTimelineItem {
