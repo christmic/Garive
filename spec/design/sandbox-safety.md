@@ -257,6 +257,22 @@ appends only the missing ordered suffix. A changed policy constraint, executor
 revision, workspace binding, effective limit or dispatch-attempt identity
 fails before `effect.started` and never allocates a replacement invocation.
 
+Local startup recovery uses the same `ToolPreparationPort`, bounded content
+resolver and frozen Tool capability snapshot as live execution. Recovery must
+reject a reconstructed name/revision absent from that snapshot and may inspect
+only the pending invocation belonging to the latest Execution. It must not
+substitute a catalogue-only resolver, an older Execution's invocation, or a
+fresh invocation identity.
+
+If recovery reaches a committed observation, Runtime atomically abandons the
+interrupted Execution and starts one replacement with the recovered completed
+iteration count. An iteration already represented by `iteration.started` or
+`model.prepared` remains consumed, so crashes cannot reset the loop bound. If
+Safety instead requires interaction, Runtime commits the single governed
+binding through `interaction.requested`, `execution.suspended` and
+`turn.suspended`, reports estimated unknown recovery usage, and emits no
+replacement dispatch. Startup never fabricates provider token usage.
+
 Policy or binding changes after Started never authorize a new replay under the
 old invocation.
 
