@@ -99,7 +99,7 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
-    func testSettingsDiagnosticsAndUnpairRemainExplicit() throws {
+    func testSettingsDiagnosticsAndConfirmedUnpairReturnToPairing() throws {
         let app = walkthroughApp("--garive-walkthrough-settings")
         app.launch()
 
@@ -125,6 +125,9 @@ final class GariveIOSUITests: XCTestCase {
         unpair.tap()
         XCTAssertTrue(app.buttons["Unpair device"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["This removes access from this phone. Agent work and history remain on your service."].exists)
+        app.buttons["Unpair device"].tap()
+        XCTAssertTrue(app.staticTexts["Your agents, wherever you are"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Connect securely"].exists)
     }
 
     @MainActor

@@ -3,6 +3,7 @@ package com.garive.android.ui
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -10,6 +11,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +104,51 @@ public class GariveMobileAppJourneyTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Light").performScrollTo().assertIsSelected()
         compose.onNodeWithText("Dark").performClick().assertIsSelected()
+    }
+
+    @Test
+    public fun confirmedUnpairReturnsToSecurePairing(): Unit {
+        JourneyHost.reset()
+        val controller = MobileWorkController(
+            host = JourneyHost,
+            identities = CommandIdentitySource { "01k000000000000000000000" },
+            maxInputBytes = 16 * 1_024,
+            persistence = EphemeralMobileWorkPersistence,
+        )
+        compose.setContent {
+            var paired by remember { mutableStateOf(true) }
+            GariveTheme(Theme.LIGHT) {
+                if (paired) {
+                    GariveMobileApp(
+                        origin = "https://demo.garive.local/",
+                        controller = controller,
+                        wakeRoute = null,
+                        onWakeConsumed = {},
+                        onSignOut = { paired = false },
+                        theme = Theme.LIGHT,
+                        onTheme = {},
+                        openNotificationSettings = {},
+                    )
+                } else {
+                    PairingScreen(errorCode = null, pairing = false, suggestion = null) { _, _ -> }
+                }
+            }
+        }
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("Your Agents are ready").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Open navigation").performClick()
+        compose.onNodeWithText("Settings").performClick()
+        repeat(4) { compose.onNode(hasScrollAction()).performTouchInput { swipeUp() } }
+        compose.onNodeWithText("Unpair this device").performClick()
+        compose.onNodeWithText("Unpair device").performClick()
+
+        compose.waitUntil(3_000) {
+            compose.onAllNodesWithText("Pair your server").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Pair your server").assertIsDisplayed()
+        compose.onNodeWithText("Connect securely").assertIsDisplayed()
     }
 }
 
