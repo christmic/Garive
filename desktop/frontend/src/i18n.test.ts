@@ -29,4 +29,12 @@ describe("Desktop localization", () => {
     expect(t("search.description")).toContain("不会创建云端索引");
     expect(t("agents.description")).toContain("新工作");
   });
+
+  it("preserves approval and Artifact trust semantics in Chinese", () => {
+    const t = createTranslator("zh-Hans");
+    expect(t("approval.durationValue")).toContain("仅限当前已准备调用");
+    expect(t("approval.overwriteValue")).toBe("绝不覆盖");
+    expect(t("artifact.overwriteError")).toContain("绝不覆盖");
+    expect(t("artifact.previewVerified")).toBe("已验证预览");
+  });
 });
