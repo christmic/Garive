@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runAgentTurn } from "./host";
+import { decodeHostTimelinePage, runAgentTurn } from "./host";
 
 describe("desktop Host IPC", () => {
   it("returns one typed embedded Runtime terminal", async () => {
@@ -16,5 +16,30 @@ describe("desktop Host IPC", () => {
       definitionId: "definition-main", input: "hello",
     } }]);
     expect(result).toEqual(expected);
+  });
+
+  it("preserves optional presence and unknown H2/H3 strings", () => {
+    const raw = {
+      api_version: "v1", session_id: "session-1", scanned_through_position: 9,
+      observed_max_position: 9, has_more: false,
+      items: [{
+        turn_id: "turn-1", started_position: 1, latest_position: 9,
+        state: "future_state", user_text: "hello", content_truncated: false,
+        suspension: {
+          suspension_id: "suspension-1", session_version: 3, kind: "future_kind",
+          prompt_schema: "garive.prompt.v1", prompt_json: [123, 125], prompt_digest: "digest",
+        },
+        activities: [{
+          api_version: "v1", activity_id: "activity-1", kind: "future_kind",
+          label_key: "agent.activity.future", state: "future_state", source_position: 8,
+          terminal: false,
+        }],
+      }],
+    };
+    const decoded = decodeHostTimelinePage(JSON.parse(JSON.stringify(raw)));
+    expect(decoded.items[0]?.state).toBe("future_state");
+    expect(decoded.items[0]?.activities[0]?.kind).toBe("future_kind");
+    expect(decoded.items[0]?.completion_text).toBeUndefined();
+    expect(decoded.items[0]?.activities[0]?.safe_code).toBeUndefined();
   });
 });
