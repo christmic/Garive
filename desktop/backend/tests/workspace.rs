@@ -1,3 +1,5 @@
+use std::fs;
+
 use garive_desktop::{DesktopWorkspaceError, DesktopWorkspaceService};
 
 #[test]
@@ -44,6 +46,92 @@ fn symlink_roots_are_rejected_before_capability_allocation() {
     assert_eq!(
         DesktopWorkspaceService::default()
             .admit_selected(&link, "main")
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+}
+
+#[test]
+fn entry_pages_are_bounded_path_free_and_support_directory_descent() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("alpha.md"), "alpha").unwrap();
+    fs::write(directory.path().join("bravo.txt"), "bravo").unwrap();
+    fs::write(directory.path().join(".private"), "secret").unwrap();
+    fs::create_dir(directory.path().join("notes")).unwrap();
+    fs::write(directory.path().join("notes").join("inside.md"), "inside").unwrap();
+    fs::create_dir(directory.path().join("Sample.app")).unwrap();
+
+    let service = DesktopWorkspaceService::default();
+    let grant = service.admit_selected(directory.path(), "main").unwrap();
+    let first = service
+        .list_entries(&grant.workspace_id, "main", None, None, 2)
+        .unwrap();
+    assert_eq!(first.entries.len(), 2);
+    assert!(first.has_more);
+    assert!(first.next_cursor.is_some());
+    let second = service
+        .list_entries(
+            &grant.workspace_id,
+            "main",
+            None,
+            first.next_cursor.as_deref(),
+            2,
+        )
+        .unwrap();
+    let mut entries = first.entries;
+    entries.extend(second.entries);
+    assert!(entries.iter().all(|entry| entry.display_name != ".private"));
+    assert!(!serde_json::to_string(&entries)
+        .unwrap()
+        .contains(directory.path().to_string_lossy().as_ref()));
+    let package = entries
+        .iter()
+        .find(|entry| entry.display_name == "Sample.app")
+        .unwrap();
+    assert!(!package.selectable);
+
+    let notes = entries
+        .iter()
+        .find(|entry| entry.display_name == "notes")
+        .unwrap();
+    let nested = service
+        .list_entries(&grant.workspace_id, "main", Some(&notes.entry_id), None, 8)
+        .unwrap();
+    assert_eq!(nested.entries[0].display_name, "inside.md");
+    assert_eq!(
+        nested.entries[0].parent_entry_id.as_deref(),
+        Some(&*notes.entry_id)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn enumeration_omits_symlinks_and_rejects_forged_cursors_and_parents() {
+    use std::os::unix::fs::symlink;
+
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("safe.txt"), "safe").unwrap();
+    symlink(
+        directory.path().join("safe.txt"),
+        directory.path().join("link.txt"),
+    )
+    .unwrap();
+    let service = DesktopWorkspaceService::default();
+    let grant = service.admit_selected(directory.path(), "main").unwrap();
+    let page = service
+        .list_entries(&grant.workspace_id, "main", None, None, 8)
+        .unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].display_name, "safe.txt");
+    assert_eq!(
+        service
+            .list_entries(&grant.workspace_id, "main", None, Some("cursor-forged"), 8)
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+    assert_eq!(
+        service
+            .list_entries(&grant.workspace_id, "main", Some("entry-forged"), None, 8)
             .unwrap_err(),
         DesktopWorkspaceError::CapabilityInvalid
     );

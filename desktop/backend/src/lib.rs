@@ -40,7 +40,10 @@ pub use system_provider::{
     SystemDesktopSecretResolver, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
     DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
-pub use workspace::{DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceService};
+pub use workspace::{
+    DesktopWorkspaceEntry, DesktopWorkspaceEntryPage, DesktopWorkspaceError, DesktopWorkspaceGrant,
+    DesktopWorkspaceService,
+};
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.
 pub trait DesktopOperations: Send + Sync {
