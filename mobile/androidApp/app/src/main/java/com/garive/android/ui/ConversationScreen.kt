@@ -116,7 +116,11 @@ internal fun ConversationScreen(
             if (state.timeline.isEmpty()) {
                 item {
                     Column(Modifier.padding(vertical = 36.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("What should the Agent do?", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            "What should the Agent do?",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
                         Text(
                             "Send a clear outcome. You can leave after the server acknowledges it.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -214,7 +218,11 @@ private fun TurnCard(turn: MobileTurnItem) {
                     )
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(turn.responseText.orEmpty(), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        turn.responseText.orEmpty(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
                     if (turn.contentTruncated) {
                         Text(
                             "Display content was safely bounded",
@@ -254,7 +262,12 @@ private fun TurnCard(turn: MobileTurnItem) {
                             Modifier.fillMaxWidth().padding(vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(activity.label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                activity.label,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
                             Text(
                                 activity.state.replace('_', ' '),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
