@@ -1,7 +1,10 @@
 use std::{
     collections::BTreeMap,
     fs,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use garive_desktop::{
@@ -10,7 +13,7 @@ use garive_desktop::{
 };
 
 #[derive(Default)]
-struct MemoryBookmarkStore(Mutex<BTreeMap<String, Vec<u8>>>);
+struct MemoryBookmarkStore(Mutex<BTreeMap<String, Vec<u8>>>, AtomicBool);
 
 impl DesktopWorkspaceBookmarkStore for MemoryBookmarkStore {
     fn store(&self, bookmark_ref: &str, bytes: &[u8]) -> Result<(), DesktopWorkspaceError> {
@@ -31,6 +34,9 @@ impl DesktopWorkspaceBookmarkStore for MemoryBookmarkStore {
     }
 
     fn delete(&self, bookmark_ref: &str) -> Result<(), DesktopWorkspaceError> {
+        if self.1.load(Ordering::SeqCst) {
+            return Err(DesktopWorkspaceError::Unavailable);
+        }
         self.0.lock().unwrap().remove(bookmark_ref);
         Ok(())
     }
@@ -67,7 +73,9 @@ fn cloned_service_shares_the_exact_authority_registry() {
         runtime_view.verify(&grant.workspace_id, "main").unwrap(),
         grant
     );
-    runtime_view.revoke(&grant.workspace_id, "main").unwrap();
+    runtime_view
+        .revoke(&grant.workspace_id, grant.grant_revision, "main")
+        .unwrap();
     assert_eq!(
         service.verify(&grant.workspace_id, "main").unwrap_err(),
         DesktopWorkspaceError::CapabilityInvalid
@@ -118,7 +126,9 @@ fn native_bookmark_restores_the_same_opaque_workspace_after_process_rebuild() {
         .unwrap();
     assert_eq!(page.entries[0].display_name, "brief.md");
 
-    restored.revoke(&grant.workspace_id, "main").unwrap();
+    restored
+        .revoke(&grant.workspace_id, grant.grant_revision, "main")
+        .unwrap();
     assert_eq!(
         DesktopWorkspaceService::durable(manifest, store)
             .recover("main")
@@ -249,12 +259,55 @@ fn revocation_drops_private_authority_without_falsifying_the_public_receipt() {
     let directory = tempfile::tempdir().unwrap();
     let service = DesktopWorkspaceService::default();
     let grant = service.admit_selected(directory.path(), "main").unwrap();
-    service.revoke(&grant.workspace_id, "main").unwrap();
+    let receipt = service
+        .revoke(&grant.workspace_id, grant.grant_revision, "main")
+        .unwrap();
+    assert_eq!(receipt.workspace_id, grant.workspace_id);
+    assert_eq!(receipt.grant_revision, grant.grant_revision);
+    assert_eq!(receipt.outcome, "revoked");
+    assert!(!receipt.cleanup_pending);
     assert_eq!(
         service.verify(&grant.workspace_id, "main").unwrap_err(),
         DesktopWorkspaceError::CapabilityInvalid
     );
     assert_eq!(grant.state, "active");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn revocation_receipt_survives_restart_and_retries_private_cleanup() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("Project");
+    fs::create_dir(&workspace).unwrap();
+    let manifest = root.path().join(DESKTOP_WORKSPACE_MANIFEST_FILE);
+    let store = Arc::new(MemoryBookmarkStore::default());
+    let original = DesktopWorkspaceService::durable(manifest.clone(), store.clone());
+    let grant = original.admit_selected(&workspace, "main").unwrap();
+    store.1.store(true, Ordering::SeqCst);
+
+    let receipt = original
+        .revoke(&grant.workspace_id, grant.grant_revision, "main")
+        .unwrap();
+    assert_eq!(receipt.outcome, "revoked");
+    assert!(receipt.cleanup_pending);
+    assert!(original.authorizations().unwrap().is_empty());
+    drop(original);
+
+    let restarted = DesktopWorkspaceService::durable(manifest, store.clone());
+    assert_eq!(restarted.recover("main").unwrap(), 0);
+    let replay = restarted
+        .revoke(&grant.workspace_id, grant.grant_revision, "main")
+        .unwrap();
+    assert_eq!(replay.outcome, "already_revoked");
+    assert!(replay.cleanup_pending);
+
+    store.1.store(false, Ordering::SeqCst);
+    assert_eq!(restarted.recover("main").unwrap(), 0);
+    let cleaned = restarted
+        .revoke(&grant.workspace_id, grant.grant_revision, "main")
+        .unwrap();
+    assert_eq!(cleaned.outcome, "already_revoked");
+    assert!(!cleaned.cleanup_pending);
 }
 
 #[cfg(unix)]

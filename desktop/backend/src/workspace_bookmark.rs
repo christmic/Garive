@@ -16,6 +16,7 @@ pub const DESKTOP_WORKSPACE_MANIFEST_FILE: &str = "desktop-workspaces.json";
 
 const MAX_BOOKMARK_BYTES: usize = 128 * 1_024;
 const MAX_MANIFEST_BYTES: usize = 64 * 1_024;
+const MAX_MANIFEST_RECORDS: usize = 64;
 const MANIFEST_TEMP_FILE: &str = ".desktop-workspaces.tmp";
 
 /// Private write/read/delete store for opaque native bookmark bytes.
@@ -88,6 +89,8 @@ pub(crate) struct WorkspaceManifestRecord {
     pub file: u64,
     #[serde(default)]
     pub revoked: bool,
+    #[serde(default)]
+    pub cleanup_pending: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -110,7 +113,8 @@ pub(crate) fn read_manifest(
     }
     let manifest: WorkspaceManifest =
         serde_json::from_slice(&bytes).map_err(|_| DesktopWorkspaceError::Unavailable)?;
-    if !matches!(manifest.schema_version, 1 | 2) || manifest.workspaces.len() > 16 {
+    if !matches!(manifest.schema_version, 1 | 2) || manifest.workspaces.len() > MAX_MANIFEST_RECORDS
+    {
         return Err(DesktopWorkspaceError::BoundExceeded);
     }
     for record in &manifest.workspaces {
@@ -123,7 +127,7 @@ pub(crate) fn write_manifest(
     path: &Path,
     records: Vec<WorkspaceManifestRecord>,
 ) -> Result<(), DesktopWorkspaceError> {
-    if records.len() > 16 {
+    if records.len() > MAX_MANIFEST_RECORDS {
         return Err(DesktopWorkspaceError::BoundExceeded);
     }
     for record in &records {
@@ -200,6 +204,7 @@ mod tests {
             device: 7,
             file: 9,
             revoked: false,
+            cleanup_pending: false,
         };
         write_manifest(&path, vec![record.clone()]).unwrap();
         let encoded = fs::read_to_string(&path).unwrap();

@@ -216,9 +216,10 @@ fn revoke_workspace(
     window: tauri::WebviewWindow,
     workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
     workspace_id: String,
-) -> Result<(), String> {
+    expected_grant_revision: u64,
+) -> Result<garive_desktop::DesktopWorkspaceRevocationReceipt, String> {
     workspaces
-        .revoke(&workspace_id, window.label())
+        .revoke(&workspace_id, expected_grant_revision, window.label())
         .map_err(|error| error.code().to_owned())
 }
 

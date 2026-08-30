@@ -164,6 +164,21 @@ pub struct DesktopWorkspaceAuthorization {
     pub state: &'static str,
 }
 
+/// Durable path-free acknowledgement of monotonic Workspace revocation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopWorkspaceRevocationReceipt {
+    /// Exact public schema version.
+    pub schema_version: u32,
+    /// Opaque revoked Workspace identity.
+    pub workspace_id: String,
+    /// Exact grant revision invalidated by this revocation.
+    pub grant_revision: u64,
+    /// Whether this call committed or replayed the monotonic revocation.
+    pub outcome: &'static str,
+    /// Whether private bookmark deletion remains queued for bounded recovery.
+    pub cleanup_pending: bool,
+}
+
 impl Default for DesktopWorkspaceRecoveryStatus {
     fn default() -> Self {
         Self {
@@ -290,13 +305,15 @@ impl DesktopWorkspaceService {
         }
         let revoked = record_map
             .values()
-            .filter(|record| record.revoked)
+            .filter(|record| record.revoked && record.cleanup_pending)
             .map(|record| (record.workspace_id.clone(), record.bookmark_ref.clone()))
             .collect::<Vec<_>>();
         let mut cleaned_revocations = false;
         for (workspace_id, bookmark_ref) in revoked {
             if persistence.store.delete(&bookmark_ref).is_ok() {
-                record_map.remove(&workspace_id);
+                if let Some(record) = record_map.get_mut(&workspace_id) {
+                    record.cleanup_pending = false;
+                }
                 cleaned_revocations = true;
             }
         }
@@ -657,6 +674,7 @@ impl DesktopWorkspaceService {
                     device: selected_identity.device,
                     file: selected_identity.file,
                     revoked: false,
+                    cleanup_pending: false,
                 },
             );
         }
@@ -912,44 +930,116 @@ impl DesktopWorkspaceService {
         Ok(WorkspaceWriteRoot { directory })
     }
 
-    /// Revokes one exact capability and drops its private root immediately.
+    /// Revokes one exact capability and durably schedules private bookmark cleanup.
     pub fn revoke(
         &self,
         workspace_id: &str,
+        expected_grant_revision: u64,
         owner_window: &str,
-    ) -> Result<(), DesktopWorkspaceError> {
+    ) -> Result<DesktopWorkspaceRevocationReceipt, DesktopWorkspaceError> {
+        if expected_grant_revision == 0 {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
         let mut active = self
             .active
             .lock()
             .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-        if active
-            .get(workspace_id)
-            .is_none_or(|workspace| workspace.owner_window != owner_window)
-        {
-            return Err(DesktopWorkspaceError::CapabilityInvalid);
-        }
-        let removed = active
-            .remove(workspace_id)
-            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
         let mut records = self
             .records
             .lock()
             .map_err(|_| DesktopWorkspaceError::Unavailable)?;
-        let removed_record = records.remove(workspace_id);
-        if let Err(error) = self.persist_records_locked(&records) {
+        let existing_record = records.get(workspace_id).cloned();
+        if let Some(record) = &existing_record {
+            if record.grant_revision != expected_grant_revision {
+                return Err(DesktopWorkspaceError::CapabilityInvalid);
+            }
+        }
+        if existing_record
+            .as_ref()
+            .is_some_and(|record| record.revoked)
+        {
+            let cleanup_pending = existing_record
+                .as_ref()
+                .is_some_and(|record| record.cleanup_pending);
+            drop(records);
+            drop(active);
+            let cleanup_pending = if cleanup_pending {
+                self.finish_revocation_cleanup(workspace_id)?
+            } else {
+                false
+            };
+            return Ok(DesktopWorkspaceRevocationReceipt {
+                schema_version: 1,
+                workspace_id: workspace_id.to_owned(),
+                grant_revision: expected_grant_revision,
+                outcome: "already_revoked",
+                cleanup_pending,
+            });
+        }
+        let removed = active
+            .remove(workspace_id)
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        if removed.owner_window != owner_window
+            || removed.public.grant_revision != expected_grant_revision
+        {
             active.insert(workspace_id.to_owned(), removed);
-            if let Some(record) = removed_record {
-                records.insert(workspace_id.to_owned(), record);
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        if let Some(record) = records.get_mut(workspace_id) {
+            record.revoked = true;
+            record.cleanup_pending = true;
+            if let Err(error) = self.persist_records_locked(&records) {
+                active.insert(workspace_id.to_owned(), removed);
+                if let Some(record) = existing_record {
+                    records.insert(workspace_id.to_owned(), record);
+                }
+                return Err(error);
+            }
+        }
+        drop(records);
+        drop(active);
+        let cleanup_pending = self.finish_revocation_cleanup(workspace_id)?;
+        Ok(DesktopWorkspaceRevocationReceipt {
+            schema_version: 1,
+            workspace_id: workspace_id.to_owned(),
+            grant_revision: expected_grant_revision,
+            outcome: "revoked",
+            cleanup_pending,
+        })
+    }
+
+    fn finish_revocation_cleanup(&self, workspace_id: &str) -> Result<bool, DesktopWorkspaceError> {
+        let Some(persistence) = &self.persistence else {
+            return Ok(false);
+        };
+        let reference = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?
+            .get(workspace_id)
+            .filter(|record| record.revoked && record.cleanup_pending)
+            .map(|record| record.bookmark_ref.clone());
+        let Some(reference) = reference else {
+            return Ok(false);
+        };
+        if persistence.store.delete(&reference).is_err() {
+            return Ok(true);
+        }
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let Some(record) = records.get_mut(workspace_id) else {
+            return Ok(false);
+        };
+        record.cleanup_pending = false;
+        if let Err(error) = self.persist_records_locked(&records) {
+            if let Some(record) = records.get_mut(workspace_id) {
+                record.cleanup_pending = true;
             }
             return Err(error);
         }
-        if let (Some(persistence), Some(reference)) = (
-            &self.persistence,
-            removed_record.as_ref().map(|record| &*record.bookmark_ref),
-        ) {
-            persistence.store.delete(reference)?;
-        }
-        Ok(())
+        Ok(false)
     }
 
     /// Lists one explicitly requested directory without exposing a path or file bytes.

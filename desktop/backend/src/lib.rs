@@ -57,7 +57,7 @@ pub use workspace::{
     DesktopArtifactContent, DesktopArtifactPreview, DesktopWorkspaceAuthorization,
     DesktopWorkspaceContextFile, DesktopWorkspaceEntry, DesktopWorkspaceEntryPage,
     DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceRecoveryStatus,
-    DesktopWorkspaceService,
+    DesktopWorkspaceRevocationReceipt, DesktopWorkspaceService,
 };
 pub use workspace_bookmark::{
     DesktopWorkspaceBookmarkStore, SystemDesktopWorkspaceBookmarkStore,
