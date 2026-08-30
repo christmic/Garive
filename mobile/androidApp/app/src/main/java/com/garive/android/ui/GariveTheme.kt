@@ -10,6 +10,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import com.garive.mobile.preferences.Theme
 
 internal val GariveCoral = Color(0xFFFF745F)
 internal val GariveMint = Color(0xFF6ED6B2)
@@ -51,9 +52,14 @@ private val LightColors = lightColorScheme(
 
 /** Garive's native Material 3 visual system. */
 @Composable
-internal fun GariveTheme(content: @Composable () -> Unit) {
+internal fun GariveTheme(theme: Theme = Theme.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (theme) {
+        Theme.SYSTEM -> isSystemInDarkTheme()
+        Theme.LIGHT -> false
+        Theme.DARK -> true
+    }
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (dark) DarkColors else LightColors,
         typography = MaterialTheme.typography.copy(
             displaySmall = TextStyle(
                 fontFamily = FontFamily.SansSerif,

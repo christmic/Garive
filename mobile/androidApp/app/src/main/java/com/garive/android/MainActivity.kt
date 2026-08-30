@@ -5,6 +5,7 @@ import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import android.Manifest
+import android.provider.Settings
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,6 +34,7 @@ import com.garive.mobile.host.LiveHostClient
 import com.garive.mobile.host.MobilePlatform
 import com.garive.mobile.host.GatewayNotificationClient
 import com.garive.mobile.host.MobileWakeRoute
+import com.garive.mobile.preferences.Theme
 import java.util.UUID
 import kotlinx.coroutines.launch
 
@@ -44,19 +46,33 @@ public class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val walkthrough = BuildConfig.DEBUG && intent.getBooleanExtra(WALKTHROUGH_EXTRA, false)
+        val appearance = getSharedPreferences("garive-client", MODE_PRIVATE)
         pairingSuggestion.value = parsePairingLink(intent?.data)
         val store = AndroidConnectionStore(this)
         wakeToken.value = intent?.takeIf { it.action == WAKE_ACTION }?.getStringExtra(WAKE_TOKEN)
         if (!walkthrough && store.load() != null) requestNotificationPermission()
         setContent {
-            GariveTheme {
+            var theme by remember {
+                mutableStateOf(
+                    Theme.entries.firstOrNull { it.wireName == appearance.getString("theme", null) }
+                        ?: Theme.SYSTEM,
+                )
+            }
+            val selectTheme: (Theme) -> Unit = {
+                theme = it
+                appearance.edit().putString("theme", it.wireName).apply()
+            }
+            GariveTheme(theme) {
                 if (walkthrough) {
-                    GariveWalkthroughRoot()
+                    GariveWalkthroughRoot(theme, selectTheme, ::openNotificationSettings)
                 } else {
                     GariveRoot(
                         store, pairingSuggestion.value, wakeToken.value,
                         onWakeConsumed = { wakeToken.value = null },
                         requestNotifications = ::requestNotificationPermission,
+                        theme = theme,
+                        onTheme = selectTheme,
+                        openNotificationSettings = ::openNotificationSettings,
                     )
                 }
             }
@@ -75,6 +91,13 @@ public class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun openNotificationSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+        )
+    }
+
     private companion object {
         const val NOTIFICATION_PERMISSION_REQUEST = 41
         const val WALKTHROUGH_EXTRA = "garive_walkthrough"
@@ -82,7 +105,11 @@ public class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun GariveWalkthroughRoot() {
+private fun GariveWalkthroughRoot(
+    theme: Theme,
+    onTheme: (Theme) -> Unit,
+    openNotificationSettings: () -> Unit,
+) {
     val origin = "http://127.0.0.1:4318/"
     val controller = remember {
         MobileWorkController(
@@ -90,7 +117,7 @@ private fun GariveWalkthroughRoot() {
             identities = CommandIdentitySource { UUID.randomUUID().toString() },
         )
     }
-    GariveMobileApp(origin, controller, null, {}, {})
+    GariveMobileApp(origin, controller, null, {}, {}, theme, onTheme, openNotificationSettings)
 }
 
 @Composable
@@ -100,6 +127,9 @@ private fun GariveRoot(
     wakeToken: String?,
     onWakeConsumed: () -> Unit,
     requestNotifications: () -> Unit = {},
+    theme: Theme,
+    onTheme: (Theme) -> Unit,
+    openNotificationSettings: () -> Unit,
 ) {
     var connection by remember { mutableStateOf(store.load()) }
     var pairingError by remember { mutableStateOf<String?>(null) }
@@ -131,7 +161,7 @@ private fun GariveRoot(
         }
     } else {
         LaunchedEffect(current) { runCatching { AndroidPushCoordinator.register(context, current) } }
-        ConnectedRoot(current, wakeToken, onWakeConsumed) {
+        ConnectedRoot(current, wakeToken, onWakeConsumed, theme, onTheme, openNotificationSettings) {
             store.clear()
             connection = null
             scope.launch {
@@ -162,6 +192,9 @@ private fun ConnectedRoot(
     connection: StoredConnection,
     wakeToken: String?,
     onWakeConsumed: () -> Unit,
+    theme: Theme,
+    onTheme: (Theme) -> Unit,
+    openNotificationSettings: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val controller = remember(connection) {
@@ -180,7 +213,10 @@ private fun ConnectedRoot(
             if (wakeToken != null) onWakeConsumed()
         }
     }
-    GariveMobileApp(connection.origin, controller, wakeRoute, { wakeRoute = null }, onSignOut)
+    GariveMobileApp(
+        connection.origin, controller, wakeRoute, { wakeRoute = null }, onSignOut,
+        theme, onTheme, openNotificationSettings,
+    )
 }
 
 private fun limits(): HostClientLimits = HostClientLimits(
