@@ -57,8 +57,15 @@ fn command_palette(model: &AppModel) -> String {
     let matches = model.matching_command_indices();
     let rows = window(matches.len(), model.command_selection)
         .map(|index| {
-            let (name, help) = COMMAND_PALETTE[matches[index]];
-            numbered(index, model.command_selection, format!("{name}: {help}"))
+            let command = COMMAND_PALETTE[matches[index]];
+            let unavailable = command
+                .unavailable_reason(model.command_context())
+                .map_or_else(String::new, |reason| format!(". Unavailable: {reason}"));
+            numbered(
+                index,
+                model.command_selection,
+                format!("{}: {}{unavailable}", command.input, command.help),
+            )
         })
         .collect::<Vec<_>>();
     list_prompt(

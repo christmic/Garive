@@ -152,6 +152,9 @@ Host page. Session filtering matches the displayed Agent definition label or
 the opaque Session ID. Long result sets scroll with the selection, so the row
 that Enter will open remains visible. Prompt history is local convenience state
 and is not reconstructed from Host transcript content.
+Unavailable commands remain discoverable and name a safe reason. The visual
+palette, screen-reader prompt, and Enter activation consume the same condition,
+so an unavailable action cannot appear enabled or fail silently.
 When mouse capture is enabled, the wheel moves the selection while the pointer
 is over a selectable overlay and a left click activates the visibly hit row.
 Modal input never scrolls the conversation or opens a Session behind the

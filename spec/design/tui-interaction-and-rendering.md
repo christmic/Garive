@@ -252,8 +252,11 @@ arguments, extra arguments, invalid escapes, or more than the command byte
 bound produce a local validation error. Commands never fall back to Host text
 after parse failure.
 
-The command palette uses the same registry, availability predicates, handlers,
-and help strings. Disabled commands remain discoverable with a safe reason.
+The command palette uses one typed registry for input text, help, and
+availability requirements. Visual rendering, screen-reader output, and Enter
+activation derive the same safe unavailable reason from the current model;
+they cannot maintain separate predicates. Disabled commands remain
+discoverable with that reason.
 
 ## Session navigation
 

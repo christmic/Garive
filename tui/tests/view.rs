@@ -196,6 +196,7 @@ fn linear_overlays_share_filtered_results_and_selection_windows() {
     };
     let commands = view::linear_overlay(&model);
     assert!(commands.contains("> 1. /copy last: Copy last completion"));
+    assert!(commands.contains("Unavailable: no completion is visible"));
     assert!(!commands.contains("/status"));
 
     model.overlay = Some(Overlay::PromptHistory);
@@ -216,6 +217,28 @@ fn linear_overlays_share_filtered_results_and_selection_windows() {
     let sessions = view::linear_overlay(&model);
     assert!(sessions.contains("> 1. needle-agent Session ending 000001"));
     assert!(!sessions.contains("other-agent"));
+}
+
+#[test]
+fn command_palette_shares_safe_unavailable_reasons_with_activation_context() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::CommandPalette),
+        command_filter: "copy last".into(),
+        ..Default::default()
+    };
+    let unavailable = frame(&model, 120, 24);
+    assert!(unavailable.contains("no completion is visible"));
+    assert!(view::linear_overlay(&model).contains("Unavailable: no completion is visible"));
+
+    model.timeline.push(TimelineItem {
+        stable_key: "completion".into(),
+        position: 1,
+        role: TimelineRole::Agent,
+        tone: Default::default(),
+        text: "ready".into(),
+    });
+    assert!(!frame(&model, 120, 24).contains("no completion is visible"));
+    assert!(!view::linear_overlay(&model).contains("Unavailable:"));
 }
 
 #[test]

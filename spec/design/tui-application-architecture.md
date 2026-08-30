@@ -65,7 +65,7 @@ tui/src/
   input/
     mod.rs               key/paste/mouse routing
     editor.rs            grapheme-aware multiline editor
-    command.rs           slash-command parser and registry
+    commands.rs          parser, typed registry, and shared availability contract
   persistence.rs         preference and pending-command ports/adapters
   runtime/
     mod.rs               event loop and task supervision

@@ -82,6 +82,8 @@ hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
 The linear screen-reader component uses that same filtered order and marks the
 selected numbered row explicitly; it cannot maintain a separate list model.
+Command rows also consume the registry's shared availability result. A
+disabled visual or linear row names the same safe reason that blocks Enter.
 
 ## Conformance
 

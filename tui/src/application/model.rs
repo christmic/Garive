@@ -1,7 +1,7 @@
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::input::{command_matches, EditorState, COMMAND_PALETTE};
+use crate::input::{command_matches, CommandContext, EditorState, COMMAND_PALETTE};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -187,9 +187,24 @@ impl AppModel {
         COMMAND_PALETTE
             .iter()
             .enumerate()
-            .filter(|(_, (name, help))| command_matches(name, help, &self.command_filter))
+            .filter(|(_, command)| {
+                command_matches(command.input, command.help, &self.command_filter)
+            })
             .map(|(index, _)| index)
             .collect()
+    }
+
+    pub(crate) fn command_context(&self) -> CommandContext {
+        CommandContext {
+            has_installed_agent: !self.definitions.is_empty(),
+            has_pending_command: self.has_pending_command,
+            has_running_turn: self.execution == ExecutionState::Following,
+            has_visible_completion: self
+                .timeline
+                .iter()
+                .any(|item| item.role == TimelineRole::Agent),
+            has_selected_session: self.selected_session.is_some(),
+        }
     }
 
     pub(crate) fn switch_viewport(&mut self, session_id: &str) {

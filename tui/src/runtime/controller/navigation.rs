@@ -1,5 +1,5 @@
 use crate::{
-    application::{AppAction, AppModel, ExecutionState, FocusTarget, Overlay},
+    application::{AppAction, AppModel, FocusTarget, Overlay},
     input::{parse_command, CommandParse, COMMAND_PALETTE},
 };
 
@@ -118,13 +118,13 @@ pub(super) fn select_command(state: &mut RuntimeState) {
     else {
         return;
     };
-    let name = COMMAND_PALETTE[index].0;
-    if let Some(reason) = command_disabled_reason(name, state) {
+    let command = COMMAND_PALETTE[index];
+    if let Some(reason) = command.unavailable_reason(state.model.command_context()) {
         state.model.notice = Some(format!("Command unavailable: {reason}."));
         return;
     }
     state.model.overlay = None;
-    if let CommandParse::Valid(command) = parse_command(name) {
+    if let CommandParse::Valid(command) = parse_command(command.input) {
         execute_command(command, state);
     }
 }
@@ -162,27 +162,6 @@ pub(super) fn matching_commands(state: &RuntimeState) -> Vec<usize> {
 
 pub(super) fn matching_history(state: &RuntimeState) -> Vec<String> {
     state.model.matching_history().cloned().collect()
-}
-
-fn command_disabled_reason(name: &str, state: &RuntimeState) -> Option<&'static str> {
-    match name {
-        "/new" if state.model.definitions.is_empty() => Some("no Agent is installed"),
-        "/retry" if state.pending_for_context().is_none() => Some("no pending command"),
-        "/cancel" if state.model.execution != ExecutionState::Following => {
-            Some("no Turn is running")
-        }
-        "/copy last"
-            if !state
-                .model
-                .timeline
-                .iter()
-                .any(|item| item.role == crate::application::TimelineRole::Agent) =>
-        {
-            Some("no completion is visible")
-        }
-        "/copy session-id" if state.model.selected_session.is_none() => Some("no Session selected"),
-        _ => None,
-    }
 }
 
 pub(super) fn select_session(state: &mut RuntimeState) {
