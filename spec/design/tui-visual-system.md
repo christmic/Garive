@@ -45,6 +45,11 @@ The composer lives in `view/composer.rs`. It consumes the editor's admitted
 byte range, styles whole rendered graphemes, and owns its frame, viewport, and
 cursor geometry. Dark/light selection uses the semantic selection surface;
 mono uses reverse video. Selection may not be communicated by color alone.
+Its private `EditorLayout` is the single source for rendered rows, selection
+spans, cursor coordinates, and vertical scroll. It measures sanitized extended
+graphemes in terminal cells, prefers whitespace wrap points, and hard-wraps an
+oversized word without splitting a grapheme. Screens and controllers may not
+recompute composer wrapping or cursor coordinates.
 All time-varying presentation lives in `view/motion.rs`. An active connection
 or execution may use its calm single-cell pulse; reduced motion uses the same
 text and semantic style with a stable glyph. Screens cannot invent local frame

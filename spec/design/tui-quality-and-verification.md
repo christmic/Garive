@@ -338,6 +338,15 @@ selection with a real Left sequence, inserts `X`, and observes `aX界b` before
 clean restoration. Strict all-target/all-feature Clippy, formatting, and diff
 checks pass.
 
+Merge revision `7b2c50c0` replaces independent widget-wrap and cursor math with
+the composer's shared Unicode layout. Unit contracts cover whitespace-first
+wrapping, hard continuation at exact width, explicit newline plus soft wrap,
+and selected CJK/combining graphemes across rows. After rebasing onto the then
+current `master`, 10 editor tests, 41 view tests, 23 snapshot/boundary tests,
+and all nine shipping-binary macOS PTYs passed. Strict all-target/all-feature
+Clippy, formatting, and diff checks passed. These results are executable
+semantic and PTY evidence; they do not close the physical-window image gate.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

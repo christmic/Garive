@@ -172,6 +172,14 @@ CJK, emoji ZWJ, and combining sequences cannot be partially selected. The
 selection remains explicit in monochrome through reverse video and stays
 aligned while the composer wraps or scrolls.
 
+Soft wrapping, selected-text painting, cursor placement, and viewport scroll
+consume one immutable layout result. Each explicit newline starts a logical
+line. Within it, wrapping prefers the last whitespace boundary that fits and
+otherwise hard-wraps at an extended-grapheme boundary. Sanitization happens
+before terminal-cell measurement, so a visible safety marker and its width
+cannot disagree. A cursor exactly after a full-width row advances to column
+zero of a continuation row and is scrolled into view by the same layout.
+
 | Operation | Required behavior |
 |---|---|
 | Insert | one transaction per typed cluster; adjacent typing may coalesce within a bounded interval |

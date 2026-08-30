@@ -282,6 +282,16 @@ pass. The mono Expect case now selects `界b`, sends a real unmodified Left,
 inserts `X`, observes `aX界b`, and then proves normal alternate-screen restore.
 Strict all-target/all-feature Clippy, formatting, and diff checks passed.
 
+Merge revision `7b2c50c0` gives the composer one Unicode layout for rendered
+rows, selection spans, cursor placement, and scroll. Focused contracts cover
+`hello world` at eight cells, a cursor exactly after a full row, explicit
+newline followed by soft wrap, and selected CJK plus a combining sequence
+across wrapped rows. On native macOS arm64 after rebasing to the then-current
+`master`, all 10 editor, 41 view, 23 snapshot/boundary, and nine shipping-binary
+PTY tests passed. Strict all-target/all-feature Clippy passed with warnings
+denied; formatting and diff checks were clean. This is semantic-buffer and real
+PTY evidence, not a physical Terminal/iTerm2-class screenshot.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

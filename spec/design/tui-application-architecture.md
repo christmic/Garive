@@ -79,7 +79,7 @@ tui/src/
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
     linear.rs            screen-reader presentation components
-    composer.rs          editor text, selection, viewport, frame, and cursor rendering
+    composer.rs          shared Unicode row layout, selection, viewport, frame, and cursor rendering
     navigation.rs        Session/Agent navigation
     overlay.rs           help, command, Session, error, suspension overlays
     overlay/geometry.rs  popup, visible-window, and pointer geometry
@@ -101,6 +101,13 @@ key priority and completion edits. Mouse routing consumes view geometry and
 cannot reproduce row coordinates. The modal command palette and visual-only
 anchored menu share the catalog but remain separate components because their
 search grammar, focus, accessibility, and backdrop contracts differ.
+
+The composer is similarly bounded. `EditorState` owns admitted text and
+grapheme-indexed editing state; the private `EditorLayout` in
+`view/composer.rs` derives sanitized display tokens and wrapped rows as a pure
+width-dependent presentation model. Text spans, selection styles, cursor
+placement, and scroll derive from those rows. Ratatui receives already-wrapped
+lines and does not perform a second, divergent wrapping pass.
 
 The title presenter is pure and returns only bounded product labels derived
 from typed connection/execution state plus a loaded Session ordinal. The

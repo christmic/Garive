@@ -209,6 +209,17 @@ position in its editor state. Garive's Shift-selection model and visible
 grapheme-safe selection are therefore a Garive-authored requirement, not a
 behavior inferred from either product or copied from those sources.
 
+Codex's pinned `bottom_pane/textarea.rs:436-489,1883-1960` derives height,
+cursor position, viewport state, and rendering from cached grapheme-safe
+wrapped ranges; `bottom_pane/textarea/wrapping.rs` owns those ranges. Pi's
+pinned `packages/tui/src/components/editor.ts:106-177,469,909` independently
+uses one `wordWrapLine` result for grapheme-aware word/hard wrapping and records
+the same content width for navigation. These are direct source facts. Garive
+adopts the invariant that painting and cursor geometry share one wrap model,
+but authors its own Rust `EditorLayout`, safety-marker measurement, selection
+spans, exact-width continuation, and tests; it does not copy either data model
+or implementation.
+
 ### Pi corroboration
 
 At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`

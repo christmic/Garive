@@ -169,6 +169,12 @@ expands tabs to spaces, rejects unsafe controls, and enforces the Host's 4,096
 UTF-8-byte command limit. Cursor movement follows Unicode grapheme boundaries,
 including CJK, emoji, and combining sequences.
 
+Long drafts wrap at readable whitespace when possible and at a complete
+displayed character when a word is wider than the composer. Explicit newlines,
+wrapped text, selection highlighting, the cursor, and automatic vertical
+scroll all use the same terminal-cell layout, so the cursor remains aligned at
+line boundaries and while a narrow composer scrolls.
+
 While a mutation has an unknown durable result for the active Session, the
 draft is frozen to prevent a second conflicting command. Global Help remains
 available with `?` during that recovery state.
