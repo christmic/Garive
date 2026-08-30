@@ -50,6 +50,20 @@ The Xcode target produces `Garive.app`, registers expiring `garive://pair`
 handoffs, and links the static XCFramework. Distribution still requires the
 operator's Apple team, signing, and physical-device verification.
 
+## Private wake hints
+
+The app target enables remote notifications and uses development APNs
+entitlements in Debug and production entitlements in Release. A signed build
+must use a provisioning profile that authorizes the matching environment.
+Gateway owns `GARIVE_APNS_TEAM_ID`, `GARIVE_APNS_KEY_ID`,
+`GARIVE_APNS_TOPIC`, and `GARIVE_APNS_KEY_FILE`; the APNs provider private key
+must never enter the app bundle.
+
+After pairing, the app registers its APNs device token against that grant. It
+accepts only the exact content-free wake envelope, resolves the opaque route
+token through authenticated Gateway transport, refreshes Runtime truth, and
+only then opens the verified Session or Settings destination.
+
 ## Meta
 
 - Owner: `@christmic`

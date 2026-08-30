@@ -114,15 +114,51 @@ credentials. An operator may use `POST /v1/mobile/devices/{device_id}:revoke`
 with the admin Bearer token. The admin token is digest-compared in constant time
 and is never accepted on Host routes.
 
+## Push registration and automatic wake relay
+
+An authenticated device registers exactly one provider address with:
+
+```text
+POST /v1/mobile/push/registrations
+{"api_version":"v1","transport":"apns|fcm","registration_id":"..."}
+```
+
+The grant's paired platform fixes the transport: iOS accepts only APNs and
+Android only FCM. `DELETE /v1/mobile/push/registrations/self` removes it before
+sign-out revocation. Provider addresses remain in volatile Gateway memory and
+never enter Runtime, logs, diagnostics, or notification content.
+
+Runtime exposes the loopback-only, non-proxied
+`GET /internal/mobile/wake-snapshot?limit=N[&before=ID]`. It projects only
+Session ID, latest durable position, and an optional `attention`, `completed`,
+or `failed` wake category. Gateway pages the whole projection, suppresses the
+initial historical snapshot, and emits only category transitions. Runtime
+remains the owner of the category; Gateway retains only an ephemeral observed
+position/category map and cannot turn a hint into durable truth.
+
+APNs uses ES256 provider authentication and an alert/background payload with
+generic lock-screen text. FCM uses service-account OAuth2, Firebase Installation
+IDs, and a data message. The provider-specific envelope contains only:
+
+```json
+{"schema_version":1,"route_token":"opaque","category":"attention","collapse_key":"attention"}
+```
+
+Each device receives its own random 10-minute route token. The app must resolve
+it once through `POST /v1/mobile/wake/{token}:resolve` with the same active
+grant. Resolution returns only `destination`, `session_id`, and `category`;
+the app then refreshes Runtime truth before rendering or authorizing anything.
+Provider failure removes the unresolved token and never becomes Agent failure.
+
 ## Stable edge failures
 
 | HTTP | Code | Meaning |
 |---:|---|---|
-| 400 | `invalid_json`, `invalid_pairing_request`, `invalid_request` | Correct the request. |
+| 400 | `invalid_json`, `invalid_pairing_request`, `invalid_push_registration`, `invalid_wake_hint`, `invalid_request` | Correct the request. |
 | 401 | `pairing_rejected`, `authentication_required` | Pair or re-pair. |
-| 404 | `route_not_admitted`, `device_not_found` | Nothing was routed. |
+| 404 | `route_not_admitted`, `device_not_found`, `wake_hint_not_found` | Nothing was routed. |
 | 413 | `request_too_large` | Reduce input. |
-| 503 | `entropy_unavailable`, `runtime_unavailable` | Reads may back off; mutations retain identity. |
+| 503 | `entropy_unavailable`, `runtime_unavailable`, `push_unavailable` | Reads may back off; mutations retain identity. |
 
 Host errors/success bodies pass through. Edge errors never contain request
 values or upstream exception text.
@@ -135,7 +171,10 @@ and admin secrets.
 
 Tests cover invalid composition, strict single-use pairing, credential
 stripping, path/body/query preservation, expiry, self/admin revocation,
-traversal/method rejection, bounds, stable errors, and the race detector.
+provider payload privacy and authentication, strict registration, route-token
+binding/expiry/single use, snapshot paging, transition deduplication, startup
+history suppression, traversal/method rejection, bounds, stable errors, and
+the race detector.
 A-MOBILE-R additionally requires physical iOS and Android evidence through a
 disposable certificate, Gateway, and Runtime.
 

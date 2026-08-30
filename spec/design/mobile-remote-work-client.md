@@ -286,7 +286,9 @@ reduced motion, increased contrast, RTL-safe layout, dark/light appearance,
 
 ## Background and push
 
-The Gateway registers an OS push token against the authenticated device grant.
+The Gateway registers an APNs device token or FCM Firebase Installation ID
+against the authenticated device grant. Registration is platform-bound and
+sign-out unregisters it before best-effort grant revocation.
 The payload is versioned and content-free:
 
 ```text
@@ -302,6 +304,12 @@ MobileWakeHintV1 {
 only after authentication. A notification never directly authorizes a command.
 Foreground receipt coalesces by `collapse_key`, refreshes snapshots, and then
 announces one semantic change. Background limits never become failure truth.
+Runtime's private loopback wake projection assigns categories from durable Turn
+state. Gateway suppresses startup history, pages all Sessions, and relays only
+category transitions. iOS registers for APNs/background notification delivery;
+Android uses FCM's current FID registration callbacks. Both reject extended or
+malformed envelopes, resolve the opaque token with the device grant, and open
+the verified Session or Settings destination only after authenticated refresh.
 
 ## Failures and recovery
 

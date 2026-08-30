@@ -31,7 +31,14 @@ GARIVE_TLS_CERT=/absolute/path/to/fullchain.pem
 GARIVE_TLS_KEY=/absolute/path/to/private-key.pem
 GARIVE_PAIRING_CODE=<single-use operator code>
 GARIVE_ADMIN_TOKEN=<at least 20 random characters>
+GARIVE_WAKE_POLL_INTERVAL=3s
 ```
+
+For iOS delivery also set `GARIVE_APNS_TEAM_ID`, `GARIVE_APNS_KEY_ID`,
+`GARIVE_APNS_TOPIC`, and `GARIVE_APNS_KEY_FILE`; set
+`GARIVE_APNS_SANDBOX=true` only for development device builds. For Android set
+`GARIVE_FCM_CREDENTIALS` to a service-account JSON file with FCM send authority.
+Provider secrets stay outside the repository and command-line arguments.
 
 Start `go run ./cmd/garive-gateway`. Production DNS and the certificate must
 match the HTTPS service origin entered on mobile. Do not expose the Runtime
@@ -76,4 +83,5 @@ returns `204`; network failure never restores the local credential.
 
 Run `go test -race ./...`. Tests cover strict one-time pairing, authorization,
 expiry, revocation, route admission, header stripping, body preservation, and
-loopback-only Runtime composition.
+loopback-only Runtime composition, plus APNs/FCM payload privacy, FID targeting,
+strict wake resolution, automatic durable-transition relay and deduplication.
