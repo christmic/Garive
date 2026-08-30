@@ -43,7 +43,7 @@ planned without reopening a narrower completed row.
 | C7-C | Publication-grade context-pressure runner | accepted | accepted | documented | implemented | verified | done | Keep strict tagged configs, permanent command non-publication, OS credential resolution, clean Git attestation and bounded no-retry HTTPS loopback/failure gates green; a live credentialed run remains C7 evidence. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Publish and review a C7-A baseline before accepting thresholds or algorithms. |
 | L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | verified | done | Keep exact C6 payloads, lifecycle ownership, iteration/abandon transitions, and shared Rust/Kotlin matrices green. |
-| L1-R | SQLite Ledger adapter | accepted | accepted | documented | implemented | verified | done | Keep v1→v3/future-schema gates, execution/schedule fenced writes, file restart matrices, and all shared ledger scenarios green. |
+| L1-R | SQLite Ledger adapter | accepted | accepted | documented | implemented | verified | done | Keep v1→v4/future-schema gates, execution/schedule fenced writes, file restart matrices, and all shared ledger scenarios green. |
 | L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | verified | done | Keep real PostgreSQL shared scenarios, writer-race normalization, migration refusal, and admitted recovery-host subset green. |
 
 ## Protocols, Providers, Host, and clients
@@ -79,8 +79,9 @@ planned without reopening a narrower completed row.
 |---|---|---|---|---|---|---|---|
 | Memory | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin bounds/revision/capability-admission fixtures, exact L0 payloads, Runtime authority, atomic writes, and SQLite commit-before-C2/restart evidence green. |
 | Memory M1 | accepted | accepted | documented | implemented | verified | done | Keep M1-A through M1-G green: shared Rust/Kotlin lifecycle/maintenance/recall semantics, exact L0 facts, SQLite recovery, committed-recall C2 admission and the pinned synthetic quality regression. Representative empirical quality remains a separate evidence gate. |
-| Memory M2 | accepted | accepted | missing | partial | partial | active | M2-A/B are complete; implement M2-C atomic namespace control journal, projection changes, receipts, replay and crash recovery. |
+| Memory M2 | accepted | accepted | partial | partial | partial | active | M2-A through M2-C are complete; implement M2-D opaque-capability Desktop review, confirmation and receipt workflow. |
 | Memory M2-A/B | accepted | accepted | documented | implemented | verified | done | Keep exact-identity documents, canonical manifest/layout validation, authority-safe ordered plans and shared Rust/Kotlin digests green. |
+| Memory M2-C | accepted | accepted | documented | implemented | verified | done | Keep exact grants, namespace projection/journal transactions, canonical receipts, content-scrubbing erasure, fsynced directory export and import/export crash/replay/corruption matrices green. |
 | Memory M2-D | accepted | accepted | missing | missing | missing | active | Add Desktop-native opaque file capabilities, bounded review/confirmation IPC and durable receipt recovery after M2-C. |
 | Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure/capability-admission fixtures, exact L0 transitions, source authority, connector commit ordering, C2 attribution, and SQLite recovery green. |
 | Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds and capability-admission fixtures, Rust/Kotlin narrowing, L0 validation, and SQLite commit-before-C2/restart evidence green. |
