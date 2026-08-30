@@ -342,6 +342,12 @@ points. Dynamic Type/font scaling 200%, TalkBack/VoiceOver, keyboard traversal,
 reduced motion, increased contrast, RTL-safe layout, dark/light appearance,
 320-point width, rotation, and tablet split presentation are release scenarios.
 
+When a paired workspace leaves the active scene, native presentation replaces
+the complete Remote tree—including accessibility semantics—with a content-free
+privacy shield before task-switcher capture. Returning active removes the shield
+and refreshes durable server truth. The shield contains no Host, Agent, Session,
+Turn, prompt, output, decision, activity, or error value.
+
 ## Background and push
 
 The Gateway registers an APNs device token or FCM Firebase Installation ID

@@ -192,7 +192,9 @@ Both platforms share behavior and visual intent, not pixel-for-pixel layout.
 
 ## Responsive and accessibility behavior
 
-- Phones use bottom navigation and full-screen conversation destinations.
+- Phones use an overlay navigation drawer and full-screen conversation destinations,
+  preserving the conversation's vertical canvas; tablets use the same destination
+  model in a persistent sidebar.
 - Tablets use a navigation rail or split view with Session list and detail.
 - Every touch target is at least 44 platform points; Android also meets its
   density-independent minimum.
@@ -210,9 +212,11 @@ Both platforms share behavior and visual intent, not pixel-for-pixel layout.
 - Durable snapshots are bounded and keyed by account, installation, Session,
   and watermark. Signing out erases credentials, push registration, cached
   snapshots, drafts, and pending command records for that account.
-- Screenshots and OS task-switcher previews are obscured on explicit secure
-  decision screens. Ordinary conversation screenshots remain a platform/user
-  choice unless enterprise policy disables them.
+- Whenever a paired workspace becomes inactive or enters the background, both
+  native shells replace Remote content and accessibility semantics with a
+  content-free privacy shield before the OS task-switcher preview is retained.
+  Deliberate foreground screenshots remain a platform/user choice unless
+  enterprise policy disables them.
 - Analytics contain only stable route, result code, latency bucket, app/build
   version, and approved anonymous trace token. They exclude prompts, outputs,
   titles, URLs, IDs, paths, headers, credentials, and raw errors.

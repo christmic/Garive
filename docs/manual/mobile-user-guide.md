@@ -308,6 +308,8 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 ## 11. 通知、前后台与离线
 
 - 应用退到后台后不会无限维持连接；Agent 继续在服务端运行。
+- 已配对应用进入后台或 inactive 状态时，双端会先用无 Host、Agent、Session、问题或输出的
+  隐私遮罩替换整个 Remote 界面及其无障碍语义，系统任务切换器不会保留工作内容预览。
 - 回到前台时，应用先取有界快照，再从已确认位置继续跟随事件。
 - APNs/FCM 消息只包含分类和十分钟有效的一次性 route token，不包含提示词、输出、路径、
   Session 标题、工具名或凭据。
@@ -330,6 +332,13 @@ Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片
 ![Android 离线但保留已验证历史](assets/mobile/android-12-offline.png)
 
 ![iOS 前后台返回后的连接中断提示](assets/mobile/ios-15-recovery-notice.png)
+
+![Android 深色后台隐私遮罩](assets/mobile/android-24-privacy-shield.png)
+
+![iOS 深色后台隐私遮罩](assets/mobile/ios-20-privacy-shield.png)
+
+重新回到前台后遮罩立即移除，客户端先刷新服务端持久化事实再恢复操作。遮罩不停止 Agent、
+不清除草稿，也不把后台切换解释成失败；前台由用户主动发起的系统截图仍遵循设备或企业策略。
 
 实际离线验证中，停止 Host 后刷新会显示明确的连接中断 banner 和
 **Offline · verified history**，并继续保留最后一次已验证的会话投影；banner 可关闭，但关闭只影响
@@ -409,6 +418,8 @@ adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true --es garive_walkthrough_session release-decline
 adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true --es garive_walkthrough_session clarification-input
+adb shell am start -n com.garive.android/.MainActivity \
+  --ez garive_walkthrough true --ez garive_walkthrough_privacy_shield true
 ```
 
 也可以用一条门禁命令自动完成 Host 启停、ADB 端口转发，以及真实网络上的
@@ -433,6 +444,8 @@ xcrun simctl launch booted com.garive.mobile --garive-walkthrough \
   --garive-walkthrough-conversation --garive-walkthrough-session release-decline
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough \
   --garive-walkthrough-conversation --garive-walkthrough-session clarification-input
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough \
+  --garive-walkthrough-privacy-shield
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-new-task
 ```
 
@@ -460,6 +473,7 @@ Android 的 Debug APK 可直接安装演示；Release APK 在本地门禁中保�
 | Activity | 点击 `Activity · N` | 默认折叠，可展开公开活动 |
 | 重启恢复 | 输入草稿后终止并重开应用 | 导航、Session 草稿与精确 pending 有界恢复 |
 | 结果未知 | walkthrough 错误场景 | 只允许 Retry exact 或带警告 Forget retry |
+| 后台隐私 | 应用进入 inactive/background | Remote 内容和无障碍语义由无内容隐私遮罩替换 |
 
 ## 15. 截图与验收说明
 
@@ -470,19 +484,19 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 `accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
-Android 与 iOS 的 Sessions、新建任务、运行中 Conversation、代码结果和开放问题场景，以及 Android
+Android 与 iOS 的 Sessions、新建任务、运行中 Conversation、代码结果、开放问题和后台隐私场景，以及 Android
 展开 Activity/审批场景，还绑定了截图 SHA-256、
 尺寸及当前原生 UI/KMP/Demo Host 源码摘要。相关源码变化但未重新运行、检查并捕获这些场景时，
 证据校验器会直接失败，避免旧版底部导航或半展开 sheet 截图继续冒充当前候选。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（19 条加 5 条 opt-in 真实 Host journeys，含显式主题跨存储实例恢复、严格配对链接、整应用 Work → Sessions →
+界面流程（20 条加 5 条 opt-in 真实 Host journeys，含显式主题跨存储实例恢复、后台隐私遮罩、严格配对链接、整应用 Work → Sessions →
 create/start → cancel → append → approve/decline、开放文字回答及
-Light → Dark 切换、可横向滚动的 fenced code 与系统分享 chooser）、Swift 测试（10 条）、iOS Simulator XCUITest（8 条，含真实 loopback
+Light → Dark 切换、可横向滚动的 fenced code 与系统分享 chooser）、Swift 测试（10 条）、iOS Simulator XCUITest（9 条，含后台隐私遮罩与真实 loopback
 create/start → cancel → append、批准/拒绝与开放文字回答提交、Sessions 搜索/状态筛选、系统分享 sheet、Light/Dark 跨应用重启恢复与 System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 42 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 44 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
