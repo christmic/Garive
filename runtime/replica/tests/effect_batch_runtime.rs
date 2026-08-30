@@ -247,13 +247,21 @@ impl ConcurrentExecutorPort for Executor {
 }
 
 async fn run(mode: Mode, cancellation: EffectCancellation) -> (Publisher, Vec<BatchTerminal>) {
+    run_with_parallel(mode, cancellation, 3).await
+}
+
+async fn run_with_parallel(
+    mode: Mode,
+    cancellation: EffectCancellation,
+    max_parallel_reads: usize,
+) -> (Publisher, Vec<BatchTerminal>) {
     let invocations = invocations(3);
     let plan = plan_effect_batch(
         &invocations
             .iter()
             .map(|value| value.prepared.clone())
             .collect::<Vec<_>>(),
-        &EffectBatchLimitsV1::new(3, 1, 3, 3, 1536).unwrap(),
+        &EffectBatchLimitsV1::new(3, 1, 3, max_parallel_reads, 1536).unwrap(),
     )
     .unwrap();
     let started = Arc::new(Mutex::new(HashSet::new()));
@@ -266,12 +274,16 @@ async fn run(mode: Mode, cancellation: EffectCancellation) -> (Publisher, Vec<Ba
         started,
         fail_terminal: None,
     };
-    let report = EffectBatchDispatcher::new(limits(30))
+    let runtime_limits = EffectBatchRuntimeLimits {
+        max_parallel_reads,
+        ..limits(30)
+    };
+    let report = EffectBatchDispatcher::new(runtime_limits)
         .unwrap()
         .execute(
             &plan,
             &invocations,
-            limits(30),
+            runtime_limits,
             &cancellation,
             &executor,
             &mut publisher,
@@ -315,6 +327,23 @@ async fn completion_permutations_publish_identical_model_order() {
             .iter()
             .all(|value| matches!(value, BatchTerminal::Execution(_))));
     }
+}
+
+#[tokio::test]
+async fn sequential_and_parallel_modes_publish_identical_terminals() {
+    let (_, sequential) = run_with_parallel(
+        Mode::Complete(vec![3, 2, 1]),
+        EffectCancellation::default(),
+        1,
+    )
+    .await;
+    let (_, parallel) = run_with_parallel(
+        Mode::Complete(vec![3, 2, 1]),
+        EffectCancellation::default(),
+        3,
+    )
+    .await;
+    assert_eq!(sequential, parallel);
 }
 
 #[tokio::test]
