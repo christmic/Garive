@@ -48,7 +48,7 @@ public sealed interface AppEffectPayload {
     ) : AppEffectPayload
     public data class HostEvent(
         public val event: String, public val position: Long, public val turnId: String? = null,
-        public val activity: ActivityItem? = null,
+        public val text: String? = null, public val activity: ActivityItem? = null,
     ) : AppEffectPayload
     public data object EventStreamEnded : AppEffectPayload
     public data class CommandSucceeded(
@@ -68,14 +68,18 @@ public fun reduceApp(
         AppIntent.Boot -> boot(state)
         is AppIntent.SelectSession -> selectSession(state, intent)
         is AppIntent.EditDraft -> editDraft(state, intent, limits)
-        is AppIntent.CreateSession -> beginCommand(
+        is AppIntent.CreateSession -> if (state.definitions.none { it.definitionId == intent.definitionId }) {
+            notice(state, AppErrorKind.VALIDATION, "definition_not_found")
+        } else beginCommand(
             state,
             PendingCommand(CommandKind.CREATE_SESSION, intent.commandId, intent.requestDigest, state.generation, status = PendingStatus.PENDING),
             EffectDraft(EffectKind.CREATE_SESSION, commandId = intent.commandId, requestDigest = intent.requestDigest, definitionId = intent.definitionId),
         )
         is AppIntent.SubmitDraft -> submitDraft(state, intent, limits)
         is AppIntent.RetryPending -> retryPending(state, intent)
-        is AppIntent.CancelTurn -> beginCommand(
+        is AppIntent.CancelTurn -> if (state.timeline.none { it.turnId == intent.turnId } ||
+            state.sessions.none { it.sessionId == intent.sessionId }
+        ) notice(state, AppErrorKind.VALIDATION, "turn_not_found") else beginCommand(
             state.copy(execution = ExecutionState.CANCELLING),
             PendingCommand(CommandKind.CANCEL_TURN, intent.commandId, intent.requestDigest, state.generation,
                 intent.sessionId, intent.turnId, PendingStatus.PENDING),
@@ -117,6 +121,7 @@ private fun editDraft(state: AppViewState, intent: AppIntent.EditDraft, limits: 
 }
 
 private fun submitDraft(state: AppViewState, intent: AppIntent.SubmitDraft, limits: ControllerLimits): Reduction {
+    if (state.sessions.none { it.sessionId == intent.sessionId }) return notice(state, AppErrorKind.VALIDATION, "session_not_found")
     val text = state.drafts.firstOrNull { it.sessionId == intent.sessionId }?.text.orEmpty()
     if (text.isBlank() || text.encodeToByteArray().size > limits.maxDraftBytes) return notice(state, AppErrorKind.VALIDATION, "invalid_draft")
     return beginCommand(
@@ -220,9 +225,13 @@ private fun commandSucceeded(state: AppViewState, effect: AppEffect, result: App
         )
     }
     val drafts = if (effect.kind == EffectKind.START_TURN) state.drafts.filterNot { it.sessionId == result.sessionId } else state.drafts
+    val timeline = if (effect.kind == EffectKind.START_TURN && result.turnId != null && state.timeline.none { it.turnId == result.turnId }) {
+        state.timeline + TimelineItem(result.turnId, "running", result.committedPosition,
+            userText = effect.text.orEmpty())
+    } else state.timeline
     val effects = mutableListOf(EffectDraft(EffectKind.FOLLOW_EVENTS, sessionId = result.sessionId, afterPosition = result.committedPosition))
     if (effect.kind == EffectKind.START_TURN) effects += EffectDraft(EffectKind.SAVE_PREFERENCES)
-    return issueMany(state.copy(pending = pending, drafts = drafts, cursor = result.committedPosition,
+    return issueMany(state.copy(pending = pending, drafts = drafts, timeline = timeline, cursor = result.committedPosition,
         execution = ExecutionState.FOLLOWING, notice = null), effects)
 }
 
@@ -248,8 +257,26 @@ private fun hostEvent(
             result.turnId, result.position, true)).takeLast(limits.maxActivities)
         notice = null
     }
-    return Reduction(state.copy(cursor = result.position, execution = execution, activities = activities,
-        outstanding = outstanding, notice = notice))
+    val timeline = state.timeline.map { item ->
+        if (item.turnId != result.turnId) return@map item
+        val turnActivities = if (result.activity == null) item.activities else
+            item.activities.filterNot { it.activityId == result.activity.activityId } + result.activity.copy(neutral = false)
+        val terminalState = when (result.event) {
+            "turn.completed" -> "completed"
+            "turn.stopped" -> "stopped"
+            "turn.failed" -> "failed"
+            "turn.suspended" -> "suspended"
+            else -> item.state
+        }
+        item.copy(state = terminalState, latestPosition = result.position,
+            completionText = if (result.event == "turn.completed") result.text.orEmpty() else item.completionText,
+            activities = turnActivities)
+    }
+    val base = state.copy(timeline = timeline, cursor = result.position, execution = execution,
+        activities = activities, outstanding = outstanding, notice = notice)
+    return if (result.event == "turn.suspended" && effect.sessionId != null) {
+        issueMany(base, listOf(EffectDraft(EffectKind.LOAD_TIMELINE, sessionId = effect.sessionId)))
+    } else Reduction(base)
 }
 
 private fun failedResult(state: AppViewState, effect: AppEffect, error: AppError): Reduction {

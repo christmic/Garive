@@ -64,6 +64,7 @@ export function mapHostEvent(value: HostEvent, expectedSessionId: string): Extra
   if (value.session_id !== expectedSessionId || value.position <= 0) invalid();
   const turnId = value.turn_id || undefined;
   return { type: "host_event", event: value.event, position: value.position, turnId,
+    text: value.text || undefined,
     activity: value.activity && mapActivity(value.activity, turnId) };
 }
 

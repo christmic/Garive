@@ -36,7 +36,7 @@ describe("A-UX1 controller boundaries", () => {
       { maxDraftBytes: 3, maxActivities: 2 }).state;
     state = reduceApp(state, { type: "submit_draft", sessionId: "session-a",
       commandId: "command-a", requestDigest: DIGEST }, { maxDraftBytes: 3, maxActivities: 2 }).state;
-    const second = reduceApp(state, { type: "cancel_turn", sessionId: "session-a", turnId: "turn-a",
+    const second = reduceApp(state, { type: "submit_draft", sessionId: "session-a",
       commandId: "command-b", requestDigest: "b".repeat(64) }, { maxDraftBytes: 3, maxActivities: 2 });
     expect(second.state.notice?.code).toBe("command_not_admitted");
     const oversized = reduceApp(second.state, { type: "edit_draft", sessionId: "session-a", text: "🦀" },

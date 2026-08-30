@@ -78,7 +78,8 @@ export type AppEffectPayload =
   | { readonly type: "definitions_loaded"; readonly definitions: readonly DefinitionItem[] }
   | { readonly type: "session_page_loaded"; readonly sessions: readonly SessionItem[] }
   | { readonly type: "timeline_loaded"; readonly items: readonly TimelineItem[]; readonly cursor: number; readonly activities: readonly ActivityItem[] }
-  | { readonly type: "host_event"; readonly event: string; readonly position: number; readonly turnId?: string; readonly activity?: Omit<ActivityItem, "neutral"> }
+  | { readonly type: "host_event"; readonly event: string; readonly position: number; readonly turnId?: string;
+      readonly text?: string; readonly activity?: Omit<ActivityItem, "neutral"> }
   | { readonly type: "event_stream_ended" }
   | { readonly type: "command_succeeded"; readonly sessionId: string; readonly turnId?: string; readonly committedPosition: number }
   | { readonly type: "failed"; readonly error: AppError };
@@ -120,12 +121,16 @@ export function reduceApp(
       return issueMany({ ...state, drafts, notice: undefined }, [{ kind: "save_preferences" }]);
     }
     case "create_session":
+      if (!state.definitions.some((item) => item.definitionId === intent.definitionId)) {
+        return notice(state, "validation", "definition_not_found");
+      }
       return beginCommand(state, { kind: "create_session", commandId: intent.commandId,
         requestDigest: intent.requestDigest, generation: state.generation, status: "pending" }, {
         kind: "create_session", commandId: intent.commandId, requestDigest: intent.requestDigest,
         definitionId: intent.definitionId,
       });
     case "submit_draft": {
+      if (!state.sessions.some((item) => item.sessionId === intent.sessionId)) return notice(state, "validation", "session_not_found");
       const text = state.drafts.find((item) => item.sessionId === intent.sessionId)?.text ?? "";
       if (!text.trim() || utf8(text) > limits.maxDraftBytes) return notice(state, "validation", "invalid_draft");
       return beginCommand({ ...state, execution: "submitting" }, {
@@ -144,6 +149,10 @@ export function reduceApp(
       return issueMany({ ...state, pending: replacePending(state.pending, { ...pending, status: "pending" }), notice: undefined }, [effect]);
     }
     case "cancel_turn":
+      if (!state.timeline.some((item) => item.turnId === intent.turnId) ||
+          !state.sessions.some((item) => item.sessionId === intent.sessionId)) {
+        return notice(state, "validation", "turn_not_found");
+      }
       return beginCommand({ ...state, execution: "cancelling" }, {
         kind: "cancel_turn", commandId: intent.commandId, requestDigest: intent.requestDigest,
         generation: state.generation, sessionId: intent.sessionId, turnId: intent.turnId, status: "pending",
@@ -219,7 +228,11 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
     return issueMany(base, [{ kind: "load_timeline", sessionId: result.sessionId }, { kind: "save_preferences" }]);
   }
   const drafts = effect.kind === "start_turn" ? state.drafts.filter((item) => item.sessionId !== result.sessionId) : state.drafts;
-  const base = { ...state, pending, drafts, cursor: result.committedPosition,
+  const timeline = effect.kind === "start_turn" && result.turnId &&
+    !state.timeline.some((item) => item.turnId === result.turnId)
+    ? [...state.timeline, { turnId: result.turnId, state: "running", latestPosition: result.committedPosition,
+      userText: effect.text ?? "", contentTruncated: false, activities: [] }] : state.timeline;
+  const base = { ...state, pending, drafts, timeline, cursor: result.committedPosition,
     execution: "following" as const, notice: undefined };
   return issueMany(base, [{ kind: "follow_events", sessionId: result.sessionId,
     afterPosition: result.committedPosition }, ...(effect.kind === "start_turn" ? [{ kind: "save_preferences" as const }] : [])]);
@@ -241,7 +254,19 @@ function hostEvent(state: AppViewState, effect: AppEffect, result: Extract<AppEf
       state: "updated", turnId: result.turnId, position: result.position, neutral: true }].slice(-limits.maxActivities);
     notice = undefined;
   }
-  return changed({ ...state, cursor: result.position, execution, activities, outstanding, notice });
+  const timeline = state.timeline.map((item) => {
+    if (item.turnId !== result.turnId) return item;
+    const turnActivities = result.activity ? [...(item.activities ?? []).filter((entry) =>
+      entry.activityId !== result.activity!.activityId), { ...result.activity, neutral: false }] : item.activities;
+    const terminalState = result.event === "turn.completed" ? "completed" : result.event === "turn.stopped" ? "stopped" :
+      result.event === "turn.failed" ? "failed" : result.event === "turn.suspended" ? "suspended" : item.state;
+    return { ...item, state: terminalState, latestPosition: result.position,
+      completionText: result.event === "turn.completed" ? result.text ?? "" : item.completionText,
+      activities: turnActivities };
+  });
+  const base = { ...state, timeline, cursor: result.position, execution, activities, outstanding, notice };
+  return result.event === "turn.suspended" && effect.sessionId
+    ? issueMany(base, [{ kind: "load_timeline", sessionId: effect.sessionId }]) : changed(base);
 }
 
 function failedResult(state: AppViewState, effect: AppEffect, error: AppError): Reduction {

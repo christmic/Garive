@@ -37,10 +37,13 @@ public class ProductControllerBoundaryTest {
         var state = ready(listOf("session-a"), "session-a")
         state = reduceApp(state, AppIntent.EditDraft("session-a", "ok"), limits).state
         state = reduceApp(state, AppIntent.SubmitDraft("session-a", "command-a", digest), limits).state
-        val second = reduceApp(state, AppIntent.CancelTurn("session-a", "turn-a", "command-b", "b".repeat(64)), limits)
+        val second = reduceApp(state, AppIntent.SubmitDraft("session-a", "command-b", "b".repeat(64)), limits)
         assertEquals("command_not_admitted", second.state.notice?.code)
         val oversized = reduceApp(second.state, AppIntent.EditDraft("session-a", "🦀"), limits)
         assertEquals("draft_too_large", oversized.state.notice?.code)
+        val fixtureSized = reduceApp(ready(listOf("session-a"), "session-a"),
+            AppIntent.EditDraft("session-a", "this draft is deliberately over thirty-two bytes"), ControllerLimits(32, 3))
+        assertEquals("draft_too_large", fixtureSized.state.notice?.code)
     }
 
     @Test

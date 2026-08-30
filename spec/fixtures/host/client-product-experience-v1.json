@@ -46,10 +46,10 @@
         {"resolve":{"effect_kind":"start_turn","result":{"type":"failed","error":{"kind":"transport","code":"connection_lost"}}}},
         {"intent":{"type":"retry_pending","session_id":"session-a"}},
         {"resolve":{"effect_kind":"start_turn","result":{"type":"command_succeeded","session_id":"session-a","turn_id":"turn-a","committed_position":5}}},
-        {"resolve":{"effect_kind":"follow_events","result":{"type":"host_event","event":"turn.completed","position":8,"turn_id":"turn-a"}}}
+        {"resolve":{"effect_kind":"follow_events","result":{"type":"host_event","event":"turn.completed","position":8,"turn_id":"turn-a","text":"answer"}}}
       ],
       "expected_effects": ["start_turn","start_turn","follow_events","save_preferences"],
-      "expected_state": {"configuration":"configured","shell":"ready","generation":2,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[],"cursor":8,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "expected_state": {"configuration":"configured","shell":"ready","generation":2,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"completed","latest_position":8}],"cursor":8,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
       "expected_retried_command_id": "command-start-a",
       "expected_retried_request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
@@ -61,7 +61,29 @@
         {"resolve":{"effect_kind":"start_turn","result":{"type":"command_succeeded","session_id":"session-a","turn_id":"turn-b","committed_position":10}}}
       ],
       "expected_effects": ["start_turn","follow_events","save_preferences"],
-      "expected_state": {"configuration":"configured","shell":"ready","generation":4,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"completed","latest_position":8}],"cursor":10,"drafts":[],"execution":"following","pending":[],"activities":[],"notice":null}
+      "expected_state": {"configuration":"configured","shell":"ready","generation":4,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"completed","latest_position":8},{"turn_id":"turn-b","state":"running","latest_position":10}],"cursor":10,"drafts":[],"execution":"following","pending":[],"activities":[],"notice":null}
+    },
+    {
+      "name": "create-session-selects-only-after-durable-ack",
+      "initial_state": {"configuration":"configured","shell":"ready","generation":1,"definition_ids":["definition-main"],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps": [
+        {"intent":{"type":"create_session","definition_id":"definition-main","command_id":"command-create-a","request_digest":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}},
+        {"resolve":{"effect_kind":"create_session","result":{"type":"command_succeeded","session_id":"session-new","committed_position":1}}},
+        {"resolve":{"effect_kind":"load_timeline","result":{"type":"timeline_loaded","items":[],"cursor":1,"activities":[]}}}
+      ],
+      "expected_effects": ["create_session","load_timeline","save_preferences"],
+      "expected_state": {"configuration":"configured","shell":"ready","generation":2,"definition_ids":["definition-main"],"session_ids":["session-new"],"selected_session_id":"session-new","timeline":[],"cursor":1,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null}
+    },
+    {
+      "name": "cancel-remains-request-until-durable-stop",
+      "initial_state": {"configuration":"configured","shell":"ready","generation":5,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"running","latest_position":5}],"cursor":5,"drafts":[],"execution":"following","pending":[],"activities":[],"notice":null},
+      "steps": [
+        {"intent":{"type":"cancel_turn","session_id":"session-a","turn_id":"turn-a","command_id":"command-cancel-a","request_digest":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}},
+        {"resolve":{"effect_kind":"cancel_turn","result":{"type":"command_succeeded","session_id":"session-a","turn_id":"turn-a","committed_position":6}}},
+        {"resolve":{"effect_kind":"follow_events","result":{"type":"host_event","event":"turn.stopped","position":7,"turn_id":"turn-a"}}}
+      ],
+      "expected_effects": ["cancel_turn","follow_events"],
+      "expected_state": {"configuration":"configured","shell":"ready","generation":5,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"stopped","latest_position":7}],"cursor":7,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null}
     }
   ],
   "follow_cases": [
@@ -76,7 +98,7 @@
         {"resolve":{"effect_kind":"follow_events","result":{"type":"host_event","event":"turn.completed","position":9,"turn_id":"turn-a"}}}
       ],
       "expected_effects": ["follow_events","follow_events"],
-      "expected_state": {"configuration":"configured","shell":"ready","generation":6,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"running","latest_position":4}],"cursor":9,"drafts":[],"execution":"idle","pending":[],"activities":[{"activity_id":"unknown-6","kind":"unknown","state":"updated","turn_id":"turn-a","position":6,"neutral":true}],"notice":null}
+      "expected_state": {"configuration":"configured","shell":"ready","generation":6,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"completed","latest_position":9}],"cursor":9,"drafts":[],"execution":"idle","pending":[],"activities":[{"activity_id":"unknown-6","kind":"unknown","state":"updated","turn_id":"turn-a","position":6,"neutral":true}],"notice":null}
     }
   ],
   "suspension_cases": [
@@ -114,12 +136,48 @@
     {"name":"unknown-key-resets","document":{"schema_version":1,"session_rail":"expanded","activity_inspector":"closed","theme":"system","composer_drafts":[],"host_url":"must-not-enter-preferences"},"expected_reset":true,"expected_draft_count":0}
   ],
   "failure_cases": [
-    {"name":"configuration","error":{"kind":"configuration","code":"not_configured"},"expected_public_kind":"configuration"},
-    {"name":"validation","error":{"kind":"validation","code":"invalid_draft"},"expected_public_kind":"validation"},
-    {"name":"command-unknown","error":{"kind":"command_unknown","code":"mutation_outcome_unknown"},"expected_public_kind":"command_unknown"},
-    {"name":"host","error":{"kind":"host","code":"not_found"},"expected_public_kind":"host"},
-    {"name":"transport","error":{"kind":"transport","code":"connection_lost"},"expected_public_kind":"transport"},
-    {"name":"protocol","error":{"kind":"protocol","code":"invalid_event"},"expected_public_kind":"protocol"},
-    {"name":"local-preference","error":{"kind":"local_preference","code":"invalid_local_preference"},"expected_public_kind":"local_preference"}
+    {
+      "name":"configuration","error":{"kind":"configuration","code":"not_configured"},"expected_public_kind":"configuration",
+      "initial_state":{"configuration":"not_configured","shell":"booting","generation":0,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps":[{"intent":{"type":"boot"}}],"expected_effects":[],
+      "expected_state":{"configuration":"not_configured","shell":"not_configured","generation":0,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null}
+    },
+    {
+      "name":"validation","error":{"kind":"validation","code":"draft_too_large"},"expected_public_kind":"validation",
+      "initial_state":{"configuration":"configured","shell":"ready","generation":1,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps":[{"intent":{"type":"edit_draft","session_id":"session-a","text":"this draft is deliberately over thirty-two bytes"}}],"expected_effects":[],
+      "expected_state":{"configuration":"configured","shell":"ready","generation":1,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":{"kind":"validation","code":"draft_too_large"}}
+    },
+    {
+      "name":"command-unknown","error":{"kind":"command_unknown","code":"mutation_outcome_unknown"},"expected_public_kind":"command_unknown",
+      "initial_state":{"configuration":"configured","shell":"ready","generation":2,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[],"cursor":2,"drafts":[{"session_id":"session-a","text":"hello"}],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps":[{"intent":{"type":"submit_draft","session_id":"session-a","command_id":"command-unknown","request_digest":"abababababababababababababababababababababababababababababababab"}},{"resolve":{"effect_kind":"start_turn","result":{"type":"failed","error":{"kind":"transport","code":"connection_lost"}}}}],
+      "expected_effects":["start_turn"],
+      "expected_state":{"configuration":"configured","shell":"ready","generation":2,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[],"cursor":2,"drafts":[{"session_id":"session-a","text":"hello"}],"execution":"idle","pending":[{"kind":"start_turn","command_id":"command-unknown","request_digest":"abababababababababababababababababababababababababababababababab","session_id":"session-a","turn_id":null,"status":"unknown"}],"activities":[],"notice":{"kind":"command_unknown","code":"mutation_outcome_unknown"}}
+    },
+    {
+      "name":"host","error":{"kind":"host","code":"not_found"},"expected_public_kind":"host",
+      "initial_state":{"configuration":"configured","shell":"booting","generation":0,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps":[{"intent":{"type":"boot"}},{"resolve":{"effect_kind":"load_definitions","result":{"type":"failed","error":{"kind":"host","code":"not_found"}}}}],"expected_effects":["load_preferences","load_definitions"],
+      "expected_state":{"configuration":"configured","shell":"unavailable","generation":1,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":{"kind":"host","code":"not_found"}}
+    },
+    {
+      "name":"transport","error":{"kind":"transport","code":"connection_lost"},"expected_public_kind":"transport",
+      "initial_state":{"configuration":"configured","shell":"ready","generation":3,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"running","latest_position":3}],"cursor":3,"drafts":[],"execution":"following","pending":[],"activities":[],"notice":null},
+      "steps":[{"seed_effect":{"kind":"follow_events","session_id":"session-a","after_position":3}},{"resolve":{"effect_kind":"follow_events","result":{"type":"failed","error":{"kind":"transport","code":"connection_lost"}}}}],"expected_effects":["follow_events"],
+      "expected_state":{"configuration":"configured","shell":"ready","generation":3,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"running","latest_position":3}],"cursor":3,"drafts":[],"execution":"disconnected","pending":[],"activities":[],"notice":{"kind":"transport","code":"connection_lost"}}
+    },
+    {
+      "name":"protocol","error":{"kind":"protocol","code":"invalid_event"},"expected_public_kind":"protocol",
+      "initial_state":{"configuration":"configured","shell":"booting","generation":0,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps":[{"intent":{"type":"boot"}},{"resolve":{"effect_kind":"load_definitions","result":{"type":"failed","error":{"kind":"protocol","code":"invalid_event"}}}}],"expected_effects":["load_preferences","load_definitions"],
+      "expected_state":{"configuration":"configured","shell":"unavailable","generation":1,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":{"kind":"protocol","code":"invalid_event"}}
+    },
+    {
+      "name":"local-preference","error":{"kind":"local_preference","code":"invalid_local_preference"},"expected_public_kind":"local_preference",
+      "initial_state":{"configuration":"configured","shell":"booting","generation":0,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":null},
+      "steps":[{"intent":{"type":"boot"}},{"resolve":{"effect_kind":"load_preferences","result":{"type":"failed","error":{"kind":"local_preference","code":"invalid_local_preference"}}}}],"expected_effects":["load_preferences","load_definitions"],
+      "expected_state":{"configuration":"configured","shell":"loading_navigation","generation":1,"definition_ids":[],"session_ids":[],"selected_session_id":null,"timeline":[],"cursor":0,"drafts":[],"execution":"idle","pending":[],"activities":[],"notice":{"kind":"local_preference","code":"invalid_local_preference"}}
+    }
   ]
 }

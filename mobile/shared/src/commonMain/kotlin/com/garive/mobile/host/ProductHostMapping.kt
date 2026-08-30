@@ -63,7 +63,7 @@ public fun HostEventV1.toProductEvent(expectedSessionId: String): AppEffectPaylo
     version(api_version); required(expectedSessionId); required(event)
     if (session_id != expectedSessionId || position <= 0) invalid()
     val turn = turn_id.takeIf { it.isNotEmpty() }
-    return AppEffectPayload.HostEvent(event, position, turn, activity?.toProductActivity(turn))
+    return AppEffectPayload.HostEvent(event, position, turn, text.takeIf { it.isNotEmpty() }, activity?.toProductActivity(turn))
 }
 
 private fun HostActivityV1.toProductActivity(turnId: String?): ActivityItem {

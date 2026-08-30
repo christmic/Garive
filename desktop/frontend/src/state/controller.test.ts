@@ -19,7 +19,7 @@ const limits = object(FIXTURE.limits);
 describe("A-UX1 shared controller", () => {
   it("consumes every ordered state-machine scenario", () => {
     validateFixture();
-    for (const family of FAMILIES.slice(0, 6)) {
+    for (const family of FAMILIES.filter((value) => value !== "preference_cases")) {
       for (const raw of array(FIXTURE[family])) runControllerCase(object(raw));
     }
   });
@@ -111,9 +111,12 @@ function decodeIntent(raw: Record<string, unknown>): AppIntent {
     case "boot": return { type };
     case "select_session": return { type, sessionId: text(raw.session_id) };
     case "edit_draft": return { type, sessionId: text(raw.session_id), text: text(raw.text) };
+    case "create_session": return { type, definitionId: text(raw.definition_id), commandId: text(raw.command_id), requestDigest: text(raw.request_digest) };
     case "submit_draft": return { type, sessionId: text(raw.session_id), commandId: text(raw.command_id), requestDigest: text(raw.request_digest) };
     case "retry_pending": return { type, sessionId: optionalText(raw.session_id) };
     case "reconnect": return { type, sessionId: text(raw.session_id) };
+    case "cancel_turn": return { type, sessionId: text(raw.session_id), turnId: text(raw.turn_id),
+      commandId: text(raw.command_id), requestDigest: text(raw.request_digest) };
     case "continue_suspension": return { type, sessionId: text(raw.session_id), turnId: text(raw.turn_id), input: text(raw.input),
       commandId: text(raw.command_id), requestDigest: text(raw.request_digest) };
     default: throw new Error(`unknown fixture intent ${type}`);
@@ -136,6 +139,7 @@ function decodeResult(raw: Record<string, unknown>): AppEffectPayload {
       activities: array(raw.activities).map(decodeActivity) };
     case "command_succeeded": return { type, sessionId: text(raw.session_id), turnId: optionalText(raw.turn_id), committedPosition: number(raw.committed_position) };
     case "host_event": return { type, event: text(raw.event), position: number(raw.position), turnId: optionalText(raw.turn_id),
+      text: optionalText(raw.text),
       activity: raw.activity === undefined ? undefined : decodeActivity(object(raw.activity)) };
     case "event_stream_ended": return { type };
     case "failed": return { type, error: object(raw.error) as unknown as Extract<AppEffectPayload, {type:"failed"}>["error"] };

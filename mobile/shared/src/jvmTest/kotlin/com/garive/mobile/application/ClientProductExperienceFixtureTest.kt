@@ -21,7 +21,9 @@ public class ClientProductExperienceFixtureTest {
     @Test
     public fun consumesEveryOrderedStateMachineScenario(): Unit {
         validateFixture()
-        families.take(6).forEach { family -> fixture.array(family).forEach { runControllerCase(it.jsonObject) } }
+        families.filterNot { it == "preference_cases" }.forEach { family ->
+            fixture.array(family).forEach { runControllerCase(it.jsonObject) }
+        }
     }
 
     @Test
@@ -54,7 +56,10 @@ public class ClientProductExperienceFixtureTest {
         test.array("steps").forEach { rawStep ->
             val step = rawStep.jsonObject
             val reduction = when {
-                "intent" in step -> reduceApp(state, decodeIntent(step.obj("intent")), controllerLimits())
+                "intent" in step -> {
+                    val decoded = decodeIntent(step.obj("intent"))
+                    reduceApp(state, decoded, controllerLimits())
+                }
                 "seed_effect" in step -> {
                     val seed = step.obj("seed_effect")
                     val effect = AppEffect("effect-${state.nextEffect}", effectKind(seed.text("kind")), state.generation,
@@ -112,9 +117,12 @@ public class ClientProductExperienceFixtureTest {
         "boot" -> AppIntent.Boot
         "select_session" -> AppIntent.SelectSession(raw.text("session_id"))
         "edit_draft" -> AppIntent.EditDraft(raw.text("session_id"), raw.text("text"))
+        "create_session" -> AppIntent.CreateSession(raw.text("definition_id"), raw.text("command_id"), raw.text("request_digest"))
         "submit_draft" -> AppIntent.SubmitDraft(raw.text("session_id"), raw.text("command_id"), raw.text("request_digest"))
         "retry_pending" -> AppIntent.RetryPending(raw.optionalText("session_id"))
         "reconnect" -> AppIntent.Reconnect(raw.text("session_id"))
+        "cancel_turn" -> AppIntent.CancelTurn(raw.text("session_id"), raw.text("turn_id"),
+            raw.text("command_id"), raw.text("request_digest"))
         "continue_suspension" -> AppIntent.ContinueSuspension(raw.text("session_id"), raw.text("turn_id"),
             raw.text("input"), raw.text("command_id"), raw.text("request_digest"))
         else -> error("unknown fixture intent")
@@ -131,7 +139,7 @@ public class ClientProductExperienceFixtureTest {
             raw.long("cursor"), raw.array("activities").map { decodeActivity(it.jsonObject) })
         "command_succeeded" -> AppEffectPayload.CommandSucceeded(raw.text("session_id"), raw.optionalText("turn_id"), raw.long("committed_position"))
         "host_event" -> AppEffectPayload.HostEvent(raw.text("event"), raw.long("position"), raw.optionalText("turn_id"),
-            raw["activity"]?.jsonObject?.let { decodeActivity(it) })
+            raw.optionalText("text"), raw["activity"]?.jsonObject?.let { decodeActivity(it) })
         "event_stream_ended" -> AppEffectPayload.EventStreamEnded
         "failed" -> AppEffectPayload.Failed(decodeError(raw.obj("error")))
         else -> error("unknown fixture result")
@@ -158,8 +166,9 @@ public class ClientProductExperienceFixtureTest {
             put("activity_id", item.activityId); put("kind", item.kind); put("state", item.state)
             item.turnId?.let { put("turn_id", it) }; put("position", item.position); put("neutral", item.neutral)
         } } }
-        state.notice?.let { putJsonObject("notice") { put("kind", it.kind.wireName); put("code", it.code) } }
-            ?: put("notice", JsonNull)
+        val notice = state.notice
+        if (notice == null) put("notice", JsonNull)
+        else putJsonObject("notice") { put("kind", notice.kind.wireName); put("code", notice.code) }
     }
 
     private fun decodeTimeline(raw: JsonObject): TimelineItem = TimelineItem(
