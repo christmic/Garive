@@ -1,0 +1,6 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "composer_selection_style_preview(Theme::Mono)"
+---
+"Selected" <fg=Reset bg=Reset +REVERSED>
+" tail" <fg=Reset bg=Reset +NONE>

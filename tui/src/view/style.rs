@@ -36,6 +36,7 @@ pub(super) struct Palette {
     pub(super) warning_chip: Style,
     pub(super) danger_chip: Style,
     pub(super) selection_row: Style,
+    pub(super) text_selection: Style,
 }
 
 pub(super) fn palette(theme: Theme) -> Palette {
@@ -82,6 +83,11 @@ pub(super) fn palette(theme: Theme) -> Palette {
             .bg(Color::Rgb(45, 62, 78))
             .add_modifier(Modifier::BOLD)
     };
+    let text_selection = if mono {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default().fg(text).bg(violet)
+    };
     Palette {
         normal: Style::default().fg(text),
         muted: Style::default().fg(muted),
@@ -127,6 +133,7 @@ pub(super) fn palette(theme: Theme) -> Palette {
             .bg(surface)
             .add_modifier(Modifier::BOLD),
         selection_row,
+        text_selection,
     }
 }
 

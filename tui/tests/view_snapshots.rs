@@ -54,6 +54,18 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         command_suggestion_frame_at(Theme::Mono, 40, 12)
     );
     insta::assert_snapshot!(
+        "composer_selection_dark",
+        composer_selection_style_preview(Theme::Dark)
+    );
+    insta::assert_snapshot!(
+        "composer_selection_light",
+        composer_selection_style_preview(Theme::Light)
+    );
+    insta::assert_snapshot!(
+        "composer_selection_mono",
+        composer_selection_style_preview(Theme::Mono)
+    );
+    insta::assert_snapshot!(
         "markdown_table_narrow_dark",
         markdown_table_narrow_preview(Theme::Dark)
     );
@@ -214,6 +226,58 @@ fn command_suggestion_frame_at(theme: Theme, width: u16, height: u16) -> String 
     model.composer.replace("/theme ").unwrap();
     model.command_suggestion_selection = 1;
     frame(&model, theme, width, height)
+}
+
+fn composer_selection_style_preview(theme: Theme) -> String {
+    let mut model = product_model();
+    model.execution = ExecutionState::Idle;
+    model.composer.replace("Selected tail").unwrap();
+    model.composer.move_document_start(false);
+    for _ in 0..8 {
+        model.composer.move_right(true);
+    }
+    let area = Rect::new(0, 0, 40, 12);
+    let mut buffer = Buffer::empty(area);
+    let _ = view::render_cached(
+        &model,
+        theme,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
+    let target = "Selected tail";
+    let start = (0..area.height)
+        .flat_map(|y| (0..=area.width - target.len() as u16).map(move |x| (x, y)))
+        .find(|&(x, y)| {
+            target.chars().enumerate().all(|(offset, character)| {
+                buffer[(x + offset as u16, y)]
+                    .symbol()
+                    .chars()
+                    .eq([character])
+            })
+        })
+        .expect("composer selection start");
+    let mut runs = Vec::<(
+        String,
+        ratatui::style::Color,
+        ratatui::style::Color,
+        ratatui::style::Modifier,
+    )>::new();
+    for column in start.0..start.0 + 13 {
+        let cell = &buffer[(column, start.1)];
+        if let Some((text, _, _, _)) = runs
+            .last_mut()
+            .filter(|run| run.1 == cell.fg && run.2 == cell.bg && run.3 == cell.modifier)
+        {
+            text.push_str(cell.symbol());
+        } else {
+            runs.push((cell.symbol().to_owned(), cell.fg, cell.bg, cell.modifier));
+        }
+    }
+    runs.into_iter()
+        .map(|(text, fg, bg, modifier)| format!("{text:?} <fg={fg:?} bg={bg:?} +{modifier:?}>"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn session(id: &str, state: &str, turns: u64) -> SessionSummary {

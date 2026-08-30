@@ -60,6 +60,17 @@ fn selection_can_be_cleared_without_mutating_the_draft() {
 }
 
 #[test]
+fn selected_byte_range_follows_extended_grapheme_boundaries() {
+    let mut editor = EditorState::new(128);
+    editor.insert("a界e\u{301}z").unwrap();
+    editor.move_left(true);
+    editor.move_left(true);
+
+    let (start, end) = editor.selected_byte_range().unwrap();
+    assert_eq!(&editor.text()[start..end], "e\u{301}z");
+}
+
+#[test]
 fn terminal_controls_and_bidi_overrides_never_enter_the_model() {
     let mut editor = EditorState::new(128);
     for value in ["secret\u{1b}[31m", "left\u{202e}right"] {

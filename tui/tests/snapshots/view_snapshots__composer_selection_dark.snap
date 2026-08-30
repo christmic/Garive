@@ -1,0 +1,6 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "composer_selection_style_preview(Theme::Dark)"
+---
+"Selected" <fg=Rgb(232, 235, 242) bg=Rgb(189, 147, 249) +NONE>
+" tail" <fg=Rgb(232, 235, 242) bg=Reset +NONE>

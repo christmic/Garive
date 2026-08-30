@@ -184,6 +184,34 @@ fn only_the_composer_owns_the_terminal_cursor() {
 }
 
 #[test]
+fn composer_selection_is_visible_by_grapheme_without_color() {
+    let mut model = AppModel::default();
+    model.composer.replace("a界b").unwrap();
+    model.composer.move_left(true);
+    model.composer.move_left(true);
+    let area = Rect::new(0, 0, 100, 24);
+    let mut buffer = Buffer::empty(area);
+    let _ = view::render_cached(
+        &model,
+        Theme::Mono,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
+    let selected = (0..area.height)
+        .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+        .find(|&(x, y)| buffer[(x, y)].symbol() == "界")
+        .expect("selected CJK composer grapheme");
+    assert!(!buffer[(selected.0 - 1, selected.1)]
+        .modifier
+        .contains(Modifier::REVERSED));
+    assert!(buffer[selected].modifier.contains(Modifier::REVERSED));
+    assert!(buffer[(selected.0 + 2, selected.1)]
+        .modifier
+        .contains(Modifier::REVERSED));
+}
+
+#[test]
 fn searchable_overlays_show_only_matching_rows() {
     let mut model = AppModel {
         overlay: Some(Overlay::CommandPalette),

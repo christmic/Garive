@@ -270,6 +270,10 @@ impl EditorState {
             .is_some_and(|anchor| anchor != self.cursor_grapheme)
     }
 
+    pub(crate) fn selected_byte_range(&self) -> Option<(usize, usize)> {
+        self.has_selection().then(|| self.selection_bytes())
+    }
+
     pub(crate) fn clear_selection(&mut self) {
         self.selection_anchor = None;
     }

@@ -1,15 +1,16 @@
 use crate::{
-    application::{AppModel, BootState, ExecutionState, TerminalSize},
+    application::{AppModel, BootState, TerminalSize},
     Theme,
 };
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Padding, Paragraph, Widget, Wrap},
+    text::{Line, Span},
+    widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
 
 mod command_suggestions;
+mod composer;
 mod conversation;
 mod footer;
 mod linear;
@@ -88,7 +89,7 @@ pub(crate) fn render_cached_with_motion(
         None
     } else {
         (model.focus == crate::application::FocusTarget::Composer)
-            .then(|| composer_cursor(model, composer))
+            .then(|| composer::cursor(model, composer))
             .flatten()
     }
 }
@@ -102,7 +103,7 @@ fn render_content(
 ) -> Rect {
     let rows = content_rows(model, area);
     render_conversation(model, theme, rows[0], buffer, cache);
-    render_composer(model, theme, rows[1], buffer);
+    composer::render(model, palette(theme), rows[1], buffer);
     render_footer(model, theme, rows[2], buffer);
     command_suggestions::render(model, rows[1], palette(theme), buffer);
     rows[1]
@@ -314,78 +315,6 @@ pub(crate) fn overlay_contains(model: &AppModel, column: u16, row: u16) -> bool 
         column,
         row,
     )
-}
-
-fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
-    let colors = palette(theme);
-    let title = if model.execution == ExecutionState::Suspended {
-        " Action response "
-    } else {
-        " Compose "
-    };
-    let block = Block::default()
-        .title(Line::styled(title, colors.title))
-        .borders(Borders::ALL)
-        .border_type(
-            if model.focus == crate::application::FocusTarget::Composer {
-                BorderType::Double
-            } else {
-                BorderType::Rounded
-            },
-        )
-        .border_style(
-            if model.focus == crate::application::FocusTarget::Composer {
-                colors.composer_border
-            } else {
-                colors.border
-            },
-        )
-        .padding(Padding::horizontal(1));
-    let inner = block.inner(area);
-    block.render(area, buffer);
-    let text = if model.composer.text().is_empty() {
-        Text::from(Line::styled(
-            "›  Message Garive — / for commands",
-            colors.placeholder,
-        ))
-    } else {
-        Text::from(safe_text(model.composer.text()))
-    };
-    let (_, scroll) = composer_visual_cursor(model, inner.width, inner.height);
-    Paragraph::new(text)
-        .style(colors.normal)
-        .wrap(Wrap { trim: false })
-        .scroll((scroll, 0))
-        .render(inner, buffer);
-}
-
-fn composer_cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
-    let inner_width = area.width.saturating_sub(4);
-    let inner_height = area.height.saturating_sub(2);
-    if inner_width == 0 || inner_height == 0 {
-        return None;
-    }
-    let ((column, row), scroll) = composer_visual_cursor(model, inner_width, inner_height);
-    Some((area.x + 2 + column, area.y + 1 + row.saturating_sub(scroll)))
-}
-
-fn composer_visual_cursor(model: &AppModel, width: u16, height: u16) -> ((u16, u16), u16) {
-    let width = width.max(1);
-    let lines_before = model
-        .composer
-        .text()
-        .lines()
-        .take(model.composer.cursor_line())
-        .map(|line| {
-            let columns = unicode_width::UnicodeWidthStr::width(line) as u16;
-            columns.max(1).div_ceil(width)
-        })
-        .sum::<u16>();
-    let display_column = model.composer.display_column().min(u16::MAX as usize) as u16;
-    let row = lines_before.saturating_add(display_column / width);
-    let column = display_column % width;
-    let scroll = row.saturating_sub(height.saturating_sub(1));
-    ((column, row), scroll)
 }
 
 pub(super) fn safe_text(value: &str) -> String {
