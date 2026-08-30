@@ -1,8 +1,12 @@
 package com.garive.mobile.host
 
 import com.garive.host.v1.CreateSessionResponseV1
+import com.garive.host.v1.AgentDefinitionPageV1
 import com.garive.host.v1.HostEventV1
+import com.garive.host.v1.SessionPageV1
+import com.garive.host.v1.SessionViewV1
 import com.garive.host.v1.TurnCommandResponseV1
+import com.garive.host.v1.TurnTimelinePageV1
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -10,6 +14,7 @@ import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.plugins.sse.serverSentEvents
 import io.ktor.client.request.accept
 import io.ktor.client.request.header
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
@@ -75,6 +80,43 @@ public class LiveHostClient private constructor(
         if (limits.maxCommandBytes <= 0 || limits.maxEventBytes <= 0 ||
             limits.maxEvents <= 0 || limits.followDeadlineMs <= 0
         ) fail(HostClientError.INVALID_CONFIGURATION)
+    }
+
+    /** Loads installed Agent definitions available for new Sessions. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun agentDefinitions(): AgentDefinitionPageV1 =
+        decodeAgentDefinitionPage(read("/v1/agent-definitions"))
+
+    /** Loads one bounded reverse-opened Session page. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun sessions(limit: Int): SessionPageV1 {
+        if (limit <= 0 || limit > limits.maxEvents) fail(HostClientError.INVALID_COMMAND)
+        return decodeSessionPage(read("/v1/sessions?limit=$limit"))
+    }
+
+    /** Loads one exact durable Session summary. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun session(sessionId: String): SessionViewV1 {
+        if (sessionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        val value = decodeSessionView(read("/v1/sessions/${sessionId.encodeURLPathPart()}"))
+        if (value.session?.session_id != sessionId) fail(HostClientError.INVALID_EVENT)
+        return value
+    }
+
+    /** Loads complete durable Turns changed after the supplied watermark. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun timeline(sessionId: String, afterPosition: Long, limit: Int): TurnTimelinePageV1 {
+        if (sessionId.isEmpty() || afterPosition < 0 || limit <= 0 || limit > limits.maxEvents) {
+            fail(HostClientError.INVALID_COMMAND)
+        }
+        val value = decodeTimelinePage(
+            read(
+                "/v1/sessions/${sessionId.encodeURLPathPart()}/timeline" +
+                    "?after_position=$afterPosition&limit=$limit",
+            ),
+        )
+        if (value.session_id != sessionId) fail(HostClientError.INVALID_EVENT)
+        return value
     }
 
     /** Creates a Session with a caller-owned stable command identity. */
@@ -211,6 +253,21 @@ public class LiveHostClient private constructor(
                 authorization?.let { header(HttpHeaders.Authorization, it.header) }
                 setBody(encoded) }
         } catch (_: Throwable) { fail(HostClientError.TRANSPORT_FAILURE) }
+        return decodeResponse(response)
+    }
+
+    private suspend fun read(path: String): JsonObject {
+        val response = try {
+            client.get {
+                url(origin + path)
+                accept(ContentType.Application.Json)
+                authorization?.let { header(HttpHeaders.Authorization, it.header) }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            fail(HostClientError.TRANSPORT_FAILURE)
+        }
         return decodeResponse(response)
     }
 

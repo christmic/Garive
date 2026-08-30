@@ -168,6 +168,43 @@ public class LiveHostClientTest {
     }
 
     @Test
+    public fun remoteReadModelsUseExactH2RoutesAndGeneratedValues(): Unit = runBlocking {
+        val seen = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            seen += "${request.method.value} ${request.url.encodedPath}?${request.url.encodedQuery} ${request.headers[HttpHeaders.Authorization]}"
+            val body = when (request.url.encodedPath) {
+                "/v1/agent-definitions" ->
+                    """{"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"definition-main","definition_revision":"revision-1","capabilities":["work"]}]}"""
+                "/v1/sessions" ->
+                    """{"api_version":"v1","sessions":[{"api_version":"v1","session_id":"session-client","agent_instance_id":"agent-1","definition_id":"definition-main","definition_revision":"revision-1","opened_at":"2026-08-30T00:00:00Z","latest_position":9,"latest_turn_id":"turn-client","latest_turn_state":"suspended","turn_count":1}]}"""
+                "/v1/sessions/session-client" ->
+                    """{"api_version":"v1","session":{"api_version":"v1","session_id":"session-client","agent_instance_id":"agent-1","definition_id":"definition-main","definition_revision":"revision-1","opened_at":"2026-08-30T00:00:00Z","latest_position":9,"latest_turn_id":"turn-client","latest_turn_state":"suspended","turn_count":1},"observed_max_position":9}"""
+                "/v1/sessions/session-client/timeline" ->
+                    """{"api_version":"v1","session_id":"session-client","items":[{"turn_id":"turn-client","started_position":2,"latest_position":9,"state":"suspended","user_text":"ship mobile","suspension":{"suspension_id":"suspension-1","session_version":3,"kind":"approval_required"},"content_truncated":false,"activities":[{"api_version":"v1","activity_id":"activity-1","kind":"tool","label_key":"agent.activity.work","state":"waiting_for_input","source_position":8,"terminal":false}]}],"scanned_through_position":9,"observed_max_position":9,"has_more":false}"""
+                else -> error("unexpected path ${request.url.encodedPath}")
+            }
+            respondJson(body)
+        }
+        val client = LiveHostClient("https://agent.example.test/", "mobile-secret", limits(), HttpClient(engine))
+
+        assertEquals("definition-main", client.agentDefinitions().definitions.single().definition_id)
+        assertEquals("suspended", client.sessions(8).sessions.single().latest_turn_state)
+        assertEquals(9, client.session("session-client").observed_max_position)
+        val timeline = client.timeline("session-client", 0, 8)
+        assertEquals("approval_required", timeline.items.single().suspension?.kind)
+        assertEquals("agent.activity.work", timeline.items.single().activities.single().label_key)
+        assertEquals(
+            listOf(
+                "GET /v1/agent-definitions? Bearer mobile-secret",
+                "GET /v1/sessions?limit=8 Bearer mobile-secret",
+                "GET /v1/sessions/session-client? Bearer mobile-secret",
+                "GET /v1/sessions/session-client/timeline?after_position=0&limit=8 Bearer mobile-secret",
+            ),
+            seen,
+        )
+    }
+
+    @Test
     public fun everySharedHostFailureIsTyped(): Unit = runBlocking {
         fixture.getValue("host_errors").jsonArray.forEach { raw ->
             val hostError = raw.jsonObject
