@@ -43,6 +43,7 @@ fn standard_frame_has_navigation_timeline_and_safe_text() {
         ..Default::default()
     };
     model.timeline.push(TimelineItem {
+        stable_key: "answer".into(),
         position: 7,
         role: TimelineRole::Agent,
         text: "answer\u{1b}[31m\u{2066}x\u{2069}".into(),

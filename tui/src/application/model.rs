@@ -95,6 +95,7 @@ pub(crate) enum TimelineRole {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TimelineItem {
+    pub(crate) stable_key: String,
     pub(crate) position: u64,
     pub(crate) role: TimelineRole,
     pub(crate) text: String,

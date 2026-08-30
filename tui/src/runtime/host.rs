@@ -30,6 +30,10 @@ pub(crate) enum HostMessage {
         session_id: String,
         code: HostClientErrorCode,
     },
+    ReconnectDue {
+        session_id: String,
+        attempt: u32,
+    },
     Failed(garive_host_client::HostClientError),
 }
 
@@ -245,6 +249,29 @@ pub(crate) fn follow(
         };
         let _ = sender
             .send(HostMessage::FollowEnded { session_id, code })
+            .await;
+    })
+}
+
+pub(crate) fn schedule_reconnect(
+    session_id: String,
+    attempt: u32,
+    sender: mpsc::Sender<HostMessage>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let delay_ms = match attempt {
+            1 => 250,
+            2 => 500,
+            3 => 1_000,
+            4 => 2_000,
+            _ => 4_000,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        let _ = sender
+            .send(HostMessage::ReconnectDue {
+                session_id,
+                attempt,
+            })
             .await;
     })
 }

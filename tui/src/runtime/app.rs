@@ -83,6 +83,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if let Some(task) = state.follow.take() {
         task.abort();
     }
+    if let Some(task) = state.reconnect.take() {
+        task.abort();
+    }
     state.persist_presentation();
     guard.restore().map_err(map_terminal_error)
 }
@@ -93,6 +96,8 @@ pub(super) struct RuntimeState {
     pub(super) sender: mpsc::Sender<HostMessage>,
     pub(super) model: AppModel,
     pub(super) follow: Option<JoinHandle<()>>,
+    reconnect: Option<JoinHandle<()>>,
+    reconnect_attempt: u32,
     pub(super) store: StateStore,
     pub(super) preferences: Preferences,
     pub(super) pending: Option<PendingCommand>,
@@ -121,6 +126,8 @@ impl RuntimeState {
             sender,
             model,
             follow: None,
+            reconnect: None,
+            reconnect_attempt: 0,
             store,
             preferences,
             pending,
@@ -136,6 +143,10 @@ impl RuntimeState {
         if let Some(task) = self.follow.take() {
             task.abort();
         }
+        if let Some(task) = self.reconnect.take() {
+            task.abort();
+        }
+        self.reconnect_attempt = 0;
         self.persist_presentation();
         self.model.selected_session = Some(session_id.clone());
         self.preferences.selected_session_id = Some(session_id.clone());
@@ -359,13 +370,56 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             state.load(session_id);
         }
         HostMessage::Event(event) => apply_event(event, state),
-        HostMessage::FollowEnded {
-            session_id,
-            code: _,
-        } if state.model.selected_session.as_deref() == Some(&session_id) => {
-            state.model.connection = ConnectionState::Disconnected { attempt: 1 };
+        HostMessage::FollowEnded { session_id, code }
+            if state.model.selected_session.as_deref() == Some(&session_id) =>
+        {
+            state.follow = None;
+            if matches!(
+                code,
+                HostClientErrorCode::InvalidEvent
+                    | HostClientErrorCode::EventOrderViolation
+                    | HostClientErrorCode::EventLimitExceeded
+            ) {
+                state.model.connection = ConnectionState::Unavailable {
+                    safe_code: code.wire_name(),
+                };
+            } else if matches!(
+                state.model.execution,
+                ExecutionState::Following | ExecutionState::Suspended
+            ) && state.reconnect_attempt < 5
+            {
+                state.reconnect_attempt += 1;
+                state.model.connection = ConnectionState::Disconnected {
+                    attempt: state.reconnect_attempt,
+                };
+                state.reconnect = Some(host::schedule_reconnect(
+                    session_id,
+                    state.reconnect_attempt,
+                    state.sender.clone(),
+                ));
+            } else {
+                state.model.connection = ConnectionState::Disconnected {
+                    attempt: state.reconnect_attempt,
+                };
+            }
         }
         HostMessage::FollowEnded { .. } => {}
+        HostMessage::ReconnectDue {
+            session_id,
+            attempt,
+        } if state.model.selected_session.as_deref() == Some(&session_id)
+            && state.reconnect_attempt == attempt =>
+        {
+            state.reconnect = None;
+            state.model.connection = ConnectionState::Reconnecting { attempt };
+            state.follow = Some(host::follow(
+                state.client.clone(),
+                session_id,
+                state.model.observed_position,
+                state.sender.clone(),
+            ));
+        }
+        HostMessage::ReconnectDue { .. } => {}
         HostMessage::Failed(error) => {
             let code = error.code;
             state.reject_pending(code);
@@ -385,13 +439,33 @@ fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         return;
     }
     state.model.observed_position = event.position;
+    state.reconnect_attempt = 0;
     state.model.connection = ConnectionState::Online;
     if !event.turn_id.is_empty() {
         state.model.selected_turn = Some(event.turn_id.clone());
     }
+    if let Some(activity) = event.activity {
+        let key = format!("activity:{}:{}", event.turn_id, activity.activity_id);
+        let item = TimelineItem {
+            stable_key: key.clone(),
+            position: activity.source_position,
+            role: TimelineRole::Status,
+            text: format!("{} · {}", activity.label_key, activity.state),
+        };
+        if let Some(existing) = state
+            .model
+            .timeline
+            .iter_mut()
+            .find(|value| value.stable_key == key)
+        {
+            *existing = item;
+        } else {
+            state.model.timeline.push(item);
+        }
+    }
     if matches!(
         event.event.as_str(),
-        "turn.completed" | "turn.failed" | "turn.stopped" | "turn.suspended"
+        "turn.started" | "turn.completed" | "turn.failed" | "turn.stopped" | "turn.suspended"
     ) {
         let session = event.session_id;
         state.load(session);
@@ -406,12 +480,14 @@ fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimelineItem>) {
     model.execution = ExecutionState::Idle;
     for turn in turns {
         model.timeline.push(TimelineItem {
+            stable_key: format!("turn:{}:user", turn.turn_id),
             position: turn.started_position,
             role: TimelineRole::User,
             text: turn.user_text,
         });
         for activity in turn.activities {
             model.timeline.push(TimelineItem {
+                stable_key: format!("activity:{}:{}", turn.turn_id, activity.activity_id),
                 position: activity.source_position,
                 role: TimelineRole::Status,
                 text: format!("{} · {}", activity.label_key, activity.state),
@@ -419,6 +495,7 @@ fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimelineItem>) {
         }
         if let Some(text) = turn.completion_text {
             model.timeline.push(TimelineItem {
+                stable_key: format!("turn:{}:agent", turn.turn_id),
                 position: turn.latest_position,
                 role: TimelineRole::Agent,
                 text,
