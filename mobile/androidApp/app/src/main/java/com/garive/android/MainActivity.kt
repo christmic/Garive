@@ -22,11 +22,11 @@ import com.garive.android.push.WAKE_ACTION
 import com.garive.android.push.WAKE_TOKEN
 import com.garive.android.security.AndroidConnectionStore
 import com.garive.android.security.AndroidMobileWorkPersistence
+import com.garive.android.security.SortableCommandIdentitySource
 import com.garive.android.security.StoredConnection
 import com.garive.android.ui.GariveMobileApp
 import com.garive.android.ui.GariveTheme
 import com.garive.android.ui.PairingScreen
-import com.garive.mobile.application.CommandIdentitySource
 import com.garive.mobile.application.MobileWorkController
 import com.garive.mobile.host.HostClientException
 import com.garive.mobile.host.HostClientLimits
@@ -36,7 +36,6 @@ import com.garive.mobile.host.MobilePlatform
 import com.garive.mobile.host.GatewayNotificationClient
 import com.garive.mobile.host.MobileWakeRoute
 import com.garive.mobile.preferences.Theme
-import java.util.UUID
 import kotlinx.coroutines.launch
 
 /** Native Android entry point for secure remote Agent work. */
@@ -116,7 +115,7 @@ private fun GariveWalkthroughRoot(
     val controller = remember {
         MobileWorkController(
             host = LiveHostClient(origin, limits()),
-            identities = CommandIdentitySource { UUID.randomUUID().toString() },
+            identities = SortableCommandIdentitySource(),
             persistence = AndroidMobileWorkPersistence(context),
         )
     }
@@ -204,7 +203,7 @@ private fun ConnectedRoot(
     val controller = remember(connection) {
         MobileWorkController(
             host = LiveHostClient(connection.origin, connection.accessGrant, limits()),
-            identities = CommandIdentitySource { UUID.randomUUID().toString() },
+            identities = SortableCommandIdentitySource(),
             persistence = AndroidMobileWorkPersistence(context),
         )
     }

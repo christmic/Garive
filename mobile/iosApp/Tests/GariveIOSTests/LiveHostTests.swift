@@ -66,10 +66,20 @@ func pendingMutationStorageRoundTripsAndClears() throws {
 }
 
 @Test
-func commandIdentitiesAreUnique() {
+func commandIdentitiesHaveExactLowercaseSortableShape() {
 #if canImport(GariveShared)
-    let source = UUIDIdentitySource()
-    #expect(source.nextId() != source.nextId())
+    var now: UInt64 = 1_700_000_000_000
+    var random: UInt8 = 1
+    let source = SortableCommandIdentitySource(
+        nowMillis: { defer { now += 1 }; return now },
+        randomBytes: { defer { random += 1 }; return Array(repeating: random, count: 10) }
+    )
+    let first = source.nextId()
+    let second = source.nextId()
+    #expect(first.count == 26)
+    #expect(first.allSatisfy { "0123456789abcdefghjkmnpqrstvwxyz".contains($0) })
+    #expect(first < second)
+    #expect(first != second)
 #endif
 }
 

@@ -2,8 +2,41 @@
 import Foundation
 @preconcurrency import GariveShared
 
-final class UUIDIdentitySource: NSObject, CommandIdentitySource {
-    func nextId() -> String { UUID().uuidString.lowercased() }
+final class SortableCommandIdentitySource: NSObject, CommandIdentitySource {
+    private let nowMillis: () -> UInt64
+    private let randomBytes: () -> [UInt8]
+
+    init(
+        nowMillis: @escaping () -> UInt64 = { UInt64(Date().timeIntervalSince1970 * 1_000) },
+        randomBytes: @escaping () -> [UInt8] = {
+            var uuid = UUID().uuid
+            return withUnsafeBytes(of: &uuid) { Array($0.prefix(10)) }
+        }
+    ) {
+        self.nowMillis = nowMillis
+        self.randomBytes = randomBytes
+    }
+
+    func nextId() -> String {
+        let timestamp = nowMillis()
+        precondition(timestamp <= 0xffff_ffff_ffff)
+        var bytes = (0..<6).map { UInt8(truncatingIfNeeded: timestamp >> (40 - $0 * 8)) }
+        let random = randomBytes()
+        precondition(random.count == 10)
+        bytes.append(contentsOf: random)
+        let alphabet = Array("0123456789abcdefghjkmnpqrstvwxyz")
+        return String((0..<26).map { character in
+            var value = 0
+            for offset in 0..<5 {
+                value <<= 1
+                let sourceBit = character * 5 + offset - 2
+                if sourceBit >= 0 {
+                    value |= Int((bytes[sourceBit / 8] >> (7 - sourceBit % 8)) & 1)
+                }
+            }
+            return alphabet[value]
+        })
+    }
 }
 
 private final class UnsafeTransfer<Value>: @unchecked Sendable {
@@ -175,7 +208,7 @@ final class MobileViewModel: ObservableObject {
                 baseUrl: value.origin, bearerToken: value.accessGrant, limits: limits
             )
             let controller = MobileWorkController(
-                host: host, identities: UUIDIdentitySource(), pageLimit: 100,
+                host: host, identities: SortableCommandIdentitySource(), pageLimit: 100,
                 maxInputBytes: 16_384, persistence: workPersistence
             )
             self.controller = controller
@@ -205,7 +238,7 @@ final class MobileViewModel: ObservableObject {
             )
             let host = try LiveHostClient(baseUrl: origin, limits: limits)
             let controller = MobileWorkController(
-                host: host, identities: UUIDIdentitySource(), pageLimit: 100,
+                host: host, identities: SortableCommandIdentitySource(), pageLimit: 100,
                 maxInputBytes: 16_384, persistence: EphemeralMobileWorkPersistence.shared
             )
             self.controller = controller
