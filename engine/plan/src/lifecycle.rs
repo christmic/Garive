@@ -234,10 +234,7 @@ impl PlanSnapshot {
             PlanTransition::FailStep(step_id) => {
                 next.require_state(&step_id, StepState::Running)?.state = StepState::Failed;
             }
-            PlanTransition::RetryStep(step_id) => {
-                next.require_state(&step_id, StepState::Failed)?.state = StepState::Pending;
-                next.refresh_ready();
-            }
+            PlanTransition::RetryStep(step_id) => next.retry(&step_id)?,
             _ => return Err(PlanError::new(PlanErrorCode::PlanTransitionInvalid)),
         }
         Ok(next)
@@ -277,6 +274,30 @@ impl PlanSnapshot {
         progress.state = StepState::Running;
         self.total_attempts += 1;
         self.state = PlanState::Running;
+        Ok(())
+    }
+
+    fn retry(&mut self, step_id: &PlanStepId) -> Result<(), PlanError> {
+        let step_limit = self
+            .definition
+            .steps()
+            .iter()
+            .find(|step| step.step_id() == step_id)
+            .ok_or_else(|| PlanError::new(PlanErrorCode::PlanInvalid))?
+            .max_attempts();
+        let attempts = self
+            .steps
+            .get(step_id)
+            .filter(|progress| progress.state == StepState::Failed)
+            .ok_or_else(|| PlanError::new(PlanErrorCode::PlanTransitionInvalid))?
+            .attempts;
+        if attempts >= step_limit
+            || self.total_attempts >= self.definition.bounds().max_total_attempts()
+        {
+            return Err(PlanError::new(PlanErrorCode::PlanBoundExceeded));
+        }
+        self.require_state(step_id, StepState::Failed)?.state = StepState::Pending;
+        self.refresh_ready();
         Ok(())
     }
 
