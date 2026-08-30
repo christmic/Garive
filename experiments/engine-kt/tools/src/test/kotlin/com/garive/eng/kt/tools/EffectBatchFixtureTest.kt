@@ -253,6 +253,60 @@ class EffectBatchFixtureTest {
         assertTrue(expected.all { it in setOf("effect_batch_bound_exceeded", "effect_access_invalid") })
         assertFalse(expected.isEmpty())
     }
+
+    @Test
+    fun `every read write pattern preserves sequential observation order`() {
+        val limits = EffectBatchLimitsV1.create(8, 2, 16, 3, 2_048).value()
+        repeat(16) { mask ->
+            val calls = (0 until 4).map { index ->
+                val write = mask and (1 shl index) != 0
+                prepared(
+                    "src/$index",
+                    if (write) AccessMode.WRITE else AccessMode.READ,
+                    if (write) ReplayClass.IDEMPOTENT else ReplayClass.READ_ONLY,
+                )
+            }
+            val plan = planEffectBatch(calls, limits).value()
+            val flattened = plan.steps.flatMap { step ->
+                when (step) {
+                    is EffectBatchStep.SequentialStep -> listOf(step.intentIndex)
+                    is EffectBatchStep.ParallelReadGroup -> step.intentIndexes
+                }
+            }
+            assertEquals(listOf(0, 1, 2, 3), flattened)
+            assertEquals(calls.map(PreparedToolCall::inputDigest), plan.orderedPreparedDigests)
+        }
+    }
+
+    @Test
+    fun `suspension and exclusive access close parallel groups`() {
+        val limits = EffectBatchLimitsV1.create(8, 2, 16, 3, 2_048).value()
+        val reads = listOf("a", "b", "c").map {
+            prepared("src/$it", AccessMode.READ, ReplayClass.READ_ONLY)
+        }
+        assertEquals(
+            listOf(
+                EffectBatchStep.ParallelReadGroup(listOf(0)),
+                EffectBatchStep.SequentialStep(1),
+                EffectBatchStep.ParallelReadGroup(listOf(2)),
+            ),
+            planEffectBatchIntents(
+                reads.mapIndexed { index, call -> EffectBatchIntent(call, index == 1) },
+                limits,
+            ).value().steps,
+        )
+
+        val exclusive = listOf(
+            prepared("src/a", AccessMode.EXCLUSIVE, ReplayClass.IDEMPOTENT),
+            prepared("src/b", AccessMode.WRITE, ReplayClass.IDEMPOTENT),
+        )
+        val plan = planEffectBatch(exclusive, limits).value()
+        assertEquals(listOf(1), plan.conflictGraphBytes)
+        assertEquals(
+            listOf(EffectBatchStep.SequentialStep(0), EffectBatchStep.SequentialStep(1)),
+            plan.steps,
+        )
+    }
 }
 
 private fun assertKeys(value: JsonObject, vararg expected: String) {

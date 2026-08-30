@@ -1,8 +1,8 @@
 use garive_tools::{
-    plan_effect_batch, AccessMode, AccessNamespace, AccessPolicyEntry, EffectBatchLimitsV1,
-    EffectBatchStep, ExecutionCapability, ExecutionRequirements, InvocationAccessSet,
-    PreparationError, ReplayClass, ResourceAccess, ToolAccessPolicyV1, ToolAccessResolver,
-    ToolCatalog, ToolDefinition, ToolIntent,
+    plan_effect_batch, plan_effect_batch_intents, AccessMode, AccessNamespace, AccessPolicyEntry,
+    EffectBatchIntent, EffectBatchLimitsV1, EffectBatchStep, ExecutionCapability,
+    ExecutionRequirements, InvocationAccessSet, PreparationError, ReplayClass, ResourceAccess,
+    ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog, ToolDefinition, ToolIntent,
 };
 use serde_json::{json, Value};
 
@@ -300,6 +300,89 @@ fn shared_c5b_fixture_matches_canonical_rust_semantics() {
             "effect_batch_bound_exceeded",
             "effect_access_invalid",
             "effect_access_invalid"
+        ]
+    );
+}
+
+#[test]
+fn every_read_write_pattern_preserves_sequential_observation_order() {
+    for mask in 0u8..16 {
+        let calls = (0..4)
+            .map(|index| {
+                let write = mask & (1 << index) != 0;
+                prepared(
+                    &format!("src/{index}"),
+                    if write {
+                        AccessMode::Write
+                    } else {
+                        AccessMode::Read
+                    },
+                    if write {
+                        ReplayClass::Idempotent
+                    } else {
+                        ReplayClass::ReadOnly
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let plan = plan_effect_batch(&calls, &limits()).unwrap();
+        let flattened = plan
+            .steps()
+            .iter()
+            .flat_map(|step| match step {
+                EffectBatchStep::SequentialStep { intent_index } => vec![*intent_index],
+                EffectBatchStep::ParallelReadGroup { intent_indexes } => intent_indexes.clone(),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(flattened, vec![0, 1, 2, 3]);
+        assert_eq!(
+            plan.ordered_prepared_digests(),
+            calls
+                .iter()
+                .map(|call| call.input_digest().to_owned())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn suspension_and_exclusive_access_close_parallel_groups() {
+    let reads = [
+        prepared("src/a", AccessMode::Read, ReplayClass::ReadOnly),
+        prepared("src/b", AccessMode::Read, ReplayClass::ReadOnly),
+        prepared("src/c", AccessMode::Read, ReplayClass::ReadOnly),
+    ];
+    let intents = reads
+        .iter()
+        .enumerate()
+        .map(|(index, call)| EffectBatchIntent::new(call, index == 1))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        plan_effect_batch_intents(&intents, &limits())
+            .unwrap()
+            .steps(),
+        &[
+            EffectBatchStep::ParallelReadGroup {
+                intent_indexes: vec![0]
+            },
+            EffectBatchStep::SequentialStep { intent_index: 1 },
+            EffectBatchStep::ParallelReadGroup {
+                intent_indexes: vec![2]
+            }
+        ]
+    );
+
+    let exclusive = [
+        prepared("src/a", AccessMode::Exclusive, ReplayClass::Idempotent),
+        prepared("src/b", AccessMode::Write, ReplayClass::Idempotent),
+    ];
+    let plan = plan_effect_batch(&exclusive, &limits()).unwrap();
+    assert_eq!(plan.conflict_graph_bytes(), &[1]);
+    assert_eq!(
+        plan.steps(),
+        &[
+            EffectBatchStep::SequentialStep { intent_index: 0 },
+            EffectBatchStep::SequentialStep { intent_index: 1 }
         ]
     );
 }
