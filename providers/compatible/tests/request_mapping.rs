@@ -206,6 +206,21 @@ fn messages_rejects_late_instruction_and_metadata() {
 }
 
 #[test]
+fn messages_admits_runtime_trace_identity_without_sending_vendor_metadata() {
+    let fixture = fixture();
+    let deployment = messages_deployment(&fixture["deployments"]["messages"]);
+    let mut request = neutral_request(&fixture["request_cases"][1]["request"]);
+    request.trace_metadata = vec![
+        ("turn_id".into(), "turn-1".into()),
+        ("execution_id".into(), "execution-1".into()),
+    ];
+
+    let mapped = map_messages_request(&deployment, &request).expect("runtime trace is internal");
+
+    assert_eq!(mapped.metadata, None);
+}
+
+#[test]
 fn every_shared_failure_case_returns_its_stable_code() {
     let fixture = fixture();
     let responses = response_deployment(&fixture["deployments"]["responses"]);

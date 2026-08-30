@@ -80,7 +80,11 @@ pub fn map_messages_request(
     request: &ModelRequest,
 ) -> Result<messages::CreateMessageRequest, CompatibleProviderError> {
     admit_request(&deployment.target_id, &deployment.capabilities, request)?;
-    if !request.trace_metadata.is_empty() {
+    if request
+        .trace_metadata
+        .iter()
+        .any(|(key, _)| !matches!(key.as_str(), "turn_id" | "execution_id"))
+    {
         return Err(CompatibleProviderError::UnsupportedMetadata);
     }
     if request.output.reasoning_visibility && deployment.thinking.is_none() {
