@@ -8,13 +8,15 @@
 - **UI**: SwiftUI (iOS 17+)
 - **Async**: Swift Concurrency over Kotlin/Native completion handlers
 - **Min target**: iOS 17
-- **Build**: SwiftPM linked to the generated KMP XCFramework
+- **Build**: installable Xcode app plus SwiftPM contract tests
 
 ## Module Layout
 
 ```
 iosApp/
-├── Sources/GariveIOS/main.swift
+├── GariveIOS.xcodeproj
+├── Config/Info.plist
+├── Sources/GariveIOS/
 ├── Tests/GariveIOSTests/LiveHostTests.swift
 ├── Package.swift
 └── README.md
@@ -32,7 +34,7 @@ iosApp/
 
 ## Build
 
-The executable contract gate builds the shared framework before SwiftPM:
+Build the shared framework, contract tests, then the unsigned device app gate:
 
 ```text
 cd ../shared
@@ -40,13 +42,16 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   org.gradle.wrapper.GradleWrapperMain assembleGariveSharedDebugXCFramework
 cd ../iosApp
 swift test
+xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
+  -configuration Debug -sdk iphoneos CODE_SIGNING_ALLOWED=NO clean build
 ```
 
-SwiftPM links the XCFramework when it exists. A conditional local fallback
-keeps source-only editing possible, but it is not the acceptance path.
+The Xcode target produces `Garive.app`, registers expiring `garive://pair`
+handoffs, and links the static XCFramework. Distribution still requires the
+operator's Apple team, signing, and physical-device verification.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
-- Status: live-H1 SwiftUI shell with verified KMP framework and Swift tests.
+- Last reviewed: 2026-08-30
+- Status: installable remote-work app; physical remote release evidence pending.

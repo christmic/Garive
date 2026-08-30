@@ -50,3 +50,5 @@ its repository dependency order is also maintained in
 [`design/core-agent-plan.md`](design/core-agent-plan.md#next-accepted-increments).
 The native physical-device remote-work contract is
 [`design/mobile-remote-work-client.md`](design/mobile-remote-work-client.md).
+Its authenticated service edge is
+[`design/mobile-gateway-v1.md`](design/mobile-gateway-v1.md).

@@ -380,6 +380,7 @@ native evidence does not close A-MOBILE-R.
 ## See also
 
 - [`../../docs/architecture/mobile-remote-work.md`](../../docs/architecture/mobile-remote-work.md) — product and visual decision.
+- [`mobile-gateway-v1.md`](mobile-gateway-v1.md) — authenticated pairing and narrow Runtime edge.
 - [`client-product-experience.md`](client-product-experience.md) — shared controller semantics.
 - [`host-read-model-v1.md`](host-read-model-v1.md) — H2 navigation/timeline truth.
 - [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — H3 redacted activity.

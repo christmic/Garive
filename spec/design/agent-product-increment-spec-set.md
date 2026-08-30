@@ -39,6 +39,7 @@ live-Host-to-shared-client E2E before any H2/H3 or product completion claim.
 | Desktop can become configured without exposing secrets | [A-DESKTOP-C2](desktop-configuration-onboarding.md) | Write-only staged setup/rotation, OS secret storage and crash recovery. |
 | Desktop/Web/mobile share one product behavior | [A-UX1](client-product-experience.md) | Pure controller semantics, native presentation, explicit local/durable ownership and accessibility gates. |
 | Mobile controls server-hosted Agents away from a computer | [A-MOBILE-R](mobile-remote-work-client.md) | Authenticated HTTPS, exact durable commands, native Work/conversation/decision UI, background return, and physical-device evidence. |
+| Mobile reaches Runtime without exposing Host | [G0-R](mobile-gateway-v1.md) | TLS edge, one-time device pairing, narrow route admission, transparent SSE, expiry and revocation. |
 | Toolchains and SDKs remain current and reproducible | [dependency rule](../../.agents/dependency-versions.md) | Official-source stable selection, explicit compatibility holds, lockfiles and native build evidence. |
 
 Existing [M0](memory-capability.md) and

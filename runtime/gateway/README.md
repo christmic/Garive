@@ -68,6 +68,10 @@ The route returns `204` and subsequent requests with that grant return the
 stable `authentication_required` error. Operator tooling must keep the admin
 token outside command history and application logs.
 
+Native sign-out first clears protected local storage, then best-effort calls
+`POST /v1/mobile/grants/self:revoke` with the captured prior grant. This also
+returns `204`; network failure never restores the local credential.
+
 ## Verify
 
 Run `go test -race ./...`. Tests cover strict one-time pairing, authorization,
