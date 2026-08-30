@@ -201,6 +201,27 @@ impl ToolDefinition {
         requirements: ExecutionRequirements,
         replay_class: ReplayClass,
     ) -> Result<Self, PreparationError> {
+        Self::new_internal(
+            name,
+            revision,
+            description,
+            input_schema,
+            requirements,
+            replay_class,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_internal(
+        name: impl Into<String>,
+        revision: impl Into<String>,
+        description: impl Into<String>,
+        input_schema: Value,
+        requirements: ExecutionRequirements,
+        replay_class: ReplayClass,
+        v2_access_proof: bool,
+    ) -> Result<Self, PreparationError> {
         let (name, revision, description) = (name.into(), revision.into(), description.into());
         if name.is_empty() || revision.is_empty() || description.is_empty() {
             return Err(PreparationError::new(
@@ -209,9 +230,10 @@ impl ToolDefinition {
         }
         validate_definition(&input_schema)?;
         if replay_class == ReplayClass::ReadOnly
-            && requirements
-                .capabilities()
-                .any(|capability| capability != ExecutionCapability::FilesystemRead)
+            && requirements.capabilities().any(|capability| {
+                capability != ExecutionCapability::FilesystemRead
+                    && !(v2_access_proof && capability == ExecutionCapability::Network)
+            })
         {
             return Err(PreparationError::new(
                 PreparationErrorCode::InvalidToolDefinition,
@@ -240,13 +262,14 @@ impl ToolDefinition {
         access_policy: ToolAccessPolicyV1,
         access_resolver_revision: impl Into<String>,
     ) -> Result<Self, PreparationError> {
-        let mut definition = Self::new(
+        let mut definition = Self::new_internal(
             name,
             revision,
             description,
             input_schema,
             requirements,
             replay_class,
+            true,
         )?;
         let resolver_revision = access_resolver_revision.into();
         if resolver_revision.is_empty() {

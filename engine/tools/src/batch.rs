@@ -160,11 +160,11 @@ pub fn plan_effect_batch_intents(
     for intent in intents {
         let call = intent.prepared;
         let accesses = call.invocation_accesses().ok_or_else(access_error)?;
-        if call.contract_version() != 2
-            || accesses.values().is_empty()
-            || accesses.values().len() > limits.max_accesses_per_intent
-        {
+        if call.contract_version() != 2 || accesses.values().is_empty() {
             return Err(access_error());
+        }
+        if accesses.values().len() > limits.max_accesses_per_intent {
+            return Err(bound_error());
         }
         total_accesses = total_accesses
             .checked_add(accesses.values().len())

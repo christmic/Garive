@@ -106,3 +106,50 @@ fn v2_rejects_missing_wrong_or_out_of_policy_resolver() {
         PreparationErrorCode::EffectAccessInvalid
     );
 }
+
+#[test]
+fn v2_allows_exact_read_only_network_access() {
+    struct OriginResolver;
+    impl ToolAccessResolver for OriginResolver {
+        fn revision(&self) -> &str {
+            "origin-v1"
+        }
+        fn resolve(&self, _: &Value) -> Result<InvocationAccessSet, PreparationError> {
+            InvocationAccessSet::new([ResourceAccess::new(
+                AccessNamespace::Network,
+                "https://example.com:443",
+                AccessMode::Read,
+            )?])
+        }
+    }
+    let definition = ToolDefinition::new_v2(
+        "fetch",
+        "fetch-v2",
+        "Fetch one origin",
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+        }),
+        ExecutionRequirements::new([ExecutionCapability::Network], 1_000, 4_096).unwrap(),
+        ReplayClass::ReadOnly,
+        ToolAccessPolicyV1::new(
+            "network-policy-v1",
+            [],
+            [],
+            [AccessPolicyEntry::new("https://example.com:443", [AccessMode::Read]).unwrap()],
+            [],
+            1,
+            2_048,
+        )
+        .unwrap(),
+        "origin-v1",
+    )
+    .unwrap();
+
+    assert!(ToolCatalog::new([definition])
+        .unwrap()
+        .prepare_v2(&ToolIntent::new("call", "fetch", "{}"), &OriginResolver)
+        .is_ok());
+}

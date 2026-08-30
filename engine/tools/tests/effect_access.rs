@@ -20,6 +20,9 @@ fn invalid_and_duplicate_exact_resources_fail_closed() {
     assert!(
         ResourceAccess::new(AccessNamespace::Filesystem, "../secret", AccessMode::Read).is_err()
     );
+    assert!(
+        ResourceAccess::new(AccessNamespace::Filesystem, "src\\secret", AccessMode::Read).is_err()
+    );
     assert!(ResourceAccess::new(
         AccessNamespace::Network,
         "HTTPS://example.com:443",

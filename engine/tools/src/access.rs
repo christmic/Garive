@@ -252,6 +252,7 @@ fn valid_key(namespace: AccessNamespace, key: &str) -> bool {
         AccessNamespace::Filesystem => {
             !key.starts_with('/')
                 && !key.contains('\0')
+                && !key.contains('\\')
                 && key
                     .split('/')
                     .all(|part| !part.is_empty() && part != "." && part != "..")
@@ -306,13 +307,18 @@ fn canonical_origin(origin: &str) -> bool {
             .ok()
             .as_deref()
             == Some(host);
-        let canonical_dns = host.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
-        }) && !host.starts_with('.')
+        let canonical_dns = host.len() <= 253
+            && host.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+            })
+            && !host.starts_with('.')
             && !host.ends_with('.')
-            && !host
-                .split('.')
-                .any(|label| label.is_empty() || label.starts_with('-') || label.ends_with('-'));
+            && !host.split('.').any(|label| {
+                label.is_empty()
+                    || label.len() > 63
+                    || label.starts_with('-')
+                    || label.ends_with('-')
+            });
         if !canonical_ip && !canonical_dns {
             return false;
         }
