@@ -13,6 +13,7 @@ mod view;
 use std::{hint::black_box, process::Command, time::Instant};
 
 use application::{AppModel, BootState, TimelineItem, TimelineRole};
+use garive_host_client::{reduce_host_events, HostActivity, HostEvent, HostView};
 use ratatui::{buffer::Buffer, layout::Rect};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -30,7 +31,7 @@ struct Report {
     warmup_samples: usize,
     measured_samples_per_run: usize,
     environment: Environment,
-    not_measured: [&'static str; 4],
+    not_measured: [&'static str; 3],
     runs: Vec<Run>,
 }
 
@@ -48,6 +49,7 @@ struct Run {
     key_to_model_us: Distribution,
     render_120x40_200_cells_us: Distribution,
     resize_200x60_1000_cells_us: Distribution,
+    h3_event_reduction_per_second: Throughput,
     unloaded_page_growth_ratio_milli: u64,
 }
 
@@ -59,14 +61,28 @@ struct Distribution {
     max: u64,
 }
 
+#[derive(Serialize)]
+struct Throughput {
+    p05: u64,
+    p50: u64,
+    p95: u64,
+    min: u64,
+}
+
 fn main() {
     let corpus = timeline(10_000);
-    let fixture_sha256 = format!("{:x}", Sha256::digest(fixture_bytes(&corpus)));
-    let runs = (0..RUNS).map(|_| measure_run(&corpus)).collect::<Vec<_>>();
+    let h3_events = h3_events();
+    let mut fixture = fixture_bytes(&corpus);
+    fixture.extend(serde_jcs::to_vec(&h3_events).unwrap());
+    let fixture_sha256 = format!("{:x}", Sha256::digest(fixture));
+    let runs = (0..RUNS)
+        .map(|_| measure_run(&corpus, &h3_events))
+        .collect::<Vec<_>>();
     for run in &runs {
         assert!(run.key_to_model_us.p99 < 2_000);
         assert!(run.render_120x40_200_cells_us.p99 < 16_000);
         assert!(run.resize_200x60_1000_cells_us.p95 < 33_000);
+        assert!(run.h3_event_reduction_per_second.p05 > 100_000);
         assert!(run.unloaded_page_growth_ratio_milli < 2_000);
     }
     let report = Report {
@@ -83,7 +99,6 @@ fn main() {
         environment: environment(),
         not_measured: [
             "first interactive PTY frame",
-            "Host H3 event reduction",
             "60-second idle CPU",
             "peak resident memory",
         ],
@@ -121,17 +136,41 @@ fn output(program: &str, arguments: &[&str]) -> String {
         .unwrap_or_else(|| "unavailable".into())
 }
 
-fn measure_run(corpus: &[TimelineItem]) -> Run {
+fn measure_run(corpus: &[TimelineItem], h3_events: &[HostEvent]) -> Run {
     let key_to_model_us = measure_editor();
     let render_120x40_200_cells_us = measure_render(&corpus[..200], Rect::new(0, 0, 120, 40));
     let resize_200x60_1000_cells_us = measure_resize(&corpus[..1_000]);
+    let h3_event_reduction_per_second = measure_h3(h3_events);
     let bounded = median_render_ns(&corpus[..200]);
     let unloaded = median_render_ns(corpus);
     Run {
         key_to_model_us,
         render_120x40_200_cells_us,
         resize_200x60_1000_cells_us,
+        h3_event_reduction_per_second,
         unloaded_page_growth_ratio_milli: unloaded.saturating_mul(1_000) / bounded.max(1),
+    }
+}
+
+fn measure_h3(events: &[HostEvent]) -> Throughput {
+    let mut samples = measure(|| {
+        black_box(reduce_host_events(
+            "session-benchmark",
+            events,
+            HostView::default(),
+            events.len(),
+        ))
+        .unwrap();
+    })
+    .into_iter()
+    .map(|nanoseconds| events.len() as u64 * 1_000_000_000 / nanoseconds.max(1))
+    .collect::<Vec<_>>();
+    samples.sort_unstable();
+    Throughput {
+        p05: percentile(&samples, 5),
+        p50: percentile(&samples, 50),
+        p95: percentile(&samples, 95),
+        min: samples[0],
     }
 }
 
@@ -266,6 +305,30 @@ fn timeline(count: usize) -> Vec<TimelineItem> {
             text: format!(
                 "Bounded cell {position}: Unicode 界, emoji 🦀, and **safe Markdown** remain visible."
             ),
+        })
+        .collect()
+}
+
+fn h3_events() -> Vec<HostEvent> {
+    (1..=10_000)
+        .map(|position| HostEvent {
+            api_version: "v1".into(),
+            session_id: "session-benchmark".into(),
+            position,
+            event: "agent.activity.prepared".into(),
+            turn_id: "turn-benchmark".into(),
+            execution_id: "execution-benchmark".into(),
+            text: String::new(),
+            activity: Some(HostActivity {
+                api_version: "v1".into(),
+                activity_id: format!("activity-{position}"),
+                kind: "tool".into(),
+                label_key: "activity.tool".into(),
+                state: "prepared".into(),
+                source_position: position,
+                terminal: false,
+                safe_code: None,
+            }),
         })
         .collect()
 }
