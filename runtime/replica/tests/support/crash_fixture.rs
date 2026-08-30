@@ -199,14 +199,15 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
                 turn_id: turn.clone(),
                 expected_suspension_id: "suspension".into(),
                 expected_session_version: version,
-                continuation_input: ContinuationInput::ExternalInput("approved".into()),
+                continuation_input: ContinuationInput::ExternalInput("true".into()),
                 interaction: Some(InteractionContinuation {
                     execution_id: execution.clone(),
                     tool_invocation_id: ToolInvocationId::try_from("tool").unwrap(),
                     interaction_id: "interaction".into(),
                     prepared_digest: empty_digest().into(),
-                    response_schema_digest: empty_digest().into(),
-                    response_schema: None,
+                    response_schema_digest:
+                        "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553".into(),
+                    response_schema: Some(json!({"type":"boolean"})),
                     expiry: InteractionExpiry::None,
                 }),
                 recorded_at: "2026-08-29T00:00:02Z".into(),

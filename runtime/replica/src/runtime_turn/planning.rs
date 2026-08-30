@@ -3,6 +3,7 @@ use std::fmt::Write;
 use garive_ledger::{
     CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, ToolInvocationId, TurnId,
 };
+use garive_tools::validate_portable_value;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
@@ -201,6 +202,26 @@ fn validate_continuation(
             if let Some(interaction) = &state.interaction {
                 validate_digest(&interaction.prepared_digest)?;
                 validate_digest(&interaction.response_schema_digest)?;
+                let schema = interaction
+                    .response_schema
+                    .as_ref()
+                    .ok_or(RuntimeCommandError::CorruptLedger)?;
+                let canonical_schema = CanonicalPayload::from_value(schema)
+                    .map_err(|_| RuntimeCommandError::CorruptLedger)?;
+                if canonical_schema.sha256() != interaction.response_schema_digest {
+                    return Err(RuntimeCommandError::CorruptLedger);
+                }
+                let value: Value = serde_json::from_str(content)
+                    .map_err(|_| RuntimeCommandError::ContinuationMismatch)?;
+                let canonical_input = CanonicalPayload::from_value(&value)
+                    .map_err(|_| RuntimeCommandError::ContinuationMismatch)?;
+                if canonical_input.as_json() != content
+                    || !validate_portable_value(schema, &value)
+                        .map_err(|_| RuntimeCommandError::CorruptLedger)?
+                        .is_empty()
+                {
+                    return Err(RuntimeCommandError::ContinuationMismatch);
+                }
             }
             Ok(("external_input", content.clone()))
         }

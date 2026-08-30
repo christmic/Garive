@@ -322,7 +322,8 @@ pub(crate) struct ContinueTurnBody {
     pub session_id: String,
     pub suspension_id: String,
     pub expected_session_version: u64,
-    pub input: String,
+    pub input: Option<String>,
+    pub input_json: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]

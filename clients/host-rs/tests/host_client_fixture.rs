@@ -231,7 +231,11 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     let response = r#"{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":12}"#;
     let requests = Arc::new(Mutex::new(Vec::new()));
     let (base_url, server) = serve(
-        vec![http_json(200, response), http_json(200, response)],
+        vec![
+            http_json(200, response),
+            http_json(200, response),
+            http_json(200, response),
+        ],
         Arc::clone(&requests),
     )
     .await;
@@ -251,6 +255,17 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
         )
         .await
         .expect("continue");
+    client
+        .continue_turn_json(
+            "continue-json-stable",
+            "session-client",
+            "turn-client",
+            "suspension-client",
+            4,
+            &serde_json::json!(true),
+        )
+        .await
+        .expect("typed continue");
     server.await.expect("server task");
     let requests = requests.lock().await;
     assert!(requests[0].starts_with("POST /v1/turns/turn-client:cancel HTTP/1.1\r\n"));
@@ -258,6 +273,8 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     assert!(requests[1].starts_with("POST /v1/turns/turn-client:continue HTTP/1.1\r\n"));
     assert!(requests[1].contains("\"expected_session_version\":4"));
     assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
+    assert!(requests[2].starts_with("POST /v1/turns/turn-client:continue HTTP/1.1\r\n"));
+    assert!(requests[2].contains("\"input_json\":true"));
 }
 
 fn http_json(status: u16, body: &str) -> Vec<u8> {

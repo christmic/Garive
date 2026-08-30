@@ -11,7 +11,7 @@ use crate::{
     HostEvent, HostView, TurnCommandResponse,
 };
 
-const KNOWN_HOST_ERRORS: [&str; 7] = [
+const KNOWN_HOST_ERRORS: [&str; 8] = [
     "invalid_request",
     "not_found",
     "command_conflict",
@@ -19,6 +19,7 @@ const KNOWN_HOST_ERRORS: [&str; 7] = [
     "precondition_failed",
     "durability_unavailable",
     "corrupt_state",
+    "read_bound_exceeded",
 ];
 
 /// Explicit loopback implementation of the A1 Host client boundary.
@@ -156,6 +157,39 @@ impl LiveHostClient {
                     suspension_id,
                     expected_session_version,
                     input,
+                },
+            )
+            .await?;
+        validate_owned_turn_response(value, session_id, turn_id)
+    }
+
+    /// Continues one typed interaction using a structured JSON response.
+    pub async fn continue_turn_json(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        expected_session_version: u64,
+        input_json: &Value,
+    ) -> Result<TurnCommandResponse, HostClientError> {
+        if session_id.is_empty()
+            || turn_id.is_empty()
+            || suspension_id.is_empty()
+            || expected_session_version == 0
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/turns/{}:continue", encode_segment(turn_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &ContinueJsonCommand {
+                    session_id,
+                    suspension_id,
+                    expected_session_version,
+                    input_json,
                 },
             )
             .await?;
@@ -359,6 +393,14 @@ struct ContinueCommand<'a> {
     suspension_id: &'a str,
     expected_session_version: u64,
     input: &'a str,
+}
+
+#[derive(Serialize)]
+struct ContinueJsonCommand<'a> {
+    session_id: &'a str,
+    suspension_id: &'a str,
+    expected_session_version: u64,
+    input_json: &'a Value,
 }
 
 fn validate_base_url(value: &str) -> Result<Url, HostClientError> {

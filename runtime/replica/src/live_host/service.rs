@@ -419,8 +419,59 @@ impl LiveHost {
         expected_session_version: u64,
         input: &str,
     ) -> Result<TurnCommandResponse, LiveHostError> {
+        let json_string =
+            CanonicalPayload::from_value(&serde_json::Value::String(input.to_owned()))
+                .map_err(|_| LiveHostError::InvalidRequest)?;
+        self.continue_turn_inner(
+            idempotency_key,
+            session,
+            turn,
+            suspension_id,
+            expected_session_version,
+            Some(input),
+            json_string.as_json(),
+        )
+    }
+
+    /// Continues an interaction suspension with canonical schema-validated JSON.
+    pub fn continue_turn_json(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        turn: &str,
+        suspension_id: &str,
+        expected_session_version: u64,
+        input: &serde_json::Value,
+    ) -> Result<TurnCommandResponse, LiveHostError> {
+        let canonical =
+            CanonicalPayload::from_value(input).map_err(|_| LiveHostError::InvalidRequest)?;
+        self.continue_turn_inner(
+            idempotency_key,
+            session,
+            turn,
+            suspension_id,
+            expected_session_version,
+            None,
+            canonical.as_json(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn continue_turn_inner(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        turn: &str,
+        suspension_id: &str,
+        expected_session_version: u64,
+        plain_input: Option<&str>,
+        json_input: &str,
+    ) -> Result<TurnCommandResponse, LiveHostError> {
         validate_key(idempotency_key)?;
-        validate_text(input, self.state.limits.max_command_bytes)?;
+        validate_text(json_input, self.state.limits.max_command_bytes)?;
+        if let Some(input) = plain_input {
+            validate_text(input, self.state.limits.max_command_bytes)?;
+        }
         let session_id = identity::<SessionId>(session)?;
         let turn_id = identity::<TurnId>(turn)?;
         let mut ledger = self.ledger()?;
@@ -432,7 +483,8 @@ impl LiveHost {
                 command_id: idempotency_key,
                 suspension_id,
                 expected_session_version,
-                input,
+                plain_input,
+                json_input,
             },
         )? {
             return Ok(response);
@@ -453,6 +505,11 @@ impl LiveHost {
         {
             return Err(LiveHostError::PreconditionFailed);
         }
+        let input = if state.interaction.is_some() {
+            json_input
+        } else {
+            plain_input.ok_or(LiveHostError::PreconditionFailed)?
+        };
         let plan = plan_continue_turn(
             &ContinueTurnCommand {
                 command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
@@ -640,11 +697,17 @@ impl LiveHost {
         {
             return Err(LiveHostError::CommandConflict);
         }
+        let interaction = index >= 2 && facts[index - 2].kind.as_str() == "interaction.resolved";
+        let input = if interaction {
+            request.json_input
+        } else {
+            request.plain_input.ok_or(LiveHostError::CommandConflict)?
+        };
         replay_started_batch(
             session_id,
             &facts,
             index,
-            request.input,
+            input,
             Some(request.suspension_id),
         )
     }
@@ -693,7 +756,8 @@ struct ContinueReplay<'a> {
     command_id: &'a str,
     suspension_id: &'a str,
     expected_session_version: u64,
-    input: &'a str,
+    plain_input: Option<&'a str>,
+    json_input: &'a str,
 }
 
 #[derive(Deserialize)]

@@ -16,4 +16,15 @@ class HostRoundtripTest {
         assertEquals(event, decoded)
         assertEquals(ULong.MAX_VALUE, decoded.position.toULong())
     }
+
+
+    @Test fun `typed continuation JSON round trips`() {
+        val request = Host.ContinueTurnRequestV1.newBuilder()
+            .setSessionId("session")
+            .setSuspensionId("suspension")
+            .setExpectedSessionVersion(7)
+            .setInputJson("{\"approved\":true}")
+            .build()
+        assertEquals(request, Host.ContinueTurnRequestV1.parseFrom(request.toByteArray()))
+    }
 }

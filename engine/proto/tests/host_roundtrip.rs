@@ -1,5 +1,5 @@
 use garive_proto::com::garive::host::v1::{
-    CreateSessionRequestV1, HostEventV1, TurnCommandResponseV1,
+    ContinueTurnRequestV1, CreateSessionRequestV1, HostEventV1, TurnCommandResponseV1,
 };
 use prost::Message;
 
@@ -34,5 +34,20 @@ fn generated_host_v1_round_trips_live_commands_events_and_responses() {
     assert_eq!(
         TurnCommandResponseV1::decode(response.encode_to_vec().as_slice()).unwrap(),
         response
+    );
+}
+
+#[test]
+fn typed_continuation_json_uses_the_additive_tag() {
+    let request = ContinueTurnRequestV1 {
+        session_id: "session".into(),
+        suspension_id: "suspension".into(),
+        expected_session_version: 7,
+        input: String::new(),
+        input_json: Some(r#"{"approved":true}"#.into()),
+    };
+    assert_eq!(
+        ContinueTurnRequestV1::decode(request.encode_to_vec().as_slice()).unwrap(),
+        request
     );
 }

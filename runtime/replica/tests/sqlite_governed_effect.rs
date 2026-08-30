@@ -13,8 +13,9 @@ use garive_llm::{
 use garive_runtime::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
     reconstruct_suspended_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
-    AuthorityRequest, CoreTerminalContext, ExecutorDispatch, ExecutorFuture, ExecutorPort,
-    GovernedEffectConfig, ModelLifecycleContext, PreparedExecution, SqliteGovernedEffectPort,
+    AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
+    ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, ModelLifecycleContext,
+    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort,
     SqliteLedger,
 };
 use garive_tools::{
@@ -305,8 +306,27 @@ fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
     assert_eq!(payload(suspended)["suspension_id"], suspension_id);
     let state = reconstruct_suspended_turn(&setup.ledger.load_turn(&setup.turn).unwrap()).unwrap();
     assert_eq!(
-        state.interaction.unwrap().response_schema,
-        Some(json!({"type":"boolean"}))
+        state.interaction.as_ref().unwrap().response_schema.as_ref(),
+        Some(&json!({"type":"boolean"}))
+    );
+    let command = |input: &str| ContinueTurnCommand {
+        command_id: RuntimeCommandId::new(format!("continue-{input}")).unwrap(),
+        session_id: setup.session.clone(),
+        turn_id: setup.turn.clone(),
+        expected_suspension_id: state.suspension_id.clone(),
+        expected_session_version: state.session_version,
+        continuation_input: ContinuationInput::ExternalInput(input.into()),
+        interaction: state.interaction.clone(),
+        recorded_at: timestamp().into(),
+    };
+    assert!(garive_runtime::plan_continue_turn(&command("true"), &state).is_ok());
+    assert_eq!(
+        garive_runtime::plan_continue_turn(&command("\"not boolean\""), &state),
+        Err(RuntimeCommandError::ContinuationMismatch)
+    );
+    assert_eq!(
+        garive_runtime::plan_continue_turn(&command(" true"), &state),
+        Err(RuntimeCommandError::ContinuationMismatch)
     );
 }
 
