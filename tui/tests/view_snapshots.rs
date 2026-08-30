@@ -12,6 +12,7 @@ mod view;
 
 use application::{
     AppModel, BootState, ConnectionState, ExecutionState, Overlay, TimelineItem, TimelineRole,
+    TimelineTone,
 };
 use garive_host_client::{AgentDefinitionSummary, SessionSummary};
 use ratatui::{buffer::Buffer, layout::Rect};
@@ -73,14 +74,16 @@ fn product_model() -> AppModel {
         observed_position: 42,
         ..Default::default()
     };
+    let mut activity = item(
+        "activity",
+        4,
+        TimelineRole::Status,
+        "Agent action · completed",
+    );
+    activity.tone = TimelineTone::Success;
     model.timeline = vec![
         item("user", 2, TimelineRole::User, "Summarize the release plan."),
-        item(
-            "activity",
-            4,
-            TimelineRole::Status,
-            "activity.research · completed",
-        ),
+        activity,
         item(
             "agent",
             6,
@@ -112,6 +115,7 @@ fn item(key: &str, position: u64, role: TimelineRole, text: &str) -> TimelineIte
         stable_key: key.into(),
         position,
         role,
+        tone: Default::default(),
         text: text.into(),
     }
 }

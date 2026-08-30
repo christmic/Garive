@@ -272,14 +272,12 @@ fn render_timeline_item(
         }
         TimelineRole::Status => {
             let text = safe_text(&item.text);
-            let (icon, style) = if text.contains("failed") {
-                ("×", colors.danger)
-            } else if text.contains("suspended") || text.contains("required") {
-                ("!", colors.warning)
-            } else if text.contains("completed") {
-                ("✓", colors.success)
-            } else {
-                ("◌", colors.activity)
+            let (icon, style) = match item.tone {
+                crate::application::TimelineTone::Success => ("✓", colors.success),
+                crate::application::TimelineTone::Warning => ("!", colors.warning),
+                crate::application::TimelineTone::Danger => ("×", colors.danger),
+                crate::application::TimelineTone::Active => ("●", colors.accent),
+                crate::application::TimelineTone::Neutral => ("◌", colors.activity),
             };
             lines.push(Line::from(vec![
                 Span::styled(format!("  {icon}  "), style),
@@ -320,6 +318,7 @@ mod tests {
                 stable_key: format!("item-{position}"),
                 position,
                 role: TimelineRole::Agent,
+                tone: Default::default(),
                 text: "A short bounded response.".into(),
             });
         }
@@ -335,6 +334,7 @@ mod tests {
             stable_key: "answer".into(),
             position: 1,
             role: TimelineRole::Agent,
+            tone: Default::default(),
             text: "**cached** answer".into(),
         };
         let mut cache = RenderCache::default();
@@ -354,6 +354,7 @@ mod tests {
                 stable_key: format!("item-{position}"),
                 position,
                 role: TimelineRole::Status,
+                tone: Default::default(),
                 text: "bounded".into(),
             };
             let _ = cache.render(&item, 80, Theme::Dark);

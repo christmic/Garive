@@ -160,6 +160,7 @@ fn timeline() -> Vec<TimelineItem> {
                 1 => TimelineRole::User,
                 _ => TimelineRole::Status,
             },
+            tone: Default::default(),
             text: format!("Bounded cell {position}: Unicode 界, emoji 🦀, and **safe Markdown**."),
         })
         .collect()

@@ -90,11 +90,22 @@ pub(crate) enum TimelineRole {
     Status,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum TimelineTone {
+    #[default]
+    Neutral,
+    Active,
+    Success,
+    Warning,
+    Danger,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TimelineItem {
     pub(crate) stable_key: String,
     pub(crate) position: u64,
     pub(crate) role: TimelineRole,
+    pub(crate) tone: TimelineTone,
     pub(crate) text: String,
 }
 

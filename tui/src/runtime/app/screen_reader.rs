@@ -163,18 +163,12 @@ fn linear_overlay(model: &AppModel) -> String {
             format!("Prompt history.\n{rows}\nUse arrows and Enter, or Escape to close.")
         }
         Overlay::Suspension => {
-            let prompt = model
-                .suspension
-                .as_ref()
-                .map(|value| value.prompt_json.as_str())
-                .unwrap_or("Action required");
-            let guidance = model
-                .suspension
-                .as_ref()
-                .and_then(|value| value.response_schema_json.as_deref())
-                .map(crate::input::describe_schema)
-                .unwrap_or("Enter a text response.");
-            format!("Action required. {prompt}\n{guidance}\nPress Enter to reply now.")
+            let copy = crate::view::presentation::suspension_copy(model.suspension.as_ref());
+            let message = copy.message.unwrap_or_default();
+            format!(
+                "{}. {} {}\n{}\nPress Enter to respond now.",
+                copy.title, copy.context, message, copy.guidance
+            )
         }
         Overlay::UnknownCommand => "Command result unknown. Press Enter for exact retry, or A to abandon the local recovery record.".into(),
         Overlay::ErrorDetails => format!(

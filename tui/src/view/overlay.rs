@@ -7,11 +7,13 @@ use ratatui::{
 
 use crate::{
     application::{AppModel, ExecutionState, Overlay},
-    input::{command_matches, describe_schema, COMMAND_PALETTE},
+    input::{command_matches, COMMAND_PALETTE},
     Theme,
 };
 
-use super::{palette, primitives::centered_popup, safe_text, short_tail};
+use super::{
+    palette, presentation::suspension_copy, primitives::centered_popup, safe_text, short_tail,
+};
 
 pub(super) fn render_overlay(
     model: &AppModel,
@@ -30,7 +32,7 @@ pub(super) fn render_overlay(
         Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
         Overlay::PromptHistory => (" Prompt history ", history_text(model), (model.prompt_history.len() as u16 + 5).clamp(7, 16)),
-        Overlay::Suspension => (" Action required ", suspension_text(model), 11),
+        Overlay::Suspension => (" Action required ", suspension_text(model), 14),
         Overlay::UnknownCommand => (" Unknown command ", format!("{}\n\nEnter  Exact retry     A  Abandon local record", model.notice.as_deref().unwrap_or("Nothing was sent to the Host.")), 8),
         Overlay::ErrorDetails => (" Status details ", model.notice.clone().unwrap_or_else(|| "No additional safe details.".into()), 7),
         Overlay::EphemeralConfirmation => (" Ephemeral mode ", "A lost response cannot be recovered after exit.\n\nEnter  Accept for this run     Esc  Cancel".into(), 7),
@@ -210,20 +212,13 @@ fn palette_text(model: &AppModel) -> String {
 }
 
 fn suspension_text(model: &AppModel) -> String {
-    let prompt = model
-        .suspension
-        .as_ref()
-        .map(|value| value.prompt_json.as_str())
-        .unwrap_or("Action required");
-    let guidance = model
-        .suspension
-        .as_ref()
-        .and_then(|value| value.response_schema_json.as_deref())
-        .map(describe_schema)
-        .unwrap_or("Enter a text response.");
+    let copy = suspension_copy(model.suspension.as_ref());
+    let message = copy
+        .message
+        .map(|value| format!("\n{}\n", safe_text(&value)))
+        .unwrap_or_default();
     format!(
-        "{}\n\n{}\n\nEnter  Reply now     Ctrl+Q  Leave safely",
-        safe_text(prompt),
-        guidance
+        "!  {}\n{}{}\n\nResponse\n{}\n\nEnter  Respond now     Ctrl+Q  Leave safely",
+        copy.title, copy.context, message, copy.guidance
     )
 }

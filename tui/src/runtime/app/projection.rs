@@ -5,6 +5,7 @@ use garive_host_client::{HostEvent, TurnTimelineItem};
 use crate::application::{
     AppModel, ConnectionState, ExecutionState, Overlay, TimelineItem, TimelineRole,
 };
+use crate::view::presentation::activity_copy;
 
 use super::RuntimeState;
 
@@ -23,12 +24,19 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         state.model.selected_turn = Some(event.turn_id.clone());
     }
     if let Some(activity) = event.activity {
+        let (text, tone) = activity_copy(
+            &activity.kind,
+            &activity.label_key,
+            &activity.state,
+            activity.safe_code.as_deref(),
+        );
         let key = format!("activity:{}:{}", event.turn_id, activity.activity_id);
         let item = TimelineItem {
             stable_key: key.clone(),
             position: activity.source_position,
             role: TimelineRole::Status,
-            text: format!("{} · {}", activity.label_key, activity.state),
+            tone,
+            text,
         };
         if let Some(existing) = state
             .model
@@ -136,14 +144,22 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
             stable_key: format!("turn:{}:user", turn.turn_id),
             position: turn.started_position,
             role: TimelineRole::User,
+            tone: Default::default(),
             text: turn.user_text,
         });
         for activity in turn.activities {
+            let (text, tone) = activity_copy(
+                &activity.kind,
+                &activity.label_key,
+                &activity.state,
+                activity.safe_code.as_deref(),
+            );
             model.timeline.push(TimelineItem {
                 stable_key: format!("activity:{}:{}", turn.turn_id, activity.activity_id),
                 position: activity.source_position,
                 role: TimelineRole::Status,
-                text: format!("{} · {}", activity.label_key, activity.state),
+                tone,
+                text,
             });
         }
         if let Some(text) = turn.completion_text {
@@ -151,6 +167,7 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
                 stable_key: format!("turn:{}:agent", turn.turn_id),
                 position: turn.latest_position,
                 role: TimelineRole::Agent,
+                tone: Default::default(),
                 text,
             });
         }
