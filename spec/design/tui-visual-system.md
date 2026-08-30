@@ -52,7 +52,7 @@ sequences or schedule their own redraw loops.
 | Header | compact/full; connection chip; execution chip; safe identity |
 | Session rail | empty/populated; selected; terminal/running/action/failed; overflow |
 | Conversation | empty/live/scrolled/newer updates; user/Agent/activity/notice cells |
-| Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped code; responsive table grid/records |
+| Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped and syntax-aware code; responsive table grid/records |
 | Composer | idle/focused/frozen/action response; placeholder/draft/over-limit |
 | Context footer | idle/running/notice/recovery; tiny/full width collapse |
 | Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
@@ -107,6 +107,15 @@ their label and a bounded sanitized destination without emitting OSC 8.
 Fenced code uses one semantic frame, retains its first bounded language token,
 expands tabs to four cells for display, and clips by grapheme/display width with
 an explicit `…`; source text remains unchanged for copy.
+
+Syntax color is a component contract, not a theme passthrough. Recognized
+fenced languages map parser scopes to `normal`, `comment`, `string`,
+`constant`, `keyword`, `type`, `function`, and `punctuation` semantic roles.
+Those roles consume only palette styles: dark and light use polarity-safe
+colors, while mono distinguishes roles with weight, italic, underline, and
+muted punctuation. No state may be color-only. Unlabeled or unknown languages
+render plain code and remain visually framed; Garive never guesses a language
+from content.
 
 Markdown tables are one component with two presentations. When every column
 can retain at least six display cells, a compact content-aware grid uses bold

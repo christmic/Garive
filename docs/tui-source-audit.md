@@ -199,15 +199,31 @@ style, parsing, hyperlinks, code-block metadata, streaming, and syntax in
 its `buffers.rs:124+`, `parse.rs:1526+`, and `render.rs:1310+` directly model,
 constrain, and test table width.
 
+Grok's `xai-grok-markdown/src/syntax.rs` owns `SyntaxSet`, theme, language-token
+lookup, and stateful `HighlightLines`; an unknown language or highlighting
+error returns plain code. Its pager-side `xai-grok-pager-render/src/syntax.rs`
+maps chromatic source colors to terminal-safe semantic ANSI roles instead of
+forwarding arbitrary theme colors. Pi independently exposes highlighting as an
+optional Markdown theme capability in `packages/tui/src/components/markdown.ts`
+and validates the fenced language before calling highlight.js in
+`packages/coding-agent/src/utils/syntax-highlight.ts`; it explicitly rejects
+automatic language detection because prose is misclassified, and catches
+errors as plain code. The audited Codex Markdown renderer records fenced
+languages but provides no equivalent syntax-coloring path. These are distinct
+findings, not an inferred shared implementation.
+
 Garive adopts the bounded component boundaries that its transcript needs:
 compositional inline styles, visible sanitized link destinations, ordered-list
-indices, semantic fenced-code frames/language labels, and width-aware
-grapheme-safe code clipping. Garive's own `markdown_table.rs` bounds the model
+indices, semantic fenced-code frames/language labels, stateful Syntect parsing
+for recognized labels, terminal-palette token mapping, and width-aware
+grapheme-safe code clipping. Unlabeled/unknown code stays plain; a 16 KiB line
+or 64 KiB block budget disables highlighting for the remainder of that block
+without changing its text. Garive's own `markdown_table.rs` bounds the model
 to 12 columns, 64 body rows, and 4,096 characters per cell; preserves styled
 spans and CommonMark alignment; allocates content-aware Unicode display widths;
 and deterministically transposes an undersized grid into labeled records. It
-does not copy either renderer, emit active OSC 8 links, or import their large
-syntax/table systems.
+does not copy either renderer, emit active OSC 8 links, auto-detect languages,
+or admit Grok's extended language bundle.
 
 ### Motion ownership
 
@@ -285,6 +301,13 @@ operating-system authority and are not represented as ordinary Garive access.
 | Resume | Load a verified Host snapshot, then follow after its watermark; ignore replay duplicates. | Garive H1/H2 normative Specs |
 | Testing | Pure reducer matrices, render snapshots, hostile input, transport contracts, real Runtime loopback, and PTY launch/restore. | Garive testing constitution + both Apache sources |
 
+The 2026-08-31 macOS syntax candidate rendered 64 labeled Rust blocks / 384
+code lines at 100 cells with p95 111,839 µs in debug and 12,380 µs in release,
+against a 150,000 µs debug gate. Its optimized executable was 10,205,176 bytes;
+the previously pinned pre-syntax executable was 7,498,968 bytes. This size cost
+is explicit and buys only Syntect's bundled common grammar set; Garive does not
+include Grok's larger extended-language bundle.
+
 ## Rejected transfers
 
 - Client-owned Agent execution, provider selection, credential lookup, or
@@ -309,5 +332,5 @@ operating-system authority and are not represented as ordinary Garive access.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-08-31
 - Status: active

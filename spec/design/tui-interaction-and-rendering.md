@@ -315,8 +315,14 @@ label. They are visible text, not an active OSC 8 escape.
 Code blocks preserve indentation inside a semantic frame, show the first
 bounded fenced-language token, expand tabs to four display cells, and use
 grapheme-aware horizontal clipping with an explicit `…` overflow marker.
-Their theme-token presentation is deterministic; copy operates on source text,
-not clipped cells, language labels, or border glyphs.
+Recognized labels select a bundled grammar by extension or case-insensitive
+name. Highlighting is stateful across lines so multiline strings/comments
+remain coherent, but no label is auto-detected. Parser scopes map through the
+Garive semantic palette; raw syntax-theme colors and backgrounds cannot reach
+the terminal. Unknown labels, parser errors, lines above 16 KiB, or blocks above
+64 KiB fall back to plain semantic code; crossing either budget disables
+highlighting for the rest of that block. Copy operates on source text, not
+clipped cells, language labels, token spans, or border glyphs.
 
 Tables are parsed into bounded header, row, cell, alignment, and styled-span
 state before presentation. At usable widths they render as a content-aware
@@ -443,6 +449,9 @@ client-side imitation.
   cursor addressing, mouse, and alternate-screen control;
 - PTY tests cover typing, paste, resize, Session picker, help, cancellation,
   reconnect notice, and clean exit.
+- syntax presentation stress-renders 64 labeled blocks / 384 code lines at
+  100 cells with debug p95 below 150 ms; the parser bundle remains lazy until a
+  recognized labeled fence is rendered.
 
 ## See also
 

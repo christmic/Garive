@@ -98,6 +98,11 @@ Agent responses render safe headings, nested emphasis, block quotes, tables,
 task and numbered lists, inline code, and framed fenced code. A fenced language
 appears in its `CODE` header. Code that exceeds the conversation width ends in
 `…` instead of wrapping into an ambiguous gutter; tabs display as four spaces.
+Common recognized fenced languages are syntax-highlighted with Garive's own
+dark, light, or monochrome semantic styles. Use a language label such as
+`rust` or `json` after the opening fence to enable it. Garive does not guess an
+unlabeled language; unknown labels and unusually large blocks remain readable
+as plain framed code. Highlighting never changes `/copy last` source text.
 Markdown links show both their label and bounded destination as inert terminal
 text, so the target remains inspectable even when OSC hyperlinks are disabled.
 Tables use a compact aligned grid when the conversation has room. In a narrow
