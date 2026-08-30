@@ -64,19 +64,23 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
             .read_facts(&committed.session_id, 0, committed.committed_position, None)
             .map_err(|_| LocalWorkerError::DurabilityUnavailable)?;
         let snapshot = ExecutionAuthoritySnapshot::from_facts(&facts)?;
+        let definition = write_definition(&snapshot)?;
+        let tool_revision = definition.revision().to_owned();
         Ok(LocalGovernedExecution {
             capabilities: AgentToolCapabilities {
-                definitions: vec![write_definition()?],
+                definitions: vec![definition],
             },
             authority: Box::new(WorkspaceAuthority {
                 workspaces: self.workspaces.clone(),
                 owner_window: self.owner_window.clone(),
                 snapshot: snapshot.clone(),
+                tool_revision: tool_revision.clone(),
             }),
             executor: Box::new(WorkspaceExecutor {
                 workspaces: self.workspaces.clone(),
                 owner_window: self.owner_window.clone(),
                 attachments: snapshot.attachments,
+                tool_revision,
             }),
         })
     }
@@ -142,7 +146,6 @@ impl ExecutionAuthoritySnapshot {
 #[serde(deny_unknown_fields)]
 struct WriteArguments {
     workspace_id: String,
-    grant_revision: u64,
     artifact_name: String,
     content_utf8: String,
 }
@@ -151,6 +154,7 @@ struct WorkspaceAuthority {
     workspaces: DesktopWorkspaceService,
     owner_window: String,
     snapshot: ExecutionAuthoritySnapshot,
+    tool_revision: String,
 }
 
 impl AuthorityPort for WorkspaceAuthority {
@@ -164,13 +168,12 @@ impl AuthorityPort for WorkspaceAuthority {
             let Some(attachment) = self.snapshot.attachments.get(&arguments.workspace_id) else {
                 return Ok(denied("workspace_not_attached"));
             };
-            if attachment.grant_revision != arguments.grant_revision
-                || attachment.access != "read_write"
+            if attachment.access != "read_write"
                 || self
                     .workspaces
                     .resolve_write_root(
                         &arguments.workspace_id,
-                        arguments.grant_revision,
+                        attachment.grant_revision,
                         &self.owner_window,
                     )
                     .is_err()
@@ -191,8 +194,8 @@ impl AuthorityPort for WorkspaceAuthority {
             {
                 return Ok(AuthorityDecision::Approve {
                     granted_requirements: request.prepared.requirements().clone(),
-                    constraints_digest: binding_digest(&arguments),
-                    authority_revision: WRITE_TOOL_REVISION.into(),
+                    constraints_digest: binding_digest(&arguments, attachment.grant_revision),
+                    authority_revision: self.tool_revision.clone(),
                 });
             }
             Ok(AuthorityDecision::InteractionRequired {
@@ -221,6 +224,7 @@ struct WorkspaceExecutor {
     workspaces: DesktopWorkspaceService,
     owner_window: String,
     attachments: BTreeMap<String, WorkspaceAttachment>,
+    tool_revision: String,
 }
 
 impl ExecutorPort for WorkspaceExecutor {
@@ -234,7 +238,7 @@ impl ExecutorPort for WorkspaceExecutor {
         self.validate(&arguments)?;
         Ok(PreparedExecution {
             executor_id: "desktop.workspace.atomic-create".into(),
-            executor_revision: WRITE_TOOL_REVISION.into(),
+            executor_revision: self.tool_revision.clone(),
             dispatch_attempt_id: format!("workspace-write-{}", Uuid::new_v4()),
         })
     }
@@ -268,7 +272,7 @@ impl ExecutorPort for WorkspaceExecutor {
             let content = json!({
                 "artifact_id":format!("artifact-{}", &hex_digest(format!("{}:{}:{}", arguments.workspace_id, arguments.artifact_name, result.digest).as_bytes())[..32]),
                 "workspace_id":arguments.workspace_id,
-                "grant_revision":arguments.grant_revision,
+                "grant_revision":self.attachments[&arguments.workspace_id].grant_revision,
                 "display_name":arguments.artifact_name,
                 "byte_size":result.byte_size,
                 "content_digest":result.digest,
@@ -293,15 +297,13 @@ impl WorkspaceExecutor {
             .attachments
             .get(&arguments.workspace_id)
             .ok_or_else(|| "workspace_not_attached".to_owned())?;
-        if attachment.grant_revision != arguments.grant_revision
-            || attachment.access != "read_write"
-        {
+        if attachment.access != "read_write" {
             return Err("workspace_write_not_authorized".into());
         }
         self.workspaces
             .resolve_write_root(
                 &arguments.workspace_id,
-                arguments.grant_revision,
+                attachment.grant_revision,
                 &self.owner_window,
             )
             .map_err(|_| "workspace_write_not_authorized".into())
@@ -404,27 +406,49 @@ fn arguments(value: &str) -> Result<WriteArguments, String> {
         || name.contains(['/', '\\'])
         || name.chars().any(char::is_control)
         || arguments.content_utf8.len() > MAX_ARTIFACT_BYTES
-        || arguments.grant_revision == 0
     {
         return Err("invalid".into());
     }
     Ok(arguments)
 }
 
-fn write_definition() -> Result<ToolDefinition, LocalWorkerError> {
+fn write_definition(
+    snapshot: &ExecutionAuthoritySnapshot,
+) -> Result<ToolDefinition, LocalWorkerError> {
+    let writable = snapshot
+        .attachments
+        .values()
+        .filter(|attachment| attachment.access == "read_write")
+        .collect::<Vec<_>>();
+    let workspace_ids = writable
+        .iter()
+        .map(|attachment| Value::String(attachment.workspace_id.clone()))
+        .collect::<Vec<_>>();
+    let workspace_schema = if workspace_ids.is_empty() {
+        json!({"type":"string","minLength":1,"maxLength":64})
+    } else {
+        json!({"type":"string","enum":workspace_ids})
+    };
+    let revision_digest = hex_digest(
+        writable
+            .iter()
+            .map(|attachment| format!("{}:{}", attachment.workspace_id, attachment.grant_revision))
+            .collect::<Vec<_>>()
+            .join("|")
+            .as_bytes(),
+    );
     ToolDefinition::new(
         "write_file",
-        WRITE_TOOL_REVISION,
+        format!("{WRITE_TOOL_REVISION}.{}", &revision_digest[..16]),
         "Create one new approved artifact at the root of an attached writable Workspace.",
         json!({
             "type":"object",
             "properties":{
-                "workspace_id":{"type":"string","minLength":1,"maxLength":64},
-                "grant_revision":{"type":"integer","minimum":1},
+                "workspace_id":workspace_schema,
                 "artifact_name":{"type":"string","minLength":1,"maxLength":MAX_ARTIFACT_NAME_BYTES},
                 "content_utf8":{"type":"string","maxLength":MAX_ARTIFACT_BYTES}
             },
-            "required":["workspace_id","grant_revision","artifact_name","content_utf8"],
+            "required":["workspace_id","artifact_name","content_utf8"],
             "additionalProperties":false
         }),
         ExecutionRequirements::new([ExecutionCapability::FilesystemWrite], 5_000, 4_096)
@@ -434,12 +458,12 @@ fn write_definition() -> Result<ToolDefinition, LocalWorkerError> {
     .map_err(|_| LocalWorkerError::InvalidComposition)
 }
 
-fn binding_digest(arguments: &WriteArguments) -> String {
+fn binding_digest(arguments: &WriteArguments, grant_revision: u64) -> String {
     hex_digest(
         format!(
             "{}:{}:{}:{}",
             arguments.workspace_id,
-            arguments.grant_revision,
+            grant_revision,
             arguments.artifact_name,
             hex_digest(arguments.content_utf8.as_bytes())
         )
@@ -472,7 +496,6 @@ mod tests {
     fn arguments(name: &str, content: &str) -> WriteArguments {
         WriteArguments {
             workspace_id: "workspace-test".into(),
-            grant_revision: 2,
             artifact_name: name.into(),
             content_utf8: content.into(),
         }

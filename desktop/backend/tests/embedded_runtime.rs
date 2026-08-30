@@ -403,7 +403,6 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
     let database = directory.path().join("governed.db");
     let arguments = serde_json::json!({
         "workspace_id":writable.workspace_id,
-        "grant_revision":writable.grant_revision,
         "artifact_name":"result.md",
         "content_utf8":"durable artifact"
     })
