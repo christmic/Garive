@@ -12,6 +12,8 @@ use garive_memory::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::core_bridge::MemoryPrefix;
+
 /// One Runtime authority operation admitted by an exact grant.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum MemoryControlAction {
@@ -69,6 +71,8 @@ pub struct MemoryRepositoryImportContext {
     pub expected_session_version: u64,
     /// Highest fixed fact position before import.
     pub through_position: u64,
+    /// Canonical complete fixed prefixes used to recover repository pre-state.
+    pub repository_prefixes: Vec<MemoryPrefix>,
     /// Canonical Runtime observation time.
     pub recorded_at: String,
     /// Verified user confirmation or approval fact inside the fixed prefix.
@@ -166,6 +170,7 @@ impl MemoryRepositoryImportContext {
         execution_id: ExecutionId,
         expected_session_version: u64,
         through_position: u64,
+        repository_prefixes: Vec<MemoryPrefix>,
         recorded_at: impl Into<String>,
         authorization_fact: DurableFactReference,
         authority_receipt_digest: impl Into<String>,
@@ -177,6 +182,7 @@ impl MemoryRepositoryImportContext {
             execution_id,
             expected_session_version,
             through_position,
+            repository_prefixes,
             recorded_at: recorded_at.into(),
             authorization_fact,
             authority_receipt_digest: authority_receipt_digest.into(),
@@ -184,6 +190,22 @@ impl MemoryRepositoryImportContext {
         };
         if value.expected_session_version == 0
             || value.through_position == 0
+            || value.repository_prefixes.is_empty()
+            || !value
+                .repository_prefixes
+                .windows(2)
+                .all(|pair| pair[0].session_id < pair[1].session_id)
+            || value
+                .repository_prefixes
+                .iter()
+                .filter(|prefix| prefix.session_id == value.session_id)
+                .count()
+                != 1
+            || value.repository_prefixes.iter().any(|prefix| {
+                prefix.through_position == 0
+                    || prefix.session_id == value.session_id
+                        && prefix.through_position != value.through_position
+            })
             || value.authorization_fact.session_id() != value.session_id.as_str()
             || value.authorization_fact.position() > value.through_position
             || !valid_digest(&value.authority_receipt_digest)

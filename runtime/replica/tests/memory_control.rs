@@ -6,7 +6,7 @@ use garive_memory::{
     prepare_memory_import, DurableFactReference, MemoryDocumentLimits, MemoryIdentityAllocation,
 };
 use garive_runtime::{
-    MemoryControlRuntimeError, MemoryImportCommand, MemoryRepositoryError,
+    MemoryControlRuntimeError, MemoryImportCommand, MemoryPrefix, MemoryRepositoryError,
     MemoryRepositoryImportContext, MemoryRepositoryImportPolicy, MemoryRepositoryStatus,
     SqliteLedger,
 };
@@ -21,6 +21,10 @@ fn fact_backed_import_context_requires_exact_prefix_authority_and_policies() {
         ExecutionId::try_from("execution").unwrap(),
         2,
         7,
+        vec![MemoryPrefix {
+            session_id: SessionId::try_from("session").unwrap(),
+            through_position: 7,
+        }],
         "2026-08-30T12:00:00Z",
         DurableFactReference::new("session", 7, "confirmation", "a".repeat(64)).unwrap(),
         "b".repeat(64),
@@ -36,6 +40,10 @@ fn fact_backed_import_context_requires_exact_prefix_authority_and_policies() {
             ExecutionId::try_from("execution").unwrap(),
             2,
             7,
+            vec![MemoryPrefix {
+                session_id: SessionId::try_from("session").unwrap(),
+                through_position: 7,
+            }],
             "2026-08-30T12:00:00Z",
             DurableFactReference::new("foreign", 7, "confirmation", "a".repeat(64)).unwrap(),
             "b".repeat(64),
