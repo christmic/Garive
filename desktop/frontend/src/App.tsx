@@ -2,15 +2,22 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  continueAgentTurn, getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
-  type HostSessionSummary,
+  attachWorkspaceToSession, chooseWorkspace, continueAgentTurn, createWorkSession,
+  getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+  runAgentTurnWithWorkspaceContext, type HostSessionSummary, type WorkspaceEntry,
+  type WorkspaceGrant,
 } from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import { Icon, type IconName } from "./ui/Icon";
 import { SetupFlow } from "./setup/SetupFlow";
+import { WorkspacePicker } from "./workspace/WorkspacePicker";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
+interface SelectedContext {
+  readonly grant: WorkspaceGrant;
+  readonly entries: readonly WorkspaceEntry[];
+}
 
 const suggestions = [
   ["Synthesize", "Turn notes into a clear decision memo"],
@@ -24,6 +31,9 @@ const errorCopy: Record<string, string> = {
   host_failure: "Garive could not commit this request. Your draft is still here.",
   execution_failure: "The local Runtime could not finish this Turn.",
   projection_failure: "The result committed, but its public view is unavailable.",
+  workspace_capability_invalid: "That local folder or file selection is no longer available.",
+  workspace_unavailable: "Garive could not safely re-open the selected local file.",
+  workspace_bound_exceeded: "Select fewer or smaller text files for this Turn.",
   desktop_unavailable: "The Desktop backend is unavailable. Restart Garive and try again.",
 };
 
@@ -36,7 +46,7 @@ const visualCapabilities = {
   durable_navigation: visualTestMode !== "setup",
   activity: false,
   setup: visualTestMode === "setup",
-  workspaces: false,
+  workspaces: visualTestMode !== "setup",
   artifacts: false,
 } as const;
 
@@ -45,6 +55,9 @@ export function App() {
   const [screen, setScreen] = useState<Screen>("work");
   const [recents, setRecents] = useState<readonly HostSessionSummary[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
+  const [selectedContext, setSelectedContext] = useState<SelectedContext>();
+  const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
+  const [preparedSessionId, setPreparedSessionId] = useState<string>();
   const composer = useRef<HTMLTextAreaElement>(null);
 
   const refreshRecents = useCallback(async () => {
@@ -78,7 +91,8 @@ export function App() {
     const shortcuts = (event: KeyboardEvent) => {
       if (!event.metaKey) return;
       if (event.key.toLowerCase() === "n") {
-        event.preventDefault(); dispatch({ type: "new_work" }); setScreen("work");
+        event.preventDefault(); dispatch({ type: "new_work" }); setSelectedContext(undefined);
+        setPreparedSessionId(undefined); setScreen("work");
         requestAnimationFrame(() => composer.current?.focus());
       }
       if (event.key === ",") { event.preventDefault(); setScreen("settings"); }
@@ -111,13 +125,25 @@ export function App() {
         text: "## Decision brief\n\nThe outcome is ready to move forward with a clear owner and a reversible first step.\n\n| Priority | Next action |\n| --- | --- |\n| High | Confirm the launch owner |\n| Next | Share the review draft |\n\n- [x] Decisions separated from assumptions\n- [ ] Confirm the final date",
         terminal: "completed",
       } });
+      setSelectedContext(undefined);
       return;
     }
     try {
       const suspended = [...state.messages].reverse().find((message) => message.suspension);
-      const result = suspended?.suspension && state.sessionId
-        ? await continueAgentTurn(state.sessionId, suspended.id, suspended.suspension, input)
-        : await runAgentTurn(definition, input, state.sessionId);
+      let result;
+      if (suspended?.suspension && state.sessionId) {
+        result = await continueAgentTurn(state.sessionId, suspended.id, suspended.suspension, input);
+      } else if (selectedContext) {
+        const sessionId = state.sessionId ?? preparedSessionId ?? await createWorkSession(definition);
+        if (!state.sessionId && !preparedSessionId) setPreparedSessionId(sessionId);
+        await attachWorkspaceToSession(sessionId, selectedContext.grant.workspace_id);
+        result = await runAgentTurnWithWorkspaceContext(
+          definition, sessionId, input, selectedContext.grant.workspace_id,
+          selectedContext.entries.map((entry) => entry.entry_id),
+        );
+      } else {
+        result = await runAgentTurn(definition, input, state.sessionId ?? preparedSessionId);
+      }
       if (suspended || result.terminal === "suspended" || state.capabilities?.activity) {
         dispatch({ type: "session_loaded", timeline: await getSessionTimeline(result.session_id) });
       } else {
@@ -126,8 +152,23 @@ export function App() {
       if (state.capabilities?.durable_navigation) {
         void refreshRecents().catch(() => undefined);
       }
+      setSelectedContext(undefined);
+      setPreparedSessionId(undefined);
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
+    }
+  };
+
+  const openContext = async () => {
+    try {
+      const grant = visualTest ? {
+        schema_version: 1, workspace_id: "workspace-preview", display_name: "Launch materials",
+        access: "enumerate", grant_revision: 1, state: "active",
+        expires_at: "2026-08-30T15:00:00Z",
+      } satisfies WorkspaceGrant : await chooseWorkspace();
+      if (grant) setPickerGrant(grant);
+    } catch {
+      dispatch({ type: "submission_failed", code: "workspace_unavailable" });
     }
   };
 
@@ -138,6 +179,7 @@ export function App() {
 
   const openRecent = async (sessionId: string) => {
     setScreen("work");
+    setSelectedContext(undefined); setPreparedSessionId(undefined);
     try {
       const timeline = await getSessionTimeline(sessionId);
       dispatch({ type: "session_loaded", timeline });
@@ -146,12 +188,12 @@ export function App() {
     }
   };
 
-  return (
-    <div className="app-shell">
+  return <>
+    <div className="app-shell" inert={Boolean(pickerGrant)} aria-hidden={Boolean(pickerGrant)}>
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
-        <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setScreen("work"); }}>
+        <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); }}>
           <Icon name="plus" /><span>New work</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
@@ -201,22 +243,32 @@ export function App() {
           </div>
         </header>
 
-        {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit} startSuggestion={startSuggestion} dispatch={dispatch} />
+        {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit}
+          startSuggestion={startSuggestion} dispatch={dispatch} context={selectedContext}
+          openContext={openContext} removeContext={() => setSelectedContext(undefined)} />
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
             : <SettingsScreen capabilities={state.capabilities} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
     </div>
-  );
+    {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest}
+      onCancel={() => setPickerGrant(undefined)} onConfirm={(entries) => {
+        setSelectedContext({ grant: pickerGrant, entries }); setPickerGrant(undefined);
+        requestAnimationFrame(() => composer.current?.focus());
+      }} />}
+  </>;
 }
 
-function WorkSurface({ state, composer, submit, startSuggestion, dispatch }: {
+function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext, removeContext }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
   startSuggestion: (text: string) => void;
   dispatch: WorkDispatch;
+  context?: SelectedContext;
+  openContext: () => Promise<void>;
+  removeContext: () => void;
 }) {
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>Opening your workspace</h1><p>Recovering the local Runtime…</p></div>;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title="Garive could not start" body={errorCopy.desktop_unavailable} />;
@@ -235,14 +287,24 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch }: {
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label="Dismiss error"><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
+        {context && <div className="context-chips" aria-label="Context selected for next Turn">
+          {context.entries.map((entry) => <span className="context-chip" key={entry.entry_id}>
+            <Icon name="file" /><span><strong dir="auto">{entry.display_name}</strong>
+              <small>{state.phase === "submitting" ? "Committing with Turn…" : context.grant.display_name}</small></span>
+            <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
+              aria-label={`Remove ${entry.display_name}`}><Icon name="close" /></button>
+          </span>)}</div>}
         <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
           aria-label={needsInput ? "Continue suspended work" : "Describe the outcome you want"}
           placeholder={blockedSuspension ? "This suspension requires a governed action." : needsInput ? "Provide the input needed to continue…" : "Describe the outcome you want…"}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
           onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
         <div className="composer-toolbar">
-          <div className="composer-tools"><button type="button" disabled title="Workspace attachments require opaque capabilities"><Icon name="paperclip" /><span>Add context</span></button>
-            <span className="access-pill"><Icon name="shield" />{needsInput ? "Resume exact suspension" : "Local · text only"}</span></div>
+          <div className="composer-tools"><button type="button"
+            disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
+            title={state.capabilities?.workspaces ? "Choose local text files" : "Local Workspaces are not installed"}
+            onClick={() => void openContext()}><Icon name="paperclip" /><span>Add context</span></button>
+            <span className="access-pill"><Icon name="shield" />{needsInput ? "Resume exact suspension" : context ? `${context.entries.length} local ${context.entries.length === 1 ? "file" : "files"}` : "Local · text only"}</span></div>
           <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label="Send work" onClick={() => void submit()}>
             {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
           </button>

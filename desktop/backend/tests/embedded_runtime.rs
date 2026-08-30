@@ -187,6 +187,7 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
         Some("definition-main")
     );
     assert!(state.capabilities().durable_navigation);
+    assert!(state.capabilities().workspaces);
     let result = state
         .run_turn_isolated("definition-main".into(), "hello desktop".into())
         .await

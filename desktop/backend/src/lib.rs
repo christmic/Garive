@@ -422,7 +422,7 @@ impl DesktopState {
             durable_navigation: configured,
             activity,
             setup: false,
-            workspaces: false,
+            workspaces: configured,
             artifacts: false,
         }
     }
