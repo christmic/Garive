@@ -465,6 +465,8 @@ fn obligation(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "namespace_id",
             "record_id",
             "revision_id",
+            "recall_fact",
+            "selection_id",
             "application_fact",
             "expected_outcome_digest",
             "application_scope_digest",
@@ -478,10 +480,14 @@ fn obligation(value: &Map<String, Value>) -> Result<(), LedgerError> {
         "namespace_id",
         "record_id",
         "revision_id",
+        "selection_id",
         "attribution_policy_revision",
     ] {
         non_empty(value, key)?;
     }
+    fact_reference(object(
+        value.get("recall_fact").ok_or(LedgerError::InvalidFact)?,
+    )?)?;
     fact_reference(object(
         value
             .get("application_fact")

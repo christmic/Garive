@@ -245,6 +245,7 @@ fn installed_agent(config: &DesktopSystemConfiguration) -> InstalledAgent {
         definition_revision: config.installed_agent.definition_revision.clone(),
         snapshot_digest: config.installed_agent.snapshot_digest.clone(),
         agent_instance_namespace: config.installed_agent.agent_instance_namespace.clone(),
+        public_capabilities: Vec::new(),
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: config.installed_agent.max_iterations,
             max_input_tokens: config.installed_agent.max_input_tokens,

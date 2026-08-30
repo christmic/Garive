@@ -188,7 +188,7 @@ describe("desktop Host IPC", () => {
     };
     await getSetupCatalogue(invoke);
     await prepareSetup({ schema_version: 1, caller_nonce: "nonce", catalogue_revision: "catalogue-1",
-      profile_id: "profile", model_target_id: "target", model_id: "model",
+      preset_id: "balanced", profile_id: "profile", model_target_id: "target", model_id: "model",
       deployment_id: "deployment", definition_id: "definition" }, invoke);
     expect((await commitSetup("plan-1", "secret-once", invoke)).restart_required).toBe(true);
     expect(calls).toEqual(["get_setup_catalogue", "prepare_setup", "commit_setup"]);

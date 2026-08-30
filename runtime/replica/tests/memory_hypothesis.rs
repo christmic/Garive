@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 use garive_core::{derive_context_with_memory, ContextPurpose, ContextRequest};
 
 use garive_ledger::{
-    CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
+    CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, ModelRequestId, SessionId, TurnId,
 };
 use garive_memory::{
     DurableFactReference, EvidenceTally, HypothesisState, MemoryAuthority, MemoryErrorCode,
@@ -99,14 +99,33 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
     )
     .is_err());
 
-    let application = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    ledger
+        .commit(
+            session.clone(),
+            2,
+            vec![
+                model_draft("model-prepared", "model.prepared"),
+                model_draft("model-started", "model.started"),
+                model_draft("model-completed", "model.completed"),
+            ],
+        )
+        .unwrap();
+    let application = ledger.read_facts(&session, 6, 7, None).unwrap().remove(0);
     let obligation = MemoryObligation::new(
         "obligation",
         "record",
         "revision",
         DurableFactReference::new(
             session.as_str(),
-            1,
+            recall_fact.position,
+            recall_fact.fact_id.as_str(),
+            recall_fact.payload.sha256(),
+        )
+        .unwrap(),
+        "selection",
+        DurableFactReference::new(
+            session.as_str(),
+            application.position,
             application.fact_id.as_str(),
             application.payload.sha256(),
         )
@@ -117,6 +136,31 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
         20,
     )
     .unwrap();
+    let unselected = MemoryObligation::new(
+        "unselected",
+        "missing-record",
+        "missing-revision",
+        obligation.recall_fact().clone(),
+        obligation.selection_id(),
+        obligation.application_fact().clone(),
+        "c".repeat(64),
+        "d".repeat(64),
+        "attribution-v1",
+        20,
+    )
+    .unwrap();
+    assert!(plan_memory_obligation(
+        &MemoryObligationContext {
+            namespace_id: "namespace-a".into(),
+            turn_id: turn.clone(),
+            execution_id: execution.clone(),
+            recorded_at: "2026-08-30T00:00:02Z".into(),
+        },
+        &recall_fact,
+        &application,
+        &unselected,
+    )
+    .is_err());
     let obligation_fact = plan_memory_obligation(
         &MemoryObligationContext {
             namespace_id: "namespace-a".into(),
@@ -124,26 +168,34 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
             execution_id: execution,
             recorded_at: "2026-08-30T00:00:02Z".into(),
         },
+        &recall_fact,
+        &application,
         &obligation,
     )
     .unwrap();
+    let mut forged_obligation = obligation_fact.clone();
+    forged_obligation.fact_id = FactId::try_from("fact-forged-obligation").unwrap();
+    let mut forged_payload: Value =
+        serde_json::from_str(forged_obligation.payload.as_json()).unwrap();
+    forged_payload["obligation_id"] = Value::String("forged-obligation".into());
+    forged_payload["selection_id"] = Value::String("wrong-selection".into());
+    forged_obligation.payload = CanonicalPayload::from_value(&forged_payload).unwrap();
     ledger
-        .commit(session.clone(), 2, vec![obligation_fact])
+        .commit(session.clone(), 3, vec![obligation_fact])
         .unwrap();
 
-    let recall_fact = ledger.read_facts(&session, 3, 4, None).unwrap().remove(0);
     let observation = MemoryObservation::new(
         "observation",
         "obligation",
-        6,
+        9,
         "verifier-v1",
         vec![ObservationEvidence::new(
             ObservationEvidenceKind::TestResult,
             DurableFactReference::new(
                 session.as_str(),
-                4,
-                recall_fact.fact_id.as_str(),
-                recall_fact.payload.sha256(),
+                application.position,
+                application.fact_id.as_str(),
+                application.payload.sha256(),
             )
             .unwrap(),
         )],
@@ -157,7 +209,7 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
             falsified: 0,
             neutral: 0,
         },
-        1,
+        7,
         None,
     )
     .unwrap();
@@ -172,35 +224,11 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
     )
     .unwrap();
     assert_eq!(planned.reduction.lifecycle.state(), HypothesisState::Active);
-    ledger.commit(session.clone(), 3, planned.facts).unwrap();
-    let foreign = MemoryObligation::new(
-        "obligation-b",
-        "record-b",
-        "revision-b",
-        obligation.application_fact().clone(),
-        "e".repeat(64),
-        "f".repeat(64),
-        "attribution-v1",
-        30,
-    )
-    .unwrap();
-    let foreign_fact = plan_memory_obligation(
-        &MemoryObligationContext {
-            namespace_id: "namespace-b".into(),
-            turn_id: TurnId::try_from("turn").unwrap(),
-            execution_id: ExecutionId::try_from("execution").unwrap(),
-            recorded_at: "2026-08-30T00:00:04Z".into(),
-        },
-        &foreign,
-    )
-    .unwrap();
-    ledger
-        .commit(session.clone(), 4, vec![foreign_fact])
-        .unwrap();
+    ledger.commit(session.clone(), 4, planned.facts).unwrap();
     drop(ledger);
 
     let restarted = SqliteLedger::open(&path).unwrap();
-    let facts = restarted.read_facts(&session, 3, 8, None).unwrap();
+    let facts = restarted.read_facts(&session, 3, 10, None).unwrap();
     assert_eq!(
         facts
             .iter()
@@ -208,17 +236,19 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
             .collect::<Vec<_>>(),
         vec![
             "memory.recall_recorded",
+            "model.prepared",
+            "model.started",
+            "model.completed",
             "memory.obligation_opened",
             "memory.observation_recorded",
             "memory.lifecycle_transitioned",
-            "memory.obligation_opened",
         ]
     );
-    assert!(facts[2].turn_id.is_none() && facts[2].execution_id.is_none());
-    assert!(facts[3].turn_id.is_none() && facts[3].execution_id.is_none());
+    assert!(facts[5].turn_id.is_none() && facts[5].execution_id.is_none());
+    assert!(facts[6].turn_id.is_none() && facts[6].execution_id.is_none());
     let before_observation = [MemoryPrefix {
         session_id: session.clone(),
-        through_position: 5,
+        through_position: 8,
     }];
     assert!(reconstruct_memory_hypothesis_projection(
         &restarted,
@@ -230,15 +260,15 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
     .is_some());
     let torn_prefix = [MemoryPrefix {
         session_id: session.clone(),
-        through_position: 6,
+        through_position: 9,
     }];
     assert_eq!(
         reconstruct_memory_hypothesis_projection(&restarted, &torn_prefix, "namespace-a"),
         Err(MemoryErrorCode::CorruptMemoryState),
     );
     let prefixes = [MemoryPrefix {
-        session_id: session,
-        through_position: 8,
+        session_id: session.clone(),
+        through_position: 10,
     }];
     let projection_a =
         reconstruct_memory_hypothesis_projection(&restarted, &prefixes, "namespace-a").unwrap();
@@ -256,12 +286,18 @@ fn m1_recall_obligation_and_observation_commit_and_restart() {
         reconstruct_memory_hypothesis_projection(&restarted, &prefixes, "namespace-b").unwrap();
     assert!(projection_b.recalls().is_empty());
     assert!(projection_b.lifecycle("record", "revision").is_none());
+    assert!(projection_b.open_obligation("obligation").is_none());
+    ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 5, vec![forged_obligation])
+        .unwrap();
+    let corrupt_prefix = [MemoryPrefix {
+        session_id: session,
+        through_position: 11,
+    }];
     assert_eq!(
-        projection_b
-            .open_obligation("obligation-b")
-            .unwrap()
-            .record_id(),
-        "record-b"
+        reconstruct_memory_hypothesis_projection(&ledger, &corrupt_prefix, "namespace-a"),
+        Err(MemoryErrorCode::CorruptMemoryState),
     );
 }
 
@@ -290,6 +326,12 @@ fn draft(id: &str, kind: &str, turn: Option<&str>, execution: Option<&str>) -> F
         payload: CanonicalPayload::from_value(&runtime_payload(kind)).unwrap(),
         recorded_at: "2026-08-30T00:00:00Z".into(),
     }
+}
+
+fn model_draft(id: &str, kind: &str) -> FactDraft {
+    let mut fact = draft(id, kind, Some("turn"), Some("execution"));
+    fact.model_request_id = Some(ModelRequestId::try_from("request").unwrap());
+    fact
 }
 
 fn initial_facts() -> Vec<FactDraft> {

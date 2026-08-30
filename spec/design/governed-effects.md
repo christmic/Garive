@@ -108,6 +108,11 @@ InteractionRequest {
 
 `response_schema` uses the C4 portable JSON value/schema rules, but may declare
 any admitted root type rather than C4's tool-argument object restriction.
+`prompt` must match `garive.public-suspension-prompt.v1`: exactly
+`schema_version = 1`, non-empty `title_key` and `action_label_key`, plus optional
+non-empty `message_text` and `cancel_label_key`, with no unknown fields. Runtime
+rejects an authority response that does not satisfy this public boundary before
+it can be published or persisted.
 
 Runtime commits `interaction.requested` before publication. Core returns
 `Suspended(ApprovalRequired|ExternalInputRequired)`; the current Execution is

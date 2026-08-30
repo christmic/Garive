@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "contract": "host-read-model-v1",
+  "definition_cases": [
+    {"name":"one-installed","limit":4,"expected_ids":["definition-main"],"error":null},
+    {"name":"definition-bound","limit":0,"expected_ids":[],"error":"read_bound_exceeded"}
+  ],
+  "session_page_cases": [
+    {"name":"empty","limit":2,"before":null,"opened":["2026-08-30T00:00:00Z"],"expected_ids":[],"has_next":false,"error":null},
+    {"name":"equal-time-first-page","limit":1,"before":null,"opened":["2026-08-30T00:00:00Z"],"expected_ids":["session-b"],"has_next":true,"error":null},
+    {"name":"equal-time-next-page","limit":1,"before":"valid-session-b-cursor","opened":["2026-08-30T00:00:00Z"],"expected_ids":["session-a"],"has_next":false,"error":null},
+    {"name":"concurrent-newer-session","limit":1,"before":"valid-session-b-cursor","opened":["2026-08-30T00:00:01Z","2026-08-30T00:00:00Z"],"expected_ids":["session-a"],"has_next":false,"error":null}
+  ],
+  "session_view_cases": [
+    {"name":"opened-only","prefix":["session.opened"],"expected_state":null,"expected_turn_count":0,"error":null},
+    {"name":"running-turn","prefix":["session.opened","turn.started","turn.input","execution.started"],"expected_state":"running","expected_turn_count":1,"error":null},
+    {"name":"invalid-timestamp","prefix":["session.opened"],"expected_state":null,"expected_turn_count":0,"error":"corrupt_state"},
+    {"name":"terminal-reversal","prefix":["session.opened","turn.started","turn.input","turn.completed","turn.started"],"expected_state":null,"expected_turn_count":1,"error":"corrupt_state"}
+  ],
+  "timeline_cases": [
+    {"name":"running","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started"],"expected_states":["running"],"truncated":false,"error":null},
+    {"name":"suspended","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started","execution.suspended","turn.suspended"],"expected_states":["suspended"],"truncated":false,"error":null},
+    {"name":"continued-same-turn","after_position":6,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started","execution.suspended","turn.suspended","turn.input","turn.started","execution.started"],"expected_states":["running"],"truncated":false,"error":null},
+    {"name":"completed","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started","execution.completed","turn.completed"],"expected_states":["completed"],"truncated":false,"error":null},
+    {"name":"stopped","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started","turn.stopped"],"expected_states":["stopped"],"truncated":false,"error":null},
+    {"name":"failed","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started","turn.failed"],"expected_states":["failed"],"truncated":false,"error":null},
+    {"name":"user-and-completion-truncation","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started","turn.completed"],"expected_states":["completed"],"truncated":true,"error":null},
+    {"name":"duplicate-terminal","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","turn.completed","turn.failed"],"expected_states":[],"truncated":false,"error":"corrupt_state"},
+    {"name":"fact-bound","after_position":0,"limit":4,"prefix":["session.opened","turn.started","turn.input","execution.started"],"expected_states":[],"truncated":false,"error":"read_bound_exceeded"}
+  ],
+  "cursor_cases": [
+    {"name":"canonical-round-trip","scenario":"same-installation","error":null},
+    {"name":"invalid-base64url","scenario":"malformed","error":"invalid_request"},
+    {"name":"padded-token","scenario":"padding","error":"invalid_request"},
+    {"name":"digest-mismatch","scenario":"tampered","error":"invalid_request"},
+    {"name":"cross-installation","scenario":"different-installation","error":"invalid_request"},
+    {"name":"ordering-key-mismatch","scenario":"changed-opened-at","error":"invalid_request"},
+    {"name":"cursor-bound","scenario":"oversized","error":"invalid_request"}
+  ],
+  "failure_cases": [
+    {"name":"bad-query","status":400,"code":"invalid_request"},
+    {"name":"missing-session","status":404,"code":"not_found"},
+    {"name":"bounded-view","status":413,"code":"read_bound_exceeded"},
+    {"name":"store-unavailable","status":503,"code":"durability_unavailable"},
+    {"name":"corrupt-prefix","status":500,"code":"corrupt_state"}
+  ]
+}

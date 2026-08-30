@@ -210,6 +210,29 @@ impl MemoryControlDocument {
         output.push_str(&self.content);
         output
     }
+
+    /// Rebinds a prepared new or superseding document to its committed M0 identity.
+    pub fn bind_existing_identity(
+        &self,
+        record_id: impl Into<String>,
+        revision_id: impl Into<String>,
+        max_id_bytes: usize,
+    ) -> Result<Self, MemoryControlError> {
+        let record_id = record_id.into();
+        let revision_id = revision_id.into();
+        if !valid_decoded_identity(&record_id, max_id_bytes)
+            || !valid_decoded_identity(&revision_id, max_id_bytes)
+        {
+            return Err(MemoryControlError::InvalidSnapshot);
+        }
+        let mut bound = self.clone();
+        bound.record_ref = MemoryRecordRef::Existing {
+            record_id,
+            revision_id,
+        };
+        bound.erase = false;
+        Ok(bound)
+    }
 }
 
 /// Parses strict M2 front matter and normalizes CRLF/content termination.
@@ -322,14 +345,14 @@ fn decode_identity(value: &str, max_bytes: usize) -> Result<String, MemoryContro
         .decode(value)
         .map_err(|_| MemoryControlError::InvalidSnapshot)?;
     let decoded = String::from_utf8(bytes).map_err(|_| MemoryControlError::InvalidSnapshot)?;
-    if decoded.is_empty()
-        || decoded.len() > max_bytes
-        || decoded.trim() != decoded
-        || URL_SAFE_NO_PAD.encode(&decoded) != value
-    {
+    if !valid_decoded_identity(&decoded, max_bytes) || URL_SAFE_NO_PAD.encode(&decoded) != value {
         return Err(MemoryControlError::InvalidSnapshot);
     }
     Ok(decoded)
+}
+
+fn valid_decoded_identity(value: &str, max_bytes: usize) -> bool {
+    max_bytes > 0 && !value.is_empty() && value.len() <= max_bytes && value.trim() == value
 }
 
 fn valid_token(value: &str, max: usize) -> bool {

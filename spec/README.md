@@ -50,3 +50,7 @@ its repository dependency order is also maintained in
 [`design/core-agent-plan.md`](design/core-agent-plan.md#next-accepted-increments).
 The macOS product composition and work-quality bar are defined by
 [`design/desktop-work-product.md`](design/desktop-work-product.md).
+The complete terminal product is indexed by
+[`design/tui-product-spec-set.md`](design/tui-product-spec-set.md), including
+its source audit, architecture, interaction, communication/persistence, and
+competitive verification contracts.

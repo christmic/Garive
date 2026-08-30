@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use crate::{
     DesktopSystemConfiguration, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
@@ -19,6 +20,7 @@ use crate::{
 };
 
 const CATALOGUE_REVISION: &str = "desktop-setup-catalogue-1";
+const BALANCED_PRESET_ID: &str = "desktop-balanced-v1";
 const MAX_TEXT_BYTES: usize = 256;
 const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_SECRET_BYTES: usize = 16_384;
@@ -38,8 +40,40 @@ pub struct DesktopSetupProfile {
     pub display_name_key: &'static str,
     /// Whether an optional explicit endpoint is accepted.
     pub endpoint_mode: &'static str,
+    /// Model selection accepts one exact caller-supplied identity.
+    pub model_mode: &'static str,
+    /// Stable localization key for the write-only credential field.
+    pub credential_label_key: &'static str,
     /// Stable neutral capabilities exposed by this profile.
     pub supported_capabilities: Vec<&'static str>,
+}
+
+/// One backend-owned immutable Runtime policy preset.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopSetupPreset {
+    /// Opaque preset identity submitted back to the backend.
+    pub preset_id: &'static str,
+    /// Stable frontend localization key.
+    pub display_name_key: &'static str,
+    /// Installed profiles accepted by this preset in stable order.
+    pub supported_profile_ids: Vec<&'static str>,
+}
+
+/// Complete non-zero setup input and lifecycle bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopSetupLimits {
+    /// Maximum installed profiles returned by the catalogue.
+    pub max_profiles: usize,
+    /// Maximum UTF-8 bytes accepted for one normal text field.
+    pub max_text_bytes: usize,
+    /// Maximum UTF-8 bytes accepted for an endpoint override.
+    pub max_endpoint_bytes: usize,
+    /// Maximum credential bytes accepted during commit.
+    pub max_secret_bytes: usize,
+    /// Maximum live prepared plans retained in memory.
+    pub max_plan_count: usize,
+    /// Lifetime of one prepared plan in whole seconds.
+    pub plan_lifetime_seconds: i64,
 }
 
 /// Redacted setup choices and backend-enforced limits.
@@ -51,12 +85,10 @@ pub struct DesktopSetupCatalogue {
     pub catalogue_revision: &'static str,
     /// Profiles sorted by opaque identity.
     pub profiles: Vec<DesktopSetupProfile>,
-    /// Maximum UTF-8 bytes accepted for one normal text field.
-    pub max_text_bytes: usize,
-    /// Maximum UTF-8 bytes accepted for an endpoint override.
-    pub max_endpoint_bytes: usize,
-    /// Maximum credential bytes accepted during commit.
-    pub max_secret_bytes: usize,
+    /// Backend-owned immutable Runtime policy presets.
+    pub presets: Vec<DesktopSetupPreset>,
+    /// Complete setup input and lifecycle bounds.
+    pub limits: DesktopSetupLimits,
 }
 
 /// Bounded user choices submitted for backend-owned setup planning.
@@ -69,6 +101,8 @@ pub struct DesktopSetupInput {
     pub caller_nonce: String,
     /// Catalogue revision observed by the caller.
     pub catalogue_revision: String,
+    /// Backend-owned immutable policy preset.
+    pub preset_id: String,
     /// Opaque installed connection profile.
     pub profile_id: String,
     /// Optional explicit endpoint override.
@@ -86,6 +120,8 @@ pub struct DesktopSetupInput {
 /// Redacted normalized choices shown for explicit setup review.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DesktopSetupSummary {
+    /// Opaque backend-owned policy preset.
+    pub preset_id: String,
     /// Opaque installed profile.
     pub profile_id: String,
     /// Fixed or caller-supplied endpoint selection mode.
@@ -113,6 +149,10 @@ pub struct DesktopSetupPlan {
     pub caller_nonce: String,
     /// Installed catalogue revision bound by this plan.
     pub catalogue_revision: &'static str,
+    /// Configuration revision observed while preparing, absent before v2.
+    pub expected_configuration_revision: Option<u64>,
+    /// Canonical current configuration digest, absent on first setup.
+    pub expected_configuration_digest: Option<String>,
     /// Digest of the complete private effective configuration.
     pub effective_configuration_digest: String,
     /// Canonical UTC instant after which this plan cannot commit.
@@ -146,6 +186,8 @@ pub struct DesktopSetupReceipt {
 /// Stable secret-free setup failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopSetupError {
+    /// Caller window or capability does not own Desktop setup authority.
+    NotAllowed,
     /// Submitted choices, bounds, version, or profile are invalid.
     InputInvalid,
     /// The requested plan is missing or no longer current.
@@ -164,6 +206,7 @@ impl DesktopSetupError {
     /// Returns the stable frontend-safe error code.
     pub const fn code(self) -> &'static str {
         match self {
+            Self::NotAllowed => "setup_not_allowed",
             Self::InputInvalid => "setup_input_invalid",
             Self::PlanStale => "setup_plan_stale",
             Self::PlanConflict => "setup_plan_conflict",
@@ -171,6 +214,15 @@ impl DesktopSetupError {
             Self::PersistenceFailed => "setup_persistence_failed",
             Self::RecoveryFailed => "setup_recovery_failed",
         }
+    }
+}
+
+/// Requires the exact shipping main-window identity for setup IPC.
+pub fn authorize_setup_window(window_label: &str) -> Result<(), DesktopSetupError> {
+    if window_label == "main" {
+        Ok(())
+    } else {
+        Err(DesktopSetupError::NotAllowed)
     }
 }
 
@@ -184,10 +236,101 @@ pub enum DesktopSetupCancellation {
     AlreadyCommitted,
 }
 
+/// Redacted setup lifecycle state exposed to the Desktop frontend.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum DesktopSetupState {
+    /// No stored Desktop configuration exists.
+    NotConfigured,
+    /// One valid configuration exists; a new commit may require restart.
+    Configured {
+        /// Whether the process still runs the prior immutable Runtime snapshot.
+        restart_required: bool,
+    },
+    /// Stored configuration could not construct Runtime.
+    InvalidConfiguration {
+        /// Stable secret-free configuration failure code.
+        code: String,
+    },
+    /// Startup is classifying or repairing one staged setup.
+    SetupRecovering,
+}
+
+/// Write-only credential value that cannot be serialized, cloned, or debug-formatted.
+#[derive(Deserialize)]
+#[serde(transparent)]
+pub struct SensitiveSetupCredential(String);
+
+impl SensitiveSetupCredential {
+    /// Borrows the credential only for the credential-store commit boundary.
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for SensitiveSetupCredential {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 /// Backend-owned clock used to freeze and validate setup expiry.
 pub trait SetupClock: Send + Sync {
     /// Returns whole UTC seconds since the Unix epoch.
     fn unix_seconds(&self) -> Result<i64, DesktopSetupError>;
+}
+
+/// Backend-owned source for opaque setup and credential-reference identities.
+pub trait SetupIdentitySource: Send + Sync {
+    /// Returns one fresh opaque public setup identity.
+    fn setup_id(&self) -> Result<String, DesktopSetupError>;
+    /// Returns one fresh opaque private credential reference.
+    fn credential_ref(&self) -> Result<String, DesktopSetupError>;
+}
+
+/// Shipping setup identity source backed by cryptographically random UUIDs.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemSetupIdentitySource;
+
+impl SetupIdentitySource for SystemSetupIdentitySource {
+    fn setup_id(&self) -> Result<String, DesktopSetupError> {
+        Ok(format!("setup-{}", Uuid::new_v4()))
+    }
+
+    fn credential_ref(&self) -> Result<String, DesktopSetupError> {
+        Ok(format!("credential-{}", Uuid::new_v4()))
+    }
+}
+
+/// Durable setup commit stages available to deterministic fault injection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SetupCommitStage {
+    /// Recovery journal committed before credential storage.
+    Planned,
+    /// New credential stored and journal advanced.
+    CredentialStored,
+    /// Strict v2 configuration atomically committed.
+    ConfigCommitted,
+    /// Non-secret receipt committed and journal advanced.
+    ReceiptCommitted,
+    /// Obsolete credential cleanup remains after Runtime restart.
+    CleanupPending,
+}
+
+/// Injected fault boundary used to prove every staged commit recovery outcome.
+pub trait SetupCommitFaults: Send + Sync {
+    /// Returns an injected failure immediately after one durable stage.
+    fn after_stage(&self, stage: SetupCommitStage) -> Result<(), DesktopSetupError>;
+}
+
+/// Shipping no-op setup fault boundary.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoSetupCommitFaults;
+
+impl SetupCommitFaults for NoSetupCommitFaults {
+    fn after_stage(&self, _stage: SetupCommitStage) -> Result<(), DesktopSetupError> {
+        Ok(())
+    }
 }
 
 /// Shipping setup clock backed by the operating system wall clock.
@@ -278,7 +421,10 @@ pub struct DesktopSetupService<S> {
     directory: PathBuf,
     credentials: S,
     clock: Arc<dyn SetupClock>,
+    identities: Arc<dyn SetupIdentitySource>,
+    faults: Arc<dyn SetupCommitFaults>,
     plans: Mutex<PreparedPlans>,
+    state: Mutex<DesktopSetupState>,
 }
 
 impl<S: SetupCredentialStore> DesktopSetupService<S> {
@@ -289,11 +435,31 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
 
     /// Constructs setup with an explicit clock for deterministic expiry checks.
     pub fn with_clock(directory: PathBuf, credentials: S, clock: Arc<dyn SetupClock>) -> Self {
+        Self::with_dependencies(
+            directory,
+            credentials,
+            clock,
+            Arc::new(SystemSetupIdentitySource),
+            Arc::new(NoSetupCommitFaults),
+        )
+    }
+
+    /// Constructs setup with every nondeterministic and crash boundary injected.
+    pub fn with_dependencies(
+        directory: PathBuf,
+        credentials: S,
+        clock: Arc<dyn SetupClock>,
+        identities: Arc<dyn SetupIdentitySource>,
+        faults: Arc<dyn SetupCommitFaults>,
+    ) -> Self {
         Self {
             directory,
             credentials,
             clock,
+            identities,
+            faults,
             plans: Mutex::new(PreparedPlans::default()),
+            state: Mutex::new(DesktopSetupState::SetupRecovering),
         }
     }
 
@@ -307,23 +473,78 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
                     profile_id: ANTHROPIC_MESSAGES_PROFILE_ID,
                     display_name_key: "setup.profile.anthropic",
                     endpoint_mode: "optional_override",
+                    model_mode: "exact_id",
+                    credential_label_key: "setup.credential.connection",
                     supported_capabilities: vec!["text"],
                 },
                 DesktopSetupProfile {
                     profile_id: OPENAI_RESPONSES_PROFILE_ID,
                     display_name_key: "setup.profile.openai",
                     endpoint_mode: "optional_override",
+                    model_mode: "exact_id",
+                    credential_label_key: "setup.credential.connection",
                     supported_capabilities: vec!["text"],
                 },
             ],
-            max_text_bytes: MAX_TEXT_BYTES,
-            max_endpoint_bytes: MAX_ENDPOINT_BYTES,
-            max_secret_bytes: MAX_SECRET_BYTES,
+            presets: vec![DesktopSetupPreset {
+                preset_id: BALANCED_PRESET_ID,
+                display_name_key: "setup.preset.balanced",
+                supported_profile_ids: vec![
+                    ANTHROPIC_MESSAGES_PROFILE_ID,
+                    OPENAI_RESPONSES_PROFILE_ID,
+                ],
+            }],
+            limits: DesktopSetupLimits {
+                max_profiles: 2,
+                max_text_bytes: MAX_TEXT_BYTES,
+                max_endpoint_bytes: MAX_ENDPOINT_BYTES,
+                max_secret_bytes: MAX_SECRET_BYTES,
+                max_plan_count: MAX_PREPARED_PLANS,
+                plan_lifetime_seconds: PLAN_LIFETIME_SECONDS,
+            },
         }
     }
 
+    /// Returns the current redacted setup lifecycle state.
+    pub fn state(&self) -> DesktopSetupState {
+        self.state.lock().map(|state| state.clone()).unwrap_or(
+            DesktopSetupState::InvalidConfiguration {
+                code: "setup_recovery_failed".to_owned(),
+            },
+        )
+    }
+
+    /// Publishes the secret-free result after recovery and Runtime construction.
+    pub fn complete_startup(
+        &self,
+        runtime_started: bool,
+        invalid_code: Option<&str>,
+    ) -> Result<(), DesktopSetupError> {
+        let state = match (runtime_started, invalid_code) {
+            (_, Some(code)) if !code.is_empty() && code.len() <= MAX_TEXT_BYTES => {
+                DesktopSetupState::InvalidConfiguration {
+                    code: code.to_owned(),
+                }
+            }
+            (true, None) => DesktopSetupState::Configured {
+                restart_required: false,
+            },
+            (false, None) => DesktopSetupState::NotConfigured,
+            _ => return Err(DesktopSetupError::RecoveryFailed),
+        };
+        *self
+            .state
+            .lock()
+            .map_err(|_| DesktopSetupError::RecoveryFailed)? = state;
+        Ok(())
+    }
+
     /// Validates choices and returns a redacted immutable review plan.
-    pub fn prepare(&self, input: DesktopSetupInput) -> Result<DesktopSetupPlan, DesktopSetupError> {
+    pub fn prepare(
+        &self,
+        mut input: DesktopSetupInput,
+    ) -> Result<DesktopSetupPlan, DesktopSetupError> {
+        normalize_input(&mut input);
         validate_input(&input)?;
         let now = self.clock.unix_seconds()?;
         let input_digest = digest_value(
@@ -354,9 +575,12 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         if plans.by_digest.len() >= MAX_PREPARED_PLANS {
             return Err(DesktopSetupError::InputInvalid);
         }
-        let setup_id = format!("setup-{}", Uuid::new_v4());
-        let credential_ref = format!("credential-{}", Uuid::new_v4());
-        let revision = current_revision(&self.directory)?
+        let setup_id = self.identities.setup_id()?;
+        let credential_ref = self.identities.credential_ref()?;
+        let (expected_configuration_revision, expected_configuration_digest) =
+            current_configuration_binding(&self.directory)?;
+        let revision = expected_configuration_revision
+            .unwrap_or(0)
             .checked_add(1)
             .ok_or(DesktopSetupError::PlanStale)?;
         let configuration = configuration(&input, &setup_id, &credential_ref, revision);
@@ -368,6 +592,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             .ok_or(DesktopSetupError::PersistenceFailed)?
             .to_rfc3339_opts(SecondsFormat::Secs, true);
         let summary = DesktopSetupSummary {
+            preset_id: input.preset_id.clone(),
             profile_id: input.profile_id.clone(),
             endpoint_mode: if input.endpoint_override.is_some() {
                 "override"
@@ -380,13 +605,15 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             deployment_id: input.deployment_id.clone(),
             definition_id: input.definition_id.clone(),
         };
-        let public_value = json!({"schema_version":1,"setup_id":setup_id,"caller_nonce":input.caller_nonce,"catalogue_revision":CATALOGUE_REVISION,"effective_configuration_digest":effective_configuration_digest,"expires_at":expires_at,"summary":summary});
+        let public_value = json!({"schema_version":1,"setup_id":setup_id,"caller_nonce":input.caller_nonce,"catalogue_revision":CATALOGUE_REVISION,"expected_configuration_revision":expected_configuration_revision,"expected_configuration_digest":expected_configuration_digest,"effective_configuration_digest":effective_configuration_digest,"expires_at":expires_at,"summary":summary});
         let plan_digest = digest_value(&public_value)?;
         let public = DesktopSetupPlan {
             schema_version: 1,
             setup_id,
             caller_nonce: input.caller_nonce,
             catalogue_revision: CATALOGUE_REVISION,
+            expected_configuration_revision,
+            expected_configuration_digest,
             effective_configuration_digest,
             expires_at,
             summary,
@@ -414,7 +641,10 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         plan_digest: &str,
         credential: &str,
     ) -> Result<DesktopSetupReceipt, DesktopSetupError> {
-        if plan_digest.len() != 64 || credential.is_empty() || credential.len() > MAX_SECRET_BYTES {
+        if !valid_digest(plan_digest) {
+            return Err(DesktopSetupError::PlanStale);
+        }
+        if credential.is_empty() || credential.len() > MAX_SECRET_BYTES {
             return Err(DesktopSetupError::CredentialRejected);
         }
         if let Some(receipt) = committed_receipt(&self.directory, plan_digest)? {
@@ -444,7 +674,12 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         let revision = prepared.configuration["configuration_revision"]
             .as_u64()
             .ok_or(DesktopSetupError::PlanStale)?;
-        if current_revision(&self.directory)? != revision - 1 {
+        if current_configuration_binding(&self.directory)?
+            != (
+                prepared.public.expected_configuration_revision,
+                prepared.public.expected_configuration_digest.clone(),
+            )
+        {
             return Err(DesktopSetupError::PlanStale);
         }
         let mut journal = RecoveryJournal {
@@ -458,10 +693,13 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             stage: RecoveryStage::Planned,
         };
         write_journal(&self.directory, &journal)?;
+        self.faults.after_stage(SetupCommitStage::Planned)?;
         self.credentials
             .store(&prepared.credential_ref, credential)?;
         journal.stage = RecoveryStage::CredentialStored;
         write_journal(&self.directory, &journal)?;
+        self.faults
+            .after_stage(SetupCommitStage::CredentialStored)?;
         let bytes = serde_json::to_vec_pretty(&prepared.configuration)
             .map_err(|_| DesktopSetupError::PersistenceFailed)?;
         atomic_write(
@@ -472,6 +710,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         )?;
         journal.stage = RecoveryStage::ConfigCommitted;
         write_journal(&self.directory, &journal)?;
+        self.faults.after_stage(SetupCommitStage::ConfigCommitted)?;
         let receipt = receipt(&journal)?;
         let receipt_bytes = serde_json::to_vec_pretty(&receipt)
             .map_err(|_| DesktopSetupError::PersistenceFailed)?;
@@ -483,15 +722,24 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         )?;
         journal.stage = RecoveryStage::ReceiptCommitted;
         write_journal(&self.directory, &journal)?;
+        self.faults
+            .after_stage(SetupCommitStage::ReceiptCommitted)?;
         let nonce = prepared.public.caller_nonce.clone();
         plans.by_digest.remove(plan_digest);
         plans.by_nonce.remove(&nonce);
         if journal.old_credential_ref.is_some() {
             journal.stage = RecoveryStage::CleanupPending;
             write_journal(&self.directory, &journal)?;
+            self.faults.after_stage(SetupCommitStage::CleanupPending)?;
         } else {
             remove_recovery(&self.directory)?;
         }
+        *self
+            .state
+            .lock()
+            .map_err(|_| DesktopSetupError::PersistenceFailed)? = DesktopSetupState::Configured {
+            restart_required: true,
+        };
         Ok(receipt)
     }
 
@@ -575,17 +823,46 @@ fn validate_input(input: &DesktopSetupInput) -> Result<(), DesktopSetupError> {
     ];
     if input.schema_version != 1
         || input.catalogue_revision != CATALOGUE_REVISION
+        || input.preset_id != BALANCED_PRESET_ID
         || !profile
         || texts
             .iter()
             .any(|value| value.is_empty() || value.len() > MAX_TEXT_BYTES)
-        || input.endpoint_override.as_ref().is_some_and(|value| {
-            value.is_empty() || value.len() > MAX_ENDPOINT_BYTES || url::Url::parse(value).is_err()
-        })
+        || input
+            .endpoint_override
+            .as_ref()
+            .is_some_and(|value| !valid_endpoint(value))
     {
         return Err(DesktopSetupError::InputInvalid);
     }
     Ok(())
+}
+
+fn normalize_input(input: &mut DesktopSetupInput) {
+    input.caller_nonce = input.caller_nonce.trim().to_owned();
+    input.catalogue_revision = input.catalogue_revision.trim().to_owned();
+    input.preset_id = input.preset_id.trim().to_owned();
+    input.profile_id = input.profile_id.trim().to_owned();
+    input.endpoint_override = input
+        .endpoint_override
+        .take()
+        .map(|value| value.trim().to_owned());
+    input.model_target_id = input.model_target_id.trim().to_owned();
+    input.model_id = input.model_id.trim().to_owned();
+    input.deployment_id = input.deployment_id.trim().to_owned();
+    input.definition_id = input.definition_id.trim().to_owned();
+}
+
+fn valid_endpoint(value: &str) -> bool {
+    let Ok(endpoint) = url::Url::parse(value) else {
+        return false;
+    };
+    value.len() <= MAX_ENDPOINT_BYTES
+        && matches!(endpoint.scheme(), "http" | "https")
+        && endpoint.host_str().is_some()
+        && endpoint.username().is_empty()
+        && endpoint.password().is_none()
+        && endpoint.fragment().is_none()
 }
 
 fn digest_value(value: &Value) -> Result<String, DesktopSetupError> {
@@ -593,16 +870,20 @@ fn digest_value(value: &Value) -> Result<String, DesktopSetupError> {
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
-fn current_revision(directory: &std::path::Path) -> Result<u64, DesktopSetupError> {
+fn current_configuration_binding(
+    directory: &std::path::Path,
+) -> Result<(Option<u64>, Option<String>), DesktopSetupError> {
     let path = directory.join(DESKTOP_CONFIG_FILE);
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((None, None)),
         Err(_) => return Err(DesktopSetupError::PersistenceFailed),
     };
     let config = DesktopSystemConfiguration::parse(&bytes, directory)
         .map_err(|_| DesktopSetupError::PersistenceFailed)?;
-    Ok(config.configuration_revision().unwrap_or(0))
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    Ok((config.configuration_revision(), Some(digest_value(&value)?)))
 }
 
 fn current_credential_ref(
@@ -667,12 +948,6 @@ fn read_journal(directory: &std::path::Path) -> Result<Option<RecoveryJournal>, 
 }
 
 fn validate_journal(journal: &RecoveryJournal) -> Result<(), DesktopSetupError> {
-    let valid_digest = |value: &str| {
-        value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-    };
     if journal.schema_version != 1
         || journal.setup_id.is_empty()
         || journal.configuration_revision == 0
@@ -684,6 +959,13 @@ fn validate_journal(journal: &RecoveryJournal) -> Result<(), DesktopSetupError> 
         return Err(DesktopSetupError::RecoveryFailed);
     }
     Ok(())
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn configuration_matches(
@@ -731,10 +1013,47 @@ fn committed_receipt(
     let receipt: DesktopSetupReceipt =
         serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
     if receipt.plan_digest == plan_digest {
+        validate_committed_receipt(directory, &receipt)?;
         Ok(Some(receipt))
     } else {
         Ok(None)
     }
+}
+
+fn validate_committed_receipt(
+    directory: &std::path::Path,
+    receipt: &DesktopSetupReceipt,
+) -> Result<(), DesktopSetupError> {
+    let value = json!({
+        "schema_version": receipt.schema_version,
+        "setup_id": receipt.setup_id,
+        "plan_digest": receipt.plan_digest,
+        "configuration_revision": receipt.configuration_revision,
+        "configuration_digest": receipt.configuration_digest,
+        "restart_required": receipt.restart_required,
+    });
+    if receipt.schema_version != 1
+        || !receipt.restart_required
+        || !valid_digest(&receipt.plan_digest)
+        || !valid_digest(&receipt.configuration_digest)
+        || !valid_digest(&receipt.receipt_digest)
+        || digest_value(&value)? != receipt.receipt_digest
+    {
+        return Err(DesktopSetupError::PersistenceFailed);
+    }
+    let bytes = fs::read(directory.join(DESKTOP_CONFIG_FILE))
+        .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    let config = DesktopSystemConfiguration::parse(&bytes, directory)
+        .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    let config_value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    if config.setup_id() != Some(receipt.setup_id.as_str())
+        || config.configuration_revision() != Some(receipt.configuration_revision)
+        || digest_value(&config_value)? != receipt.configuration_digest
+    {
+        return Err(DesktopSetupError::PersistenceFailed);
+    }
+    Ok(())
 }
 
 fn remove_known_temporary(directory: &std::path::Path, setup_id: Option<&str>) {
@@ -763,15 +1082,9 @@ fn configuration(
 ) -> Value {
     let snapshot_digest = format!(
         "{:x}",
-        Sha256::digest(
-            format!(
-                "garive-desktop-agent-v2\n{}\nactivity-labels-1\n[]",
-                input.definition_id
-            )
-            .as_bytes()
-        )
+        Sha256::digest(format!("garive-desktop-agent-v1\n{}", input.definition_id).as_bytes())
     );
-    json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":input.definition_id,"definition_revision":"revision-1","snapshot_digest":snapshot_digest,"agent_instance_namespace":format!("desktop-{setup_id}"),"max_iterations":12,"max_input_tokens":131072,"max_output_tokens":8192,"deadline_budget_ms":600000,"public_activity_catalogue":{"schema_version":1,"catalogue_revision":"activity-labels-1","descriptors":[]}},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100,"activity":{"max_activities_per_turn":32,"max_activity_facts":512,"max_label_bytes":128,"max_activity_id_bytes":128,"max_encoded_bytes_per_turn":32768}},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000})
+    json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":input.definition_id,"definition_revision":"revision-1","snapshot_digest":snapshot_digest,"agent_instance_namespace":format!("desktop-{setup_id}"),"max_iterations":12,"max_input_tokens":131072,"max_output_tokens":8192,"deadline_budget_ms":600000},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000})
 }
 
 fn atomic_write(path: PathBuf, temporary: PathBuf, bytes: &[u8]) -> Result<(), DesktopSetupError> {

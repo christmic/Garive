@@ -22,6 +22,29 @@ contract; this document is normative where it proposes concrete mechanisms.
 
 Engine reads no environment, database, clock, network, embedding or random state.
 
+## Architecture vocabulary reconciliation
+
+The architecture deep-dive predates parts of this contract. The following
+mapping is exact; aliases do not add states, permissions, schedules, or hidden
+read paths:
+
+| Architecture phrase | M1 meaning |
+|---|---|
+| hot capture | asynchronous `ExitSummary` Candidate proposal |
+| explicit remember | authorized `ExplicitUserCommand`; wording alone proves no authority |
+| session-end memory | bounded `SessionEnd` Candidate or durable Noop |
+| dream | `ScheduledDistillation` over one exact prefix and watermark |
+| confidence | exact `EvidenceTally`; optional versioned display calibration only |
+| graduated | `Promoted` after an exact Knowledge publication receipt |
+| retired | no M1 state; use explicit Cold/Archived policy or M0 supersession/tombstone |
+| vector / FTS / recency | replaceable Runtime candidate ports before deterministic selection |
+| risk-action recall | outside M1 until a Governance × Memory Spec admits the full contract |
+
+Fixed clocks, percentages, fusion weights, confidence thresholds, automatic
+scope rewrites, and Thompson-style exploration are research. Stochastic
+exploration is permitted only under the frozen-request and committed-result
+rules below; no particular algorithm is selected here.
+
 ## Classification and M0 compatibility
 
 Classification has two independent axes:
@@ -158,6 +181,90 @@ by the model benefiting from it.
 Observation and extraction are asynchronous Runtime branches. Their failure
 cannot rewrite or block a completed turn; later visibility still follows
 commit-before-context.
+
+### Exact recall/application/outcome chain
+
+The architecture aliases `recall.event`, `recall.apply`, and
+`recall.outcome` do not introduce another event store. They map exactly to:
+
+```text
+memory.recall_recorded
+  -> memory.obligation_opened
+  -> memory.observation_recorded + memory.lifecycle_transitioned
+```
+
+The application edge adds these mandatory bindings to `MemoryObligation`:
+
+```text
+recall_fact: DurableFactReference
+selection_id: non-empty opaque identity
+```
+
+`recall_fact.position < application_fact.position < expires_at_position`.
+Runtime resolves `recall_fact` from the fixed Session prefix, verifies its kind,
+payload digest, namespace, selection identity, Turn/Execution ownership, and
+that the exact record/revision occurs once in its selected items. The portable
+constructor validates identity, fact order and bounds; it does not read Ledger.
+
+- A recall fact freezes one selection request, ordered revision identities,
+  integer score components, selection kinds and truncation. It proves exposure,
+  not use or correctness.
+- An obligation binds one selected record/revision and recall fact to a committed application
+  fact, expected-outcome digest, application-scope digest, attribution-policy
+  revision and expiry. A model citation or generated reference cannot open an
+  obligation unless Runtime verifies its exact committed application fact and
+  membership in the recalled product visible to that Execution.
+- An observation binds the obligation to ordered typed durable reality evidence
+  and one verifier revision. Observation and lifecycle transition commit
+  atomically. An expired, duplicated, cross-namespace, unselected, mismatched or
+  unsupported-attribution chain fails closed.
+
+Exposure without an obligation and an open obligation without conclusive
+reality evidence do not change `verified`, `falsified`, or lifecycle state.
+Runtime may report them as pending/expired audit projections; those projections
+are not observations. An admitted `Neutral` observation increments only the
+exact `neutral` audit tally and never `verified` or `falsified`.
+
+Conflict between two recalled revisions is not evidence against either one.
+Each revision requires separately attributable reality evidence; there is no
+"penalize both" or "higher confidence wins" reducer.
+
+### Error versus applicability mismatch
+
+The frozen attribution policy classifies a conclusive negative outcome:
+
+| Classification | Portable reduction |
+|---|---|
+| Failure is within the declared application scope | `Falsified {in_scope:true}`; increment `falsified`. |
+| Failure is outside the declared application scope | `Falsified {in_scope:false, observed_scope_digest}`; increment `neutral` and emit an optional `ScopeNarrowingCandidate`. |
+| Scope or causality cannot be established | `Neutral {safe_reason}`; increment only `neutral`. |
+
+A narrowing Candidate binds the source revision, original and observed scope
+digests, and exact evidence. It has no write authority. The old immutable
+revision is unchanged until normal M0/M1 admission explicitly supersedes it.
+Similarity scores, thresholds and model-generated scope labels cannot perform
+this attribution by themselves.
+
+### Quality and calibration evidence
+
+Production chains and pinned suites are complementary evidence. Any proposed
+recall/calibration policy must publish a content-free, non-overwriting evidence
+record binding:
+
+- policy, candidate-port, attribution and verifier revisions;
+- exact fixed ledger/repository prefix or pinned corpus digest;
+- eligible exposure/application/outcome counts and exclusion reasons;
+- integer numerators and denominators for recall, precision, application and
+  verified-outcome ratios, with zero denominators represented as absent;
+- replay result, namespace/redaction checks and configuration digest.
+
+Floating scores may be a versioned display or candidate-ranking projection.
+They are not portable state, truth, authority, lifecycle permission, or a
+substitute for `EvidenceTally`. Beta/Bernoulli priors, RRF, rerankers, query
+expansion, freshness equations, Platt/isotonic calibration, ranker weights,
+thresholds and schedules remain evaluation-gated policies. None is a default
+until a focused Spec freezes its exact arithmetic, tie-breaks, inputs, failure
+behavior, recovery and cross-language fixtures.
 
 ## Distillation, promotion, quota and forget
 
@@ -325,7 +432,9 @@ Stable additions are `unknown_memory_type`, `authority_receipt_required`,
 4. M1-D obligation/observation and scope narrowing;
 5. M1-E Runtime facts, SQLite projection, restart and isolation;
 6. M1-F distillation, audit, promotion and erasure receipts;
-7. M1-G derive integration and pinned recall-quality evaluation.
+7. M1-G derive integration and pinned recall-quality evaluation;
+8. M1-H recall-bound application membership, restart validation and exact
+   attributable feedback-quality reduction.
 
 Portable slices require strict Rust evidence plus Kotlin semantic conformance.
 Runtime claims require real SQLite restart/process-kill tests. Quality/latency
@@ -343,6 +452,14 @@ The admitted v1 synthetic suite contains four selector-linked cases. Its pinned
 aggregate is recall `6/7`, precision `6/8`, zero forbidden admissions and zero
 ordered replay mismatches. These unreduced fractions are regression evidence,
 not a production quality target.
+
+M1-H adds `memory-recall-feedback-v1.json`. Rust and Kotlin independently
+reduce the same content-free chain rows into exact exposure, application,
+censored, pending, verified, falsified and neutral counts plus unreduced
+application and verified-outcome ratios. Runtime planning verifies recall and
+application fact identity, namespace, Turn/Execution owner, selection identity
+and exact revision membership. SQLite reconstruction repeats those checks and
+fails closed on a forged selection after restart.
 
 ## Meta
 

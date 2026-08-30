@@ -173,6 +173,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "desktop-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 4,
                 max_input_tokens: Some(64),
@@ -430,7 +431,11 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
         )
         .await
         .unwrap();
-    assert_eq!(suspended.terminal, DesktopTerminal::Suspended);
+    assert_eq!(
+        suspended.terminal,
+        DesktopTerminal::Suspended,
+        "{suspended:?}"
+    );
     let timeline = state.session_timeline(&session_id, 0, 8).unwrap();
     let approval = timeline.items[0].suspension.as_ref().unwrap();
     assert_eq!(approval.kind, "approval_required");

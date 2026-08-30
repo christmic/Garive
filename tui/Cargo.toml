@@ -7,14 +7,30 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+base64.workspace = true
+clap.workspace = true
+chrono = { workspace = true, features = ["clock"] }
+crossterm.workspace = true
+futures.workspace = true
 garive-host-client = { path = "../clients/host-rs" }
-tokio.workspace = true
+ratatui.workspace = true
+pulldown-cmark = { version = "0.13.0", default-features = false }
+serde.workspace = true
+serde_jcs.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
+uuid.workspace = true
+fs2 = "0.4.3"
 
 [dev-dependencies]
 garive-core = { path = "../engine/core" }
 garive-ledger = { path = "../engine/ledger" }
 garive-llm = { path = "../engine/llm" }
 garive-runtime = { path = "../runtime/replica" }
+insta = "1.46.3"
 tempfile = "3.27.0"
 
 [[bin]]

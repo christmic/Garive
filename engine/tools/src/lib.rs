@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod access;
+mod batch;
 mod governed_outcome;
 mod governed_reducer;
 mod governed_types;
@@ -11,6 +13,14 @@ mod schema;
 mod schema_validate;
 mod unique_json;
 
+pub use access::{
+    AccessMode, AccessNamespace, AccessPolicyEntry, InvocationAccessSet, ResourceAccess,
+    ToolAccessPolicyV1, ToolAccessResolver,
+};
+pub use batch::{
+    plan_effect_batch, plan_effect_batch_intents, EffectBatchError, EffectBatchErrorCode,
+    EffectBatchIntent, EffectBatchLimitsV1, EffectBatchPlanV1, EffectBatchStep,
+};
 pub use governed_outcome::{
     EffectState, ExecutionFact, GovernedAction, GovernedEffectFailure, GovernedFailureCode,
     GovernedObservation, GovernedToolResult, ObservationOutcome, PreparationRejectedFeedback,

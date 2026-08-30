@@ -444,16 +444,29 @@ fn commit_artifact_export(
 
 #[tauri::command]
 fn get_setup_catalogue(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
-) -> garive_desktop::DesktopSetupCatalogue {
-    setup.catalogue()
+) -> Result<garive_desktop::DesktopSetupCatalogue, String> {
+    require_setup_window(&window)?;
+    Ok(setup.catalogue())
+}
+
+#[tauri::command]
+fn get_setup_state(
+    window: tauri::Window,
+    setup: tauri::State<'_, SetupState>,
+) -> Result<garive_desktop::DesktopSetupState, String> {
+    require_setup_window(&window)?;
+    Ok(setup.state())
 }
 
 #[tauri::command]
 fn prepare_setup(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
     input: garive_desktop::DesktopSetupInput,
 ) -> Result<garive_desktop::DesktopSetupPlan, String> {
+    require_setup_window(&window)?;
     setup
         .prepare(input)
         .map_err(|error| error.code().to_owned())
@@ -461,28 +474,37 @@ fn prepare_setup(
 
 #[tauri::command]
 fn commit_setup(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
     plan_digest: String,
-    credential: String,
+    credential: garive_desktop::SensitiveSetupCredential,
 ) -> Result<garive_desktop::DesktopSetupReceipt, String> {
+    require_setup_window(&window)?;
     setup
-        .commit(&plan_digest, &credential)
+        .commit(&plan_digest, credential.expose_secret())
         .map_err(|error| error.code().to_owned())
 }
 
 #[tauri::command]
 fn cancel_setup(
+    window: tauri::Window,
     setup: tauri::State<'_, SetupState>,
     plan_digest: String,
 ) -> Result<garive_desktop::DesktopSetupCancellation, String> {
+    require_setup_window(&window)?;
     setup
         .cancel(&plan_digest)
         .map_err(|error| error.code().to_owned())
 }
 
 #[tauri::command]
-fn restart_desktop(app: tauri::AppHandle) {
+fn restart_desktop(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+    require_setup_window(&window)?;
     app.restart()
+}
+
+fn require_setup_window(window: &tauri::Window) -> Result<(), String> {
+    garive_desktop::authorize_setup_window(window.label()).map_err(|error| error.code().to_owned())
 }
 
 #[tauri::command]
@@ -536,12 +558,29 @@ fn main() {
                 std::sync::Arc::new(garive_desktop::SystemDesktopWorkspaceBookmarkStore),
             );
             let state = garive_desktop::DesktopState::default();
-            let installed = state
-                .install_from_with_workspaces(&provider, workspaces.clone(), "main")
-                .map_err(|error| stable_setup_error(error.code()))?;
-            setup
-                .recover(installed)
-                .map_err(|error| stable_setup_error(error.code()))?;
+            let recovered = setup.recover(false).is_ok();
+            if recovered {
+                match state.install_from_with_workspaces(&provider, workspaces.clone(), "main") {
+                    Ok(installed) => {
+                        if setup.recover(installed).is_err() {
+                            setup
+                                .complete_startup(false, Some("setup_recovery_failed"))
+                                .map_err(|error| stable_setup_error(error.code()))?;
+                        } else {
+                            setup
+                                .complete_startup(installed, None)
+                                .map_err(|error| stable_setup_error(error.code()))?;
+                        }
+                    }
+                    Err(error) => setup
+                        .complete_startup(false, Some(error.code()))
+                        .map_err(|setup_error| stable_setup_error(setup_error.code()))?,
+                }
+            } else {
+                setup
+                    .complete_startup(false, Some("setup_recovery_failed"))
+                    .map_err(|error| stable_setup_error(error.code()))?;
+            }
             // Workspace authorization can become unavailable independently of
             // the Runtime configuration; never make a stale bookmark prevent
             // the Desktop shell from launching.
@@ -559,6 +598,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_desktop_capabilities,
+            get_setup_state,
             get_setup_catalogue,
             prepare_setup,
             commit_setup,

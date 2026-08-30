@@ -1,8 +1,11 @@
 package com.garive.eng.kt.ledger
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -26,6 +29,11 @@ internal data class KnowledgeRecord(
     val requestDigest: String,
     val dispatchAttempts: MutableSet<String>,
     var terminal: Boolean,
+)
+
+internal data class EffectBatchRecord(
+    val tools: List<ToolInvocationId>,
+    var nextStart: Int = 0,
 )
 
 internal enum class ScheduleState { ACTIVE, SUPERSEDING, CANCELLED, FAILED, EXHAUSTED }
@@ -63,6 +71,10 @@ internal class LedgerProjection(
     private val modelDigests: MutableMap<ModelRequestId, String> = mutableMapOf(),
     private val tools: MutableMap<ToolInvocationId, Pair<ExecutionId, InvocationState>> = mutableMapOf(),
     private val toolDigests: MutableMap<ToolInvocationId, String> = mutableMapOf(),
+    private val toolContractVersions: MutableMap<ToolInvocationId, UInt> = mutableMapOf(),
+    private val toolResultBytes: MutableMap<ToolInvocationId, ULong> = mutableMapOf(),
+    private val toolBatchPlans: MutableMap<ToolInvocationId, String> = mutableMapOf(),
+    private val effectBatches: MutableMap<String, EffectBatchRecord> = mutableMapOf(),
     private val toolGrants: MutableMap<ToolInvocationId, String> = mutableMapOf(),
     private val toolReceipts: MutableMap<ToolInvocationId, String> = mutableMapOf(),
     private val toolExecutors: MutableMap<ToolInvocationId, Pair<String, String>> = mutableMapOf(),
@@ -87,6 +99,10 @@ internal class LedgerProjection(
         modelDigests.toMutableMap(),
         tools.toMutableMap(),
         toolDigests.toMutableMap(),
+        toolContractVersions.toMutableMap(),
+        toolResultBytes.toMutableMap(),
+        toolBatchPlans.toMutableMap(),
+        effectBatches.mapValues { (_, value) -> value.copy() }.toMutableMap(),
         toolGrants.toMutableMap(),
         toolReceipts.toMutableMap(),
         toolExecutors.toMutableMap(),
@@ -127,6 +143,7 @@ internal class LedgerProjection(
             "execution.suspended" -> transitionExecution(fact, ExecutionState.SUSPENDED)
             "execution.stopped" -> transitionExecution(fact, ExecutionState.STOPPED)
             "execution.failed" -> transitionExecution(fact, ExecutionState.FAILED)
+            "execution.effect_batch_planned" -> planEffectBatch(fact)
             "model.prepared" -> prepareModel(fact)
             "model.started" -> transitionModel(fact, InvocationState.STARTED)
             "model.completed" -> transitionModel(fact, InvocationState.COMPLETED)
@@ -378,7 +395,73 @@ internal class LedgerProjection(
             return LedgerError.InvalidTransition
         }
         toolDigests[tool] = fact.payloadObject().text("prepared_digest")
+        toolContractVersions[tool] = fact.schemaVersion
+        if (fact.schemaVersion == 2u) toolResultBytes[tool] = fact.payloadObject().ulong("max_result_bytes")
         return null
+    }
+
+    private fun planEffectBatch(fact: FactDraft): LedgerError? {
+        requireActiveExecution(fact)?.let { return it }
+        val execution = fact.executionId ?: return LedgerError.MissingReference
+        val payload = fact.payloadObject()
+        val planDigest = payload.text("plan_digest")
+        if (planDigest in effectBatches) return LedgerError.InvalidTransition
+        val digests = payload.contentValue("ordered_prepared_digests")?.jsonArray
+            ?: return LedgerError.InvalidFact
+        if (digests.isEmpty()) return LedgerError.InvalidTransition
+        val batchTools = digests.map { digestValue ->
+            val digest = digestValue.jsonPrimitive.contentOrNull ?: return LedgerError.InvalidFact
+            val matches = tools.filter { (tool, state) ->
+                state == execution to InvocationState.AUTHORIZED && toolContractVersions[tool] == 2u &&
+                    toolDigests[tool] == digest && tool !in toolBatchPlans
+            }.keys
+            if (matches.size != 1) return LedgerError.InvalidTransition
+            matches.single()
+        }
+        if (batchTools.toSet().size != batchTools.size) return LedgerError.InvalidTransition
+        validateBatchSteps(
+            payload.contentValue("steps") ?: return LedgerError.InvalidFact,
+            batchTools,
+            payload.ulong("max_parallel_reads"),
+            payload.ulong("max_buffered_result_bytes"),
+        )?.let { return it }
+        batchTools.forEach { toolBatchPlans[it] = planDigest }
+        effectBatches[planDigest] = EffectBatchRecord(batchTools)
+        return null
+    }
+
+    private fun validateBatchSteps(
+        value: JsonElement,
+        batchTools: List<ToolInvocationId>,
+        maxParallel: ULong,
+        maxBuffered: ULong,
+    ): LedgerError? {
+        val indexes = mutableListOf<Int>()
+        for (valueStep in value as? JsonArray ?: return LedgerError.InvalidFact) {
+            val step = valueStep as? JsonObject ?: return LedgerError.InvalidFact
+            when (step.text("kind")) {
+                "sequential_step" -> {
+                    if (step.size != 2) return LedgerError.InvalidFact
+                    indexes += step.ulong("intent_index").toInt()
+                }
+                "parallel_read_group" -> {
+                    if (step.size != 2) return LedgerError.InvalidFact
+                    val group = step["intent_indexes"] as? JsonArray ?: return LedgerError.InvalidFact
+                    if (group.isEmpty() || group.size.toULong() > maxParallel) return LedgerError.InvalidTransition
+                    var bytes = 0uL
+                    for (indexValue in group) {
+                        val index = indexValue.jsonPrimitive.content.toIntOrNull() ?: return LedgerError.InvalidFact
+                        val tool = batchTools.getOrNull(index) ?: return LedgerError.InvalidTransition
+                        bytes = bytes.plusOrNull(toolResultBytes[tool] ?: return LedgerError.InvalidTransition)
+                            ?: return LedgerError.InvalidTransition
+                        indexes += index
+                    }
+                    if (bytes > maxBuffered) return LedgerError.InvalidTransition
+                }
+                else -> return LedgerError.InvalidFact
+            }
+        }
+        return if (indexes == batchTools.indices.toList()) null else LedgerError.InvalidTransition
     }
 
     private fun requestInteraction(fact: FactDraft): LedgerError? {
@@ -445,8 +528,15 @@ internal class LedgerProjection(
             else -> false
         }
         if (!valid) return LedgerError.InvalidTransition
+        if (next == InvocationState.STARTED && toolContractVersions[tool] == 2u) {
+            val batch = toolBatchPlans[tool]?.let(effectBatches::get) ?: return LedgerError.InvalidTransition
+            if (batch.tools.getOrNull(batch.nextStart) != tool) return LedgerError.InvalidTransition
+        }
         validateEffectBinding(tool, current.second, next, payload)?.let { return it }
         tools[tool] = execution to next
+        if (next == InvocationState.STARTED && toolContractVersions[tool] == 2u) {
+            effectBatches.getValue(toolBatchPlans.getValue(tool)).nextStart += 1
+        }
         return null
     }
 
@@ -800,7 +890,15 @@ internal class LedgerProjection(
 
 private fun FactDraft.payloadObject(): JsonObject = Json.parseToJsonElement(payload.json).jsonObject
 
+private fun JsonObject.contentValue(key: String): JsonElement? {
+    val binding = this[key] as? JsonObject ?: return null
+    val stored = CanonicalPayload.fromStoredJson(binding.text("inline_utf8"), binding.text("digest"))
+    return (stored as? CanonicalPayloadResult.Success)?.payload?.json?.let(Json::parseToJsonElement)
+}
+
 private fun JsonObject.ulong(key: String): ULong =
     getValue(key).jsonPrimitive.content.toULongOrNull() ?: throw IllegalArgumentException(key)
 
 private fun ULong.nextOrdinalOrNull(): ULong? = if (this == ULong.MAX_VALUE) null else this + 1u
+
+private fun ULong.plusOrNull(other: ULong): ULong? = if (ULong.MAX_VALUE - this < other) null else this + other

@@ -49,6 +49,8 @@ pub struct MemoryObligation {
     obligation_id: String,
     record_id: String,
     revision_id: String,
+    recall_fact: DurableFactReference,
+    selection_id: String,
     application_fact: DurableFactReference,
     expected_outcome_digest: String,
     application_scope_digest: String,
@@ -63,6 +65,8 @@ impl MemoryObligation {
         obligation_id: impl Into<String>,
         record_id: impl Into<String>,
         revision_id: impl Into<String>,
+        recall_fact: DurableFactReference,
+        selection_id: impl Into<String>,
         application_fact: DurableFactReference,
         expected_outcome_digest: impl Into<String>,
         application_scope_digest: impl Into<String>,
@@ -73,6 +77,8 @@ impl MemoryObligation {
             obligation_id: obligation_id.into(),
             record_id: record_id.into(),
             revision_id: revision_id.into(),
+            recall_fact,
+            selection_id: selection_id.into(),
             application_fact,
             expected_outcome_digest: expected_outcome_digest.into(),
             application_scope_digest: application_scope_digest.into(),
@@ -82,9 +88,11 @@ impl MemoryObligation {
         if !valid_id(&value.obligation_id)
             || !valid_id(&value.record_id)
             || !valid_id(&value.revision_id)
+            || !valid_id(&value.selection_id)
             || !valid_digest(&value.expected_outcome_digest)
             || !valid_digest(&value.application_scope_digest)
             || !valid_text(&value.attribution_policy_revision, 512)
+            || value.recall_fact.position() >= value.application_fact.position()
             || value.expires_at_position <= value.application_fact.position()
         {
             return Err(MemoryError::new(MemoryErrorCode::InvalidMemory));
@@ -102,6 +110,14 @@ impl MemoryObligation {
     /// Returns the applied immutable revision.
     pub fn revision_id(&self) -> &str {
         &self.revision_id
+    }
+    /// Returns the exact committed recall fact that exposed the revision.
+    pub const fn recall_fact(&self) -> &DurableFactReference {
+        &self.recall_fact
+    }
+    /// Returns the selection identity carried by the recall fact.
+    pub fn selection_id(&self) -> &str {
+        &self.selection_id
     }
     /// Returns the application fact.
     pub const fn application_fact(&self) -> &DurableFactReference {

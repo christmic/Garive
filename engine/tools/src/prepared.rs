@@ -4,6 +4,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::access::{AccessMode, InvocationAccessSet, ToolAccessPolicyV1, ToolAccessResolver};
 use crate::schema::{parse_arguments, validate_arguments, validate_definition};
 
 /// Stable failure classification for C4 preparation.
@@ -25,6 +26,8 @@ pub enum PreparationErrorCode {
     UnsupportedSchemaKeyword,
     /// A value cannot be represented by the admitted JCS surface.
     NonCanonicalValue,
+    /// A C5b access declaration, key, resolver result, or policy is invalid.
+    EffectAccessInvalid,
 }
 
 /// Deterministic JSON Schema assertion failure.
@@ -178,6 +181,14 @@ pub struct ToolDefinition {
     input_schema: Value,
     requirements: ExecutionRequirements,
     replay_class: ReplayClass,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    access_contract: Option<ToolAccessContract>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct ToolAccessContract {
+    policy: ToolAccessPolicyV1,
+    resolver_revision: String,
 }
 
 impl ToolDefinition {
@@ -190,6 +201,27 @@ impl ToolDefinition {
         requirements: ExecutionRequirements,
         replay_class: ReplayClass,
     ) -> Result<Self, PreparationError> {
+        Self::new_internal(
+            name,
+            revision,
+            description,
+            input_schema,
+            requirements,
+            replay_class,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_internal(
+        name: impl Into<String>,
+        revision: impl Into<String>,
+        description: impl Into<String>,
+        input_schema: Value,
+        requirements: ExecutionRequirements,
+        replay_class: ReplayClass,
+        v2_access_proof: bool,
+    ) -> Result<Self, PreparationError> {
         let (name, revision, description) = (name.into(), revision.into(), description.into());
         if name.is_empty() || revision.is_empty() || description.is_empty() {
             return Err(PreparationError::new(
@@ -198,9 +230,10 @@ impl ToolDefinition {
         }
         validate_definition(&input_schema)?;
         if replay_class == ReplayClass::ReadOnly
-            && requirements
-                .capabilities()
-                .any(|capability| capability != ExecutionCapability::FilesystemRead)
+            && requirements.capabilities().any(|capability| {
+                capability != ExecutionCapability::FilesystemRead
+                    && !(v2_access_proof && capability == ExecutionCapability::Network)
+            })
         {
             return Err(PreparationError::new(
                 PreparationErrorCode::InvalidToolDefinition,
@@ -213,7 +246,42 @@ impl ToolDefinition {
             input_schema,
             requirements,
             replay_class,
+            access_contract: None,
         })
+    }
+
+    /// Constructs a Prepared v2-capable definition with a frozen access contract.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_v2(
+        name: impl Into<String>,
+        revision: impl Into<String>,
+        description: impl Into<String>,
+        input_schema: Value,
+        requirements: ExecutionRequirements,
+        replay_class: ReplayClass,
+        access_policy: ToolAccessPolicyV1,
+        access_resolver_revision: impl Into<String>,
+    ) -> Result<Self, PreparationError> {
+        let mut definition = Self::new_internal(
+            name,
+            revision,
+            description,
+            input_schema,
+            requirements,
+            replay_class,
+            true,
+        )?;
+        let resolver_revision = access_resolver_revision.into();
+        if resolver_revision.is_empty() {
+            return Err(PreparationError::new(
+                PreparationErrorCode::EffectAccessInvalid,
+            ));
+        }
+        definition.access_contract = Some(ToolAccessContract {
+            policy: access_policy,
+            resolver_revision,
+        });
+        Ok(definition)
     }
     /// Returns the admitted provider-neutral name.
     pub fn name(&self) -> &str {
@@ -238,6 +306,15 @@ impl ToolDefinition {
     /// Returns the declared recovery class.
     pub const fn replay_class(&self) -> ReplayClass {
         self.replay_class
+    }
+
+    /// Returns the opted-in Prepared Call contract version.
+    pub const fn prepared_contract_version(&self) -> u16 {
+        if self.access_contract.is_some() {
+            2
+        } else {
+            1
+        }
     }
 }
 
@@ -300,6 +377,57 @@ impl ToolCatalog {
     }
     /// Validates one untrusted intent and returns an immutable authority-free call.
     pub fn prepare(&self, intent: &ToolIntent) -> Result<PreparedToolCall, PreparationError> {
+        let (definition, arguments) = self.validate_intent(intent)?;
+        if definition.access_contract.is_some() {
+            return Err(PreparationError::new(
+                PreparationErrorCode::EffectAccessInvalid,
+            ));
+        }
+        PreparedToolCall::from_v1(intent, definition, arguments)
+    }
+
+    /// Prepares one v2 call using the exact frozen trusted resolver revision.
+    pub fn prepare_v2(
+        &self,
+        intent: &ToolIntent,
+        resolver: &dyn ToolAccessResolver,
+    ) -> Result<PreparedToolCall, PreparationError> {
+        let (definition, arguments) = self.validate_intent(intent)?;
+        let contract = definition
+            .access_contract
+            .as_ref()
+            .ok_or_else(|| PreparationError::new(PreparationErrorCode::EffectAccessInvalid))?;
+        if resolver.revision() != contract.resolver_revision {
+            return Err(PreparationError::new(
+                PreparationErrorCode::EffectAccessInvalid,
+            ));
+        }
+        let accesses = resolver.resolve(&arguments)?;
+        let mutating = accesses
+            .values()
+            .iter()
+            .any(|access| access.mode() != AccessMode::Read);
+        let requires_mutation = definition.requirements.capabilities().any(|capability| {
+            matches!(
+                capability,
+                ExecutionCapability::FilesystemWrite | ExecutionCapability::Process
+            )
+        });
+        if !contract.policy.covers(&accesses)
+            || (definition.replay_class == ReplayClass::ReadOnly && mutating)
+            || (definition.replay_class != ReplayClass::ReadOnly && requires_mutation && !mutating)
+        {
+            return Err(PreparationError::new(
+                PreparationErrorCode::EffectAccessInvalid,
+            ));
+        }
+        PreparedToolCall::from_v2(intent, definition, arguments, accesses, contract)
+    }
+
+    fn validate_intent<'a>(
+        &'a self,
+        intent: &ToolIntent,
+    ) -> Result<(&'a ToolDefinition, Value), PreparationError> {
         if intent.model_call_id.is_empty() {
             return Err(PreparationError::new(
                 PreparationErrorCode::InvalidModelCallId,
@@ -320,7 +448,7 @@ impl ToolCatalog {
                 failures,
             ));
         }
-        PreparedToolCall::from_parts(intent, definition, arguments)
+        Ok((definition, arguments))
     }
 }
 
@@ -334,10 +462,15 @@ pub struct PreparedToolCall {
     input_digest: String,
     requirements: ExecutionRequirements,
     replay_class: ReplayClass,
+    contract_version: u16,
+    access_policy_revision: Option<String>,
+    access_resolver_revision: Option<String>,
+    invocation_accesses: Option<InvocationAccessSet>,
+    max_result_bytes: Option<u64>,
 }
 
 impl PreparedToolCall {
-    fn from_parts(
+    fn from_v1(
         intent: &ToolIntent,
         definition: &ToolDefinition,
         arguments: Value,
@@ -356,6 +489,51 @@ impl PreparedToolCall {
             input_digest,
             requirements: definition.requirements.clone(),
             replay_class: definition.replay_class,
+            contract_version: 1,
+            access_policy_revision: None,
+            access_resolver_revision: None,
+            invocation_accesses: None,
+            max_result_bytes: None,
+        })
+    }
+
+    fn from_v2(
+        intent: &ToolIntent,
+        definition: &ToolDefinition,
+        arguments: Value,
+        accesses: InvocationAccessSet,
+        contract: &ToolAccessContract,
+    ) -> Result<Self, PreparationError> {
+        let normalized_arguments = serde_jcs::to_string(&arguments)
+            .map_err(|_| PreparationError::new(PreparationErrorCode::NonCanonicalValue))?;
+        let preimage = json!({
+            "contract": "garive.prepared-tool-call",
+            "version": 2,
+            "tool_name": definition.name,
+            "tool_revision": definition.revision,
+            "arguments": arguments,
+            "requirements": definition.requirements,
+            "replay_class": definition.replay_class,
+            "access_policy_revision": contract.policy.policy_revision(),
+            "access_resolver_revision": contract.resolver_revision,
+            "invocation_accesses": accesses,
+            "max_result_bytes": contract.policy.max_result_bytes(),
+        });
+        let canonical = serde_jcs::to_vec(&preimage)
+            .map_err(|_| PreparationError::new(PreparationErrorCode::NonCanonicalValue))?;
+        Ok(Self {
+            model_call_id: intent.model_call_id.clone(),
+            tool_name: definition.name.clone(),
+            tool_revision: definition.revision.clone(),
+            normalized_arguments,
+            input_digest: format!("{:x}", Sha256::digest(canonical)),
+            requirements: definition.requirements.clone(),
+            replay_class: definition.replay_class,
+            contract_version: 2,
+            access_policy_revision: Some(contract.policy.policy_revision().to_owned()),
+            access_resolver_revision: Some(contract.resolver_revision.clone()),
+            invocation_accesses: Some(accesses),
+            max_result_bytes: Some(contract.policy.max_result_bytes()),
         })
     }
     /// Returns untrusted model correlation retained for observations.
@@ -385,5 +563,30 @@ impl PreparedToolCall {
     /// Returns the untrusted recovery declaration.
     pub const fn replay_class(&self) -> ReplayClass {
         self.replay_class
+    }
+
+    /// Returns the immutable Prepared Call contract version.
+    pub const fn contract_version(&self) -> u16 {
+        self.contract_version
+    }
+
+    /// Returns the v2 access policy revision, absent for v1.
+    pub fn access_policy_revision(&self) -> Option<&str> {
+        self.access_policy_revision.as_deref()
+    }
+
+    /// Returns the v2 trusted resolver revision, absent for v1.
+    pub fn access_resolver_revision(&self) -> Option<&str> {
+        self.access_resolver_revision.as_deref()
+    }
+
+    /// Returns the v2 exact canonical access set, absent for v1.
+    pub const fn invocation_accesses(&self) -> Option<&InvocationAccessSet> {
+        self.invocation_accesses.as_ref()
+    }
+
+    /// Returns the v2 buffered result charge, absent for v1.
+    pub const fn max_result_bytes(&self) -> Option<u64> {
+        self.max_result_bytes
     }
 }

@@ -1,0 +1,33 @@
+---
+source: tui/tests/view_snapshots.rs
+assertion_line: 27
+expression: "frame(&wide, Theme::Light, 160, 28)"
+---
+  GARIVE  research-age  /  Session session-alph                                                                                           ● online  ·  running
+
+ Sessions 2                      │       Conversation
+                                 │        ╭─ YOU #2
+ ▸ New session · 123456          │        │╭ Command palette ───────────────────────────────────────────────────────╮
+   completed  ·  3 turns         │        ╰│                                                                        │
+                                 │         │  Search: type to search                                                │
+   New session · 987654          │         │  › /new         Create session                                         │
+   running  ·  1 turns           │         │    /sessions    Switch session                                         │
+                                 │        ◆│    /status      Connection details                                     │
+                                 │         │    /retry       Retry unknown command  · no pending command            │
+                                 │         │    /reconnect   Resume event stream                                    │
+                                 │         │    /cancel      Cancel running turn                                    │
+                                 │         │    /theme system Follow terminal theme                                 │
+                                 │         │    /mouse off   Disable mouse capture next launch                      │
+                                 │         │    /copy last   Copy last completion                                   │
+                                 │         │    /copy session-id Copy Session ID                                    │
+                                 │         │    /help        Keyboard guide                                         │
+                                 │         │    /quit        Exit safely                                            │
+                                 │         │                                                                        │
+                                 │         │  ↑/↓ select   Enter run   Esc close                                    │
+                                 │         │                                                                        │
+                                 │         ╰────────────────────────────────────────────────────────────────────────╯
+                                 │      ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+╭ Message ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Ask a follow-up…                                                                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help                                                                                          18/4096 bytes

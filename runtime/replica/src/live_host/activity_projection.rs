@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use super::{ActivityProjectionLimits, HostActivity, InstalledActivityCatalogue, LiveHostError};
 
 const API_VERSION: &str = "v1";
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 pub(crate) struct ActivityProjection {
     pub events: BTreeMap<u64, ProjectedActivityEvent>,
@@ -29,7 +30,12 @@ struct State {
     family: Family,
     public: HostActivity,
     first_position: u64,
-    receipt_seen: bool,
+    receipt: Option<Receipt>,
+}
+
+struct Receipt {
+    id: String,
+    classification: String,
 }
 
 pub(crate) fn project_activities(
@@ -42,6 +48,9 @@ pub(crate) fn project_activities(
     let mut activity_facts = 0usize;
     for fact in facts {
         fact.verify().map_err(|_| LiveHostError::CorruptState)?;
+        if fact.position == 0 || fact.position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
         if !is_activity_fact(fact.kind.as_str()) {
             continue;
         }
@@ -49,7 +58,7 @@ pub(crate) fn project_activities(
             .checked_add(1)
             .ok_or(LiveHostError::CorruptState)?;
         if activity_facts > limits.max_activity_facts {
-            return Err(LiveHostError::CorruptState);
+            return Err(LiveHostError::ReadBoundExceeded);
         }
         let turn = fact
             .turn_id
@@ -68,10 +77,17 @@ pub(crate) fn project_activities(
                 return Err(LiveHostError::CorruptState);
             }
             if fact.kind.as_str() == "effect.receipt" {
-                if state.public.state != "running" || state.receipt_seen {
+                if state.public.state != "running" || state.receipt.is_some() {
                     return Err(LiveHostError::CorruptState);
                 }
-                state.receipt_seen = true;
+                state.receipt = Some(Receipt {
+                    id: text(&payload, "receipt_id")?.to_owned(),
+                    classification: admitted(
+                        text(&payload, "classification")?,
+                        &["completed", "failed"],
+                    )?
+                    .to_owned(),
+                });
             } else if !state.public.terminal {
                 return Err(LiveHostError::CorruptState);
             }
@@ -91,7 +107,7 @@ pub(crate) fn project_activities(
         if projected.activity.activity_id.len() > limits.max_activity_id_bytes
             || projected.activity.label_key.len() > limits.max_label_bytes
         {
-            return Err(LiveHostError::CorruptState);
+            return Err(LiveHostError::ReadBoundExceeded);
         }
         if matches!(
             fact.kind.as_str(),
@@ -111,7 +127,7 @@ pub(crate) fn project_activities(
                     family,
                     public: projected.activity.clone(),
                     first_position: fact.position,
-                    receipt_seen: false,
+                    receipt: None,
                 },
             );
         }
@@ -135,7 +151,7 @@ pub(crate) fn project_activities(
                 .then_with(|| left.1.activity_id.cmp(&right.1.activity_id))
         });
         if values.len() > limits.max_activities_per_turn {
-            return Err(LiveHostError::CorruptState);
+            return Err(LiveHostError::ReadBoundExceeded);
         }
         let activities = values
             .into_iter()
@@ -146,7 +162,7 @@ pub(crate) fn project_activities(
             .len()
             > limits.max_encoded_bytes_per_turn
         {
-            return Err(LiveHostError::CorruptState);
+            return Err(LiveHostError::ReadBoundExceeded);
         }
         by_turn.insert(turn, activities);
     }
@@ -192,7 +208,19 @@ fn rejection(fact: &DurableFact, payload: &Value) -> Result<ProjectedActivityEve
         "failed",
         fact.position,
         true,
-        Some(text(payload, "code")?.into()),
+        Some(
+            admitted(
+                text(payload, "code")?,
+                &[
+                    "invalid_tool_name",
+                    "tool_not_admitted",
+                    "invalid_arguments_json",
+                    "arguments_schema_mismatch",
+                    "non_canonical_value",
+                ],
+            )?
+            .into(),
+        ),
     ))
 }
 
@@ -246,7 +274,13 @@ fn transition(
             "agent.activity.cancelled",
             "cancelled",
             true,
-            Some(text(payload, "reason")?.to_owned()),
+            Some(
+                admitted(
+                    text(payload, "reason")?,
+                    &["user", "expired", "turn_cancelled", "operator"],
+                )?
+                .to_owned(),
+            ),
         ),
         "effect.authorized" if state.public.state == "prepared" => {
             ("agent.activity.authorized", "authorized", false, None)
@@ -255,31 +289,57 @@ fn transition(
             "agent.activity.denied",
             "denied",
             true,
-            Some(text(payload, "code")?.to_owned()),
+            Some(
+                admitted(
+                    text(payload, "code")?,
+                    &["authorization_denied", "replacement_required"],
+                )?
+                .to_owned(),
+            ),
         ),
         "effect.started" if matches!(state.public.state.as_str(), "prepared" | "authorized") => {
             ("agent.activity.started", "running", false, None)
         }
-        "effect.completed" if state.public.state == "running" && state.receipt_seen => {
+        "effect.completed"
+            if state.public.state == "running" && receipt_matches(state, payload, "completed")? =>
+        {
             ("agent.activity.completed", "completed", true, None)
         }
-        "effect.failed" if state.public.state == "authorized" => (
-            "agent.activity.failed",
-            "failed",
-            true,
-            Some(text(payload, "code")?.to_owned()),
-        ),
-        "effect.failed" if state.public.state == "running" && state.receipt_seen => (
-            "agent.activity.failed",
-            "failed",
-            true,
-            Some(text(payload, "code")?.to_owned()),
-        ),
-        "effect.uncertain" if state.public.state == "running" => (
+        "effect.failed"
+            if state.public.state == "authorized" && payload.get("receipt_id").is_none() =>
+        {
+            (
+                "agent.activity.failed",
+                "failed",
+                true,
+                Some(failure_code(payload)?.to_owned()),
+            )
+        }
+        "effect.failed"
+            if state.public.state == "running" && receipt_matches(state, payload, "failed")? =>
+        {
+            (
+                "agent.activity.failed",
+                "failed",
+                true,
+                Some(failure_code(payload)?.to_owned()),
+            )
+        }
+        "effect.uncertain" if state.public.state == "running" && state.receipt.is_none() => (
             "agent.activity.attention_required",
             "attention_required",
             false,
-            Some(text(payload, "reason")?.to_owned()),
+            Some(
+                admitted(
+                    text(payload, "reason")?,
+                    &[
+                        "started_without_receipt",
+                        "receipt_invalid",
+                        "executor_state_unknown",
+                    ],
+                )?
+                .to_owned(),
+            ),
         ),
         "effect.reconciled" if state.public.state == "attention_required" => {
             let decision = text(payload, "decision")?;
@@ -341,6 +401,36 @@ fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, LiveHostError> {
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or(LiveHostError::CorruptState)
+}
+
+fn admitted<'a>(value: &'a str, values: &[&str]) -> Result<&'a str, LiveHostError> {
+    values
+        .contains(&value)
+        .then_some(value)
+        .ok_or(LiveHostError::CorruptState)
+}
+
+fn failure_code(payload: &Value) -> Result<&str, LiveHostError> {
+    admitted(
+        text(payload, "code")?,
+        &[
+            "timeout",
+            "cancelled",
+            "tool_failure",
+            "requirement_unsupported",
+            "executor_unavailable",
+        ],
+    )
+}
+
+fn receipt_matches(
+    state: &State,
+    payload: &Value,
+    classification: &str,
+) -> Result<bool, LiveHostError> {
+    let receipt = state.receipt.as_ref().ok_or(LiveHostError::CorruptState)?;
+    Ok(receipt.classification == classification
+        && payload.get("receipt_id").and_then(Value::as_str) == Some(receipt.id.as_str()))
 }
 
 fn is_activity_fact(kind: &str) -> bool {

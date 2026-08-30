@@ -124,13 +124,14 @@ fn shared_fixture_reduces_gaps_unknown_events_and_reconnects() {
 fn h3_activity_updates_only_from_greater_committed_positions() {
     let events: Vec<HostEvent> = serde_json::from_value(serde_json::json!([
         {"api_version":"v1","session_id":"session-1","position":2,"event":"agent.activity.prepared","turn_id":"turn-1","execution_id":"execution-1","text":"","activity":{"api_version":"v1","activity_id":"activity-1","kind":"tool","label_key":"agent.activity.read_file","state":"prepared","source_position":2,"terminal":false}},
+        {"api_version":"v1","session_id":"session-1","position":3,"event":"agent.activity.started","turn_id":"turn-1","execution_id":"execution-1","text":"","activity":{"api_version":"v1","activity_id":"activity-1","kind":"tool","label_key":"agent.activity.read_file","state":"running","source_position":3,"terminal":false}},
         {"api_version":"v1","session_id":"session-1","position":4,"event":"agent.activity.completed","turn_id":"turn-1","execution_id":"execution-1","text":"","activity":{"api_version":"v1","activity_id":"activity-1","kind":"tool","label_key":"agent.activity.read_file","state":"completed","source_position":4,"terminal":true}}
     ])).unwrap();
     let view = reduce_host_events("session-1", &events, HostView::default(), 8).unwrap();
     assert_eq!(view.activities["activity-1"].state, "completed");
 
     let mut invalid = events;
-    invalid[1].activity.as_mut().unwrap().terminal = false;
+    invalid[2].activity.as_mut().unwrap().terminal = false;
     assert_eq!(
         reduce_host_events("session-1", &invalid, HostView::default(), 8)
             .unwrap_err()

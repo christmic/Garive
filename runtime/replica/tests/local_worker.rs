@@ -228,6 +228,7 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "local-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 2,
                 max_input_tokens: Some(20),
@@ -313,6 +314,7 @@ async fn explicit_governed_factory_runs_the_complete_effect_fact_chain() {
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "local-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 2,
                 max_input_tokens: Some(20),
@@ -395,6 +397,7 @@ async fn restart_abandons_unproven_execution_before_dispatch() {
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "local-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 2,
                 max_input_tokens: Some(20),

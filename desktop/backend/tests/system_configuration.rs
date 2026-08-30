@@ -1,17 +1,19 @@
 use std::{
+    collections::BTreeMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::Path,
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
 
 use garive_desktop::{
     BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopProfileConfiguration,
-    DesktopProfileRegistry, DesktopSecretResolver, DesktopState, DesktopSystemConfiguration,
-    FileDesktopConfigurationProvider, ANTHROPIC_MESSAGES_PROFILE_ID, MAX_DESKTOP_CONFIG_BYTES,
-    OPENAI_RESPONSES_PROFILE_ID,
+    DesktopProfileRegistry, DesktopSecretResolver, DesktopSetupError, DesktopSetupInput,
+    DesktopSetupService, DesktopState, DesktopSystemConfiguration,
+    FileDesktopConfigurationProvider, SetupCredentialStore, ANTHROPIC_MESSAGES_PROFILE_ID,
+    MAX_DESKTOP_CONFIG_BYTES, OPENAI_RESPONSES_PROFILE_ID,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelFuture, ModelItem, ModelObserver, ModelPort,
@@ -257,6 +259,92 @@ fn missing_document_is_distinct_from_invalid_configuration() {
     assert!(!DesktopState::default()
         .install_from(&provider)
         .expect("absence is not malformed"));
+}
+
+#[derive(Clone, Default)]
+struct RestartSecrets(Arc<Mutex<BTreeMap<String, String>>>);
+
+impl SetupCredentialStore for RestartSecrets {
+    fn store(&self, credential_ref: &str, credential: &str) -> Result<(), DesktopSetupError> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(credential_ref.into(), credential.into());
+        Ok(())
+    }
+
+    fn delete(&self, credential_ref: &str) -> Result<(), DesktopSetupError> {
+        self.0.lock().unwrap().remove(credential_ref);
+        Ok(())
+    }
+}
+
+impl DesktopSecretResolver for RestartSecrets {
+    fn resolve(&self, credential_ref: &str) -> Result<SecretValue, DesktopConfigurationError> {
+        let secret = self
+            .0
+            .lock()
+            .unwrap()
+            .get(credential_ref)
+            .cloned()
+            .ok_or(DesktopConfigurationError::SecretUnavailable)?;
+        SecretValue::new(secret).map_err(|_| DesktopConfigurationError::SecretUnavailable)
+    }
+}
+
+struct RestartProfiles;
+
+impl DesktopProfileRegistry for RestartProfiles {
+    fn construct(
+        &self,
+        config: DesktopProfileConfiguration<'_>,
+        credential: SecretValue,
+    ) -> Result<Arc<dyn ModelPort>, DesktopConfigurationError> {
+        assert_eq!(config.profile_id, OPENAI_RESPONSES_PROFILE_ID);
+        assert_eq!(credential.expose_secret(), "restart-secret");
+        Ok(Arc::new(CompletingModel))
+    }
+}
+
+#[tokio::test]
+async fn committed_setup_constructs_runtime_after_explicit_restart() {
+    let directory = tempdir().expect("temporary config directory");
+    let secrets = RestartSecrets::default();
+    let setup = DesktopSetupService::new(directory.path().to_owned(), secrets.clone());
+    let plan = setup
+        .prepare(DesktopSetupInput {
+            schema_version: 1,
+            caller_nonce: "restart-nonce".into(),
+            catalogue_revision: "desktop-setup-catalogue-1".into(),
+            preset_id: "desktop-balanced-v1".into(),
+            profile_id: OPENAI_RESPONSES_PROFILE_ID.into(),
+            endpoint_override: None,
+            model_target_id: "desktop-target".into(),
+            model_id: "restart-model".into(),
+            deployment_id: "desktop-deployment".into(),
+            definition_id: "definition-main".into(),
+        })
+        .expect("prepared setup");
+    let receipt = setup
+        .commit(&plan.plan_digest, "restart-secret")
+        .expect("committed setup");
+    assert_eq!(receipt.configuration_revision, 1);
+
+    let restarted = DesktopState::default();
+    let provider = FileDesktopConfigurationProvider::new(
+        directory.path().join("desktop-v1.json"),
+        directory.path().to_owned(),
+        secrets,
+        RestartProfiles,
+    );
+    assert!(restarted
+        .install_from(&provider)
+        .expect("restart installs revision"));
+    let result = restarted
+        .run_turn_isolated("definition-main".into(), "hello after restart".into())
+        .await
+        .expect("durable turn after setup restart");
+    assert_eq!(result.text, "configured durable answer");
 }
 
 #[test]

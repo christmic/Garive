@@ -30,6 +30,7 @@ tauri-plugin-dialog = "2.7.2"
 tokio.workspace = true
 url = "2.5.8"
 uuid.workspace = true
+zeroize.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 garive-macos-bookmark = { path = "../macos-bookmark" }

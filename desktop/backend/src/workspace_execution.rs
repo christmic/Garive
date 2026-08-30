@@ -99,7 +99,8 @@ struct WorkspaceAttachment {
     #[serde(rename = "command_id")]
     _command_id: String,
     workspace_id: String,
-    display_name: String,
+    #[serde(rename = "display_name")]
+    _display_name: String,
     grant_revision: u64,
     access: String,
 }
@@ -201,11 +202,11 @@ impl AuthorityPort for WorkspaceAuthority {
             Ok(AuthorityDecision::InteractionRequired {
                 kind: InteractionKind::Approval,
                 prompt: json!({
-                    "action":"create_workspace_artifact",
-                    "workspace":attachment.display_name,
-                    "artifact_name":arguments.artifact_name,
-                    "byte_size":arguments.content_utf8.len(),
-                    "content_digest":hex_digest(arguments.content_utf8.as_bytes()),
+                    "schema_version":1,
+                    "title_key":"workspace.write.approval.title",
+                    "message_text":"Create one new file in the attached Workspace.",
+                    "action_label_key":"approval.allow_once",
+                    "cancel_label_key":"approval.deny",
                 }),
                 response_schema: json!({"type":"boolean"}),
                 expiry_code: "turn_deadline".into(),

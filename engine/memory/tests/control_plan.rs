@@ -106,6 +106,11 @@ fn plans_all_variants_in_canonical_order_with_exact_counts() {
         plan.plan_digest,
         fixture["plan_vector"]["plan_digest"].as_str().unwrap()
     );
+    plan.verify().unwrap();
+    assert!(plan.canonical_operations_json().unwrap().starts_with('['));
+    let mut corrupt = plan.clone();
+    corrupt.add_count += 1;
+    assert_eq!(corrupt.verify(), Err(MemoryControlError::InvalidSnapshot));
     assert!(
         matches!(&plan.operations[0], MemoryImportOperation::Supersede { record_id, .. } if record_id == "mem-a")
     );

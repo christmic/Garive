@@ -3,7 +3,8 @@
 use serde::Serialize;
 
 use crate::{
-    HypothesisState, MemoryAuthority, MemoryKind, MemoryScopeClass, MemorySensitivity, MemoryType,
+    control_plane::hex_sha256, HypothesisState, MemoryAuthority, MemoryKind, MemoryScopeClass,
+    MemorySensitivity, MemoryType,
 };
 
 /// Current Runtime-owned Memory projection row supplied to the pure planner.
@@ -115,7 +116,8 @@ pub enum MemoryImportOperation {
 }
 
 impl MemoryImportOperation {
-    pub(crate) fn record_id(&self) -> &str {
+    /// Returns the exact record identity targeted by this operation.
+    pub fn record_id(&self) -> &str {
         match self {
             Self::Add { record_id, .. }
             | Self::Supersede { record_id, .. }
@@ -158,6 +160,142 @@ pub struct MemoryImportPlan {
     pub erase_count: u64,
     /// Lowercase SHA-256 over the JCS plan without this field.
     pub plan_digest: String,
+}
+
+impl MemoryImportPlan {
+    /// Verifies counts, canonical operation order, uniqueness, and the JCS digest.
+    pub fn verify(&self) -> Result<(), crate::MemoryControlError> {
+        let counts = (
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Add { .. }))
+                .count() as u64,
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Supersede { .. }))
+                .count() as u64,
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Archive { .. }))
+                .count() as u64,
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Erase { .. }))
+                .count() as u64,
+        );
+        let ordered = self
+            .operations
+            .windows(2)
+            .all(|pair| pair[0].record_id() < pair[1].record_id());
+        if !valid_identity(&self.export_id)
+            || !valid_identity(&self.namespace_id)
+            || self.through_revision == 0
+            || self.expected_repository_revision == 0
+            || !valid_sha256(&self.input_manifest_digest)
+            || !valid_sha256(&self.plan_digest)
+            || self.operations.iter().any(|operation| !operation.valid())
+            || !ordered
+            || counts
+                != (
+                    self.add_count,
+                    self.supersede_count,
+                    self.archive_count,
+                    self.erase_count,
+                )
+        {
+            return Err(crate::MemoryControlError::InvalidSnapshot);
+        }
+        let canonical = serde_jcs::to_vec(&self.preimage())
+            .map_err(|_| crate::MemoryControlError::InvalidSnapshot)?;
+        if hex_sha256(&canonical) != self.plan_digest {
+            return Err(crate::MemoryControlError::InvalidSnapshot);
+        }
+        Ok(())
+    }
+
+    /// Returns exact canonical operation JSON for the durable M2 journal binding.
+    pub fn canonical_operations_json(&self) -> Result<String, crate::MemoryControlError> {
+        self.verify()?;
+        serde_jcs::to_string(&self.operations)
+            .map_err(|_| crate::MemoryControlError::InvalidSnapshot)
+    }
+
+    fn preimage(&self) -> PlanPreimage<'_> {
+        PlanPreimage {
+            schema_version: 1,
+            export_id: &self.export_id,
+            namespace_id: &self.namespace_id,
+            through_revision: self.through_revision,
+            input_manifest_digest: &self.input_manifest_digest,
+            expected_repository_revision: self.expected_repository_revision,
+            operations: &self.operations,
+            add_count: self.add_count,
+            supersede_count: self.supersede_count,
+            archive_count: self.archive_count,
+            erase_count: self.erase_count,
+        }
+    }
+}
+
+impl MemoryImportOperation {
+    fn valid(&self) -> bool {
+        match self {
+            Self::Add {
+                source_draft_token,
+                record_id,
+                revision_id,
+                expected_absent,
+                document_digest,
+            } => {
+                valid_identity(source_draft_token)
+                    && valid_identity(record_id)
+                    && valid_identity(revision_id)
+                    && *expected_absent
+                    && valid_sha256(document_digest)
+            }
+            Self::Supersede {
+                record_id,
+                expected_active_revision_id,
+                new_revision_id,
+                document_digest,
+                supersedes_learned_revision_id,
+                ..
+            } => {
+                valid_identity(record_id)
+                    && valid_identity(expected_active_revision_id)
+                    && valid_identity(new_revision_id)
+                    && valid_sha256(document_digest)
+                    && supersedes_learned_revision_id
+                        .as_ref()
+                        .is_none_or(|revision| valid_identity(revision))
+            }
+            Self::Archive {
+                record_id,
+                expected_active_revision_id,
+                document_digest,
+            }
+            | Self::Erase {
+                record_id,
+                expected_active_revision_id,
+                document_digest,
+            } => {
+                valid_identity(record_id)
+                    && valid_identity(expected_active_revision_id)
+                    && valid_sha256(document_digest)
+            }
+        }
+    }
+}
+
+fn valid_identity(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 128 && value.trim() == value
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Serialize)]

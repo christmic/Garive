@@ -3,7 +3,7 @@ package com.garive.eng.kt.ledger
 import kotlinx.serialization.json.Json
 
 /** Classification returned after durable Runtime fact validation. */
-public enum class RuntimeFactDisposition { APPLIED_V1, OPAQUE }
+public enum class RuntimeFactDisposition { APPLIED_V1, APPLIED_V2, OPAQUE }
 
 /** Validates admitted C6 Turn/Execution payload-v1 semantics and envelope ownership. */
 public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposition> {
@@ -26,7 +26,10 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     if (!kind.startsWith("turn.") && !executionFamily && !modelFamily && !effectFamily && !skillFamily && !memoryFamily && !knowledgeFamily && !schedulerFamily && !delegationFamily && !rejection) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
-    if (fact.schemaVersion != 1u) return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
+    val effectPreparedV2 = kind == "effect.prepared" && fact.schemaVersion == 2u
+    if (fact.schemaVersion != 1u && !effectPreparedV2) {
+        return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
+    }
     if ((fact.turnId != null) != !(memorySessionScoped || schedulerFamily) ||
         (fact.executionId != null) != (executionFamily || modelFamily || effectFamily || skillFamily || knowledgeFamily || delegationFamily || rejection || memoryFamily && !memorySessionScoped) ||
         (fact.modelRequestId != null) != (modelFamily || rejection) ||
@@ -37,6 +40,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     return try {
         val payload = Json.parseToJsonElement(fact.payload.json).asObject()
         when {
+            effectPreparedV2 -> validateEffectPreparedV2(payload)
             delegationFamily -> validateDelegationFact(kind, payload)
             schedulerFamily -> validateSchedulerFact(kind, payload)
             knowledgeFamily -> validateKnowledgeFact(kind, payload)
@@ -46,7 +50,10 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
             modelFamily -> validateModelFact(kind, payload)
             else -> validateTurnFact(kind, payload)
         }
-        LedgerResult.Success(RuntimeFactDisposition.APPLIED_V1)
+        LedgerResult.Success(
+            if (effectPreparedV2) RuntimeFactDisposition.APPLIED_V2
+            else RuntimeFactDisposition.APPLIED_V1,
+        )
     } catch (_: IllegalArgumentException) {
         LedgerResult.Failure(LedgerError.InvalidFact)
     }

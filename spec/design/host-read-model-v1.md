@@ -80,7 +80,7 @@ The additive Proto field allocation is exact:
 All unspecified scalar types, including immutable Definition revisions, are
 `string`; positions, Session versions, and counts are `uint64`. Message fields use message presence. Optional scalar fields use Proto
 `optional`, not empty-string sentinels. H3 field 9 is coordinated in the same
-Host v1 tag audit but remains absent until H3 is implemented.
+Host v1 tag audit and is present as the additive repeated activity projection.
 
 `capabilities` is a sorted set of stable public capability names installed for
 new Sessions, not a promise that every action is authorized. V1 may return one
@@ -160,11 +160,13 @@ or cursor-bound durable position is non-zero. Unknown query fields, duplicate
 fields, malformed UTF-8/percent encoding, and oversized tokens return
 `invalid_request`.
 
-Timeline pagination never splits one Turn: Runtime scans at most its separate
-fact bound, completes the current Turn projection, and returns
-`scanned_through_position`. The next request uses that position. A Turn whose
-first start is before `after_position` is still returned when it changed after
-that position. Gaps are valid.
+Timeline pagination never splits one Turn: Runtime projects the bounded fixed
+prefix, orders changed Turns by `latest_position` ascending (then
+`started_position`), and returns `scanned_through_position` equal to the last
+returned change position while more remain, otherwise the frozen watermark.
+The next request uses that position. A Turn whose first start is before
+`after_position` is still returned when it changed after that position. Gaps
+are valid.
 
 ## Session ordering and page token
 
@@ -204,6 +206,13 @@ deletion is outside H2.
 - Response bodies have explicit total byte, item-count, text, and prompt bounds.
   Oversized committed display content uses the existing redaction/truncation
   policy with an explicit `content_truncated` flag; silent truncation is forbidden.
+
+For non-interaction suspensions, Runtime constructs the canonical public prompt
+from the stable reason using only admitted localization keys:
+`suspension.{reason}.title` and one of `continue`, `retry`, `inspect`, or `wait`
+as `suspension.{reason}.{action}`. This view conveys status and available UI;
+it does not create continuation authority. Interaction suspensions instead use
+the exact verified C5 prompt binding and never synthesize model-originated text.
 
 Runtime construction supplies independent non-zero maxima for definitions per
 page, Sessions per page, timeline items, facts scanned, response bytes, user
@@ -264,6 +273,20 @@ fixture readers reject unknown case fields and duplicate names.
 - [`durable-ledger.md`](durable-ledger.md) — verified fixed-prefix reads.
 - [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — H3 activity snapshots and events.
 - [`client-product-experience.md`](client-product-experience.md) — product UI consuming H2.
+
+## Delivery evidence
+
+- Runtime owns one bounded `*V1` projection surface for installed definitions,
+  reverse-opened Session pages/views, and complete latest-change timeline pages;
+  the earlier partial duplicate types and methods were removed.
+- Session cursors use canonical JSON, base64url without padding, installation
+  binding and self-digest validation. HTTP rejects missing, duplicate, unknown,
+  malformed and over-bound query values with the stable error model.
+- File-backed SQLite tests cover restart equality, concurrent commits, cursor
+  tampering, lifecycle corruption, JavaScript-safe positions, independent fact,
+  response and UTF-8 text bounds, and canonical suspension prompt/schema data.
+- `host-read-model-v1.json` is consumed by strict Rust, Kotlin and TypeScript
+  readers; generated Proto presence/tag round trips remain separately gated.
 
 ## Meta
 

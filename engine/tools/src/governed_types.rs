@@ -139,11 +139,46 @@ pub struct InteractionRequest {
 }
 
 impl InteractionRequest {
-    /// Rejects empty digest and expiry bindings.
+    /// Rejects empty bindings and prompts outside the public v1 schema.
     pub fn validate(&self) -> Result<(), InvalidGovernanceValue> {
         required(&self.prepared_digest, "prepared digest")?;
-        required(&self.expiry_policy, "expiry policy")
+        required(&self.expiry_policy, "expiry policy")?;
+        let prompt = self
+            .prompt
+            .as_object()
+            .ok_or(InvalidGovernanceValue("interaction prompt"))?;
+        let optional = ["message_text", "cancel_label_key"];
+        if prompt.len() < 3
+            || prompt.len() > 5
+            || prompt.get("schema_version").and_then(Value::as_u64) != Some(1)
+            || !non_empty_text(prompt.get("title_key"))
+            || !non_empty_text(prompt.get("action_label_key"))
+            || optional.iter().any(|key| {
+                prompt
+                    .get(*key)
+                    .is_some_and(|value| !non_empty_text(Some(value)))
+            })
+            || prompt.keys().any(|key| {
+                !matches!(
+                    key.as_str(),
+                    "schema_version"
+                        | "title_key"
+                        | "message_text"
+                        | "action_label_key"
+                        | "cancel_label_key"
+                )
+            })
+        {
+            return Err(InvalidGovernanceValue("interaction prompt"));
+        }
+        Ok(())
     }
+}
+
+fn non_empty_text(value: Option<&Value>) -> bool {
+    value
+        .and_then(Value::as_str)
+        .is_some_and(|text| !text.is_empty())
 }
 
 /// Typed continuation fact for one requested interaction.

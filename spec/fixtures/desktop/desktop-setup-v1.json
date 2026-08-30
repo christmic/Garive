@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "catalogue_revision": "desktop-setup-catalogue-1",
+  "expected_profile_count": 2,
+  "expected_preset_id": "desktop-balanced-v1",
+  "limits": {
+    "max_profiles": 2,
+    "max_text_bytes": 256,
+    "max_endpoint_bytes": 2048,
+    "max_secret_bytes": 16384,
+    "max_plan_count": 16,
+    "plan_lifetime_seconds": 900
+  },
+  "plan_cases": [
+    {
+      "name": "fixed_endpoint",
+      "now_unix": 1800000000,
+      "setup_id": "setup-fixture-fixed",
+      "credential_ref": "credential-fixture-fixed",
+      "input": {
+        "schema_version": 1,
+        "caller_nonce": "nonce-fixture-fixed",
+        "catalogue_revision": "desktop-setup-catalogue-1",
+        "preset_id": "desktop-balanced-v1",
+        "profile_id": "openai.responses.v1",
+        "endpoint_override": null,
+        "model_target_id": "target-fixed",
+        "model_id": "model-fixed",
+        "deployment_id": "deployment-fixed",
+        "definition_id": "definition-fixed"
+      },
+      "expected_expires_at": "2027-01-15T08:15:00Z",
+      "expected_endpoint_mode": "fixed",
+      "effective_configuration_digest": "3b31bd1fbea9eae6f14062401e3d80d0b37f89f2ae558130c7a6813df428587b",
+      "plan_digest": "ee9b7fbee4932319fdb2dbc5653766a79ddac992071c12144ca3a19f46aefcef"
+    },
+    {
+      "name": "override_endpoint",
+      "now_unix": 1800000000,
+      "setup_id": "setup-fixture-override",
+      "credential_ref": "credential-fixture-override",
+      "input": {
+        "schema_version": 1,
+        "caller_nonce": "nonce-fixture-override",
+        "catalogue_revision": "desktop-setup-catalogue-1",
+        "preset_id": "desktop-balanced-v1",
+        "profile_id": "anthropic.messages.v1",
+        "endpoint_override": "https://models.example.test/messages",
+        "model_target_id": "target-override",
+        "model_id": "model-override",
+        "deployment_id": "deployment-override",
+        "definition_id": "definition-override"
+      },
+      "expected_expires_at": "2027-01-15T08:15:00Z",
+      "expected_endpoint_mode": "override",
+      "effective_configuration_digest": "68e91d1c842321b10552cafd4179b6acc65543b538b32f0a982d143e32cf3225",
+      "plan_digest": "590e467b7701f2500a94a7ca5869717d706eb946fd130252d128b8f8e8a6f7d4"
+    }
+  ],
+  "failure_codes": [
+    "setup_not_allowed",
+    "setup_input_invalid",
+    "setup_plan_stale",
+    "setup_plan_conflict",
+    "setup_credential_rejected",
+    "setup_persistence_failed",
+    "setup_recovery_failed"
+  ],
+  "receipt_forbidden_fragments": [
+    "credential-fixture",
+    "model-fixed",
+    "models.example.test"
+  ]
+}

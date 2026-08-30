@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::Arc};
+
 use futures::executor::block_on;
 use garive_core::{
     AgentOutcome, ExecutionReport, GovernedEffectPort, GovernedSuspensionBinding, SuspensionReason,
@@ -12,9 +14,13 @@ use garive_llm::{
 };
 use garive_runtime::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
-    AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, CoreTerminalContext,
-    ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, ModelLifecycleContext,
-    PreparedExecution, SqliteGovernedEffectPort, SqliteLedger,
+    reconstruct_suspended_turn, ActivityProjectionLimits, AuthorityDecision, AuthorityFuture,
+    AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
+    ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, HostClock,
+    HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
+    InteractionInputRepresentation, LiveHost, LiveHostLimits, ModelLifecycleContext,
+    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort,
+    SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
@@ -27,6 +33,22 @@ enum Decision {
     Approve,
     Interaction,
     Deny,
+}
+
+struct TestClock;
+
+impl HostClock for TestClock {
+    fn recorded_at(&self) -> String {
+        timestamp().to_owned()
+    }
+}
+
+struct NoopDispatcher;
+
+impl TurnDispatcher for NoopDispatcher {
+    fn dispatch(&self, _: &garive_runtime::CommittedTurn) -> Result<(), TurnDispatchError> {
+        Ok(())
+    }
 }
 
 struct Authority {
@@ -44,7 +66,7 @@ impl AuthorityPort for Authority {
                 },
                 Decision::Interaction => AuthorityDecision::InteractionRequired {
                     kind: InteractionKind::Approval,
-                    prompt: json!({"message":"approve"}),
+                    prompt: json!({"schema_version":1,"title_key":"approval.title","message_text":"approve","action_label_key":"approval.allow","cancel_label_key":"approval.deny"}),
                     response_schema: json!({"type":"boolean"}),
                     expiry_code: "none".into(),
                 },
@@ -117,6 +139,7 @@ impl ExecutorPort for Executor {
 }
 
 struct Setup {
+    database: PathBuf,
     ledger: SqliteLedger,
     session: SessionId,
     turn: TurnId,
@@ -133,13 +156,30 @@ fn setup(path: &std::path::Path) -> Setup {
     let execution = ExecutionId::try_from("e1").unwrap();
     let mut ledger = SqliteLedger::open(path).unwrap();
     let initial = vec![
-        draft("f1", "session.opened", None, None, json!({})),
+        draft(
+            "f1",
+            "session.opened",
+            None,
+            None,
+            json!({
+                "command_id":"open","definition_id":"definition",
+                "definition_revision":"revision","snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "agent_instance_id":"agent"
+            }),
+        ),
         draft(
             "f2",
             "turn.started",
             Some(&turn),
             None,
             runtime_payload("turn.started"),
+        ),
+        draft(
+            "f-input",
+            "turn.input",
+            Some(&turn),
+            None,
+            runtime_payload("turn.input"),
         ),
         draft(
             "f3",
@@ -185,6 +225,7 @@ fn setup(path: &std::path::Path) -> Setup {
         .commit(session.clone(), committed.session_version, vec![terminal])
         .unwrap();
     Setup {
+        database: path.to_owned(),
         ledger,
         session,
         turn,
@@ -233,6 +274,71 @@ fn sqlite_success_commits_every_effect_boundary_before_observation() {
             "effect.completed",
             "effect.observation",
         ],
+    );
+    let host = LiveHost::new_with_read_limits(
+        &setup.database,
+        InstalledAgent {
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                .into(),
+            agent_instance_namespace: "agent".into(),
+            public_capabilities: Vec::new(),
+            runtime_limits: garive_runtime::EffectiveRuntimeLimits {
+                max_iterations: 4,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                deadline_budget_ms: None,
+            },
+            public_activity_catalogue: Some(InstalledActivityCatalogue {
+                schema_version: 1,
+                catalogue_revision: "catalogue-1".into(),
+                descriptors: vec![InstalledActivityDescriptor {
+                    tool_name: "read_file".into(),
+                    tool_revision: "1".into(),
+                    label_key: "agent.activity.read_file".into(),
+                }],
+            }),
+        },
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+            activity: Some(ActivityProjectionLimits {
+                max_activities_per_turn: 8,
+                max_activity_facts: 64,
+                max_label_bytes: 128,
+                max_activity_id_bytes: 128,
+                max_encoded_bytes_per_turn: 8_192,
+            }),
+        },
+        HostReadLimits::PRODUCT_DEFAULT,
+        Arc::new(TestClock),
+        Arc::new(NoopDispatcher),
+    )
+    .unwrap();
+    let timeline = host.get_timeline(setup.session.as_str(), 0, 10).unwrap();
+    let activity = &timeline.items[0].activities[0];
+    assert_eq!(activity.kind, "tool");
+    assert_eq!(activity.label_key, "agent.activity.read_file");
+    assert_eq!(activity.state, "completed");
+    assert!(activity.terminal);
+    assert!(activity.safe_code.is_none());
+    let events = host
+        .read_event_page(setup.session.as_str(), initial_position)
+        .unwrap();
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .map(|event| event.event.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "agent.activity.prepared",
+            "agent.activity.authorized",
+            "agent.activity.started",
+            "agent.activity.completed",
+        ]
     );
 }
 
@@ -302,12 +408,32 @@ fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
         r#"{"type":"boolean"}"#
     );
     assert_eq!(payload(suspended)["suspension_id"], suspension_id);
-    let state =
-        garive_runtime::reconstruct_suspended_turn(&setup.ledger.load_turn(&setup.turn).unwrap())
-            .unwrap();
+    let state = reconstruct_suspended_turn(&setup.ledger.load_turn(&setup.turn).unwrap()).unwrap();
     assert_eq!(
-        state.interaction.unwrap().response_schema,
-        serde_json::json!({"type":"boolean"})
+        state.interaction.as_ref().unwrap().response_schema,
+        json!({"type":"boolean"})
+    );
+    let command = |input: &str| ContinueTurnCommand {
+        command_id: RuntimeCommandId::new(format!("continue-{input}")).unwrap(),
+        session_id: setup.session.clone(),
+        turn_id: setup.turn.clone(),
+        expected_suspension_id: state.suspension_id.clone(),
+        expected_session_version: state.session_version,
+        continuation_input: ContinuationInput::InteractionResponse {
+            canonical_json: input.into(),
+            representation: InteractionInputRepresentation::JsonField,
+        },
+        interaction: state.interaction.clone(),
+        recorded_at: timestamp().into(),
+    };
+    assert!(garive_runtime::plan_continue_turn(&command("true"), &state).is_ok());
+    assert_eq!(
+        garive_runtime::plan_continue_turn(&command("\"not boolean\""), &state),
+        Err(RuntimeCommandError::InvalidCommand)
+    );
+    assert_eq!(
+        garive_runtime::plan_continue_turn(&command(" true"), &state),
+        Err(RuntimeCommandError::InvalidCommand)
     );
 }
 

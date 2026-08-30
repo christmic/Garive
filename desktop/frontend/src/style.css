@@ -349,6 +349,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .workspace-sheet > footer button { min-height: 35px; }
 
 .setup-flow { position: relative; min-height: 0; overflow: auto; padding: 44px 34px 30px; background: radial-gradient(circle at 18% 10%, rgba(83,119,211,.1), transparent 32%), radial-gradient(circle at 88% 85%, rgba(67,139,107,.08), transparent 29%), var(--paper); }
+.setup-shell { position: relative; min-height: 100%; overflow: auto; padding: 44px 34px 30px; background: radial-gradient(circle at 18% 10%, rgba(83,119,211,.1), transparent 32%), radial-gradient(circle at 88% 85%, rgba(67,139,107,.08), transparent 29%), var(--paper); }
 .setup-ambient { position: fixed; top: 100px; left: 40%; width: 280px; height: 280px; border: 1px solid rgba(49,95,207,.09); border-radius: 50%; box-shadow: 0 0 100px rgba(49,95,207,.08); pointer-events: none; }
 .setup-card { position: relative; width: min(750px, 100%); margin: 0 auto; padding: 30px 34px 26px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 24px; background: rgba(255,254,251,.82); box-shadow: 0 28px 80px rgba(38,39,31,.1), inset 0 1px rgba(255,255,255,.7); backdrop-filter: blur(22px); }
 .setup-card::before { position: absolute; top: 0; right: 0; left: 0; height: 3px; background: linear-gradient(90deg, #315fcf, #7895e5 55%, #4c9a78); content: ""; }
@@ -357,13 +358,26 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .setup-heading h1 { margin: 0; font-size: 28px; font-weight: 610; letter-spacing: -.035em; }
 .setup-heading > div > p:last-child { max-width: 585px; margin: 8px 0 0; color: var(--muted); line-height: 1.55; }
 .setup-progress { display: grid; grid-template-columns: repeat(3, 1fr); margin: 26px 0 25px; border-bottom: 1px solid var(--line); }
-.setup-progress > div { position: relative; display: flex; align-items: center; gap: 7px; padding: 0 2px 12px; color: var(--subtle); font-size: 11px; font-weight: 610; }
-.setup-progress > div::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: transparent; content: ""; }
-.setup-progress > div.active { color: var(--text); }
-.setup-progress > div.active::after { background: var(--accent); }
+.setup-progress { padding: 0; list-style: none; }
+.setup-progress > div, .setup-progress > li { position: relative; display: flex; align-items: center; gap: 7px; padding: 0 2px 12px; color: var(--subtle); font-size: 11px; font-weight: 610; }
+.setup-progress > div::after, .setup-progress > li::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; content: ""; }
+.setup-progress > div.active, .setup-progress > li[aria-current="step"] { color: var(--text); }
+.setup-progress > div.active::after, .setup-progress > li[aria-current="step"]::after { background: var(--accent); }
 .setup-progress span { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--line-strong); border-radius: 50%; font-size: 9px; }
 .setup-progress .active span { color: white; border-color: var(--accent); background: var(--accent); }
 .setup-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 17px; }
+.setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 17px; }
+.field { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 620; }
+.field input, .field select { width: 100%; height: 42px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 10px; outline: 0; color: var(--text); background: rgba(255,255,255,.64); }
+.field input:focus, .field select:focus { border-color: rgba(49,95,207,.55); box-shadow: 0 0 0 3px rgba(49,95,207,.08); }
+.disclosure { margin-top: 14px; padding: 0; border: 0; color: var(--accent); background: transparent; font-size: 11px; }
+.setup-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 0 0 20px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: var(--line); }
+.setup-summary > div { padding: 12px 14px; background: rgba(255,255,255,.7); }
+.setup-summary dt { color: var(--muted); font-size: 10px; }
+.setup-summary dd { margin: 4px 0 0; font-size: 12px; font-weight: 610; }
+.setup-lede, .field-note { color: var(--muted); font-size: 11px; line-height: 1.55; }
+.setup-warning { padding: 10px 12px; border: 1px solid rgba(193,129,34,.3); border-radius: 10px; color: #6b4a15; background: #fff8e9; font-size: 11px; }
+.setup-actions .primary, .setup-ready .primary { min-height: 40px; padding: 0 16px; border: 1px solid var(--accent); border-radius: 10px; color: white; background: var(--accent); }
 .setup-fields fieldset { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; }
 .setup-fields legend, .setup-fields > label, .setup-review > label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 620; }
 .profile-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
@@ -422,10 +436,10 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
   .empty-conversation { place-items: start center; padding-top: 72px; }
   .composer-wrap { padding-inline: 15px; }
   .timeline { width: calc(100% - 30px); }
-  .setup-flow { padding: 24px 16px; }
+  .setup-flow, .setup-shell { padding: 24px 16px; }
   .setup-card { padding: 25px 22px; border-radius: 18px; }
-  .setup-fields, .profile-options { grid-template-columns: 1fr; }
-  .setup-review dl { grid-template-columns: 1fr; }
+  .setup-fields, .setup-grid, .profile-options { grid-template-columns: 1fr; }
+  .setup-review dl, .setup-summary { grid-template-columns: 1fr; }
   .workspace-scrim { padding: 12px; }
   .workspace-sheet { max-height: calc(100vh - 24px); }
   .workspace-sheet > footer { align-items: flex-end; }
@@ -464,6 +478,8 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .theme-dark .error-banner { color: #f0aaa4; background: #3a2422; }
 .theme-dark .search-results { background: rgba(255,255,255,.025); }
 .theme-dark .setup-card { background: rgba(35,36,33,.86); box-shadow: 0 28px 80px rgba(0,0,0,.3); }
+.theme-dark .field input, .theme-dark .field select, .theme-dark .setup-summary > div { background: #242522; }
+.theme-dark .setup-warning { color: #f1c27d; background: #47351d; }
 .theme-dark .setup-logo { background: linear-gradient(145deg, #2b3246, #21283a); }
 .theme-dark .profile-option, .theme-dark .setup-fields input, .theme-dark .setup-review input, .theme-dark .secondary-button { background: rgba(255,255,255,.04); }
 .theme-dark .setup-review dl > div { background: #242522; }

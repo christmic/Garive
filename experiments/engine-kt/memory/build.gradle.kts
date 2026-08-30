@@ -9,5 +9,6 @@ tasks.withType<Test>().configureEach {
     inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/memory-maintenance-v1.json"))
     inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/memory-promotion-erasure-v1.json"))
     inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/memory-recall-quality-v1.json"))
+    inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/memory-recall-feedback-v1.json"))
     inputs.file(rootProject.projectDir.resolve("../../spec/fixtures/agent/memory-control-plane-v1.json"))
 }

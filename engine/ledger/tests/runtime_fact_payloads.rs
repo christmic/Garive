@@ -40,14 +40,20 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 }
 
 #[test]
-fn every_c6_payload_fixture_is_applied_as_v1() {
+fn every_c6_payload_fixture_is_applied_at_its_declared_version() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 75);
+    assert_eq!(cases.len(), 77);
     for case in cases {
+        let schema = case["schema_version"].as_u64().unwrap_or(1) as u32;
+        let expected = if case["expected_disposition"] == "applied_v2" {
+            RuntimeFactDisposition::AppliedV2
+        } else {
+            RuntimeFactDisposition::AppliedV1
+        };
         assert_eq!(
-            validate_runtime_fact(&fact(case, 1)),
-            Ok(RuntimeFactDisposition::AppliedV1),
+            validate_runtime_fact(&fact(case, schema)),
+            Ok(expected),
             "{}",
             case["kind"]
         );
@@ -57,7 +63,7 @@ fn every_c6_payload_fixture_is_applied_as_v1() {
 #[test]
 fn exact_fields_types_and_envelopes_fail_closed_for_every_kind() {
     for case in fixture()["valid_cases"].as_array().unwrap() {
-        let original = fact(case, 1);
+        let original = fact(case, case["schema_version"].as_u64().unwrap_or(1) as u32);
         let mut missing = case["payload"].clone();
         let first = missing.as_object().unwrap().keys().next().unwrap().clone();
         missing.as_object_mut().unwrap().remove(&first);
@@ -114,14 +120,17 @@ fn malformed_digests_and_inline_content_mismatches_are_rejected() {
         if corrupt_first_digest(&mut payload) {
             digest_cases += 1;
             assert_eq!(
-                validate_runtime_fact(&with_payload(fact(case, 1), payload)),
+                validate_runtime_fact(&with_payload(
+                    fact(case, case["schema_version"].as_u64().unwrap_or(1) as u32),
+                    payload,
+                )),
                 Err(LedgerError::InvalidFact),
                 "{}",
                 case["kind"]
             );
         }
     }
-    assert_eq!(digest_cases, 58);
+    assert_eq!(digest_cases, 60);
 }
 
 #[test]

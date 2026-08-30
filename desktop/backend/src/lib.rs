@@ -41,10 +41,12 @@ pub use garive_runtime::SessionSummary as DesktopSessionSummary;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
 pub use setup::{
-    DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput,
-    DesktopSetupPlan, DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService,
-    DesktopSetupSummary, SetupClock, SetupCredentialStore, SystemSetupClock,
-    SystemSetupCredentialStore,
+    authorize_setup_window, DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError,
+    DesktopSetupInput, DesktopSetupLimits, DesktopSetupPlan, DesktopSetupPreset,
+    DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService, DesktopSetupState,
+    DesktopSetupSummary, NoSetupCommitFaults, SensitiveSetupCredential, SetupClock,
+    SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
+    SystemSetupClock, SystemSetupCredentialStore, SystemSetupIdentitySource,
 };
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,
@@ -479,7 +481,7 @@ impl DesktopHost {
         limit: usize,
     ) -> Result<Vec<DesktopSessionSummary>, DesktopHostError> {
         self.host
-            .list_sessions(limit)
+            .recent_sessions(limit)
             .map_err(|_| DesktopHostError::ProjectionFailure)
     }
 

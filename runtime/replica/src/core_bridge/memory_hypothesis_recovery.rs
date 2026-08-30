@@ -14,6 +14,9 @@ use super::memory_recovery::MemoryPrefix;
 /// Redacted durable binding for one committed M1 recall.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordedMemoryRecall {
+    fact: DurableFactReference,
+    turn_id: String,
+    execution_id: String,
     /// Stable selection identity.
     pub selection_id: String,
     /// Digest over complete request semantics.
@@ -114,9 +117,37 @@ pub fn reconstruct_memory_hypothesis_projection(
             continue;
         }
         match fact.kind.as_str() {
-            "memory.recall_recorded" => recalls.push(parse_recall(object)?),
+            "memory.recall_recorded" => recalls.push(parse_recall(&fact, object)?),
             "memory.obligation_opened" => {
                 let obligation = parse_obligation(object)?;
+                let recall = recalls
+                    .iter()
+                    .find(|item| item.fact == *obligation.recall_fact())
+                    .ok_or(MemoryErrorCode::CorruptMemoryState)?;
+                let selected = recall
+                    .items
+                    .iter()
+                    .filter(|(record, revision)| {
+                        record == obligation.record_id() && revision == obligation.revision_id()
+                    })
+                    .count();
+                let application = load_reference(ledger, prefixes, obligation.application_fact())?;
+                if recall.selection_id != obligation.selection_id()
+                    || selected != 1
+                    || application.turn_id.as_ref().map(|value| value.as_str())
+                        != Some(recall.turn_id.as_str())
+                    || application
+                        .execution_id
+                        .as_ref()
+                        .map(|value| value.as_str())
+                        != Some(recall.execution_id.as_str())
+                    || fact.turn_id.as_ref().map(|value| value.as_str())
+                        != Some(recall.turn_id.as_str())
+                    || fact.execution_id.as_ref().map(|value| value.as_str())
+                        != Some(recall.execution_id.as_str())
+                {
+                    return Err(MemoryErrorCode::CorruptMemoryState);
+                }
                 if obligations
                     .insert(obligation.obligation_id().to_owned(), obligation)
                     .is_some()
@@ -191,7 +222,10 @@ pub fn reconstruct_memory_hypothesis_projection(
     })
 }
 
-fn parse_recall(value: &Map<String, Value>) -> Result<RecordedMemoryRecall, MemoryErrorCode> {
+fn parse_recall(
+    fact: &DurableFact,
+    value: &Map<String, Value>,
+) -> Result<RecordedMemoryRecall, MemoryErrorCode> {
     let items = value["items"]
         .as_array()
         .ok_or(MemoryErrorCode::CorruptMemoryState)?
@@ -204,6 +238,23 @@ fn parse_recall(value: &Map<String, Value>) -> Result<RecordedMemoryRecall, Memo
         })
         .collect::<Result<Vec<_>, MemoryErrorCode>>()?;
     Ok(RecordedMemoryRecall {
+        fact: DurableFactReference::new(
+            fact.session_id.as_str(),
+            fact.position,
+            fact.fact_id.as_str(),
+            fact.payload.sha256(),
+        )
+        .map_err(|_| MemoryErrorCode::CorruptMemoryState)?,
+        turn_id: fact
+            .turn_id
+            .as_ref()
+            .map(|value| value.as_str().to_owned())
+            .ok_or(MemoryErrorCode::CorruptMemoryState)?,
+        execution_id: fact
+            .execution_id
+            .as_ref()
+            .map(|value| value.as_str().to_owned())
+            .ok_or(MemoryErrorCode::CorruptMemoryState)?,
         selection_id: text(value, "selection_id")?,
         request_digest: text(value, "request_digest")?,
         product: text(value, "product")?,
@@ -215,7 +266,42 @@ fn parse_recall(value: &Map<String, Value>) -> Result<RecordedMemoryRecall, Memo
     })
 }
 
+fn load_reference(
+    ledger: &SqliteLedger,
+    prefixes: &[MemoryPrefix],
+    reference: &DurableFactReference,
+) -> Result<DurableFact, MemoryErrorCode> {
+    let prefix = prefixes
+        .iter()
+        .find(|item| {
+            item.session_id.as_str() == reference.session_id()
+                && item.through_position >= reference.position()
+        })
+        .ok_or(MemoryErrorCode::CorruptMemoryState)?;
+    let mut facts = ledger
+        .read_facts(
+            &prefix.session_id,
+            reference.position().saturating_sub(1),
+            reference.position(),
+            None,
+        )
+        .map_err(|_| MemoryErrorCode::CorruptMemoryState)?;
+    if facts.len() != 1 {
+        return Err(MemoryErrorCode::CorruptMemoryState);
+    }
+    let fact = facts.remove(0);
+    if fact.fact_id.as_str() != reference.fact_id()
+        || fact.payload.sha256() != reference.payload_digest()
+    {
+        return Err(MemoryErrorCode::CorruptMemoryState);
+    }
+    Ok(fact)
+}
+
 fn parse_obligation(value: &Map<String, Value>) -> Result<MemoryObligation, MemoryErrorCode> {
+    let recall = value["recall_fact"]
+        .as_object()
+        .ok_or(MemoryErrorCode::CorruptMemoryState)?;
     let fact = value["application_fact"]
         .as_object()
         .ok_or(MemoryErrorCode::CorruptMemoryState)?;
@@ -223,6 +309,14 @@ fn parse_obligation(value: &Map<String, Value>) -> Result<MemoryObligation, Memo
         text(value, "obligation_id")?,
         text(value, "record_id")?,
         text(value, "revision_id")?,
+        DurableFactReference::new(
+            text(recall, "session_id")?,
+            number(recall, "position")?,
+            text(recall, "fact_id")?,
+            text(recall, "payload_digest")?,
+        )
+        .map_err(|_| MemoryErrorCode::CorruptMemoryState)?,
+        text(value, "selection_id")?,
         DurableFactReference::new(
             text(fact, "session_id")?,
             number(fact, "position")?,

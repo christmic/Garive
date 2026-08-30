@@ -9,7 +9,7 @@
 ## Current scope
 
 The Gradle project contains `:config` (D0), `:core` (C0-C3), `:llm` (C1/C1b),
-`:tools` (C4-C5), `:ledger` (L0), `:skill` (S0), `:memory` (M0),
+`:tools` (C4-C5 and pure C5b-A), `:ledger` (L0), `:skill` (S0), `:memory` (M0),
 `:knowledge` (K0), `:scheduler` (Q0), `:multiagent` (MA0),
 `:persistence-postgres` (L1),
 `:adapter-openai-responses`, `:adapter-anthropic-messages`, `:proto`, and an
@@ -25,7 +25,7 @@ experiments/engine-kt/
 ├── config/               experimental D0 definition/snapshot contract
 ├── core/                 experimental C0-C3 domain + shared fixtures
 ├── llm/                  experimental C1/C1b model contract
-├── tools/                experimental C4-C5 prepared/governed effects
+├── tools/                experimental C4-C5 plus C5b-A planner
 ├── ledger/               experimental L0 durable fact semantics
 ├── skill/                experimental S0 activation contract
 ├── memory/               experimental M0 value/reduction contract
@@ -88,7 +88,7 @@ An empty diff proves only the dimension being compared.
 ## What not to do
 
 - Do not add placeholder modules for the Rust directory list.
-- Do not claim conformance for a D0/C0-C5 change until both declared fixture suites
+- Do not claim conformance for a D0/C0-C5/C5b-A change until both declared fixture suites
   pass; Rust remains free to evolve production-only slices outside that matrix.
 - Do not use generated proto values as the entire internal domain model.
 - Do not claim production parity, Runtime ownership, or product support from
