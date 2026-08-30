@@ -214,6 +214,29 @@ export async function getSessionTimeline(
   });
 }
 
+/** Restores a bounded complete timeline by following strictly advancing Host pages. */
+export async function getCompleteSessionTimeline(
+  sessionId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<HostTimelinePage> {
+  const items: HostTimelinePage["items"][number][] = [];
+  let afterPosition = 0;
+  let latest: HostTimelinePage | undefined;
+  for (let pageNumber = 0; pageNumber < 8; pageNumber += 1) {
+    const page = await getSessionTimeline(sessionId, afterPosition, 64, invoke);
+    if (page.session_id !== sessionId || page.scanned_through_position < afterPosition) {
+      throw new Error("projection_failure");
+    }
+    items.push(...page.items);
+    if (items.length > 512) throw new Error("projection_failure");
+    latest = page;
+    if (!page.has_more) return { ...page, items };
+    if (page.scanned_through_position === afterPosition) throw new Error("projection_failure");
+    afterPosition = page.scanned_through_position;
+  }
+  throw new Error(latest?.has_more ? "projection_failure" : "host_failure");
+}
+
 /** Restores immutable Artifacts without exposing backing filesystem paths. */
 export async function listArtifacts(
   sessionId: string,
@@ -225,6 +248,29 @@ export async function listArtifacts(
     throw new Error("invalid_request");
   }
   return invoke<HostArtifactPage>("list_artifacts", { sessionId, afterPosition, limit });
+}
+
+/** Restores every Artifact in one bounded fixed-prefix sequence. */
+export async function listAllArtifacts(
+  sessionId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<HostArtifactPage> {
+  const items: HostArtifact[] = [];
+  let afterPosition = 0;
+  let latest: HostArtifactPage | undefined;
+  for (let pageNumber = 0; pageNumber < 4; pageNumber += 1) {
+    const page = await listArtifacts(sessionId, afterPosition, 64, invoke);
+    if (page.session_id !== sessionId || page.scanned_through_position < afterPosition) {
+      throw new Error("projection_failure");
+    }
+    items.push(...page.items);
+    if (items.length > 256) throw new Error("projection_failure");
+    latest = page;
+    if (!page.has_more) return { ...page, items };
+    if (page.scanned_through_position === afterPosition) throw new Error("projection_failure");
+    afterPosition = page.scanned_through_position;
+  }
+  throw new Error(latest?.has_more ? "projection_failure" : "host_failure");
 }
 
 /** Requests a bounded preview using only backend-verified Artifact coordinates. */

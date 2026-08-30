@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
+  getCompleteSessionTimeline, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, detachWorkspaceFromSession, getSessionWorkspaces, getSetupCatalogue,
   listWorkspaceEntries, prepareSetup,
   authorizeWorkspaceWrites, getWorkspaceRecoveryStatus, listWorkspaceAuthorizations,
-  commitArtifactExport, getArtifactPreview, listArtifacts, prepareArtifactExport,
+  commitArtifactExport, getArtifactPreview, listAllArtifacts, listArtifacts, prepareArtifactExport,
   reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
-  runAgentTurnWithWorkspaceContext, verifyWorkspace,
+  runAgentTurn, runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -25,6 +25,31 @@ describe("desktop Host IPC", () => {
       definitionId: "definition-main", sessionId: "session-0", input: "hello",
     } }]);
     expect(result).toEqual(expected);
+  });
+
+  it("restores long Sessions through strictly advancing bounded pages", async () => {
+    const cursors: number[] = [];
+    const timeline = await getCompleteSessionTimeline("session-1", async <T>(
+      command: string, args: Record<string, unknown>,
+    ) => {
+      expect(command).toBe("get_session_timeline");
+      const after = args.afterPosition as number; cursors.push(after);
+      return { api_version: "v1", session_id: "session-1",
+        scanned_through_position: after === 0 ? 80 : 120, observed_max_position: 120,
+        has_more: after === 0, items: [{ turn_id: after === 0 ? "turn-1" : "turn-2",
+          started_position: after + 1, latest_position: after === 0 ? 80 : 120,
+          state: "completed", user_text: "work", completion_text: "done",
+          content_truncated: false, activities: [] }] } as T;
+    });
+    expect(cursors).toEqual([0, 80]);
+    expect(timeline.items.map((item) => item.turn_id)).toEqual(["turn-1", "turn-2"]);
+  });
+
+  it("fails closed when a timeline cursor does not advance", async () => {
+    await expect(getCompleteSessionTimeline("session-1", async <T>() => ({
+      api_version: "v1", session_id: "session-1", scanned_through_position: 0,
+      observed_max_position: 90, has_more: true, items: [],
+    } as T))).rejects.toThrow("projection_failure");
   });
 
   it("continues one exact durable text suspension", async () => {
@@ -86,6 +111,27 @@ describe("desktop Host IPC", () => {
         artifactId: "artifact-1", revision: 2, committedPosition: 17 } },
     ]);
     expect(JSON.stringify(calls)).not.toContain("/Users/");
+  });
+
+  it("restores Artifact pages without dropping later committed revisions", async () => {
+    const cursors: number[] = [];
+    const page = await listAllArtifacts("session-1", async <T>(
+      command: string, args: Record<string, unknown>,
+    ) => {
+      expect(command).toBe("list_artifacts");
+      const after = args.afterPosition as number; cursors.push(after);
+      return { api_version: "v1", session_id: "session-1",
+        scanned_through_position: after === 0 ? 64 : 91, observed_max_position: 91,
+        has_more: after === 0, items: [{ api_version: "v1",
+          artifact_id: after === 0 ? "artifact-1" : "artifact-2", revision: 1,
+          session_id: "session-1", turn_id: "turn-1", display_name: "result.md",
+          kind: "document", mime_type: "text/markdown", byte_size: 7,
+          content_digest: "a".repeat(64), committed_position: after === 0 ? 64 : 91,
+          verification: "not_run", preview: "text", revealable: false,
+          exportable: true }] } as T;
+    });
+    expect(cursors).toEqual([0, 64]);
+    expect(page.items.map((item) => item.artifact_id)).toEqual(["artifact-1", "artifact-2"]);
   });
 
   it("exports through one path-free native destination capability", async () => {

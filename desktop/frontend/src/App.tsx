@@ -5,8 +5,9 @@ import remarkGfm from "remark-gfm";
 import {
   attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace, continueAgentTurn,
   createWorkSession, detachWorkspaceFromSession,
-  getArtifactPreview, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
-  getSessionWorkspaces, getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
+  getArtifactPreview, getCompleteSessionTimeline, getDesktopCapabilities, getRecentSessions,
+  getSessionTimeline, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
+  listWorkspaceAuthorizations, reauthorizeWorkspace,
   resolveTurnApproval, revokeWorkspace, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
@@ -106,10 +107,10 @@ export function App() {
   }, []);
 
   const loadSession = useCallback(async (sessionId: string) => {
-    const timeline = await getSessionTimeline(sessionId);
+    const timeline = await getCompleteSessionTimeline(sessionId);
     dispatch({ type: "session_loaded", timeline });
     const [artifacts, workspaces] = await Promise.all([
-      listArtifacts(sessionId), getSessionWorkspaces(sessionId),
+      listAllArtifacts(sessionId), getSessionWorkspaces(sessionId),
     ]);
     dispatch({ type: "artifacts_loaded", page: artifacts });
     dispatch({ type: "workspaces_loaded", sessionId, workspaces });
