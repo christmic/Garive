@@ -6,6 +6,26 @@ use garive_tools::{
 };
 use serde_json::{json, Value};
 
+fn fixture() -> Value {
+    serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/deterministic-effect-batches-v1.json"
+    ))
+    .unwrap()
+}
+
+fn assert_keys(value: &Value, expected: &[&str]) {
+    let mut actual: Vec<_> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    actual.sort_unstable();
+    let mut expected = expected.to_vec();
+    expected.sort_unstable();
+    assert_eq!(actual, expected);
+}
+
 struct ExactResolver {
     revision: &'static str,
     mode: AccessMode,
@@ -148,4 +168,138 @@ fn invalid_limits_and_v1_calls_fail_before_planning() {
         .prepare(&ToolIntent::new("call", "legacy", "{}"))
         .unwrap();
     assert!(plan_effect_batch(&[call], &limits()).is_err());
+}
+
+#[test]
+fn shared_c5b_fixture_matches_canonical_rust_semantics() {
+    let fixture = fixture();
+    assert_keys(
+        &fixture,
+        &[
+            "schema_version",
+            "definition_template",
+            "normalization_cases",
+            "policy_cases",
+            "plan_case",
+            "failure_cases",
+        ],
+    );
+    assert_eq!(fixture["schema_version"], 1);
+
+    for case in fixture["normalization_cases"].as_array().unwrap() {
+        assert_keys(
+            case,
+            &["name", "namespace", "resource_key", "mode", "valid"],
+        );
+        let namespace = match case["namespace"].as_str().unwrap() {
+            "filesystem" => AccessNamespace::Filesystem,
+            "network" => AccessNamespace::Network,
+            value => panic!("unknown fixture namespace {value}"),
+        };
+        let result = ResourceAccess::new(
+            namespace,
+            case["resource_key"].as_str().unwrap(),
+            AccessMode::Read,
+        );
+        assert_eq!(result.is_ok(), case["valid"].as_bool().unwrap());
+    }
+
+    let policy = ToolAccessPolicyV1::new(
+        "policy-v1",
+        [AccessPolicyEntry::new("src", [AccessMode::Read]).unwrap()],
+        [],
+        [],
+        [],
+        1,
+        512,
+    )
+    .unwrap();
+    for case in fixture["policy_cases"].as_array().unwrap() {
+        assert_keys(case, &["name", "resource_key", "covered"]);
+        let accesses = InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            case["resource_key"].as_str().unwrap(),
+            AccessMode::Read,
+        )
+        .unwrap()])
+        .unwrap();
+        assert_eq!(policy.covers(&accesses), case["covered"].as_bool().unwrap());
+    }
+
+    let case = &fixture["plan_case"];
+    assert_keys(
+        case,
+        &[
+            "name",
+            "calls",
+            "limits",
+            "conflict_graph_bytes",
+            "conflict_graph_digest",
+            "steps",
+            "plan_digest",
+        ],
+    );
+    let calls = case["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|call| {
+            assert_keys(call, &["path", "mode", "replay_class", "prepared_digest"]);
+            let mode = if call["mode"] == "read" {
+                AccessMode::Read
+            } else {
+                AccessMode::Write
+            };
+            let replay = if call["replay_class"] == "read_only" {
+                ReplayClass::ReadOnly
+            } else {
+                ReplayClass::Idempotent
+            };
+            let prepared = prepared(call["path"].as_str().unwrap(), mode, replay);
+            assert_eq!(prepared.input_digest(), call["prepared_digest"]);
+            prepared
+        })
+        .collect::<Vec<_>>();
+    let limits_value = &case["limits"];
+    assert_keys(
+        limits_value,
+        &[
+            "max_intents",
+            "max_accesses_per_intent",
+            "max_total_accesses",
+            "max_parallel_reads",
+            "max_buffered_result_bytes",
+        ],
+    );
+    let fixture_limits = EffectBatchLimitsV1::new(
+        limits_value["max_intents"].as_u64().unwrap() as usize,
+        limits_value["max_accesses_per_intent"].as_u64().unwrap() as usize,
+        limits_value["max_total_accesses"].as_u64().unwrap() as usize,
+        limits_value["max_parallel_reads"].as_u64().unwrap() as usize,
+        limits_value["max_buffered_result_bytes"].as_u64().unwrap(),
+    )
+    .unwrap();
+    let plan = plan_effect_batch(&calls, &fixture_limits).unwrap();
+    let expected_graph = case["conflict_graph_bytes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_u64().unwrap() as u8)
+        .collect::<Vec<_>>();
+    assert_eq!(plan.conflict_graph_bytes(), expected_graph);
+    assert_eq!(plan.conflict_graph_digest(), case["conflict_graph_digest"]);
+    assert_eq!(plan.plan_digest(), case["plan_digest"]);
+    assert_eq!(
+        fixture["failure_cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|failure| failure["expected_code"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            "effect_batch_bound_exceeded",
+            "effect_access_invalid",
+            "effect_access_invalid"
+        ]
+    );
 }

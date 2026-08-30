@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "definition_template": {
+    "tool_revision": "revision-v2",
+    "description": "Exact fixture tool",
+    "input_schema": {
+      "type": "object",
+      "properties": { "path": { "type": "string" } },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "requirements": {
+      "max_duration_ms": 1000,
+      "max_output_bytes": 1024
+    },
+    "access_policy": {
+      "policy_revision": "policy-v1",
+      "filesystem_root": "src",
+      "max_accesses": 1,
+      "max_result_bytes": 512
+    },
+    "resolver_revision": "exact-v1"
+  },
+  "normalization_cases": [
+    {
+      "name": "filesystem_exact",
+      "namespace": "filesystem",
+      "resource_key": "src/lib.rs",
+      "mode": "read",
+      "valid": true
+    },
+    {
+      "name": "filesystem_traversal",
+      "namespace": "filesystem",
+      "resource_key": "../secret",
+      "mode": "read",
+      "valid": false
+    },
+    {
+      "name": "filesystem_native_separator",
+      "namespace": "filesystem",
+      "resource_key": "src\\secret",
+      "mode": "read",
+      "valid": false
+    },
+    {
+      "name": "network_origin",
+      "namespace": "network",
+      "resource_key": "https://example.com:443",
+      "mode": "read",
+      "valid": true
+    },
+    {
+      "name": "network_path_forbidden",
+      "namespace": "network",
+      "resource_key": "https://example.com:443/path",
+      "mode": "read",
+      "valid": false
+    }
+  ],
+  "policy_cases": [
+    { "name": "equal_root", "resource_key": "src", "covered": true },
+    { "name": "descendant", "resource_key": "src/domain/lib.rs", "covered": true },
+    { "name": "prefix_sibling", "resource_key": "src-old/lib.rs", "covered": false }
+  ],
+  "plan_case": {
+    "name": "reads_then_write",
+    "calls": [
+      {
+        "path": "src/a",
+        "mode": "read",
+        "replay_class": "read_only",
+        "prepared_digest": "00d855ec624565dee4a71d463a8fb77faab11c393c70a57572432680f012b58b"
+      },
+      {
+        "path": "src/b",
+        "mode": "read",
+        "replay_class": "read_only",
+        "prepared_digest": "de332c5c32c7a363d1ef94499074ecd6f01b3824decd16a93112ad79ac7bf96b"
+      },
+      {
+        "path": "src/a",
+        "mode": "read",
+        "replay_class": "read_only",
+        "prepared_digest": "00d855ec624565dee4a71d463a8fb77faab11c393c70a57572432680f012b58b"
+      },
+      {
+        "path": "src/a",
+        "mode": "write",
+        "replay_class": "idempotent",
+        "prepared_digest": "e0244dedba29486b4cddd0c7018cf19e15f43e3ec4913de9d2f17b20df166fe3"
+      }
+    ],
+    "limits": {
+      "max_intents": 8,
+      "max_accesses_per_intent": 2,
+      "max_total_accesses": 16,
+      "max_parallel_reads": 3,
+      "max_buffered_result_bytes": 2048
+    },
+    "conflict_graph_bytes": [0, 0, 1, 0, 0, 1],
+    "conflict_graph_digest": "bde8c785cbc697092a95bb63334223687a4f113ad82df469d0a47f942d55807c",
+    "steps": [
+      { "kind": "parallel_read_group", "intent_indexes": [0, 1, 2] },
+      { "kind": "sequential_step", "intent_index": 3 }
+    ],
+    "plan_digest": "3c43bfe37ef26c151f6b3bd8bfd1851f3eef352049cd2a72148aa599bbb87d09"
+  },
+  "failure_cases": [
+    { "name": "zero_limit", "expected_code": "effect_batch_bound_exceeded" },
+    { "name": "legacy_v1", "expected_code": "effect_access_invalid" },
+    { "name": "resolver_revision_mismatch", "expected_code": "effect_access_invalid" }
+  ]
+}
