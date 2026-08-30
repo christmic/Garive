@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,8 +49,7 @@ const candidateReady = typeof candidate.version === "string"
 if (candidateReady) {
   try {
     const packagePath = resolve(repository, candidate.package_path);
-    const packageBytes = await readFile(packagePath);
-    const packageDigest = createHash("sha256").update(packageBytes).digest("hex");
+    const packageDigest = await sha256File(packagePath);
     if (packageDigest !== candidate.package_sha256) failures.push("candidate package SHA-256 mismatch");
   } catch {
     failures.push("candidate package is missing or unreadable");
@@ -134,3 +134,9 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(`Desktop evidence gate passed: ${captures.length}/${expectedIds.length} captures`);
+
+async function sha256File(path) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
+}
