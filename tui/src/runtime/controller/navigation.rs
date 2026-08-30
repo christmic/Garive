@@ -1,5 +1,5 @@
 use crate::{
-    application::{AppAction, ExecutionState, FocusTarget, Overlay},
+    application::{AppAction, AppModel, ExecutionState, FocusTarget, Overlay},
     input::{command_matches, parse_command, CommandParse, COMMAND_PALETTE},
 };
 
@@ -12,6 +12,76 @@ pub(super) fn cycle_focus(state: &mut RuntimeState, backwards: bool) {
         backwards,
     );
     state.dispatch(AppAction::FocusChanged(next));
+    if next == FocusTarget::Navigation {
+        ensure_navigation_selection(&mut state.model);
+    }
+}
+
+pub(super) fn move_navigation_selection(model: &mut AppModel, backwards: bool) {
+    ensure_navigation_selection(model);
+    let Some(current) = model.navigation_selection.as_deref() else {
+        return;
+    };
+    let Some(index) = model
+        .sessions
+        .iter()
+        .position(|session| session.session_id == current)
+    else {
+        return;
+    };
+    let target = if backwards {
+        index.saturating_sub(1)
+    } else {
+        (index + 1).min(model.sessions.len().saturating_sub(1))
+    };
+    model.navigation_selection = model
+        .sessions
+        .get(target)
+        .map(|session| session.session_id.clone());
+}
+
+pub(super) fn move_navigation_to_edge(model: &mut AppModel, last: bool) {
+    let session = if last {
+        model.sessions.last()
+    } else {
+        model.sessions.first()
+    };
+    model.navigation_selection = session.map(|value| value.session_id.clone());
+}
+
+pub(super) fn activate_navigation_selection(state: &mut RuntimeState) {
+    ensure_navigation_selection(&mut state.model);
+    if let Some(session_id) = state.model.navigation_selection.clone() {
+        state.load(session_id);
+    }
+}
+
+fn ensure_navigation_selection(model: &mut AppModel) {
+    let current_is_visible = model.navigation_selection.as_deref().is_some_and(|id| {
+        model
+            .sessions
+            .iter()
+            .any(|session| session.session_id == id)
+    });
+    if current_is_visible {
+        return;
+    }
+    model.navigation_selection = model
+        .selected_session
+        .as_ref()
+        .filter(|id| {
+            model
+                .sessions
+                .iter()
+                .any(|session| &session.session_id == *id)
+        })
+        .cloned()
+        .or_else(|| {
+            model
+                .sessions
+                .first()
+                .map(|session| session.session_id.clone())
+        });
 }
 
 fn next_focus(width: u16, current: FocusTarget, backwards: bool) -> FocusTarget {
@@ -181,6 +251,7 @@ pub(super) fn matching_sessions(state: &RuntimeState) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use garive_host_client::SessionSummary;
 
     #[test]
     fn focus_cycle_matches_responsive_regions() {
@@ -200,5 +271,43 @@ mod tests {
             next_focus(80, FocusTarget::Conversation, true),
             FocusTarget::Composer
         );
+    }
+
+    #[test]
+    fn navigation_selection_is_stable_bounded_and_seeded_from_active_session() {
+        let mut model = AppModel {
+            sessions: vec![
+                session("session-a"),
+                session("session-b"),
+                session("session-c"),
+            ],
+            selected_session: Some("session-b".into()),
+            ..Default::default()
+        };
+        move_navigation_selection(&mut model, true);
+        assert_eq!(model.navigation_selection.as_deref(), Some("session-a"));
+        move_navigation_selection(&mut model, true);
+        assert_eq!(model.navigation_selection.as_deref(), Some("session-a"));
+        move_navigation_to_edge(&mut model, true);
+        assert_eq!(model.navigation_selection.as_deref(), Some("session-c"));
+
+        model.navigation_selection = Some("stale".into());
+        move_navigation_selection(&mut model, false);
+        assert_eq!(model.navigation_selection.as_deref(), Some("session-c"));
+    }
+
+    fn session(id: &str) -> SessionSummary {
+        SessionSummary {
+            api_version: "v1".into(),
+            session_id: id.into(),
+            agent_instance_id: "agent-instance".into(),
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            opened_at: "2026-08-30T00:00:00Z".into(),
+            latest_position: 1,
+            latest_turn_id: Some("turn".into()),
+            latest_turn_state: Some("running".into()),
+            turn_count: 1,
+        }
     }
 }

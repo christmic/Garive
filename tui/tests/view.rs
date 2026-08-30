@@ -195,6 +195,37 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
 }
 
 #[test]
+fn focused_session_rail_keeps_stable_keyboard_selection_visible() {
+    let model = AppModel {
+        focus: FocusTarget::Navigation,
+        sessions: (0..12)
+            .map(|index| session(&format!("session-{index:06}"), &format!("agent-{index:06}")))
+            .collect(),
+        selected_session: Some("session-000000".into()),
+        navigation_selection: Some("session-000011".into()),
+        ..Default::default()
+    };
+    let rendered = frame(&model, 100, 24);
+    assert!(rendered.contains("› agent-000011"));
+    assert!(!rendered.contains("agent-000000"));
+
+    let area = Rect::new(0, 0, 100, 24);
+    let mut buffer = Buffer::empty(area);
+    let _ = view::render_cached(
+        &model,
+        Theme::Mono,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    );
+    let selected = (0..area.height)
+        .flat_map(|y| (0..28).map(move |x| (x, y)))
+        .find(|&(x, y)| buffer[(x, y)].symbol() == "›")
+        .expect("focused Session marker");
+    assert!(buffer[selected].modifier.contains(Modifier::REVERSED));
+}
+
+#[test]
 fn agent_markdown_is_structured_and_terminal_safe() {
     let mut model = AppModel {
         boot: BootState::Ready,

@@ -19,7 +19,7 @@ mod style;
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use overlay::render_overlay;
-use primitives::{centered_column, key_hints, status_chip};
+use primitives::{centered_column, key_hints, selection_window, status_chip};
 use session::rail_lines;
 use style::{
     connection_icon, connection_name, connection_style, execution_name, execution_style, palette,
@@ -185,20 +185,50 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
         lines.push(Line::default());
         lines.push(Line::styled("Ctrl+N  Create one", colors.accent));
     } else {
-        for (index, session) in model
-            .sessions
-            .iter()
-            .take(regions[0].height.saturating_sub(1) as usize)
-            .enumerate()
-        {
-            let selected = model.selected_session.as_deref() == Some(&session.session_id);
-            lines.extend(rail_lines(session, selected, colors));
-            if index + 1 < model.sessions.len() {
+        let capacity = usize::from(regions[0].height.saturating_add(1) / 3).max(1);
+        let focus_id = if model.focus == crate::application::FocusTarget::Navigation {
+            model.navigation_selection.as_deref()
+        } else {
+            None
+        };
+        let anchor_id = focus_id.or(model.selected_session.as_deref());
+        let anchor = anchor_id
+            .and_then(|id| {
+                model
+                    .sessions
+                    .iter()
+                    .position(|session| session.session_id == id)
+            })
+            .unwrap_or(0);
+        let (start, end) = selection_window(model.sessions.len(), anchor, capacity);
+        for (offset, session) in model.sessions[start..end].iter().enumerate() {
+            let active = model.selected_session.as_deref() == Some(&session.session_id);
+            let focused = focus_id == Some(session.session_id.as_str());
+            lines.extend(rail_lines(session, active, focused, colors));
+            if start + offset + 1 < end {
                 lines.push(Line::default());
             }
         }
     }
     Paragraph::new(lines).render(regions[0], buffer);
+    if model.focus == crate::application::FocusTarget::Navigation {
+        if let Some(focused) = model.navigation_selection.as_deref().and_then(|id| {
+            model
+                .sessions
+                .iter()
+                .position(|session| session.session_id == id)
+        }) {
+            let capacity = usize::from(regions[0].height.saturating_add(1) / 3).max(1);
+            let (start, end) = selection_window(model.sessions.len(), focused, capacity);
+            if focused >= start && focused < end {
+                let y = regions[0].y + u16::try_from((focused - start) * 3).unwrap_or(u16::MAX);
+                buffer.set_style(
+                    Rect::new(regions[0].x, y, regions[0].width, 2.min(regions[0].height)),
+                    colors.selection_row,
+                );
+            }
+        }
+    }
     Line::styled(" Ctrl+N new · Ctrl+S list", colors.muted).render(regions[1], buffer);
 }
 

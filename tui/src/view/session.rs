@@ -9,11 +9,18 @@ use super::{
 
 pub(super) fn rail_lines(
     session: &SessionSummary,
-    selected: bool,
+    active: bool,
+    focused: bool,
     colors: Palette,
 ) -> [Line<'static>; 2] {
-    let marker = if selected { "▌" } else { " " };
-    let identity_style = if selected {
+    let marker = if focused {
+        "›"
+    } else if active {
+        "▌"
+    } else {
+        " "
+    };
+    let identity_style = if active {
         colors.selected
     } else {
         colors.normal
