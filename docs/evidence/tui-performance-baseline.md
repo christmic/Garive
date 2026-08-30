@@ -1,6 +1,6 @@
 # TUI interactive latency baseline
 
-> Recorded: 2026-08-30. This is reproducible local evidence, not a claim about
+> Recorded: 2026-08-30; candidate rerun: 2026-08-31. This is reproducible local evidence, not a claim about
 > every terminal, operating system, or CPU.
 
 ## Environment
@@ -50,19 +50,18 @@ cargo build --release -p garive-tui --bin garive-tui \
 cargo run --release -p garive-tui --example release_process_baseline
 ```
 
-Latest pinned evidence: [`tui-release-process-2026-08-30.json`](tui-release-process-2026-08-30.json),
-Garive `d0cfc1c01da30d9389907fbb1bb4b61db1eee34b`. The earlier
-first-frame-only record remains retained for audit history.
+Latest pinned evidence: [`tui-release-process-2026-08-31.json`](tui-release-process-2026-08-31.json),
+Garive `d907ea633f024474de21bd3be50b63f5b53f7875`. Earlier reports remain
+retained for audit history.
 
 | Run | p50 | p95 | p99 | max | Gate |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 23.269 ms | 24.971 ms | 24.971 ms | 527.282 ms | p95 < 150 ms |
-| 2 | 23.535 ms | 26.098 ms | 26.098 ms | 26.175 ms | p95 < 150 ms |
-| 3 | 23.098 ms | 25.113 ms | 25.113 ms | 33.601 ms | p95 < 150 ms |
+| 1 | 26.200 ms | 29.907 ms | 29.907 ms | 54.150 ms | p95 < 150 ms |
+| 2 | 25.810 ms | 27.146 ms | 27.146 ms | 27.169 ms | p95 < 150 ms |
+| 3 | 26.900 ms | 29.520 ms | 29.520 ms | 31.488 ms | p95 < 150 ms |
 
-All three p95 values pass. The first run's unsmoothed maximum is retained; the
-gate is percentile-based and no outlier was deleted. This closes the first-frame
-metric on the pinned macOS reference only.
+All three p95 values pass, and every unsmoothed maximum is retained. This
+closes the first-frame metric on the pinned macOS reference only.
 
 ## Release idle CPU and bounded-model peak RSS
 
@@ -83,14 +82,19 @@ other benchmark corpora.
 cargo run --release -p garive-tui --example release_memory_baseline
 ```
 
-Pinned evidence: [`tui-release-memory-2026-08-30.json`](tui-release-memory-2026-08-30.json),
-Garive `d0cfc1c01da30d9389907fbb1bb4b61db1eee34b`.
+Pinned evidence: [`tui-release-memory-2026-08-31.json`](tui-release-memory-2026-08-31.json),
+Garive `d907ea633f024474de21bd3be50b63f5b53f7875`.
 
 | Run | Peak RSS | Gate |
 |---:|---:|---:|
-| 1 | 3.938 MiB | < 100 MiB |
-| 2 | 4.016 MiB | < 100 MiB |
-| 3 | 3.953 MiB | < 100 MiB |
+| 1 | 3.984 MiB | < 100 MiB |
+| 2 | 4.031 MiB | < 100 MiB |
+| 3 | 4.031 MiB | < 100 MiB |
+
+The same candidate's three-run in-process distribution is retained in
+[`tui-release-in-process-2026-08-31.json`](tui-release-in-process-2026-08-31.json).
+Its worst observed p95 was 307 µs key-to-model, 405 µs for the 120×40 render,
+600 µs for the 200×60 resize, and at least 776,025 H3 reductions/second at p05.
 
 Both metrics are Gates on the pinned macOS reference environment. Other native
 platforms remain open.

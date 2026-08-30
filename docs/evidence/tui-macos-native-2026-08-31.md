@@ -65,6 +65,16 @@ synthetic images.
 
 ## Related performance gate
 
+Revision `d907ea63`, which includes this evidence plus concurrent integration,
+was rerun through the release outer-process and bounded-memory gates. Three
+first-frame p95 values were 29.907, 27.146, and 29.520 ms; three 60-second idle
+runs recorded no CPU-time increase at the measurement resolution; three loaded
+10-Session/5,000-cell processes peaked at 4,177,920, 4,227,072, and 4,227,072
+bytes. Raw reports are stored beside this document as
+`tui-release-process-2026-08-31.json`,
+`tui-release-memory-2026-08-31.json`, and
+`tui-release-in-process-2026-08-31.json`.
+
 The same source candidate lineage has a passing 30-minute production
 reconnect/Turn churn report in
 [`tui-release-churn-2026-08-31.json`](tui-release-churn-2026-08-31.json). That

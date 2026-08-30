@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "candidate-in-process",
+  "build_profile": "bench",
+  "fixture_sha256": "043babb882c7a454a6a1e5071bec8d9dd8c93e11851aeee66e17af65744a6b24",
+  "warmup_samples": 20,
+  "measured_samples_per_run": 200,
+  "environment": {
+    "os": "Darwin 25.6.0 Darwin Kernel Version 25.6.0: Sat Jul 11 15:26:21 PDT 2026; root:xnu-12377.161.13~4/RELEASE_ARM64_T6000 arm64 arm",
+    "cpu": "Apple M1 Pro",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18) (Homebrew)",
+    "garive_commit": "d907ea633f024474de21bd3be50b63f5b53f7875",
+    "terminal_backend": "in-process ratatui Buffer"
+  },
+  "not_measured": [
+    "first interactive PTY frame",
+    "60-second idle CPU",
+    "peak resident memory"
+  ],
+  "runs": [
+    {
+      "key_to_model_us": { "p50": 217, "p95": 232, "p99": 239, "max": 258 },
+      "render_120x40_200_cells_us": { "p50": 241, "p95": 280, "p99": 326, "max": 335 },
+      "resize_200x60_1000_cells_us": { "p50": 366, "p95": 408, "p99": 469, "max": 482 },
+      "h3_event_reduction_per_second": { "p05": 1006753, "p50": 1057543, "p95": 1182132, "min": 974061 },
+      "unloaded_page_growth_ratio_milli": 1044
+    },
+    {
+      "key_to_model_us": { "p50": 240, "p95": 298, "p99": 317, "max": 393 },
+      "render_120x40_200_cells_us": { "p50": 271, "p95": 347, "p99": 369, "max": 459 },
+      "resize_200x60_1000_cells_us": { "p50": 426, "p95": 529, "p99": 629, "max": 710 },
+      "h3_event_reduction_per_second": { "p05": 876834, "p50": 976566, "p95": 1067824, "min": 741328 },
+      "unloaded_page_growth_ratio_milli": 1036
+    },
+    {
+      "key_to_model_us": { "p50": 244, "p95": 307, "p99": 409, "max": 441 },
+      "render_120x40_200_cells_us": { "p50": 292, "p95": 405, "p99": 498, "max": 593 },
+      "resize_200x60_1000_cells_us": { "p50": 449, "p95": 600, "p99": 789, "max": 895 },
+      "h3_event_reduction_per_second": { "p05": 776025, "p50": 943121, "p95": 1017785, "min": 624299 },
+      "unloaded_page_growth_ratio_milli": 1024
+    }
+  ]
+}
