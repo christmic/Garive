@@ -184,9 +184,11 @@ Work 按处理优先级分组：
 
 1. 在 Work 点击 **New task**，或从 Agents 选择一个 Agent。
 2. 明确核对 Agent 名称；默认选择只是便利，不会改变服务端权限。
-3. 在 **Outcome for the Agent** 写清楚期望结果和验收条件。
-4. 点击 **Start on server**。
-5. 看到新 Session 和第一条 Turn 的服务端确认后，才表示任务已可靠提交。
+3. 可以横向浏览 **Synthesize / Analyze / Create** 快速目标；点击只会把桌面端一致的结果导向文案
+   写入可编辑草稿，不会自动提交。
+4. 在 **Outcome for the Agent** 补充上下文、验收条件与限制。
+5. 点击 **Start on server**。
+6. 看到新 Session 和第一条 Turn 的服务端确认后，才表示任务已可靠提交。
 
 创建 Session 与启动第一条 Turn 是两个具有稳定命令身份的操作。若网络在提交期间断开，应用
 不会偷偷创建第二个任务，而会把有界 pending record 和精确输入保存在应用私有存储中。即使
@@ -368,11 +370,12 @@ iOS Simulator 可直接打开首页、导航抽屉或审批 Session：
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-sidebar
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-conversation
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-new-task
 ```
 
 | 演示动作 | UI 入口 | 可观察服务端事实 |
 |---|---|---|
-| 新建并启动 | `+` → Agent → Outcome → Start | 新 Session 与第一条 running Turn |
+| 新建并启动 | `+` → Agent → 快速目标/Outcome → Start | 新 Session 与第一条 running Turn |
 | 继续同一 Session | 终态会话底部输入并发送 | 原 Turn 保留，新增 Turn |
 | 批准 | Approval needed → Approve once | completion 以 `Approved.` 开头 |
 | 拒绝 | Approval needed → Decline | completion 以 `Declined.` 开头 |
@@ -391,7 +394,7 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 Settings 语义标签。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（9 条）、Swift 测试（7 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
+界面流程（12 条）、Swift 测试（8 条）、iOS Simulator 构建与界面流程，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
 输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 33 张实际运行截图。

@@ -271,6 +271,13 @@ does not retain the local credential.
 
 - Cards show installed public Agent label, availability, and public capability
   labels. Raw definition IDs remain in details.
+- The mobile composer adapts the desktop Work starters into one horizontal,
+  glanceable row: `Synthesize` writes `Turn notes into a clear decision memo`,
+  `Analyze` writes `Find the key patterns and recommend next steps`, and
+  `Create` writes `Draft a polished project brief from my outline`.
+- A starter replaces only the editable draft. It never submits, selects broader
+  authority, or changes the chosen Agent; users can edit the outcome before
+  starting server work.
 - Selecting an Agent opens the new-task composer; send remains disabled for
   empty/oversized text or offline/auth-invalid state.
 
