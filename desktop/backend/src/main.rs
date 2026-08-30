@@ -279,6 +279,18 @@ fn get_session_workspaces(
 }
 
 #[tauri::command]
+fn detach_workspace_from_session(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    workspace_id: String,
+    grant_revision: u64,
+) -> Result<garive_desktop::DesktopWorkspaceDetachment, String> {
+    state
+        .detach_workspace(&session_id, &workspace_id, grant_revision)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn list_artifacts(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     session_id: String,
@@ -550,6 +562,7 @@ fn main() {
             create_work_session,
             attach_workspace_to_session,
             get_session_workspaces,
+            detach_workspace_from_session,
             list_artifacts,
             get_artifact_preview,
             prepare_artifact_export,

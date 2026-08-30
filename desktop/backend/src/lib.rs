@@ -32,6 +32,8 @@ pub use garive_runtime::HostArtifact as DesktopArtifact;
 pub use garive_runtime::HostArtifactPage as DesktopArtifactPage;
 /// Durable path-free Workspace attachment exposed to Desktop clients.
 pub use garive_runtime::HostWorkspaceAttachment as DesktopWorkspaceAttachment;
+/// Durable path-free Workspace detachment receipt exposed to Desktop clients.
+pub use garive_runtime::HostWorkspaceDetachment as DesktopWorkspaceDetachment;
 /// Restart-safe durable Session summary exposed to Desktop clients.
 pub use garive_runtime::SessionSummary as DesktopSessionSummary;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
@@ -274,6 +276,19 @@ impl DesktopHost {
     ) -> Result<Vec<DesktopWorkspaceAttachment>, DesktopHostError> {
         self.host
             .session_workspaces(session_id)
+            .map_err(|_| DesktopHostError::HostFailure)
+    }
+
+    /// Commits one exact idempotent Session Workspace detachment receipt.
+    pub fn detach_workspace(
+        &self,
+        session_id: &str,
+        workspace_id: &str,
+        grant_revision: u64,
+    ) -> Result<DesktopWorkspaceDetachment, DesktopHostError> {
+        let command_id = self.operations.command_id("detach-workspace")?;
+        self.host
+            .detach_workspace(&command_id, session_id, workspace_id, grant_revision)
             .map_err(|_| DesktopHostError::HostFailure)
     }
 
@@ -621,6 +636,17 @@ impl DesktopState {
             .clone()
             .ok_or(DesktopHostError::NotConfigured)?;
         host.session_workspaces(session_id)
+    }
+
+    /// Commits one exact durable Workspace detachment for a Session.
+    pub fn detach_workspace(
+        &self,
+        session_id: &str,
+        workspace_id: &str,
+        grant_revision: u64,
+    ) -> Result<DesktopWorkspaceDetachment, DesktopHostError> {
+        self.installed_host()?
+            .detach_workspace(session_id, workspace_id, grant_revision)
     }
 
     /// Returns one bounded immutable Artifact page.
