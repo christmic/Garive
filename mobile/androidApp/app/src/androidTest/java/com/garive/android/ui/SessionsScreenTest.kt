@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -107,7 +108,7 @@ public class SessionsScreenTest {
         val responses = mutableListOf<String>()
         compose.setContent {
             GariveTheme {
-                ConversationScreen(state, {}, {}, {}, {}, {}, { responses += it }, {}, {})
+                ConversationScreen(state, {}, {}, {}, {}, {}, {}, { responses += it }, {}, {})
             }
         }
 
@@ -117,6 +118,20 @@ public class SessionsScreenTest {
         compose.onNodeWithText("Activity · 1").performClick()
         compose.onNodeWithText("Ran 4 checks").assertIsDisplayed()
         compose.runOnIdle { assertEquals(listOf("false", "true"), responses) }
+    }
+
+    @Test
+    public fun stableFailureIsVisibleAndDismissible(): Unit {
+        var dismissed = false
+        compose.setContent {
+            GariveTheme {
+                MobileNoticeBanner("runtime_unavailable", false, { dismissed = true }, {}, {})
+            }
+        }
+
+        compose.onNodeWithText("Runtime unavailable. Verified history is still shown.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Dismiss notice").performClick()
+        compose.runOnIdle { assertEquals(true, dismissed) }
     }
 
     private fun session(id: String, agent: String, status: MobileWorkStatus): MobileSessionCard =

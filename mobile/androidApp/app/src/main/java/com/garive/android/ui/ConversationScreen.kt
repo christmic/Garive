@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.garive.android.MOBILE_MAX_INPUT_BYTES
 import com.garive.mobile.model.MobileConnectionState
 import com.garive.mobile.model.MobileTurnItem
 import com.garive.mobile.model.MobileWorkState
@@ -62,6 +63,7 @@ internal fun ConversationScreen(
     onSend: () -> Unit,
     onCancel: () -> Unit,
     onShare: () -> Unit,
+    onDismissNotice: () -> Unit,
     onContinue: (String) -> Unit,
     onRetry: () -> Unit,
     onAbandonRetry: () -> Unit,
@@ -153,26 +155,62 @@ internal fun ConversationScreen(
                     latest?.status !in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT),
             )
         }
-        if (state.pendingCommand != null) {
-            Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Result unknown. Retry the exact command.", modifier = Modifier.weight(1f))
-                    Column(horizontalAlignment = Alignment.End) {
-                        OutlinedButton(onClick = onRetry) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Text("Retry exact", modifier = Modifier.padding(start = 6.dp))
-                        }
-                        androidx.compose.material3.TextButton(onClick = onAbandonRetry) {
-                            Text("Forget retry")
-                        }
+        if (state.noticeCode != null || state.pendingCommand != null) {
+            MobileNoticeBanner(
+                code = state.noticeCode ?: "command_unknown",
+                pending = state.pendingCommand != null,
+                onDismiss = onDismissNotice,
+                onRetry = onRetry,
+                onAbandonRetry = onAbandonRetry,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun MobileNoticeBanner(
+    code: String,
+    pending: Boolean,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    onAbandonRetry: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(mobileNoticeMessage(code), modifier = Modifier.weight(1f))
+            if (pending) {
+                Column(horizontalAlignment = Alignment.End) {
+                    OutlinedButton(onClick = onRetry) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = null)
+                        Text("Retry exact", modifier = Modifier.padding(start = 6.dp))
                     }
+                    androidx.compose.material3.TextButton(onClick = onAbandonRetry) {
+                        Text("Forget retry")
+                    }
+                }
+            } else {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Rounded.Close, contentDescription = "Dismiss notice")
                 }
             }
         }
     }
+}
+
+internal fun mobileNoticeMessage(code: String): String = when (code) {
+    "validation_input_empty" -> "Add an outcome before sending."
+    "validation_input_too_large" -> "Outcome is over 16 KiB. Shorten it before sending."
+    "command_unknown" -> "Result unknown. Verify history or retry the exact command."
+    "pending_retry_abandoned" -> "Exact retry was forgotten. Verify server history before replacing the work."
+    "runtime_unavailable" -> "Runtime unavailable. Verified history is still shown."
+    "transport_failure", "follow_deadline" -> "Connection interrupted. Verified history is still shown."
+    "rate_limited" -> "The service is busy. Wait before trying again."
+    "actor_forbidden" -> "This device cannot access that work."
+    "device_reauth_required" -> "This device must pair again before remote work can continue."
+    else -> code.replace('_', ' ').replaceFirstChar(Char::uppercase)
 }
 
 internal fun conversationTranscript(state: MobileWorkState): String = state.timeline.joinToString("\n\n") { turn ->
@@ -334,7 +372,7 @@ private fun MessageComposer(
                     FilledIconButton(
                         onClick = onSend,
                         enabled = enabled && !busy && draft.isNotBlank() &&
-                            draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
+                            draft.encodeToByteArray().size <= MOBILE_MAX_INPUT_BYTES,
                         modifier = Modifier.padding(bottom = 4.dp),
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send to Agent")
@@ -411,7 +449,7 @@ private fun DecisionComposer(
                 Button(
                     onClick = { onContinue(draft) },
                     enabled = enabled && !busy && draft.isNotBlank() &&
-                        draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
+                        draft.encodeToByteArray().size <= MOBILE_MAX_INPUT_BYTES,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(action)
@@ -420,5 +458,3 @@ private fun DecisionComposer(
         }
     }
 }
-
-private const val MAX_MOBILE_INPUT_BYTES = 16_384

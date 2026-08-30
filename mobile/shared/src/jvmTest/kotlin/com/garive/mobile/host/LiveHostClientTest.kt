@@ -9,6 +9,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.http.content.TextContent
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.nio.file.Path
@@ -235,6 +236,25 @@ public class LiveHostClientTest {
             "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input", false,
         )
         assertEquals(listOf("/v1/turns/turn-client:cancel", "/v1/turns/turn-client:continue"), paths)
+    }
+
+    @Test
+    public fun mobileInputBoundaryFitsTheConfiguredCommandEnvelope(): Unit = runBlocking {
+        val input = "a".repeat(16_384)
+        var encodedBytes = 0
+        val engine = MockEngine { request ->
+            encodedBytes = (request.body as TextContent).text.encodeToByteArray().size
+            respondJson(
+                """{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}""",
+            )
+        }
+        val mobileLimits = HostClientLimits(65_536, 65_536, 1_024, 120_000)
+        val client = LiveHostClient("http://127.0.0.1:4317/", mobileLimits, HttpClient(engine))
+
+        client.startTurn("turn-stable", "session-client", input)
+
+        assertTrue(encodedBytes > input.length)
+        assertTrue(encodedBytes <= mobileLimits.maxCommandBytes)
     }
 
     private fun mutation(name: String, source: List<HostEventV1>): List<HostEventV1> = when (name) {

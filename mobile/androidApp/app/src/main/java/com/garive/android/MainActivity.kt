@@ -123,6 +123,7 @@ private fun GariveWalkthroughRoot(
         MobileWorkController(
             host = LiveHostClient(origin, limits()),
             identities = SortableCommandIdentitySource(),
+            maxInputBytes = MOBILE_MAX_INPUT_BYTES,
             persistence = AndroidMobileWorkPersistence(context),
         )
     }
@@ -214,6 +215,7 @@ private fun ConnectedRoot(
         MobileWorkController(
             host = LiveHostClient(connection.origin, connection.accessGrant, limits()),
             identities = SortableCommandIdentitySource(),
+            maxInputBytes = MOBILE_MAX_INPUT_BYTES,
             persistence = AndroidMobileWorkPersistence(context),
         )
     }
@@ -234,8 +236,11 @@ private fun ConnectedRoot(
 }
 
 private fun limits(): HostClientLimits = HostClientLimits(
-    maxCommandBytes = 4_096,
+    maxCommandBytes = MOBILE_MAX_COMMAND_BYTES,
     maxEventBytes = 64 * 1_024,
     maxEvents = 256,
     followDeadlineMs = 120_000,
 )
+
+internal const val MOBILE_MAX_INPUT_BYTES: Int = 16_384
+internal const val MOBILE_MAX_COMMAND_BYTES: Int = 65_536

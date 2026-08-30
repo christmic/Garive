@@ -80,7 +80,7 @@ struct NewTaskView: View {
     }
 
     private var selectedID: String { definitionID.isEmpty ? agents.first?.definitionId ?? "" : definitionID }
-    private let maxInputBytes = 16_384
+    private let maxInputBytes = mobileMaxInputBytes
 }
 
 struct MobileGoalStarter: Equatable {
@@ -309,7 +309,7 @@ private struct DecisionCard: View {
                 }.disabled(!enabled)
             } else {
                 Button(decision.actionLabel) { submit(response) }.buttonStyle(.borderedProminent)
-                    .disabled(!enabled || response.utf8.count > 16_384 || response.isEmpty)
+                    .disabled(!enabled || response.utf8.count > mobileMaxInputBytes || response.isEmpty)
             }
         }.padding(17).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(GarivePalette.amber.opacity(0.35)))
@@ -330,7 +330,7 @@ private struct Composer: View {
                     Image(systemName: "arrow.up").font(.headline).frame(width: 42, height: 42)
                         .background(GarivePalette.coral, in: Circle()).foregroundStyle(.white)
                 }.buttonStyle(.plain).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    text.utf8.count > 16_384 || sending || !enabled)
+                    text.utf8.count > mobileMaxInputBytes || sending || !enabled)
             }
             .padding(7).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(.secondary.opacity(0.25)))

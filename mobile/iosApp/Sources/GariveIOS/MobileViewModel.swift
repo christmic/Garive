@@ -2,6 +2,9 @@
 import Foundation
 @preconcurrency import GariveShared
 
+let mobileMaxInputBytes = 16_384
+let mobileMaxCommandBytes = 65_536
+
 final class SortableCommandIdentitySource: NSObject, CommandIdentitySource {
     private let nowMillis: () -> UInt64
     private let randomBytes: () -> [UInt8]
@@ -213,7 +216,7 @@ final class MobileViewModel: ObservableObject {
     private func connect(_ value: ConnectionCredentials, persist: Bool) {
         do {
             let limits = HostClientLimits(
-                maxCommandBytes: 16_384, maxEventBytes: 65_536,
+                maxCommandBytes: Int32(mobileMaxCommandBytes), maxEventBytes: 65_536,
                 maxEvents: 1_024, followDeadlineMs: 120_000
             )
             let host = try LiveHostClient(
@@ -221,7 +224,7 @@ final class MobileViewModel: ObservableObject {
             )
             let controller = MobileWorkController(
                 host: host, identities: SortableCommandIdentitySource(), pageLimit: 100,
-                maxInputBytes: 16_384, persistence: workPersistence
+                maxInputBytes: Int32(mobileMaxInputBytes), persistence: workPersistence
             )
             self.controller = controller
             credentials = value
@@ -245,13 +248,13 @@ final class MobileViewModel: ObservableObject {
         let origin = "http://127.0.0.1:4318/"
         do {
             let limits = HostClientLimits(
-                maxCommandBytes: 16_384, maxEventBytes: 65_536,
+                maxCommandBytes: Int32(mobileMaxCommandBytes), maxEventBytes: 65_536,
                 maxEvents: 1_024, followDeadlineMs: 120_000
             )
             let host = try LiveHostClient(baseUrl: origin, limits: limits)
             let controller = MobileWorkController(
                 host: host, identities: SortableCommandIdentitySource(), pageLimit: 100,
-                maxInputBytes: 16_384, persistence: EphemeralMobileWorkPersistence.shared
+                maxInputBytes: Int32(mobileMaxInputBytes), persistence: EphemeralMobileWorkPersistence.shared
             )
             self.controller = controller
             credentials = ConnectionCredentials(origin: origin, accessGrant: "walkthrough")

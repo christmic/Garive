@@ -89,6 +89,12 @@ public class MobileWorkController(
         return viewState
     }
 
+    /** Dismisses one presentation notice without changing durable or pending work. */
+    public fun dismissNotice(): MobileWorkState {
+        viewState = viewState.copy(noticeCode = null)
+        return viewState
+    }
+
     /** Updates the current bounded composer draft. */
     public fun editDraft(text: String): MobileWorkState {
         viewState = viewState.copy(draft = text, noticeCode = null)

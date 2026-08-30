@@ -90,6 +90,20 @@ public class MobileWorkControllerTest {
     }
 
     @Test
+    public fun completeMobileInputBoundaryReachesTheHostUnchanged(): Unit = runBlocking {
+        val input = "界".repeat(5_461) + "a"
+        val host = FakeMobileHost()
+        val controller = MobileWorkController(host, identities(), maxInputBytes = 16_384)
+        controller.boot()
+
+        val state = controller.startTask("definition-main", input)
+
+        assertEquals(16_384, input.encodeToByteArray().size)
+        assertEquals(input, host.startText)
+        assertNull(state.noticeCode)
+    }
+
+    @Test
     public fun revokedGrantFailsClosedToSignedOut(): Unit = runBlocking {
         val controller = MobileWorkController(
             FakeMobileHost(failDefinitionsWith = HostClientError.AUTHENTICATION_REQUIRED),
@@ -223,6 +237,7 @@ private class FakeMobileHost(
     private val failDefinitionsWith: HostClientError? = null,
 ) : MobileHost {
     val startCommandIds: MutableList<String> = mutableListOf()
+    var startText: String? = null
     var continuationInput: String? = null
     var continuationIsJson: Boolean? = null
     private var created: Boolean = false
@@ -274,6 +289,7 @@ private class FakeMobileHost(
         text: String,
     ): TurnCommandResponseV1 {
         startCommandIds += commandId
+        startText = text
         if (failFirstStart) {
             failFirstStart = false
             throw HostClientException(HostClientError.TRANSPORT_FAILURE)

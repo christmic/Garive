@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.rememberDrawerState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.garive.android.MOBILE_MAX_INPUT_BYTES
 import com.garive.mobile.application.MobileWorkController
 import com.garive.mobile.host.MobileWakeRoute
 import com.garive.mobile.model.MobileAgentCard
@@ -126,6 +127,7 @@ internal fun GariveMobileApp(
                 }
                 context.startActivity(Intent.createChooser(intent, "Share Agent work"))
             },
+            onDismissNotice = { state = controller.dismissNotice() },
             onContinue = { input -> scope.launch { state = controller.continueLatest(input) } },
             onRetry = { scope.launch { state = controller.retryExact() } },
             onAbandonRetry = { confirmAbandonRetry = true },
@@ -229,6 +231,15 @@ internal fun GariveMobileApp(
                 },
             ) { padding ->
                 Column(Modifier.padding(padding)) {
+                state.noticeCode?.let { code ->
+                    MobileNoticeBanner(
+                        code = code,
+                        pending = state.pendingCommand != null,
+                        onDismiss = { state = controller.dismissNotice() },
+                        onRetry = { scope.launch { state = controller.retryExact() } },
+                        onAbandonRetry = { confirmAbandonRetry = true },
+                    )
+                }
                 when (state.destination) {
                     MobileDestination.WORK -> WorkScreen(
                         state,
@@ -417,8 +428,8 @@ internal fun NewTaskSheet(
                 maxLines = 8,
                 enabled = !busy,
                 shape = RoundedCornerShape(18.dp),
-                isError = draft.encodeToByteArray().size > MAX_MOBILE_INPUT_BYTES,
-                supportingText = if (draft.encodeToByteArray().size > MAX_MOBILE_INPUT_BYTES) {
+                isError = draft.encodeToByteArray().size > MOBILE_MAX_INPUT_BYTES,
+                supportingText = if (draft.encodeToByteArray().size > MOBILE_MAX_INPUT_BYTES) {
                     { Text("Goal is larger than the 16 KiB service limit") }
                 } else null,
             )
@@ -426,7 +437,7 @@ internal fun NewTaskSheet(
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = selected != null && draft.isNotBlank() &&
-                    draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES && !busy && online,
+                    draft.encodeToByteArray().size <= MOBILE_MAX_INPUT_BYTES && !busy && online,
             ) { Text(if (busy) "Sending securely…" else "Start on server") }
             OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
         }
@@ -446,7 +457,6 @@ private val navigationItems = listOf(
     NavigationItem(MobileDestination.SETTINGS, "Settings", Icons.Rounded.Settings),
 )
 
-private const val MAX_MOBILE_INPUT_BYTES = 16_384
 
 private fun String.remoteHost(): String = removePrefix("https://").removePrefix("http://").substringBefore('/').ifBlank { "service" }
 
