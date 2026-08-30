@@ -38,7 +38,7 @@ A-UX1 includes:
 - durable Session list, creation, reopening, and timeline;
 - multi-turn composer with send, cancel, exact retry, and continuation;
 - running, disconnected, suspended, completed, stopped, and failed states;
-- a typed activity summary derived only from public Host events;
+- a typed activity summary derived only from H3 public Host views/events;
 - keyboard, screen-reader, reduced-motion, contrast, and responsive behavior.
 
 Memory control, attachments, media generation, voice, notifications, search,
@@ -149,8 +149,8 @@ a pending identity or redirects its result into the new selection.
 
 ## Activity presentation
 
-Public events reduce to ordered, bounded activity items with semantic kind,
-status, Turn, and durable position. Unknown event names appear as neutral
+H3 snapshots/events reduce to ordered, bounded activity items with semantic
+kind, status, Turn, and durable position. Unknown event names appear as neutral
 “Activity updated” entries in details and never alter known Turn state.
 Tool arguments, hidden reasoning, credentials, paths, raw provider values, and
 internal Ledger facts are absent. Streaming token/tool output is not simulated;
@@ -221,9 +221,11 @@ content with visible content and clears no OS clipboard automatically.
 | UX-C Web/mobile | Web production build and same-machine loopback E2E; KMP controller conformance; Android API 37 Compose device UI flow; iOS SwiftUI/XCFramework build and native state tests. Physical-device live Host connectivity remains Gateway/on-device-Runtime gated. |
 | UX-D release gate | No hard-coded definition/input in shipping entry points, no fixture transport, no Engine/database import, no secret/content logging, and dependency/toolchain policy green. |
 
-UX-B begins after H2 wire and Runtime projections are verified. UX-C reuses the
-accepted controller semantics but retains platform-native UI. Screenshot-only,
-compile-only, and fake-Host evidence cannot close a product slice.
+UX-A begins after coordinated H2/H3 wire fixtures are accepted. UX-B begins
+after H2/H3 Runtime projections and A-DESKTOP-C2 configured startup are
+verified. UX-C reuses the accepted controller semantics but retains
+platform-native UI. Screenshot-only, compile-only, and fake-Host evidence
+cannot close a product slice.
 
 The shared `client-product-experience-v1` fixture contains `bootstrap_cases`,
 `navigation_cases`, `command_cases`, `follow_cases`, `suspension_cases`,
@@ -235,9 +237,11 @@ cover rendering/focus/navigation and do not reimplement controller semantics.
 ## See also
 
 - [`host-read-model-v1.md`](host-read-model-v1.md) — navigation and timeline data.
+- [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — typed public activity.
 - [`live-host-clients.md`](live-host-clients.md) — H1 command/reducer semantics.
 - [`desktop-system-configuration.md`](desktop-system-configuration.md) — backend-only Desktop configuration.
-- [`memory-control-plane.md`](memory-control-plane.md) — later Memory review flow.
+- [`desktop-configuration-onboarding.md`](desktop-configuration-onboarding.md) — first-run and rotation flow.
+- [`desktop-memory-control.md`](desktop-memory-control.md) — Desktop Memory review flow.
 - [`../../.agents/dependency-versions.md`](../../.agents/dependency-versions.md) — stable SDK and build governance.
 
 ## Meta

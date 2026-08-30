@@ -14,10 +14,13 @@ that directory and resolves one credential reference through an injected
 backend secret resolver. It then constructs the existing P2/R1 values and
 installs `DesktopHost` exactly once.
 
-The following remain forbidden:
+The following remain forbidden outside the exact write-only setup/rotation
+channel admitted by
+[`desktop-configuration-onboarding.md`](desktop-configuration-onboarding.md):
 
 - process environment lookup;
-- frontend IPC carrying endpoint, model, headers, credential or database path;
+- frontend IPC reading endpoint, model, headers, credential, configuration
+  document, credential reference, or database path;
 - plaintext credentials in the JSON document;
 - adapter/Provider/Runtime configuration-file or credential-store lookup;
 - vendor names in the stable document schema;
@@ -107,8 +110,9 @@ manages the resulting `DesktopState`. No document leaves the state
 unconfigured. Any other configuration failure aborts startup with only a
 stable error code.
 
-The existing `run_agent_turn` IPC remains the complete frontend surface. It
-cannot inspect whether a credential exists or retrieve configuration values.
+For a configured Runtime, `run_agent_turn` remains the conversation surface.
+A-DESKTOP-C2 adds only setup state/catalogue and write-only staged mutation; it
+cannot inspect a credential, credential reference, or persisted configuration.
 
 ## Verification
 
@@ -121,7 +125,12 @@ cannot inspect whether a credential exists or retrieve configuration values.
   installed official profiles without changing the schema;
 - temporary SQLite plus loopback protocol server proves configured startup can
   complete one durable Desktop Turn;
-- source scan proves no environment lookup and no configuration IPC command.
+- source scan proves no environment lookup and no configuration read IPC; the
+  only mutation exception is the exact accepted A-DESKTOP-C2 command set.
+
+## See also
+
+- [`desktop-configuration-onboarding.md`](desktop-configuration-onboarding.md) — safe first-run and rotation amendment.
 
 ## Meta
 

@@ -179,6 +179,11 @@ The first Tauri shell embeds the durable local Runtime behind typed IPC. Its
 frontend is deliberately minimal until product UI and backend-only Garive
 configuration provisioning slices land.
 
+Accepted product work follows A-UX1 layering. Configuration remains backend
+owned; A-DESKTOP-C2 permits only its exact write-only staged setup/rotation IPC.
+Memory file selection uses M2-D opaque capabilities, so filesystem paths and
+secret/configuration read APIs never cross into React.
+
 ## Build
 
 ```

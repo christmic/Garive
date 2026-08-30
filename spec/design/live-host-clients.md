@@ -23,6 +23,11 @@ do not discover ports from environment, read Provider credentials or access
 Engine/SQLite. Desktop uses typed Tauri IPC to embedded R1; its frontend still
 implements the same semantics and never receives Provider configuration.
 
+“Mobile receives a loopback URL” proves KMP client semantics only when the Host
+runs on that same device/test process. A physical device cannot reach a Desktop
+loopback listener. Remote mobile product connectivity requires an authenticated
+Gateway or a separately admitted on-device Runtime and is not an A1 claim.
+
 ## Command identity and retry
 
 Command IDs are stable client-generated identities. Retrying the same mutation

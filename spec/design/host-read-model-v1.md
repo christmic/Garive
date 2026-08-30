@@ -46,7 +46,7 @@ SessionSummaryV1 {
 
 TurnTimelineItemV1 {
   turn_id, started_position, latest_position, state,
-  user_text, completion_text?, suspension?
+  user_text, completion_text?, suspension?, activities[]
 }
 
 SuspensionViewV1 {
@@ -78,6 +78,10 @@ projection as H1 `turn.completed`. `prompt` is the redacted structured public
 interaction prompt admitted by C5/C6. No model request, hidden instruction,
 context, reasoning, tool arguments/results, raw failure, credential, endpoint,
 or internal fact payload is included.
+
+`activities` is absent from H2-only implementations and becomes the repeated
+H3 public snapshot when H3 is admitted. H2 does not independently interpret
+effect facts or define a second activity state machine.
 
 Every protobuf field is explicit rather than a JSON blob except the public C5
 suspension prompt, which uses UTF-8 canonical JSON bytes plus a schema identity
@@ -210,6 +214,7 @@ fixture readers reject unknown case fields and duplicate names.
 - [`host-api-v1.md`](host-api-v1.md) — H1 command and durable event semantics.
 - [`live-host-clients.md`](live-host-clients.md) — client retry and reducer rules.
 - [`durable-ledger.md`](durable-ledger.md) — verified fixed-prefix reads.
+- [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — H3 activity snapshots and events.
 - [`client-product-experience.md`](client-product-experience.md) — product UI consuming H2.
 
 ## Meta

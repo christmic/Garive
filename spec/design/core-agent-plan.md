@@ -177,8 +177,10 @@ M2-A projection/parser -> M2-B planner -> M2-C SQLite -> M2-D Desktop flow
                               v                              |
                          shared Rust/Kotlin                  |
                                                              |
-H2 proto -> H2 Runtime projection -> Host clients -> UX-A -> UX-B Desktop
-                                               `-----------> UX-C Web/mobile
+H2/H3 proto -> H2/H3 Runtime projections -> UX-A -> UX-B Desktop
+                                               |          ^
+                                               `-> UX-C   |
+A-DESKTOP-C -> A-DESKTOP-C2 ------------------------------'
 
 C5b declarations -> shared planner -> Runtime read batches -> executor evidence
 ```
@@ -188,17 +190,25 @@ C5b declarations -> shared planner -> Runtime read batches -> executor evidence
 | 1 | V1 | Review official stable toolchain/SDK/dependency sources; update owners and lockfiles under the dependency rule. | Native builds prove the selected compatible stable set; every hold is documented. |
 | 2 | M2-A/B | Canonical Memory snapshot parser/projection and authority-safe import planner. | Shared Rust/Kotlin fixture and plan digests. |
 | 3 | C5b-A | Tool access policy, pure exact resolver contract, Prepared Call digest amendment, conflict planner. | Shared Rust/Kotlin graph/plan fixture plus sequential differential properties. |
-| 4 | H2-W | Additive Host v1 read-model messages and shared client mappings. | Proto/docs/generated consumer round trips. |
+| 4 | H2/H3-W | Additive Host v1 read-model/activity messages and shared client mappings. | Proto tag audit plus Rust/KMP/TypeScript presence and unknown-value round trips. |
 | 5 | M2-C | Runtime filesystem capability and atomic SQLite Memory import receipts. | Real-file bounds/symlink tests and crash/replay matrix. |
 | 6 | C5b-R | Bounded parallel read-only dispatcher with timeout/cancel/recovery ordering. | Completion-permutation properties and real confined executor tests. |
-| 7 | H2-R | Installed-Agent, Session page, summary and timeline projections. | File-backed SQLite restart/concurrency/corruption matrices. |
-| 8 | UX-A/B | Shared application controller and Desktop reference UI. | Controller scenarios and configured embedded-Runtime restart E2E plus accessibility gates. |
-| 9 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Real Host/native builds and platform UI scenarios. |
-| 10 | M2-D | Desktop Memory export, edit handoff, dry-run diff, confirmation, import/erasure receipt. | Product E2E over M2-C and the A-UX1 controller boundary. |
+| 7 | H2/H3-R | Installed-Agent, Session/timeline and redacted activity projections/events. | File-backed SQLite restart/concurrency/corruption/redaction matrices. |
+| 8 | A-DESKTOP-C2 | Staged backend setup/rotation and first-run UI. | OS credential-store, crash recovery, redaction and configured restart E2E. |
+| 9 | UX-A | Shared pure application controller. | Complete TypeScript/KMP controller scenarios over H2/H3 fixtures. |
+| 10 | UX-B | Desktop reference product UI. | Configured embedded-Runtime restart E2E plus accessibility gates. |
+| 11 | UX-C | Web, KMP, Android API 37 Compose, and iOS native presentation. | Same-host Web E2E, controller conformance, native builds and platform UI scenarios. |
+| 12 | M2-D | Desktop Memory export, edit handoff, dry-run diff, confirmation, import/erasure receipt. | Product E2E over M2-C and the A-UX1 controller boundary. |
 
-M2, C5b, and H2 may progress independently after their own fixtures are
-accepted. A-UX1 requires H2; M2-D requires both M2-C and the Desktop controller.
-No package may use a later UI mock as evidence for an earlier Runtime boundary.
+M2, C5b, and the H2/H3 Host chain may progress independently after their own
+fixtures are accepted. UX-A requires coordinated H2/H3 wire fixtures; UX-B
+requires their Runtime projections and A-DESKTOP-C2. M2-D requires both M2-C
+and the Desktop controller. No package may use a later UI mock as evidence for
+an earlier Runtime boundary.
+
+The complete requirement, language, fixture, and dependency coverage for these
+packages is frozen by
+[`agent-product-increment-spec-set.md`](agent-product-increment-spec-set.md).
 
 ## First milestone acceptance
 

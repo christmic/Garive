@@ -58,18 +58,18 @@ planned without reopening a narrower completed row.
 | P2-VX-ATC | Anthropic exact input-token count | accepted | accepted | documented | implemented | verified | done | Keep exact projection/profile/response fixtures and no-environment/no-transport gates green; a credentialed C7-A publication run is separate evidence. |
 | H0 | Host API v1 schema and bindings | accepted | accepted | documented | implemented | verified | done | Keep Proto SSOT field docs, generated-binding gate, and round-trip test green. |
 | H1-T | Runtime-owned model HTTP transport | accepted | accepted | documented | implemented | verified | done | Keep explicit no-proxy/no-retry limits, exact failure classification, fragmented SSE, cancellation, and real-loopback matrices green. |
-| H1 | Live durable Host | accepted | accepted | documented | implemented | verified | done | Keep durable command replay/conflict, commit-before-dispatch, restart projection, loopback-only HTTP/SSE, and shared failure fixtures green. |
+| H1 | Live durable Host | accepted | accepted | documented | partial | partial | active | Normalize the emitter to the frozen `api_version = "v1"` and add a real live-Host-to-shared-client E2E before restoring the completion claim. |
 | H2 | Client-safe Host read model | accepted | accepted | missing | missing | missing | active | Add versioned Agent discovery, Session pages and bounded restart-safe Turn timelines before claiming product-level client navigation. |
 | H3 | Public Agent activity projection | accepted | accepted | missing | missing | missing | active | Add redacted committed interaction/effect activity snapshots and events before claiming the product activity surface. |
 | R1 | Local Runtime composition | accepted | accepted | documented | implemented | verified | done | Keep explicit configuration, fixed-prefix reconstruction, post-commit queue, real protocol flow, bounded shutdown and process-kill recovery gates green. |
-| A-CLI | CLI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit create/reuse, real-loopback H1, terminal output, stable command identity and exit-code tests green. |
-| A-TUI | TUI shell | accepted | accepted | documented | implemented | verified | done | Keep explicit loopback H1 and ordered durable event/cursor rendering tests green; resident multi-turn UX is a later slice. |
+| A-CLI | CLI shell | accepted | accepted | documented | implemented | partial | active | Replace the scripted TCP fixture with one Runtime H1 E2E after the API-version emitter fix; retain create/reuse, terminal, identity and exit-code coverage. |
+| A-TUI | TUI shell | accepted | accepted | documented | implemented | partial | active | Replace the scripted TCP fixture with one Runtime H1 E2E after the API-version emitter fix; retain ordered durable event/cursor rendering coverage. |
 | A-WEB | Web shell | accepted | accepted | documented | implemented | verified | done | Keep strict injectable HTTP/SSE, all H1 mutations, shared reducer fixture and production TypeScript build green. |
 | A-DESKTOP | Tauri/React shell | accepted | accepted | documented | implemented | verified | done | Keep embedded R1, typed IPC, backend-only configured startup and temporary-SQLite/real-protocol loops green. |
 | A-DESKTOP-C | Desktop backend system configuration | accepted | accepted | documented | implemented | verified | done | Keep strict document parsing, injected secret/profile registries, OS credential resolution and configured startup gates green. |
 | A-DESKTOP-C2 | Secure Desktop configuration onboarding | accepted | accepted | missing | missing | missing | active | Add write-only staged setup IPC, crash recovery, OS credential rotation and first-run/reconfigure UI without exposing readable configuration or secrets. |
-| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | verified | done | Keep KMP JVM/real-H1, XCFramework, Swift, Android SDK 36 APK and API 36 Compose instrumentation gates green. Signing and distribution remain later product slices. |
-| A-UX1 | Product client experience | accepted | accepted | missing | missing | missing | active | Implement the shared controller and Desktop reference product after H2, then close Web and Android API 37/iOS native conformance without moving durable truth into clients. |
+| A-MOBILE | KMP/Android/iOS shells | accepted | accepted | documented | implemented | verified | done | Keep KMP real-loopback transport, XCFramework, Swift, Android SDK 36 APK and API 36 Compose instrumentation gates green; remote physical-device connectivity is not claimed. |
+| A-UX1 | Product client experience | accepted | accepted | missing | missing | missing | active | Implement the shared controller after H2/H3 wire, then the Desktop reference product after Runtime projections/C2; close Web/native UI without claiming remote mobile reachability. |
 | G0 | Go Gateway | accepted | missing | missing | missing | missing | gated | Admit only after a live Host requires a separately scaled edge. |
 | B0 | SWE benchmark harness | accepted | accepted | documented | implemented | verified | done | Keep strict official loading, the sole bounded concurrent route, release-once failure matrix, explicit command ports, unified-diff/prediction adapters, pinned official report coverage, JSONL tracking and CLI E2E green. Real Docker publication evidence remains external and gated. |
 
@@ -105,6 +105,7 @@ planned without reopening a narrower completed row.
 - [`design/core-agent-plan.md`](design/core-agent-plan.md) — dependency DAG and work packages.
 - [`design/agent-platform-delivery.md`](design/agent-platform-delivery.md) — platform acceptance contract.
 - [`design/agent-capability-spec-set.md`](design/agent-capability-spec-set.md) — draft post-H1 capability review set.
+- [`design/agent-product-increment-spec-set.md`](design/agent-product-increment-spec-set.md) — complete active increment contract/fixture coverage.
 - [`design/desktop-system-configuration.md`](design/desktop-system-configuration.md) — backend-only Desktop configuration contract.
 - [`../.agents/testing.md`](../.agents/testing.md) — evidence levels and repository gates.
 - [`AGENTS.md`](AGENTS.md) — Spec admission and schema rules.

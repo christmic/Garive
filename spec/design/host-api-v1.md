@@ -110,6 +110,11 @@ uses `after_position`; duplicate delivery is permitted, reordering is not.
 Heartbeat comments carry no position and no semantics. Stream EOF is never a
 Turn terminal.
 
+Every H1 event carries the exact string `api_version = "v1"`. This value is
+already frozen by the shared client fixture; package-qualified Proto names are
+not runtime version values. An emitter/consumer mismatch is a protocol failure,
+not a value clients may normalize.
+
 The v1 projection is deliberately small:
 
 | Durable fact | Host event | Public text |

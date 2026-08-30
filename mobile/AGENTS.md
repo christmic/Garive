@@ -79,6 +79,11 @@ Android Compose and iOS SwiftUI call the shared live H1 client. KMP, iOS and
 the Android SDK 36 APK are verified natively; the Android device gate uses an
 API 36 Compose instrumentation test.
 
+H1 is loopback-only. A mobile fixture or on-device test may inject a same-process
+Host transport, but the shipping UI must not imply that a physical device can
+reach a Desktop Host. Live remote connectivity starts only after an accepted
+authenticated Gateway or on-device Runtime slice.
+
 ## Build
 
 ```
