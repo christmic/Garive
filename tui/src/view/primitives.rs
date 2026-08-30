@@ -40,3 +40,15 @@ pub(super) fn centered_column(area: Rect, width: u16) -> Rect {
         area.height,
     )
 }
+
+pub(super) fn selection_window(total: usize, selected: usize, capacity: usize) -> (usize, usize) {
+    if total == 0 || capacity == 0 {
+        return (0, 0);
+    }
+    let selected = selected.min(total - 1);
+    let start = selected
+        .saturating_add(1)
+        .saturating_sub(capacity)
+        .min(total.saturating_sub(capacity));
+    (start, (start + capacity).min(total))
+}

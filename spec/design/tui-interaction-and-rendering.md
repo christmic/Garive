@@ -253,8 +253,11 @@ expose prompt text. State always has a non-color glyph (`✓`, `●`, `!`, `×`,
 The picker supports case-folded substring filtering over public label and
 opaque ID, keyboard/mouse selection, and incremental H2 page loading. Results
 remain in Host order. Filtering never changes durable order or execution
-priority. Creating a Session requires choosing an installed definition when
-more than one exists.
+priority. Rendering, selection movement, and `Enter` activation consume the
+same filtered result set. When results exceed the bounded popup, the visible
+window follows the selection without changing its result-relative index.
+Creating a Session requires choosing an installed definition when more than
+one exists.
 
 Selecting a Session restores its draft and viewport, loads a fresh H2 timeline,
 and starts H1 follow after the snapshot watermark. A running background Session

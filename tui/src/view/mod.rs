@@ -13,15 +13,16 @@ mod conversation;
 mod overlay;
 pub(crate) mod presentation;
 mod primitives;
+mod session;
 mod style;
 
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use overlay::render_overlay;
 use primitives::{centered_column, key_hints, status_chip};
+use session::rail_lines;
 use style::{
     connection_icon, connection_name, connection_style, execution_name, execution_style, palette,
-    session_state_icon, session_state_style,
 };
 
 pub(crate) fn render_cached(
@@ -191,35 +192,7 @@ fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
             .enumerate()
         {
             let selected = model.selected_session.as_deref() == Some(&session.session_id);
-            let marker = if selected { "▌" } else { " " };
-            let state = session.latest_turn_state.as_deref().unwrap_or("new");
-            let style = if selected {
-                colors.selected
-            } else {
-                colors.normal
-            };
-            lines.push(Line::styled(
-                format!(
-                    "{marker} {} · {}",
-                    short_id(&session.definition_id),
-                    short_tail(&session.session_id)
-                ),
-                style,
-            ));
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {} {state}", session_state_icon(state)),
-                    session_state_style(state, colors),
-                ),
-                Span::styled(
-                    format!(
-                        "  ·  {} {}",
-                        session.turn_count,
-                        turn_label(session.turn_count)
-                    ),
-                    colors.muted,
-                ),
-            ]));
+            lines.extend(rail_lines(session, selected, colors));
             if index + 1 < model.sessions.len() {
                 lines.push(Line::default());
             }

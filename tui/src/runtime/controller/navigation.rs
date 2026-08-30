@@ -171,12 +171,9 @@ pub(super) fn cycle_session_selection(state: &mut RuntimeState, backwards: bool)
 }
 
 pub(super) fn matching_sessions(state: &RuntimeState) -> Vec<String> {
-    let filter = state.model.session_filter.to_lowercase();
     state
         .model
-        .sessions
-        .iter()
-        .filter(|session| filter.is_empty() || session.session_id.to_lowercase().contains(&filter))
+        .matching_sessions()
         .map(|session| session.session_id.clone())
         .collect()
 }

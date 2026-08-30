@@ -166,6 +166,15 @@ pub(crate) struct AppModel {
 }
 
 impl AppModel {
+    pub(crate) fn matching_sessions(&self) -> impl Iterator<Item = &SessionSummary> {
+        let filter = self.session_filter.to_lowercase();
+        self.sessions.iter().filter(move |session| {
+            filter.is_empty()
+                || session.session_id.to_lowercase().contains(&filter)
+                || session.definition_id.to_lowercase().contains(&filter)
+        })
+    }
+
     pub(crate) fn switch_viewport(&mut self, session_id: &str) {
         if self.selected_session.as_deref() == Some(session_id) {
             return;

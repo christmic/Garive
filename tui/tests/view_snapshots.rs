@@ -44,6 +44,19 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         response_schema_digest: Some("1".repeat(64)),
     });
     insta::assert_snapshot!("action_100x24", frame(&action, Theme::Dark, 100, 24));
+
+    let mut sessions = product_model();
+    sessions.overlay = Some(Overlay::SessionPicker);
+    sessions.sessions = (0..12)
+        .map(|index| session(&format!("session-{index:06}"), "running", 1))
+        .collect();
+    sessions.session_count = 12;
+    sessions.session_selection = 11;
+    sessions.selected_session = Some("session-000011".into());
+    insta::assert_snapshot!(
+        "session_picker_scrolled_100x24",
+        frame(&sessions, Theme::Mono, 100, 24)
+    );
 }
 
 #[test]

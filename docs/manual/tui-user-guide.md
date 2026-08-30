@@ -147,8 +147,10 @@ available with `?` during that recovery state.
 
 Picker and palette overlays accept a text filter, Backspace, Up/Down, Enter,
 and Escape. Reaching the end of the Session picker requests the next bounded
-Host page. Prompt history is local convenience state and is not reconstructed
-from Host transcript content.
+Host page. Session filtering matches the displayed Agent definition label or
+the opaque Session ID. Long result sets scroll with the selection, so the row
+that Enter will open remains visible. Prompt history is local convenience state
+and is not reconstructed from Host transcript content.
 
 ## Slash commands
 
