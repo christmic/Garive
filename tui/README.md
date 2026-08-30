@@ -60,6 +60,8 @@ all-target check and strict Clippy, including its private-state backend, while
 native linking, ACL execution, and ConPTY remain open. Linux x86_64 likewise
 passes complete source-level checking and strict Clippy, but its native
 execution, physical terminal, tmux, and `TERM=dumb` gates remain open.
+The current macOS candidate's full native results are recorded in
+[macOS native evidence](../docs/evidence/tui-macos-native-2026-08-31.md).
 
 ## Verify
 
