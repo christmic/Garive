@@ -24,6 +24,13 @@ Runtime. Web is a strict Host client for development/deployment compositions.
 Android and iOS consume the same KMP presentation contract with native UI.
 CLI/TUI retain their focused terminal contracts and do not block A-UX1.
 
+H1/H2 bind only to loopback. Therefore Desktop and a browser running on the
+same machine can close live product E2E in A-UX1. A physical mobile device
+cannot reach that Host merely by accepting a URL: live remote mobile transport
+is gated on an authenticated Gateway or a separately admitted on-device
+Runtime. UX-C proves the KMP controller and native UI against injected contract
+transport and does not claim deployable remote connectivity.
+
 A-UX1 includes:
 
 - configured/not-configured startup;
@@ -94,6 +101,28 @@ page, selected Session, timeline watermark, composer draft, pending command,
 connection state, and bounded activity items. Only application intents mutate
 it. Stale async completions carry an operation generation and are ignored.
 
+```text
+AppIntent =
+  Boot | RefreshNavigation | SelectSession | CreateSession
+  | EditDraft | SubmitDraft | RetryPending | CancelTurn
+  | ContinueSuspension | Reconnect | DismissNotice
+
+AppEffect =
+  LoadDefinitions | LoadSessionPage | LoadTimeline | FollowEvents
+  | CreateSessionCommand | StartTurnCommand | CancelTurnCommand
+  | ContinueTurnCommand | LoadPreferences | SavePreferences
+
+PendingCommand {
+  kind, command_id, semantic_request_digest,
+  session_id?, turn_id?, issued_generation, status
+}
+```
+
+The reducer is pure: it emits ordered effects, and only typed effect results
+re-enter as intents. At most one mutation is pending per selected Session;
+navigation reads and event following may coexist. Effect-result correlation
+requires exact effect identity, Session, generation, and request digest.
+
 Command identity is allocated once when an intent becomes pending and remains
 stable across byte-equivalent retries. The draft is cleared only after durable
 start success. A lost mutation response remains `unknown`; the UI offers exact
@@ -140,6 +169,23 @@ Local preferences are versioned, non-secret, bounded, and disposable. A corrupt
 preference file resets UI preferences only; it never changes or hides durable
 Host state. Browser storage is not trusted as a Session database.
 
+```text
+ClientPreferencesV1 {
+  schema_version: 1
+  selected_session_id?
+  session_rail: expanded | collapsed
+  activity_inspector: open | closed
+  theme: system | light | dark
+  composer_drafts: [{session_id, text}] // bounded LRU, local only
+}
+```
+
+Unknown versions reset after preserving no fields. Duplicate Session drafts,
+unknown keys, oversized text, and invalid enums reject the whole preference
+document. A pending command record is stored separately and contains only the
+typed fields above; it is removed only after a known durable response or an
+explicit user abandonment acknowledgement.
+
 ## Visual and accessibility contract
 
 - Use platform system fonts, semantic spacing/color tokens, light/dark themes,
@@ -172,12 +218,19 @@ content with visible content and clears no OS clipboard automatically.
 |---|---|
 | UX-A controller | Shared scenarios for boot, navigation, multi-turn, exact retry, stale completion, disconnect/reconnect, cancel, suspension, unknown event, and every error family. |
 | UX-B Desktop | Configured embedded Runtime E2E: create, complete, restart app, reopen Session, second Turn; plus not-configured, keyboard, focus, contrast, 200% text, and responsive tests. |
-| UX-C Web/mobile | Web production build and loopback E2E; KMP controller conformance; Android API 37 Compose device flow; iOS SwiftUI/XCFramework build and native state tests. |
+| UX-C Web/mobile | Web production build and same-machine loopback E2E; KMP controller conformance; Android API 37 Compose device UI flow; iOS SwiftUI/XCFramework build and native state tests. Physical-device live Host connectivity remains Gateway/on-device-Runtime gated. |
 | UX-D release gate | No hard-coded definition/input in shipping entry points, no fixture transport, no Engine/database import, no secret/content logging, and dependency/toolchain policy green. |
 
 UX-B begins after H2 wire and Runtime projections are verified. UX-C reuses the
 accepted controller semantics but retains platform-native UI. Screenshot-only,
 compile-only, and fake-Host evidence cannot close a product slice.
+
+The shared `client-product-experience-v1` fixture contains `bootstrap_cases`,
+`navigation_cases`, `command_cases`, `follow_cases`, `suspension_cases`,
+`preference_cases`, and `failure_cases`. Each case supplies initial state,
+ordered intents/effect results, and the complete expected state/effect list.
+TypeScript Desktop/Web and KMP consume every semantic case; platform UI tests
+cover rendering/focus/navigation and do not reimplement controller semantics.
 
 ## See also
 

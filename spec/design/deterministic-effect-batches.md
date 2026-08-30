@@ -30,6 +30,19 @@ read-only execution with deterministic durable publication.
 - Model intent order is authoritative for start, terminal, observation, and
   continuation order. Executor completion timing is never model-visible truth.
 
+## Contract versioning
+
+C5b does not silently change the shipped C4 digest. C4 v1 Prepared Calls retain
+their exact preimage and are always sequential. A C5b-capable definition opts
+into `prepared_contract_version = 2`; the v2 preimage extends v1 with
+`access_policy_revision`, `access_resolver_revision`, and the exact normalized
+`invocation_accesses`. Version is itself inside the preimage.
+
+Runtime, grants, durable facts, and recovery queries carry the Prepared Call's
+contract version. Unknown versions fail before authorization. A definition
+revision cannot change contract version, policy, or resolver meaning; doing so
+requires a new Tool revision and effective Agent snapshot.
+
 ## Two-level resource declaration
 
 One declaration cannot safely describe both a tool's possible access surface
@@ -49,6 +62,15 @@ AccessNamespace = filesystem | process | network | runtime
 AccessMode      = read | write | exclusive
 ResourceAccess  = { namespace, resource_key, mode }
 InvocationAccessSet = non-empty ordered unique ResourceAccess values
+
+ToolAccessPolicyV1 {
+  policy_revision
+  filesystem_roots[]
+  process_lanes[]
+  network_origins[]
+  runtime_lanes[]
+  max_accesses
+}
 ```
 
 `resource_key` is an opaque canonical UTF-8 identity interpreted only by the
@@ -61,6 +83,19 @@ namespaces and empty keys fail preparation.
 The Prepared Call digest includes policy revision, resolver revision, and the
 ordered exact access set. Grants bind that digest, so claims cannot change after
 authorization.
+
+Policy lists and access sets sort by namespace enum order
+`filesystem, process, network, runtime`, then raw UTF-8 key, then mode enum
+order `read, write, exclusive`. Duplicate policy entries or accesses are
+invalid rather than deduplicated. Policy roots/origins/lanes are authority
+ceilings; only exact `ResourceAccess` values participate in conflicts.
+
+Filesystem canonicalization is lexical and workspace-relative before any I/O:
+UTF-8 `/` separators, no empty/`.`/`..` segment, no leading slash, no NUL, and
+no platform-specific alias. Runtime later resolves components beneath its
+workspace capability without following an escaping symlink. Network origins
+are lowercase scheme/ASCII host/effective port triples with no user-info, path,
+query, or fragment. Process/runtime lanes are admitted opaque ASCII identities.
 
 ## Declaration validation
 
@@ -96,6 +131,28 @@ index order. The resulting adjacency matrix and digest are deterministic.
 `plan_effect_batch(prepared_intents, limits)` is pure. It returns ordered
 `SequentialStep` or `ParallelReadGroup` steps.
 
+```text
+EffectBatchLimitsV1 {
+  max_intents, max_accesses_per_intent, max_total_accesses
+  max_parallel_reads, max_buffered_result_bytes
+}
+EffectBatchPlanV1 {
+  schema_version: 1
+  prepared_contract_version: 2
+  ordered_prepared_digests[]
+  conflict_graph_digest
+  steps: (SequentialStep { intent_index } |
+          ParallelReadGroup { intent_indexes[] })[]
+  plan_digest
+}
+```
+
+All counts are non-zero. Intent indexes are zero-based, unique, cover every
+input exactly once, and increase within/across steps. Graph bytes are the upper
+triangle of the boolean adjacency matrix in pair iteration order. Its digest
+and the plan digest are lowercase SHA-256 over their named canonical bytes;
+the plan uses RFC 8785 JSON with `plan_digest` omitted.
+
 1. Walk Prepared Calls in model order.
 2. A read-only call with a non-empty exact access set may join the current read
    group when it has no graph edge with any member and group bounds permit.
@@ -103,6 +160,10 @@ index order. The resulting adjacency matrix and digest are deterministic.
 4. A suspension-capable interaction boundary also closes the group.
 5. Group size, total access count, total buffered output, and planner work have
    explicit non-zero Runtime limits.
+
+The planner does not inspect model prose or scheduling hints. The same ordered
+Prepared Calls and limits always produce the same graph and plan in Rust and
+Kotlin.
 
 V1 never runs writes, processes, unknown tools, or network mutations in
 parallel, even when their keys are disjoint. This conservative rule leaves a
@@ -168,6 +229,12 @@ forbidden labels.
 
 Existing C4/C5 failures retain their meanings and take precedence when they
 occur before C5b planning.
+
+Failure precedence inside C5b is: invalid/unknown contract version, declaration
+shape, policy coverage, authorization coverage, aggregate bounds, stale plan,
+queue timeout, execution timeout, uncertainty, then durability. When several
+independent declarations are invalid, report the lowest intent index and then
+the lowest canonical access index.
 
 ## Explicitly deferred
 

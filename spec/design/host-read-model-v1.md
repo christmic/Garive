@@ -52,6 +52,14 @@ TurnTimelineItemV1 {
 SuspensionViewV1 {
   suspension_id, session_version, kind, prompt
 }
+
+AgentDefinitionPageV1 { api_version, definitions[] }
+SessionPageV1 { api_version, sessions[], next_before? }
+SessionViewV1 { api_version, session, observed_max_position }
+TurnTimelinePageV1 {
+  api_version, session_id, items[], scanned_through_position,
+  observed_max_position, has_more
+}
 ```
 
 `capabilities` is a sorted set of stable public capability names installed for
@@ -70,6 +78,22 @@ projection as H1 `turn.completed`. `prompt` is the redacted structured public
 interaction prompt admitted by C5/C6. No model request, hidden instruction,
 context, reasoning, tool arguments/results, raw failure, credential, endpoint,
 or internal fact payload is included.
+
+Every protobuf field is explicit rather than a JSON blob except the public C5
+suspension prompt, which uses UTF-8 canonical JSON bytes plus a schema identity
+and digest. `capabilities`, definitions, Sessions, and timeline items are
+repeated messages, never maps. Optional values use protobuf presence; empty
+string does not mean absent. Positions, revisions, versions, counts, and limits
+are unsigned 64-bit values and required non-zero where the prose says they
+identify committed state.
+
+JSON field names are the protobuf lower-snake names already used by H1. The H1
+HTTP contract encodes positions as JSON numbers, so H2 restricts every exposed
+unsigned value to `0..=9_007_199_254_740_991`; a larger durable value returns
+`read_bound_exceeded` rather than losing precision in TypeScript. Proto binary
+bindings retain `uint64`. Unknown response fields survive generated wire
+decoding where Proto permits and are ignored by v1 presentation; missing
+required semantic values fail protocol validation.
 
 ## HTTP queries
 
@@ -96,11 +120,23 @@ Sessions order by `session.opened.recorded_at` descending, then raw UTF-8
 `session_id` descending. Runtime validates RFC 3339 timestamps from durable
 facts; an invalid value is `corrupt_state`.
 
-`before` is an opaque, authenticated local token containing schema version,
-ordered key, and a digest bound to the immutable Host installation identity.
-It contains no content or secret. Runtime accepts only tokens it issued for the
-same installation. Newer Sessions created between pages do not duplicate or
-hide older results; deletion is outside H2.
+`before` is an opaque base64url-without-padding token over canonical JSON:
+
+```text
+SessionCursorV1 {
+  schema_version: 1, opened_at, session_id,
+  installation_binding_digest, cursor_digest
+}
+```
+
+`installation_binding_digest` is SHA-256 over the public immutable installed
+definition identity, revision, and snapshot digest. `cursor_digest` is SHA-256
+over RFC 8785 JSON with itself omitted. This is an integrity checksum, not
+authentication or authority. The token contains no content or secret; every
+field is treated as untrusted and revalidated against a verified
+`session.opened` fact. A mismatched installation or ordering key is invalid.
+Newer Sessions created between pages do not duplicate or hide older results;
+deletion is outside H2.
 
 ## Snapshot and integrity rules
 
@@ -116,6 +152,12 @@ hide older results; deletion is outside H2.
 - Response bodies have explicit total byte, item-count, text, and prompt bounds.
   Oversized committed display content uses the existing redaction/truncation
   policy with an explicit `content_truncated` flag; silent truncation is forbidden.
+
+Runtime construction supplies independent non-zero maxima for definitions per
+page, Sessions per page, timeline items, facts scanned, response bytes, user
+text bytes, completion bytes, prompt bytes, and cursor bytes. A caller `limit`
+may narrow but never widen these bounds. `read_bound_exceeded` returns no
+partial view and names no content.
 
 ## Freshness and client behavior
 
@@ -156,6 +198,12 @@ paths, or exception strings.
   mutation;
 - source/log scans prove no credential, provider configuration, Engine value,
   raw fact, SQL diagnostic, or process environment discovery crosses H2.
+
+The fixture root is `host-read-model-v1`, declares `schema_version = 1`, and
+contains `definition_cases`, `session_page_cases`, `session_view_cases`,
+`timeline_cases`, `cursor_cases`, and `failure_cases`. Every case has a unique
+name, exact input prefix/query, and complete expected response or stable error;
+fixture readers reject unknown case fields and duplicate names.
 
 ## See also
 

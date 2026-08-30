@@ -55,6 +55,29 @@ garive-memory-v1/
 | `exported_at` | RFC 3339 display metadata; excluded from semantic entry digests. |
 | `entries` | Ordered by raw UTF-8 `memory_id`; each item has file name, authority, lifecycle, revision, and SHA-256 content digest. |
 
+The exact canonical shape is:
+
+```text
+MemorySnapshotManifestV1 {
+  schema_version: 1
+  export_id, namespace_id, through_revision, exported_at
+  entries: MemorySnapshotEntryV1[]
+  manifest_digest
+}
+MemorySnapshotEntryV1 {
+  memory_id, file_name, revision, authority, kind, scope, lifecycle
+  content_digest, document_digest
+}
+```
+
+`file_name` is exactly `entries/<memory_id>.md`. `content_digest` hashes the
+normalized content including its one final LF; `document_digest` hashes the
+complete canonical Markdown bytes. `manifest_digest` is lowercase SHA-256 over
+RFC 8785 JSON for the manifest with `manifest_digest` omitted. Entries are
+sorted by raw UTF-8 `memory_id`; duplicate identities, file names, or digests
+fail closed. `exported_at` participates in the manifest digest but not any
+entry digest.
+
 Each entry file is UTF-8 Markdown with one strict YAML-compatible front matter
 block followed by the Memory content:
 
@@ -76,6 +99,12 @@ restricted ASCII token grammar; quoting, anchors, aliases, tags, comments,
 duplicate keys, unknown keys, and extra document markers fail closed. Content
 is normalized to UTF-8 with LF endings and exactly one final newline for digest
 calculation. Runtime preserves no filesystem metadata as domain truth.
+
+The seven fields shown above are required. An optional eighth field
+`erase: true` may follow `lifecycle` and has no other accepted value. It is an
+explicit import instruction, never an exported default. A document with erase
+set still carries its unchanged content so the planner can bind the destructive
+request to the exact exported revision and digest.
 
 ## Bounds and privacy
 
@@ -103,10 +132,37 @@ Import is two-phase:
    expected_repository_revision)` revalidates authority and revision, commits
    all changes atomically, and appends one receipt.
 
-The plan contains ordered operations and totals. Operation order is
-`memory_id`, then `operation` using `add`, `supersede`, `archive`, `erase`.
-Unchanged entries produce no operation. A command retry with the same identity
-and byte-equivalent plan returns the original receipt; different bytes conflict.
+The exact plan shape is:
+
+```text
+MemoryImportPlanV1 {
+  schema_version: 1
+  export_id, namespace_id, through_revision
+  input_manifest_digest, expected_repository_revision
+  operations: MemoryImportOperationV1[]
+  add_count, supersede_count, archive_count, erase_count
+  plan_digest
+}
+MemoryImportOperationV1 =
+  Add {source_memory_id, new_record_id, expected_absent, document_digest}
+  | Supersede {record_id, expected_revision, new_revision_id,
+               authority, document_digest, supersedes_learned_record_id?}
+  | Archive {record_id, expected_revision, document_digest}
+  | Erase {record_id, expected_revision, document_digest}
+```
+
+Runtime allocates proposed new identities before presentation and freezes them
+in the plan. Operations order by raw UTF-8 `record_id`/`new_record_id`, then
+variant order `add`, `supersede`, `archive`, `erase`. Counts must exactly match
+the list. `plan_digest` is lowercase SHA-256 over RFC 8785 JSON with that field
+omitted. Unchanged entries produce no operation. A command retry with the same
+identity and byte-equivalent plan returns the original receipt; different bytes
+conflict.
+
+The planner input is the verified manifest/documents plus an ordered current
+Memory projection containing exact identity, revision, authority, kind, scope,
+lifecycle, content digest, and supersession provenance. It performs no I/O,
+clock read, ID generation, authorization lookup, or implicit merge.
 
 ## Authority semantics
 
@@ -137,6 +193,11 @@ and downgrade from user authority fail closed.
   the original receipt when the command is replayed.
 - Export is a read snapshot and may be retried to a new empty destination; an
   incomplete destination is never treated as a valid package.
+
+Unknown `schema_version` values are rejected; a future reader may add a new
+version but cannot reinterpret v1 fields. Export/import canonical bytes are a
+cross-language contract, so Rust and Kotlin must produce identical manifest,
+document, and plan digests rather than only equivalent outcomes.
 
 ## Stable failures
 
