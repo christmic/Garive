@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,6 +41,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -166,6 +168,7 @@ internal fun AgentsScreen(state: MobileWorkState, onStart: (MobileAgentCard) -> 
     ) {
         item { DestinationHeader("Agents", "Choose the right specialist", state.connection, onRefresh) }
         items(state.agents, key = { it.definitionId }) { agent ->
+            var showingDetails by remember(agent.definitionId) { mutableStateOf(false) }
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -210,6 +213,21 @@ internal fun AgentsScreen(state: MobileWorkState, onStart: (MobileAgentCard) -> 
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    TextButton(onClick = { showingDetails = !showingDetails }) {
+                        Text(if (showingDetails) "Hide details" else "Details")
+                    }
+                    if (showingDetails) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Revision ${agent.revision}", style = MaterialTheme.typography.labelMedium)
+                            SelectionContainer {
+                                Text(
+                                    agent.definitionId,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                 }
             }

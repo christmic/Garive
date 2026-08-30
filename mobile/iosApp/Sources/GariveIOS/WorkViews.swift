@@ -93,6 +93,13 @@ struct AgentsView: View {
                         if !agent.capabilities.isEmpty {
                             Text(agent.capabilities.joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
+                        DisclosureGroup("Details") {
+                            LabeledContent("Revision", value: agent.revision)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Definition ID").font(.caption).foregroundStyle(.secondary)
+                                Text(agent.definitionId).font(.caption.monospaced()).textSelection(.enabled)
+                            }
+                        }
                         Button("Start with this agent") {
                             model.showNewTask(definitionID: agent.definitionId)
                         }.buttonStyle(.bordered)

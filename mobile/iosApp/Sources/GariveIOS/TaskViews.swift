@@ -32,6 +32,10 @@ struct NewTaskView: View {
                     TextEditor(text: $prompt).frame(minHeight: 150)
                     Text("Be specific about the outcome. The agent keeps working on your service if this app closes.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    if prompt.utf8.count > maxInputBytes {
+                        Text("Goal is larger than the 16 KiB service limit")
+                            .font(.footnote).foregroundStyle(.red)
+                    }
                 }
             }
             .navigationTitle(dynamicTypeSize.isAccessibilitySize ? "New task" : "New remote task")
@@ -41,7 +45,8 @@ struct NewTaskView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start") { model.start(definitionID: selectedID, text: prompt) }
-                        .disabled(selectedID.isEmpty || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(selectedID.isEmpty || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                            prompt.utf8.count > maxInputBytes || model.state?.connection != .online)
                 }
             }
             .onAppear {
@@ -55,6 +60,7 @@ struct NewTaskView: View {
     }
 
     private var selectedID: String { definitionID.isEmpty ? agents.first?.definitionId ?? "" : definitionID }
+    private let maxInputBytes = 16_384
 }
 
 struct ConversationView: View {
@@ -79,7 +85,11 @@ struct ConversationView: View {
                             )
                         }
                         ForEach(state.timeline, id: \.turnId) { turn in
-                            TurnView(turn: turn, respond: { model.continueDecision($0) })
+                            TurnView(
+                                turn: turn,
+                                controlsEnabled: state.connection == .online && state.pendingCommand == nil,
+                                respond: { model.continueDecision($0) }
+                            )
                                 .id(turn.turnId)
                         }
                         if state.timeline.isEmpty {
@@ -92,7 +102,11 @@ struct ConversationView: View {
                     if let last = state.timeline.last { withAnimation { proxy.scrollTo(last.turnId, anchor: .bottom) } }
                 }
             }
-            Composer(text: $composer, sending: state.pendingCommand != nil) {
+            Composer(
+                text: $composer,
+                sending: state.pendingCommand != nil,
+                enabled: state.connection == .online
+            ) {
                 let value = composer
                 composer = ""
                 model.send(value)
@@ -148,6 +162,7 @@ struct ConversationView: View {
 
 private struct TurnView: View {
     let turn: MobileTurnItem
+    let controlsEnabled: Bool
     let respond: (String) -> Void
     @State private var response = ""
 
@@ -169,7 +184,7 @@ private struct TurnView: View {
                 }.padding(14).background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 15))
             }
             if let decision = turn.decision {
-                DecisionCard(decision: decision, response: $response) {
+                DecisionCard(decision: decision, response: $response, enabled: controlsEnabled) {
                     let input = decision.kind.lowercased().contains("approval") ? "true" : response
                     respond(input)
                 }
@@ -200,6 +215,7 @@ private struct MessageBubble: View {
 private struct DecisionCard: View {
     let decision: MobileDecision
     @Binding var response: String
+    let enabled: Bool
     let submit: () -> Void
 
     var body: some View {
@@ -210,7 +226,8 @@ private struct DecisionCard: View {
                 TextField("Your response", text: $response).textFieldStyle(.roundedBorder)
             }
             Button(decision.actionLabel, action: submit).buttonStyle(.borderedProminent)
-                .disabled(!decision.kind.lowercased().contains("approval") && response.isEmpty)
+                .disabled(!enabled || response.utf8.count > 16_384 ||
+                    (!decision.kind.lowercased().contains("approval") && response.isEmpty))
         }.padding(17).background(GarivePalette.amber.opacity(0.09), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(GarivePalette.amber.opacity(0.35)))
     }
@@ -219,6 +236,7 @@ private struct DecisionCard: View {
 private struct Composer: View {
     @Binding var text: String
     let sending: Bool
+    let enabled: Bool
     let send: () -> Void
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
@@ -227,7 +245,8 @@ private struct Composer: View {
             Button(action: send) {
                 Image(systemName: "arrow.up").font(.headline).frame(width: 42, height: 42)
                     .background(GarivePalette.coral, in: Circle()).foregroundStyle(.white)
-            }.buttonStyle(.plain).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
+            }.buttonStyle(.plain).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                text.utf8.count > 16_384 || sending || !enabled)
         }.padding(12).background(.ultraThinMaterial)
     }
 }

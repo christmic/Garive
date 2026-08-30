@@ -170,6 +170,7 @@ internal fun GariveMobileApp(
             selected = selectedAgent,
             draft = state.draft,
             busy = state.pendingCommand != null,
+            online = state.connection == MobileConnectionState.ONLINE,
             onSelect = { selectedAgent = it },
             onDraft = { state = controller.editDraft(it) },
             onDismiss = { showNewTask = false },
@@ -248,6 +249,7 @@ private fun NewTaskSheet(
     selected: MobileAgentCard?,
     draft: String,
     busy: Boolean,
+    online: Boolean,
     onSelect: (MobileAgentCard) -> Unit,
     onDraft: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -285,11 +287,16 @@ private fun NewTaskSheet(
                 maxLines = 8,
                 enabled = !busy,
                 shape = RoundedCornerShape(18.dp),
+                isError = draft.encodeToByteArray().size > MAX_MOBILE_INPUT_BYTES,
+                supportingText = if (draft.encodeToByteArray().size > MAX_MOBILE_INPUT_BYTES) {
+                    { Text("Goal is larger than the 16 KiB service limit") }
+                } else null,
             )
             Button(
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = selected != null && draft.isNotBlank() && !busy,
+                enabled = selected != null && draft.isNotBlank() &&
+                    draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES && !busy && online,
             ) { Text(if (busy) "Sending securely…" else "Start on server") }
             OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
         }
@@ -308,3 +315,5 @@ private val navigationItems = listOf(
     NavigationItem(MobileDestination.AGENTS, "Agents", Icons.Rounded.PeopleAlt),
     NavigationItem(MobileDestination.SETTINGS, "Settings", Icons.Rounded.Settings),
 )
+
+private const val MAX_MOBILE_INPUT_BYTES = 16_384

@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.garive.mobile.model.MobileConnectionState
 import com.garive.mobile.model.MobileTurnItem
 import com.garive.mobile.model.MobileWorkState
 import com.garive.mobile.model.MobileWorkStatus
@@ -131,6 +132,7 @@ internal fun ConversationScreen(
                 onDraft = onDraft,
                 onContinue = onContinue,
                 busy = state.pendingCommand != null,
+                enabled = state.connection == MobileConnectionState.ONLINE,
             )
         } else {
             MessageComposer(
@@ -138,7 +140,8 @@ internal fun ConversationScreen(
                 onDraft = onDraft,
                 onSend = onSend,
                 busy = state.pendingCommand != null,
-                enabled = latest?.status !in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT),
+                enabled = state.connection == MobileConnectionState.ONLINE &&
+                    latest?.status !in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT),
             )
         }
         if (state.pendingCommand != null) {
@@ -259,7 +262,8 @@ private fun MessageComposer(
             )
             FilledIconButton(
                 onClick = onSend,
-                enabled = enabled && !busy && draft.isNotBlank(),
+                enabled = enabled && !busy && draft.isNotBlank() &&
+                    draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
                 modifier = Modifier.padding(start = 8.dp),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send to Agent")
@@ -278,6 +282,7 @@ private fun DecisionComposer(
     onDraft: (String) -> Unit,
     onContinue: () -> Unit,
     busy: Boolean,
+    enabled: Boolean,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -298,14 +303,15 @@ private fun DecisionComposer(
                     onValueChange = onDraft,
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("Your response") },
-                    enabled = !busy,
+                    enabled = enabled && !busy,
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),
                 )
             }
             Button(
                 onClick = onContinue,
-                enabled = !busy && (approval || draft.isNotBlank()),
+                enabled = enabled && !busy && (approval || draft.isNotBlank()) &&
+                    draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(action)
@@ -313,3 +319,5 @@ private fun DecisionComposer(
         }
     }
 }
+
+private const val MAX_MOBILE_INPUT_BYTES = 16_384
