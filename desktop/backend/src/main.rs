@@ -17,7 +17,44 @@ async fn run_agent_turn(
 fn get_desktop_capabilities(
     state: tauri::State<'_, garive_desktop::DesktopState>,
 ) -> garive_desktop::DesktopCapabilityManifest {
-    state.capabilities()
+    let mut capabilities = state.capabilities();
+    capabilities.setup = true;
+    capabilities
+}
+
+type SetupState = garive_desktop::DesktopSetupService<garive_desktop::SystemSetupCredentialStore>;
+
+#[tauri::command]
+fn get_setup_catalogue(
+    setup: tauri::State<'_, SetupState>,
+) -> garive_desktop::DesktopSetupCatalogue {
+    setup.catalogue()
+}
+
+#[tauri::command]
+fn prepare_setup(
+    setup: tauri::State<'_, SetupState>,
+    input: garive_desktop::DesktopSetupInput,
+) -> Result<garive_desktop::DesktopSetupPlan, String> {
+    setup
+        .prepare(input)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn commit_setup(
+    setup: tauri::State<'_, SetupState>,
+    plan_digest: String,
+    credential: String,
+) -> Result<garive_desktop::DesktopSetupReceipt, String> {
+    setup
+        .commit(&plan_digest, &credential)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn restart_desktop(app: tauri::AppHandle) {
+    app.restart()
 }
 
 #[tauri::command]
@@ -51,7 +88,7 @@ fn main() {
                 .map_err(|_| stable_setup_error("config_directory"))?;
             let provider = garive_desktop::FileDesktopConfigurationProvider::new(
                 directory.join(garive_desktop::DESKTOP_CONFIG_FILE),
-                directory,
+                directory.clone(),
                 garive_desktop::SystemDesktopSecretResolver,
                 garive_desktop::BuiltinDesktopProfileRegistry,
             );
@@ -60,10 +97,18 @@ fn main() {
                 .install_from(&provider)
                 .map_err(|error| stable_setup_error(error.code()))?;
             app.manage(state);
+            app.manage(garive_desktop::DesktopSetupService::new(
+                directory,
+                garive_desktop::SystemSetupCredentialStore,
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_desktop_capabilities,
+            get_setup_catalogue,
+            prepare_setup,
+            commit_setup,
+            restart_desktop,
             get_recent_sessions,
             get_session_timeline,
             run_agent_turn
