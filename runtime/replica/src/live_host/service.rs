@@ -18,12 +18,10 @@ use crate::{
 };
 
 use super::{
-    completion_text, project_activities, project_fact, AgentDefinitionPageV1,
-    AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
-    HostClock, HostContinuationInput, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
-    LiveHostEvent, LiveHostLimits, LiveHostState, SessionPageV1, SessionSummary, SessionViewV1,
-    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
-    TurnTimelinePageV1,
+    project_activities, project_fact, AgentDefinitionPageV1, AgentDefinitionSummaryV1,
+    CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState,
+    SessionPageV1, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -245,110 +243,6 @@ impl LiveHost {
     /// Returns explicit Host bounds used by HTTP parsing and event follow mode.
     pub fn limits(&self) -> LiveHostLimits {
         self.state.limits
-    }
-
-    /// Returns bounded installed-Agent discovery without granting new authority.
-    pub fn agent_definitions(&self) -> Vec<AgentDefinitionSummary> {
-        vec![AgentDefinitionSummary {
-            api_version: "v1",
-            definition_id: self.state.installed.definition_id.clone(),
-            definition_revision: self.state.installed.definition_revision.clone(),
-            capabilities: self.state.installed.public_capabilities.clone(),
-        }]
-    }
-
-    /// Returns restart-safe Sessions ordered by open time and identity descending.
-    pub fn list_session_summaries(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<SessionSummary>, LiveHostError> {
-        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
-            return Err(LiveHostError::InvalidRequest);
-        }
-        let ledger = self.ledger()?;
-        let mut sessions = ledger
-            .list_sessions()
-            .map_err(map_sqlite)?
-            .into_iter()
-            .map(|session_id| self.project_session(&ledger, &session_id))
-            .collect::<Result<Vec<_>, _>>()?;
-        sessions.sort_by(|left, right| {
-            right
-                .opened_at
-                .cmp(&left.opened_at)
-                .then_with(|| right.session_id.cmp(&left.session_id))
-        });
-        sessions.truncate(limit);
-        Ok(sessions)
-    }
-
-    /// Returns complete durable Turns changed after a caller watermark.
-    pub fn read_timeline(
-        &self,
-        session: &str,
-        after_position: u64,
-        limit: usize,
-    ) -> Result<TurnTimelinePage, LiveHostError> {
-        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
-            return Err(LiveHostError::InvalidRequest);
-        }
-        let session_id = identity::<SessionId>(session)?;
-        let ledger = self.ledger()?;
-        let watermark = ledger
-            .session_watermark(&session_id)
-            .map_err(map_sqlite)?
-            .ok_or(LiveHostError::NotFound)?;
-        if after_position > watermark.max_position {
-            return Err(LiveHostError::InvalidRequest);
-        }
-        let facts = ledger
-            .read_facts(&session_id, 0, watermark.max_position, None)
-            .map_err(map_sqlite)?;
-        let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
-        if let (Some(catalogue), Some(limits)) = (
-            self.state.installed.public_activity_catalogue.as_ref(),
-            self.state.limits.activity,
-        ) {
-            let mut activities = project_activities(&facts, catalogue, limits)?.by_turn;
-            for item in &mut items {
-                item.activities = activities.remove(&item.turn_id).unwrap_or_default();
-                if let Some(position) = item
-                    .activities
-                    .iter()
-                    .map(|activity| activity.source_position)
-                    .max()
-                {
-                    item.latest_position = item.latest_position.max(position);
-                }
-            }
-            if !activities.is_empty() {
-                return Err(LiveHostError::CorruptState);
-            }
-        }
-        for item in items.iter_mut().filter(|item| item.state == "suspended") {
-            let turn_id = identity::<TurnId>(&item.turn_id)?;
-            let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite_query)?;
-            let suspended = reconstruct_suspended_turn(&snapshot).map_err(map_runtime)?;
-            item.suspension = Some(TurnSuspensionView {
-                suspension_id: suspended.suspension_id,
-                session_version: suspended.session_version,
-                kind: suspension_kind(suspended.suspension_kind).into(),
-            });
-        }
-        items.retain(|item| item.latest_position > after_position);
-        let has_more = items.len() > limit;
-        items.truncate(limit);
-        let scanned_through_position = items
-            .last()
-            .map_or(watermark.max_position, |item| item.latest_position);
-        Ok(TurnTimelinePage {
-            api_version: "v1",
-            session_id: session_id.as_str().to_owned(),
-            items,
-            scanned_through_position,
-            observed_max_position: watermark.max_position,
-            has_more,
-        })
     }
 
     /// Creates or exactly replays one durable Session creation command.
@@ -736,60 +630,6 @@ impl LiveHost {
             .map_err(|_| LiveHostError::InvalidRequest)
     }
 
-    fn project_session(
-        &self,
-        ledger: &SqliteLedger,
-        session_id: &SessionId,
-    ) -> Result<SessionSummary, LiveHostError> {
-        let binding = self.load_session(ledger, session_id)?;
-        let facts = ledger
-            .read_facts(session_id, 0, binding.max_position, None)
-            .map_err(map_sqlite)?;
-        let opened_at = facts
-            .first()
-            .ok_or(LiveHostError::CorruptState)?
-            .recorded_at
-            .clone();
-        chrono::DateTime::parse_from_rfc3339(&opened_at)
-            .map_err(|_| LiveHostError::CorruptState)?;
-        let mut turns: Vec<(TurnId, String)> = Vec::new();
-        for fact in &facts {
-            let Some(turn_id) = fact.turn_id.as_ref() else {
-                continue;
-            };
-            match fact.kind.as_str() {
-                "turn.started" => {
-                    let started: StartedCommand = decode_payload(fact)?;
-                    if started.kind == "start" {
-                        turns.push((turn_id.clone(), "running".into()));
-                    } else if turns.last().map(|turn| &turn.0) != Some(turn_id) {
-                        return Err(LiveHostError::CorruptState);
-                    } else {
-                        turns.last_mut().ok_or(LiveHostError::CorruptState)?.1 = "running".into();
-                    }
-                }
-                "turn.suspended" => set_latest_turn_state(&mut turns, turn_id, "suspended")?,
-                "turn.completed" => set_latest_turn_state(&mut turns, turn_id, "completed")?,
-                "turn.stopped" => set_latest_turn_state(&mut turns, turn_id, "stopped")?,
-                "turn.failed" => set_latest_turn_state(&mut turns, turn_id, "failed")?,
-                _ => {}
-            }
-        }
-        let latest = turns.last();
-        Ok(SessionSummary {
-            api_version: "v1",
-            session_id: session_id.as_str().to_owned(),
-            agent_instance_id: binding.agent_instance_id.as_str().to_owned(),
-            definition_id: binding.definition_id.as_str().to_owned(),
-            definition_revision: binding.definition_revision.as_str().to_owned(),
-            opened_at,
-            latest_position: binding.max_position,
-            latest_turn_id: latest.map(|turn| turn.0.as_str().to_owned()),
-            latest_turn_state: latest.map(|turn| turn.1.clone()),
-            turn_count: turns.len() as u64,
-        })
-    }
-
     fn load_session(
         &self,
         ledger: &SqliteLedger,
@@ -931,127 +771,6 @@ struct SessionBinding {
     snapshot_digest: String,
     session_version: u64,
     max_position: u64,
-}
-
-fn set_latest_turn_state(
-    turns: &mut [(TurnId, String)],
-    turn_id: &TurnId,
-    state: &str,
-) -> Result<(), LiveHostError> {
-    let latest = turns.last_mut().ok_or(LiveHostError::CorruptState)?;
-    if &latest.0 != turn_id {
-        return Err(LiveHostError::CorruptState);
-    }
-    latest.1 = state.to_owned();
-    Ok(())
-}
-
-fn project_timeline(
-    facts: &[DurableFact],
-    max_text_bytes: usize,
-) -> Result<Vec<TurnTimelineItem>, LiveHostError> {
-    let mut items = Vec::new();
-    for fact in facts {
-        let Some(turn_id) = fact.turn_id.as_ref() else {
-            continue;
-        };
-        match fact.kind.as_str() {
-            "turn.started" => {
-                let started: StartedCommand = decode_payload(fact)?;
-                if started.kind == "start" {
-                    items.push(TurnTimelineItem {
-                        turn_id: turn_id.as_str().to_owned(),
-                        started_position: fact.position,
-                        latest_position: fact.position,
-                        state: "running".into(),
-                        user_text: String::new(),
-                        completion_text: None,
-                        suspension: None,
-                        content_truncated: false,
-                        activities: Vec::new(),
-                    });
-                } else {
-                    let item = timeline_item(&mut items, turn_id)?;
-                    item.latest_position = fact.position;
-                    item.state = "running".into();
-                    item.completion_text = None;
-                    item.suspension = None;
-                }
-            }
-            "turn.input" => {
-                let input: TurnInput = decode_payload(fact)?;
-                if input.input_kind == "trusted_user" {
-                    if digest(input.content.inline_utf8.as_bytes()) != input.content.digest {
-                        return Err(LiveHostError::CorruptState);
-                    }
-                    let (text, truncated) =
-                        bounded_text(&input.content.inline_utf8, max_text_bytes);
-                    let item = timeline_item(&mut items, turn_id)?;
-                    item.user_text = text;
-                    item.content_truncated |= truncated;
-                    item.latest_position = fact.position;
-                }
-            }
-            "turn.suspended" | "turn.stopped" | "turn.failed" => {
-                let state = fact.kind.as_str().trim_start_matches("turn.");
-                let item = timeline_item(&mut items, turn_id)?;
-                item.latest_position = fact.position;
-                item.state = state.into();
-                if state != "suspended" {
-                    item.suspension = None;
-                }
-            }
-            "turn.completed" => {
-                let (text, truncated) = bounded_text(&completion_text(fact)?, max_text_bytes);
-                let item = timeline_item(&mut items, turn_id)?;
-                item.latest_position = fact.position;
-                item.state = "completed".into();
-                item.completion_text = Some(text);
-                item.suspension = None;
-                item.content_truncated |= truncated;
-            }
-            _ => {}
-        }
-    }
-    if items.iter().any(|item| item.user_text.is_empty()) {
-        return Err(LiveHostError::CorruptState);
-    }
-    Ok(items)
-}
-
-fn timeline_item<'a>(
-    items: &'a mut [TurnTimelineItem],
-    turn_id: &TurnId,
-) -> Result<&'a mut TurnTimelineItem, LiveHostError> {
-    items
-        .iter_mut()
-        .rev()
-        .find(|item| item.turn_id == turn_id.as_str())
-        .ok_or(LiveHostError::CorruptState)
-}
-
-fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
-    if value.len() <= max_bytes {
-        return (value.to_owned(), false);
-    }
-    let boundary = value
-        .char_indices()
-        .map(|(index, _)| index)
-        .take_while(|index| *index <= max_bytes)
-        .last()
-        .unwrap_or(0);
-    (value[..boundary].to_owned(), true)
-}
-
-fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {
-    match kind {
-        RuntimeSuspensionKind::ApprovalRequired => "approval_required",
-        RuntimeSuspensionKind::ExternalInputRequired => "external_input_required",
-        RuntimeSuspensionKind::OperatorReconciliation => "operator_reconciliation",
-        RuntimeSuspensionKind::ResourceUnavailable => "resource_unavailable",
-        RuntimeSuspensionKind::PartialOutput => "partial_output",
-        RuntimeSuspensionKind::DelegationPending => "delegation_pending",
-    }
 }
 
 struct ContinueReplay<'a> {

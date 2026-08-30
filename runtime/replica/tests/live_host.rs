@@ -200,13 +200,15 @@ fn commands_are_durable_idempotent_and_dispatched_only_after_commit() {
 #[test]
 fn installed_definitions_and_sessions_are_restart_safe_read_models() {
     let harness = Harness::new(64);
-    let definitions = harness.host.agent_definitions();
-    assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions[0].api_version, "v1");
-    assert_eq!(definitions[0].definition_id, "definition-main");
-    assert_eq!(definitions[0].capabilities, ["timeline", "tools"]);
-    assert_eq!(definitions[0].definition_revision, "revision-1");
-    assert!(definitions[0].capabilities.is_empty());
+    let definitions = harness.host.list_agent_definitions().unwrap();
+    assert_eq!(definitions.definitions.len(), 1);
+    assert_eq!(definitions.definitions[0].api_version, "v1");
+    assert_eq!(definitions.definitions[0].definition_id, "definition-main");
+    assert_eq!(
+        definitions.definitions[0].capabilities,
+        ["timeline", "tools"]
+    );
+    assert_eq!(definitions.definitions[0].definition_revision, "revision-1");
 
     let first = harness
         .host
@@ -229,7 +231,7 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
         harness.dispatcher,
     )
     .unwrap();
-    let sessions = restarted.list_session_summaries(2).unwrap();
+    let sessions = restarted.list_sessions(2, None).unwrap().sessions;
     assert_eq!(sessions.len(), 2);
     assert!(sessions[0].session_id > sessions[1].session_id);
     let active = sessions
@@ -248,7 +250,7 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
         .iter()
         .any(|summary| summary.session_id == second.session_id));
     assert_eq!(
-        restarted.list_session_summaries(0),
+        restarted.list_sessions(0, None),
         Err(LiveHostError::InvalidRequest)
     );
 }

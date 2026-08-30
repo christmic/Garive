@@ -87,14 +87,6 @@ pub(super) fn display_text(content: &Content) -> Result<String, LiveHostError> {
         .collect())
 }
 
-pub(crate) fn completion_text(fact: &DurableFact) -> Result<String, LiveHostError> {
-    if fact.kind.as_str() != "turn.completed" {
-        return Err(LiveHostError::CorruptState);
-    }
-    let payload: Completed = decode(fact)?;
-    display_text(&payload.response)
-}
-
 #[derive(Deserialize)]
 struct Started {
     kind: String,
