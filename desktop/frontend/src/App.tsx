@@ -428,7 +428,7 @@ export function App() {
           openContext={openContext} authorizeOutputs={authorizeOutputs}
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
-          approvalAction={approvalAction} />
+          approvalAction={approvalAction} t={t} />
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
@@ -436,7 +436,7 @@ export function App() {
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
     </div>
-    {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest}
+    {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest} t={t}
       onCancel={() => { setPickerGrant(undefined);
         requestAnimationFrame(() => composer.current?.focus()); }} onConfirm={(entries) => {
         setSelectedContext({ grant: pickerGrant, entries }); setPickerGrant(undefined);
@@ -447,7 +447,7 @@ export function App() {
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
   authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
-  approvalAction }: {
+  approvalAction, t }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
@@ -461,11 +461,12 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   detachWorkspace: (attachment: WorkspaceAttachment) => Promise<void>;
   detachingWorkspaceId?: string;
   approvalAction: React.RefObject<HTMLButtonElement | null>;
+  t: (key: MessageKey) => string;
 }) {
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>Opening your workspace</h1><p>Recovering the local Runtime…</p></div>;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title="Garive could not start" body={errorCopy.desktop_unavailable} />;
   if (!state.capabilities?.configured) {
-    return state.capabilities?.setup ? <SetupFlow preview={visualTest} /> : <SetupRequired />;
+    return state.capabilities?.setup ? <SetupFlow preview={visualTest} t={t} /> : <SetupRequired />;
   }
   const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
   const needsInput = suspension?.kind === "partial_output" || suspension?.kind === "external_input_required";

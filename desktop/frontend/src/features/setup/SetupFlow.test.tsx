@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SetupCatalogue, SetupInput, SetupPlan } from "../../ipc/host";
+import { createTranslator } from "../../i18n";
 import { SetupFlow, type SetupFlowApi } from "./SetupFlow";
 
 const catalogue: SetupCatalogue = {
@@ -69,6 +70,22 @@ describe("secure Desktop setup", () => {
     await screen.findByRole("alert");
     expect(secret.value).toBe("");
     await waitFor(() => expect(document.activeElement).toBe(secret));
+  });
+
+  it("completes the secure journey in Simplified Chinese", async () => {
+    const api = setupApi(async (input) => plan(input), async () => undefined);
+    render(<SetupFlow api={api} nonce={() => "nonce-zh"}
+      t={createTranslator("zh-Hans")} />);
+    await screen.findByRole("heading", { name: "配置 Garive" });
+    for (const [label, value] of [
+      ["模型目标", "target-a"], ["模型 ID", "model-a"],
+      ["部署", "deployment-a"], ["智能体定义", "definition-a"],
+    ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.click(screen.getByRole("button", { name: "检查设置" }));
+    await screen.findByRole("heading", { name: "检查设置" });
+    fireEvent.change(screen.getByLabelText("凭据"), { target: { value: "secret-once" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交配置" }));
+    await screen.findByRole("heading", { name: "需要重新启动" });
   });
 });
 
