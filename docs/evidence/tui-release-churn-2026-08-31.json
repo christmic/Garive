@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "status": "candidate-release-gate",
+  "build_profile": "release",
+  "duration_ms": 1800080,
+  "reconnect_count": 1426,
+  "committed_turn_count": 143,
+  "rss": {
+    "baseline_kib": 10816,
+    "early_window_peak_kib": 11680,
+    "late_window_peak_kib": 12784,
+    "peak_kib": 12784,
+    "ending_kib": 12784,
+    "absolute_gate_kib": 102400,
+    "window_growth_gate_kib": 20480
+  },
+  "environment": {
+    "os": "Darwin 25.6.0 Darwin Kernel Version 25.6.0: Sat Jul 11 15:26:21 PDT 2026; root:xnu-12377.161.13~4/RELEASE_ARM64_T6000 arm64 arm",
+    "cpu": "Apple M1 Pro",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18) (Homebrew)",
+    "garive_commit": "8b077f128d62bd90b22c63283fec500c6c70714b",
+    "terminal_backend": "shipping binary under expect PTY",
+    "host_backend": "production LiveHost with file SQLite"
+  }
+}

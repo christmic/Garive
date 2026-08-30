@@ -76,6 +76,12 @@ The Runtime E2E launches the shipping binary in a real PTY against the
 production HTTP Host and SQLite ledger, then covers completion, suspension,
 continuation, cancellation, exit, restart, and screen-reader replay.
 
+The release-only `release_churn_baseline` example runs that same production
+path for at least 30 minutes with unique committed Turns and reconnect churn.
+The pinned macOS arm64 candidate completed 1,426 reconnects and 143 Turns with a
+12,784 KiB TUI RSS peak; see the
+[machine-readable report](../docs/evidence/tui-release-churn-2026-08-31.json).
+
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-08-31
 - Status: resident product implementation; see `spec/STATUS.md` for evidence

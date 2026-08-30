@@ -93,4 +93,31 @@ Garive `d0cfc1c01da30d9389907fbb1bb4b61db1eee34b`.
 | 3 | 3.953 MiB | < 100 MiB |
 
 Both metrics are Gates on the pinned macOS reference environment. Other native
-platforms and the scheduled 30-minute reconnect-churn gate remain open.
+platforms remain open.
+
+## Release reconnect-churn stability
+
+The release gate runs the shipping TUI under an `expect` PTY against production
+`LiveHost` and file SQLite for at least 30 minutes. It alternates unique,
+numbered committed Turns with `/reconnect`, so a stale redraw cannot satisfy the
+progress checks. The executable gate requires at least 1,000 reconnects and 100
+committed Turns, peak TUI RSS below 100 MiB, and the late five-minute RSS peak
+no more than 20 MiB above the early five-minute peak.
+
+```sh
+cargo build --release -p garive-tui --bin garive-tui \
+  --example visual_demo_host --example release_churn_baseline
+cargo run --release -p garive-tui --example release_churn_baseline
+```
+
+Pinned evidence: [`tui-release-churn-2026-08-31.json`](tui-release-churn-2026-08-31.json),
+Garive `8b077f128d62bd90b22c63283fec500c6c70714b`.
+
+| Duration | Reconnects | Committed Turns | Early peak | Late/overall/end peak | Result |
+|---:|---:|---:|---:|---:|---|
+| 1,800.080 s | 1,426 | 143 | 11,680 KiB | 12,784 KiB | PASS |
+
+The late-window increase was 1,104 KiB, within the 20,480 KiB growth gate; the
+12,784 KiB overall peak was within the 102,400 KiB absolute gate. This closes
+the sustained reconnect/Turn memory-stability gate on the pinned macOS arm64
+candidate only.
