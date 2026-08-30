@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "jsx": "react-jsx",
     "lib": ["ESNext", "DOM"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -8,5 +9,5 @@
     "target": "ES2023",
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": ["src", "test", "vite.config.ts", "../desktop/frontend/src"]
 }

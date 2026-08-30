@@ -6,16 +6,7 @@
     <title>Garive</title>
   </head>
   <body>
-    <main>
-      <h1>Garive Agent</h1>
-      <form id="turn-form">
-        <label>Loopback Host URL <input id="base-url" type="url" placeholder="http://127.0.0.1:PORT/" required /></label>
-        <label>Agent definition <input id="definition" value="definition-main" required /></label>
-        <label>Message <input id="input" value="hello" required /></label>
-        <button type="submit">Run Agent</button>
-      </form>
-      <output id="output"></output>
-    </main>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
