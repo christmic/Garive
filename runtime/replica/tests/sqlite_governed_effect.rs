@@ -16,15 +16,20 @@ use garive_runtime::{
     plan_core_terminal, plan_model_prepared, plan_model_started, plan_model_terminal,
     reconstruct_suspended_turn, ActivityProjectionLimits, AuthorityDecision, AuthorityFuture,
     AuthorityPort, AuthorityRequest, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    ExecutorDispatch, ExecutorFuture, ExecutorPort, GovernedEffectConfig, HostClock,
-    HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
-    InteractionInputRepresentation, LiveHost, LiveHostLimits, ModelLifecycleContext,
-    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SqliteGovernedEffectPort,
-    SqliteLedger, TurnDispatchError, TurnDispatcher,
+    ExecutorDispatch, ExecutorFuture, ExecutorPort, F0GovernanceContext, GovernedEffectConfig,
+    HostClock, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits,
+    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
+    SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyPort,
+    SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
+    SqliteGovernedEffectPort, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
-    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
-    ReceiptId, ReplayClass, TerminalClassification, ToolCatalog, ToolDefinition, ToolIntent,
+    AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
+    ExecutionFact, ExecutionRequirements, InteractionKind, InvocationAccessSet, PreparationError,
+    ReceiptId, ReplayClass, ResourceAccess, SandboxControl, SandboxRequirementsV1,
+    TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog, ToolDefinition,
+    ToolIntent,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -53,6 +58,73 @@ impl TurnDispatcher for NoopDispatcher {
 
 struct Authority {
     decision: Decision,
+}
+
+struct AllowSafety;
+
+impl SafetyPort for AllowSafety {
+    fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        Box::pin(async move {
+            Ok(SafetyEvaluation {
+                decision: SafetyDecisionV1::new(
+                    "safety-decision",
+                    SafetyDisposition::Allow,
+                    request.invocation_id().clone(),
+                    request.prepared_digest(),
+                    Some("a".repeat(64)),
+                    request.effective_policy_revision(),
+                    None,
+                )
+                .unwrap(),
+                granted_requirements: Some(
+                    ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 1_024)
+                        .unwrap(),
+                ),
+                interaction: None,
+            })
+        })
+    }
+}
+
+struct LocalSandbox;
+
+impl SandboxAdmissionPort for LocalSandbox {
+    fn admit(
+        &mut self,
+        _: SandboxAdmissionRequest<'_>,
+    ) -> Result<SandboxAdmission, garive_runtime::GovernedRuntimePortError> {
+        Ok(SandboxAdmission {
+            binding: SandboxBindingV1::new(
+                "binding",
+                "workspace",
+                "local.read",
+                "1",
+                "policy-1",
+                access_policy(),
+                sandbox_requirements(),
+            )
+            .unwrap(),
+            effective_limits_digest: "e".repeat(64),
+            preflight_id: "preflight".into(),
+            dispatch_attempt_id: "dispatch-1".into(),
+        })
+    }
+}
+
+struct Resolver;
+
+impl ToolAccessResolver for Resolver {
+    fn revision(&self) -> &str {
+        "resolver-1"
+    }
+
+    fn resolve(&self, arguments: &Value) -> Result<InvocationAccessSet, PreparationError> {
+        InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            arguments["path"].as_str().unwrap(),
+            AccessMode::Read,
+        )?])
+    }
 }
 
 impl AuthorityPort for Authority {
@@ -343,6 +415,99 @@ fn sqlite_success_commits_every_effect_boundary_before_observation() {
 }
 
 #[test]
+fn prepared_v3_without_f0_brokers_fails_before_any_effect_fact() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("ledger.sqlite3"));
+    setup.prepared = v3_catalog()
+        .prepare_v3(
+            &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+            &Resolver,
+        )
+        .unwrap();
+    let before = setup.ledger.load_turn(&setup.turn).unwrap().facts.len();
+    let mut authority = Authority {
+        decision: Decision::Approve,
+    };
+    let mut executor = Executor {
+        mode: ExecutionMode::Success,
+        prepares: 0,
+        dispatches: 0,
+    };
+    let request_id = setup.request_id.clone();
+    let prepared = setup.prepared.clone();
+    let mut port = port(&mut setup, &mut authority, &mut executor);
+    assert!(block_on(port.invoke(&request_id, &prepared)).is_err());
+    drop(port);
+    assert_eq!((executor.prepares, executor.dispatches), (0, 0));
+    assert_eq!(
+        setup.ledger.load_turn(&setup.turn).unwrap().facts.len(),
+        before
+    );
+}
+
+#[test]
+fn prepared_v3_commits_exact_f0_chain_before_dispatch() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("ledger.sqlite3"));
+    setup.prepared = v3_catalog()
+        .prepare_v3(
+            &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+            &Resolver,
+        )
+        .unwrap();
+    let mut authority = Authority {
+        decision: Decision::Approve,
+    };
+    let mut executor = Executor {
+        mode: ExecutionMode::Success,
+        prepares: 0,
+        dispatches: 0,
+    };
+    let mut safety = AllowSafety;
+    let mut sandbox = LocalSandbox;
+    let request_id = setup.request_id.clone();
+    let prepared = setup.prepared.clone();
+    let mut port = port(&mut setup, &mut authority, &mut executor)
+        .with_f0_governance(
+            &mut safety,
+            &mut sandbox,
+            F0GovernanceContext {
+                actor_authority_reference: "actor".into(),
+                goal_reference: Some("goal:1".into()),
+                plan_reference: Some("plan:1".into()),
+                effective_policy_revision: "policy-1".into(),
+            },
+        )
+        .unwrap();
+    let result = block_on(port.invoke(&request_id, &prepared)).unwrap();
+    assert!(matches!(
+        result.result,
+        garive_tools::GovernedToolResult::Observation(_)
+    ));
+    drop(port);
+    assert_eq!((executor.prepares, executor.dispatches), (0, 1));
+    assert_tail(
+        &setup,
+        &[
+            "effect.prepared",
+            "safety.decided",
+            "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
+            "effect.started",
+            "effect.receipt",
+            "effect.completed",
+            "effect.observation",
+        ],
+    );
+    drop(setup.ledger);
+    let reopened = SqliteLedger::open(&setup.database).unwrap();
+    let facts = reopened.load_turn(&setup.turn).unwrap().facts;
+    assert_eq!(facts[facts.len() - 9].schema_version, 3);
+    assert_eq!(facts[facts.len() - 7].schema_version, 2);
+}
+
+#[test]
 fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
     let directory = tempdir().unwrap();
     let mut setup = setup(&directory.path().join("ledger.sqlite3"));
@@ -622,6 +787,49 @@ fn tool_catalog() -> ToolCatalog {
         ReplayClass::ReadOnly,
     )
     .unwrap()])
+    .unwrap()
+}
+
+fn v3_catalog() -> ToolCatalog {
+    ToolCatalog::new([ToolDefinition::new_v3(
+        "read_file",
+        "1",
+        "Read one file.",
+        json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 1_024).unwrap(),
+        ReplayClass::ReadOnly,
+        access_policy(),
+        "resolver-1",
+        sandbox_requirements(),
+    )
+    .unwrap()])
+    .unwrap()
+}
+
+fn access_policy() -> ToolAccessPolicyV1 {
+    ToolAccessPolicyV1::new(
+        "access-1",
+        [AccessPolicyEntry::new("a", [AccessMode::Read]).unwrap()],
+        [],
+        [],
+        [],
+        1,
+        1_024,
+    )
+    .unwrap()
+}
+
+fn sandbox_requirements() -> SandboxRequirementsV1 {
+    SandboxRequirementsV1::new(
+        [ExecutionCapability::FilesystemRead],
+        [
+            SandboxControl::FilesystemScope,
+            SandboxControl::SymlinkContainment,
+            SandboxControl::ResourceLimits,
+        ],
+        None,
+        8,
+    )
     .unwrap()
 }
 
