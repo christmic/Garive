@@ -54,9 +54,9 @@ pub use knowledge_recovery::{
 };
 pub use memory_authority::{authorize_memory_query, authorize_memory_write, MemoryAccessGrant};
 pub use memory_hypothesis::{
-    decode_committed_memory_recall, plan_memory_obligation, plan_memory_observation,
-    plan_memory_recall, MemoryObligationContext, MemoryObservationContext, MemoryRecallContext,
-    PlannedMemoryObservation, PlannedMemoryRecall,
+    decode_committed_memory_recall, plan_memory_archive, plan_memory_obligation,
+    plan_memory_observation, plan_memory_recall, MemoryObligationContext, MemoryObservationContext,
+    MemoryRecallContext, PlannedMemoryArchive, PlannedMemoryObservation, PlannedMemoryRecall,
 };
 pub use memory_hypothesis_recovery::{
     reconstruct_memory_hypothesis_projection, MemoryHypothesisProjection, RecordedMemoryRecall,

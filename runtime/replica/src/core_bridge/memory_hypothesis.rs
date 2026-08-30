@@ -8,8 +8,8 @@ use garive_ledger::{
     CanonicalPayload, DurableFact, ExecutionId, FactDraft, FactId, FactKind, TurnId,
 };
 use garive_memory::{
-    reduce_observation, select_recall, HypothesisState, MemoryAuthority, MemoryLifecycle,
-    MemoryObligation, MemoryObservation, MemoryRecallCandidate, MemoryType,
+    reduce_observation, select_recall, HypothesisState, LifecycleEvent, MemoryAuthority,
+    MemoryLifecycle, MemoryObligation, MemoryObservation, MemoryRecallCandidate, MemoryType,
     ObservationEvidenceKind, ObservationReduction, ObservationVerdict, RecallProduct,
     RecallSelectionKind, RecallSelectionRequest,
 };
@@ -316,6 +316,55 @@ pub struct PlannedMemoryObservation {
     pub facts: Vec<FactDraft>,
     /// Pure portable reduction used to build the facts.
     pub reduction: ObservationReduction,
+}
+
+/// Result of one explicit control-plane Cold-to-Archived transition.
+pub struct PlannedMemoryArchive {
+    /// Existing M1 lifecycle fact committed by Runtime.
+    pub fact: FactDraft,
+    /// Exact lifecycle after the archive transition.
+    pub lifecycle: MemoryLifecycle,
+}
+
+/// Plans one explicit control-plane archive from an exact recovered lifecycle.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_memory_archive(
+    transition_id: &str,
+    namespace_id: &str,
+    record_id: &str,
+    revision_id: &str,
+    position: u64,
+    turn_id: &TurnId,
+    execution_id: &ExecutionId,
+    recorded_at: &str,
+    lifecycle: &MemoryLifecycle,
+) -> Result<PlannedMemoryArchive, RuntimeCommandError> {
+    for value in [transition_id, namespace_id, record_id, revision_id] {
+        validate_text(value)?;
+    }
+    validate_time(recorded_at)?;
+    let archived = lifecycle
+        .apply(LifecycleEvent::Archive { position })
+        .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+    let tally = archived.tally();
+    let fact = fact(
+        "memory.lifecycle_transitioned",
+        transition_id,
+        Some((turn_id, execution_id)),
+        json!({
+            "transition_id": transition_id, "namespace_id": namespace_id,
+            "record_id": record_id, "revision_id": revision_id,
+            "from_state": state(lifecycle.state()), "to_state": "archived",
+            "verified": tally.verified, "falsified": tally.falsified,
+            "neutral": tally.neutral, "last_observed_position": position,
+            "cause_kind": "maintenance", "cause_id": transition_id,
+        }),
+        recorded_at,
+    )?;
+    Ok(PlannedMemoryArchive {
+        fact,
+        lifecycle: archived,
+    })
 }
 
 /// Reconciles reality evidence and plans an atomic session-scoped fact pair.
