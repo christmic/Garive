@@ -298,6 +298,10 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             after 200
             send "\177"
             send "i\r"
+            send "?"
+            expect "Keyboard guide"
+            after 300
+            send "\033"
             expect "answer from production runtime"
             send "second question\r"
             expect "Action required"
