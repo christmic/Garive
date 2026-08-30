@@ -24,6 +24,7 @@ import {
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
+import { shouldSubmitComposer } from "./composer";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -366,7 +367,7 @@ export function App() {
       <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
-        <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
+        <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
@@ -512,7 +513,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
           aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
           placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
-          onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} />
+          onKeyDown={(event) => { if (shouldSubmitComposer({ key: event.key,
+            shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing })) {
+            event.preventDefault(); void submit();
+          } }} />
         <div className="composer-toolbar">
           <div className="composer-tools"><button type="button"
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
@@ -868,7 +872,7 @@ function LocaleOptions({ value, onChange, t }: {
   </span>;
 }
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
-function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
+function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} aria-label={label} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
 function recentLabel(session: HostSessionSummary) {
   const opened = new Date(session.opened_at);
