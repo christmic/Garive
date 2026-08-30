@@ -80,7 +80,7 @@ func rejectsInvalidAdmissionMaterial() {
 @Test("the native listener enforces the current process designated requirement")
 func nativeListenerAdmitsAnExactlySignedPeer() async throws {
     let policy = try NativeXPCPeerAdmissionPolicy(
-        codeSigningRequirement: try currentDesignatedRequirement(),
+        codeSigningRequirement: try currentTestDesignatedRequirement(),
         effectiveUserIdentifier: geteuid(),
         auditSessionIdentifier: try currentAuditSessionIdentifier()
     )
@@ -102,7 +102,7 @@ func nativeListenerAdmitsAnExactlySignedPeer() async throws {
     #expect(response == "admitted")
 }
 
-private func currentDesignatedRequirement() throws -> String {
+func currentTestDesignatedRequirement() throws -> String {
     var code: SecCode?
     guard SecCodeCopySelf(SecCSFlags(), &code) == errSecSuccess, let code else {
         throw NativeXPCAdmissionFailure.invalidCodeSigningRequirement

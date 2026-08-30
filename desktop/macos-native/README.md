@@ -11,6 +11,12 @@ installs it into `NSXPCListener` before activation, and requires the exact
 effective user and login audit session after system signature admission. It
 does not read configuration from the environment.
 
+Application targets use a separate verifier. It binds a running PID to process
+start time, a validated signing identifier and CodeDirectory hash, validates
+the dynamic code before and after evidence collection, and can re-resolve that
+exact instance before every AX observation or input. It never admits a bundle
+name or PID alone.
+
 The package does not yet enumerate application targets, capture pixels, inject
 input, expose the production XPC IDL, or claim a packaged XPC service. Those
 capabilities land only with their accepted target-identity, wire, broker and

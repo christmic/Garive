@@ -268,6 +268,17 @@ bundle identifier, or reusable PID alone is insufficient. XPC caller identity
 is a distinct boundary authenticated from the connection's audit token by the
 operating system as specified below.
 
+The macOS application-instance binding takes one explicitly admitted Security
+requirement and PID; it performs no application-name discovery. It reads the
+PID and process start seconds/microseconds with `proc_pidinfo`, resolves dynamic
+code with `SecCodeCopyGuestWithAttributes`, validates that code against the
+requirement, and records the signed identifier plus bounded CodeDirectory hash.
+It validates the dynamic code again and rereads process start evidence before
+returning. Changed evidence fails the operation. Preflight repeats this resolver
+and requires byte-identical process-start, identifier, and CodeDirectory data;
+therefore a restarted process, reused PID, replaced executable, or differently
+signed instance cannot inherit an old target revision.
+
 Observation enumerates only admitted applications/windows. The Accessibility
 tree exposes bounded role, label, value summary, enabled/focused/selected state,
 supported actions and geometry. Secure text fields expose no value. Garive's
@@ -425,6 +436,9 @@ The initial Swift package gate validates prompt-free permission mapping and the
 XPC caller admission policy. Its real anonymous-listener test derives the test
 process's designated requirement, installs it at the listener, admits the exact
 same-user/audit-session peer, and completes one exported-object round trip.
+The package also resolves the running test process through dynamic Security
+validation plus `proc_pidinfo`, proves exact revalidation, rejects a wrong
+signer and unavailable PID, and rejects a forged process-start identity.
 Packaged service identity and rejection from a separately signed process remain
 release evidence, not a claim of this package-level gate.
 

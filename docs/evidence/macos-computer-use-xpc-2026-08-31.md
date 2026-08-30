@@ -38,22 +38,31 @@ the connecting peer's authenticated identity before the listener delegate. The
 delegate then validates positive PID, effective user and login audit session;
 none of those public values substitutes for the signature gate.
 
+Application identity is resolved independently from the XPC caller. The
+verifier accepts an explicit Security requirement and PID, freezes
+`proc_pidinfo` start seconds/microseconds, validates the dynamic `SecCode`, and
+records its signing identifier and CodeDirectory hash. Code validity and
+process-start evidence are checked again after collection. Revalidation
+repeats the full resolver and requires exact identity equality.
+
 The native integration test obtains the actual Swift test process's designated
 requirement from Security framework, installs it on an anonymous listener,
 connects through `NSXPCConnection`, validates the peer facts, and completes an
 exported-object `ping` reply. Pure negative cases cover user/session mismatch,
 invalid PID/session and malformed or `always` requirements.
 
-Latest result: 4 Swift Testing tests passed, including four permission-posture
-argument cases and one real XPC round trip. No permission prompt, application
-enumeration, screen capture, input dispatch, environment read, or Engine/Ledger
-access occurs.
+Latest result: 7 Swift Testing tests passed, including four permission-posture
+argument cases, one real XPC round trip and real current-process Security/
+`proc_pidinfo` resolution. Negative cases cover a wrong signer, unavailable PID,
+forged process start, user/session mismatch and invalid requirements. No
+permission prompt, application enumeration, screen capture, input dispatch,
+environment read, or Engine/Ledger access occurs.
 
 ## Open evidence
 
 This package gate is not a packaged-service claim. The generated Rust/Swift IDL,
 separately signed service/backend rejection matrix, hardened-runtime bundle,
-dynamic application-instance identity, AX observation/actions,
+AX observation/actions,
 ScreenCaptureKit, native input, permission revocation, and crash recovery remain
 open.
 
