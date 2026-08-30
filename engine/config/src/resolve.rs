@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 use crate::{
     AgentDefinition, CapabilityKind, EffectiveAgentSnapshot, EffectiveCapabilitySnapshot,
     EffectiveGovernancePolicy, EffectiveLimits, InstructionReference, InstructionResource,
-    ProductPolicy, ResolutionError, ResolutionErrorCode, ResolutionRegistry, ResolvedContextPolicy,
-    ResolvedInstruction, ResolvedModelRole,
+    ProductPolicy, PublicToolActivityCatalogue, ResolutionError, ResolutionErrorCode,
+    ResolutionRegistry, ResolvedContextPolicy, ResolvedInstruction, ResolvedModelRole,
 };
 
 fn canonical_digest<T: Serialize>(value: &T, path: &str) -> Result<String, ResolutionError> {
@@ -231,6 +231,80 @@ fn validate_contracts(
     Ok(())
 }
 
+fn public_activity_catalogue(
+    definition: &AgentDefinition,
+    registry: &ResolutionRegistry,
+    tools: &[garive_tools::ToolDefinition],
+) -> Result<(u64, Option<PublicToolActivityCatalogue>), ResolutionError> {
+    let version = definition
+        .contract_versions
+        .get("effective_snapshot")
+        .copied()
+        .unwrap_or(1);
+    match version {
+        1 if registry.public_tool_activity_catalogue.is_none() => Ok((1, None)),
+        1 => Err(ResolutionError::new(
+            ResolutionErrorCode::InvalidDefinition,
+            "/public_tool_activity_catalogue",
+        )),
+        2 => {
+            let catalogue = registry
+                .public_tool_activity_catalogue
+                .as_ref()
+                .ok_or_else(|| {
+                    ResolutionError::new(
+                        ResolutionErrorCode::ReferenceNotFound,
+                        "/public_tool_activity_catalogue",
+                    )
+                })?;
+            let valid_label = |value: &str| {
+                !value.is_empty()
+                    && value.len() <= 128
+                    && !value.starts_with('.')
+                    && !value.ends_with('.')
+                    && !value.contains("..")
+                    && value.bytes().all(|byte| {
+                        byte.is_ascii_lowercase()
+                            || byte.is_ascii_digit()
+                            || matches!(byte, b'.' | b'_')
+                    })
+            };
+            let keys = catalogue
+                .descriptors
+                .iter()
+                .map(|item| (item.tool_name.as_str(), item.tool_revision.as_str()))
+                .collect::<Vec<_>>();
+            let ordered = keys.windows(2).all(|pair| pair[0] < pair[1]);
+            let complete = catalogue.descriptors.len() == tools.len()
+                && tools.iter().all(|tool| {
+                    catalogue.descriptors.iter().any(|item| {
+                        item.tool_name == tool.name() && item.tool_revision == tool.revision()
+                    })
+                });
+            if catalogue.schema_version != 1
+                || catalogue.catalogue_revision.is_empty()
+                || catalogue.catalogue_revision.len() > 128
+                || !ordered
+                || !complete
+                || catalogue
+                    .descriptors
+                    .iter()
+                    .any(|item| !valid_label(&item.label_key))
+            {
+                return Err(ResolutionError::new(
+                    ResolutionErrorCode::InvalidDefinition,
+                    "/public_tool_activity_catalogue",
+                ));
+            }
+            Ok((2, Some(catalogue.clone())))
+        }
+        _ => Err(ResolutionError::new(
+            ResolutionErrorCode::UnsupportedContractVersion,
+            "/contract_versions/effective_snapshot",
+        )),
+    }
+}
+
 /// Resolves exact Runtime candidates into one immutable Turn-bound snapshot.
 pub fn resolve_definition(
     definition: &AgentDefinition,
@@ -324,6 +398,8 @@ pub fn resolve_definition(
         })
         .collect();
     let context = exact_one(context_candidates, true, "/context_policy")?.expect("required");
+    let (effective_snapshot_version, public_tool_activity_catalogue) =
+        public_activity_catalogue(definition, registry, &tools)?;
     let definition_preimage = json!({
         "contract": "garive.agent-definition",
         "version": 1,
@@ -344,6 +420,7 @@ pub fn resolve_definition(
         },
         limits: effective_limits(definition, policy)?,
         contract_versions: definition.contract_versions.clone(),
+        public_tool_activity_catalogue,
         snapshot_digest: String::new(),
     };
     let mut preimage = serde_json::to_value(&snapshot)
@@ -356,7 +433,10 @@ pub fn resolve_definition(
         "contract".to_owned(),
         Value::String("garive.effective-agent-snapshot".to_owned()),
     );
-    object.insert("version".to_owned(), Value::from(1));
+    object.insert(
+        "version".to_owned(),
+        Value::from(effective_snapshot_version),
+    );
     snapshot.snapshot_digest = digest_canonical_value(&preimage)?;
     Ok(snapshot)
 }
