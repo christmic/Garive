@@ -285,6 +285,9 @@ does not retain the local credential.
   and internal identifiers remain absent.
 - Sticky composer respects keyboard/safe area and supports multiline input.
 - Blocking suspension replaces composer actions but never hides prior content.
+  Boolean approval exposes explicit one-shot approve/decline actions; any other
+  admitted public suspension exposes a bounded text response and the exact
+  server-provided action label. Empty or over-16-KiB responses remain local.
 - Approval exposes two explicit actions, `Decline` and `Approve once`, and
   states that scope is the current Turn and committed history remains.
 - Cancel uses a confirmation sheet. Share/copy is an explicit menu action.

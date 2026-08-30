@@ -277,6 +277,19 @@ Agent 输出中的普通文字保持原生正文排版并可选择；独立成�
 
 ![iOS 拒绝后服务端提交结果](assets/mobile/ios-16-declined.png)
 
+除布尔审批外，Agent 也可以暂停并请求一段明确的文字，例如交接对象、环境名称或发布窗口。
+此时卡片会显示 **Input needed**、服务端公开问题、单行回答框和 **Respond**。Android 与 iOS
+都把回答限制在 16 KiB，并用原 suspension ID、Session version 和响应 schema 提交；空回答或
+超限回答不会发送。iOS 同时支持键盘 **Send**，按钮与输入框保持在同一可点击行，键盘出现后
+仍可单手完成操作：
+
+![Android 开放问题输入](assets/mobile/android-23-input-needed.png)
+
+![iOS 开放问题输入](assets/mobile/ios-19-input-needed.png)
+
+提交后必须等服务端回读的新 committed position 和结果文字出现，才能认为 Agent 已恢复；关闭
+卡片、收起键盘或离开应用都不会被冒充为回答。
+
 应用不会根据通知文本直接审批。通知只带一次性 opaque route token；打开通知后，应用先向
 Gateway 解析目标，再刷新 Runtime 真相，最后才显示可操作卡片。
 
@@ -394,6 +407,8 @@ adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true --es garive_walkthrough_session release-approval
 adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true --es garive_walkthrough_session release-decline
+adb shell am start -n com.garive.android/.MainActivity \
+  --ez garive_walkthrough true --es garive_walkthrough_session clarification-input
 ```
 
 也可以用一条门禁命令自动完成 Host 启停、ADB 端口转发，以及真实网络上的
@@ -416,6 +431,8 @@ xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkt
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-conversation
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough \
   --garive-walkthrough-conversation --garive-walkthrough-session release-decline
+xcrun simctl launch booted com.garive.mobile --garive-walkthrough \
+  --garive-walkthrough-conversation --garive-walkthrough-session clarification-input
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-new-task
 ```
 
@@ -438,6 +455,7 @@ Android 的 Debug APK 可直接安装演示；Release APK 在本地门禁中保�
 | 继续同一 Session | 终态会话底部输入并发送 | 原 Turn 保留，新增 Turn |
 | 批准 | Approval needed → Approve once | completion 以 `Approved.` 开头 |
 | 拒绝 | Approval needed → Decline | completion 以 `Declined.` 开头 |
+| 回答开放问题 | Input needed → 填写回答 → Respond/键盘 Send | 精确回答被提交，Agent 恢复并返回 completion |
 | 取消 | 运行会话右上角停止 → Request cancel | Turn 进入 stopped，历史保留 |
 | Activity | 点击 `Activity · N` | 默认折叠，可展开公开活动 |
 | 重启恢复 | 输入草稿后终止并重开应用 | 导航、Session 草稿与精确 pending 有界恢复 |
@@ -452,19 +470,19 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 `accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
-Android 与 iOS 的 Sessions、新建任务、运行中 Conversation 和代码结果场景，以及 Android
+Android 与 iOS 的 Sessions、新建任务、运行中 Conversation、代码结果和开放问题场景，以及 Android
 展开 Activity/审批场景，还绑定了截图 SHA-256、
 尺寸及当前原生 UI/KMP/Demo Host 源码摘要。相关源码变化但未重新运行、检查并捕获这些场景时，
 证据校验器会直接失败，避免旧版底部导航或半展开 sheet 截图继续冒充当前候选。
 
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
-界面流程（19 条加 4 条 opt-in 真实 Host journeys，含显式主题跨存储实例恢复、严格配对链接、整应用 Work → Sessions →
-create/start → cancel → append → approve/decline 及
-Light → Dark 切换、可横向滚动的 fenced code 与系统分享 chooser）、Swift 测试（10 条）、iOS Simulator XCUITest（7 条，含真实 loopback
-create/start → cancel → append、批准/拒绝提交、Sessions 搜索/状态筛选、系统分享 sheet、Light/Dark 跨应用重启恢复与 System 切换）与构建，以及断开/恢复 Host 的
+界面流程（19 条加 5 条 opt-in 真实 Host journeys，含显式主题跨存储实例恢复、严格配对链接、整应用 Work → Sessions →
+create/start → cancel → append → approve/decline、开放文字回答及
+Light → Dark 切换、可横向滚动的 fenced code 与系统分享 chooser）、Swift 测试（10 条）、iOS Simulator XCUITest（8 条，含真实 loopback
+create/start → cancel → append、批准/拒绝与开放文字回答提交、Sessions 搜索/状态筛选、系统分享 sheet、Light/Dark 跨应用重启恢复与 System 切换）与构建，以及断开/恢复 Host 的
 离线历史回退。原生安全存储测试还验证了授权不会明文进入偏好，解除配对后授权不可再加载，且
 本机设备身份密钥会轮换。共享重启测试验证了未知 start 在新控制器实例中恢复相同 identity、
-输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 40 张实际运行截图。
+输入和 Retry exact，并对所有 pending 形状执行摘要往返及篡改拒绝。当前手册包含 42 张实际运行截图。
 正式远程发布仍必须在受信任公网 TLS、
 真实 APNs/FCM 凭据和物理 iOS/Android 设备上完成 create、reconnect、background/wake、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
