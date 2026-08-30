@@ -8,18 +8,21 @@ let storedPending: unknown = null;
 let configured = true;
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
+vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "0.1.0") }));
+vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn(async () => null) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, args: Record<string, unknown>) => {
   commands.push(command);
   switch (command) {
     case "get_desktop_capabilities": return { configured,
       agent_definition_id: "definition-main", multi_turn: true, durable_navigation: true,
-      activity: true, setup: !configured, workspaces: true, artifacts: true };
+      activity: true, setup: !configured, workspaces: true, artifacts: true, updater: false };
     case "get_setup_catalogue": return { schema_version: 1, catalogue_revision: "catalogue-1",
       profiles: [], presets: [], limits: { max_profiles: 2, max_text_bytes: 256,
         max_endpoint_bytes: 2048, max_secret_bytes: 16384, max_plan_count: 16,
         plan_lifetime_seconds: 900 } };
     case "read_client_preferences": return null;
     case "read_pending_command": return storedPending;
+    case "read_pending_update": return null;
     case "write_pending_command": storedPending = args.value; return undefined;
     case "write_client_preferences": return undefined;
     case "get_agent_definitions": return { api_version: "v1", definitions: [{ api_version: "v1",
@@ -79,6 +82,15 @@ describe("Desktop product experience", () => {
     expect(await screen.findByText("Configure Garive")).toBeTruthy();
     expect(commands).not.toContain("get_agent_definitions");
     expect(commands).not.toContain("get_product_sessions");
+  });
+
+  it("shows exact version and an honest unavailable update channel", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Updates" })).toBeTruthy();
+    expect(await screen.findByText("0.1.0")).toBeTruthy();
+    expect(screen.getByText("This build has no configured update channel.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
   });
 
   it("submits on Enter but not Shift+Enter or an active IME composition", async () => {

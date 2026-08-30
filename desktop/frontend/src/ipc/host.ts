@@ -19,6 +19,7 @@ export interface DesktopCapabilities {
   readonly setup: boolean;
   readonly workspaces: boolean;
   readonly artifacts: boolean;
+  readonly updater: boolean;
 }
 
 export type DesktopMenuLocale = "en" | "zh-Hans" | "en-XA";

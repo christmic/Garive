@@ -57,6 +57,7 @@ export function reduceDesktopUpdate(
 ): DesktopUpdateState {
   if (event.type === "check") {
     return ["idle", "current", "refused", "failed"].includes(state.kind)
+      && !(state.kind === "failed" && state.reason === "update_outcome_unknown")
       ? { kind: "checking", currentVersion: state.currentVersion }
       : state;
   }

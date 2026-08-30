@@ -15,7 +15,9 @@ import {
   type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
 import { startProductTurnWithWorkspaceContext } from "./ipc/productHost";
+import type { DesktopUpdateClient } from "./ipc/desktop-update";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
+import type { DesktopUpdateState } from "./state/desktop-update";
 import { Icon, type IconName } from "./ui/Icon";
 import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
@@ -65,6 +67,7 @@ const visualCapabilities = {
   setup: visualTestMode === "setup",
   workspaces: visualTestMode !== "setup",
   artifacts: visualTestMode === "artifact",
+  updater: false,
 } as const;
 const visualArtifactTimeline = {
   api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 24,
@@ -109,6 +112,10 @@ export function App() {
   const desktopZoom = useRef(1);
   const pendingDraft = useRef("");
   const [queuedSubmission, setQueuedSubmission] = useState<string>();
+  const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState>({
+    kind: "unavailable", currentVersion: "—",
+  });
+  const desktopUpdateClient = useRef<DesktopUpdateClient | null>(null);
   const product = useDesktopProduct(state.capabilities
     ? state.capabilities.configured ? "configured" : "not_configured" : undefined, !visualTest);
 
@@ -125,6 +132,34 @@ export function App() {
   useEffect(() => {
     if (!visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
   }, [locale]);
+  useEffect(() => {
+    if (!state.capabilities) return;
+    if (visualTest) {
+      setDesktopUpdate({ kind: "unavailable", currentVersion: "0.1.0" });
+      return;
+    }
+    let cancelled = false;
+    let unsubscribe: () => void = () => undefined;
+    void import("./ipc/desktop-update").then(({ DesktopUpdateClient }) => {
+      if (cancelled) return;
+      const client = new DesktopUpdateClient(state.capabilities?.updater ?? false);
+      desktopUpdateClient.current = client;
+      unsubscribe = client.subscribe(setDesktopUpdate);
+      void client.initialize().catch(() => setDesktopUpdate({
+        kind: "failed", currentVersion: "—", reason: "update_outcome_unknown",
+      }));
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, [state.capabilities?.updater]);
+
+  const runUpdateAction = () => {
+    const client = desktopUpdateClient.current;
+    if (!client) return;
+    if (["idle", "current", "refused", "failed"].includes(desktopUpdate.kind)) void client.check();
+    else if (desktopUpdate.kind === "available") void client.download();
+    else if (desktopUpdate.kind === "ready_to_install") void client.install();
+    else if (desktopUpdate.kind === "restart_required") void client.restart();
+  };
 
   const loadSessionExtras = useCallback(async (sessionId: string) => {
     const [artifacts, workspaces] = await Promise.all([
@@ -503,7 +538,8 @@ export function App() {
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} t={t} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} t={t} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
-              setPreferences={setPreferences} t={t} />}
+              setPreferences={setPreferences} update={desktopUpdate} runUpdate={runUpdateAction}
+              restartBlocked={state.phase === "submitting"} t={t} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch} t={t} />}
     </div>
@@ -812,10 +848,14 @@ function SearchScreen({ recents, titles, onOpen, t }: {
 
 function SetupRequired({ t }: { t: (key: MessageKey) => string }) { return <StatusCard icon="shield" title={t("shell.setupRequired")} body={t("setup.unavailable")} />; }
 function AgentsScreen({ definition, t }: { definition?: string; t: (key: MessageKey) => string }) { return <section className="content-page"><p className="eyebrow">{t("agents.eyebrow")}</p><h1>{t("agents.title")}</h1><p>{t("agents.description")}</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? t("agents.none")}</h2><p>{t(definition ? "agents.readyBody" : "agents.configureBody")}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{t(definition ? "common.ready" : "common.unavailable")}</span></div></section>; }
-function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
+function SettingsScreen({ capabilities, preferences, setPreferences, update, runUpdate,
+  restartBlocked, t }: {
   capabilities?: WorkState["capabilities"];
   preferences: DesktopPreferences;
   setPreferences: React.Dispatch<React.SetStateAction<DesktopPreferences>>;
+  update: DesktopUpdateState;
+  runUpdate: () => void;
+  restartBlocked: boolean;
   t: (key: MessageKey) => string;
 }) {
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
@@ -906,6 +946,7 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
     <div className="settings-card"><h2>{t("settings.language.title")}</h2><p>{t("settings.language.description")}</p>
       <div className="setting-row"><span>{t("settings.language.label")}</span><LocaleOptions value={preferences.locale} onChange={(locale) => setPreferences((current) => ({ ...current, locale }))} t={t} /></div>
     </div>
+    <UpdateSettings state={update} run={runUpdate} restartBlocked={restartBlocked} t={t} />
     <div className="settings-card"><h2>{t("settings.runtime.title")}</h2><p>{t("settings.runtime.description")}</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{t(label)}</span><span className={available ? "state-chip ready" : "state-chip"}>{t(available ? "settings.runtime.available" : "settings.runtime.notInstalled")}</span></div>)}</div>
     {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>{t("settings.workspace.title")}</h2><p>{t("settings.workspace.description")}</p><div className="setting-row"><span>{t("settings.workspace.recovery")}</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} ${t("settings.workspace.restored")}` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} ${t("settings.workspace.needsAccess")}` : t("settings.workspace.indexUnavailable") : t("settings.workspace.checking")}</span></div>
       {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `${t("settings.workspace.readOnly")} ${workspace.grant_revision}` : t("settings.workspace.expired")}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">{t("settings.workspace.active")}</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.opening")}</> : t("settings.workspace.restore")}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label={t("settings.workspace.removeAria")} disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.removing")}</> : t(confirmingRevocation === workspace.workspace_id ? "settings.workspace.confirmRemove" : "settings.workspace.remove")}</button></span></div>)}
@@ -913,6 +954,40 @@ function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
       {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{t(recoveryError)}</span></div>}
     </div>}
     <div className="settings-card"><h2>{t("settings.privacy.title")}</h2><p>{t("settings.privacy.description")}</p></div></section>;
+}
+
+function UpdateSettings({ state, run, restartBlocked, t }: {
+  state: DesktopUpdateState; run: () => void; restartBlocked: boolean;
+  t: (key: MessageKey) => string;
+}) {
+  const active = ["checking", "downloading", "installing"].includes(state.kind);
+  const reasonKey = state.kind === "failed" || state.kind === "refused"
+    ? `settings.update.error.${state.reason}` as MessageKey : undefined;
+  const statusKey = reasonKey ?? `settings.update.state.${state.kind}` as MessageKey;
+  const actionKey: MessageKey | undefined = state.kind === "idle" ? "settings.update.check"
+    : state.kind === "current" || state.kind === "refused" || (state.kind === "failed"
+      && state.reason !== "update_outcome_unknown") ? "settings.update.checkAgain"
+      : state.kind === "available" ? "settings.update.download"
+      : state.kind === "ready_to_install" ? "settings.update.install"
+      : state.kind === "restart_required" ? "settings.update.restart" : undefined;
+  const target = "targetVersion" in state ? state.targetVersion : undefined;
+  const progress = state.kind === "downloading" && state.totalBytes
+    ? Math.min(100, Math.round(state.receivedBytes / state.totalBytes * 100)) : undefined;
+  return <div className="settings-card update-card"><h2>{t("settings.update.title")}</h2>
+    <p>{t("settings.update.description")}</p>
+    <div className="setting-row"><span>{t("settings.update.currentVersion")}</span><code>{state.currentVersion}</code></div>
+    {target && <div className="setting-row"><span>{t("settings.update.targetVersion")}</span><code>{target}</code></div>}
+    <div className={reasonKey ? "update-status error" : "update-status"}
+      role={reasonKey ? "alert" : "status"} aria-live="polite">
+      {active && <span className="spinner" />}{t(statusKey)}
+    </div>
+    {state.kind === "downloading" && <progress max={100} value={progress}
+      aria-label={t("settings.update.progress")} />}
+    {actionKey && <button className="secondary-button" type="button" onClick={run}
+      disabled={state.kind === "restart_required" && restartBlocked}>{t(actionKey)}</button>}
+    {state.kind === "restart_required" && restartBlocked
+      && <small>{t("settings.update.restartBlocked")}</small>}
+  </div>;
 }
 
 function ThemeOptions({ value, onChange, t }: {

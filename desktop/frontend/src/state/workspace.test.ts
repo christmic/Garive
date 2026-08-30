@@ -4,7 +4,7 @@ import { initialAppViewState } from "./controller";
 
 const capabilities = {
   configured: true, agent_definition_id: "definition-main", multi_turn: true, durable_navigation: false,
-  activity: false, setup: false, workspaces: false, artifacts: false,
+  activity: false, setup: false, workspaces: false, artifacts: false, updater: false,
 };
 
 describe("Desktop work state", () => {

@@ -71,5 +71,7 @@ describe("Desktop update lifecycle", () => {
       .toMatchObject({ reason: "update_install_failed" });
     expect(reduceDesktopUpdate(installing, { type: "install_failed", outcomeUnknown: true }))
       .toMatchObject({ reason: "update_outcome_unknown" });
+    const unknown = reduceDesktopUpdate(installing, { type: "install_failed", outcomeUnknown: true });
+    expect(reduceDesktopUpdate(unknown, { type: "check" })).toBe(unknown);
   });
 });
