@@ -147,18 +147,33 @@ final class GariveIOSUITests: XCTestCase {
         XCTAssertTrue(reveal(light, in: list))
         light.tap()
         XCTAssertTrue(light.isSelected)
-        let dark = app.buttons["Dark"]
-        dark.tap()
-        XCTAssertTrue(dark.isSelected)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
+        let restoredLight = app.buttons["Light"]
+        XCTAssertTrue(reveal(restoredLight, in: app.collectionViews.firstMatch))
+        XCTAssertTrue(restoredLight.isSelected)
+
+        app.buttons["Dark"].tap()
+        XCTAssertTrue(app.buttons["Dark"].isSelected)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 8))
+        let restoredDark = app.buttons["Dark"]
+        XCTAssertTrue(reveal(restoredDark, in: app.collectionViews.firstMatch))
+        XCTAssertTrue(restoredDark.isSelected)
+
         app.buttons["System"].tap()
         XCTAssertTrue(app.buttons["System"].isSelected)
-        XCTAssertTrue(reveal(app.buttons["Open notification settings"], in: list))
+        let restoredList = app.collectionViews.firstMatch
+        XCTAssertTrue(reveal(app.buttons["Open notification settings"], in: restoredList))
         let diagnostics = app.buttons["Copy safe diagnostics"]
-        XCTAssertTrue(reveal(diagnostics, in: list))
+        XCTAssertTrue(reveal(diagnostics, in: restoredList))
         diagnostics.tap()
         XCTAssertTrue(app.buttons["Diagnostics copied"].exists)
         let unpair = app.buttons["Unpair this device"]
-        XCTAssertTrue(reveal(unpair, in: list))
+        XCTAssertTrue(reveal(unpair, in: restoredList))
         unpair.tap()
         XCTAssertTrue(app.buttons["Unpair device"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["This removes access from this phone. Agent work and history remain on your service."].exists)

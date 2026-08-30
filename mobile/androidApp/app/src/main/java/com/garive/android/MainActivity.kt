@@ -47,7 +47,7 @@ public class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val walkthrough = BuildConfig.DEBUG && intent.getBooleanExtra(WALKTHROUGH_EXTRA, false)
-        val appearance = getSharedPreferences("garive-client", MODE_PRIVATE)
+        val appearance = AndroidAppearanceStore(this)
         pairingSuggestion.value = parsePairingLink(intent?.data)
         val store = AndroidConnectionStore(this)
         wakeToken.value = intent?.takeIf { it.action == WAKE_ACTION }?.getStringExtra(WAKE_TOKEN)
@@ -55,13 +55,12 @@ public class MainActivity : ComponentActivity() {
         setContent {
             var theme by remember {
                 mutableStateOf(
-                    Theme.entries.firstOrNull { it.wireName == appearance.getString("theme", null) }
-                        ?: Theme.SYSTEM,
+                    appearance.theme(),
                 )
             }
             val selectTheme: (Theme) -> Unit = {
                 theme = it
-                appearance.edit().putString("theme", it.wireName).apply()
+                appearance.setTheme(it)
             }
             GariveTheme(theme) {
                 if (walkthrough) {

@@ -61,7 +61,9 @@ confirmation, committed real-Host `Approve once` and `Decline` results, safe
 diagnostics, notification entry, the native system share sheet with its Copy
 activity, and confirmed unpair.
 The Settings journey additionally selects Light, Dark, and System and verifies
-the native segmented-control state after every change.
+the native segmented-control state after every change. It terminates and
+relaunches the shipping app after both explicit choices to prove AppStorage
+restoration rather than only an in-memory selection.
 Swift contract tests also require pairing links to pass the same shared remote
 HTTPS-origin validator before any service suggestion is presented.
 

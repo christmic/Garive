@@ -35,13 +35,17 @@ def verify(artifacts: bool) -> None:
         raise ValueError(f"manual must contain and declare exactly 37 screenshots, found {len(files)}")
 
     required = {
+        "android-02-work-light.png",
+        "android-10-a11y-dark-work.png",
         "android-18-navigation-dark.png",
         "android-21-navigation-light.png",
+        "ios-02-work-light.png",
+        "ios-08-a11y-dark-work.png",
         "ios-13-navigation-dark.png",
         "ios-14-navigation-light.png",
     }
     if not required.issubset({Path(item).name for item in files}):
-        raise ValueError("both native clients require light and dark Remote navigation evidence")
+        raise ValueError("both native clients require light Work, dark accessible Work, and light/dark Remote evidence")
     for item in sorted(files):
         width, height = png_size(MANUAL.parent / item)
         if min(width, height) < 300:

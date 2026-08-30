@@ -50,7 +50,9 @@ create/start responses, reloads the durable timeline, cancels the running Turn,
 and appends a second Turn in the opened Conversation in addition to focused
 component and secure-storage tests.
 The full-shell journey also selects Light and Dark through the same Settings
-segmented control used by the shipping activity, then confirms unpair and
+segmented control used by the shipping activity. Platform tests additionally
+prove explicit Light and Dark choices survive a new appearance-store instance
+while unknown future values fail closed to System. The journey then confirms unpair and
 proves the shell returns to secure pairing.
 Run `just mobile-android-live-ui` from the repository root for the opt-in
 network journey. It starts the real repository Debug Host, establishes
