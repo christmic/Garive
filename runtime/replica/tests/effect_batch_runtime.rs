@@ -5,12 +5,15 @@ use std::{
     time::Duration,
 };
 
-use garive_ledger::CanonicalPayload;
+use garive_ledger::{
+    CanonicalPayload, ExecutionId, FactDraft, FactId, FactKind, SessionId, TurnId,
+};
 use garive_runtime::{
-    AuthorizedBatchInvocation, BatchRuntimeError, BatchTerminal, CancellationEvidence,
-    ConcurrentExecutorDispatch, ConcurrentExecutorPort, EffectBatchDispatcher,
-    EffectBatchPublisher, EffectBatchRuntimeLimits, EffectCancellation, ExecutorDispatchError,
-    PreparedExecution,
+    plan_effect_batch_admission, AuthorizedBatchInvocation, BatchRuntimeError, BatchTerminal,
+    CancellationEvidence, ConcurrentExecutorDispatch, ConcurrentExecutorPort,
+    EffectBatchAdmissionContext, EffectBatchDispatcher, EffectBatchPublisher,
+    EffectBatchRuntimeLimits, EffectCancellation, ExecutorDispatchError, PreparedExecution,
+    SqliteLedger,
 };
 use garive_tools::{
     plan_effect_batch, AccessMode, AccessNamespace, AccessPolicyEntry, EffectBatchLimitsV1,
@@ -20,6 +23,7 @@ use garive_tools::{
     ToolIntent, ToolInvocationId,
 };
 use serde_json::{json, Value};
+use tempfile::tempdir;
 
 struct Resolver;
 
@@ -377,4 +381,83 @@ async fn terminal_durability_failure_stops_later_publication() {
         publisher.events,
         ["start:0", "start:1", "start:2", "terminal:0", "terminal:1"]
     );
+}
+
+#[test]
+fn admission_facts_commit_prepared_v2_authorizations_then_exact_plan() {
+    let directory = tempdir().unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("ledger.db")).unwrap();
+    let session = SessionId::try_from("session").unwrap();
+    let turn = TurnId::try_from("turn").unwrap();
+    let execution = ExecutionId::try_from("execution").unwrap();
+    let initial = ledger.commit(
+        session.clone(),
+        0,
+        vec![
+            raw_fact("open", "session.opened", None, None, json!({})),
+            raw_fact("turn", "turn.started", Some(&turn), None, json!({
+                "command_id":"command","kind":"start","agent_instance_id":"agent",
+                "definition_id":"definition","definition_revision":"revision",
+                "snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "trusted_input_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            })),
+            raw_fact("execution", "execution.started", Some(&turn), Some(&execution), json!({
+                "snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "through_position":0,"completed_iterations":0,"limits":{"max_iterations":1},"recovery_ordinal":0
+            })),
+        ],
+    ).unwrap();
+    let invocations = invocations(3);
+    let plan = plan_effect_batch(
+        &invocations
+            .iter()
+            .map(|value| value.prepared.clone())
+            .collect::<Vec<_>>(),
+        &EffectBatchLimitsV1::new(3, 1, 3, 3, 1536).unwrap(),
+    )
+    .unwrap();
+    let context = EffectBatchAdmissionContext {
+        turn_id: turn,
+        execution_id: execution,
+        max_parallel_reads: 3,
+        max_buffered_result_bytes: 1536,
+        recorded_at: "2026-08-30T00:00:00Z".into(),
+    };
+    let admission = plan_effect_batch_admission(&context, &plan, &invocations).unwrap();
+    assert_eq!(admission.facts.len(), 7);
+    assert_eq!(admission.facts[0].schema_version, 2);
+    assert_eq!(
+        admission.facts[6].kind.as_str(),
+        "execution.effect_batch_planned"
+    );
+    ledger
+        .commit(session, initial.session_version, admission.facts)
+        .unwrap();
+
+    let mut stale = invocations.clone();
+    stale[0].grant.prepared_digest = "b".repeat(64);
+    assert_eq!(
+        plan_effect_batch_admission(&context, &plan, &stale).unwrap_err(),
+        BatchRuntimeError::InvalidBinding,
+    );
+}
+
+fn raw_fact(
+    id: &str,
+    kind: &str,
+    turn: Option<&TurnId>,
+    execution: Option<&ExecutionId>,
+    payload: Value,
+) -> FactDraft {
+    FactDraft {
+        fact_id: FactId::try_from(id).unwrap(),
+        turn_id: turn.cloned(),
+        execution_id: execution.cloned(),
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new(kind).unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&payload).unwrap(),
+        recorded_at: "2026-08-30T00:00:00Z".into(),
+    }
 }
