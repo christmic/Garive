@@ -30,6 +30,7 @@ garive-core = { path = "../engine/core" }
 garive-ledger = { path = "../engine/ledger" }
 garive-llm = { path = "../engine/llm" }
 garive-runtime = { path = "../runtime/replica" }
+insta = "1.46.3"
 tempfile = "3.23"
 
 [[bin]]
