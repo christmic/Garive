@@ -334,8 +334,6 @@ pub fn plan_memory_archive(
     record_id: &str,
     revision_id: &str,
     position: u64,
-    turn_id: &TurnId,
-    execution_id: &ExecutionId,
     recorded_at: &str,
     lifecycle: &MemoryLifecycle,
 ) -> Result<PlannedMemoryArchive, RuntimeCommandError> {
@@ -350,7 +348,7 @@ pub fn plan_memory_archive(
     let fact = fact(
         "memory.lifecycle_transitioned",
         transition_id,
-        Some((turn_id, execution_id)),
+        None,
         json!({
             "transition_id": transition_id, "namespace_id": namespace_id,
             "record_id": record_id, "revision_id": revision_id,

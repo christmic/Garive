@@ -149,8 +149,6 @@ pub fn plan_memory_repository_import(
                     record_id,
                     expected_active_revision_id,
                     position,
-                    &context.turn_id,
-                    &context.execution_id,
                     &context.recorded_at,
                     lifecycle,
                 )
@@ -187,11 +185,7 @@ pub fn plan_memory_repository_import(
                 .map_err(|_| MemoryRepositoryError::Corrupt)?;
                 state = planned.next_state;
                 erasure_requests.push(planned.request);
-                facts.extend(planned.facts.into_iter().map(|mut fact| {
-                    fact.turn_id = Some(context.turn_id.clone());
-                    fact.execution_id = Some(context.execution_id.clone());
-                    fact
-                }));
+                facts.extend(planned.facts);
             }
         }
     }
