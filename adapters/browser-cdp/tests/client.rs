@@ -57,6 +57,15 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
         assert_eq!(tree["method"], "Accessibility.getFullAXTree");
         assert_eq!(tree["params"]["depth"], 64);
         assert_eq!(tree["params"]["frameId"], "frame-1");
+        let history = reply(
+            &mut socket,
+            json!({"currentIndex":1,"entries":[
+                {"id":1,"url":"https://example.test:443/old","userTypedURL":"","title":"Old","transitionType":"typed"},
+                {"id":2,"url":"https://example.test:443/current","userTypedURL":"","title":"Current","transitionType":"link"}
+            ]}),
+        )
+        .await;
+        assert_eq!(history["method"], "Page.getNavigationHistory");
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -77,5 +86,11 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
     assert_eq!(tree.nodes.len(), 2);
     assert_eq!(tree.nodes[1].role.as_deref(), Some("button"));
     assert_eq!(tree.nodes[1].backend_dom_node_id, Some(42));
+    let history = client
+        .current_history_entry(&session)
+        .await
+        .expect("history");
+    assert_eq!(history.id, 2);
+    assert_eq!(history.url, "https://example.test:443/current");
     server.await.expect("server");
 }

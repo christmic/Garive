@@ -18,7 +18,7 @@ runtime dependency.
 
 V1 admits only `Browser.getVersion`, managed blank-page `Target.createTarget`,
 flat `Target.attachToTarget`, `Accessibility.enable|disable|getFullAXTree`,
-bounded Page navigation/history, `DOM.focus|scrollIntoViewIfNeeded|getBoxModel`,
+bounded Page navigation/history/layout metrics, `DOM.focus|scrollIntoViewIfNeeded|getBoxModel`,
 and bounded `Input.dispatchKeyEvent|dispatchMouseEvent|insertText`. The adapter
 freezes the experimental `Input.insertText` shape reviewed against the official
 tip-of-tree protocol; absence is a closed protocol failure. Every semantic
@@ -100,7 +100,8 @@ client. It performs no target/session discovery. Observe enables Accessibility
 once, applies the requested bounds, maps the AX tree and retains only the
 current private snapshot binding.
 
-Preflight supports navigate plus `click`, `type_text` and `clear`. It resolves
+Preflight supports navigate plus `click`, `type_text`, `clear`, `press_key` and
+`scroll`. It resolves
 the exact semantic operation and hashes canonical command, adapter and backend
 evidence into the frozen binding. Dispatch recomputes that binding, invalidates
 the old snapshot before crossing CDP, executes exactly once and returns a
@@ -110,9 +111,18 @@ the committed final origin and rotates the opaque target revision. A
 cross-origin redirect returns a trustworthy failed receipt carrying
 `browser_origin_denied`; an allowed commit returns completed. Any CDP failure
 without trustworthy terminal evidence after dispatch is
-`native_action_uncertain`. A later observe, explicitly chained from the prior
-snapshot, creates the next observation. The remaining action set stays
-unsupported until its bindings land.
+`native_action_uncertain`. Press-key freezes the snapshot's one focused private
+backend node and refreshes the bounded AX tree before input; changed focus
+returns `native_focus_changed` without input. Scroll gets the current
+`Page.getLayoutMetrics` visual viewport and emits one `mouseWheel` event at its
+center, so tool input never controls pointer coordinates. Every act freezes the
+sorted canonical allowed-navigation origins and compares the current
+`Page.getNavigationHistory` entry before and after input. A changed committed
+entry rotates the target revision; an origin outside that frozen set returns a
+trustworthy `browser_origin_denied` receipt, while loss before post-action
+history is uncertain. A later observe, explicitly chained from the prior
+snapshot, creates the next observation. Select and explicit history commands
+stay unsupported until their bindings land.
 
 ## Acceptance
 
@@ -137,7 +147,7 @@ using an unexposed backend identity and observes the resulting AX-name change.
 The same gate inserts Unicode text and clears the textbox, observing both AX
 states. Runtime separately proves the exact click binding gate; text-action
 binding now passes the same exact gate. Mock-transport concrete-port gates cover
-observe, navigate/click/type/clear and success/failed/uncertain binding
+observe, navigate/click/type/clear/key/scroll and success/failed/uncertain binding
 invalidation. A second managed-Chrome gate passes initial observation,
 same-origin redirected navigation, completed receipt, target-revision rotation
 and fresh semantic observation through the concrete Runtime port itself. This

@@ -218,8 +218,8 @@ blocked. Exact action shapes are:
 | `click`, `clear` | `node_ref` | coordinates |
 | `type_text` | `node_ref`, bounded `text` | clipboard |
 | `select_option` | `node_ref`, bounded `option` | free-form script |
-| `press_key` | one closed portable `key` | raw scan codes |
-| `scroll` | non-zero integer `delta_x`, `delta_y` | unbound wheel events |
+| `press_key` | one closed portable `key` | raw scan codes or caller-selected focus |
+| `scroll` | non-zero integer `delta_x`, `delta_y` | caller-supplied pointer coordinates |
 | `go_back`, `go_forward`, `reload` | no detail field | ambient tab selection |
 
 Portable keys are `enter`, `tab`, `escape`, `backspace`, `delete`, four arrow
@@ -235,7 +235,11 @@ started. `act` supports the closed set:
 `GoBack`, `GoForward`, `Reload`.
 
 Click/type/select require a snapshot-local node reference and supported action.
-Key names use a portable closed catalogue; text is one bounded UTF-8 value.
+Press-key binds the snapshot's unique focused semantic node and revalidates the
+same adapter-private backend focus immediately before input; absent, ambiguous
+or changed focus fails before input. Scroll is bound to the page snapshot and
+the adapter derives its event point from the current browser-reported visual
+viewport center. Key names use a portable closed catalogue; text is one bounded UTF-8 value.
 Coordinates are not accepted by browser v1. File upload requires a separate
 opaque workspace file capability. Download requires a separately authorized
 Artifact target and receipt; it never writes to ambient Downloads.
@@ -279,7 +283,7 @@ capture is `none`, so changing capture posture changes the Prepared Call.
 `act` requires `expected_snapshot_id`, `target_revision`, and one exact action
 shape. Semantic actions are `press(node_ref)`,
 `set_value(node_ref,value)`, `type_text(node_ref,text)`,
-`press_key(key)`, and non-zero `scroll(node_ref,delta_x,delta_y)`. They reject
+`press_key(key)`, and non-zero `scroll(delta_x,delta_y)`. They reject
 every coordinate field; an unsupported AX action never switches to pixels.
 
 Coordinate actions are `move_pointer`, `click_point`, and `drag`. Each binds

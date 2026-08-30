@@ -74,6 +74,39 @@ pub enum CdpWaitUntil {
     NetworkIdle,
 }
 
+/// Closed portable keyboard catalogue independent of platform scan codes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CdpPortableKey {
+    /// Enter or Return.
+    Enter,
+    /// Tab focus traversal.
+    Tab,
+    /// Escape.
+    Escape,
+    /// Backspace.
+    Backspace,
+    /// Forward delete.
+    Delete,
+    /// Up arrow.
+    ArrowUp,
+    /// Down arrow.
+    ArrowDown,
+    /// Left arrow.
+    ArrowLeft,
+    /// Right arrow.
+    ArrowRight,
+    /// Home.
+    Home,
+    /// End.
+    End,
+    /// Page up.
+    PageUp,
+    /// Page down.
+    PageDown,
+    /// Space.
+    Space,
+}
+
 /// Typed navigation result used by Runtime redirect/origin revalidation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CdpNavigationResult {
@@ -85,6 +118,15 @@ pub struct CdpNavigationResult {
     pub final_url: String,
     /// Whether Chromium classified the navigation as a download.
     pub is_download: bool,
+}
+
+/// Current bounded top-level history entry used for action navigation audits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpHistoryEntry {
+    /// Browser-local navigation entry identity.
+    pub id: i64,
+    /// Current exact entry URL.
+    pub url: String,
 }
 
 /// Sequential typed client over one exact managed-browser transport.
@@ -238,6 +280,42 @@ impl CdpClient {
         })
     }
 
+    /// Returns the current bounded top-level navigation entry.
+    pub async fn current_history_entry(
+        &mut self,
+        session_id: &str,
+    ) -> Result<CdpHistoryEntry, CdpTransportError> {
+        validate_id(session_id)?;
+        let result = self
+            .transport
+            .call(
+                "Page.getNavigationHistory",
+                json!({}),
+                Some(session_id.into()),
+            )
+            .await?;
+        let entries = result
+            .get("entries")
+            .and_then(Value::as_array)
+            .filter(|entries| !entries.is_empty() && entries.len() <= 10_000)
+            .ok_or_else(protocol)?;
+        let index = result
+            .get("currentIndex")
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < entries.len())
+            .ok_or_else(protocol)?;
+        let entry = entries[index].as_object().ok_or_else(protocol)?;
+        Ok(CdpHistoryEntry {
+            id: entry
+                .get("id")
+                .and_then(Value::as_i64)
+                .filter(|id| *id >= 0)
+                .ok_or_else(protocol)?,
+            url: object_text(entry, "url", 32_768)?,
+        })
+    }
+
     /// Clicks one adapter-private backend node through its current rendered box.
     pub async fn click_backend_node(
         &mut self,
@@ -316,6 +394,120 @@ impl CdpClient {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Dispatches one closed portable key down/up pair to the current page focus.
+    pub async fn press_key(
+        &mut self,
+        session_id: &str,
+        key: CdpPortableKey,
+    ) -> Result<(), CdpTransportError> {
+        validate_id(session_id)?;
+        let (key, code, virtual_key, text) = portable_key_fields(key);
+        let mut down = json!({
+            "type":"rawKeyDown",
+            "key":key,
+            "code":code,
+            "windowsVirtualKeyCode":virtual_key
+        });
+        if let Some(text) = text {
+            down["type"] = json!("keyDown");
+            down["text"] = json!(text);
+            down["unmodifiedText"] = json!(text);
+        }
+        self.transport
+            .call("Input.dispatchKeyEvent", down, Some(session_id.into()))
+            .await?;
+        self.transport
+            .call(
+                "Input.dispatchKeyEvent",
+                json!({
+                    "type":"keyUp",
+                    "key":key,
+                    "code":code,
+                    "windowsVirtualKeyCode":virtual_key
+                }),
+                Some(session_id.into()),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Scrolls the current visual viewport from its browser-reported center.
+    pub async fn scroll_viewport(
+        &mut self,
+        session_id: &str,
+        delta_x: i64,
+        delta_y: i64,
+    ) -> Result<(), CdpTransportError> {
+        validate_id(session_id)?;
+        if (delta_x == 0 && delta_y == 0)
+            || delta_x.unsigned_abs() > 100_000
+            || delta_y.unsigned_abs() > 100_000
+        {
+            return Err(protocol());
+        }
+        let metrics = self
+            .transport
+            .call("Page.getLayoutMetrics", json!({}), Some(session_id.into()))
+            .await?;
+        let viewport = metrics
+            .get("visualViewport")
+            .and_then(Value::as_object)
+            .ok_or_else(protocol)?;
+        let extent = |field| {
+            viewport
+                .get(field)
+                .and_then(Value::as_f64)
+                .filter(|value| value.is_finite() && *value > 0.0 && *value <= 10_000_000.0)
+                .ok_or_else(protocol)
+        };
+        self.transport
+            .call(
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type":"mouseWheel",
+                    "x":extent("clientWidth")? / 2.0,
+                    "y":extent("clientHeight")? / 2.0,
+                    "deltaX":delta_x,
+                    "deltaY":delta_y,
+                    "button":"none",
+                    "buttons":0
+                }),
+                Some(session_id.into()),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Returns the one focused AX backend node under explicit observation bounds.
+    pub async fn focused_backend_node(
+        &mut self,
+        session_id: &str,
+        depth: u32,
+        max_nodes: usize,
+        max_text_bytes: usize,
+    ) -> Result<Option<u64>, CdpTransportError> {
+        let tree = self
+            .full_ax_tree(session_id, None, depth, max_nodes, max_text_bytes)
+            .await?;
+        let focused = tree
+            .nodes
+            .iter()
+            .filter(|node| {
+                node.properties.iter().any(|property| {
+                    property.name.eq_ignore_ascii_case("focused")
+                        && property_truthy(&property.value)
+                })
+            })
+            .collect::<Vec<_>>();
+        if focused.len() > 1 {
+            return Err(protocol());
+        }
+        focused
+            .first()
+            .map(|node| node.backend_dom_node_id.ok_or_else(protocol))
+            .transpose()
     }
 
     async fn focus_backend_node(
@@ -581,8 +773,38 @@ fn content_center(result: &Value) -> Result<(f64, f64), CdpTransportError> {
     }
 }
 
+fn portable_key_fields(
+    key: CdpPortableKey,
+) -> (&'static str, &'static str, u16, Option<&'static str>) {
+    match key {
+        CdpPortableKey::Enter => ("Enter", "Enter", 13, None),
+        CdpPortableKey::Tab => ("Tab", "Tab", 9, None),
+        CdpPortableKey::Escape => ("Escape", "Escape", 27, None),
+        CdpPortableKey::Backspace => ("Backspace", "Backspace", 8, None),
+        CdpPortableKey::Delete => ("Delete", "Delete", 46, None),
+        CdpPortableKey::ArrowUp => ("ArrowUp", "ArrowUp", 38, None),
+        CdpPortableKey::ArrowDown => ("ArrowDown", "ArrowDown", 40, None),
+        CdpPortableKey::ArrowLeft => ("ArrowLeft", "ArrowLeft", 37, None),
+        CdpPortableKey::ArrowRight => ("ArrowRight", "ArrowRight", 39, None),
+        CdpPortableKey::Home => ("Home", "Home", 36, None),
+        CdpPortableKey::End => ("End", "End", 35, None),
+        CdpPortableKey::PageUp => ("PageUp", "PageUp", 33, None),
+        CdpPortableKey::PageDown => ("PageDown", "PageDown", 34, None),
+        CdpPortableKey::Space => (" ", "Space", 32, Some(" ")),
+    }
+}
+
 fn optional_len(value: &Option<String>) -> usize {
     value.as_ref().map_or(0, String::len)
+}
+
+fn property_truthy(value: &Value) -> bool {
+    value.get("value").is_some_and(|value| match value {
+        Value::Bool(value) => *value,
+        Value::String(value) => !value.is_empty() && value != "false",
+        Value::Number(value) => value.as_i64() != Some(0),
+        _ => false,
+    })
 }
 
 fn protocol() -> CdpTransportError {

@@ -34,6 +34,10 @@ fn target() -> NativeTarget {
     }
 }
 
+fn history(id: i64, url: &str) -> Value {
+    json!({"currentIndex":0,"entries":[{"id":id,"url":url}]})
+}
+
 #[tokio::test]
 async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -56,6 +60,10 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         .await;
         assert_eq!(tree["method"], "Accessibility.getFullAXTree");
         assert_eq!(
+            reply(&mut socket, history(1, "https://fixture.test:443/form")).await["method"],
+            "Page.getNavigationHistory"
+        );
+        assert_eq!(
             reply(&mut socket, json!({})).await["method"],
             "DOM.scrollIntoViewIfNeeded"
         );
@@ -68,6 +76,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             let command = reply(&mut socket, json!({})).await;
             assert_eq!(command["params"]["type"], expected);
         }
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -76,10 +85,12 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             ]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
         let insert = reply(&mut socket, json!({})).await;
         assert_eq!(insert["method"], "Input.insertText");
         assert_eq!(insert["params"]["text"], "Garive 🦀");
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -88,6 +99,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             ]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
         for _ in 0..3 {
             assert_eq!(
@@ -95,6 +107,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
                 "Input.dispatchKeyEvent"
             );
         }
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -126,7 +139,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         target: target(),
         expected_snapshot_id: observation.snapshot_id.clone(),
         target_revision: observation.target_revision.clone(),
-        prepared_input: json!({"action":"click","node_ref":button.node_ref.as_str()}),
+        prepared_input: json!({"action":"click","node_ref":button.node_ref.as_str(),"allowed_navigation_origins":[]}),
     };
     let binding = port.preflight_action(&command).expect("preflight");
     let receipt = port
@@ -172,7 +185,8 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         prepared_input: json!({
             "action":"type_text",
             "node_ref":textbox_ref.as_str(),
-            "text":"Garive 🦀"
+            "text":"Garive 🦀",
+            "allowed_navigation_origins":[]
         }),
     };
     let type_binding = port
@@ -201,7 +215,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         target: target(),
         expected_snapshot_id: clear_observation.snapshot_id,
         target_revision: clear_observation.target_revision,
-        prepared_input: json!({"action":"clear","node_ref":clear_ref.as_str()}),
+        prepared_input: json!({"action":"clear","node_ref":clear_ref.as_str(),"allowed_navigation_origins":[]}),
     };
     let clear_binding = port
         .preflight_action(&clear_command)
@@ -209,6 +223,247 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
     port.dispatch_action(&clear_command, &clear_binding)
         .await
         .expect("clear receipt");
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_snapshot() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        let focused_tree = json!({"nodes":[
+            {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"name":{"value":"Account"},"backendDOMNodeId":43,"properties":[{"name":"focused","value":{"type":"booleanOrUndefined","value":true}}],"parentId":"root"},
+            {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+        ]});
+        reply(&mut socket, focused_tree.clone()).await;
+        assert_eq!(
+            reply(&mut socket, focused_tree.clone()).await["method"],
+            "Accessibility.getFullAXTree"
+        );
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        for expected in ["rawKeyDown", "keyUp"] {
+            let key = reply(&mut socket, json!({})).await;
+            assert_eq!(key["method"], "Input.dispatchKeyEvent");
+            assert_eq!(key["params"]["type"], expected);
+            assert_eq!(key["params"]["key"], "ArrowDown");
+        }
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, focused_tree).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        let metrics = reply(
+            &mut socket,
+            json!({"visualViewport":{"clientWidth":1000,"clientHeight":600}}),
+        )
+        .await;
+        assert_eq!(metrics["method"], "Page.getLayoutMetrics");
+        let scroll = reply(&mut socket, json!({})).await;
+        assert_eq!(scroll["method"], "Input.dispatchMouseEvent");
+        assert_eq!(scroll["params"]["type"], "mouseWheel");
+        assert_eq!(scroll["params"]["x"], 500.0);
+        assert_eq!(scroll["params"]["y"], 300.0);
+        assert_eq!(scroll["params"]["deltaY"], 120);
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-key-scroll",
+        64,
+        client,
+    )
+    .expect("port");
+    let before = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    assert!(before.focused_node.is_some());
+    let key = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-key").expect("action"),
+        target: target(),
+        expected_snapshot_id: before.snapshot_id.clone(),
+        target_revision: before.target_revision.clone(),
+        prepared_input: json!({"action":"press_key","key":"arrow_down","allowed_navigation_origins":[]}),
+    };
+    let key_binding = port.preflight_action(&key).expect("key preflight");
+    port.dispatch_action(&key, &key_binding)
+        .await
+        .expect("key receipt");
+    let after_key = port
+        .observe(&target(), Some(&before.snapshot_id), before.bounds)
+        .await
+        .expect("post-key observation");
+    let scroll = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-scroll").expect("action"),
+        target: target(),
+        expected_snapshot_id: after_key.snapshot_id,
+        target_revision: after_key.target_revision,
+        prepared_input: json!({"action":"scroll","delta_x":0,"delta_y":120,"allowed_navigation_origins":[]}),
+    };
+    let scroll_binding = port.preflight_action(&scroll).expect("scroll preflight");
+    port.dispatch_action(&scroll, &scroll_binding)
+        .await
+        .expect("scroll receipt");
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"one","ignored":false,"role":{"value":"textbox"},"backendDOMNodeId":43,"properties":[{"name":"focused","value":{"value":true}}],"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"two","ignored":false,"role":{"value":"textbox"},"backendDOMNodeId":44,"properties":[{"name":"focused","value":{"value":true}}],"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-focus-change",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-focus-change").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({"action":"press_key","key":"enter","allowed_navigation_origins":[]}),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    assert_eq!(
+        port.dispatch_action(&command, &binding).await,
+        Err(garive_runtime::NativeProtocolError::FocusChanged)
+    );
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn action_navigation_revalidates_the_committed_history_origin() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        let focused_tree = json!({"nodes":[
+            {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"backendDOMNodeId":43,"properties":[{"name":"focused","value":{"value":true}}],"parentId":"root"},
+            {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+        ]});
+        reply(&mut socket, focused_tree.clone()).await;
+        reply(&mut socket, focused_tree).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, json!({})).await;
+        reply(&mut socket, json!({})).await;
+        reply(&mut socket, history(2, "https://denied.test:443/landing")).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-action-navigation",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-navigation-denied").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"press_key",
+            "key":"enter",
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("failed receipt");
+    assert_eq!(receipt.terminal_classification, "failed");
+    assert_eq!(
+        receipt.failure_code.as_deref(),
+        Some("browser_origin_denied")
+    );
+    receipt.validate().expect("valid receipt");
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
     server.await.expect("server");
 }
 
@@ -228,6 +483,7 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
             ]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         let Message::Text(_) = socket.next().await.expect("dispatch").expect("frame") else {
             panic!("text dispatch required")
         };
@@ -266,7 +522,8 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
         target_revision: observation.target_revision,
         prepared_input: json!({
             "action":"click",
-            "node_ref":button_ref.as_str()
+            "node_ref":button_ref.as_str(),
+            "allowed_navigation_origins":[]
         }),
     };
     let binding = port.preflight_action(&command).expect("preflight");

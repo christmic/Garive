@@ -189,6 +189,7 @@ fn admitted_method(method: &str) -> bool {
             | "Page.setLifecycleEventsEnabled"
             | "Page.getNavigationHistory"
             | "Page.navigateToHistoryEntry"
+            | "Page.getLayoutMetrics"
             | "Input.dispatchKeyEvent"
             | "Input.dispatchMouseEvent"
             | "Input.insertText"

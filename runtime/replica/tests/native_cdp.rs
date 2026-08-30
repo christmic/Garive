@@ -111,6 +111,10 @@ fn private_binding_resolves_only_the_exact_snapshot_node_revision_and_action() {
     button.backend_dom_node_id = Some(42);
     let mut textbox = node("textbox-cdp", Some("root-cdp"), "textbox", false);
     textbox.backend_dom_node_id = Some(43);
+    textbox.properties.push(CdpAxProperty {
+        name: "focused".into(),
+        value: json!({"type":"booleanOrUndefined","value":true}),
+    });
     let mapped = map_cdp_ax_tree_with_binding(
         context(),
         &CdpAxTree {
@@ -140,6 +144,15 @@ fn private_binding_resolves_only_the_exact_snapshot_node_revision_and_action() {
         .expect("textbox")
         .node_ref
         .clone();
+    assert_eq!(mapped.observation.focused_node, Some(textbox_ref.clone()));
+    assert_eq!(
+        mapped
+            .binding
+            .resolve_focus(&target, &snapshot, "revision-1")
+            .expect("focus target")
+            .backend_dom_node_id,
+        43
+    );
     assert_eq!(
         mapped
             .binding

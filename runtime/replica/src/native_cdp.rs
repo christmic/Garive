@@ -35,6 +35,7 @@ pub struct CdpSnapshotBindingV1 {
     target: NativeTarget,
     snapshot_id: NativeSnapshotId,
     target_revision: String,
+    focused_node: Option<NativeNodeRef>,
     nodes: BTreeMap<NativeNodeRef, CdpBoundNode>,
 }
 
@@ -54,6 +55,43 @@ pub struct CdpElementTarget {
 }
 
 impl CdpSnapshotBindingV1 {
+    /// Revalidates the exact page snapshot without selecting an element.
+    pub fn validate_page(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+    ) -> Result<(), NativeProtocolError> {
+        if target != &self.target {
+            return Err(NativeProtocolError::TargetNotAdmitted);
+        }
+        if expected_snapshot_id != &self.snapshot_id || target_revision != self.target_revision {
+            return Err(NativeProtocolError::SnapshotStale);
+        }
+        Ok(())
+    }
+
+    /// Resolves the exact focused semantic node retained by this snapshot.
+    pub fn resolve_focus(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+    ) -> Result<CdpElementTarget, NativeProtocolError> {
+        self.validate_page(target, expected_snapshot_id, target_revision)?;
+        let node = self
+            .focused_node
+            .as_ref()
+            .and_then(|node| self.nodes.get(node))
+            .ok_or(NativeProtocolError::FocusChanged)?;
+        Ok(CdpElementTarget {
+            backend_dom_node_id: node
+                .backend_dom_node_id
+                .ok_or(NativeProtocolError::FocusChanged)?,
+            frame_id: node.frame_id.clone(),
+        })
+    }
+
     /// Resolves one click only under exact target, snapshot, revision and action support.
     pub fn resolve_click(
         &self,
@@ -113,12 +151,7 @@ impl CdpSnapshotBindingV1 {
         node_ref: &NativeNodeRef,
         action: &str,
     ) -> Result<CdpElementTarget, NativeProtocolError> {
-        if target != &self.target {
-            return Err(NativeProtocolError::TargetNotAdmitted);
-        }
-        if expected_snapshot_id != &self.snapshot_id || target_revision != self.target_revision {
-            return Err(NativeProtocolError::SnapshotStale);
-        }
+        self.validate_page(target, expected_snapshot_id, target_revision)?;
         let node = self
             .nodes
             .get(node_ref)
@@ -199,6 +232,20 @@ pub fn map_cdp_ax_tree_with_binding(
             ))
         })
         .collect::<Result<BTreeMap<_, _>, NativeProtocolError>>()?;
+    let focused = visible
+        .iter()
+        .filter(|node| {
+            node.properties.iter().any(|property| {
+                property.name.eq_ignore_ascii_case("focused") && property_truthy(&property.value)
+            })
+        })
+        .collect::<Vec<_>>();
+    if focused.len() > 1 {
+        return Err(NativeProtocolError::ReceiptInvalid);
+    }
+    let focused_node = focused
+        .first()
+        .map(|node| references[node.node_id.as_str()].clone());
     let mut redacted_field_count = 0_u32;
     let nodes = ordered
         .into_iter()
@@ -239,6 +286,7 @@ pub fn map_cdp_ax_tree_with_binding(
         target: context.target.clone(),
         snapshot_id: context.snapshot_id.clone(),
         target_revision: context.target_revision.clone(),
+        focused_node: focused_node.clone(),
         nodes: visible
             .iter()
             .map(|node| {
@@ -258,7 +306,7 @@ pub fn map_cdp_ax_tree_with_binding(
         snapshot_id: context.snapshot_id,
         target_revision: context.target_revision,
         nodes,
-        focused_node: None,
+        focused_node,
         screenshot_reference: None,
         redacted_field_count,
         bounds: context.bounds,
