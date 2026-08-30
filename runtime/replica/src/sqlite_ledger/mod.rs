@@ -143,11 +143,8 @@ impl SqliteLedger {
         &self,
         command: &crate::MemoryExportCommand,
         target: &crate::MemoryExportTarget,
-        receipt: &crate::MemoryExportReceipt,
     ) -> Result<Option<crate::MemoryExportReceipt>, crate::MemoryControlRuntimeError> {
-        let binding =
-            crate::memory_export::export_binding_digest(command, target, &receipt.manifest_digest)?;
-        memory_export::load(&self.connection, command, receipt, &binding)
+        memory_export::load(&self.connection, command, target)
     }
 
     /// Lists verified durable Session identities in lexical order.

@@ -21,7 +21,10 @@ pub(super) fn commit(
         return Err(MemoryControlRuntimeError::Unauthorized);
     }
     let binding = export_binding_digest(command, target, &receipt.manifest_digest)?;
-    if let Some(replayed) = load(transaction, command, receipt, &binding)? {
+    if let Some(replayed) = load(transaction, command, target)? {
+        if &replayed != receipt {
+            return Err(MemoryControlRuntimeError::CommandConflict);
+        }
         return Ok(replayed);
     }
     let revision = integrity::namespace_revision(transaction, command.namespace_id())?
@@ -75,8 +78,7 @@ pub(super) fn commit(
 pub(super) fn load(
     connection: &Connection,
     command: &MemoryExportCommand,
-    expected: &MemoryExportReceipt,
-    binding: &str,
+    target: &MemoryExportTarget,
 ) -> Result<Option<MemoryExportReceipt>, MemoryControlRuntimeError> {
     let row = connection
         .query_row(
@@ -98,11 +100,14 @@ pub(super) fn load(
     let Some((stored_binding, receipt_json, receipt_digest, event_json, event_digest)) = row else {
         return Ok(None);
     };
+    let receipt = MemoryExportReceipt::decode_verified(&receipt_json)?;
+    let binding = export_binding_digest(command, target, &receipt.manifest_digest)?;
     if stored_binding != binding {
         return Err(MemoryControlRuntimeError::CommandConflict);
     }
-    let receipt = MemoryExportReceipt::decode_verified(&receipt_json)?;
-    if &receipt != expected
+    if receipt.command_id != command.command_id()
+        || receipt.export_id != command.export_id()
+        || receipt.namespace_id != command.namespace_id()
         || receipt_digest != receipt.receipt_digest
         || !verify_event(&event_json, &event_digest, command, &receipt)
     {

@@ -10,7 +10,10 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 
-use garive_memory::{project_memory_snapshot, MemorySnapshot, MemorySnapshotLimits};
+use garive_memory::{
+    parse_memory_snapshot, project_memory_snapshot, MemorySnapshot, MemorySnapshotFile,
+    MemorySnapshotLimits,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -27,6 +30,28 @@ pub fn export_memory_snapshot(
     target: &MemoryExportTarget,
     limits: MemorySnapshotLimits,
 ) -> Result<MemoryExportReceipt, MemoryControlRuntimeError> {
+    if let Some(committed) = ledger.read_memory_export_journal(command, target)? {
+        verify_committed_destination(target.path(), command, &committed, limits)?;
+        let binding = export_binding_digest(command, target, &committed.manifest_digest)?;
+        let paths = ExportPaths::new(target.path(), &binding)?;
+        if fs::symlink_metadata(&paths.stage).is_ok() {
+            return Err(MemoryControlRuntimeError::ExportTargetInvalid);
+        }
+        if fs::symlink_metadata(&paths.journal).is_ok() {
+            let (receipt_json, _) = canonical_digest(&committed)?;
+            let recovery = RecoveryRecord {
+                schema_version: 1,
+                binding_digest: &binding,
+                manifest_digest: &committed.manifest_digest,
+                receipt_json: &receipt_json,
+            };
+            let (recovery_json, _) = canonical_digest(&recovery)?;
+            ensure_recovery_record(&paths, &recovery_json)?;
+            fs::remove_file(&paths.journal).map_err(persistence)?;
+            sync_directory(&paths.parent)?;
+        }
+        return Ok(committed);
+    }
     let projection =
         ledger.read_memory_control_projection(grant, command.namespace_id(), limits.document)?;
     let snapshot = project_memory_snapshot(
@@ -55,18 +80,6 @@ pub fn export_memory_snapshot(
     };
     let (recovery_json, _) = canonical_digest(&recovery)?;
     let paths = ExportPaths::new(target.path(), &binding)?;
-    if let Some(committed) = ledger.read_memory_export_journal(command, target, &receipt)? {
-        verify_package(&paths.final_path, &snapshot)?;
-        if fs::symlink_metadata(&paths.stage).is_ok() {
-            return Err(MemoryControlRuntimeError::ExportTargetInvalid);
-        }
-        if fs::symlink_metadata(&paths.journal).is_ok() {
-            ensure_recovery_record(&paths, &recovery_json)?;
-            fs::remove_file(&paths.journal).map_err(persistence)?;
-            sync_directory(&paths.parent)?;
-        }
-        return Ok(committed);
-    }
     ensure_recovery_record(&paths, &recovery_json)?;
     ensure_destination(&paths, &snapshot)?;
     let committed = ledger.commit_memory_export_journal(grant, command, target, &receipt)?;
@@ -118,6 +131,47 @@ impl ExportPaths {
             journal: parent.join(format!(".garive-memory-{tag}.journal")),
         })
     }
+}
+
+fn verify_committed_destination(
+    path: &Path,
+    command: &MemoryExportCommand,
+    receipt: &MemoryExportReceipt,
+    limits: MemorySnapshotLimits,
+) -> Result<(), MemoryControlRuntimeError> {
+    require_directory(path)?;
+    if directory_names(path)? != ["entries".to_owned(), "manifest.json".to_owned()].into() {
+        return Err(MemoryControlRuntimeError::ExportTargetInvalid);
+    }
+    let manifest = read_bounded(&path.join("manifest.json"), limits.max_total_bytes)?;
+    let entries_path = path.join("entries");
+    require_directory(&entries_path)?;
+    let mut files = Vec::new();
+    for name in directory_names(&entries_path)? {
+        let file_path = entries_path.join(&name);
+        let metadata = fs::symlink_metadata(&file_path).map_err(persistence)?;
+        #[cfg(unix)]
+        let storage_identity = format!("{}:{}", metadata.dev(), metadata.ino());
+        #[cfg(not(unix))]
+        let storage_identity = name.clone();
+        files.push(MemorySnapshotFile {
+            file_name: format!("entries/{name}"),
+            bytes: read_bounded(&file_path, limits.document.max_document_bytes)?,
+            storage_identity,
+            regular: metadata.is_file() && !metadata.file_type().is_symlink(),
+        });
+    }
+    let snapshot = parse_memory_snapshot(&manifest, &files, limits)
+        .map_err(|_| MemoryControlRuntimeError::ExportTargetInvalid)?;
+    if snapshot.manifest.export_id != command.export_id()
+        || snapshot.manifest.namespace_id != command.namespace_id()
+        || snapshot.manifest.manifest_digest != receipt.manifest_digest
+        || snapshot.manifest.through_revision != receipt.through_repository_revision
+        || u64::try_from(snapshot.documents.len()).ok() != Some(receipt.entry_count)
+    {
+        return Err(MemoryControlRuntimeError::ExportTargetInvalid);
+    }
+    Ok(())
 }
 
 fn enforce_bounds(

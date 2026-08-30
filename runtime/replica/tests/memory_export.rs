@@ -46,6 +46,17 @@ fn export_is_exact_replayable_and_contains_no_path_in_receipt() {
         ),
         1
     );
+    ledger
+        .connection_for_test()
+        .execute(
+            "UPDATE memory_namespaces SET repository_revision=?1 WHERE namespace_id='namespace-export'",
+            [12_u64.to_be_bytes()],
+        )
+        .unwrap();
+    assert_eq!(
+        export_memory_snapshot(&mut ledger, &grant, &command, &target, limits()).unwrap(),
+        receipt
+    );
     std::fs::write(destination.join("manifest.json"), b"{}").unwrap();
     assert_eq!(
         export_memory_snapshot(&mut ledger, &grant, &command, &target, limits()),
