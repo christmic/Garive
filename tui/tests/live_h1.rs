@@ -64,6 +64,10 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
             expect "Garive. Connecting"
             expect "Connection online"
+            send "\020"
+            expect "Command palette."
+            expect "1. /new: Create session"
+            send "\033"
             send "\021"
             send "\r"
             expect "Terminal restored."
@@ -76,6 +80,7 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
     let output = fs::read(&transcript).unwrap();
     let text = String::from_utf8_lossy(&output);
     assert!(text.contains("Connection online"));
+    assert!(text.contains("Command palette."));
     assert!(!text.contains("\x1b[6n"));
     assert!(!text.contains("\x1b[2J"));
     assert!(!text.contains("\x1b[?1049h"));
