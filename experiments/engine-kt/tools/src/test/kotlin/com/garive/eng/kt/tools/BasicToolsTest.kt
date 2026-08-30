@@ -1,9 +1,14 @@
 package com.garive.eng.kt.tools
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class BasicToolsTest {
     @Test
@@ -79,6 +84,57 @@ class BasicToolsTest {
             ),
         )
         assertEquals(PreparationErrorCode.EFFECT_ACCESS_INVALID, unknownLane.error())
+    }
+
+    @Test
+    fun sharedFixtureMatchesExactPreparationSemantics() {
+        val fixture = Json.parseToJsonElement(
+            File(System.getProperty("garive.repo.root"), "spec/fixtures/agent/basic-tools-v1.json").readText(),
+        ).jsonObject
+        val catalogue = assertIs<ToolContractResult.Success<BuiltinT1Catalogue>>(
+            BuiltinT1Catalogue.create(
+                fixture.getValue("policy_revision").jsonPrimitive.content,
+                fixture.getValue("process_lanes").jsonArray.map { it.jsonPrimitive.content },
+            ),
+        ).value
+        fixture.getValue("valid_cases").jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val prepared = catalogue.prepare(
+                ToolIntent(
+                    "call",
+                    case.getValue("tool_name").jsonPrimitive.content,
+                    case.getValue("arguments").toString(),
+                ),
+            ).value()
+            assertEquals(case.getValue("prepared_digest").jsonPrimitive.content, prepared.inputDigest)
+            assertEquals(
+                case.getValue("accesses").jsonArray.map { access ->
+                    val value = access.jsonObject
+                    Triple(
+                        value.getValue("namespace").jsonPrimitive.content,
+                        value.getValue("resource_key").jsonPrimitive.content,
+                        value.getValue("mode").jsonPrimitive.content,
+                    )
+                },
+                requireNotNull(prepared.invocationAccesses).values.map {
+                    Triple(it.namespace.wireName, it.resourceKey, it.mode.wireName)
+                },
+            )
+        }
+        fixture.getValue("invalid_cases").jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val result = catalogue.prepare(
+                ToolIntent(
+                    "call",
+                    case.getValue("tool_name").jsonPrimitive.content,
+                    case.getValue("arguments").toString(),
+                ),
+            )
+            assertEquals(
+                case.getValue("error").jsonPrimitive.content,
+                assertIs<ToolContractResult.Failure>(result).error.code.wireName,
+            )
+        }
     }
 
     private fun catalogue(): BuiltinT1Catalogue =

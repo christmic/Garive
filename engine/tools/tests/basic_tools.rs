@@ -2,6 +2,7 @@ use garive_tools::{
     AccessMode, AccessNamespace, BuiltinT1Catalogue, PreparationErrorCode, ReplayClass, ToolIntent,
     T1_APPLY_PATCH, T1_LIST, T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT, T1_TOOL_REVISION,
 };
+use serde_json::Value;
 
 #[test]
 fn catalogue_freezes_all_five_v3_definitions() {
@@ -132,4 +133,79 @@ fn directory_root_never_becomes_a_file_or_patch_target() {
             .code(),
         PreparationErrorCode::EffectAccessInvalid
     );
+}
+
+#[test]
+fn shared_fixture_matches_exact_preparation_semantics() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/basic-tools-v1.json"
+    ))
+    .unwrap();
+    let catalogue = BuiltinT1Catalogue::new(
+        fixture["policy_revision"].as_str().unwrap(),
+        fixture["process_lanes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap()),
+    )
+    .unwrap();
+    for case in fixture["valid_cases"].as_array().unwrap() {
+        let prepared = catalogue
+            .prepare(&ToolIntent::new(
+                "call",
+                case["tool_name"].as_str().unwrap(),
+                case["arguments"].to_string(),
+            ))
+            .unwrap();
+        assert_eq!(prepared.input_digest(), case["prepared_digest"]);
+        let actual = prepared
+            .invocation_accesses()
+            .unwrap()
+            .values()
+            .iter()
+            .map(|access| {
+                let namespace = match access.namespace() {
+                    AccessNamespace::Filesystem => "filesystem",
+                    AccessNamespace::Process => "process",
+                    AccessNamespace::Network => "network",
+                    AccessNamespace::Runtime => "runtime",
+                };
+                let mode = match access.mode() {
+                    AccessMode::Read => "read",
+                    AccessMode::Write => "write",
+                    AccessMode::Exclusive => "exclusive",
+                };
+                (namespace, access.resource_key(), mode)
+            })
+            .collect::<Vec<_>>();
+        let expected = case["accesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|access| {
+                (
+                    access["namespace"].as_str().unwrap(),
+                    access["resource_key"].as_str().unwrap(),
+                    access["mode"].as_str().unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+    for case in fixture["invalid_cases"].as_array().unwrap() {
+        let error = catalogue
+            .prepare(&ToolIntent::new(
+                "call",
+                case["tool_name"].as_str().unwrap(),
+                case["arguments"].to_string(),
+            ))
+            .unwrap_err();
+        let expected = match case["error"].as_str().unwrap() {
+            "effect_access_invalid" => PreparationErrorCode::EffectAccessInvalid,
+            "arguments_schema_mismatch" => PreparationErrorCode::ArgumentsSchemaMismatch,
+            value => panic!("unknown fixture error {value}"),
+        };
+        assert_eq!(error.code(), expected);
+    }
 }
