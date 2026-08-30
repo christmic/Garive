@@ -1,6 +1,16 @@
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct WorkspaceTurnCommand {
+    definition_id: String,
+    session_id: String,
+    input: String,
+    workspace_id: String,
+    entry_ids: Vec<String>,
+}
+
 #[tauri::command]
 async fn run_agent_turn(
     state: tauri::State<'_, garive_desktop::DesktopState>,
@@ -10,6 +20,27 @@ async fn run_agent_turn(
 ) -> Result<garive_desktop::DesktopTurnResult, String> {
     state
         .run_turn_in_session_isolated(definition_id, session_id, input)
+        .await
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+async fn run_agent_turn_with_workspace_context(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    request: WorkspaceTurnCommand,
+) -> Result<garive_desktop::DesktopTurnResult, String> {
+    let context = workspaces
+        .read_context_files(&request.workspace_id, window.label(), &request.entry_ids)
+        .map_err(|error| error.code().to_owned())?;
+    state
+        .run_turn_with_context_isolated(
+            request.definition_id,
+            request.session_id,
+            request.input,
+            context,
+        )
         .await
         .map_err(|error| error.code().to_owned())
 }
@@ -253,6 +284,7 @@ fn main() {
             get_recent_sessions,
             get_session_timeline,
             continue_agent_turn,
+            run_agent_turn_with_workspace_context,
             run_agent_turn
         ])
         .run(tauri::generate_context!())

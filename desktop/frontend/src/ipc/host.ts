@@ -255,6 +255,23 @@ export async function runAgentTurn(
   });
 }
 
+export async function runAgentTurnWithWorkspaceContext(
+  definitionId: string,
+  sessionId: string,
+  input: string,
+  workspaceId: string,
+  entryIds: readonly string[],
+  invoke: Invoke = tauriInvoke,
+): Promise<HostResult> {
+  if (!definitionId || !sessionId || !input || !workspaceId
+      || entryIds.length < 1 || entryIds.length > 8 || new Set(entryIds).size !== entryIds.length) {
+    throw new Error("workspace_capability_invalid");
+  }
+  return invoke<HostResult>("run_agent_turn_with_workspace_context", {
+    request: { definitionId, sessionId, input, workspaceId, entryIds },
+  });
+}
+
 /** Continues one exact restart-safe text suspension. */
 export async function continueAgentTurn(
   sessionId: string,

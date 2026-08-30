@@ -3,7 +3,7 @@ import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
-  revokeWorkspace, verifyWorkspace,
+  revokeWorkspace, runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -143,5 +143,24 @@ describe("desktop Host IPC", () => {
     };
     const page = await listWorkspaceEntries("workspace-1", undefined, undefined, 32, invoke);
     expect(page.entries[0].entry_id).toBe("entry-1");
+  });
+
+  it("sends only opaque selected entry identities for a contextual Turn", async () => {
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      expect(command).toBe("run_agent_turn_with_workspace_context");
+      expect(args).toEqual({
+        request: {
+          definitionId: "definition-main", sessionId: "session-1", input: "summarize",
+          workspaceId: "workspace-1", entryIds: ["entry-1"],
+        },
+      });
+      expect(JSON.stringify(args)).not.toContain("file content");
+      return { session_id: "session-1", turn_id: "turn-1", execution_id: "execution-1",
+        cursor: 8, text: "done", terminal: "completed" } as T;
+    };
+    const result = await runAgentTurnWithWorkspaceContext(
+      "definition-main", "session-1", "summarize", "workspace-1", ["entry-1"], invoke,
+    );
+    expect(result.text).toBe("done");
   });
 });
