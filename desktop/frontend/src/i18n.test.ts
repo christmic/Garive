@@ -37,4 +37,12 @@ describe("Desktop localization", () => {
     expect(t("artifact.overwriteError")).toContain("绝不覆盖");
     expect(t("artifact.previewVerified")).toBe("已验证预览");
   });
+
+  it("preserves Settings revocation and privacy boundaries in Chinese", () => {
+    const t = createTranslator("zh-Hans");
+    expect(t("settings.workspace.confirmNotice")).toContain("立即阻止后续读取和输出");
+    expect(t("settings.workspace.confirmNotice")).toContain("既有收据仍会保留");
+    expect(t("settings.privacy.description")).toContain("文件系统路径");
+    expect(t("settings.privacy.description")).toContain("原始运行时事实");
+  });
 });
