@@ -12,42 +12,42 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.garive.mobile.preferences.Theme
 
-internal val GariveCoral = Color(0xFFFF745F)
-internal val GariveMint = Color(0xFF6ED6B2)
-internal val GariveAmber = Color(0xFFF2BC62)
-internal val GariveFailure = Color(0xFFFF6B73)
-internal val GariveInk = Color(0xFF101315)
-internal val GariveRaised = Color(0xFF1A1F22)
-internal val GariveIvory = Color(0xFFF8F5EE)
+internal val GariveCoral = Color(0xFF315FCF)
+internal val GariveMint = Color(0xFF27825A)
+internal val GariveAmber = Color(0xFFA46816)
+internal val GariveFailure = Color(0xFFD85B63)
+internal val GariveInk = Color(0xFF111318)
+internal val GariveRaised = Color(0xFF1B1E25)
+internal val GariveIvory = Color(0xFFF7F5EF)
 
 private val DarkColors = darkColorScheme(
-    primary = GariveCoral,
-    onPrimary = Color(0xFF24100C),
-    secondary = GariveMint,
-    tertiary = GariveAmber,
+    primary = Color(0xFF8FAAFF),
+    onPrimary = Color(0xFF102657),
+    secondary = Color(0xFF70D5A7),
+    tertiary = Color(0xFFE7B46C),
     error = GariveFailure,
     background = GariveInk,
     onBackground = GariveIvory,
     surface = GariveRaised,
     onSurface = GariveIvory,
-    surfaceVariant = Color(0xFF252B2E),
-    onSurfaceVariant = Color(0xFFB9C1C3),
-    outline = Color(0xFF465055),
+    surfaceVariant = Color(0xFF272A31),
+    onSurfaceVariant = Color(0xFFC2C3C8),
+    outline = Color(0xFF4C4F58),
 )
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFFB83C2C),
+    primary = GariveCoral,
     onPrimary = Color.White,
-    secondary = Color(0xFF176B54),
-    tertiary = Color(0xFF7C5200),
+    secondary = GariveMint,
+    tertiary = GariveAmber,
     error = Color(0xFFB32635),
-    background = Color(0xFFF6F3EC),
-    onBackground = Color(0xFF171A1C),
-    surface = Color(0xFFFFFCF5),
-    onSurface = Color(0xFF171A1C),
-    surfaceVariant = Color(0xFFEAE6DD),
-    onSurfaceVariant = Color(0xFF545C60),
-    outline = Color(0xFFABB1B2),
+    background = Color(0xFFFBFAF6),
+    onBackground = Color(0xFF272723),
+    surface = Color(0xFFFFFEFB),
+    onSurface = Color(0xFF272723),
+    surfaceVariant = Color(0xFFF0EEE7),
+    onSurfaceVariant = Color(0xFF686760),
+    outline = Color(0xFFD4D1C8),
 )
 
 /** Garive's native Material 3 visual system. */

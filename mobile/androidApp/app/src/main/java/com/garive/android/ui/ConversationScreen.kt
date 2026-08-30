@@ -18,23 +18,33 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.VerifiedUser
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.garive.mobile.model.MobileConnectionState
@@ -56,30 +66,33 @@ internal fun ConversationScreen(
     onAbandonRetry: () -> Unit,
 ) {
     val latest = state.timeline.lastOrNull()
+    val agentName = state.sessions.firstOrNull { it.sessionId == state.selectedSessionId }?.agentName ?: "Agent work"
     Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to Work")
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text("Agent work", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text(
-                    latest?.status?.label() ?: "Ready",
-                    color = latest?.status?.let { statusColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-            if (state.timeline.isNotEmpty()) {
-                IconButton(onClick = onShare) {
-                    Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
+        Surface(color = MaterialTheme.colorScheme.background, shadowElevation = 1.dp) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back to Work")
                 }
-            }
-            if (latest?.status in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT)) {
-                IconButton(onClick = onCancel) {
-                    Icon(Icons.Rounded.Close, contentDescription = "Request cancellation")
+                Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Text(agentName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "${latest?.status?.label() ?: "Ready"} · server work continues",
+                        color = latest?.status?.let { statusColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                if (state.timeline.isNotEmpty()) {
+                    IconButton(onClick = onShare) {
+                        Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
+                    }
+                }
+                if (latest?.status in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT)) {
+                    IconButton(onClick = onCancel) {
+                        Icon(Icons.Rounded.Close, contentDescription = "Request cancellation")
+                    }
                 }
             }
         }
@@ -88,23 +101,14 @@ internal fun ConversationScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                ) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Rounded.VerifiedUser,
-                            contentDescription = null,
-                            tint = GariveMint,
-                        )
-                        Text(
-                            "Durable server history · safe public activity",
-                            modifier = Modifier.padding(start = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.VerifiedUser, contentDescription = null, tint = GariveMint)
+                    Text(
+                        "Committed history · safe public activity",
+                        modifier = Modifier.padding(start = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             items(state.timeline, key = { it.turnId }) { TurnCard(it) }
@@ -179,29 +183,36 @@ internal fun conversationTranscript(state: MobileWorkState): String = state.time
 
 @Composable
 private fun TurnCard(turn: MobileTurnItem) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    var activityExpanded by remember(turn.turnId) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Surface(
                 shape = RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp),
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.surfaceVariant,
                 modifier = Modifier.sizeIn(maxWidth = 340.dp),
             ) {
                 Text(
                     turn.userText,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
         }
         if (!turn.responseText.isNullOrBlank()) {
-            Surface(
-                shape = RoundedCornerShape(5.dp, 20.dp, 20.dp, 20.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
-                modifier = Modifier.sizeIn(maxWidth = 560.dp),
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ) {
+                    Icon(
+                        Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(turn.responseText.orEmpty(), style = MaterialTheme.typography.bodyLarge)
                     if (turn.contentTruncated) {
                         Text(
@@ -210,16 +221,46 @@ private fun TurnCard(turn: MobileTurnItem) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            turn.status.label(),
+                            color = statusColor(turn.status),
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "Committed",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
         if (turn.activities.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                turn.activities.take(3).forEach { activity ->
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("${activity.label} · ${activity.state.replace('_', ' ')}") },
+            Column(Modifier.padding(start = 44.dp)) {
+                TextButton(onClick = { activityExpanded = !activityExpanded }) {
+                    Icon(
+                        if (activityExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null,
                     )
+                    Text("Activity · ${turn.activities.size}", modifier = Modifier.padding(start = 4.dp))
+                }
+                if (activityExpanded) {
+                    turn.activities.forEach { activity ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(activity.label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                activity.state.replace('_', ' '),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -241,33 +282,57 @@ private fun MessageComposer(
     busy: Boolean,
     enabled: Boolean,
 ) {
-    Surface(shadowElevation = 10.dp, color = MaterialTheme.colorScheme.background) {
-        Row(
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(12.dp),
-            verticalAlignment = Alignment.Bottom,
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraft,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text(if (enabled) "Give the Agent direction" else "Agent is still working") },
-                enabled = enabled && !busy,
-                minLines = 1,
-                maxLines = 5,
-                shape = RoundedCornerShape(18.dp),
-            )
-            FilledIconButton(
-                onClick = onSend,
-                enabled = enabled && !busy && draft.isNotBlank() &&
-                    draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
-                modifier = Modifier.padding(start = 8.dp),
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
+                shadowElevation = 7.dp,
             ) {
-                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send to Agent")
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = onDraft,
+                        modifier = Modifier.weight(1f),
+                        placeholder = {
+                            Text(if (enabled) "Give the Agent direction" else "Waiting for committed state")
+                        },
+                        enabled = enabled && !busy,
+                        minLines = 1,
+                        maxLines = 5,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledBorderColor = Color.Transparent,
+                        ),
+                    )
+                    FilledIconButton(
+                        onClick = onSend,
+                        enabled = enabled && !busy && draft.isNotBlank() &&
+                            draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send to Agent")
+                    }
+                }
             }
+            Text(
+                "Draft clears only after the server commits",
+                modifier = Modifier.padding(horizontal = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }
@@ -285,7 +350,9 @@ private fun DecisionComposer(
     enabled: Boolean,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f)),
         shadowElevation = 12.dp,
     ) {
         Column(
@@ -295,7 +362,12 @@ private fun DecisionComposer(
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 prompt.ifBlank { "Review the public request before continuing this exact suspended Turn." },
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "This Turn only · one response · committed history stays",
+                color = MaterialTheme.colorScheme.tertiary,
+                style = MaterialTheme.typography.labelMedium,
             )
             if (!approval) {
                 OutlinedTextField(
