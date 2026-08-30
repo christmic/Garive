@@ -1,6 +1,6 @@
 use crate::{
     application::{AppAction, AppModel, ExecutionState, FocusTarget, Overlay},
-    input::{command_matches, parse_command, CommandParse, COMMAND_PALETTE},
+    input::{parse_command, CommandParse, COMMAND_PALETTE},
 };
 
 use super::{actions::execute_command, RuntimeState};
@@ -157,23 +157,11 @@ pub(super) fn open_prompt_history(state: &mut RuntimeState) {
 }
 
 pub(super) fn matching_commands(state: &RuntimeState) -> Vec<usize> {
-    COMMAND_PALETTE
-        .iter()
-        .enumerate()
-        .filter(|(_, (name, help))| command_matches(name, help, &state.model.command_filter))
-        .map(|(index, _)| index)
-        .collect()
+    state.model.matching_command_indices()
 }
 
 pub(super) fn matching_history(state: &RuntimeState) -> Vec<String> {
-    let filter = state.model.history_filter.to_lowercase();
-    state
-        .model
-        .prompt_history
-        .iter()
-        .filter(|text| filter.is_empty() || text.to_lowercase().contains(&filter))
-        .cloned()
-        .collect()
+    state.model.matching_history().cloned().collect()
 }
 
 fn command_disabled_reason(name: &str, state: &RuntimeState) -> Option<&'static str> {

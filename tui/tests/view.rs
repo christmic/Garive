@@ -169,6 +169,25 @@ fn searchable_overlays_show_only_matching_rows() {
 }
 
 #[test]
+fn compact_list_overlays_keep_their_selection_visible() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::CommandPalette),
+        command_selection: 11,
+        ..Default::default()
+    };
+    let palette = frame(&model, 100, 12);
+    assert!(palette.contains("› /quit"));
+    assert!(!palette.contains("/new"));
+
+    model.overlay = Some(Overlay::PromptHistory);
+    model.prompt_history = (0..20).map(|index| format!("prompt {index:02}")).collect();
+    model.history_selection = 19;
+    let history = frame(&model, 100, 12);
+    assert!(history.contains("› prompt 19"));
+    assert!(!history.contains("prompt 00"));
+}
+
+#[test]
 fn session_picker_filter_and_selection_share_one_visible_result_set() {
     let mut model = AppModel {
         overlay: Some(Overlay::SessionPicker),
