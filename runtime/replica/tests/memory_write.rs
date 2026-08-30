@@ -6,11 +6,12 @@ use garive_ledger::{
 };
 use garive_memory::{
     parse_memory_document, prepare_memory_import, ContentBinding, DurableFactReference,
-    HypothesisState, MemoryAuthority, MemoryAuthorityBinding, MemoryAuthorizedScope, MemoryCommit,
-    MemoryControlDocument, MemoryDocumentLimits, MemoryErrorCode, MemoryIdentityAllocation,
-    MemoryKind, MemoryProposal, MemoryPurpose, MemoryQuery, MemoryRevisionClassification,
-    MemoryRevisionScope, MemoryScope, MemoryScopeClass, MemorySensitivity, MemoryState,
-    MemoryStatus, MemoryTombstone, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
+    ErasureTargetKind, HypothesisState, MemoryAuthority, MemoryAuthorityBinding,
+    MemoryAuthorizedScope, MemoryCommit, MemoryControlDocument, MemoryDocumentLimits,
+    MemoryErasureTarget, MemoryErrorCode, MemoryIdentityAllocation, MemoryKind, MemoryProposal,
+    MemoryPurpose, MemoryQuery, MemoryRevisionClassification, MemoryRevisionScope, MemoryScope,
+    MemoryScopeClass, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
+    MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use garive_runtime::{
     authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
@@ -18,10 +19,10 @@ use garive_runtime::{
     reconstruct_memory_repository, reconstruct_memory_repository_projection,
     reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryControlAction,
     MemoryControlGrant, MemoryControlRuntimeError, MemoryImportCommand, MemoryPrefix,
-    MemoryRepositoryCommitError, MemoryRepositoryError, MemoryRepositoryImportContext,
-    MemoryRepositoryImportPolicy, MemoryRepositoryStatus, MemoryTombstoneContext,
-    MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection,
-    RuntimeCommandError, SqliteLedger, SqliteLedgerError,
+    MemoryRepositoryCommitError, MemoryRepositoryErasurePolicy, MemoryRepositoryError,
+    MemoryRepositoryImportContext, MemoryRepositoryImportPolicy, MemoryRepositoryStatus,
+    MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision,
+    MemoryWriteRejection, RuntimeCommandError, SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -291,7 +292,7 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         2,
         6,
         vec![MemoryPrefix {
-            session_id: session,
+            session_id: session.clone(),
             through_position: 6,
         }],
         "2026-08-29T00:00:02Z",
@@ -431,6 +432,162 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         )
         .unwrap();
     assert_eq!(replay, receipt);
+    let mut cool = draft("m2-cool", "memory.lifecycle_transitioned", None, None);
+    cool.payload = CanonicalPayload::from_value(&json!({
+        "transition_id": "m2-cool", "namespace_id": "namespace",
+        "record_id": "record", "revision_id": "revision-2",
+        "from_state": "active", "to_state": "cold",
+        "verified": 0, "falsified": 0, "neutral": 0,
+        "last_observed_position": 14, "cause_kind": "maintenance",
+        "cause_id": "m2-cool-policy"
+    }))
+    .unwrap();
+    ledger
+        .commit_memory_lifecycle_transition(
+            session.clone(),
+            3,
+            vec![cool],
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    let current_projection = ledger
+        .read_memory_repository_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    let current = current_projection
+        .documents
+        .iter()
+        .map(|document| garive_memory::MemoryCurrentEntry {
+            record_id: document.record_ref().record_id().unwrap().into(),
+            revision_id: document.record_ref().revision_id().unwrap().into(),
+            authority: document.authority(),
+            memory_type: document.memory_type(),
+            memory_role: document.memory_role(),
+            scope: document.scope(),
+            scope_owner_id: document.scope_owner_id().into(),
+            lifecycle: document.lifecycle(),
+            sensitivity: document.sensitivity(),
+            content_digest: document.content_digest(),
+        })
+        .collect::<Vec<_>>();
+    let archive = MemoryControlDocument::from_repository_record(
+        "record",
+        "revision-2",
+        MemoryAuthority::UserDeclared,
+        MemoryType::Semantic,
+        MemoryKind::Preference,
+        MemoryScopeClass::Session,
+        "session",
+        HypothesisState::Archived,
+        MemorySensitivity::Ordinary,
+        "user value",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    let erase = parse_memory_document(
+        b"---\nschema_version: 1\nrecord_ref: existing.cmVjb3JkLXo.cmV2aXNpb24teg\nauthority: user_declared\nmemory_type: semantic\nmemory_role: preference\nscope: session\nscope_owner_b64: c2Vzc2lvbg\nlifecycle: active\nsensitivity: ordinary\nerase: true\n---\nnew user value\n",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    let plan = prepare_memory_import(
+        "export-control",
+        "namespace",
+        3,
+        &"e".repeat(64),
+        3,
+        &[archive.clone(), erase.clone()],
+        &current,
+        &[MemoryAuthorizedScope {
+            scope: MemoryScopeClass::Session,
+            owner_id: "session".into(),
+        }],
+        &[],
+    )
+    .unwrap();
+    let command2 = MemoryImportCommand::new(
+        "control-command",
+        "control-receipt",
+        "control-event",
+        plan,
+        vec![archive, erase],
+        128,
+    )
+    .unwrap();
+    let erasure = MemoryRepositoryErasurePolicy::new(
+        "erase-policy-v1",
+        vec![MemoryErasureTarget::new("primary", ErasureTargetKind::PrimaryStore).unwrap()],
+    )
+    .unwrap();
+    let context2 = MemoryRepositoryImportContext::new(
+        session.clone(),
+        TurnId::try_from("turn").unwrap(),
+        ExecutionId::try_from("execution").unwrap(),
+        4,
+        14,
+        vec![MemoryPrefix {
+            session_id: session.clone(),
+            through_position: 14,
+        }],
+        "2026-08-29T00:00:03Z",
+        context.authorization_fact.clone(),
+        "f".repeat(64),
+        MemoryRepositoryImportPolicy::new(
+            "d".repeat(64),
+            "classification-v1",
+            10_000,
+            None,
+            Some(erasure),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let planned2 = plan_memory_repository_import(
+        &ledger,
+        &context2,
+        &command2,
+        &grant,
+        &classification_registry(),
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        planned2
+            .facts
+            .iter()
+            .map(|fact| fact.kind.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "memory.lifecycle_transitioned",
+            "memory.tombstoned",
+            "memory.erasure_requested"
+        ]
+    );
+    assert_eq!(planned2.erasure_requests.len(), 1);
+    let receipt2 = ledger
+        .commit_memory_repository_import(&context2, &grant, &command2, planned2)
+        .unwrap();
+    assert_eq!(
+        (
+            receipt2.previous_repository_revision,
+            receipt2.committed_repository_revision
+        ),
+        (3, 4)
+    );
+    let final_projection = ledger
+        .read_memory_repository_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(final_projection.documents.len(), 1);
+    assert_eq!(
+        final_projection.documents[0].lifecycle(),
+        HypothesisState::Archived
+    );
     drop(ledger);
     let reopened = SqliteLedger::open(directory.path().join("import-plan.sqlite3")).unwrap();
     let restarted = reopened
@@ -440,19 +597,19 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
             MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
         )
         .unwrap();
-    assert_eq!(restarted, projection);
+    assert_eq!(restarted, final_projection);
     assert_eq!(
         reconstruct_memory_repository_projection(
             &reopened,
             &[MemoryPrefix {
                 session_id: SessionId::try_from("session").unwrap(),
-                through_position: 13,
+                through_position: 17,
             }],
             "namespace",
             MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
         )
         .unwrap(),
-        projection,
+        final_projection,
     );
 }
 
