@@ -68,8 +68,7 @@ export interface HostActivity {
 
 export interface HostSuspension {
   readonly suspension_id: string; readonly session_version: number;
-  readonly kind: "approval_required" | "external_input_required" | "operator_reconciliation"
-    | "resource_unavailable" | "partial_output" | "delegation_pending";
+  readonly kind: string;
   readonly prompt_schema?: string; readonly prompt_json?: readonly number[];
   readonly prompt_digest?: string; readonly response_schema_json?: readonly number[];
   readonly response_schema_digest?: string;
@@ -177,7 +176,7 @@ function activity(value: Record<string, unknown>): HostActivity {
 }
 function suspension(value: Record<string, unknown>): HostSuspension {
   return { suspension_id: text(value.suspension_id), session_version: position(value.session_version),
-    kind: suspensionKind(value.kind), prompt_schema: text(value.prompt_schema),
+    kind: text(value.kind), prompt_schema: text(value.prompt_schema),
     prompt_json: bytes(value.prompt_json), prompt_digest: text(value.prompt_digest),
     response_schema_json: value.response_schema_json === undefined ? undefined : bytes(value.response_schema_json),
     response_schema_digest: optionalText(value.response_schema_digest) };
@@ -218,13 +217,6 @@ function turnState(value: unknown): NonNullable<HostSessionSummary["latest_turn_
 function optionalTurnState(value: unknown): HostSessionSummary["latest_turn_state"] {
   return value === undefined ? undefined : turnState(value);
 }
-function suspensionKind(value: unknown): HostSuspension["kind"] {
-  const parsed = text(value);
-  if (!["approval_required", "external_input_required", "operator_reconciliation", "resource_unavailable",
-    "partial_output", "delegation_pending"].includes(parsed)) throw new Error("invalid_host_value");
-  return parsed as HostSuspension["kind"];
-}
-
 export interface SetupProfile {
   readonly profile_id: string; readonly display_name_key: string;
   readonly endpoint_mode: "fixed" | "optional_override";

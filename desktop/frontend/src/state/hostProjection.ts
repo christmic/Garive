@@ -77,19 +77,22 @@ function mapActivity(value: HostActivity, turnId?: string): ActivityItem {
 }
 
 function mapSuspension(value: HostSuspension): SuspensionItem {
-  required(value.suspension_id); required(value.kind); required(value.prompt_schema); required(value.prompt_digest);
-  if (value.session_version <= 0 || value.prompt_schema !== "garive.public-suspension-prompt.v1" ||
-      !HEX.test(value.prompt_digest) || (value.response_schema_json === undefined) !==
+  required(value.suspension_id); required(value.kind);
+  const promptSchema = value.prompt_schema; const promptJson = value.prompt_json;
+  const promptDigest = value.prompt_digest;
+  if (promptSchema === undefined || promptJson === undefined || promptDigest === undefined ||
+      value.session_version <= 0 || promptSchema !== "garive.public-suspension-prompt.v1" ||
+      !HEX.test(promptDigest) || (value.response_schema_json === undefined) !==
       (value.response_schema_digest === undefined) ||
       (value.response_schema_digest !== undefined && !HEX.test(value.response_schema_digest))) invalid();
   let prompt: Record<string, unknown>;
-  try { prompt = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(value.prompt_json)))); }
+  try { prompt = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(promptJson)))); }
   catch { invalid(); }
   if (Object.keys(prompt).some((key) => !PROMPT_KEYS.has(key)) || prompt.schema_version !== 1) invalid();
   return { suspensionId: value.suspension_id, sessionVersion: value.session_version, kind: value.kind,
     titleKey: promptText(prompt.title_key), messageText: optionalPromptText(prompt.message_text),
     actionLabelKey: promptText(prompt.action_label_key), cancelLabelKey: optionalPromptText(prompt.cancel_label_key),
-    promptDigest: value.prompt_digest, responseSchemaDigest: value.response_schema_digest };
+    promptDigest, responseSchemaDigest: value.response_schema_digest };
 }
 
 function version(value: string): void { if (value !== "v1") invalid(); }
