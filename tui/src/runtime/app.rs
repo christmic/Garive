@@ -86,11 +86,13 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         config,
         client,
         sender,
-        store,
-        preferences,
-        pending,
-        history,
-        history_error,
+        RestoredState {
+            store,
+            preferences,
+            pending,
+            history,
+            history_error,
+        },
     );
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
@@ -142,11 +144,13 @@ async fn run_screen_reader(
         config,
         client,
         sender,
-        store,
-        preferences,
-        pending,
-        history,
-        history_error,
+        RestoredState {
+            store,
+            preferences,
+            pending,
+            history,
+            history_error,
+        },
     );
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
@@ -262,32 +266,37 @@ pub(super) struct RuntimeState {
     pub(super) ephemeral_confirmed: bool,
 }
 
+struct RestoredState {
+    store: StateStore,
+    preferences: Preferences,
+    pending: Option<PendingCommand>,
+    history: Vec<PromptHistoryEntry>,
+    history_error: bool,
+}
+
 impl RuntimeState {
     fn new(
         config: LaunchConfig,
         client: LiveHostClient,
         sender: mpsc::Sender<HostMessage>,
-        store: StateStore,
-        preferences: Preferences,
-        pending: Option<PendingCommand>,
-        history: Vec<PromptHistoryEntry>,
-        history_error: bool,
+        restored: RestoredState,
     ) -> Self {
         let mut model = AppModel::default();
         reduce(&mut model, AppAction::BootStarted);
-        model.prompt_history = history
+        model.prompt_history = restored
+            .history
             .into_iter()
             .rev()
             .map(|entry| entry.submitted_text)
             .collect();
-        if history_error {
+        if restored.history_error {
             model.notice = Some("Corrupt prompt history was quarantined.".into());
         }
-        if pending.is_some() {
+        if restored.pending.is_some() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             model.overlay = Some(Overlay::UnknownCommand);
         }
-        model.has_pending_command = pending.is_some();
+        model.has_pending_command = restored.pending.is_some();
         Self {
             config,
             client,
@@ -296,9 +305,9 @@ impl RuntimeState {
             follow: None,
             reconnect: None,
             reconnect_attempt: 0,
-            store,
-            preferences,
-            pending,
+            store: restored.store,
+            preferences: restored.preferences,
+            pending: restored.pending,
             ephemeral_confirmed: false,
         }
     }

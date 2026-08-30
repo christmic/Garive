@@ -321,14 +321,16 @@ fn submit(state: &mut RuntimeState) {
             ) {
                 return;
             }
-            host::continue_turn_json(
+            host::continue_turn(
                 state.client.clone(),
-                id,
-                session,
-                turn,
-                suspension.suspension_id,
-                suspension.session_version,
-                input_json,
+                host::ContinuationRequest {
+                    command_id: id,
+                    session_id: session,
+                    turn_id: turn,
+                    suspension_id: suspension.suspension_id,
+                    expected_session_version: suspension.session_version,
+                    input: host::ContinuationInput::Json(input_json),
+                },
                 state.sender.clone(),
             );
         } else {
@@ -347,12 +349,14 @@ fn submit(state: &mut RuntimeState) {
             }
             host::continue_turn(
                 state.client.clone(),
-                id,
-                session,
-                turn,
-                suspension.suspension_id,
-                suspension.session_version,
-                text,
+                host::ContinuationRequest {
+                    command_id: id,
+                    session_id: session,
+                    turn_id: turn,
+                    suspension_id: suspension.suspension_id,
+                    expected_session_version: suspension.session_version,
+                    input: host::ContinuationInput::Text(text),
+                },
                 state.sender.clone(),
             );
         }
@@ -555,23 +559,27 @@ fn retry_continuation(state: &mut RuntimeState, pending: PendingCommand) {
     if let Some(input) = pending.request_payload.get("input").and_then(Value::as_str) {
         host::continue_turn(
             state.client.clone(),
-            pending.command_id,
-            session,
-            turn,
-            suspension,
-            version,
-            input.into(),
+            host::ContinuationRequest {
+                command_id: pending.command_id,
+                session_id: session,
+                turn_id: turn,
+                suspension_id: suspension,
+                expected_session_version: version,
+                input: host::ContinuationInput::Text(input.into()),
+            },
             state.sender.clone(),
         );
     } else if let Some(input) = pending.request_payload.get("input_json") {
-        host::continue_turn_json(
+        host::continue_turn(
             state.client.clone(),
-            pending.command_id,
-            session,
-            turn,
-            suspension,
-            version,
-            input.clone(),
+            host::ContinuationRequest {
+                command_id: pending.command_id,
+                session_id: session,
+                turn_id: turn,
+                suspension_id: suspension,
+                expected_session_version: version,
+                input: host::ContinuationInput::Json(input.clone()),
+            },
             state.sender.clone(),
         );
     }

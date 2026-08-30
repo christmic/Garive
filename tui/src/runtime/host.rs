@@ -7,6 +7,20 @@ use tokio::{sync::mpsc, task::JoinHandle};
 
 pub(crate) const PAGE_LIMIT: usize = 100;
 
+pub(crate) struct ContinuationRequest {
+    pub(crate) command_id: String,
+    pub(crate) session_id: String,
+    pub(crate) turn_id: String,
+    pub(crate) suspension_id: String,
+    pub(crate) expected_session_version: u64,
+    pub(crate) input: ContinuationInput,
+}
+
+pub(crate) enum ContinuationInput {
+    Text(String),
+    Json(Value),
+}
+
 #[derive(Debug)]
 pub(crate) enum HostMessage {
     Bootstrapped {
@@ -121,62 +135,44 @@ pub(crate) fn cancel_turn(
 
 pub(crate) fn continue_turn(
     client: LiveHostClient,
-    command_id: String,
-    session_id: String,
-    turn_id: String,
-    suspension_id: String,
-    expected_session_version: u64,
-    input: String,
+    request: ContinuationRequest,
     sender: mpsc::Sender<HostMessage>,
 ) {
     tokio::spawn(async move {
-        let message = match client
-            .continue_turn(
-                &command_id,
-                &session_id,
-                &turn_id,
-                &suspension_id,
-                expected_session_version,
-                &input,
-            )
-            .await
-        {
-            Ok(response) => HostMessage::TurnAccepted {
-                session_id,
-                submitted_text: input,
-                response,
-            },
-            Err(error) => HostMessage::Failed(error),
+        let result = match &request.input {
+            ContinuationInput::Text(input) => {
+                client
+                    .continue_turn(
+                        &request.command_id,
+                        &request.session_id,
+                        &request.turn_id,
+                        &request.suspension_id,
+                        request.expected_session_version,
+                        input,
+                    )
+                    .await
+            }
+            ContinuationInput::Json(input) => {
+                client
+                    .continue_turn_json(
+                        &request.command_id,
+                        &request.session_id,
+                        &request.turn_id,
+                        &request.suspension_id,
+                        request.expected_session_version,
+                        input,
+                    )
+                    .await
+            }
         };
-        let _ = sender.send(message).await;
-    });
-}
-
-pub(crate) fn continue_turn_json(
-    client: LiveHostClient,
-    command_id: String,
-    session_id: String,
-    turn_id: String,
-    suspension_id: String,
-    expected_session_version: u64,
-    input_json: Value,
-    sender: mpsc::Sender<HostMessage>,
-) {
-    tokio::spawn(async move {
-        let message = match client
-            .continue_turn_json(
-                &command_id,
-                &session_id,
-                &turn_id,
-                &suspension_id,
-                expected_session_version,
-                &input_json,
-            )
-            .await
-        {
+        let submitted_text = match request.input {
+            ContinuationInput::Text(value) => value,
+            ContinuationInput::Json(value) => value.to_string(),
+        };
+        let message = match result {
             Ok(response) => HostMessage::TurnAccepted {
-                session_id,
-                submitted_text: input_json.to_string(),
+                session_id: request.session_id,
+                submitted_text,
                 response,
             },
             Err(error) => HostMessage::Failed(error),
