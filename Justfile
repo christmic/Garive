@@ -113,7 +113,8 @@ web:
 
 desktop-config-boundaries:
     @if rg -n 'std::env|System\.getenv|OPENAI_API_KEY|ANTHROPIC_API_KEY' desktop/backend/src; then echo 'Desktop configuration must not read process environment' >&2; exit 1; fi
-    @if rg -n 'credential|profile_id|endpoint|model_id|database' desktop/frontend/src; then echo 'Desktop frontend must not own backend configuration' >&2; exit 1; fi
+    @if rg -n 'credential_ref|database_(file|path)|get_(system_)?config|read_(system_)?config' desktop/frontend/src; then echo 'Desktop frontend must not read backend configuration or storage identities' >&2; exit 1; fi
+    @if rg -n 'credential|profile_id|endpoint|model_id' desktop/frontend/src --glob '!features/setup/**' --glob '!ipc/setup.ts' --glob '!ipc/setup/**'; then echo 'Desktop setup values may exist only in the C2 write-only feature and typed IPC' >&2; exit 1; fi
 
 desktop: desktop-config-boundaries
     cd desktop/frontend && pnpm install --frozen-lockfile && pnpm test && pnpm build
