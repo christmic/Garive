@@ -5,7 +5,8 @@ use std::sync::{
 
 use garive_desktop::{
     DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput, DesktopSetupService,
-    DesktopSetupState, DesktopSystemConfiguration, SetupClock, SetupCredentialStore,
+    DesktopSetupState, DesktopSystemConfiguration, NoSetupCommitFaults, SetupClock,
+    SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
     OPENAI_RESPONSES_PROFILE_ID,
 };
 
@@ -46,6 +47,30 @@ impl FixedClock {
 impl SetupClock for FixedClock {
     fn unix_seconds(&self) -> Result<i64, DesktopSetupError> {
         Ok(self.0.load(Ordering::SeqCst))
+    }
+}
+
+struct FixedIdentities;
+
+impl SetupIdentitySource for FixedIdentities {
+    fn setup_id(&self) -> Result<String, DesktopSetupError> {
+        Ok("setup-fixture".into())
+    }
+
+    fn credential_ref(&self) -> Result<String, DesktopSetupError> {
+        Ok("credential-fixture".into())
+    }
+}
+
+struct FailAfter(SetupCommitStage);
+
+impl SetupCommitFaults for FailAfter {
+    fn after_stage(&self, stage: SetupCommitStage) -> Result<(), DesktopSetupError> {
+        if stage == self.0 {
+            Err(DesktopSetupError::PersistenceFailed)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -110,6 +135,91 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
             restart_required: true
         }
     );
+}
+
+#[test]
+fn injected_clock_and_identities_freeze_public_plan() {
+    let directory = tempfile::tempdir().unwrap();
+    let service = DesktopSetupService::with_dependencies(
+        directory.path().to_owned(),
+        RecordingCredentials::default(),
+        FixedClock::at(1_800_000_000),
+        Arc::new(FixedIdentities),
+        Arc::new(NoSetupCommitFaults),
+    );
+    let plan = service.prepare(input("fixture")).unwrap();
+    assert_eq!(plan.setup_id, "setup-fixture");
+    assert_eq!(plan.expires_at, "2027-01-15T08:15:00Z");
+}
+
+#[test]
+fn every_staged_commit_crash_recovers_to_old_or_new_configuration() {
+    for stage in [
+        SetupCommitStage::Planned,
+        SetupCommitStage::CredentialStored,
+        SetupCommitStage::ConfigCommitted,
+        SetupCommitStage::ReceiptCommitted,
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let credentials = RecordingCredentials::default();
+        let service = DesktopSetupService::with_dependencies(
+            directory.path().to_owned(),
+            credentials.clone(),
+            FixedClock::at(1_800_000_000),
+            Arc::new(FixedIdentities),
+            Arc::new(FailAfter(stage)),
+        );
+        let plan = service.prepare(input("crash")).unwrap();
+        assert_eq!(
+            service.commit(&plan.plan_digest, "secret").unwrap_err(),
+            DesktopSetupError::PersistenceFailed
+        );
+        let recovery = DesktopSetupService::new(directory.path().to_owned(), credentials);
+        recovery.recover(false).unwrap();
+        let committed = matches!(
+            stage,
+            SetupCommitStage::ConfigCommitted | SetupCommitStage::ReceiptCommitted
+        );
+        assert_eq!(directory.path().join("desktop-v1.json").exists(), committed);
+        assert_eq!(
+            directory.path().join("desktop-setup-receipt.json").exists(),
+            committed
+        );
+        recovery.recover(committed).unwrap();
+        assert!(!directory
+            .path()
+            .join("desktop-setup-recovery.json")
+            .exists());
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let credentials = RecordingCredentials::default();
+    let baseline = DesktopSetupService::new(directory.path().to_owned(), credentials.clone());
+    let first = baseline.prepare(input("first-stage")).unwrap();
+    baseline.commit(&first.plan_digest, "old-secret").unwrap();
+    let rotating = DesktopSetupService::with_dependencies(
+        directory.path().to_owned(),
+        credentials.clone(),
+        FixedClock::at(1_800_000_000),
+        Arc::new(FixedIdentities),
+        Arc::new(FailAfter(SetupCommitStage::CleanupPending)),
+    );
+    let second = rotating.prepare(input("cleanup-stage")).unwrap();
+    assert_eq!(
+        rotating
+            .commit(&second.plan_digest, "new-secret")
+            .unwrap_err(),
+        DesktopSetupError::PersistenceFailed
+    );
+    let recovery = DesktopSetupService::new(directory.path().to_owned(), credentials.clone());
+    recovery.recover(false).unwrap();
+    recovery.recover(true).unwrap();
+    assert!(credentials
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(_, value)| value == "<deleted>"));
 }
 
 #[test]

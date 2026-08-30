@@ -249,6 +249,59 @@ pub trait SetupClock: Send + Sync {
     fn unix_seconds(&self) -> Result<i64, DesktopSetupError>;
 }
 
+/// Backend-owned source for opaque setup and credential-reference identities.
+pub trait SetupIdentitySource: Send + Sync {
+    /// Returns one fresh opaque public setup identity.
+    fn setup_id(&self) -> Result<String, DesktopSetupError>;
+    /// Returns one fresh opaque private credential reference.
+    fn credential_ref(&self) -> Result<String, DesktopSetupError>;
+}
+
+/// Shipping setup identity source backed by cryptographically random UUIDs.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemSetupIdentitySource;
+
+impl SetupIdentitySource for SystemSetupIdentitySource {
+    fn setup_id(&self) -> Result<String, DesktopSetupError> {
+        Ok(format!("setup-{}", Uuid::new_v4()))
+    }
+
+    fn credential_ref(&self) -> Result<String, DesktopSetupError> {
+        Ok(format!("credential-{}", Uuid::new_v4()))
+    }
+}
+
+/// Durable setup commit stages available to deterministic fault injection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SetupCommitStage {
+    /// Recovery journal committed before credential storage.
+    Planned,
+    /// New credential stored and journal advanced.
+    CredentialStored,
+    /// Strict v2 configuration atomically committed.
+    ConfigCommitted,
+    /// Non-secret receipt committed and journal advanced.
+    ReceiptCommitted,
+    /// Obsolete credential cleanup remains after Runtime restart.
+    CleanupPending,
+}
+
+/// Injected fault boundary used to prove every staged commit recovery outcome.
+pub trait SetupCommitFaults: Send + Sync {
+    /// Returns an injected failure immediately after one durable stage.
+    fn after_stage(&self, stage: SetupCommitStage) -> Result<(), DesktopSetupError>;
+}
+
+/// Shipping no-op setup fault boundary.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoSetupCommitFaults;
+
+impl SetupCommitFaults for NoSetupCommitFaults {
+    fn after_stage(&self, _stage: SetupCommitStage) -> Result<(), DesktopSetupError> {
+        Ok(())
+    }
+}
+
 /// Shipping setup clock backed by the operating system wall clock.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemSetupClock;
@@ -337,6 +390,8 @@ pub struct DesktopSetupService<S> {
     directory: PathBuf,
     credentials: S,
     clock: Arc<dyn SetupClock>,
+    identities: Arc<dyn SetupIdentitySource>,
+    faults: Arc<dyn SetupCommitFaults>,
     plans: Mutex<PreparedPlans>,
     state: Mutex<DesktopSetupState>,
 }
@@ -349,10 +404,29 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
 
     /// Constructs setup with an explicit clock for deterministic expiry checks.
     pub fn with_clock(directory: PathBuf, credentials: S, clock: Arc<dyn SetupClock>) -> Self {
+        Self::with_dependencies(
+            directory,
+            credentials,
+            clock,
+            Arc::new(SystemSetupIdentitySource),
+            Arc::new(NoSetupCommitFaults),
+        )
+    }
+
+    /// Constructs setup with every nondeterministic and crash boundary injected.
+    pub fn with_dependencies(
+        directory: PathBuf,
+        credentials: S,
+        clock: Arc<dyn SetupClock>,
+        identities: Arc<dyn SetupIdentitySource>,
+        faults: Arc<dyn SetupCommitFaults>,
+    ) -> Self {
         Self {
             directory,
             credentials,
             clock,
+            identities,
+            faults,
             plans: Mutex::new(PreparedPlans::default()),
             state: Mutex::new(DesktopSetupState::SetupRecovering),
         }
@@ -466,8 +540,8 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         if plans.by_digest.len() >= MAX_PREPARED_PLANS {
             return Err(DesktopSetupError::InputInvalid);
         }
-        let setup_id = format!("setup-{}", Uuid::new_v4());
-        let credential_ref = format!("credential-{}", Uuid::new_v4());
+        let setup_id = self.identities.setup_id()?;
+        let credential_ref = self.identities.credential_ref()?;
         let (expected_configuration_revision, expected_configuration_digest) =
             current_configuration_binding(&self.directory)?;
         let revision = expected_configuration_revision
@@ -581,10 +655,13 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             stage: RecoveryStage::Planned,
         };
         write_journal(&self.directory, &journal)?;
+        self.faults.after_stage(SetupCommitStage::Planned)?;
         self.credentials
             .store(&prepared.credential_ref, credential)?;
         journal.stage = RecoveryStage::CredentialStored;
         write_journal(&self.directory, &journal)?;
+        self.faults
+            .after_stage(SetupCommitStage::CredentialStored)?;
         let bytes = serde_json::to_vec_pretty(&prepared.configuration)
             .map_err(|_| DesktopSetupError::PersistenceFailed)?;
         atomic_write(
@@ -595,6 +672,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         )?;
         journal.stage = RecoveryStage::ConfigCommitted;
         write_journal(&self.directory, &journal)?;
+        self.faults.after_stage(SetupCommitStage::ConfigCommitted)?;
         let receipt = receipt(&journal)?;
         let receipt_bytes = serde_json::to_vec_pretty(&receipt)
             .map_err(|_| DesktopSetupError::PersistenceFailed)?;
@@ -606,12 +684,15 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         )?;
         journal.stage = RecoveryStage::ReceiptCommitted;
         write_journal(&self.directory, &journal)?;
+        self.faults
+            .after_stage(SetupCommitStage::ReceiptCommitted)?;
         let nonce = prepared.public.caller_nonce.clone();
         plans.by_digest.remove(plan_digest);
         plans.by_nonce.remove(&nonce);
         if journal.old_credential_ref.is_some() {
             journal.stage = RecoveryStage::CleanupPending;
             write_journal(&self.directory, &journal)?;
+            self.faults.after_stage(SetupCommitStage::CleanupPending)?;
         } else {
             remove_recovery(&self.directory)?;
         }
