@@ -45,8 +45,9 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
 
 The gate includes the connected product shell itself: Work boot, drawer
 navigation, Sessions, the native new-task sheet, goal starters, and enabled
-server submission are exercised together in addition to focused component and
-secure-storage tests.
+server submission are exercised together. The journey commits fake-Host
+create/start responses, reloads the durable timeline, and verifies the opened
+working Conversation in addition to focused component and secure-storage tests.
 The full-shell journey also selects Light and Dark through the same Settings
 segmented control used by the shipping activity.
 An active-app `garive://pair` journey verifies singleTop delivery, exact query

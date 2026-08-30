@@ -31,6 +31,9 @@ final class GariveIOSUITests: XCTestCase {
         XCTAssertTrue(starterButton("Create", in: app).exists)
         synthesize.tap()
         XCTAssertTrue(app.buttons["Start on server"].isEnabled)
+        app.buttons["Start on server"].tap()
+        XCTAssertTrue(app.navigationBars["Mobile Orchestrator"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Turn notes into a clear decision memo"].exists)
     }
 
     @MainActor

@@ -55,7 +55,8 @@ xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
 The four UI tests require `go run ./cmd/garive-mobile-demo-host` from
 `runtime/gateway/` for the three connected journeys. They exercise secure
 pairing fields, the Remote drawer, Sessions, new-task starters and enabled
-server submit control, collapsed Activity, approve/decline and cancellation
+server submit control plus an actual loopback create/start and opened working
+Conversation, collapsed Activity, approve/decline and cancellation
 confirmation, safe diagnostics, notification entry, and confirmed unpair.
 The Settings journey additionally selects Light, Dark, and System and verifies
 the native segmented-control state after every change.
