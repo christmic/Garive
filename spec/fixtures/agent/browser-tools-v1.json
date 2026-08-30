@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "policy_revision": "browser-policy-1",
+  "pages": [{"session_id":"session-1","page_id":"page-1"}],
+  "origins": ["https://example.com:443","https://next.example:443"],
+  "valid_cases": [
+    {
+      "tool_name": "garive.browser.observe",
+      "arguments": {"session_id":"session-1","page_id":"page-1","max_nodes":100,"max_text_bytes":4096},
+      "prepared_digest": "4ca8770e71974ec65be348187129696d68bd024a06898a7fe68d337f3df4393b",
+      "accesses": [{"namespace":"runtime","resource_key":"browser:session-1:page-1","mode":"read"}]
+    },
+    {
+      "tool_name": "garive.browser.navigate",
+      "arguments": {"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","destination_url":"https://example.com:443/path","destination_origin":"https://example.com:443","wait_until":"load","timeout_ms":1000,"max_nodes":100,"max_text_bytes":4096},
+      "prepared_digest": "e194ef61aa7ec90d9d7083a3c07b7c0d2e043bb4cc56a92df7f90e60e6ee8cc1",
+      "accesses": [
+        {"namespace":"network","resource_key":"https://example.com:443","mode":"write"},
+        {"namespace":"runtime","resource_key":"browser:session-1:page-1","mode":"write"}
+      ]
+    },
+    {
+      "tool_name": "garive.browser.act",
+      "arguments": {"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"click","node_ref":"node-7","allowed_navigation_origins":["https://next.example:443"]},
+      "prepared_digest": "6a0313daf7f0372881ace29a3a078cf6b66fc1b5597dfd09691a41d7d2e59c9e",
+      "accesses": [
+        {"namespace":"network","resource_key":"https://next.example:443","mode":"write"},
+        {"namespace":"runtime","resource_key":"browser:session-1:page-1","mode":"write"}
+      ]
+    }
+  ],
+  "invalid_cases": [
+    {
+      "tool_name": "garive.browser.navigate",
+      "arguments": {"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","destination_url":"https://next.example:443/path","destination_origin":"https://example.com:443","wait_until":"load","timeout_ms":1000,"max_nodes":100,"max_text_bytes":4096},
+      "error": "effect_access_invalid"
+    },
+    {
+      "tool_name": "garive.browser.act",
+      "arguments": {"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"scroll","delta_x":0,"delta_y":0,"allowed_navigation_origins":[]},
+      "error": "effect_access_invalid"
+    },
+    {
+      "tool_name": "garive.browser.act",
+      "arguments": {"session_id":"session-1","page_id":"other","expected_snapshot_id":"snapshot-1","action":"reload","allowed_navigation_origins":[]},
+      "error": "effect_access_invalid"
+    },
+    {
+      "tool_name": "garive.browser.act",
+      "arguments": {"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"press_key","key":"return","allowed_navigation_origins":[]},
+      "error": "arguments_schema_mismatch"
+    }
+  ]
+}

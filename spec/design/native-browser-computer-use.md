@@ -178,6 +178,43 @@ garive.browser.navigate@1
 garive.browser.act@1
 ```
 
+All three require portable ASCII `session_id` and `page_id` values of at most
+128 characters and bind the exact Runtime resource
+`browser:{session_id}:{page_id}`. `observe` binds it `Read`; `navigate` and
+`act` bind it `Write`. The catalogue receives admitted pages, canonical
+origins and policy revision explicitly; it performs no environment, profile or
+browser discovery.
+
+`observe` requires `max_nodes <= 10,000` and
+`max_text_bytes <= 1,048,576`; optional `expected_previous_snapshot_id` makes
+incremental observation fail stale rather than silently switching history. Its
+duration ceiling is 30 seconds and exact-access ceiling is one.
+
+`navigate` requires `expected_snapshot_id`, `destination_url`, separately
+declared canonical `destination_origin`, `wait_until`, `timeout_ms`,
+`max_nodes`, and `max_text_bytes`. The pure resolver requires the URL origin to
+equal `destination_origin`; that origin is a separate `Network(origin, Write)`
+access. V1 canonical origins include an explicit port. `wait_until` is
+`dom_content_loaded | load | network_idle`; timeout is at most 120 seconds.
+
+`act` requires `expected_snapshot_id`, one action, and at most 16 explicit
+`allowed_navigation_origins`; an empty array means action-caused navigation is
+blocked. Exact action shapes are:
+
+| Action | Required detail | Forbidden fallback |
+|---|---|---|
+| `click`, `clear` | `node_ref` | coordinates |
+| `type_text` | `node_ref`, bounded `text` | clipboard |
+| `select_option` | `node_ref`, bounded `option` | free-form script |
+| `press_key` | one closed portable `key` | raw scan codes |
+| `scroll` | non-zero integer `delta_x`, `delta_y` | unbound wheel events |
+| `go_back`, `go_forward`, `reload` | no detail field | ambient tab selection |
+
+Portable keys are `enter`, `tab`, `escape`, `backspace`, `delete`, four arrow
+keys, `home`, `end`, `page_up`, `page_down`, and `space`. Unknown fields,
+mixed action shapes, duplicate origins, zero scroll, an unadmitted page, or an
+origin outside the frozen catalogue fail during preparation.
+
 `observe` is read-only. `navigate` binds an exact canonical destination origin
 and uses `NeverReplay` after dispatch unless the adapter proves no navigation
 started. `act` supports the closed set:
