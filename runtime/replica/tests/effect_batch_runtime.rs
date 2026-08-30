@@ -430,8 +430,8 @@ fn admission_facts_commit_prepared_v2_authorizations_then_exact_plan() {
         admission.facts[6].kind.as_str(),
         "execution.effect_batch_planned"
     );
-    ledger
-        .commit(session, initial.session_version, admission.facts)
+    let admitted = ledger
+        .commit(session.clone(), initial.session_version, admission.facts)
         .unwrap();
 
     let mut stale = invocations.clone();
@@ -439,6 +439,45 @@ fn admission_facts_commit_prepared_v2_authorizations_then_exact_plan() {
     assert_eq!(
         plan_effect_batch_admission(&context, &plan, &stale).unwrap_err(),
         BatchRuntimeError::InvalidBinding,
+    );
+
+    let mut publisher = SqliteEffectBatchPublisher::new(
+        &mut ledger,
+        session,
+        admitted.session_version,
+        context.clone(),
+        plan.plan_digest(),
+    )
+    .unwrap();
+    for (index, invocation) in invocations.iter().take(2).enumerate() {
+        EffectBatchPublisher::commit_started(
+            &mut publisher,
+            index,
+            invocation,
+            &PreparedExecution {
+                executor_id: "confined-read".into(),
+                executor_revision: "1".into(),
+                dispatch_attempt_id: format!("partial-{index}"),
+            },
+        )
+        .unwrap();
+    }
+    drop(publisher);
+    let recovered = reconstruct_effect_batch_recovery(
+        &ledger,
+        &context.turn_id,
+        &context.execution_id,
+        plan.plan_digest(),
+        &invocations,
+    )
+    .unwrap();
+    assert_eq!(
+        recovered.members,
+        [
+            EffectBatchMemberRecovery::NeedsReconciliation,
+            EffectBatchMemberRecovery::NeedsReconciliation,
+            EffectBatchMemberRecovery::Authorized,
+        ]
     );
 }
 
