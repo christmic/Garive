@@ -236,6 +236,10 @@ A release candidate requires:
 - a credentialed physical iOS and Android run through the authenticated Gateway
   to a disposable real Runtime, including create, reconnect, decision, cancel,
   terminal, sign-out, and revoked-device paths;
+- the repository physical-admission gate passing on the same clean revision;
+  it rejects emulators, untrusted/private Gateway origins, missing push assets,
+  unsigned or wrong-revision apps, mutable failure records, and evidence
+  containing free-form or device/service identity fields;
 - source scans proving no Engine/database/provider configuration, fixture
   transport, hard-coded identity, secret log, or cleartext remote origin ships.
 

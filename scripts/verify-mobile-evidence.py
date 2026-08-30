@@ -130,8 +130,12 @@ def verify(artifacts: bool) -> None:
 
     for path in (
         ROOT / "mobile/androidApp/app/src/main/java/com/garive/android/MainActivity.kt",
+        ROOT / "mobile/androidApp/app/src/main/AndroidManifest.xml",
+        ROOT / "mobile/iosApp/Config/Info.plist",
         ROOT / "mobile/iosApp/GariveIOS.xcodeproj/project.pbxproj",
         ROOT / "mobile/iosApp/UITests/GariveIOSUITests.swift",
+        ROOT / "scripts/mobile_physical_admission.py",
+        ROOT / "scripts/test_mobile_physical_admission.py",
         ROOT / "spec/design/mobile-remote-work-client.md",
         ROOT / "spec/design/mobile-gateway-v1.md",
     ):
@@ -141,6 +145,8 @@ def verify(artifacts: bool) -> None:
     status = (ROOT / "spec/STATUS.md").read_text()
     if "complete 44-screenshot user guide" not in status:
         raise ValueError("spec/STATUS.md does not match the checked-in mobile evidence")
+    if "physical-admission gate" not in status or "物理设备发布验收" not in text:
+        raise ValueError("mobile release admission tooling is not bound to status and manual")
 
     if artifacts:
         for path in (

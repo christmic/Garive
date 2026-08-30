@@ -35,6 +35,12 @@ java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
   app:lintRelease app:assembleRelease
 ```
 
+Local builds default the non-visual manifest revision to `development`.
+Physical release candidates must set `GARIVE_BUILD_REVISION` to the exact clean
+40-character Git revision before building and signing. The repository physical
+admission gate reads the value back from the signed APK and rejects debug keys,
+emulators, or a revision mismatch.
+
 The checked-in Gradle memory limit is also required by the optimized Release
 pipeline. With an API 36 device or emulator attached, run the native UI gate:
 

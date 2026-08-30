@@ -448,6 +448,24 @@ a suspension, cancel another Turn, observe terminal after Runtime restart,
 revoke the device, fail closed, re-pair, and sign out. Evidence records only
 build revisions, stable codes, timestamps, and pass/fail steps.
 
+The repository physical-admission command fails before evidence creation unless
+the candidate tree is clean, public DNS resolves only to public addresses, TLS
+passes the system CA/hostname check, all provider configuration is present,
+private key files exclude group/world access, both named physical devices are
+reachable, the Android APK has a verified release signature, and the iOS app
+has a valid Apple application signature plus APNs entitlement. Emulator and
+Simulator identities are rejected for this gate.
+Both signed artifacts carry a non-visual exact 40-character source revision in
+their platform metadata. Admission reads it back and requires equality with the
+current clean Git revision; an operator-provided path alone is not provenance.
+
+The evidence schema has one exact ordered step set for shared, iOS, and Android
+admission. A result contains only platform, stable step, `pass|fail`, bounded
+stable code, and UTC timestamp. It has no extension fields or free-form notes.
+Each step is single-write; a failed run requires a new evidence file from a
+clean candidate and cannot be rewritten into a pass. Final verification binds
+all pass steps to the current exact Git revision.
+
 ## Release boundary
 
 A-MOBILE-R is `done` only when client API/code/tests and the physical remote E2E

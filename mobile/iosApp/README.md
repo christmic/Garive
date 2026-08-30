@@ -52,6 +52,13 @@ xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
   CODE_SIGNING_ALLOWED=NO clean build
 ```
 
+For a signed physical-device candidate, pass
+`GARIVE_BUILD_REVISION="$(git rev-parse HEAD)"` as an `xcodebuild` build setting
+on the clean exact revision. It expands into the non-visual
+`GariveBuildRevision` Info.plist value. The physical-admission gate requires
+that value, the bundle/APNs topic, Apple signature, and APNs entitlement to
+match before it creates evidence.
+
 The nine UI tests require `go run ./cmd/garive-mobile-demo-host` from
 `runtime/gateway/` for the connected journeys. They exercise secure
 pairing fields, the Remote drawer, the inactive-workspace privacy replacement,

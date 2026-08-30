@@ -502,6 +502,55 @@ create/start → cancel → append、批准/拒绝与开放文字回答提交、
 decision、cancel、terminal、unpair/revoke 全链路验收；在这些外部条件完成前，不应把本地截图
 当作生产网络发布证明。
 
+## 16. 物理设备发布验收
+
+仓库提供 fail-closed 的统一入口 `scripts/mobile_physical_admission.py`。它不会生成伪造的真机
+结论，也不会把设备标识、服务地址、提示词或响应写进证据。开始前需在密钥管理环境中提供：
+
+- Gateway：`GARIVE_GATEWAY_ORIGIN`、`GARIVE_TLS_CERT`、`GARIVE_TLS_KEY`、
+  `GARIVE_PAIRING_CODE`、`GARIVE_ADMIN_TOKEN`；origin 必须是仅解析到公网地址且通过系统
+  CA 信任校验的规范 HTTPS origin。
+- iOS：`GARIVE_IOS_DEVICE_ID`、`GARIVE_IOS_DEVELOPMENT_TEAM`、
+  `GARIVE_IOS_RELEASE_APP`、`GARIVE_APNS_TEAM_ID`、`GARIVE_APNS_KEY_ID`、
+  `GARIVE_APNS_TOPIC`、`GARIVE_APNS_KEY_FILE`。App 必须有有效 Apple 应用签名和
+  `aps-environment` entitlement；`devicectl` 必须能看到该物理设备。
+- Android：`GARIVE_ANDROID_SERIAL`、`GARIVE_ANDROID_RELEASE_APK`、四个 Firebase
+  Android 标识及 `GARIVE_FCM_CREDENTIALS`。APK 必须通过 `apksigner`，ADB 属性必须证明
+  目标不是模拟器。
+
+构建两个候选时都必须传入 `GARIVE_BUILD_REVISION=$(git rev-parse HEAD)`；Android 会把它
+写入签名 APK 的 manifest，iOS 构建需把同名 build setting 写入 App 的 Info.plist。门禁从
+已签名产物反查该值并要求与当前完整 40 位 revision 相同，旧包不能验收新候选。
+
+TLS 私钥、APNs 私钥和 FCM service-account 文件必须仅允许当前用户访问。候选树必须干净，
+证据文件应放在仓库之外，避免记录文件本身改变它所绑定的 Git revision：
+
+```text
+just mobile-physical-preflight
+just mobile-physical-begin /private/tmp/garive-mobile-physical.json
+python3 scripts/mobile_physical_admission.py list-steps
+```
+
+使用一次性 Runtime/Gateway，按 `list-steps` 的顺序在两个物理设备上完成安装启动、配对、
+Agent 发现、新建/跟随、后台推送唤醒、断线重连、回答开放问题、取消、Runtime 重启后终态、
+撤销后失败关闭、重新配对、退出，以及平台无障碍大字和旋转/宽屏布局。每一步只记录
+`pass|fail` 和不含用户数据的稳定代码，例如：
+
+```text
+just mobile-physical-record /private/tmp/garive-mobile-physical.json ios pair pass verified
+just mobile-physical-record /private/tmp/garive-mobile-physical.json android background_wake pass verified
+```
+
+记录是单次写入的；一次 `fail` 不能在同一文件中改写成 `pass`，修复后必须从干净候选重新
+`begin`。全部 29 个严格步骤通过后执行：
+
+```text
+just mobile-physical-verify /private/tmp/garive-mobile-physical.json
+```
+
+验证器要求当前干净 revision 与证据完全一致，字段和顺序精确、所有时间为 UTC 且位于该次
+验收区间内。只有该命令通过，A-MOBILE-R 才能从 `partial` 进入 `done`。
+
 协议与安全细节见：
 
 - [`../../spec/design/mobile-remote-work-client.md`](../../spec/design/mobile-remote-work-client.md)
