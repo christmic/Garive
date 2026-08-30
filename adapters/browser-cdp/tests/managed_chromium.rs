@@ -190,6 +190,12 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .find(|node| node.name.as_deref() == Some("Submit form"))
         .and_then(|node| node.backend_dom_node_id)
         .expect("submit backend node");
+    let account = tree
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Account name"))
+        .and_then(|node| node.backend_dom_node_id)
+        .expect("account backend node");
     client
         .click_backend_node(&session, submit)
         .await
@@ -202,4 +208,29 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Submitted")));
+    client
+        .type_text_backend_node(&session, account, "Garive 🦀")
+        .await
+        .expect("type text");
+    let after_type = client
+        .full_ax_tree(&session, None, 64, 10_000, 1_048_576)
+        .await
+        .expect("post-type AX tree");
+    assert!(after_type
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Account name")
+            && node.value_summary.as_deref() == Some("Garive 🦀")));
+    client
+        .clear_backend_node(&session, account)
+        .await
+        .expect("clear text");
+    let after_clear = client
+        .full_ax_tree(&session, None, 64, 10_000, 1_048_576)
+        .await
+        .expect("post-clear AX tree");
+    assert!(after_clear
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Account name") && node.value_summary.is_none()));
 }

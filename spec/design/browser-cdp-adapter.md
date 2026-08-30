@@ -18,9 +18,11 @@ runtime dependency.
 
 V1 admits only `Browser.getVersion`, managed blank-page `Target.createTarget`,
 flat `Target.attachToTarget`, `Accessibility.enable|disable|getFullAXTree`,
-bounded Page navigation/history, `DOM.scrollIntoViewIfNeeded|getBoxModel`, and
-bounded Input key/mouse dispatch. Every semantic element operation needs a
-constrained typed builder; v1 does not expose `Runtime.evaluate`,
+bounded Page navigation/history, `DOM.focus|scrollIntoViewIfNeeded|getBoxModel`,
+and bounded `Input.dispatchKeyEvent|dispatchMouseEvent|insertText`. The adapter
+freezes the experimental `Input.insertText` shape reviewed against the official
+tip-of-tree protocol; absence is a closed protocol failure. Every semantic
+element operation needs a constrained typed builder; v1 does not expose `Runtime.evaluate`,
 `Runtime.callFunctionOn`, arbitrary scripts or unknown CDP methods.
 
 ## Construction and scope
@@ -77,6 +79,13 @@ view, obtains its current box and emits one bounded move/press/release sequence;
 neither coordinates nor CDP/backend identities enter the Browser tool schema or
 Core observation.
 
+Text insertion resolves an exact editable node, focuses it with `DOM.focus`,
+then sends one bounded UTF-8 `Input.insertText`; it never reads or writes the
+clipboard. Clear focuses the same node, executes the closed `selectAll` editor
+command and dispatches one Backspace down/up pair. These typed adapter
+operations are not dispatchable from Runtime until their exact
+target/snapshot/revision/node/action resolvers are present.
+
 ## Acceptance
 
 - pure config/wire tests reject remote/discovered endpoints, invalid limits,
@@ -97,8 +106,10 @@ version/create-blank-target/flat-attach/enable-Accessibility, a loopback 302
 with exact final URL, and a full tree containing form and open-shadow-root
 controls. It also clicks the form button through the typed adapter operation
 using an unexposed backend identity and observes the resulting AX-name change.
-Runtime separately proves the exact semantic binding gate. This baseline does
-not satisfy the remaining frame/action/fault matrix by itself.
+The same gate inserts Unicode text and clears the textbox, observing both AX
+states. Runtime separately proves the exact click binding gate; text-action
+binding remains open. This baseline does not satisfy the remaining
+frame/action/fault matrix by itself.
 
 ## Meta
 

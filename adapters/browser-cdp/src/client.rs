@@ -7,6 +7,8 @@ use url::Url;
 
 use crate::{CdpProtocolError, CdpTransport, CdpTransportError};
 
+const MAX_ACTION_TEXT_BYTES: usize = 32_768;
+
 /// Browser protocol/build evidence returned by `Browser.getVersion`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CdpBrowserVersion {
@@ -271,6 +273,67 @@ impl CdpClient {
                 .call("Input.dispatchMouseEvent", params, Some(session_id.into()))
                 .await?;
         }
+        Ok(())
+    }
+
+    /// Focuses one adapter-private backend node and inserts bounded UTF-8 text.
+    pub async fn type_text_backend_node(
+        &mut self,
+        session_id: &str,
+        backend_dom_node_id: u64,
+        text: &str,
+    ) -> Result<(), CdpTransportError> {
+        if text.len() > MAX_ACTION_TEXT_BYTES {
+            return Err(protocol());
+        }
+        self.focus_backend_node(session_id, backend_dom_node_id)
+            .await?;
+        self.transport
+            .call(
+                "Input.insertText",
+                json!({"text":text}),
+                Some(session_id.into()),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Clears one editable adapter-private backend node without clipboard access.
+    pub async fn clear_backend_node(
+        &mut self,
+        session_id: &str,
+        backend_dom_node_id: u64,
+    ) -> Result<(), CdpTransportError> {
+        self.focus_backend_node(session_id, backend_dom_node_id)
+            .await?;
+        for params in [
+            json!({"type":"rawKeyDown","commands":["selectAll"]}),
+            json!({"type":"rawKeyDown","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8}),
+            json!({"type":"keyUp","key":"Backspace","code":"Backspace","windowsVirtualKeyCode":8}),
+        ] {
+            self.transport
+                .call("Input.dispatchKeyEvent", params, Some(session_id.into()))
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn focus_backend_node(
+        &mut self,
+        session_id: &str,
+        backend_dom_node_id: u64,
+    ) -> Result<(), CdpTransportError> {
+        validate_id(session_id)?;
+        if backend_dom_node_id == 0 {
+            return Err(protocol());
+        }
+        self.transport
+            .call(
+                "DOM.focus",
+                json!({"backendNodeId":backend_dom_node_id}),
+                Some(session_id.into()),
+            )
+            .await?;
         Ok(())
     }
 

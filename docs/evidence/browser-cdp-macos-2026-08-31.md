@@ -22,7 +22,9 @@ WebSocket transport and passed:
 6. bounded `Accessibility.getFullAXTree` returning the form button, textbox and
    an open-shadow-root button by accessible name;
 7. typed click using an adapter-private backend-node identity, with a refreshed
-   AX tree observing the button name change from `Submit form` to `Submitted`.
+   AX tree observing the button name change from `Submit form` to `Submitted`;
+8. typed Unicode text insertion into the exact textbox without clipboard or
+   script, followed by semantic clear and an AX tree with no textbox value.
 
 Command:
 
@@ -30,16 +32,17 @@ Command:
 cargo test -p garive-adapter-browser-cdp --test managed_chromium -- --ignored --nocapture
 ```
 
-Latest result: 1 passed, 0 failed, 2.01 seconds. The ordinary adapter suite also
-passed 10 tests; strict all-target Clippy and Rustdoc passed.
+Latest result: 1 passed, 0 failed, 0.77 seconds. The ordinary adapter suite also
+passed 11 tests; strict all-target Clippy and Rustdoc passed.
 
 ## Open acceptance evidence
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
-one actual click. Snapshot/node freshness is deliberately enforced by Runtime's
-exact target/snapshot/revision binding; it is not delegated to CDP backend-node
-lifetime, and its stale cases pass in the Runtime unit gate. Cross-origin
-frames, text/select/key/scroll/history actions, popups, downloads,
+actual click, Unicode text insertion and clear. Snapshot/node freshness is
+deliberately enforced by Runtime's exact target/snapshot/revision binding; it
+is not delegated to CDP backend-node lifetime, and its stale cases pass in the
+Runtime unit gate. Runtime binding of the new text actions, cross-origin
+frames, select/key/scroll/history actions, popups, downloads,
 protected-field redaction in the real browser, attachment loss and
 Started/crash fault injection remain open. This is not a complete Browser Use
 claim.
