@@ -188,9 +188,10 @@ private fun JsonObject.recall() {
 }
 
 private fun JsonObject.obligation() {
-    exact(setOf("obligation_id", "namespace_id", "record_id", "revision_id", "application_fact",
+    exact(setOf("obligation_id", "namespace_id", "record_id", "revision_id", "recall_fact", "selection_id", "application_fact",
         "expected_outcome_digest", "application_scope_digest", "attribution_policy_revision", "expires_at_position"))
-    listOf("obligation_id", "namespace_id", "record_id", "revision_id", "attribution_policy_revision").forEach(::nonEmpty)
+    listOf("obligation_id", "namespace_id", "record_id", "revision_id", "selection_id", "attribution_policy_revision").forEach(::nonEmpty)
+    getValue("recall_fact").jsonObject.factReference()
     getValue("application_fact").jsonObject.factReference()
     digest("expected_outcome_digest")
     digest("application_scope_digest")
