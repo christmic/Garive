@@ -80,7 +80,7 @@ The additive Proto field allocation is exact:
 All unspecified scalar types, including immutable Definition revisions, are
 `string`; positions, Session versions, and counts are `uint64`. Message fields use message presence. Optional scalar fields use Proto
 `optional`, not empty-string sentinels. H3 field 9 is coordinated in the same
-Host v1 tag audit but remains absent until H3 is implemented.
+Host v1 tag audit and is present as the additive repeated activity projection.
 
 `capabilities` is a sorted set of stable public capability names installed for
 new Sessions, not a promise that every action is authorized. V1 may return one
