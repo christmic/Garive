@@ -86,6 +86,26 @@ fn revoke_workspace(
 }
 
 #[tauri::command]
+fn list_workspace_entries(
+    window: tauri::WebviewWindow,
+    workspaces: tauri::State<'_, garive_desktop::DesktopWorkspaceService>,
+    workspace_id: String,
+    parent_entry_id: Option<String>,
+    cursor: Option<String>,
+    limit: usize,
+) -> Result<garive_desktop::DesktopWorkspaceEntryPage, String> {
+    workspaces
+        .list_entries(
+            &workspace_id,
+            window.label(),
+            parent_entry_id.as_deref(),
+            cursor.as_deref(),
+            limit,
+        )
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn create_work_session(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     definition_id: String,
@@ -225,6 +245,7 @@ fn main() {
             choose_workspace,
             verify_workspace,
             revoke_workspace,
+            list_workspace_entries,
             create_work_session,
             attach_workspace_to_session,
             get_session_workspaces,

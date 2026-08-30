@@ -107,6 +107,21 @@ export interface WorkspaceAttachment {
   readonly attached_position: number;
 }
 
+export interface WorkspaceEntry {
+  readonly schema_version: 1; readonly entry_id: string;
+  readonly parent_entry_id: string | null;
+  readonly display_name: string;
+  readonly kind: "directory" | "text" | "image" | "pdf" | "table" | "presentation" | "unknown";
+  readonly byte_size: number | null; readonly selectable: boolean;
+}
+
+export interface WorkspaceEntryPage {
+  readonly schema_version: 1; readonly workspace_id: string;
+  readonly parent_entry_id: string | null;
+  readonly entries: readonly WorkspaceEntry[]; readonly next_cursor: string | null;
+  readonly has_more: boolean;
+}
+
 /** Loads the capability snapshot without exposing configuration values. */
 export async function getDesktopCapabilities(
   invoke: Invoke = tauriInvoke,
@@ -185,6 +200,19 @@ export async function revokeWorkspace(
 ): Promise<void> {
   if (!workspaceId) throw new Error("workspace_capability_invalid");
   await invoke<void>("revoke_workspace", { workspaceId });
+}
+
+export async function listWorkspaceEntries(
+  workspaceId: string,
+  parentEntryId?: string,
+  cursor?: string,
+  limit = 32,
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceEntryPage> {
+  if (!workspaceId || limit < 1 || limit > 64) throw new Error("workspace_capability_invalid");
+  return invoke<WorkspaceEntryPage>("list_workspace_entries", {
+    workspaceId, parentEntryId: parentEntryId ?? null, cursor: cursor ?? null, limit,
+  });
 }
 
 export async function createWorkSession(

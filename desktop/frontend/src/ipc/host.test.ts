@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
-  createWorkSession, getSessionWorkspaces, getSetupCatalogue, prepareSetup, revokeWorkspace,
-  verifyWorkspace,
+  createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
+  revokeWorkspace, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
@@ -126,5 +126,22 @@ describe("desktop Host IPC", () => {
     expect(calls).toEqual([
       "create_work_session", "attach_workspace_to_session", "get_session_workspaces",
     ]);
+  });
+
+  it("lists bounded opaque Workspace entry pages", async () => {
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      expect(command).toBe("list_workspace_entries");
+      expect(args).toEqual({
+        workspaceId: "workspace-1", parentEntryId: null, cursor: null, limit: 32,
+      });
+      return {
+        schema_version: 1, workspace_id: "workspace-1", parent_entry_id: null,
+        entries: [{ schema_version: 1, entry_id: "entry-1", parent_entry_id: null,
+          display_name: "brief.md", kind: "text", byte_size: 12, selectable: true }],
+        next_cursor: null, has_more: false,
+      } as T;
+    };
+    const page = await listWorkspaceEntries("workspace-1", undefined, undefined, 32, invoke);
+    expect(page.entries[0].entry_id).toBe("entry-1");
   });
 });
