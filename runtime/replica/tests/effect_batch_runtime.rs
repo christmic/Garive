@@ -346,7 +346,7 @@ async fn sequential_and_parallel_modes_publish_identical_terminals() {
     assert_eq!(sequential, parallel);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn timeout_cancellation_uncertainty_and_result_bounds_are_explicit() {
     let (_, timed_out) = run(
         Mode::Pending(CancellationEvidence::ProvenNotCompleted),
