@@ -27,6 +27,7 @@ describe("Desktop configuration route", () => {
     expect(screen.getByText("config_invalid_document")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reconfigure" }));
     await screen.findByRole("heading", { name: "Configure Garive" });
+    expect(screen.getByRole("note").textContent).toContain("explicit restart");
   });
 
   it("keeps reconfiguration explicit for a running immutable Runtime", async () => {

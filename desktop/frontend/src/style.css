@@ -33,6 +33,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
 .setup-summary dd { margin: .2rem 0 0; overflow-wrap: anywhere; font-weight: 650; }
 .field-note { margin: .35rem 0 0; color: var(--muted); font-size: .78rem; }
 .setup-ready { padding: .5rem 0; }
+.setup-warning { padding: .65rem .8rem; border: 1px solid #c6a85a; border-radius: .6rem; background: #fff8df; color: #674f0d; }
 .setup-error, [role="alert"] { color: var(--danger); }
 .setup-error { margin-top: 1rem; padding: .7rem; border: 1px solid #d9aaa6; border-radius: .6rem; background: #fff3f2; }
 @media (max-width: 36rem) {
@@ -48,4 +49,5 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   body { background: radial-gradient(circle at 12% 8%, #26314a, transparent 34%), #171816; }
   .primary { color: #101620; border-color: #8eb1ff; background: #8eb1ff; }
   .setup-error { border-color: #814b48; background: #382321; }
+  .setup-warning { border-color: #806b36; background: #332e20; color: #f0d88e; }
 }

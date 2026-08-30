@@ -37,9 +37,11 @@ const ERROR_COPY: Readonly<Record<string, string>> = {
 export function SetupFlow({
   api = DEFAULT_API,
   nonce = () => crypto.randomUUID(),
+  reconfigure = false,
 }: {
   api?: SetupFlowApi;
   nonce?: () => string;
+  reconfigure?: boolean;
 }) {
   const [catalogue, setCatalogue] = useState<SetupCatalogue>();
   const [stage, setStage] = useState<Stage>("details");
@@ -117,6 +119,7 @@ export function SetupFlow({
     <p className="eyebrow">LOCAL RUNTIME SETUP</p>
     <h1 id="setup-title">{stage === "details" ? "Configure Garive" : stage === "review" ? "Review setup" : "Restart required"}</h1>
     <p className="setup-lede">Credentials are submitted once to the operating-system store and are never readable from this app.</p>
+    {reconfigure && <p className="setup-warning" role="note">Changes require an explicit restart. The current Runtime remains immutable until then.</p>}
     <ol className="setup-progress" aria-label="Setup progress"><li aria-current={stage === "details" ? "step" : undefined}>Connect</li><li aria-current={stage === "review" ? "step" : undefined}>Review</li><li aria-current={stage === "ready" ? "step" : undefined}>Restart</li></ol>
 
     {stage === "details" && <form onSubmit={(event) => { event.preventDefault(); void review(); }}>

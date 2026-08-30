@@ -24,7 +24,7 @@ export function App({ api = DEFAULT_API }: { api?: AppApi }) {
 
   if (unavailable) return <main className="status-shell"><section className="status-card"><h1>Garive could not start</h1><p role="alert">The Desktop backend is unavailable. Restart the app and open diagnostics if this continues.</p></section></main>;
   if (!state || state.state === "setup_recovering") return <main className="status-shell"><p role="status">Recovering secure setup…</p></main>;
-  if (showSetup || state.state === "not_configured") return <SetupFlow api={api.setupFlow} />;
+  if (showSetup || state.state === "not_configured") return <SetupFlow api={api.setupFlow} reconfigure={state.state !== "not_configured"} />;
 
   if (state.state === "invalid_configuration") return <main className="status-shell"><section className="status-card">
     <p className="eyebrow">CONFIGURATION ATTENTION</p><h1>Garive needs reconfiguration</h1>
