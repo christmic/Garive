@@ -54,6 +54,13 @@ redacts protected values and stores browser revision plus content evidence.
 Cross-origin frames are separate target/origin scopes; an unadmitted frame is
 opaque. AX node IDs and backend DOM IDs never reach Core.
 
+The Runtime mapper accepts only Browser targets, rejects duplicate, missing or
+cyclic parent evidence, folds ignored AX nodes into the nearest visible
+ancestor, normalizes roles/states/actions to portable tokens, and hashes node
+references with the Runtime snapshot identity. Its non-configurable v1 baseline
+redacts secure/password roles and protected/password/secure properties before
+the observation can pass the common bounds validator.
+
 ## Acceptance
 
 - pure config/wire tests reject remote/discovered endpoints, invalid limits,

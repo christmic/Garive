@@ -21,6 +21,7 @@ garive-skill = { path = "../../engine/skill" }
 garive-tools = { path = "../../engine/tools" }
 garive-openai-responses = { package = "garive-adapter-openai-responses", path = "../../adapters/openai-responses" }
 garive-anthropic-messages = { package = "garive-adapter-anthropic-messages", path = "../../adapters/anthropic-messages" }
+garive-browser-cdp = { package = "garive-adapter-browser-cdp", path = "../../adapters/browser-cdp" }
 garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }

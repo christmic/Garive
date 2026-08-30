@@ -24,6 +24,7 @@ mod memory_export;
 mod memory_export_io;
 mod model_http_transport;
 mod native_capability;
+mod native_cdp;
 mod native_executor;
 mod observability_runtime;
 mod plan_carry_forward;
@@ -144,6 +145,7 @@ pub use native_capability::{
     NativeObservationV1, NativeProtocolError, NativeSemanticNode, NativeSensitivity,
     NativeSnapshotId, NativeTarget, WindowId,
 };
+pub use native_cdp::{map_cdp_ax_tree, CdpObservationContext};
 pub use native_executor::{NativeCapabilityExecutor, T2_NATIVE_EXECUTOR_ID};
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,

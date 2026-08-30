@@ -1,0 +1,237 @@
+//! Runtime mapping from private CDP AX values into T2 semantic observations.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use garive_browser_cdp::{CdpAxNode, CdpAxTree};
+use sha2::{Digest, Sha256};
+
+use crate::{
+    NativeNodeRef, NativeObservationBounds, NativeObservationV1, NativeProtocolError,
+    NativeSemanticNode, NativeSensitivity, NativeSnapshotId, NativeTarget,
+};
+
+/// Immutable Runtime context applied to one raw CDP Accessibility tree.
+pub struct CdpObservationContext {
+    /// Exact admitted Browser target.
+    pub target: NativeTarget,
+    /// New Runtime snapshot identity.
+    pub snapshot_id: NativeSnapshotId,
+    /// Exact Browser target revision.
+    pub target_revision: String,
+    /// Exact semantic collection bounds.
+    pub bounds: NativeObservationBounds,
+}
+
+/// Maps raw adapter-private AX identities into a bounded redacted Runtime observation.
+pub fn map_cdp_ax_tree(
+    context: CdpObservationContext,
+    tree: &CdpAxTree,
+) -> Result<NativeObservationV1, NativeProtocolError> {
+    if !matches!(context.target, NativeTarget::Browser { .. })
+        || tree.nodes.len() > context.bounds.max_nodes as usize
+    {
+        return Err(NativeProtocolError::InvalidBinding);
+    }
+    let by_id = tree
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    if by_id.len() != tree.nodes.len() {
+        return Err(NativeProtocolError::ReceiptInvalid);
+    }
+    let visible = tree
+        .nodes
+        .iter()
+        .filter(|node| !node.ignored)
+        .collect::<Vec<_>>();
+    let mut semantic_parent = BTreeMap::<&str, Option<&str>>::new();
+    for node in &visible {
+        semantic_parent.insert(node.node_id.as_str(), nearest_visible_parent(node, &by_id)?);
+    }
+    let mut ordered = Vec::with_capacity(visible.len());
+    let mut emitted = BTreeSet::new();
+    while ordered.len() < visible.len() {
+        let before = ordered.len();
+        for node in &visible {
+            if emitted.contains(node.node_id.as_str()) {
+                continue;
+            }
+            let parent = semantic_parent
+                .get(node.node_id.as_str())
+                .ok_or(NativeProtocolError::ReceiptInvalid)?;
+            if parent.is_none_or(|parent| emitted.contains(parent)) {
+                emitted.insert(node.node_id.as_str());
+                ordered.push(*node);
+            }
+        }
+        if ordered.len() == before {
+            return Err(NativeProtocolError::ReceiptInvalid);
+        }
+    }
+    let references = visible
+        .iter()
+        .map(|node| {
+            Ok((
+                node.node_id.as_str(),
+                node_reference(&context.snapshot_id, &node.node_id)?,
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, NativeProtocolError>>()?;
+    let mut redacted_field_count = 0_u32;
+    let nodes = ordered
+        .into_iter()
+        .map(|node| {
+            let protected = protected(node);
+            let name = if protected {
+                redacted_field_count =
+                    redacted_field_count.saturating_add(u32::from(node.name.is_some()));
+                node.name.as_ref().map(|_| "[redacted]".into())
+            } else {
+                node.name.clone()
+            };
+            let value_summary = if protected {
+                redacted_field_count =
+                    redacted_field_count.saturating_add(u32::from(node.value_summary.is_some()));
+                node.value_summary.as_ref().map(|_| "[redacted]".into())
+            } else {
+                node.value_summary.clone()
+            };
+            Ok(NativeSemanticNode {
+                node_ref: references[node.node_id.as_str()].clone(),
+                parent_ref: semantic_parent[node.node_id.as_str()]
+                    .map(|parent| references[parent].clone()),
+                role: normalized_token(node.role.as_deref().unwrap_or("generic"))?,
+                name,
+                value_summary,
+                states: states(node)?,
+                actions: actions(node)?,
+                sensitivity: if protected {
+                    NativeSensitivity::Redacted
+                } else {
+                    NativeSensitivity::Private
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, NativeProtocolError>>()?;
+    let observation = NativeObservationV1 {
+        target: context.target,
+        snapshot_id: context.snapshot_id,
+        target_revision: context.target_revision,
+        nodes,
+        focused_node: None,
+        screenshot_reference: None,
+        redacted_field_count,
+        bounds: context.bounds,
+    };
+    observation.validate()?;
+    Ok(observation)
+}
+
+fn nearest_visible_parent<'a>(
+    node: &'a CdpAxNode,
+    by_id: &BTreeMap<&'a str, &'a CdpAxNode>,
+) -> Result<Option<&'a str>, NativeProtocolError> {
+    let mut current = node.parent_id.as_deref();
+    let mut visited = BTreeSet::new();
+    while let Some(identity) = current {
+        if !visited.insert(identity) {
+            return Err(NativeProtocolError::ReceiptInvalid);
+        }
+        let parent = by_id
+            .get(identity)
+            .ok_or(NativeProtocolError::ReceiptInvalid)?;
+        if !parent.ignored {
+            return Ok(Some(parent.node_id.as_str()));
+        }
+        current = parent.parent_id.as_deref();
+    }
+    Ok(None)
+}
+
+fn node_reference(
+    snapshot_id: &NativeSnapshotId,
+    adapter_id: &str,
+) -> Result<NativeNodeRef, NativeProtocolError> {
+    NativeNodeRef::new(format!(
+        "node-{:x}",
+        Sha256::digest(format!("{}\0{adapter_id}", snapshot_id.as_str()).as_bytes())
+    ))
+}
+
+fn protected(node: &CdpAxNode) -> bool {
+    let role = node
+        .role
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(
+        role.as_str(),
+        "password" | "securetextfield" | "secure_text_field"
+    ) || node.properties.iter().any(|property| {
+        matches!(
+            property.name.to_ascii_lowercase().as_str(),
+            "protected" | "password" | "secure"
+        )
+    })
+}
+
+fn states(node: &CdpAxNode) -> Result<Vec<String>, NativeProtocolError> {
+    let mut values = node
+        .properties
+        .iter()
+        .filter(|property| property_truthy(&property.value))
+        .map(|property| normalized_token(&property.name))
+        .collect::<Result<Vec<_>, _>>()?;
+    values.sort();
+    values.dedup();
+    Ok(values)
+}
+
+fn actions(node: &CdpAxNode) -> Result<Vec<String>, NativeProtocolError> {
+    let role = normalized_token(node.role.as_deref().unwrap_or("generic"))?;
+    let values: &[&str] = match role.as_str() {
+        "button" | "link" | "menu_item" | "checkbox" | "radio" => &["click"],
+        "textbox" | "text_field" | "searchbox" => &["clear", "type_text"],
+        "combobox" | "listbox" => &["select_option"],
+        _ => &[],
+    };
+    Ok(values.iter().map(|value| (*value).into()).collect())
+}
+
+fn property_truthy(value: &serde_json::Value) -> bool {
+    value.get("value").is_some_and(|value| match value {
+        serde_json::Value::Bool(value) => *value,
+        serde_json::Value::String(value) => !value.is_empty() && value != "false",
+        serde_json::Value::Number(value) => value.as_i64() != Some(0),
+        _ => false,
+    })
+}
+
+fn normalized_token(value: &str) -> Result<String, NativeProtocolError> {
+    let mut output = String::new();
+    let mut previous_lower = false;
+    for character in value.chars() {
+        if character.is_ascii_uppercase() {
+            if previous_lower && !output.ends_with('_') {
+                output.push('_');
+            }
+            output.push(character.to_ascii_lowercase());
+            previous_lower = false;
+        } else if character.is_ascii_alphanumeric() {
+            output.push(character.to_ascii_lowercase());
+            previous_lower = character.is_ascii_lowercase() || character.is_ascii_digit();
+        } else if !output.is_empty() && !output.ends_with('_') {
+            output.push('_');
+            previous_lower = false;
+        }
+    }
+    while output.ends_with('_') {
+        output.pop();
+    }
+    if output.is_empty() || output.len() > 128 {
+        Err(NativeProtocolError::ReceiptInvalid)
+    } else {
+        Ok(output)
+    }
+}
