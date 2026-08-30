@@ -349,6 +349,56 @@ effect.prepared.v1 {
   model_call_id: non-empty string
 }
 
+effect.prepared.v3 {
+  prepared_contract_version: 3
+  prepared_digest: Digest
+  tool_name: non-empty string
+  tool_revision: non-empty string
+  replay_class: "read_only" | "idempotent" |
+                "receipt_recoverable" | "never_replay"
+  model_call_id: non-empty string
+  access_policy_revision: non-empty string
+  access_resolver_revision: non-empty string
+  invocation_accesses: ContentBinding
+  max_result_bytes: positive u64
+  sandbox_requirements: ContentBinding
+  sandbox_requirements_digest: Digest
+}
+
+safety.decided.v1 {
+  request_id: non-empty string
+  decision_id: non-empty string
+  disposition: "allow" | "deny" | "interaction_required"
+  prepared_digest: Digest
+  tool_name, tool_revision: non-empty string
+  actor_authority_reference: non-empty string
+  goal_reference?, plan_reference?: non-empty string
+  exact_access_digest: Digest
+  sandbox_requirements_digest: Digest
+  policy_revision: non-empty string
+  constraints_digest?: Digest
+  safe_code?: "safety_denied" | "safety_interaction_required"
+}
+
+sandbox.bound.v1 {
+  binding_id, decision_id: non-empty string
+  prepared_digest: Digest
+  workspace_capability_id: non-empty string
+  executor_id, executor_revision: non-empty string
+  policy_revision: non-empty string
+  access_scope_digest: Digest
+  enforcement_digest: Digest
+  effective_limits_digest: Digest
+}
+
+sandbox.preflighted.v1 {
+  preflight_id, binding_id, decision_id: non-empty string
+  prepared_digest: Digest
+  grant_id: GrantId
+  executor_id, executor_revision: non-empty string
+  dispatch_attempt_id: non-empty string
+}
+
 effect.authorized.v1 {
   prepared_digest: Digest
   grant_id: GrantId
@@ -426,6 +476,15 @@ Suspended and appends nothing.
 `effect.observation` follows a denial, ordinary effect terminal, or reconciled
 effect and is committed before any later model
 request that contains the corresponding LLM `ToolObservation`.
+
+The three F0 facts are also Turn/Execution/Tool-Invocation scoped. An Allow
+decision requires `constraints_digest` and forbids `safe_code`; Deny and
+InteractionRequired require their exact `safe_code` and forbid constraints.
+`sandbox.bound` and `sandbox.preflighted` are legal only after Allow and the
+matching `effect.authorized`. Their prepared, policy, decision, binding, grant,
+executor and dispatch identities must match exactly. `effect.started` requires
+the matching successful preflight and repeats its prepared/grant/executor/
+dispatch bindings. V1/v2 Prepared Calls can never enter this F0 chain.
 `tool.preparation_rejected` has no Tool Invocation ID because invalid input
 never receives one; it binds the outer Model Request/Execution IDs and is also
 committed before the correcting observation enters a later model request.

@@ -142,6 +142,19 @@ Runtime commits `sandbox.bound` and successful `sandbox.preflighted` before
 `requirement_unsupported`, `sandbox_binding_stale` or
 `sandbox_scope_mismatch` as appropriate.
 
+The durable chain is exact and invocation-scoped:
+
+```text
+effect.prepared.v3 -> safety.decided(Allow) -> effect.authorized
+  -> sandbox.bound -> sandbox.preflighted -> effect.started
+```
+
+Each arrow is validated by the Ledger transition reducer. The final three
+facts repeat the minimum identity/digest bindings needed to reject a mixed
+decision, workspace, executor, grant or dispatch attempt after restart. Deny
+and InteractionRequired never admit `sandbox.bound`; they continue through the
+existing governed observation or typed interaction path.
+
 ## Filesystem enforcement
 
 Workspace filesystem keys remain non-empty relative slash-separated values
