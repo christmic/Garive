@@ -891,6 +891,16 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
         .unwrap();
     let session_id = created["session_id"].as_str().unwrap();
+    let session_view = client
+        .get(format!("{base}/v1/sessions/{session_id}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(session_view.status(), reqwest::StatusCode::OK);
+    let session_view: Value = serde_json::from_slice(&session_view.bytes().await.unwrap()).unwrap();
+    assert_eq!(session_view["api_version"], "v1");
+    assert_eq!(session_view["session"]["turn_count"], 0);
+    assert_eq!(session_view["observed_max_position"], 1);
     let started = client
         .post(format!("{base}/v1/sessions/{session_id}/turns"))
         .header("idempotency-key", "start-http")
