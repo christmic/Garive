@@ -1,4 +1,5 @@
-use garive_ledger::{ExecutionId, TurnSnapshot};
+use garive_ledger::{CanonicalPayload, ExecutionId, TurnSnapshot};
+use garive_tools::validate_portable_value_schema;
 use serde_json::{Map, Value};
 
 use super::types::{
@@ -245,6 +246,19 @@ fn pending_interaction(
                     == Some(interaction_id)
         });
         if !resolved {
+            let response_schema_digest = text(&request, "response_schema_digest")?;
+            let bound_schema_digest = request
+                .get("response_schema")
+                .and_then(Value::as_object)
+                .and_then(|binding| binding.get("digest"))
+                .and_then(Value::as_str)
+                .ok_or(RuntimeCommandError::CorruptLedger)?;
+            if response_schema_digest != bound_schema_digest {
+                return Err(RuntimeCommandError::CorruptLedger);
+            }
+            let response_schema = canonical_content(&request, "response_schema")?;
+            validate_portable_value_schema(&response_schema)
+                .map_err(|_| RuntimeCommandError::CorruptLedger)?;
             pending.push(InteractionContinuation {
                 execution_id: execution_id.clone(),
                 tool_invocation_id: requested
@@ -253,7 +267,8 @@ fn pending_interaction(
                     .ok_or(RuntimeCommandError::CorruptLedger)?,
                 interaction_id: interaction_id.to_owned(),
                 prepared_digest: text(&request, "prepared_digest")?.to_owned(),
-                response_schema_digest: text(&request, "response_schema_digest")?.to_owned(),
+                response_schema_digest: response_schema_digest.to_owned(),
+                response_schema,
                 expiry: InteractionExpiry::parse(text(&request, "expiry_code")?)?,
             });
         }
@@ -263,6 +278,19 @@ fn pending_interaction(
         1 => Ok(pending.pop()),
         _ => Err(RuntimeCommandError::CorruptLedger),
     }
+}
+
+fn canonical_content(value: &Map<String, Value>, key: &str) -> Result<Value, RuntimeCommandError> {
+    let binding = value
+        .get(key)
+        .and_then(Value::as_object)
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let canonical = CanonicalPayload::from_canonical_parts(
+        text(binding, "inline_utf8")?.to_owned(),
+        text(binding, "digest")?.to_owned(),
+    )
+    .map_err(|_| RuntimeCommandError::CorruptLedger)?;
+    serde_json::from_str(canonical.as_json()).map_err(|_| RuntimeCommandError::CorruptLedger)
 }
 
 fn reconciliation_target(

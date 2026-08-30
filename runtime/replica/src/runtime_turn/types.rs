@@ -191,6 +191,8 @@ pub struct InteractionContinuation {
     pub prepared_digest: String,
     /// Response-schema digest frozen by the interaction request.
     pub response_schema_digest: String,
+    /// Exact portable response schema frozen by the interaction request.
+    pub response_schema: serde_json::Value,
     /// Frozen expiry policy category.
     pub expiry: InteractionExpiry,
 }

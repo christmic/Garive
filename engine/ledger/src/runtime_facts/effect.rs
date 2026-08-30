@@ -36,6 +36,7 @@ fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> 
             "prepared_digest",
             "kind",
             "prompt",
+            "response_schema",
             "response_schema_digest",
             "expiry_code",
         ],
@@ -49,7 +50,8 @@ fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> 
         "expiry_code",
         &["none", "turn_deadline", "policy_deadline"],
     )?;
-    content(value, "prompt")
+    content(value, "prompt")?;
+    content(value, "response_schema")
 }
 
 fn interaction_resolved(value: &Map<String, Value>) -> Result<(), LedgerError> {

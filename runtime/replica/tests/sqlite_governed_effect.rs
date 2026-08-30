@@ -297,7 +297,18 @@ fn interaction_uses_one_suspension_binding_from_request_through_terminal() {
         .find(|fact| fact.kind.as_str() == "turn.suspended")
         .unwrap();
     assert_eq!(payload(requested)["suspension_id"], suspension_id);
+    assert_eq!(
+        payload(requested)["response_schema"]["inline_utf8"],
+        r#"{"type":"boolean"}"#
+    );
     assert_eq!(payload(suspended)["suspension_id"], suspension_id);
+    let state =
+        garive_runtime::reconstruct_suspended_turn(&setup.ledger.load_turn(&setup.turn).unwrap())
+            .unwrap();
+    assert_eq!(
+        state.interaction.unwrap().response_schema,
+        serde_json::json!({"type":"boolean"})
+    );
 }
 
 #[test]

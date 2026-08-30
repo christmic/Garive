@@ -205,7 +205,9 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
                     tool_invocation_id: ToolInvocationId::try_from("tool").unwrap(),
                     interaction_id: "interaction".into(),
                     prepared_digest: empty_digest().into(),
-                    response_schema_digest: empty_digest().into(),
+                    response_schema_digest:
+                        "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553".into(),
+                    response_schema: json!({"type":"boolean"}),
                     expiry: InteractionExpiry::None,
                 }),
                 recorded_at: "2026-08-29T00:00:02Z".into(),
