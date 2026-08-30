@@ -12,9 +12,10 @@ use garive_core::{
 use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
-    plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    HostContinuationInput, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer,
-    SqliteLedger, TurnDispatchError, TurnDispatcher,
+    plan_core_terminal, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
+    EffectiveRuntimeLimits, HostClock, HostContinuationInput, InstalledActivityCatalogue,
+    InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits,
+    LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -54,19 +55,36 @@ struct Harness {
 
 impl Harness {
     fn new(event_batch_size: u64) -> Self {
+        Self::with_h3(event_batch_size, false)
+    }
+
+    fn h3(event_batch_size: u64) -> Self {
+        Self::with_h3(event_batch_size, true)
+    }
+
+    fn with_h3(event_batch_size: u64, h3: bool) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("host.sqlite3");
         let dispatcher = Arc::new(VerifyingDispatcher {
             database: database.clone(),
             committed: Mutex::new(Vec::new()),
         });
+        let mut installed = installed();
+        installed.public_activity_catalogue = h3.then(activity_catalogue);
         let host = LiveHost::new(
             &database,
-            installed(),
+            installed,
             LiveHostLimits {
                 max_command_bytes: 4_096,
                 event_batch_size,
                 event_poll_interval_ms: 10,
+                activity: h3.then_some(ActivityProjectionLimits {
+                    max_activities_per_turn: 8,
+                    max_activity_facts: 64,
+                    max_label_bytes: 128,
+                    max_activity_id_bytes: 128,
+                    max_encoded_bytes_per_turn: 8_192,
+                }),
             },
             Arc::new(FixedClock),
             dispatcher.clone(),
@@ -78,6 +96,18 @@ impl Harness {
             dispatcher,
             host,
         }
+    }
+}
+
+fn activity_catalogue() -> InstalledActivityCatalogue {
+    InstalledActivityCatalogue {
+        schema_version: 1,
+        catalogue_revision: "activity-labels-1".into(),
+        descriptors: vec![InstalledActivityDescriptor {
+            tool_name: "read_file".into(),
+            tool_revision: "1".into(),
+            label_key: "agent.activity.read_file".into(),
+        }],
     }
 }
 
@@ -93,6 +123,7 @@ fn installed() -> InstalledAgent {
             max_output_tokens: Some(512),
             deadline_budget_ms: Some(30_000),
         },
+        public_activity_catalogue: None,
     }
 }
 
@@ -472,6 +503,126 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
             )
             .unwrap_err(),
         LiveHostError::CommandConflict
+    );
+}
+
+#[test]
+fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
+    let harness = Harness::h3(64);
+    let session = harness
+        .host
+        .create_session("create-h3", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-h3", &session.session_id, "read the brief")
+        .unwrap();
+    let session_id = SessionId::try_from(session.session_id.as_str()).unwrap();
+    let turn_id = garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap();
+    let execution_id = garive_ledger::ExecutionId::try_from(started.execution_id.as_str()).unwrap();
+    let tool_id = ToolInvocationId::try_from("tool-h3").unwrap();
+    let digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    let binding = |value: Value| {
+        let content = CanonicalPayload::from_value(&value).unwrap();
+        serde_json::json!({"digest":content.sha256(),"inline_utf8":content.as_json()})
+    };
+    let values = [
+        (
+            "h3-prepared",
+            "effect.prepared",
+            serde_json::json!({"prepared_digest":digest,"tool_name":"read_file","tool_revision":"1","replay_class":"read_only","model_call_id":"call-h3"}),
+        ),
+        (
+            "h3-authorized",
+            "effect.authorized",
+            serde_json::json!({"prepared_digest":digest,"grant_id":"grant-h3","authority_revision":"policy-1","granted_requirements":binding(serde_json::json!({}))}),
+        ),
+        (
+            "h3-started",
+            "effect.started",
+            serde_json::json!({"prepared_digest":digest,"grant_id":"grant-h3","executor_id":"local.read","executor_revision":"1","dispatch_attempt_id":"dispatch-h3"}),
+        ),
+        (
+            "h3-receipt",
+            "effect.receipt",
+            serde_json::json!({"receipt_id":"receipt-h3","prepared_digest":digest,"grant_id":"grant-h3","executor_id":"local.read","executor_revision":"1","classification":"completed","result_or_evidence":binding(serde_json::json!({"ok":true}))}),
+        ),
+        (
+            "h3-completed",
+            "effect.completed",
+            serde_json::json!({"prepared_digest":digest,"receipt_id":"receipt-h3","result":binding(serde_json::json!({"ok":true}))}),
+        ),
+        (
+            "h3-observation",
+            "effect.observation",
+            serde_json::json!({"prepared_digest":digest,"model_call_id":"call-h3","observation":binding(serde_json::json!({"ok":true}))}),
+        ),
+    ];
+    let facts = values
+        .into_iter()
+        .map(|(id, kind, payload)| FactDraft {
+            fact_id: FactId::try_from(id).unwrap(),
+            turn_id: Some(turn_id.clone()),
+            execution_id: Some(execution_id.clone()),
+            model_request_id: None,
+            tool_invocation_id: Some(tool_id.clone()),
+            kind: FactKind::new(kind).unwrap(),
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&payload).unwrap(),
+            recorded_at: NOW.into(),
+        })
+        .collect();
+    SqliteLedger::open(&harness.database)
+        .unwrap()
+        .commit(session_id, 2, facts)
+        .unwrap();
+
+    let page = harness
+        .host
+        .read_event_page(&session.session_id, 0)
+        .unwrap();
+    let activity = page
+        .events
+        .iter()
+        .filter_map(|event| event.activity.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        activity
+            .iter()
+            .map(|item| item.state.as_str())
+            .collect::<Vec<_>>(),
+        ["prepared", "authorized", "running", "completed"]
+    );
+    let timeline = harness
+        .host
+        .read_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    assert_eq!(timeline.items[0].activities[0].state, "completed");
+    assert_eq!(
+        timeline.items[0].activities[0].label_key,
+        "agent.activity.read_file"
+    );
+
+    let restarted = LiveHost::new(
+        &harness.database,
+        InstalledAgent {
+            public_activity_catalogue: Some(activity_catalogue()),
+            ..installed()
+        },
+        harness.host.limits(),
+        Arc::new(FixedClock),
+        harness.dispatcher.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(
+            restarted
+                .read_event_page(&session.session_id, 0)
+                .unwrap()
+                .events
+        )
+        .unwrap(),
+        serde_json::to_value(page.events).unwrap()
     );
 }
 
