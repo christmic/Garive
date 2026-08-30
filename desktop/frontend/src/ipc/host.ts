@@ -153,6 +153,11 @@ export interface WorkspaceAuthorization {
   readonly state: "active" | "needs_reauthorization";
 }
 
+export interface WorkspaceRevocationReceipt {
+  readonly schema_version: 1; readonly workspace_id: string; readonly grant_revision: number;
+  readonly outcome: "revoked" | "already_revoked"; readonly cleanup_pending: boolean;
+}
+
 export interface WorkspaceAttachment {
   readonly api_version: "v1"; readonly session_id: string; readonly workspace_id: string;
   readonly display_name: string; readonly grant_revision: number;
@@ -341,10 +346,14 @@ export async function verifyWorkspace(
 
 export async function revokeWorkspace(
   workspaceId: string,
+  expectedGrantRevision: number,
   invoke: Invoke = tauriInvoke,
-): Promise<void> {
-  if (!workspaceId) throw new Error("workspace_capability_invalid");
-  await invoke<void>("revoke_workspace", { workspaceId });
+): Promise<WorkspaceRevocationReceipt> {
+  if (!workspaceId || !Number.isSafeInteger(expectedGrantRevision)
+      || expectedGrantRevision < 1) throw new Error("workspace_capability_invalid");
+  return invoke<WorkspaceRevocationReceipt>("revoke_workspace", {
+    workspaceId, expectedGrantRevision,
+  });
 }
 
 export async function listWorkspaceEntries(

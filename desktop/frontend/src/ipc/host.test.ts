@@ -153,16 +153,24 @@ describe("desktop Host IPC", () => {
           access: "enumerate", grant_revision: 1, state: "active",
           expires_at: "2026-08-30T12:00:00Z" } as T;
       }
+      if (command === "revoke_workspace") return { schema_version: 1,
+        workspace_id: "workspace-1", grant_revision: 1, outcome: "revoked",
+        cleanup_pending: false } as T;
       return undefined as T;
     };
     const selected = await chooseWorkspace(invoke);
     await verifyWorkspace(selected!.workspace_id, invoke);
-    await revokeWorkspace(selected!.workspace_id, invoke);
+    const revocation = await revokeWorkspace(
+      selected!.workspace_id, selected!.grant_revision, invoke,
+    );
+    expect(revocation.outcome).toBe("revoked");
     expect(JSON.stringify(calls)).not.toContain("/Users/");
     expect(calls).toEqual([
       { command: "choose_workspace", args: {} },
       { command: "verify_workspace", args: { workspaceId: "workspace-1" } },
-      { command: "revoke_workspace", args: { workspaceId: "workspace-1" } },
+      { command: "revoke_workspace", args: {
+        workspaceId: "workspace-1", expectedGrantRevision: 1,
+      } },
     ]);
   });
 

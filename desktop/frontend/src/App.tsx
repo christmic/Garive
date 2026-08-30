@@ -6,7 +6,7 @@ import {
   createWorkSession, detachWorkspaceFromSession,
   getArtifactPreview, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
   getSessionWorkspaces, getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
-  resolveTurnApproval, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
+  resolveTurnApproval, revokeWorkspace, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
   type WorkspaceAuthorization,
@@ -675,7 +675,11 @@ function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabiliti
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
   const [authorizations, setAuthorizations] = useState<readonly WorkspaceAuthorization[]>([]);
   const [restoring, setRestoring] = useState<string>();
+  const [confirmingRevocation, setConfirmingRevocation] = useState<string>();
+  const [revoking, setRevoking] = useState<string>();
   const [recoveryError, setRecoveryError] = useState<string>();
+  const [recoveryNotice, setRecoveryNotice] = useState<string>();
+  const workspaceHeading = useRef<HTMLHeadingElement>(null);
   const loadWorkspaceHealth = useCallback(async () => {
     if (!capabilities?.workspaces) return;
     if (visualTest) {
@@ -700,7 +704,7 @@ function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabiliti
     }); setRecoveryError("Workspace recovery status is unavailable."); });
   }, [loadWorkspaceHealth]);
   const restoreAccess = async (workspace: WorkspaceAuthorization) => {
-    setRestoring(workspace.workspace_id); setRecoveryError(undefined);
+    setRestoring(workspace.workspace_id); setRecoveryError(undefined); setRecoveryNotice(undefined);
     try {
       if (visualTest) {
         setAuthorizations([{ ...workspace, grant_revision: workspace.grant_revision + 1,
@@ -717,11 +721,37 @@ function SettingsScreen({ capabilities }: { capabilities?: WorkState["capabiliti
         : "Garive could not restore this folder safely.");
     } finally { setRestoring(undefined); }
   };
+  const removeAccess = async (workspace: WorkspaceAuthorization) => {
+    if (confirmingRevocation !== workspace.workspace_id) {
+      setConfirmingRevocation(workspace.workspace_id); setRecoveryNotice(
+        "Confirm removal. This immediately blocks future reads and outputs; prior receipts remain.",
+      );
+      return;
+    }
+    setRevoking(workspace.workspace_id); setRecoveryError(undefined); setRecoveryNotice(undefined);
+    try {
+      const receipt = visualTest ? { cleanup_pending: false }
+        : await revokeWorkspace(workspace.workspace_id, workspace.grant_revision);
+      if (visualTest) {
+        setAuthorizations((items) => items.filter((item) =>
+          item.workspace_id !== workspace.workspace_id));
+        setWorkspaceRecovery({ schema_version: 1, state: "ready", restored_count: 0,
+          needs_reauthorization_count: 0 });
+      } else await loadWorkspaceHealth();
+      setRecoveryNotice(receipt.cleanup_pending
+        ? "Access is revoked. Private Keychain cleanup will retry safely after restart."
+        : "Workspace access was removed.");
+      requestAnimationFrame(() => workspaceHeading.current?.focus());
+    } catch {
+      setRecoveryError("Garive could not durably revoke this Workspace. Access was not broadened.");
+    } finally { setRevoking(undefined); setConfirmingRevocation(undefined); }
+  };
   const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const;
   const recoveryReady = workspaceRecovery?.state === "ready";
   return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1><div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div>
-    {capabilities?.workspaces && <div className="settings-card"><h2>Workspace access</h2><p>Folder access is restored from read-only bookmarks stored in macOS Keychain. No filesystem path enters this interface.</p><div className="setting-row"><span>Authorization recovery</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} restored` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} needs access` : "Index unavailable" : "Checking…"}</span></div>
-      {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `Read-only access · revision ${workspace.grant_revision}` : "Access expired · choose the original folder"}</small></span>{workspace.state === "active" ? <span className="state-chip ready">Active</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />Opening…</> : "Restore access"}</button>}</div>)}
+    {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>Workspace access</h2><p>Folder access is restored from read-only bookmarks stored in macOS Keychain. No filesystem path enters this interface.</p><div className="setting-row"><span>Authorization recovery</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} restored` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} needs access` : "Index unavailable" : "Checking…"}</span></div>
+      {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `Read-only access · revision ${workspace.grant_revision}` : "Access expired · choose the original folder"}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">Active</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />Opening…</> : "Restore access"}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label="Remove Workspace access" disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />Removing…</> : confirmingRevocation === workspace.workspace_id ? "Confirm remove" : "Remove access"}</button></span></div>)}
+      {recoveryNotice && <div className="workspace-recovery-notice" role="status"><Icon name="shield" /><span>{recoveryNotice}</span></div>}
       {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{recoveryError}</span></div>}
     </div>}
     <div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, bookmark data, or raw Runtime fact.</p></div></section>;

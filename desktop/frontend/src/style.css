@@ -286,8 +286,12 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .workspace-auth-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .workspace-auth-row small { margin-top: 2px; color: var(--muted); font-size: 10px; }
 .workspace-auth-row .secondary-button { min-height: 30px; padding: 0 11px; font-size: 10px; }
+.workspace-auth-actions { display: flex; align-items: center; gap: 7px; }
+.danger-button { min-height: 30px; padding: 0 10px; border: 1px solid rgba(177,72,54,.25); border-radius: 8px; background: transparent; color: var(--red); font-size: 10px; }
+.danger-button.confirming { background: var(--red); color: white; }
 .workspace-auth-row .spinner { width: 11px; height: 11px; margin-right: 5px; }
 .workspace-recovery-error { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding: 9px 10px; border-radius: 9px; color: #8f3f2d; background: #fff0eb; font-size: 11px; }
+.workspace-recovery-notice { display: flex; align-items: center; gap: 7px; margin-top: 10px; padding: 9px 10px; border-radius: 9px; color: var(--green); background: rgba(37,122,94,.08); font-size: 11px; }
 
 .workspace-scrim { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 34px; background: rgba(29,29,26,.34); backdrop-filter: blur(8px); }
 .workspace-sheet { display: grid; grid-template-rows: auto auto minmax(250px, 1fr) auto; width: min(680px, 100%); max-height: min(720px, calc(100vh - 68px)); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--paper-strong); box-shadow: 0 30px 100px rgba(24,24,20,.28), inset 0 1px rgba(255,255,255,.6); }
