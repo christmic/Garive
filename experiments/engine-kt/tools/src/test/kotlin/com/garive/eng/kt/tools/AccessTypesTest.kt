@@ -21,4 +21,23 @@ class AccessTypesTest {
                 is ToolContractResult.Failure,
         )
     }
+
+    @Test
+    fun workspaceRootPolicyCoversEveryValidRelativeKey() {
+        val root = assertIs<ToolContractResult.Success<AccessPolicyEntry>>(
+            AccessPolicyEntry.create(".", listOf(AccessMode.READ)),
+        ).value
+        val policy = assertIs<ToolContractResult.Success<ToolAccessPolicyV1>>(
+            ToolAccessPolicyV1.create("workspace-v1", listOf(root), emptyList(), emptyList(), emptyList(), 1, 4096),
+        ).value
+        listOf(".", "src", "src/lib.rs").forEach { key ->
+            val resource = assertIs<ToolContractResult.Success<ResourceAccess>>(
+                ResourceAccess.create(AccessNamespace.FILESYSTEM, key, AccessMode.READ),
+            ).value
+            val accesses = assertIs<ToolContractResult.Success<InvocationAccessSet>>(
+                InvocationAccessSet.create(listOf(resource)),
+            ).value
+            assertTrue(policy.covers(accesses), key)
+        }
+    }
 }

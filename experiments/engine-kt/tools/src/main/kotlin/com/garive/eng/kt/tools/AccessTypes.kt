@@ -133,7 +133,8 @@ public class ToolAccessPolicyV1 private constructor(
             entries.getValue(access.namespace).any { entry ->
                 access.mode in entry.allowedModes && when (access.namespace) {
                     AccessNamespace.FILESYSTEM ->
-                        access.resourceKey == entry.resource || access.resourceKey.startsWith("${entry.resource}/")
+                        entry.resource == "." || access.resourceKey == entry.resource ||
+                            access.resourceKey.startsWith("${entry.resource}/")
                     else -> access.resourceKey == entry.resource
                 }
             }

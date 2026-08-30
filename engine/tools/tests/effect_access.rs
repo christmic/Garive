@@ -92,3 +92,27 @@ fn policy_coverage_is_namespace_specific_and_segment_aware() {
     .unwrap();
     assert!(!policy.covers(&sibling));
 }
+
+#[test]
+fn explicit_workspace_root_policy_covers_every_valid_relative_key() {
+    let policy = ToolAccessPolicyV1::new(
+        "workspace-v1",
+        [AccessPolicyEntry::new(".", [AccessMode::Read]).unwrap()],
+        [],
+        [],
+        [],
+        2,
+        4096,
+    )
+    .unwrap();
+    for key in [".", "src", "src/lib.rs"] {
+        let access = InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            key,
+            AccessMode::Read,
+        )
+        .unwrap()])
+        .unwrap();
+        assert!(policy.covers(&access), "{key}");
+    }
+}

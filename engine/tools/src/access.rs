@@ -193,7 +193,8 @@ impl ToolAccessPolicyV1 {
                     entry.allowed_modes.contains(&access.mode)
                         && match access.namespace {
                             AccessNamespace::Filesystem => {
-                                access.resource_key == entry.resource
+                                entry.resource == "."
+                                    || access.resource_key == entry.resource
                                     || access
                                         .resource_key
                                         .starts_with(&format!("{}/", entry.resource))
