@@ -269,14 +269,23 @@ class DefinitionSnapshotTest {
     @Test
     fun snapshotV2BindsOneCompleteSortedPublicToolCatalogue() {
         val base = definition()
+        val v2 = fixture.getValue("snapshot_v2").jsonObject
+        val rawCatalogue = v2.getValue("public_tool_activity_catalogue").jsonObject
         val definition = (rebuild(
             base,
             contracts = base.contractVersions + ("effective_snapshot" to 2L),
         ) as DefinitionResult.Success).value
         val catalogue = PublicToolActivityCatalogue(
-            1,
-            "activity-labels-1",
-            listOf(PublicToolActivityDescriptor("read_file", "1", "agent.activity.read_file")),
+            rawCatalogue.getValue("schema_version").jsonPrimitive.content.toInt(),
+            rawCatalogue.getValue("catalogue_revision").jsonPrimitive.content,
+            rawCatalogue.getValue("descriptors").jsonArray.map { element ->
+                val descriptor = element.jsonObject
+                PublicToolActivityDescriptor(
+                    descriptor.getValue("tool_name").jsonPrimitive.content,
+                    descriptor.getValue("tool_revision").jsonPrimitive.content,
+                    descriptor.getValue("label_key").jsonPrimitive.content,
+                )
+            },
         )
         val registry = registry().copy(publicToolActivityCatalogue = catalogue)
         val policy = productPolicy().copy(
@@ -285,6 +294,7 @@ class DefinitionSnapshotTest {
         )
         val snapshot = (resolveDefinition(definition, registry, policy) as DefinitionResult.Success).value
         assertEquals(catalogue, snapshot.publicToolActivityCatalogue)
+        assertEquals(v2.getValue("expected_snapshot_digest").jsonPrimitive.content, snapshot.snapshotDigest)
         assertTrue(snapshot.snapshotDigest != (resolveDefinition(base, registry(), productPolicy()) as DefinitionResult.Success).value.snapshotDigest)
 
         val invalid = registry.copy(publicToolActivityCatalogue = catalogue.copy(descriptors = emptyList()))

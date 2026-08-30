@@ -173,6 +173,17 @@
     "contract_versions": {"effective_snapshot": 1, "prepared_tool_call": 1},
     "snapshot_digest": "f51020c65eb7e939430d5af968f89df39d82bbc257b302c4f05b91a098e80fe9"
   },
+  "snapshot_v2": {
+    "effective_snapshot_version": 2,
+    "public_tool_activity_catalogue": {
+      "schema_version": 1,
+      "catalogue_revision": "activity-labels-1",
+      "descriptors": [
+        {"tool_name": "read_file", "tool_revision": "1", "label_key": "agent.activity.read_file"}
+      ]
+    },
+    "expected_snapshot_digest": "63bc7c929011a87538c207bfe187a27ec3bbad8db51b4695ed68fdd970453b90"
+  },
   "failure_cases": [
     {
       "name": "required-reference-missing",
