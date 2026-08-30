@@ -3,8 +3,18 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::prepared::{PreparationError, PreparationErrorCode};
+
+/// Pure trusted resolver from schema-validated arguments to exact resources.
+pub trait ToolAccessResolver {
+    /// Returns the immutable resolver implementation revision.
+    fn revision(&self) -> &str;
+
+    /// Resolves a bounded exact access set without authority or I/O.
+    fn resolve(&self, arguments: &Value) -> Result<InvocationAccessSet, PreparationError>;
+}
 
 /// Closed namespace order used by canonical access sets and conflict graphs.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]

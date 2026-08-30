@@ -14,7 +14,7 @@ mod unique_json;
 
 pub use access::{
     AccessMode, AccessNamespace, AccessPolicyEntry, InvocationAccessSet, ResourceAccess,
-    ToolAccessPolicyV1,
+    ToolAccessPolicyV1, ToolAccessResolver,
 };
 pub use governed_outcome::{
     EffectState, ExecutionFact, GovernedAction, GovernedEffectFailure, GovernedFailureCode,
