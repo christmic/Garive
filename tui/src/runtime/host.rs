@@ -28,6 +28,7 @@ pub(crate) enum HostMessage {
         sessions: Vec<SessionSummary>,
     },
     SnapshotLoaded {
+        request_id: u64,
         session_id: String,
         view: SessionView,
         items: Vec<TurnTimelineItem>,
@@ -48,7 +49,17 @@ pub(crate) enum HostMessage {
         session_id: String,
         attempt: u32,
     },
-    Failed(garive_host_client::HostClientError),
+    Failed {
+        operation: HostOperation,
+        error: garive_host_client::HostClientError,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum HostOperation {
+    Bootstrap,
+    Snapshot { request_id: u64 },
+    Mutation,
 }
 
 pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage>) {
@@ -64,7 +75,10 @@ pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage
                 definitions,
                 sessions,
             },
-            Err(error) => HostMessage::Failed(error),
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::Bootstrap,
+                error,
+            },
         };
         let _ = sender.send(message).await;
     });
@@ -72,6 +86,7 @@ pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage
 
 pub(crate) fn load_snapshot(
     client: LiveHostClient,
+    request_id: u64,
     session_id: String,
     sender: mpsc::Sender<HostMessage>,
 ) {
@@ -93,12 +108,16 @@ pub(crate) fn load_snapshot(
         .await;
         let message = match result {
             Ok((view, items, follow_position)) => HostMessage::SnapshotLoaded {
+                request_id,
                 session_id,
                 view,
                 items,
                 follow_position,
             },
-            Err(error) => HostMessage::Failed(error),
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::Snapshot { request_id },
+                error,
+            },
         };
         let _ = sender.send(message).await;
     });
@@ -127,7 +146,10 @@ pub(crate) fn cancel_turn(
                 submitted_text: String::new(),
                 response,
             },
-            Err(error) => HostMessage::Failed(error),
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::Mutation,
+                error,
+            },
         };
         let _ = sender.send(message).await;
     });
@@ -175,7 +197,10 @@ pub(crate) fn continue_turn(
                 submitted_text,
                 response,
             },
-            Err(error) => HostMessage::Failed(error),
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::Mutation,
+                error,
+            },
         };
         let _ = sender.send(message).await;
     });
@@ -190,7 +215,10 @@ pub(crate) fn create_session(
     tokio::spawn(async move {
         let message = match client.create_session(&command_id, &definition_id).await {
             Ok(value) => HostMessage::SessionCreated(value),
-            Err(error) => HostMessage::Failed(error),
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::Mutation,
+                error,
+            },
         };
         let _ = sender.send(message).await;
     });
@@ -210,7 +238,10 @@ pub(crate) fn start_turn(
                 submitted_text: text,
                 response,
             },
-            Err(error) => HostMessage::Failed(error),
+            Err(error) => HostMessage::Failed {
+                operation: HostOperation::Mutation,
+                error,
+            },
         };
         let _ = sender.send(message).await;
     });

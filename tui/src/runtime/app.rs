@@ -22,7 +22,7 @@ use crate::{
 
 use super::{
     controller::handle_terminal,
-    host::{self, HostMessage},
+    host::{self, HostMessage, HostOperation},
     SystemTerminal, TerminalError, TerminalGuard, TerminalOptions,
 };
 
@@ -301,6 +301,7 @@ pub(super) struct RuntimeState {
     pub(super) ephemeral_confirmed: bool,
     pub(super) queued_prompt: Option<String>,
     pub(super) editing_suspension: Option<String>,
+    snapshot_request: u64,
 }
 
 struct RestoredState {
@@ -348,6 +349,7 @@ impl RuntimeState {
             ephemeral_confirmed: false,
             queued_prompt: None,
             editing_suspension: None,
+            snapshot_request: 0,
         }
     }
 
@@ -381,7 +383,13 @@ impl RuntimeState {
             .to_owned();
         let _ = self.model.composer.replace(&draft);
         self.model.connection = ConnectionState::Connecting;
-        host::load_snapshot(self.client.clone(), session_id, self.sender.clone());
+        self.snapshot_request = self.snapshot_request.saturating_add(1);
+        host::load_snapshot(
+            self.client.clone(),
+            self.snapshot_request,
+            session_id,
+            self.sender.clone(),
+        );
     }
 
     pub(super) fn persist_presentation(&mut self) {
@@ -558,11 +566,14 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             }
         }
         HostMessage::SnapshotLoaded {
+            request_id,
             session_id,
             view,
             items,
             follow_position,
-        } if state.model.selected_session.as_deref() == Some(&session_id) => {
+        } if state.model.selected_session.as_deref() == Some(&session_id)
+            && request_id == state.snapshot_request =>
+        {
             install_timeline(&mut state.model, items);
             match state.model.suspension.as_ref() {
                 Some(suspension)
@@ -690,13 +701,55 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             ));
         }
         HostMessage::ReconnectDue { .. } => {}
-        HostMessage::Failed(error) => {
+        HostMessage::Failed { operation, error } => {
             let code = error.code;
             state.reject_pending(code);
-            state.dispatch(AppAction::HostUnavailable {
-                safe_code: code.wire_name(),
-            });
-            state.model.execution = ExecutionState::Failed;
+            match operation {
+                HostOperation::Bootstrap => {
+                    state.dispatch(AppAction::HostUnavailable {
+                        safe_code: code.wire_name(),
+                    });
+                    state.model.execution = ExecutionState::Failed;
+                }
+                HostOperation::Snapshot { request_id } if request_id != state.snapshot_request => {}
+                HostOperation::Snapshot { .. }
+                    if matches!(
+                        code,
+                        HostClientErrorCode::InvalidConfiguration
+                            | HostClientErrorCode::InvalidEvent
+                            | HostClientErrorCode::EventOrderViolation
+                            | HostClientErrorCode::EventLimitExceeded
+                    ) =>
+                {
+                    state.dispatch(AppAction::HostUnavailable {
+                        safe_code: code.wire_name(),
+                    });
+                    state.model.execution = ExecutionState::Failed;
+                }
+                HostOperation::Snapshot { .. } if error.status.is_some() => {
+                    state.model.connection = ConnectionState::Online;
+                    state.model.notice =
+                        Some(format!("Snapshot refresh deferred: {}.", code.wire_name()));
+                }
+                HostOperation::Snapshot { .. } => {
+                    state.model.connection = ConnectionState::Disconnected {
+                        attempt: state.reconnect_attempt,
+                    };
+                }
+                HostOperation::Mutation if error.status.is_some() => {
+                    state.model.connection = ConnectionState::Online;
+                    state.model.notice =
+                        Some(format!("Host rejected the command: {}.", code.wire_name()));
+                    if state.model.overlay != Some(Overlay::UnknownCommand) {
+                        state.model.overlay = Some(Overlay::ErrorDetails);
+                    }
+                }
+                HostOperation::Mutation => {
+                    state.model.connection = ConnectionState::Disconnected {
+                        attempt: state.reconnect_attempt,
+                    };
+                }
+            }
         }
     }
 }

@@ -169,6 +169,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     assert!(first.contains("answer"));
     assert!(first.contains("production"));
     assert!(first.contains("runtime"));
+    assert!(!first.contains("unavailable"));
 
     let sessions = SqliteLedger::open(&database)
         .unwrap()
