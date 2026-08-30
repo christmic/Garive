@@ -1,9 +1,9 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Text},
-    widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap},
 };
 
 use crate::{
@@ -11,19 +11,29 @@ use crate::{
     Theme,
 };
 
-pub(crate) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+pub(crate) fn render(
+    model: &AppModel,
+    theme: Theme,
+    area: Rect,
+    buffer: &mut Buffer,
+) -> Option<(u16, u16)> {
     if area.width < 20 || area.height < 8 {
-        Paragraph::new("Need 20x8")
+        Paragraph::new("Need 20×8")
             .style(palette(theme).muted)
             .render(area, buffer);
-        return;
+        return None;
     }
+    let composer_height = if area.height < 14 {
+        3
+    } else {
+        (model.composer.line_count() as u16 + 2).clamp(3, 7)
+    };
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(2),
             Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(composer_height),
             Constraint::Length(1),
         ])
         .split(area);
@@ -32,115 +42,249 @@ pub(crate) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
     render_composer(model, theme, vertical[2], buffer);
     render_footer(model, theme, vertical[3], buffer);
     if let Some(overlay) = model.overlay {
-        render_overlay(overlay, theme, area, buffer);
+        render_overlay(model, overlay, theme, area, buffer);
+        None
+    } else {
+        composer_cursor(model, vertical[2])
     }
 }
 
 fn render_header(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+    let colors = palette(theme);
+    Block::default()
+        .style(colors.header_background)
+        .render(area, buffer);
     let session = model
         .selected_session
         .as_deref()
-        .map(short_id)
-        .unwrap_or("No session");
-    let label = format!(
-        " Garive  {session}  {} | {} ",
-        connection_name(model.connection),
-        execution_name(model.execution)
-    );
-    Paragraph::new(label)
-        .style(palette(theme).header)
-        .render(area, buffer);
+        .map(|value| format!("Session {}", short_id(value)))
+        .unwrap_or_else(|| "Workspace".into());
+    let definition = model
+        .definitions
+        .first()
+        .map(|item| short_id(&item.definition_id))
+        .unwrap_or("No agent");
+    let row = Layout::horizontal([Constraint::Min(1), Constraint::Length(28)]).split(area);
+    Line::from(vec![
+        Span::styled("  GARIVE ", colors.brand),
+        Span::styled(format!(" {definition}  /  {session}"), colors.header_text),
+    ])
+    .render(row[0], buffer);
+    Line::from(vec![
+        Span::styled(connection_icon(model.connection), colors.connection),
+        Span::raw(format!(
+            " {}  ·  {}  ",
+            connection_name(model.connection),
+            execution_name(model.execution)
+        )),
+    ])
+    .alignment(Alignment::Right)
+    .style(colors.header_text)
+    .render(row[1], buffer);
 }
 
 fn render_body(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     if area.width >= 100 {
-        let horizontal = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(28), Constraint::Min(1)])
-            .split(area);
-        let navigation = format!(
-            "Sessions ({})\n\nCtrl+N  New\nCtrl+S  Open",
-            model.session_count
-        );
-        Paragraph::new(navigation)
-            .block(Block::default().borders(Borders::RIGHT))
-            .style(palette(theme).muted)
-            .render(horizontal[0], buffer);
+        let rail_width = if area.width >= 160 { 34 } else { 28 };
+        let horizontal =
+            Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)]).split(area);
+        render_navigation(model, theme, horizontal[0], buffer);
         render_conversation(model, theme, horizontal[1], buffer);
     } else {
         render_conversation(model, theme, area, buffer);
     }
 }
 
+fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+    let colors = palette(theme);
+    let block = Block::default()
+        .title(Line::from(vec![
+            Span::styled(" Sessions ", colors.title),
+            Span::styled(format!("{} ", model.session_count), colors.badge),
+        ]))
+        .borders(Borders::RIGHT)
+        .border_style(colors.border)
+        .padding(Padding::new(1, 1, 1, 0));
+    let inner = block.inner(area);
+    block.render(area, buffer);
+    let mut lines = Vec::new();
+    if model.sessions.is_empty() {
+        lines.push(Line::styled("No sessions yet", colors.muted));
+        lines.push(Line::default());
+        lines.push(Line::styled("Ctrl+N  Create one", colors.accent));
+    } else {
+        for (index, session) in model
+            .sessions
+            .iter()
+            .take(inner.height.saturating_sub(3) as usize)
+            .enumerate()
+        {
+            let selected = model.selected_session.as_deref() == Some(&session.session_id);
+            let marker = if selected { "▸" } else { " " };
+            let state = session.latest_turn_state.as_deref().unwrap_or("new");
+            let style = if selected {
+                colors.selected
+            } else {
+                colors.normal
+            };
+            lines.push(Line::styled(
+                format!("{marker} New session · {}", short_tail(&session.session_id)),
+                style,
+            ));
+            lines.push(Line::styled(
+                format!("  {state}  ·  {} turns", session.turn_count),
+                colors.muted,
+            ));
+            if index + 1 < model.sessions.len() {
+                lines.push(Line::default());
+            }
+        }
+    }
+    Paragraph::new(lines).render(inner, buffer);
+}
+
 fn render_conversation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+    let colors = palette(theme);
+    let block = Block::default()
+        .title(Line::styled(" Conversation ", colors.title))
+        .borders(Borders::BOTTOM)
+        .border_style(colors.border)
+        .padding(Padding::horizontal(2));
+    let inner = block.inner(area);
+    block.render(area, buffer);
     let mut lines = Vec::new();
     if model.timeline.is_empty() {
-        lines.push(Line::from(match model.boot {
-            BootState::Cold | BootState::Loading => "Loading durable Sessions…",
-            BootState::NotConfigured => "No installed Agent definition",
-            BootState::Degraded => "Host unavailable — open status for details",
-            BootState::Ready => "Start a conversation from the composer",
-        }));
+        lines.push(Line::default());
+        lines.push(Line::styled(empty_title(model.boot), colors.empty_title));
+        lines.push(Line::styled(empty_detail(model.boot), colors.muted));
     }
-    for item in &model.timeline {
-        let role = match item.role {
-            TimelineRole::User => "You",
-            TimelineRole::Agent => "Agent",
-            TimelineRole::Status => "Status",
-        };
-        lines.push(Line::styled(role, palette(theme).role));
-        lines.extend(
-            safe_text(&item.text)
-                .lines()
-                .map(|line| Line::from(format!("  {line}"))),
-        );
+    for item in model.timeline.iter().skip(model.scroll_offset) {
+        match item.role {
+            TimelineRole::User => {
+                lines.push(Line::from(vec![
+                    Span::styled("╭─ YOU ", colors.user),
+                    Span::styled(format!("#{}", item.position), colors.muted),
+                ]));
+                push_content(&mut lines, &item.text, "│  ", colors.normal);
+                lines.push(Line::styled("╰─", colors.user));
+            }
+            TimelineRole::Agent => {
+                lines.push(Line::from(vec![
+                    Span::styled("◆  GARIVE ", colors.agent),
+                    Span::styled(format!("#{}", item.position), colors.muted),
+                ]));
+                push_content(&mut lines, &item.text, "   ", colors.normal);
+            }
+            TimelineRole::Status => lines.push(Line::from(vec![
+                Span::styled("  ◌  ", colors.activity),
+                Span::styled(safe_text(&item.text), colors.muted),
+            ])),
+        }
         lines.push(Line::default());
     }
     Paragraph::new(Text::from(lines))
         .wrap(Wrap { trim: false })
-        .render(area, buffer);
+        .render(inner, buffer);
+}
+
+fn push_content(lines: &mut Vec<Line<'static>>, text: &str, prefix: &str, style: Style) {
+    lines.extend(
+        safe_text(text)
+            .lines()
+            .map(|line| Line::styled(format!("{prefix}{line}"), style)),
+    );
 }
 
 fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
-    let title = format!(" Compose  {}/4096 bytes ", model.composer.text().len());
-    Paragraph::new(safe_text(model.composer.text()))
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .style(palette(theme).normal)
-        .render(area, buffer);
+    let colors = palette(theme);
+    let title = if model.execution == ExecutionState::Suspended {
+        " Reply to request "
+    } else {
+        " Message "
+    };
+    let block = Block::default()
+        .title(Line::styled(title, colors.title))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(colors.composer_border)
+        .padding(Padding::horizontal(1));
+    let inner = block.inner(area);
+    block.render(area, buffer);
+    let text = if model.composer.text().is_empty() {
+        Text::from(Line::styled("›  Ask Garive anything…", colors.placeholder))
+    } else {
+        Text::from(safe_text(model.composer.text()))
+    };
+    Paragraph::new(text)
+        .style(colors.normal)
+        .render(inner, buffer);
 }
 
 fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+    let colors = palette(theme);
+    let cells = Layout::horizontal([Constraint::Min(1), Constraint::Length(14)]).split(area);
     let hint = if model.execution == ExecutionState::Following {
-        " Esc cancel  Ctrl+P commands  ? help "
+        " Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help"
     } else {
-        " Enter send  Ctrl+J newline  Ctrl+P commands  ? help "
+        " Enter send   Ctrl+J newline   Ctrl+P commands   ? help"
     };
-    Paragraph::new(hint)
-        .style(palette(theme).muted)
-        .render(area, buffer);
+    Line::styled(hint, colors.muted).render(cells[0], buffer);
+    Line::styled(
+        format!("{}/4096 bytes ", model.composer.text().len()),
+        colors.muted,
+    )
+    .alignment(Alignment::Right)
+    .render(cells[1], buffer);
 }
 
-fn render_overlay(overlay: Overlay, theme: Theme, area: Rect, buffer: &mut Buffer) {
+fn render_overlay(
+    model: &AppModel,
+    overlay: Overlay,
+    theme: Theme,
+    area: Rect,
+    buffer: &mut Buffer,
+) {
+    let colors = palette(theme);
+    let (title, content, height) = match overlay {
+        Overlay::CommandPalette => (" Command palette ", "› /new          Create session\n  /sessions     Switch session\n  /status       Connection details\n  /reconnect    Resume event stream\n  /help         Keyboard guide\n  /quit         Exit safely", 10),
+        Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.", 10),
+        Overlay::SessionPicker => (" Switch session ", "↑/↓ select   Enter open   Esc close", (model.sessions.len() as u16 + 5).clamp(7, 16)),
+        Overlay::PromptHistory => (" Prompt history ", "No matching local prompts\n\nEsc close", 7),
+        Overlay::Suspension => (" Action required ", "The Agent needs your response.\nPress Enter, type your answer, then send.\n\nThis request remains durable if you leave.", 8),
+        Overlay::UnknownCommand => (" Unknown command ", "Nothing was sent to the Host.\nEdit the command or open Ctrl+P.", 7),
+        Overlay::ErrorDetails => (" Status details ", model.notice.as_deref().unwrap_or("No additional safe details."), 7),
+        Overlay::QuitConfirmation => (" Quit Garive? ", "Your Sessions stay durable in the Host.\n\nEnter  Quit     Esc  Keep working", 7),
+    };
     let popup = centered(
         area,
-        52.min(area.width.saturating_sub(4)),
-        7.min(area.height),
+        62.min(area.width.saturating_sub(4)),
+        height.min(area.height.saturating_sub(2)),
     );
     Clear.render(popup, buffer);
-    let title = match overlay {
-        Overlay::CommandPalette => " Commands ",
-        Overlay::Help => " Help ",
-        Overlay::SessionPicker => " Sessions ",
-        Overlay::PromptHistory => " Prompt history ",
-        Overlay::Suspension => " Action required ",
-        Overlay::UnknownCommand => " Command outcome unknown ",
-        Overlay::ErrorDetails => " Error details ",
-        Overlay::QuitConfirmation => " Quit Garive? ",
-    };
-    Paragraph::new("Enter confirm   Esc back")
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .style(palette(theme).normal)
+    Paragraph::new(content)
+        .block(
+            Block::default()
+                .title(Line::styled(title, colors.title))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(colors.overlay_border)
+                .padding(Padding::new(2, 2, 1, 1)),
+        )
+        .style(colors.normal)
+        .wrap(Wrap { trim: false })
         .render(popup, buffer);
+}
+
+fn composer_cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
+    let inner_width = area.width.saturating_sub(4);
+    let inner_height = area.height.saturating_sub(2);
+    if inner_width == 0 || inner_height == 0 {
+        return None;
+    }
+    Some((
+        area.x + 2 + (model.composer.display_column() as u16).min(inner_width - 1),
+        area.y + 1 + (model.composer.cursor_line() as u16).min(inner_height - 1),
+    ))
 }
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
@@ -171,6 +315,16 @@ fn safe_text(value: &str) -> String {
 fn short_id(value: &str) -> &str {
     value.get(..12).unwrap_or(value)
 }
+fn short_tail(value: &str) -> &str {
+    value.get(value.len().saturating_sub(6)..).unwrap_or(value)
+}
+fn connection_icon(value: ConnectionState) -> &'static str {
+    if value == ConnectionState::Online {
+        "●"
+    } else {
+        "○"
+    }
+}
 fn connection_name(value: ConnectionState) -> &'static str {
     match value {
         ConnectionState::Connecting => "connecting",
@@ -182,29 +336,98 @@ fn connection_name(value: ConnectionState) -> &'static str {
 }
 fn execution_name(value: ExecutionState) -> &'static str {
     match value {
-        ExecutionState::Idle => "idle",
+        ExecutionState::Idle => "ready",
         ExecutionState::Following => "running",
         ExecutionState::Suspended => "action required",
         ExecutionState::Failed => "failed",
+    }
+}
+fn empty_title(value: BootState) -> &'static str {
+    match value {
+        BootState::Cold | BootState::Loading => "  Connecting to your durable workspace…",
+        BootState::NotConfigured => "  No Agent is installed",
+        BootState::Degraded => "  Garive Host is unavailable",
+        BootState::Ready => "  A quiet place to get things done",
+    }
+}
+fn empty_detail(value: BootState) -> &'static str {
+    match value {
+        BootState::Cold | BootState::Loading => "  Sessions and activity will appear here.",
+        BootState::NotConfigured => "  Install an Agent definition before creating a Session.",
+        BootState::Degraded => "  Open /status for safe recovery details.",
+        BootState::Ready => "  Write below, or press Ctrl+N for a fresh Session.",
     }
 }
 
 struct Palette {
     normal: Style,
     muted: Style,
-    header: Style,
-    role: Style,
+    accent: Style,
+    title: Style,
+    badge: Style,
+    brand: Style,
+    header_text: Style,
+    header_background: Style,
+    connection: Style,
+    border: Style,
+    composer_border: Style,
+    overlay_border: Style,
+    selected: Style,
+    user: Style,
+    agent: Style,
+    activity: Style,
+    placeholder: Style,
+    empty_title: Style,
 }
 fn palette(theme: Theme) -> Palette {
-    let accent = match theme {
-        Theme::Light => Color::Blue,
-        Theme::Mono => Color::Reset,
-        _ => Color::Cyan,
+    let mono = theme == Theme::Mono;
+    let (accent, violet, surface, text, muted) = if theme == Theme::Light {
+        (
+            Color::Blue,
+            Color::Magenta,
+            Color::Rgb(235, 238, 244),
+            Color::Black,
+            Color::DarkGray,
+        )
+    } else if mono {
+        (
+            Color::Reset,
+            Color::Reset,
+            Color::Reset,
+            Color::Reset,
+            Color::DarkGray,
+        )
+    } else {
+        (
+            Color::Rgb(72, 202, 228),
+            Color::Rgb(189, 147, 249),
+            Color::Rgb(24, 28, 38),
+            Color::Rgb(232, 235, 242),
+            Color::Rgb(126, 134, 151),
+        )
     };
+    let bold = Style::default().fg(accent).add_modifier(Modifier::BOLD);
     Palette {
-        normal: Style::default(),
-        muted: Style::default().fg(Color::DarkGray),
-        header: Style::default().fg(accent).add_modifier(Modifier::BOLD),
-        role: Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        normal: Style::default().fg(text),
+        muted: Style::default().fg(muted),
+        accent: bold,
+        title: bold,
+        badge: Style::default().fg(violet),
+        brand: Style::default()
+            .fg(if mono { text } else { Color::Black })
+            .bg(accent)
+            .add_modifier(Modifier::BOLD),
+        header_text: Style::default().fg(text).bg(surface),
+        header_background: Style::default().bg(surface),
+        connection: Style::default().fg(if mono { text } else { Color::Green }),
+        border: Style::default().fg(muted),
+        composer_border: Style::default().fg(accent),
+        overlay_border: Style::default().fg(violet),
+        selected: Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        user: Style::default().fg(violet).add_modifier(Modifier::BOLD),
+        agent: bold,
+        activity: Style::default().fg(if mono { text } else { Color::Yellow }),
+        placeholder: Style::default().fg(muted).add_modifier(Modifier::ITALIC),
+        empty_title: Style::default().fg(text).add_modifier(Modifier::BOLD),
     }
 }

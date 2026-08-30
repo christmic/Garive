@@ -132,7 +132,11 @@ fn draw(
                 width: area.width,
                 height: area.height,
             };
-            view::render(&state.model, state.config.theme, area, frame.buffer_mut());
+            if let Some(cursor) =
+                view::render(&state.model, state.config.theme, area, frame.buffer_mut())
+            {
+                frame.set_cursor_position(cursor);
+            }
         })
         .map(|_| ())
         .map_err(|_| TuiError::TerminalIo)

@@ -14,7 +14,7 @@ use ratatui::{buffer::Buffer, layout::Rect};
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
     let mut buffer = Buffer::empty(area);
-    view::render(model, Theme::Mono, area, &mut buffer);
+    let _ = view::render(model, Theme::Mono, area, &mut buffer);
     (0..height)
         .map(|y| {
             let line: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
@@ -27,9 +27,9 @@ fn frame(model: &AppModel, width: u16, height: u16) -> String {
 #[test]
 fn minimum_and_compact_frames_are_truthful() {
     let model = AppModel::default();
-    assert!(frame(&model, 19, 7).contains("20x8"));
+    assert!(frame(&model, 19, 7).contains("20×8"));
     let compact = frame(&model, 60, 12);
-    assert!(compact.contains("Loading durable Sessions"));
+    assert!(compact.contains("Connecting to your durable workspace"));
     assert!(compact.contains("Enter send"));
     assert!(!compact.contains("Sessions ("));
 }
@@ -48,7 +48,7 @@ fn standard_frame_has_navigation_timeline_and_safe_text() {
         text: "answer\u{1b}[31m\u{2066}x\u{2069}".into(),
     });
     let standard = frame(&model, 120, 18);
-    assert!(standard.contains("Sessions (3)"));
+    assert!(standard.contains("Sessions 3"));
     assert!(standard.contains("session-1234"));
     assert!(standard.contains("answer�[31m⟦LRI⟧x⟦PDI⟧"));
     assert!(!standard.contains('\u{1b}'));

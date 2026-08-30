@@ -62,6 +62,18 @@ impl EditorState {
         UnicodeWidthStr::width(line)
     }
 
+    pub(crate) fn cursor_line(&self) -> usize {
+        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
+        self.text[..byte]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+    }
+
+    pub(crate) fn line_count(&self) -> usize {
+        self.text.bytes().filter(|byte| *byte == b'\n').count() + 1
+    }
+
     pub(crate) fn insert(&mut self, value: &str) -> Result<(), EditError> {
         let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
         if normalized.chars().any(is_unsafe_control) {
