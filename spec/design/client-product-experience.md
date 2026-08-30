@@ -63,11 +63,20 @@ native composition root
 | Domain view | immutable Session/Turn/activity/error presentation values | durable truth or side effects |
 | UI | layout, focus, input, native accessibility and rendering | Host calls, command IDs, retries, configuration parsing |
 
-Desktop frontend uses the exact ownership tree below. Web follows the same
-conversation/session/activity boundaries without importing Desktop setup,
-Memory IPC, or Tauri adapters. KMP `commonMain` owns the mobile application
-controller and view values; Compose and SwiftUI contain no Host workflow.
-Cross-surface behavior is shared through fixtures, not forced source sharing.
+Desktop and Web mount one React Work UI and the same TypeScript product
+controller. Their composition roots inject different effect ports: Tauri IPC
+for Desktop and bounded HTTP/SSE plus browser preferences for Web. Platform-only
+setup, Workspace, Artifact export, updater, menu, picker, and zoom effects stay
+capability-gated and never execute in the Web composition. KMP `commonMain`
+continues to own the mobile application controller and view values; Compose and
+SwiftUI contain no Host workflow.
+
+The shared React implementation is the SSOT for information architecture,
+copy, responsive behavior, keyboard commands, focus, theme, density, locale,
+Session navigation, conversation, Activity, and capability gates. A browser
+fork that merely resembles Desktop is not admitted. Native macOS chrome and
+authority surfaces remain Desktop-owned because browser equivalents would
+weaken the security boundary.
 
 The target product directories are:
 

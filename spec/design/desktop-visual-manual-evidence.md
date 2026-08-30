@@ -43,6 +43,19 @@ manifest:
 | `packaged-recovery` | Captured from the candidate after an intentionally induced restart, denial, stale grant, offline provider, or damaged backing file. May prove recovery behavior. |
 | `deterministic-visual` | Captured from a bounded development fixture. May prove layout, copy, contrast, and responsive presentation only. It must never prove Runtime or filesystem behavior. |
 | `system-surface` | Native macOS menu, picker, Keychain prompt, save panel, About window, Gatekeeper, or update UI associated with the candidate. |
+| `shared-work-ui` | Captured from the canonical React Work UI in either the Web production build or packaged Desktop. May prove shared layout/copy/interaction presentation for both clients; functional claims still require the corresponding live Host evidence. |
+
+Desktop and Web reuse one `shared-work-ui` screenshot set for the isomorphic
+sidebar, top bar, Session/timeline, composer, Search, Agents, Settings,
+Activity, Artifact cards, responsive modes, themes, density, localization, and
+focus presentation. The manifest binds each image to the shared UI revision and
+both client build digests. It must not duplicate the same state merely to place
+it inside different window chrome.
+
+`M01`, `M30`, `M35`, `M53`, `M64`, `M71`, `M74`, `M80`, `M81`, and native
+parts of `M82` remain separate macOS evidence. A Web capture can never prove a
+DMG install, native menu/picker/save panel, Keychain, Gatekeeper, notarization,
+VoiceOver integration, system accessibility preferences, or updater trust.
 
 Production documentation prefers `packaged-real`. If a private credential or
 unpublishable source is required, use a local loopback provider and synthetic
