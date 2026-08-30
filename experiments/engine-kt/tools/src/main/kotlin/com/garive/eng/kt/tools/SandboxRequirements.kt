@@ -22,6 +22,16 @@ public enum class SandboxControl(public val wireName: String) {
     NETWORK_ORIGIN_SCOPE("network_origin_scope"),
     /** Re-authorize every redirect destination. */
     REDIRECT_REVALIDATION("redirect_revalidation"),
+    /** Restrict browser operations to the exact admitted session and page. */
+    BROWSER_SESSION_SCOPE("browser_session_scope"),
+    /** Restrict desktop operations to the exact admitted application and window. */
+    NATIVE_TARGET_SCOPE("native_target_scope"),
+    /** Bind each action to the exact prior semantic observation. */
+    SNAPSHOT_BINDING("snapshot_binding"),
+    /** Revalidate native focus and overlay posture immediately before input. */
+    FOCUS_REVALIDATION("focus_revalidation"),
+    /** Restrict capture to admitted targets with redaction and retention bounds. */
+    SCREEN_CAPTURE_SCOPE("screen_capture_scope"),
     /** Enforce the declared resource ceilings. */
     RESOURCE_LIMITS("resource_limits"),
 }
@@ -85,11 +95,19 @@ public class SandboxRequirementsV1 private constructor(
                 ExecutionCapability.FILESYSTEM_WRITE in capabilitySet
             val process = ExecutionCapability.PROCESS in capabilitySet
             val network = ExecutionCapability.NETWORK in capabilitySet
+            val browser = ExecutionCapability.BROWSER_OBSERVE in capabilitySet ||
+                ExecutionCapability.BROWSER_ACT in capabilitySet
+            val computer = ExecutionCapability.COMPUTER_OBSERVE in capabilitySet ||
+                ExecutionCapability.COMPUTER_ACT in capabilitySet
+            val computerAct = ExecutionCapability.COMPUTER_ACT in capabilitySet
             val valid = maxOpenFiles > 0 && controls.isNotEmpty() && controlSet.size == controls.size &&
                 process == (maxProcesses != null) && (maxProcesses == null || maxProcesses > 0) &&
                 (!filesystem || controlSet.containsAll(FILESYSTEM_CONTROLS)) &&
                 (!process || controlSet.containsAll(PROCESS_CONTROLS)) &&
-                (!network || controlSet.containsAll(NETWORK_CONTROLS))
+                (!network || controlSet.containsAll(NETWORK_CONTROLS)) &&
+                (!browser || controlSet.containsAll(BROWSER_CONTROLS)) &&
+                (!computer || controlSet.containsAll(COMPUTER_CONTROLS)) &&
+                (!computerAct || SandboxControl.FOCUS_REVALIDATION in controlSet)
             if (!valid) return failure(PreparationErrorCode.SANDBOX_REQUIREMENT_INVALID)
             return ToolContractResult.Success(
                 SandboxRequirementsV1(controls.sortedBy(SandboxControl::ordinal), maxProcesses, maxOpenFiles),
@@ -110,6 +128,16 @@ public class SandboxRequirementsV1 private constructor(
         private val NETWORK_CONTROLS: Set<SandboxControl> = setOf(
             SandboxControl.NETWORK_ORIGIN_SCOPE,
             SandboxControl.REDIRECT_REVALIDATION,
+            SandboxControl.RESOURCE_LIMITS,
+        )
+        private val BROWSER_CONTROLS: Set<SandboxControl> = setOf(
+            SandboxControl.BROWSER_SESSION_SCOPE,
+            SandboxControl.SNAPSHOT_BINDING,
+            SandboxControl.RESOURCE_LIMITS,
+        )
+        private val COMPUTER_CONTROLS: Set<SandboxControl> = setOf(
+            SandboxControl.NATIVE_TARGET_SCOPE,
+            SandboxControl.SNAPSHOT_BINDING,
             SandboxControl.RESOURCE_LIMITS,
         )
     }

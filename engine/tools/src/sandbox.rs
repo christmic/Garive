@@ -25,6 +25,16 @@ pub enum SandboxControl {
     NetworkOriginScope,
     /// Re-authorize every redirect destination.
     RedirectRevalidation,
+    /// Restrict browser operations to the exact admitted session and page.
+    BrowserSessionScope,
+    /// Restrict desktop operations to the exact admitted application and window.
+    NativeTargetScope,
+    /// Bind each action to the exact prior semantic observation.
+    SnapshotBinding,
+    /// Revalidate native focus and overlay posture immediately before input.
+    FocusRevalidation,
+    /// Restrict capture to admitted targets with redaction and retention bounds.
+    ScreenCaptureScope,
     /// Enforce the declared resource ceilings.
     ResourceLimits,
 }
@@ -40,6 +50,11 @@ impl SandboxControl {
             Self::EnvironmentAllowlist => "environment_allowlist",
             Self::NetworkOriginScope => "network_origin_scope",
             Self::RedirectRevalidation => "redirect_revalidation",
+            Self::BrowserSessionScope => "browser_session_scope",
+            Self::NativeTargetScope => "native_target_scope",
+            Self::SnapshotBinding => "snapshot_binding",
+            Self::FocusRevalidation => "focus_revalidation",
+            Self::ScreenCaptureScope => "screen_capture_scope",
             Self::ResourceLimits => "resource_limits",
         }
     }
@@ -71,6 +86,11 @@ impl SandboxRequirementsV1 {
             || capabilities.contains(&ExecutionCapability::FilesystemWrite);
         let process = capabilities.contains(&ExecutionCapability::Process);
         let network = capabilities.contains(&ExecutionCapability::Network);
+        let browser = capabilities.contains(&ExecutionCapability::BrowserObserve)
+            || capabilities.contains(&ExecutionCapability::BrowserAct);
+        let computer = capabilities.contains(&ExecutionCapability::ComputerObserve)
+            || capabilities.contains(&ExecutionCapability::ComputerAct);
+        let computer_act = capabilities.contains(&ExecutionCapability::ComputerAct);
         let valid = max_open_files != 0
             && !controls.is_empty()
             && control_values.len() == controls.len()
@@ -103,7 +123,26 @@ impl SandboxRequirementsV1 {
                         SandboxControl::RedirectRevalidation,
                         SandboxControl::ResourceLimits,
                     ],
-                ));
+                ))
+            && (!browser
+                || required(
+                    &controls,
+                    &[
+                        SandboxControl::BrowserSessionScope,
+                        SandboxControl::SnapshotBinding,
+                        SandboxControl::ResourceLimits,
+                    ],
+                ))
+            && (!computer
+                || required(
+                    &controls,
+                    &[
+                        SandboxControl::NativeTargetScope,
+                        SandboxControl::SnapshotBinding,
+                        SandboxControl::ResourceLimits,
+                    ],
+                ))
+            && (!computer_act || controls.contains(&SandboxControl::FocusRevalidation));
         if !valid {
             return Err(PreparationError::new(
                 PreparationErrorCode::SandboxRequirementInvalid,

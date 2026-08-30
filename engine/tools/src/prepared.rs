@@ -105,6 +105,14 @@ pub enum ExecutionCapability {
     Process,
     /// Access an admitted network surface.
     Network,
+    /// Observe one admitted browser session without mutation.
+    BrowserObserve,
+    /// Mutate one admitted browser session.
+    BrowserAct,
+    /// Observe one admitted native desktop target without input.
+    ComputerObserve,
+    /// Send bounded input to one admitted native desktop target.
+    ComputerAct,
 }
 
 impl ExecutionCapability {
@@ -115,6 +123,10 @@ impl ExecutionCapability {
             Self::FilesystemWrite => "filesystem_write",
             Self::Process => "process",
             Self::Network => "network",
+            Self::BrowserObserve => "browser_observe",
+            Self::BrowserAct => "browser_act",
+            Self::ComputerObserve => "computer_observe",
+            Self::ComputerAct => "computer_act",
         }
     }
 }
@@ -236,8 +248,12 @@ impl ToolDefinition {
         validate_definition(&input_schema)?;
         if replay_class == ReplayClass::ReadOnly
             && requirements.capabilities().any(|capability| {
-                capability != ExecutionCapability::FilesystemRead
-                    && !(v2_access_proof && capability == ExecutionCapability::Network)
+                !matches!(
+                    capability,
+                    ExecutionCapability::FilesystemRead
+                        | ExecutionCapability::BrowserObserve
+                        | ExecutionCapability::ComputerObserve
+                ) && !(v2_access_proof && capability == ExecutionCapability::Network)
             })
         {
             return Err(PreparationError::new(
@@ -451,7 +467,10 @@ impl ToolCatalog {
         let requires_mutation = definition.requirements.capabilities().any(|capability| {
             matches!(
                 capability,
-                ExecutionCapability::FilesystemWrite | ExecutionCapability::Process
+                ExecutionCapability::FilesystemWrite
+                    | ExecutionCapability::Process
+                    | ExecutionCapability::BrowserAct
+                    | ExecutionCapability::ComputerAct
             )
         });
         if !contract.policy.covers(&accesses)
@@ -492,7 +511,10 @@ impl ToolCatalog {
         let requires_mutation = definition.requirements.capabilities().any(|capability| {
             matches!(
                 capability,
-                ExecutionCapability::FilesystemWrite | ExecutionCapability::Process
+                ExecutionCapability::FilesystemWrite
+                    | ExecutionCapability::Process
+                    | ExecutionCapability::BrowserAct
+                    | ExecutionCapability::ComputerAct
             )
         });
         if !contract.policy.covers(&accesses)

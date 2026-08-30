@@ -48,18 +48,18 @@ class SandboxRequirementsTest {
     @Test
     fun sharedFixtureHasCanonicalProfileAndFailures() {
         assertEquals(1, fixture.getValue("schema_version").jsonPrimitive.int)
-        val profile = fixture.getValue("profiles").jsonArray.single().jsonObject
-        val value = profileFromJson(profile)
-        assertEquals(
-            profile.getValue("canonical_controls").jsonArray.map { it.jsonPrimitive.content },
-            assertIs<ToolContractResult.Success<SandboxRequirementsV1>>(value).value.controls.map { it.wireName },
-        )
-        assertEquals(
-            profile.getValue("digest").jsonPrimitive.content,
-            assertIs<ToolContractResult.Success<String>>(
-                assertIs<ToolContractResult.Success<SandboxRequirementsV1>>(value).value.digest(),
-            ).value,
-        )
+        fixture.getValue("profiles").jsonArray.forEach {
+            val profile = it.jsonObject
+            val value = assertIs<ToolContractResult.Success<SandboxRequirementsV1>>(profileFromJson(profile)).value
+            assertEquals(
+                profile.getValue("canonical_controls").jsonArray.map { control -> control.jsonPrimitive.content },
+                value.controls.map(SandboxControl::wireName),
+            )
+            assertEquals(
+                profile.getValue("digest").jsonPrimitive.content,
+                assertIs<ToolContractResult.Success<String>>(value.digest()).value,
+            )
+        }
         fixture.getValue("invalid_profiles").jsonArray.forEach {
             assertEquals(
                 PreparationErrorCode.SANDBOX_REQUIREMENT_INVALID,
@@ -88,6 +88,8 @@ class SandboxRequirementsTest {
                 when (it.jsonPrimitive.content) {
                     "filesystem_read" -> ExecutionCapability.FILESYSTEM_READ
                     "process" -> ExecutionCapability.PROCESS
+                    "browser_observe" -> ExecutionCapability.BROWSER_OBSERVE
+                    "computer_act" -> ExecutionCapability.COMPUTER_ACT
                     else -> error("unknown fixture capability")
                 }
             },

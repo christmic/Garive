@@ -9,6 +9,24 @@
       "max_open_files": 8,
       "canonical_controls": ["filesystem_scope", "symlink_containment", "resource_limits"],
       "digest": "ee3658a7b9788d184f0f97b9b611826416cf546b0786a775f9ba339c18d9e611"
+    },
+    {
+      "name": "browser_observe",
+      "capabilities": ["browser_observe"],
+      "controls": ["resource_limits", "snapshot_binding", "browser_session_scope"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "canonical_controls": ["browser_session_scope", "snapshot_binding", "resource_limits"],
+      "digest": "f2d4f8026869eeb3fc65f4427a550ba92ac63098ecba48042148f025b75bf4b6"
+    },
+    {
+      "name": "computer_act",
+      "capabilities": ["computer_act"],
+      "controls": ["screen_capture_scope", "resource_limits", "focus_revalidation", "snapshot_binding", "native_target_scope"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "canonical_controls": ["native_target_scope", "snapshot_binding", "focus_revalidation", "screen_capture_scope", "resource_limits"],
+      "digest": "a3d41c0e01d7d15d95abe80308c0c9d5b2a49453295edea409ed23acb422c3f4"
     }
   ],
   "invalid_profiles": [
@@ -32,6 +50,22 @@
       "name": "duplicate_control",
       "capabilities": ["filesystem_read"],
       "controls": ["filesystem_scope", "symlink_containment", "resource_limits", "resource_limits"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "expected_code": "sandbox_requirement_invalid"
+    },
+    {
+      "name": "browser_without_snapshot_binding",
+      "capabilities": ["browser_observe"],
+      "controls": ["browser_session_scope", "resource_limits"],
+      "max_processes": null,
+      "max_open_files": 8,
+      "expected_code": "sandbox_requirement_invalid"
+    },
+    {
+      "name": "computer_act_without_focus_revalidation",
+      "capabilities": ["computer_act"],
+      "controls": ["native_target_scope", "snapshot_binding", "resource_limits"],
       "max_processes": null,
       "max_open_files": 8,
       "expected_code": "sandbox_requirement_invalid"

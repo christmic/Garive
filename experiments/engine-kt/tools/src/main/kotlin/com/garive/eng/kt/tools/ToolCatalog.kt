@@ -60,7 +60,12 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
         }
         val mutating = accesses.values.any { it.mode != AccessMode.READ }
         val requiresMutation = definition.requirements.capabilities.any {
-            it == ExecutionCapability.FILESYSTEM_WRITE || it == ExecutionCapability.PROCESS
+            it in setOf(
+                ExecutionCapability.FILESYSTEM_WRITE,
+                ExecutionCapability.PROCESS,
+                ExecutionCapability.BROWSER_ACT,
+                ExecutionCapability.COMPUTER_ACT,
+            )
         }
         if (!policy.covers(accesses) ||
             definition.replayClass == ReplayClass.READ_ONLY && mutating ||

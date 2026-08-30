@@ -45,6 +45,28 @@ The native broker never embeds Engine, opens the Ledger or decides authority.
 The Rust backend sends one already-authorized bounded command and validates one
 typed reply.
 
+## Portable execution and sandbox vocabulary
+
+T2 extends the closed execution capability set with
+`browser_observe`, `browser_act`, `computer_observe`, and `computer_act`.
+Observe capabilities may appear on `ReadOnly` definitions; act capabilities
+are mutating and require a non-read access plus `NeverReplay`. Browser and
+Computer capabilities are never represented as generic process authority.
+
+Every Browser profile proves `browser_session_scope`, `snapshot_binding`, and
+`resource_limits`. Every Computer profile proves `native_target_scope`,
+`snapshot_binding`, and `resource_limits`; Computer act additionally proves
+`focus_revalidation`. Definitions that may capture pixels also require
+`screen_capture_scope`. Browser definitions capable of navigation additionally
+declare Network and prove `network_origin_scope` plus
+`redirect_revalidation`.
+
+Runtime resource keys bind the admitted session/target identity used for
+conflict planning; exact Network resources bind canonical origins. These are
+separate accesses. A Browser or Computer access never implies filesystem,
+process, clipboard, credential, microphone, camera, or unrestricted network
+authority.
+
 ## Distinct identities
 
 ```text

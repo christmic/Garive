@@ -58,6 +58,14 @@ public enum class ExecutionCapability(public val wireName: String) {
     PROCESS("process"),
     /** Access an admitted network surface. */
     NETWORK("network"),
+    /** Observe one admitted browser session without mutation. */
+    BROWSER_OBSERVE("browser_observe"),
+    /** Mutate one admitted browser session. */
+    BROWSER_ACT("browser_act"),
+    /** Observe one admitted native desktop target without input. */
+    COMPUTER_OBSERVE("computer_observe"),
+    /** Send bounded input to one admitted native desktop target. */
+    COMPUTER_ACT("computer_act"),
 }
 
 /** Immutable executor requirements carried by a Prepared Call. */
@@ -216,7 +224,11 @@ public class ToolDefinition private constructor(
             }
             PortableSchema.validateDefinition(inputSchema)?.let { return ToolContractResult.Failure(it) }
             if (replayClass == ReplayClass.READ_ONLY && requirements.capabilities.any {
-                    it != ExecutionCapability.FILESYSTEM_READ && !(v2AccessProof && it == ExecutionCapability.NETWORK)
+                    it !in setOf(
+                        ExecutionCapability.FILESYSTEM_READ,
+                        ExecutionCapability.BROWSER_OBSERVE,
+                        ExecutionCapability.COMPUTER_OBSERVE,
+                    ) && !(v2AccessProof && it == ExecutionCapability.NETWORK)
                 }
             ) {
                 return failure(PreparationErrorCode.INVALID_TOOL_DEFINITION)

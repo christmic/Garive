@@ -69,21 +69,22 @@ fn shared_fixture_has_cross_language_profiles_and_failures() {
     ))
     .unwrap();
     assert_eq!(fixture["schema_version"], 1);
-    let profile = &fixture["profiles"][0];
-    let value = profile_from_json(profile).unwrap();
-    assert_eq!(
-        value
-            .controls()
-            .map(SandboxControl::wire_name)
-            .collect::<Vec<_>>(),
-        profile["canonical_controls"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(value.digest().unwrap(), profile["digest"]);
+    for profile in fixture["profiles"].as_array().unwrap() {
+        let value = profile_from_json(profile).unwrap();
+        assert_eq!(
+            value
+                .controls()
+                .map(SandboxControl::wire_name)
+                .collect::<Vec<_>>(),
+            profile["canonical_controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(value.digest().unwrap(), profile["digest"]);
+    }
     for invalid in fixture["invalid_profiles"].as_array().unwrap() {
         assert_eq!(
             profile_from_json(invalid).unwrap_err().code(),
@@ -117,6 +118,8 @@ fn profile_from_json(
             .map(|item| match item.as_str().unwrap() {
                 "filesystem_read" => ExecutionCapability::FilesystemRead,
                 "process" => ExecutionCapability::Process,
+                "browser_observe" => ExecutionCapability::BrowserObserve,
+                "computer_act" => ExecutionCapability::ComputerAct,
                 _ => panic!("unknown fixture capability"),
             }),
         value["controls"]
@@ -130,6 +133,11 @@ fn profile_from_json(
                 "structured_arguments" => SandboxControl::StructuredArguments,
                 "environment_allowlist" => SandboxControl::EnvironmentAllowlist,
                 "resource_limits" => SandboxControl::ResourceLimits,
+                "browser_session_scope" => SandboxControl::BrowserSessionScope,
+                "native_target_scope" => SandboxControl::NativeTargetScope,
+                "snapshot_binding" => SandboxControl::SnapshotBinding,
+                "focus_revalidation" => SandboxControl::FocusRevalidation,
+                "screen_capture_scope" => SandboxControl::ScreenCaptureScope,
                 _ => panic!("unknown fixture control"),
             }),
         value["max_processes"].as_u64().map(|number| number as u32),
