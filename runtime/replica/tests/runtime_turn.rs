@@ -9,7 +9,8 @@ use garive_runtime::{
     plan_reconcile_invocation, plan_recovery_restart, plan_start_turn, reconstruct_suspended_turn,
     select_runtime_recovery, CancelReason, CancelTurnCommand, ContinuationInput,
     ContinueTurnCommand, EffectRecoveryPosition, EffectiveRuntimeLimits, ExecutionRecoveryPosition,
-    GetTurnQuery, ModelRecoveryPosition, ReconcileInvocationCommand, ReconciliationDecision,
+    GetTurnQuery, InteractionContinuation, InteractionExpiry, InteractionInputRepresentation,
+    ModelRecoveryPosition, ReconcileInvocationCommand, ReconciliationDecision,
     RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
     RuntimeRecoverySnapshot, RuntimeTurnStatus, SqliteLedger, StartTurnCommand,
 };
@@ -317,7 +318,7 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
         recorded_at: "2026-08-29T00:00:02Z".into(),
     };
     let continued = plan_continue_turn(&command, &state).unwrap();
-    assert_ne!(continued.execution_id, Some(prior_execution));
+    assert_ne!(continued.execution_id, Some(prior_execution.clone()));
     let continued_start: Value =
         serde_json::from_str(continued.facts[2].payload.as_json()).unwrap();
     assert_eq!(continued_start["completed_iterations"], 1);
@@ -345,6 +346,45 @@ fn continuation_reopens_a_suspended_turn_with_a_fresh_execution() {
     assert_eq!(
         plan_continue_turn(&stale, &state),
         Err(RuntimeCommandError::ContinuationMismatch)
+    );
+
+    let mut typed_state = state.clone();
+    typed_state.interaction = Some(InteractionContinuation {
+        execution_id: prior_execution,
+        tool_invocation_id: garive_ledger::ToolInvocationId::try_from("tool-1").unwrap(),
+        interaction_id: "interaction-1".into(),
+        prepared_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        response_schema_digest: "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553"
+            .into(),
+        response_schema: json!({"type":"boolean"}),
+        expiry: InteractionExpiry::None,
+    });
+    let typed = ContinueTurnCommand {
+        command_id: RuntimeCommandId::new("typed-continue").unwrap(),
+        session_id: typed_state.session_id.clone(),
+        turn_id: typed_state.turn_id.clone(),
+        expected_suspension_id: typed_state.suspension_id.clone(),
+        expected_session_version: typed_state.session_version,
+        continuation_input: ContinuationInput::InteractionResponse {
+            canonical_json: "true".into(),
+            representation: InteractionInputRepresentation::JsonField,
+        },
+        interaction: typed_state.interaction.clone(),
+        recorded_at: "2026-08-29T00:00:03Z".into(),
+    };
+    let typed_plan = plan_continue_turn(&typed, &typed_state).unwrap();
+    let input: Value = serde_json::from_str(typed_plan.facts[1].payload.as_json()).unwrap();
+    assert_eq!(input["input_kind"], "interaction_json");
+    assert_eq!(input["content"]["inline_utf8"], "true");
+
+    let mut noncanonical = typed.clone();
+    noncanonical.continuation_input = ContinuationInput::InteractionResponse {
+        canonical_json: "{ \"approved\": true }".into(),
+        representation: InteractionInputRepresentation::JsonField,
+    };
+    assert_eq!(
+        plan_continue_turn(&noncanonical, &typed_state),
+        Err(RuntimeCommandError::InvalidCommand)
     );
 }
 

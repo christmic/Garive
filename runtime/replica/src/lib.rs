@@ -82,11 +82,11 @@ pub use runtime_turn::{
     reconstruct_suspended_turn, select_runtime_recovery, CancelReason, CancelTurnCommand,
     ContinuationInput, ContinueTurnCommand, DelegationContinuation, EffectRecoveryPosition,
     EffectiveRuntimeLimits, ExecutionRecoveryPosition, GetTurnQuery, InteractionContinuation,
-    InteractionExpiry, ModelRecoveryPosition, PlannedTurn, ReconcileInvocationCommand,
-    ReconciliationDecision, ReconciliationTarget, RecoveryRestartCommand, RuntimeCommandError,
-    RuntimeCommandId, RuntimeRecoveryAction, RuntimeRecoverySnapshot, RuntimeSuspensionKind,
-    RuntimeSuspensionView, RuntimeTurnStatus, RuntimeTurnView, StartTurnCommand,
-    SuspendedTurnState,
+    InteractionExpiry, InteractionInputRepresentation, ModelRecoveryPosition, PlannedTurn,
+    ReconcileInvocationCommand, ReconciliationDecision, ReconciliationTarget,
+    RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
+    RuntimeRecoverySnapshot, RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus,
+    RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };
 pub use scheduler_runtime::{
     cancel_schedule, create_schedule, reconstruct_schedule_state, run_schedule_once,

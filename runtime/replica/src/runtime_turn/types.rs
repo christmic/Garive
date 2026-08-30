@@ -222,6 +222,13 @@ impl InteractionExpiry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 /// Typed input admitted for one exact suspension reason.
 pub enum ContinuationInput {
+    /// Canonical typed response to one durable interaction request.
+    InteractionResponse {
+        /// Exact RFC 8785 JSON bytes validated before commit.
+        canonical_json: String,
+        /// Public field whose representation the caller selected.
+        representation: InteractionInputRepresentation,
+    },
     /// Schema-validated external or approval input.
     ExternalInput(String),
     /// Operator reconciliation content for one exact uncertain invocation.
@@ -242,6 +249,24 @@ pub enum ContinuationInput {
         /// Exact canonical result bytes supplied to the parent model.
         content: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Public continuation field selected by an interaction caller.
+pub enum InteractionInputRepresentation {
+    /// Proto field 4 supplied a JSON string value.
+    StringField,
+    /// Proto field 5 supplied exact canonical JSON text.
+    JsonField,
+}
+
+impl InteractionInputRepresentation {
+    pub(crate) const fn input_kind(self) -> &'static str {
+        match self {
+            Self::StringField => "interaction_string",
+            Self::JsonField => "interaction_json",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

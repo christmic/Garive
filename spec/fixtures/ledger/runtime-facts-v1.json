@@ -4,6 +4,8 @@
   "valid_cases": [
     {"kind":"turn.started","turn":"turn","payload":{"command_id":"command","kind":"start","agent_instance_id":"agent","definition_id":"definition","definition_revision":"revision","snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","trusted_input_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}},
     {"kind":"turn.input","turn":"turn","payload":{"input_kind":"trusted_user","content":{"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""}}},
+    {"kind":"turn.input","turn":"turn","payload":{"input_kind":"interaction_string","content":{"digest":"70ab47ec8fbd75027e36d5fae28639b51de6e7265220723cc99156dca295fcc5","inline_utf8":"\"approved\""},"suspension_id":"suspension"}},
+    {"kind":"turn.input","turn":"turn","payload":{"input_kind":"interaction_json","content":{"digest":"b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b","inline_utf8":"true"},"suspension_id":"suspension"}},
     {"kind":"turn.input","turn":"turn","payload":{"input_kind":"delegation_result","content":{"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""},"suspension_id":"delegation-suspension"}},
     {"kind":"turn.cancel_requested","turn":"turn","payload":{"command_id":"command","reason":"user","requested_through_position":0}},
     {"kind":"turn.suspended","turn":"turn","payload":{"suspension_id":"suspension","execution_id":"execution","reason":"approval_required","continuation":{"digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","inline_utf8":""},"cumulative_usage":{"input_tokens":{"kind":"unknown"},"output_tokens":{"kind":"known","value":0},"source":"provider_reported"}}},

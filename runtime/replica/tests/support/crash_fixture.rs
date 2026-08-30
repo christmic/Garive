@@ -8,8 +8,8 @@ use garive_runtime::{
     plan_cancel_turn, plan_continue_turn, plan_schedule_claimed, plan_schedule_created,
     plan_start_turn, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
     ContinuationInput, ContinueTurnCommand, EffectiveRuntimeLimits, ExecutionLeaseRequest,
-    InteractionContinuation, InteractionExpiry, RuntimeCommandId, ScheduleLeaseRequest,
-    ScheduleLifecycleContext, SqliteLedger, StartTurnCommand,
+    InteractionContinuation, InteractionExpiry, InteractionInputRepresentation, RuntimeCommandId,
+    ScheduleLeaseRequest, ScheduleLifecycleContext, SqliteLedger, StartTurnCommand,
 };
 use garive_scheduler::{
     next_occurrence, MisfirePolicy, ScheduleDecision, ScheduleIntent, ScheduleSubject,
@@ -199,7 +199,10 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
                 turn_id: turn.clone(),
                 expected_suspension_id: "suspension".into(),
                 expected_session_version: version,
-                continuation_input: ContinuationInput::ExternalInput("approved".into()),
+                continuation_input: ContinuationInput::InteractionResponse {
+                    canonical_json: "true".into(),
+                    representation: InteractionInputRepresentation::JsonField,
+                },
                 interaction: Some(InteractionContinuation {
                     execution_id: execution.clone(),
                     tool_invocation_id: ToolInvocationId::try_from("tool").unwrap(),

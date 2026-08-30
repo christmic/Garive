@@ -24,8 +24,8 @@ pub use recovery_facts::plan_recovery_action_facts;
 pub use types::{
     CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand,
     DelegationContinuation, EffectiveRuntimeLimits, GetTurnQuery, InteractionContinuation,
-    InteractionExpiry, PlannedTurn, ReconcileInvocationCommand, ReconciliationDecision,
-    ReconciliationTarget, RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId,
-    RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus, RuntimeTurnView,
-    StartTurnCommand, SuspendedTurnState,
+    InteractionExpiry, InteractionInputRepresentation, PlannedTurn, ReconcileInvocationCommand,
+    ReconciliationDecision, ReconciliationTarget, RecoveryRestartCommand, RuntimeCommandError,
+    RuntimeCommandId, RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus,
+    RuntimeTurnView, StartTurnCommand, SuspendedTurnState,
 };

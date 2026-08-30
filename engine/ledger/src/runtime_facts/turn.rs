@@ -87,6 +87,8 @@ fn input(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "trusted_user",
             "trusted_system",
             "external_input",
+            "interaction_string",
+            "interaction_json",
             "reconciliation",
             "resource_ready",
             "delegation_result",
