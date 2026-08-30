@@ -8,6 +8,8 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod topology;
+
 const DEFINITION_CONTRACT: &str = "garive.plan-definition";
 const CONTRACT_VERSION: u8 = 1;
 
@@ -118,6 +120,7 @@ impl PlanBoundsV1 {
     ) -> Result<Self, PlanError> {
         if max_steps == 0
             || max_parallel_ready == 0
+            || max_parallel_ready > max_steps
             || max_total_attempts == 0
             || token_budget == Some(0)
             || duration_budget_ms == Some(0)
@@ -245,6 +248,7 @@ impl PlanDefinitionV1 {
         bounds: PlanBoundsV1,
         required_goal_criteria: &BTreeSet<String>,
         already_satisfied_criteria: &BTreeSet<String>,
+        available_capabilities: &BTreeSet<PlanCapabilityReference>,
     ) -> Result<Self, PlanError> {
         let value = Self {
             contract: DEFINITION_CONTRACT,
@@ -260,7 +264,11 @@ impl PlanDefinitionV1 {
             steps,
             bounds,
         };
-        value.validate(required_goal_criteria, already_satisfied_criteria)?;
+        value.validate(
+            required_goal_criteria,
+            already_satisfied_criteria,
+            available_capabilities,
+        )?;
         Ok(value)
     }
 
@@ -268,6 +276,7 @@ impl PlanDefinitionV1 {
         &self,
         required: &BTreeSet<String>,
         satisfied: &BTreeSet<String>,
+        available_capabilities: &BTreeSet<PlanCapabilityReference>,
     ) -> Result<(), PlanError> {
         let ids: BTreeSet<_> = self
             .steps
@@ -294,12 +303,21 @@ impl PlanDefinitionV1 {
                 .steps
                 .iter()
                 .any(|step| !step.depends_on.is_subset(&ids))
+            || self
+                .steps
+                .iter()
+                .any(|step| !step.completion_criteria.is_subset(required))
+            || self
+                .steps
+                .iter()
+                .any(|step| !step.required_capabilities.is_subset(available_capabilities))
+            || required.is_empty()
             || !satisfied.is_subset(required)
             || !required.is_subset(&covered)
         {
             return Err(PlanError::new(PlanErrorCode::PlanInvalid));
         }
-        Ok(())
+        topology::validate_acyclic(&self.steps)
     }
 
     /// Returns steps in semantic declaration/tie-break order.
