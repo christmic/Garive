@@ -340,10 +340,54 @@ impl PlanDefinitionV1 {
 
     /// Returns lowercase SHA-256 over the RFC 8785 definition.
     pub fn digest(&self) -> Result<String, PlanError> {
+        Ok(format!(
+            "{:x}",
+            Sha256::digest(self.canonical_json()?.as_bytes())
+        ))
+    }
+
+    /// Returns the exact RFC 8785 Plan definition document.
+    pub fn canonical_json(&self) -> Result<String, PlanError> {
+        serde_jcs::to_string(self).map_err(|_| PlanError::new(PlanErrorCode::PlanInvalid))
+    }
+
+    /// Binds one step to all cross-revision inputs that affect safe carry-forward.
+    pub fn step_digest(&self, step_id: &PlanStepId) -> Result<String, PlanError> {
+        let step = self
+            .steps
+            .iter()
+            .find(|step| step.step_id() == step_id)
+            .ok_or_else(|| PlanError::new(PlanErrorCode::PlanInvalid))?;
+        let document = StepDigestDocument {
+            contract: "garive.plan-step",
+            version: 1,
+            plan_id: &self.plan_id,
+            goal_id: &self.goal_id,
+            goal_revision: self.goal_revision,
+            goal_definition_digest: &self.goal_definition_digest,
+            agent_snapshot_digest: &self.agent_snapshot_digest,
+            tool_catalogue_digest: &self.tool_catalogue_digest,
+            safety_policy_revision: &self.safety_policy_revision,
+            step,
+        };
         let bytes =
-            serde_jcs::to_vec(self).map_err(|_| PlanError::new(PlanErrorCode::PlanInvalid))?;
+            serde_jcs::to_vec(&document).map_err(|_| PlanError::new(PlanErrorCode::PlanInvalid))?;
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
+}
+
+#[derive(Serialize)]
+struct StepDigestDocument<'a> {
+    contract: &'static str,
+    version: u8,
+    plan_id: &'a PlanId,
+    goal_id: &'a str,
+    goal_revision: u64,
+    goal_definition_digest: &'a str,
+    agent_snapshot_digest: &'a str,
+    tool_catalogue_digest: &'a str,
+    safety_policy_revision: &'a str,
+    step: &'a PlanStepV1,
 }
 
 fn unique<T: Ord>(values: impl IntoIterator<Item = T>) -> Result<BTreeSet<T>, PlanError> {

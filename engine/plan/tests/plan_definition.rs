@@ -13,6 +13,13 @@ fn valid_definition_is_canonical_and_order_sensitive() {
     let second = definition(reversed).unwrap();
     assert_eq!(first.digest().unwrap().len(), 64);
     assert_ne!(first.digest().unwrap(), second.digest().unwrap());
+    assert_eq!(
+        first
+            .step_digest(&PlanStepId::new("prepare").unwrap())
+            .unwrap()
+            .len(),
+        64
+    );
 }
 
 #[test]
