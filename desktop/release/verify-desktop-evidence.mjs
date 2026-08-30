@@ -7,12 +7,14 @@ import { fileURLToPath } from "node:url";
 const releaseDir = dirname(fileURLToPath(import.meta.url));
 const repository = resolve(releaseDir, "../..");
 const specPath = resolve(repository, "spec/design/desktop-visual-manual-evidence.md");
+const manualPath = resolve(repository, "docs/manual/desktop-user-guide.md");
 const manifestPath = resolve(repository,
   process.argv[2] ?? "docs/evidence/desktop-capture-manifest.json");
 const assetRoot = resolve(repository, "docs/manual/assets/desktop");
 const failures = [];
 
 const spec = await readFile(specPath, "utf8");
+const manual = await readFile(manualPath, "utf8");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const expectedIds = [...spec.matchAll(/\| `(M\d{2})` \|/g)].map((match) => match[1]);
 const uniqueExpected = new Set(expectedIds);
@@ -21,6 +23,13 @@ if (manifest.schema_version !== 1) failures.push("manifest schema_version must b
 if (!Array.isArray(manifest.captures)) failures.push("captures must be an array");
 
 const captures = Array.isArray(manifest.captures) ? manifest.captures : [];
+const pendingManualIds = new Set(
+  [...manual.matchAll(/SCREENSHOT (M\d{2}) PENDING/g)].map((match) => match[1]),
+);
+const manualImages = new Map(
+  [...manual.matchAll(/!\[(M\d{2})[^\]]*\]\((assets\/desktop\/[^)]+\.png)\)/g)]
+    .map((match) => [match[1], match[2]]),
+);
 const capturedIds = captures.map((capture) => capture.id);
 if (capturedIds.length !== new Set(capturedIds).size) failures.push("manifest contains duplicate IDs");
 for (const id of expectedIds) {
@@ -54,6 +63,7 @@ const locales = new Set(["en", "zh-Hans", "en-XA"]);
 for (const capture of captures) {
   const id = capture.id ?? "unknown";
   if (capture.status === "pending") {
+    if (!pendingManualIds.has(id)) failures.push(`${id}: pending manual marker is missing`);
     failures.push(`${id}: pending`);
     continue;
   }
@@ -75,6 +85,12 @@ for (const capture of captures) {
   if (capture.git_revision !== candidate.git_revision
       || capture.package_sha256 !== candidate.package_sha256) {
     failures.push(`${id}: candidate identity mismatch`);
+  }
+  const manualImage = manualImages.get(id);
+  const expectedManualImage = typeof capture.image_path === "string"
+    ? capture.image_path.replace(/^docs\/manual\//, "") : undefined;
+  if (!manualImage || manualImage !== expectedManualImage) {
+    failures.push(`${id}: manual image reference is missing or mismatched`);
   }
   if (!Array.isArray(capture.redactions) || !Array.isArray(capture.edits)) {
     failures.push(`${id}: redactions and edits must be explicit arrays`);
@@ -105,6 +121,11 @@ for (const capture of captures) {
   } catch {
     failures.push(`${id}: image is missing or unreadable`);
   }
+}
+
+if (captures.length > 0 && captures.every((capture) => capture.status === "passed")
+    && (/PENDING|待录入|草案，不可发布/.test(manual))) {
+  failures.push("manual still contains draft or pending markers");
 }
 
 if (failures.length > 0) {
