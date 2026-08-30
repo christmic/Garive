@@ -302,6 +302,12 @@ all-target/all-feature Clippy pass. Screen-reader input remains on the shared
 linear `Ctrl+P` catalog. Physical Terminal/iTerm2-class screenshots remain an
 open native gate.
 
+Follow-up merge `2c44743a` binds the contextual footer to that same input-owner
+state. Three `100x24` theme snapshots show the complete navigation hints, while
+the `40x12` monochrome boundary retains completion and dismissal without
+clipping. The focused macOS shipping PTY and strict all-target/all-feature
+Clippy pass on the containing source.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

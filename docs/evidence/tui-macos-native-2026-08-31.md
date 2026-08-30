@@ -234,6 +234,14 @@ These are executable buffer and macOS PTY results, not physical-window images.
 The login session remains locked, so Apple Terminal/iTerm2-class review and the
 admitted PNG gallery remain open.
 
+Follow-up merge `2c44743a` removes the last routing/presentation mismatch: the
+context footer now derives the active suggestion state and shows `↑/↓ select`,
+`Tab complete`, and `Esc close` instead of the inactive composer hints. A
+reviewed monochrome `40x12` snapshot proves the compact fallback keeps only
+`Tab complete` and `Esc close`; the three `100x24` theme snapshots prove the
+full hint set. The focused shipping PTY and strict all-target/all-feature
+Clippy passed again.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
