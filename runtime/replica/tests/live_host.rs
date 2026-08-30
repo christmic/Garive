@@ -700,7 +700,7 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
     );
     let timeline = harness
         .host
-        .read_timeline(&session.session_id, 0, 8)
+        .get_timeline(&session.session_id, 0, 8)
         .unwrap();
     assert_eq!(timeline.items[0].activities[0].state, "completed");
     assert_eq!(
@@ -728,6 +728,10 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
         )
         .unwrap(),
         serde_json::to_value(page.events).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(restarted.get_timeline(&session.session_id, 0, 8).unwrap()).unwrap(),
+        serde_json::to_value(timeline).unwrap()
     );
 }
 

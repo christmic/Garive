@@ -7,20 +7,36 @@ use sha2::{Digest, Sha256};
 use super::{
     projection,
     timeline_prompt::{self, Interaction},
-    HostReadLimits, LiveHostError, SuspensionViewV1, TurnTimelineItemV1, TurnTimelinePageV1,
+    HostActivity, HostReadLimits, LiveHostError, SuspensionViewV1, TurnTimelineItemV1,
+    TurnTimelinePageV1,
 };
 
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
+pub(super) struct TimelineProjectionInput<'a> {
+    pub session_id: &'a SessionId,
+    pub observed_max_position: u64,
+    pub session_version: u64,
+    pub after_position: u64,
+    pub limit: usize,
+    pub facts: &'a [DurableFact],
+    pub activities: BTreeMap<String, Vec<HostActivity>>,
+    pub limits: HostReadLimits,
+}
+
 pub(super) fn project_timeline(
-    session_id: &SessionId,
-    observed_max_position: u64,
-    session_version: u64,
-    after_position: u64,
-    limit: usize,
-    facts: &[DurableFact],
-    limits: HostReadLimits,
+    input: TimelineProjectionInput<'_>,
 ) -> Result<TurnTimelinePageV1, LiveHostError> {
+    let TimelineProjectionInput {
+        session_id,
+        observed_max_position,
+        session_version,
+        after_position,
+        limit,
+        facts,
+        mut activities,
+        limits,
+    } = input;
     if limit == 0
         || limit > limits.max_timeline_items
         || facts.len() > limits.max_facts
@@ -62,8 +78,14 @@ pub(super) fn project_timeline(
     }
     let mut items = turns
         .into_values()
-        .map(Turn::finish)
+        .map(|turn| {
+            let values = activities.remove(&turn.turn_id).unwrap_or_default();
+            turn.finish(values)
+        })
         .collect::<Result<Vec<_>, _>>()?;
+    if !activities.is_empty() {
+        return Err(LiveHostError::CorruptState);
+    }
     items.retain(|item| item.latest_position > after_position);
     items.sort_by_key(|item| (item.latest_position, item.started_position));
     let has_more = items.len() > limit;
@@ -300,8 +322,14 @@ impl Turn {
         }
     }
 
-    fn finish(mut self) -> Result<TurnTimelineItemV1, LiveHostError> {
+    fn finish(
+        mut self,
+        activities: Vec<HostActivity>,
+    ) -> Result<TurnTimelineItemV1, LiveHostError> {
         let user = self.user_text.take().ok_or(LiveHostError::CorruptState)?;
+        if let Some(position) = activities.iter().map(|value| value.source_position).max() {
+            self.latest_position = self.latest_position.max(position);
+        }
         Ok(TurnTimelineItemV1 {
             turn_id: self.turn_id,
             started_position: self.started_position,
@@ -311,6 +339,7 @@ impl Turn {
             completion_text: self.completion_text,
             suspension: self.suspension,
             content_truncated: self.content_truncated,
+            activities,
         })
     }
 }

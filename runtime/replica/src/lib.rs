@@ -83,8 +83,9 @@ pub use live_host::{
     HostContinuationInput, HostEventPage, HostReadLimits, InstalledActivityCatalogue,
     InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostEvent,
     LiveHostLimits, LiveHostServer, LiveHostServerError, SessionPageV1, SessionSummary,
-    SessionSummaryV1, SessionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher,
-    TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    SessionSummaryV1, SessionViewV1, SuspensionViewV1, TurnCommandResponse, TurnDispatchError,
+    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage,
+    TurnTimelinePageV1,
 };
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,

@@ -238,6 +238,8 @@ pub struct TurnTimelineItemV1 {
     pub suspension: Option<SuspensionViewV1>,
     /// Whether display text was explicitly bounded by Runtime.
     pub content_truncated: bool,
+    /// Latest committed public state for every activity owned by this Turn.
+    pub activities: Vec<HostActivity>,
 }
 
 /// Bounded ascending page of complete durable Turn projections.
