@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../desktop/frontend/src/App";
 import type { DesktopCapabilities } from "../../desktop/frontend/src/ipc/host";
+import "../../desktop/frontend/src/visual-system.css";
 import "../../desktop/frontend/src/style.css";
 import { WebProductEffectPort } from "./WebProductEffectPort";
 import { FetchHostClient } from "./host";

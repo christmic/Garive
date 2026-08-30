@@ -1,0 +1,119 @@
+:root {
+  color: #272723;
+  background: #f3f1eb;
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-synthesis: none;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 22px;
+  --text-display: clamp(28px, 3vw, 38px);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --radius-composer: 18px;
+  --radius-pill: 999px;
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --ease-enter: cubic-bezier(.2, .8, .2, 1);
+
+  --surface-canvas: #fbfaf6;
+  --surface-raised: #fffefb;
+  --surface-sidebar: #eeece5;
+  --surface-subtle: #f3f1eb;
+  --border-subtle: rgba(45, 43, 35, .1);
+  --border-strong: rgba(45, 43, 35, .17);
+  --text-primary: #272723;
+  --text-secondary: #686760;
+  --text-tertiary: #74736d;
+  --action-primary: #315fcf;
+  --action-primary-hover: #244cae;
+  --state-info: #315fcf;
+  --state-info-surface: #e8edfb;
+  --state-success: #27825a;
+  --state-success-surface: #e7f3ed;
+  --state-attention: #a46816;
+  --state-attention-surface: #fff4df;
+  --state-danger: #b7473e;
+  --state-danger-surface: #fbefec;
+  --shadow-raised: 0 18px 50px rgba(42, 39, 28, .12), 0 2px 8px rgba(42, 39, 28, .06);
+  --shadow-overlay: 0 28px 80px rgba(42, 39, 28, .18), 0 4px 16px rgba(42, 39, 28, .08);
+
+  /* Compatibility aliases while legacy surfaces migrate to semantic names. */
+  --paper: var(--surface-canvas);
+  --paper-strong: var(--surface-raised);
+  --sidebar: var(--surface-sidebar);
+  --line: var(--border-subtle);
+  --line-strong: var(--border-strong);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --subtle: var(--text-tertiary);
+  --accent: var(--action-primary);
+  --accent-dark: var(--action-primary-hover);
+  --accent-wash: var(--state-info-surface);
+  --green: var(--state-success);
+  --amber: var(--state-attention);
+  --red: var(--state-danger);
+  --shadow: var(--shadow-raised);
+}
+
+.theme-dark {
+  color: #e8e7e2;
+  background: #191a18;
+  --surface-canvas: #1d1e1c;
+  --surface-raised: #242522;
+  --surface-sidebar: #191a18;
+  --surface-subtle: #1b1c1a;
+  --border-subtle: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .15);
+  --text-primary: #e8e7e2;
+  --text-secondary: #a09f99;
+  --text-tertiary: #92938d;
+  --action-primary: #7c9ff1;
+  --action-primary-hover: #6389e5;
+  --state-info: #7c9ff1;
+  --state-info-surface: #252f49;
+  --state-success: #8bd8b3;
+  --state-success-surface: #18382b;
+  --state-attention: #f1c27d;
+  --state-attention-surface: #47351d;
+  --state-danger: #f5a18e;
+  --state-danger-surface: #422721;
+  --shadow-raised: 0 18px 50px rgba(0, 0, 0, .28);
+  --shadow-overlay: 0 28px 80px rgba(0, 0, 0, .42);
+  --paper: var(--surface-canvas);
+  --paper-strong: var(--surface-raised);
+  --sidebar: var(--surface-sidebar);
+  --line: var(--border-subtle);
+  --line-strong: var(--border-strong);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --subtle: var(--text-tertiary);
+  --accent: var(--action-primary);
+  --accent-dark: var(--action-primary-hover);
+  --accent-wash: var(--state-info-surface);
+  --green: var(--state-success);
+  --amber: var(--state-attention);
+  --red: var(--state-danger);
+  --shadow: var(--shadow-raised);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0ms; --motion-base: 0ms; }
+}
+
+@media (prefers-contrast: more) {
+  :root { --border-subtle: currentColor; --border-strong: currentColor; }
+}
