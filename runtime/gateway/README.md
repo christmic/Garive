@@ -85,3 +85,36 @@ Run `go test -race ./...`. Tests cover strict one-time pairing, authorization,
 expiry, revocation, route admission, header stripping, body preservation, and
 loopback-only Runtime composition, plus APNs/FCM payload privacy, FID targeting,
 strict wake resolution, automatic durable-transition relay and deduplication.
+
+## Deterministic native walkthrough (Debug only)
+
+`garive-mobile-demo-host` is a loopback-only H2/H3 walkthrough Host for native
+UI review. It exercises the real KMP client/controller and mutation routes, but
+it is not a production Runtime and does not prove public TLS, pairing, APNs, or
+FCM delivery.
+
+Start it from this directory:
+
+```text
+go run ./cmd/garive-mobile-demo-host
+```
+
+It binds `127.0.0.1:4318` by default. Override only with
+`GARIVE_DEMO_HOST_LISTEN`; never bind this unauthenticated walkthrough service
+to a non-loopback address.
+
+After installing a Debug build, activate the native walkthrough explicitly:
+
+```text
+# iOS Simulator
+xcrun simctl launch <simulator-udid> com.garive.mobile --garive-walkthrough
+
+# Android emulator/device connected through adb
+adb reverse tcp:4318 tcp:4318
+adb shell am start -n com.garive.android/.MainActivity \
+  --ez garive_walkthrough true
+```
+
+The Swift and Kotlin entry points are compile/runtime gated by Debug builds;
+Release builds cannot select this path. Restart the walkthrough Host to restore
+its approval, running, and completed baseline Sessions.
