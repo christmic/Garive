@@ -7,9 +7,11 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    thread,
+    time::Duration,
 };
 
-use garive_core::{AgentOutcome, ExecutionReport, SuspensionReason, UsageSummary};
+use garive_core::{AgentOutcome, ExecutionReport, StopReason, SuspensionReason, UsageSummary};
 use garive_ledger::SessionId;
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
@@ -39,6 +41,10 @@ impl TurnDispatcher for CompletingDispatcher {
             estimated: false,
         };
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call == 3 {
+            schedule_cancel_terminal(self.database.clone(), turn.clone(), usage);
+            return Ok(());
+        }
         let outcome = if call == 1 {
             AgentOutcome::Suspended {
                 reason: SuspensionReason::PartialOutput,
@@ -82,6 +88,50 @@ impl TurnDispatcher for CompletingDispatcher {
             .map_err(|_| TurnDispatchError)?;
         Ok(())
     }
+}
+
+fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: UsageSummary) {
+    thread::spawn(move || {
+        for _ in 0..200 {
+            let ledger = SqliteLedger::open(&database).unwrap();
+            let snapshot = ledger.load_turn(&turn.turn_id).unwrap();
+            if snapshot
+                .facts
+                .iter()
+                .any(|fact| fact.kind.as_str() == "turn.cancel_requested")
+            {
+                let version = ledger
+                    .session_watermark(&turn.session_id)
+                    .unwrap()
+                    .unwrap()
+                    .session_version;
+                drop(ledger);
+                let report = ExecutionReport {
+                    outcome: AgentOutcome::Stopped {
+                        reason: StopReason::Cancelled,
+                    },
+                    completed_iterations: 0,
+                    usage,
+                };
+                let facts = plan_core_terminal(
+                    &CoreTerminalContext {
+                        turn_id: turn.turn_id,
+                        execution_id: turn.execution_id,
+                        recorded_at: "2026-08-30T00:00:02Z".into(),
+                    },
+                    &report,
+                )
+                .unwrap();
+                SqliteLedger::open(&database)
+                    .unwrap()
+                    .commit(turn.session_id, version, facts)
+                    .unwrap();
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("TUI never committed the cancellation request");
+    });
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -137,6 +187,8 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         timeline.items[1].completion_text.as_deref(),
         Some("answer after continuation")
     );
+    assert_eq!(timeline.items[2].user_text, "cancel this turn");
+    assert_eq!(timeline.items[2].state, "stopped");
 
     let restart_log = temporary.path().join("restart.log");
     assert!(run_expect(address, &state, &restart_log, true));
@@ -163,6 +215,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect "Garive: answer from production runtime"
             expect "You: second question"
             expect "Garive: answer after continuation"
+            expect "You: cancel this turn"
             send "\021"
             send "\r"
             expect eof
@@ -183,6 +236,10 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             after 300
             send "continue please\r"
             expect "answer after continuation"
+            send "cancel this turn\r"
+            after 300
+            send "\033"
+            expect "stopped"
             send "\021"
             send "\r"
             expect eof
