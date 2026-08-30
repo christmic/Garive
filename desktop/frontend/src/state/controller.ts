@@ -188,6 +188,9 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
     effect.kind !== "load_preferences" && effect.generation !== state.generation;
   if (navigationStale) return changed(removeEffect(state, effect.effectId));
   if (intent.result.type === "failed") return failedResult(state, effect, intent.result.error);
+  if (!resultMatches(effect.kind, intent.result.type)) {
+    return failedResult(state, effect, { kind: "protocol", code: "unexpected_effect_result" });
+  }
   let next = intent.result.type === "host_event" ? state : removeEffect(state, effect.effectId);
   switch (intent.result.type) {
     case "preferences_loaded": return changed({ ...next, drafts: intent.result.drafts,
@@ -272,7 +275,7 @@ function hostEvent(state: AppViewState, effect: AppEffect, result: Extract<AppEf
 
 function failedResult(state: AppViewState, effect: AppEffect, error: AppError): Reduction {
   const next = removeEffect(state, effect.effectId);
-  if (mutation(effect.kind) && error.kind === "transport") {
+  if (mutation(effect.kind) && (error.kind === "transport" || error.kind === "protocol")) {
     const pending = next.pending.map((item) => item.commandId === effect.commandId ? { ...item, status: "unknown" as const } : item);
     return changed({ ...next, pending, execution: "idle", notice: { kind: "command_unknown", code: "mutation_outcome_unknown" } });
   }
@@ -312,6 +315,16 @@ function replacePending(items: readonly PendingCommand[], replacement: PendingCo
   return items.map((item) => item.commandId === replacement.commandId ? replacement : item);
 }
 function mutation(kind: EffectKind): boolean { return ["create_session", "start_turn", "cancel_turn", "continue_turn"].includes(kind); }
+function resultMatches(kind: EffectKind, type: AppEffectPayload["type"]): boolean {
+  const expected: Readonly<Record<EffectKind, readonly AppEffectPayload["type"][]>> = {
+    load_preferences: ["preferences_loaded"], save_preferences: ["preferences_saved"],
+    load_definitions: ["definitions_loaded"], load_session_page: ["session_page_loaded"],
+    load_timeline: ["timeline_loaded"], follow_events: ["host_event", "event_stream_ended"],
+    create_session: ["command_succeeded"], start_turn: ["command_succeeded"],
+    cancel_turn: ["command_succeeded"], continue_turn: ["command_succeeded"],
+  };
+  return expected[kind].includes(type);
+}
 function validIdentity(value: string): boolean { return value.length > 0 && value.length <= 128 && /^[\x21-\x7e]+$/.test(value); }
 function utf8(value: string): number { return new TextEncoder().encode(value).length; }
 function notice(state: AppViewState, kind: AppErrorKind, code: string): Reduction { return changed({ ...state, notice: { kind, code } }); }

@@ -30,6 +30,19 @@ describe("A-UX1 controller boundaries", () => {
     expect(forged.effects).toEqual([]);
   });
 
+  it("rejects a mismatched mutation result without losing exact retry identity", () => {
+    let state = ready(["session-a"], "session-a");
+    state = reduceApp(state, { type: "edit_draft", sessionId: "session-a", text: "hello" }).state;
+    const started = reduceApp(state, { type: "submit_draft", sessionId: "session-a",
+      commandId: "command-a", requestDigest: DIGEST });
+    const effect = started.effects.find((item) => item.kind === "start_turn")!;
+    const rejected = reduceApp(started.state, { type: "effect_result", effectId: effect.effectId,
+      generation: effect.generation, sessionId: effect.sessionId, requestDigest: effect.requestDigest,
+      result: { type: "preferences_saved" } });
+    expect(rejected.state.notice).toEqual({ kind: "command_unknown", code: "mutation_outcome_unknown" });
+    expect(rejected.state.pending).toEqual([expect.objectContaining({ commandId: "command-a", status: "unknown" })]);
+  });
+
   it("admits at most one mutation per Session and counts UTF-8 bytes", () => {
     let state = ready(["session-a"], "session-a");
     state = reduceApp(state, { type: "edit_draft", sessionId: "session-a", text: "ok" },

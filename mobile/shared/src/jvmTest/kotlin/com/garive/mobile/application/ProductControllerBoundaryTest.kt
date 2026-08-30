@@ -32,6 +32,19 @@ public class ProductControllerBoundaryTest {
     }
 
     @Test
+    public fun mismatchedMutationResultPreservesExactRetryIdentity(): Unit {
+        var state = ready(listOf("session-a"), "session-a")
+        state = reduceApp(state, AppIntent.EditDraft("session-a", "hello")).state
+        val started = reduceApp(state, AppIntent.SubmitDraft("session-a", "command-a", digest))
+        val effect = started.effects.first { it.kind == EffectKind.START_TURN }
+        val rejected = reduceApp(started.state, AppIntent.EffectResult(effect.effectId, effect.generation,
+            effect.sessionId, effect.requestDigest, AppEffectPayload.PreferencesSaved))
+        assertEquals(AppError(AppErrorKind.COMMAND_UNKNOWN, "mutation_outcome_unknown"), rejected.state.notice)
+        assertEquals("command-a", rejected.state.pending.single().commandId)
+        assertEquals(PendingStatus.UNKNOWN, rejected.state.pending.single().status)
+    }
+
+    @Test
     public fun oneMutationPerSessionAndUtf8BytesAreEnforced(): Unit {
         val limits = ControllerLimits(3, 2)
         var state = ready(listOf("session-a"), "session-a")

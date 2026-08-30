@@ -178,6 +178,9 @@ private fun applyResult(state: AppViewState, intent: AppIntent.EffectResult, lim
         effect.generation != state.generation
     if (navigationStale) return Reduction(removeEffect(state, effect.effectId))
     if (intent.result is AppEffectPayload.Failed) return failedResult(state, effect, intent.result.error)
+    if (!resultMatches(effect.kind, intent.result)) {
+        return failedResult(state, effect, AppError(AppErrorKind.PROTOCOL, "unexpected_effect_result"))
+    }
     val next = if (intent.result is AppEffectPayload.HostEvent) state else removeEffect(state, effect.effectId)
     return when (val result = intent.result) {
         is AppEffectPayload.PreferencesLoaded -> Reduction(next.copy(drafts = result.drafts,
@@ -281,7 +284,7 @@ private fun hostEvent(
 
 private fun failedResult(state: AppViewState, effect: AppEffect, error: AppError): Reduction {
     val next = removeEffect(state, effect.effectId)
-    if (mutation(effect.kind) && error.kind == AppErrorKind.TRANSPORT) {
+    if (mutation(effect.kind) && error.kind in setOf(AppErrorKind.TRANSPORT, AppErrorKind.PROTOCOL)) {
         val pending = next.pending.map { if (it.commandId == effect.commandId) it.copy(status = PendingStatus.UNKNOWN) else it }
         return Reduction(next.copy(pending = pending, execution = ExecutionState.IDLE,
             notice = AppError(AppErrorKind.COMMAND_UNKNOWN, "mutation_outcome_unknown")))
@@ -334,6 +337,16 @@ private fun removeEffect(state: AppViewState, id: String): AppViewState = state.
 private fun replacePending(values: List<PendingCommand>, replacement: PendingCommand): List<PendingCommand> =
     values.map { if (it.commandId == replacement.commandId) replacement else it }
 private fun mutation(kind: EffectKind): Boolean = kind in setOf(EffectKind.CREATE_SESSION, EffectKind.START_TURN, EffectKind.CANCEL_TURN, EffectKind.CONTINUE_TURN)
+private fun resultMatches(kind: EffectKind, result: AppEffectPayload): Boolean = when (kind) {
+    EffectKind.LOAD_PREFERENCES -> result is AppEffectPayload.PreferencesLoaded
+    EffectKind.SAVE_PREFERENCES -> result is AppEffectPayload.PreferencesSaved
+    EffectKind.LOAD_DEFINITIONS -> result is AppEffectPayload.DefinitionsLoaded
+    EffectKind.LOAD_SESSION_PAGE -> result is AppEffectPayload.SessionPageLoaded
+    EffectKind.LOAD_TIMELINE -> result is AppEffectPayload.TimelineLoaded
+    EffectKind.FOLLOW_EVENTS -> result is AppEffectPayload.HostEvent || result is AppEffectPayload.EventStreamEnded
+    EffectKind.CREATE_SESSION, EffectKind.START_TURN, EffectKind.CANCEL_TURN, EffectKind.CONTINUE_TURN ->
+        result is AppEffectPayload.CommandSucceeded
+}
 private fun effectKind(kind: CommandKind): EffectKind = when (kind) {
     CommandKind.CREATE_SESSION -> EffectKind.CREATE_SESSION
     CommandKind.START_TURN -> EffectKind.START_TURN
