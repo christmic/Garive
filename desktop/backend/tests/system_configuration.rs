@@ -79,6 +79,23 @@ fn malformed_duplicate_oversized_and_unsafe_documents_fail_closed() {
 }
 
 #[test]
+fn strict_v2_requires_revision_and_setup_identity() {
+    let v2 = String::from_utf8(FIXTURE.to_vec()).unwrap().replace(
+        "\"schema_version\": 1,",
+        "\"schema_version\": 2,\n  \"configuration_revision\": 1,\n  \"setup_id\": \"setup-1\",",
+    );
+    DesktopSystemConfiguration::parse(v2.as_bytes(), Path::new("/tmp/garive-config"))
+        .expect("strict v2");
+    let incomplete = String::from_utf8(FIXTURE.to_vec())
+        .unwrap()
+        .replace("\"schema_version\": 1", "\"schema_version\": 2");
+    assert_eq!(
+        parse(incomplete.as_bytes()).unwrap_err(),
+        DesktopConfigurationError::InvalidDocument
+    );
+}
+
+#[test]
 fn contradictory_policy_options_fail_closed() {
     let retry_without_bound = String::from_utf8(FIXTURE.to_vec()).unwrap().replace(
         "\"output_limit_action\": \"suspend\"",
