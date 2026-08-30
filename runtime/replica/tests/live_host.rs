@@ -181,6 +181,7 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
         .host
         .read_event_page(&session.session_id, 0)
         .unwrap();
+    assert_eq!(first.events[0].api_version, "v1");
     assert_eq!(first.events[0].event, "session.created");
     let second = harness
         .host

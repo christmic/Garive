@@ -85,6 +85,25 @@ pub struct DesktopTurnResult {
     pub text: String,
 }
 
+/// Truthful capability snapshot for the currently installed Desktop backend.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopCapabilityManifest {
+    /// Whether an embedded Runtime composition is installed and ready.
+    pub configured: bool,
+    /// Whether the current process can continue a known durable Session.
+    pub multi_turn: bool,
+    /// Whether H2 durable Session discovery and timeline reload are installed.
+    pub durable_navigation: bool,
+    /// Whether H3 committed Agent activity projection is installed.
+    pub activity: bool,
+    /// Whether A-DESKTOP-C2 write-only setup is installed.
+    pub setup: bool,
+    /// Whether opaque local Workspace capabilities are installed.
+    pub workspaces: bool,
+    /// Whether bounded artifact projection and preview are installed.
+    pub artifacts: bool,
+}
+
 /// Stable secret-free embedded Desktop Host failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopHostError {
@@ -154,15 +173,29 @@ impl DesktopHost {
         definition_id: &str,
         input: &str,
     ) -> Result<DesktopTurnResult, DesktopHostError> {
-        let create_id = self.operations.command_id("create")?;
-        let session = self
-            .host
-            .create_session(&create_id, definition_id)
-            .map_err(|_| DesktopHostError::HostFailure)?;
+        self.run_turn_in_session(definition_id, None, input).await
+    }
+
+    /// Starts one Turn in a known Session, or creates a Session when absent.
+    pub async fn run_turn_in_session(
+        &self,
+        definition_id: &str,
+        session_id: Option<&str>,
+        input: &str,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        let session_id = if let Some(session_id) = session_id {
+            session_id.to_owned()
+        } else {
+            let create_id = self.operations.command_id("create")?;
+            self.host
+                .create_session(&create_id, definition_id)
+                .map_err(|_| DesktopHostError::HostFailure)?
+                .session_id
+        };
         let turn_id = self.operations.command_id("turn")?;
         let turn = self
             .host
-            .start_turn(&turn_id, &session.session_id, input)
+            .start_turn(&turn_id, &session_id, input)
             .map_err(|_| DesktopHostError::HostFailure)?;
         let attempt = self.operations.execution_attempt()?;
         self.queue
@@ -173,7 +206,7 @@ impl DesktopHost {
             .map_err(|_| DesktopHostError::ExecutionFailure)?;
         let page = self
             .host
-            .read_event_page(&session.session_id, turn.committed_position)
+            .read_event_page(&session_id, turn.committed_position)
             .map_err(|_| DesktopHostError::HostFailure)?;
         let terminal = page
             .events
@@ -181,7 +214,7 @@ impl DesktopHost {
             .find_map(|event| terminal(event.event.as_str()).map(|kind| (kind, event)))
             .ok_or(DesktopHostError::ProjectionFailure)?;
         Ok(DesktopTurnResult {
-            session_id: session.session_id,
+            session_id,
             turn_id: turn.turn_id,
             execution_id: turn.execution_id,
             cursor: page.scanned_through_position,
@@ -208,6 +241,20 @@ pub struct DesktopState {
 }
 
 impl DesktopState {
+    /// Returns only capabilities the installed backend can currently prove.
+    pub fn capabilities(&self) -> DesktopCapabilityManifest {
+        let configured = self.host.lock().map(|slot| slot.is_some()).unwrap_or(false);
+        DesktopCapabilityManifest {
+            configured,
+            multi_turn: configured,
+            durable_navigation: false,
+            activity: false,
+            setup: false,
+            workspaces: false,
+            artifacts: false,
+        }
+    }
+
     /// Loads and installs one backend-only system composition when present.
     pub fn install_from(
         &self,
@@ -257,6 +304,17 @@ impl DesktopState {
         definition_id: String,
         input: String,
     ) -> Result<DesktopTurnResult, DesktopHostError> {
+        self.run_turn_in_session_isolated(definition_id, None, input)
+            .await
+    }
+
+    /// Runs a multi-turn Desktop command on an isolated current-thread executor.
+    pub async fn run_turn_in_session_isolated(
+        &self,
+        definition_id: String,
+        session_id: Option<String>,
+        input: String,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
         let host = self
             .host
             .lock()
@@ -268,7 +326,11 @@ impl DesktopState {
                 .enable_all()
                 .build()
                 .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-            runtime.block_on(host.run_turn(&definition_id, &input))
+            runtime.block_on(host.run_turn_in_session(
+                &definition_id,
+                session_id.as_deref(),
+                &input,
+            ))
         })
         .await
         .map_err(|_| DesktopHostError::ExecutionFailure)?

@@ -9,10 +9,35 @@ export interface HostResult {
   readonly terminal: "completed" | "suspended" | "stopped" | "failed";
 }
 
+/** Backend-proved Desktop capability availability; false values remain gated. */
+export interface DesktopCapabilities {
+  readonly configured: boolean;
+  readonly multi_turn: boolean;
+  readonly durable_navigation: boolean;
+  readonly activity: boolean;
+  readonly setup: boolean;
+  readonly workspaces: boolean;
+  readonly artifacts: boolean;
+}
+
+/** Loads the capability snapshot without exposing configuration values. */
+export async function getDesktopCapabilities(
+  invoke: Invoke = tauriInvoke,
+): Promise<DesktopCapabilities> {
+  return invoke<DesktopCapabilities>("get_desktop_capabilities", {});
+}
+
 /** Invokes one typed Turn against the backend-owned embedded R1 composition. */
 export async function runAgentTurn(
-  definitionId: string, input: string, invoke: Invoke = tauriInvoke,
+  definitionId: string,
+  input: string,
+  sessionId?: string,
+  invoke: Invoke = tauriInvoke,
 ): Promise<HostResult> {
   if (!definitionId || !input) throw new Error("invalid_command");
-  return invoke<HostResult>("run_agent_turn", { definitionId, input });
+  return invoke<HostResult>("run_agent_turn", {
+    definitionId,
+    sessionId: sessionId ?? null,
+    input,
+  });
 }

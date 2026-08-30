@@ -139,11 +139,25 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
     assert!(!result.session_id.is_empty());
     assert!(!result.turn_id.is_empty());
     assert!(!result.execution_id.is_empty());
+
+    let continued = state
+        .run_turn_in_session_isolated(
+            "definition-main".into(),
+            Some(result.session_id.clone()),
+            "follow-up desktop".into(),
+        )
+        .await
+        .expect("durable follow-up Turn");
+    assert_eq!(continued.session_id, result.session_id);
+    assert_ne!(continued.turn_id, result.turn_id);
+    assert!(continued.cursor > result.cursor);
 }
 
 #[tokio::test]
 async fn unconfigured_state_is_stable_and_secret_free() {
-    let error = DesktopState::default()
+    let state = DesktopState::default();
+    assert!(!state.capabilities().configured);
+    let error = state
         .run_turn("definition", "private input")
         .await
         .expect_err("configuration is required");
