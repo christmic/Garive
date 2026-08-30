@@ -383,6 +383,17 @@ the first visual row, sends a real End sequence, inserts `X` after
 `hello wonderful`, and proves it did not jump to the logical document end.
 Strict all-target/all-feature Clippy, formatting, and diff checks passed.
 
+Merge revision `98754b25` adds a dedicated transient prompt-history browser at
+the shared visual-row boundary. Pure contracts prove bounded older/newer
+movement and exact restoration of the original draft plus grapheme cursor.
+After rebasing onto `f13b9b4a`, all 35 library, 11 editor, 48 view, 30
+snapshot/boundary, and 13 shipping-binary macOS PTY tests passed. The added
+`40x16` Expect case writes a real mode-`0600` history file, types `work`, moves
+the cursor left twice, traverses `newest -> oldest -> newest -> work`, then
+inserts `X` and observes `woXrk`. It exits normally and proves alternate-screen
+restoration. Strict all-target/all-feature Clippy, formatting, and diff checks
+passed.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

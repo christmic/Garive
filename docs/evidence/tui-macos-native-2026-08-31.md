@@ -332,6 +332,19 @@ alternate-screen restoration. Strict all-target/all-feature Clippy passed with
 warnings denied; formatting and diff checks were clean. This remains
 executable PTY evidence, not a physical-window screenshot.
 
+Merge revision `98754b25` adds visual-boundary prompt recall. On native macOS
+arm64 after rebasing onto `f13b9b4a`, all 35 library, 11 editor, 48 view, 30
+snapshot/boundary, and 13 shipping-binary PTY tests passed. The new `40x16`
+Expect PTY creates an actual mode-`0600` `prompt-history.v1.jsonl`, types
+`work`, moves its grapheme cursor left twice, and sends real Up/Down escape
+sequences through `newest`, `oldest`, `newest`, and back to `work`. Inserting
+`X` then produces `woXrk`, binding restoration of the original cursor rather
+than only the draft text. The latest focused rerun completed in 1.21 seconds,
+exited normally,
+and proved alternate-screen restoration. Strict all-target/all-feature Clippy
+passed with warnings denied; formatting and diff checks were clean. This is
+executable shipping-binary evidence, not a physical-window screenshot.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

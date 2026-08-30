@@ -260,6 +260,24 @@ contract through the shared layout, while preserving `Ctrl+Home/End` for
 document boundaries. This behavior is Garive-authored to keep navigation and
 painted wraps consistent; it is not attributed to either reference product.
 
+Pi directly couples history eligibility to visual boundaries at pinned
+`packages/tui/src/components/editor.ts:393-435,804-825`: Up recalls only from
+the first visual row, Down returns toward the draft only while browsing from
+the last visual row, entering browse mode clones the draft state, and leaving
+past the newest restores it. Codex independently documents a render-decoupled
+shell-style state machine at pinned
+`bottom_pane/chat_composer_history.rs:1-17,122-152,358-435`; ordinary Up/Down
+and `Ctrl+R` search are distinct, and multiline boundary gating protects normal
+cursor movement. Its async response path and rehydration boundary are explicit
+at `bottom_pane/chat_composer.rs:1029-1067,1616-1624,1683-1708`.
+
+Garive adopts the directly observed separation and boundary invariant, not
+either implementation. Its durable `prompt_history` projection, transient
+`PromptHistoryBrowser`, and grapheme-indexed `EditorState` are three separate
+owners. The saved draft includes its original grapheme cursor, while the shared
+Garive `EditorLayout` remains the sole authority for responsive visual rows.
+This exact data ownership and cursor-restoration contract is Garive-authored.
+
 ### Pi corroboration
 
 At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`

@@ -197,6 +197,17 @@ at the last insertion point that remains visibly on that row rather than the
 ambiguous start of the next row; an exact-width cursor continuation is its own
 empty visual row. `Ctrl+Home` and `Ctrl+End` remain document operations.
 
+Unmodified Up recalls the newest local prompt only when the cursor is already
+on the first visual row, the shared layout returns no earlier row, and no
+selection exists. Repeated Up walks toward older entries and stops at the
+oldest. Down remains ordinary visual movement unless history browsing is
+active; from the last visual row it walks toward newer entries and, after the
+newest, restores the exact pre-browse draft text and grapheme cursor. Shifted
+vertical movement never enters history. Any admitted text mutation, paste,
+submission, Session replacement, or explicit composer clear exits browsing;
+thereafter Down cannot resurrect the saved draft. `Ctrl+R` search is a separate
+overlay and does not share this sequential browse cursor.
+
 | Operation | Required behavior |
 |---|---|
 | Insert | one transaction per typed cluster; adjacent typing may coalesce within a bounded interval |

@@ -65,6 +65,7 @@ tui/src/
   input/
     mod.rs               key/paste/mouse routing
     editor.rs            grapheme-aware multiline editor
+    history.rs           transient bounded prompt-history browser
     commands.rs          parser, typed registry, and shared availability contract
   persistence.rs         preference and pending-command ports/adapters
   runtime/
@@ -122,6 +123,16 @@ does not duplicate responsive wrapping geometry.
 Home/End follows the identical request path for a visual-row edge. Modified
 `Ctrl+Home/End` bypasses presentation geometry and remains an editor-owned
 document-boundary operation.
+
+Prompt recall has three explicit owners. `persistence.rs` validates and bounds
+durable `PromptHistoryEntryV1` records; `input/history.rs` owns only the
+transient browse index plus the original draft text and grapheme cursor;
+`EditorState` owns the recalled editable buffer. Root view remains the only
+source of visual-row boundaries. The controller asks history for an older
+entry only when unmodified Up has no selection and the shared visual layout
+cannot move farther up; it asks for a newer entry only while browsing and the
+layout cannot move farther down. History state never owns rendering, files,
+Session transcript facts, or responsive coordinates.
 
 The title presenter is pure and returns only bounded product labels derived
 from typed connection/execution state plus a loaded Session ordinal. The

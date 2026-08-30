@@ -260,6 +260,12 @@ A torn final line is ignored during read and repaired before the next append;
 malformed complete lines reject/quarantine the file. History search never reads
 Host transcript or other projects.
 
+Sequential Up/Down browsing is an in-memory projection over these validated
+records. Its selected index and saved pre-browse draft/cursor are transient UI
+state: they are never serialized, appended, compacted, or treated as Host
+authority. Returning past the newest entry restores that saved draft exactly;
+an edit discards the browse state without changing any persisted history row.
+
 `--no-prompt-history` disables reads and writes without deleting the file.
 `--ephemeral` also disables preferences, drafts, pending persistence, and
 diagnostic files; mutations are then refused unless the user confirms that an

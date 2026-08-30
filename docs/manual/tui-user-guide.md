@@ -181,6 +181,13 @@ combining characters are never split.
 Home and End move to the current visible wrapped row's start or end; use
 Ctrl+Home and Ctrl+End for the whole draft. At a soft-wrap boundary, End stays
 on the visible row instead of unexpectedly jumping to the final logical line.
+At the first visible row, unmodified Up begins browsing submitted local
+prompts; repeated Up goes older. While browsing, Down goes newer only after the
+cursor reaches the recalled prompt's last visible row. Down after the newest
+restores both the text and cursor position you had before browsing, so editing
+continues at the same place. Typing, pasting, submitting, clearing, or switching
+the composer ends that browse session. Shift+Up/Down remains text selection,
+and `Ctrl+R` remains searchable history rather than sequential recall.
 When height permits, the composer grows from three to seven rows according to
 what is visibly wrapped, even if the draft contains no explicit newline. On an
 extremely short terminal it stays compact and scrolls internally so the
