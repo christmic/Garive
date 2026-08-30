@@ -93,3 +93,17 @@ Git/package identity, checks required provenance and safety declarations, and
 recomputes every PNG SHA-256 under `docs/manual/assets/desktop`. The checked-in
 manifest intentionally starts red: it becomes green only after the real
 candidate capture matrix is complete.
+
+Render the screenshot-bound Chinese manual draft from the repository root with
+the bundled PDF runtime (or another Python environment containing ReportLab):
+
+```sh
+python3 desktop/release/build-desktop-manual.py
+```
+
+The default output is `output/pdf/garive-macos-user-guide-draft.pdf`. The
+builder fails closed when the manual's screenshot placeholders differ from the
+accepted evidence spec and replaces the PDF atomically. This draft validates
+layout, extractable text, navigation, and evidence placement only: it is not a
+public manual while placeholders remain, and ReportLab does not emit a tagged
+PDF, so PDF/UA and VoiceOver reading order require a separate final gate.

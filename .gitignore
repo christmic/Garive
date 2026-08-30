@@ -1,5 +1,9 @@
 # Rust
 target/
+/output/
+/tmp/
+__pycache__/
+*.py[cod]
 **/*.rs.bk
 
 # Go
