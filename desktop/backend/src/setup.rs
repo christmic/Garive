@@ -1001,10 +1001,47 @@ fn committed_receipt(
     let receipt: DesktopSetupReceipt =
         serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
     if receipt.plan_digest == plan_digest {
+        validate_committed_receipt(directory, &receipt)?;
         Ok(Some(receipt))
     } else {
         Ok(None)
     }
+}
+
+fn validate_committed_receipt(
+    directory: &std::path::Path,
+    receipt: &DesktopSetupReceipt,
+) -> Result<(), DesktopSetupError> {
+    let value = json!({
+        "schema_version": receipt.schema_version,
+        "setup_id": receipt.setup_id,
+        "plan_digest": receipt.plan_digest,
+        "configuration_revision": receipt.configuration_revision,
+        "configuration_digest": receipt.configuration_digest,
+        "restart_required": receipt.restart_required,
+    });
+    if receipt.schema_version != 1
+        || !receipt.restart_required
+        || !valid_digest(&receipt.plan_digest)
+        || !valid_digest(&receipt.configuration_digest)
+        || !valid_digest(&receipt.receipt_digest)
+        || digest_value(&value)? != receipt.receipt_digest
+    {
+        return Err(DesktopSetupError::PersistenceFailed);
+    }
+    let bytes = fs::read(directory.join(DESKTOP_CONFIG_FILE))
+        .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    let config = DesktopSystemConfiguration::parse(&bytes, directory)
+        .map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    let config_value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    if config.setup_id() != Some(receipt.setup_id.as_str())
+        || config.configuration_revision() != Some(receipt.configuration_revision)
+        || digest_value(&config_value)? != receipt.configuration_digest
+    {
+        return Err(DesktopSetupError::PersistenceFailed);
+    }
+    Ok(())
 }
 
 fn remove_known_temporary(directory: &std::path::Path, setup_id: Option<&str>) {

@@ -431,6 +431,27 @@ fn prepared_rotation_binds_exact_current_revision_and_digest() {
 }
 
 #[test]
+fn replay_rejects_a_corrupt_committed_receipt() {
+    let directory = tempfile::tempdir().unwrap();
+    let service =
+        DesktopSetupService::new(directory.path().to_owned(), RecordingCredentials::default());
+    let plan = service.prepare(input("corrupt-receipt")).unwrap();
+    service.commit(&plan.plan_digest, "secret").unwrap();
+    let path = directory.path().join("desktop-setup-receipt.json");
+    let mut receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    receipt["receipt_digest"] = serde_json::Value::String("c".repeat(64));
+    std::fs::write(path, serde_json::to_vec(&receipt).unwrap()).unwrap();
+    assert_eq!(
+        service
+            .commit(&plan.plan_digest, "secret")
+            .unwrap_err()
+            .code(),
+        "setup_persistence_failed"
+    );
+}
+
+#[test]
 fn setup_state_reports_startup_without_configuration_values() {
     let directory = tempfile::tempdir().unwrap();
     let service =
