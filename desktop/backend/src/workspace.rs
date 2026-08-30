@@ -171,6 +171,8 @@ struct PrivateWorkspace {
     entries: BTreeMap<String, PrivateEntry>,
     #[cfg(target_os = "macos")]
     _security_scope: Option<garive_macos_bookmark::ScopedBookmark>,
+    #[cfg(target_os = "macos")]
+    write_scope: Option<garive_macos_bookmark::ScopedBookmark>,
 }
 
 #[derive(Clone)]
@@ -288,6 +290,8 @@ impl DesktopWorkspaceService {
                     entries: BTreeMap::new(),
                     #[cfg(target_os = "macos")]
                     _security_scope: Some(scope),
+                    #[cfg(target_os = "macos")]
+                    write_scope: None,
                 })
             })();
             match recovered {
@@ -416,6 +420,8 @@ impl DesktopWorkspaceService {
                 entries: BTreeMap::new(),
                 #[cfg(target_os = "macos")]
                 _security_scope: None,
+                #[cfg(target_os = "macos")]
+                write_scope: None,
             },
         );
         let mut records = self
@@ -558,6 +564,8 @@ impl DesktopWorkspaceService {
                 entries: BTreeMap::new(),
                 #[cfg(target_os = "macos")]
                 _security_scope: None,
+                #[cfg(target_os = "macos")]
+                write_scope: None,
             },
         );
         let mut records = self
@@ -618,6 +626,80 @@ impl DesktopWorkspaceService {
             return Err(DesktopWorkspaceError::Unavailable);
         }
         Ok(workspace.public.clone())
+    }
+
+    /// Upgrades one exact active Workspace to process-local write authority.
+    ///
+    /// The durable bookmark remains read-only. A restart therefore requires a
+    /// fresh native folder authorization before another mutation can occur.
+    pub fn authorize_writes(
+        &self,
+        workspace_id: &str,
+        selected: &Path,
+        owner_window: &str,
+    ) -> Result<DesktopWorkspaceGrant, DesktopWorkspaceError> {
+        let (canonical_root, metadata) = validated_root(selected)?;
+        let identity = file_identity(&metadata);
+        #[cfg(target_os = "macos")]
+        let write_scope = {
+            let bytes = garive_macos_bookmark::create_read_write(&canonical_root)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            let (scope, _) = garive_macos_bookmark::resolve(&bytes)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            Some(scope)
+        };
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let workspace = active
+            .get_mut(workspace_id)
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        if workspace.owner_window != owner_window
+            || workspace.identity != identity
+            || workspace.canonical_root != canonical_root
+        {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        if workspace.public.access == "read_write" {
+            return Ok(workspace.public.clone());
+        }
+        let previous = workspace.public.clone();
+        workspace.public.grant_revision = workspace
+            .public
+            .grant_revision
+            .checked_add(1)
+            .ok_or(DesktopWorkspaceError::BoundExceeded)?;
+        workspace.public.access = "read_write";
+        #[cfg(target_os = "macos")]
+        {
+            workspace.write_scope = write_scope;
+        }
+        let upgraded = workspace.public.clone();
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let previous_record_revision = records
+            .get(workspace_id)
+            .map(|record| record.grant_revision);
+        if let Some(record) = records.get_mut(workspace_id) {
+            record.grant_revision = upgraded.grant_revision;
+        }
+        if let Err(error) = self.persist_records_locked(&records) {
+            workspace.public = previous;
+            #[cfg(target_os = "macos")]
+            {
+                workspace.write_scope = None;
+            }
+            if let (Some(record), Some(revision)) =
+                (records.get_mut(workspace_id), previous_record_revision)
+            {
+                record.grant_revision = revision;
+            }
+            return Err(error);
+        }
+        Ok(upgraded)
     }
 
     /// Revokes one exact capability and drops its private root immediately.

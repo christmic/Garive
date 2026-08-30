@@ -108,7 +108,7 @@ impl LiveHost {
         validate_key(idempotency_key)?;
         validate_key(workspace_id)?;
         validate_text(display_name, 128)?;
-        if grant_revision == 0 || access != "enumerate" {
+        if grant_revision == 0 || !matches!(access, "enumerate" | "read_write") {
             return Err(LiveHostError::InvalidRequest);
         }
         let session_id = identity::<SessionId>(session)?;

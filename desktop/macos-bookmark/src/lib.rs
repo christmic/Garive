@@ -48,11 +48,22 @@ impl Drop for ScopedBookmark {
 
 /// Creates a read-only security-scoped bookmark for an already-authorized directory.
 pub fn create_read_only(path: &Path) -> Result<Vec<u8>, BookmarkError> {
+    create(path, true)
+}
+
+/// Creates a read-write security-scoped bookmark after explicit folder authorization.
+pub fn create_read_write(path: &Path) -> Result<Vec<u8>, BookmarkError> {
+    create(path, false)
+}
+
+fn create(path: &Path, read_only: bool) -> Result<Vec<u8>, BookmarkError> {
     let path = path.to_str().ok_or(BookmarkError::InvalidPath)?;
     let value = NSString::from_str(path);
     let url = NSURL::fileURLWithPath_isDirectory(&value, true);
-    let options = NSURLBookmarkCreationOptions::WithSecurityScope
-        | NSURLBookmarkCreationOptions::SecurityScopeAllowOnlyReadAccess;
+    let mut options = NSURLBookmarkCreationOptions::WithSecurityScope;
+    if read_only {
+        options |= NSURLBookmarkCreationOptions::SecurityScopeAllowOnlyReadAccess;
+    }
     let data = url
         .bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
             options, None, None,
@@ -120,6 +131,18 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let bytes = create_read_only(directory.path()).unwrap();
         assert!(!bytes.is_empty());
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains(directory.path().to_string_lossy().as_ref())
+        );
+        let (resolved, stale) = resolve(&bytes).unwrap();
+        assert!(!stale);
+        assert_eq!(resolved.path(), directory.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn read_write_bookmark_round_trips_without_embedding_the_plain_path() {
+        let directory = tempfile::tempdir().unwrap();
+        let bytes = create_read_write(directory.path()).unwrap();
         assert!(
             !String::from_utf8_lossy(&bytes).contains(directory.path().to_string_lossy().as_ref())
         );

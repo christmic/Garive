@@ -74,6 +74,26 @@ fn cloned_service_shares_the_exact_authority_registry() {
     );
 }
 
+#[test]
+fn write_authority_requires_the_exact_selected_workspace_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let service = DesktopWorkspaceService::default();
+    let grant = service.admit_selected(directory.path(), "main").unwrap();
+    assert_eq!(
+        service
+            .authorize_writes(&grant.workspace_id, other.path(), "main")
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+    let writable = service
+        .authorize_writes(&grant.workspace_id, directory.path(), "main")
+        .unwrap();
+    assert_eq!(writable.workspace_id, grant.workspace_id);
+    assert_eq!(writable.grant_revision, grant.grant_revision + 1);
+    assert_eq!(writable.access, "read_write");
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn native_bookmark_restores_the_same_opaque_workspace_after_process_rebuild() {
