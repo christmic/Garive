@@ -146,6 +146,39 @@ mobile-android:
 mobile-android-device: mobile-android
     cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:connectedDebugAndroidTest
 
+mobile-android-live-ui go_bin="go" adb_bin="adb":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if curl --fail --silent --max-time 0.2 http://127.0.0.1:4318/v1/sessions >/dev/null 2>&1; then
+        echo "tcp:4318 is already serving; stop it before the isolated live-Host gate" >&2
+        exit 1
+    fi
+    pushd runtime/gateway >/dev/null
+    "{{go_bin}}" run ./cmd/garive-mobile-demo-host &
+    host_pid=$!
+    popd >/dev/null
+    cleanup() {
+        "{{adb_bin}}" reverse --remove tcp:4318 >/dev/null 2>&1 || true
+        kill "$host_pid" >/dev/null 2>&1 || true
+        wait "$host_pid" >/dev/null 2>&1 || true
+    }
+    trap cleanup EXIT
+    for _ in {1..300}; do
+        if ! kill -0 "$host_pid" >/dev/null 2>&1; then
+            wait "$host_pid"
+            exit 1
+        fi
+        if curl --fail --silent http://127.0.0.1:4318/v1/sessions >/dev/null; then break; fi
+        sleep 0.1
+    done
+    curl --fail --silent http://127.0.0.1:4318/v1/sessions >/dev/null
+    "{{adb_bin}}" reverse tcp:4318 tcp:4318
+    cd mobile/androidApp
+    java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain \
+      :app:connectedDebugAndroidTest \
+      -Pandroid.testInstrumentationRunnerArguments.class=com.garive.android.LiveHostJourneyTest \
+      -Pandroid.testInstrumentationRunnerArguments.gariveLiveHost=true
+
 mobile-evidence:
     python3 scripts/verify-mobile-evidence.py
 

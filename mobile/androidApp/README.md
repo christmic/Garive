@@ -51,6 +51,10 @@ and appends a second Turn in the opened Conversation in addition to focused
 component and secure-storage tests.
 The full-shell journey also selects Light and Dark through the same Settings
 segmented control used by the shipping activity.
+Run `just mobile-android-live-ui` from the repository root for the opt-in
+network journey. It starts the real repository Debug Host, establishes
+`adb reverse`, then proves create/start, cancel and second-Turn append through
+the installed Activity rather than a UI test double.
 An active-app `garive://pair` journey verifies singleTop delivery, exact query
 shape, shared HTTPS-origin canonicalization, visible service confirmation, and
 an enabled explicit connection action.

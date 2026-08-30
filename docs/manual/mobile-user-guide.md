@@ -377,6 +377,18 @@ adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true --es garive_walkthrough_session release-approval
 ```
 
+也可以用一条门禁命令自动完成 Host 启停、ADB 端口转发，以及真实网络上的
+`create/start → cancel → 第二轮 append`：
+
+```text
+just mobile-android-live-ui \
+  /private/tmp/garive-go1.26.5/go/bin/go \
+  /Users/christmix/OraculoSpace/.android-sdk/platform-tools/adb
+```
+
+不传参数时使用当前 `PATH` 中的 `go` 与 `adb`。该测试显式 opt-in；普通
+`mobile-android-device` 在没有启动 walkthrough Host 时会跳过这一条网络旅程。
+
 iOS Simulator 可直接打开首页、导航抽屉或审批 Session：
 
 ```text
