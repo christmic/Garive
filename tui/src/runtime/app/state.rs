@@ -397,7 +397,15 @@ impl RuntimeState {
     #[cfg(feature = "test-hooks")]
     fn crash_if(&self, point: crate::args::TestCrashHook) {
         if self.config.test_crash_hook == Some(point) {
-            std::process::abort();
+            let name = match point {
+                crate::args::TestCrashHook::PendingPersisted => "pending-persisted",
+                crate::args::TestCrashHook::ResponseAccepted => "response-accepted",
+                crate::args::TestCrashHook::PendingRemoved => "pending-removed",
+            };
+            eprintln!("GARIVE_TEST_CRASH_HOOK={name}");
+            loop {
+                std::thread::park();
+            }
         }
     }
 

@@ -152,6 +152,7 @@ tui-persistence:
 
 tui-runtime-e2e:
     cargo test -p garive-tui --test production_runtime
+    cargo test -p garive-tui --features test-hooks --test crash_recovery
 
 tui-pty:
     cargo test -p garive-tui --test live_h1

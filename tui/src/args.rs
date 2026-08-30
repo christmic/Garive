@@ -43,11 +43,11 @@ pub enum MouseMode {
 #[cfg(feature = "test-hooks")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum TestCrashHook {
-    /// Abort after the exact pending command is durable and before Host I/O.
+    /// Pause after the exact pending command is durable and before Host I/O.
     PendingPersisted,
-    /// Abort after a mutation response is validated and before pending removal.
+    /// Pause after a mutation response is validated and before pending removal.
     ResponseAccepted,
-    /// Abort after pending removal and before convenience-state updates.
+    /// Pause after pending removal and before convenience-state updates.
     PendingRemoved,
 }
 
