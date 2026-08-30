@@ -152,6 +152,13 @@ Garive adopts the component and ownership pattern, not Grok's commands,
 previews, MRU ranking, or ACP/tool registry. Garive's smaller catalog is
 static, exact-prefix filtered, and bounded to five visible rows.
 
+The same pinned tree's `xai-ratatui-textarea/src/editor.rs:44-105` gives every
+directional movement an explicit selection-collapse edge. Tests at
+`textarea_tests.rs:6437-6615` distinguish plain grapheme arrows, which stop at
+the chosen edge, from word/vertical/Home/End movements, which continue from
+that edge. Garive adopts this interaction invariant in its smaller editor
+model, not Grok's textarea implementation, keymap, kill ring, or mouse grammar.
+
 ## Codex findings
 
 ### Event and terminal ownership

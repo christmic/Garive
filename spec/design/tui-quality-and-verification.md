@@ -329,6 +329,15 @@ tests and nine shipping-binary macOS PTYs pass; the new Expect case types
 proves alternate-screen restoration. Strict all-target/all-feature Clippy,
 formatting, and diff checks pass.
 
+Follow-up merge `3513b0f6` binds directional selection collapse. Ten editor
+tests prove left/right stop at the corresponding edge without extra movement
+and word/vertical moves continue from the correct edge for either anchor
+direction. The 37 view and 19 snapshot/boundary tests remain green. All nine
+shipping-binary macOS PTYs pass; the selection PTY now collapses a visible CJK
+selection with a real Left sequence, inserts `X`, and observes `aX界b` before
+clean restoration. Strict all-target/all-feature Clippy, formatting, and diff
+checks pass.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

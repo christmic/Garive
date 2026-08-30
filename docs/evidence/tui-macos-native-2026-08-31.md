@@ -273,6 +273,15 @@ xterm Shift+Left sequences, and observes an emitted reverse-video `界` before
 normal quit and alternate-screen restoration. Strict all-target/all-feature
 Clippy passed with warnings denied; formatting and diff checks were clean.
 
+Follow-up merge `3513b0f6` corrects selection collapse to the directional
+edge. Plain Left/Right stops at the start/end edge without an extra grapheme;
+word, vertical, line, and document motion continue from their corresponding
+edge. Ten editor tests bind both anchor directions plus word/vertical behavior;
+37 view and 19 snapshot/boundary tests remain green. All nine shipping PTYs
+pass. The mono Expect case now selects `界b`, sends a real unmodified Left,
+inserts `X`, observes `aX界b`, and then proves normal alternate-screen restore.
+Strict all-target/all-feature Clippy, formatting, and diff checks passed.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

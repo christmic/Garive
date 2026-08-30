@@ -144,7 +144,9 @@ Garive does not invent or persist provider/model choices in the TUI.
 
 Selected composer text is visibly highlighted in dark and light themes and
 uses reverse video in monochrome. Selection follows complete displayed
-characters, so CJK, emoji families, and combining marks are never split.
+characters, so CJK, emoji families, and combining marks are never split. Left
+or Right without Shift collapses the selection to that edge without moving an
+extra character; word and line movements continue from their directional edge.
 
 Typing `/` at the first column of a focused, single-line composer opens a
 compact command menu above it. Continue typing to narrow by command prefix.

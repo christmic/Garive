@@ -183,6 +183,13 @@ aligned while the composer wraps or scrolls.
 | Up/Down | visual line movement; history only at document boundary with no selection |
 | Selection | Shift movement; copy only visible selected text on explicit gesture |
 
+With an active selection, an unmodified Left or Right collapses to the start
+or end edge and stops without an extra grapheme move. Directional word,
+vertical, line-edge, and document-edge movement first collapses to its matching
+edge and then performs that movement. This rule is independent of which end is
+the anchor and prevents backwards selections from producing asymmetric cursor
+jumps.
+
 The editor accepts newline, tab-as-spaces, and printable Unicode. C0/C1 control
 characters other than newline/tab are rejected. Bidi isolate characters may be
 retained in the request but render with a visible safety marker; bidi override
