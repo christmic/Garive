@@ -6,6 +6,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use super::markdown_table::TableBuilder;
 use super::safe_text;
 
 pub(super) fn render_markdown(
@@ -38,6 +39,7 @@ struct Renderer<'a> {
     quote_depth: usize,
     code_block: bool,
     link: Option<LinkState>,
+    table: Option<TableBuilder>,
     width: usize,
 }
 
@@ -66,6 +68,7 @@ impl<'a> Renderer<'a> {
             quote_depth: 0,
             code_block: false,
             link: None,
+            table: None,
             width: usize::from(width.max(1)),
         }
     }
@@ -149,11 +152,23 @@ impl<'a> Renderer<'a> {
                 self.code_block = true;
                 self.block_style = self.muted;
             }
-            Tag::Table(_) => self.flush(),
-            Tag::TableHead | Tag::TableRow => self.flush(),
+            Tag::Table(alignments) => {
+                self.flush();
+                self.table = Some(TableBuilder::new(alignments));
+            }
+            Tag::TableHead => {
+                if let Some(table) = self.table.as_mut() {
+                    table.start_row(true);
+                }
+            }
+            Tag::TableRow => {
+                if let Some(table) = self.table.as_mut() {
+                    table.start_row(false);
+                }
+            }
             Tag::TableCell => {
-                if !self.spans.is_empty() {
-                    self.push(" │ ", self.muted);
+                if let Some(table) = self.table.as_mut() {
+                    table.start_cell();
                 }
             }
             Tag::Link { dest_url, .. } => {
@@ -178,7 +193,15 @@ impl<'a> Renderer<'a> {
 
     fn end(&mut self, tag: TagEnd) {
         match tag {
-            TagEnd::Paragraph | TagEnd::Item | TagEnd::TableRow | TagEnd::TableHead => self.flush(),
+            TagEnd::Paragraph | TagEnd::Item => self.flush(),
+            TagEnd::TableCell => {
+                if let Some(table) = self.table.as_mut() {
+                    table.finish_cell();
+                }
+            }
+            TagEnd::TableRow | TagEnd::TableHead => {
+                self.table.as_mut().map(TableBuilder::finish_row);
+            }
             TagEnd::Heading(_) => {
                 self.flush();
                 self.block_style = self.normal;
@@ -202,7 +225,7 @@ impl<'a> Renderer<'a> {
                 self.flush();
             }
             TagEnd::Link => self.end_link(),
-            TagEnd::Table => self.flush(),
+            TagEnd::Table => self.finish_table(),
             _ => {}
         }
     }
@@ -264,11 +287,26 @@ impl<'a> Renderer<'a> {
 
     fn push(&mut self, value: &str, style: Style) {
         if !value.is_empty() {
-            self.spans.push(Span::styled(value.to_owned(), style));
+            let span = Span::styled(value.to_owned(), style);
+            if self
+                .table
+                .as_mut()
+                .is_none_or(|table| !table.push(span.clone()))
+            {
+                self.spans.push(span);
+            }
         }
     }
 
     fn flush(&mut self) {
+        let current_style = self.current_style();
+        if self
+            .table
+            .as_mut()
+            .is_some_and(|table| table.soft_break(current_style))
+        {
+            return;
+        }
         if self.spans.is_empty() {
             return;
         }
@@ -284,6 +322,20 @@ impl<'a> Renderer<'a> {
         }
         spans.append(&mut self.spans);
         self.lines.push(Line::from(spans));
+    }
+
+    fn finish_table(&mut self) {
+        let Some(table) = self.table.take() else {
+            return;
+        };
+        self.lines.extend(table.render(
+            self.prefix,
+            self.quote_depth,
+            self.normal,
+            self.accent,
+            self.muted,
+            self.width,
+        ));
     }
 
     fn finish(mut self) -> Vec<Line<'static>> {
@@ -353,98 +405,4 @@ fn code_display_line(value: &str, width: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::style::Color;
-
-    fn text(lines: &[Line<'static>]) -> Vec<String> {
-        lines
-            .iter()
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn nested_inline_styles_compose_and_links_expose_their_destination() {
-        let normal = Style::default().fg(Color::White);
-        let accent = Style::default().fg(Color::Cyan);
-        let muted = Style::default().fg(Color::DarkGray);
-        let lines = render_markdown(
-            "**outer *inner* tail** and [docs](https://example.com)",
-            "",
-            normal,
-            accent,
-            muted,
-            80,
-        );
-
-        assert_eq!(
-            text(&lines),
-            vec!["outer inner tail and docs (https://example.com)"]
-        );
-        let spans = &lines[0].spans;
-        assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
-        assert!(spans[1].style.add_modifier.contains(Modifier::BOLD));
-        assert!(spans[1].style.add_modifier.contains(Modifier::ITALIC));
-        assert!(spans[2].style.add_modifier.contains(Modifier::BOLD));
-        assert!(spans[4].style.add_modifier.contains(Modifier::UNDERLINED));
-        assert!(spans[6].style.add_modifier.contains(Modifier::UNDERLINED));
-    }
-
-    #[test]
-    fn ordered_lists_and_fenced_code_keep_semantic_structure() {
-        let lines = render_markdown(
-            "3. first\n4. second\n\n```rust\nfn main() {}\n```",
-            "",
-            Style::default(),
-            Style::default().add_modifier(Modifier::BOLD),
-            Style::default().add_modifier(Modifier::DIM),
-            80,
-        );
-
-        assert_eq!(
-            text(&lines),
-            vec![
-                "3. first",
-                "4. second",
-                "╭─ CODE · rust",
-                "│ fn main() {}",
-                "╰─",
-            ]
-        );
-
-        let heading = render_markdown(
-            "# accent\n\nplain",
-            "",
-            Style::default().fg(Color::White),
-            Style::default().fg(Color::Cyan),
-            Style::default().fg(Color::DarkGray),
-            80,
-        );
-        assert!(heading[0].spans[0]
-            .style
-            .add_modifier
-            .contains(Modifier::UNDERLINED));
-        assert_eq!(heading[1].spans[0].style.fg, Some(Color::White));
-        assert!(!heading[1].spans[0]
-            .style
-            .add_modifier
-            .contains(Modifier::UNDERLINED));
-
-        let clipped = render_markdown(
-            "```text\n\t界abcde\n```",
-            "",
-            Style::default(),
-            Style::default(),
-            Style::default(),
-            10,
-        );
-        assert_eq!(text(&clipped)[1], "│     界a…");
-        assert_eq!(UnicodeWidthStr::width(text(&clipped)[1].as_str()), 10);
-    }
-}
+mod tests;
