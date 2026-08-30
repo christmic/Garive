@@ -1,0 +1,190 @@
+#if canImport(GariveShared)
+import SwiftUI
+@preconcurrency import GariveShared
+
+struct WorkView: View {
+    @ObservedObject var model: MobileViewModel
+    let state: MobileWorkState
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ConnectionBanner(state: state)
+                if !state.attention.isEmpty {
+                    SessionSection(title: "Needs you", subtitle: "A decision is waiting", sessions: state.attention, model: model)
+                }
+                if !state.running.isEmpty {
+                    SessionSection(title: "Working now", subtitle: "Agents continue on the server", sessions: state.running, model: model)
+                }
+                SessionSection(title: "Recent", subtitle: "Durable work you can reopen", sessions: state.recent, model: model)
+                if state.sessions.isEmpty { EmptyWorkView() }
+            }.padding(20)
+        }
+        .background(GarivePalette.ink)
+        .navigationTitle("Remote work")
+        .toolbar {
+            ToolbarItem { Button { model.refresh() } label: { Image(systemName: "arrow.clockwise") } }
+            ToolbarItem { Button { model.presentingNewTask = true } label: { Label("New task", systemImage: "plus") } }
+        }
+        .refreshable { model.refresh() }
+    }
+}
+
+struct SessionsView: View {
+    @ObservedObject var model: MobileViewModel
+    let state: MobileWorkState
+    @State private var search = ""
+
+    private var matches: [MobileSessionCard] {
+        guard !search.isEmpty else { return state.sessions }
+        return state.sessions.filter {
+            $0.agentName.localizedCaseInsensitiveContains(search) || $0.sessionId.localizedCaseInsensitiveContains(search)
+        }
+    }
+
+    var body: some View {
+        List(matches, id: \.sessionId) { session in
+            SessionRow(session: session) { model.open(session.sessionId) }
+                .listRowBackground(GarivePalette.panel)
+        }
+        .scrollContentBackground(.hidden).background(GarivePalette.ink)
+        .navigationTitle("Sessions").searchable(text: $search, prompt: "Agent or session")
+        .toolbar { Button { model.presentingNewTask = true } label: { Label("New task", systemImage: "plus") } }
+        .refreshable { model.refresh() }
+    }
+}
+
+struct AgentsView: View {
+    @ObservedObject var model: MobileViewModel
+    let state: MobileWorkState
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 14) {
+                ForEach(state.agents, id: \.definitionId) { agent in
+                    VStack(alignment: .leading, spacing: 13) {
+                        HStack(spacing: 14) {
+                            Image(systemName: "cpu.fill").font(.title2).foregroundStyle(GarivePalette.mint)
+                                .frame(width: 46, height: 46).background(GarivePalette.mint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(agent.displayName).font(.headline)
+                                Text("Revision \(agent.revision)").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        if !agent.capabilities.isEmpty {
+                            Text(agent.capabilities.joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        Button("Start with this agent") {
+                            model.presentingNewTask = true
+                        }.buttonStyle(.bordered)
+                    }
+                    .padding(18).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
+                }
+            }.padding(20)
+        }.background(GarivePalette.ink).navigationTitle("Agents")
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var model: MobileViewModel
+    let state: MobileWorkState
+
+    var body: some View {
+        List {
+            Section("Connection") {
+                LabeledContent("Status") { StatusBadge(status: state.connection.name.lowercased()) }
+                LabeledContent("Service", value: model.credentials?.origin ?? "—")
+                Label("Access grant protected by Keychain", systemImage: "lock.shield")
+            }
+            Section("Privacy") {
+                Label("Notification previews hide agent output", systemImage: "bell.slash")
+                Label("Durable work remains on your service", systemImage: "externaldrive")
+            }
+            Section {
+                Button("Disconnect this device", role: .destructive) { model.signOut() }
+            }
+        }.scrollContentBackground(.hidden).background(GarivePalette.ink).navigationTitle("Settings")
+    }
+}
+
+private struct SessionSection: View {
+    let title: String
+    let subtitle: String
+    let sessions: [MobileSessionCard]
+    @ObservedObject var model: MobileViewModel
+
+    var body: some View {
+        if !sessions.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title).font(.title2.bold())
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                ForEach(sessions, id: \.sessionId) { session in
+                    SessionRow(session: session) { model.open(session.sessionId) }
+                }
+            }
+        }
+    }
+}
+
+struct SessionRow: View {
+    let session: MobileSessionCard
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 14) {
+                Circle().fill(statusColor.opacity(0.18)).frame(width: 44, height: 44)
+                    .overlay(Image(systemName: statusIcon).foregroundStyle(statusColor))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(session.agentName).font(.headline).foregroundStyle(.primary)
+                    Text("\(session.turnCount) turns · \(shortID)").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                StatusBadge(status: session.status.name.lowercased())
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(16).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 18))
+        }.buttonStyle(.plain)
+    }
+
+    private var shortID: String { String(session.sessionId.prefix(8)) }
+    private var statusIcon: String { session.status.name == "NEEDS_INPUT" ? "hand.raised.fill" : "bolt.fill" }
+    private var statusColor: Color { session.status.name == "NEEDS_INPUT" ? GarivePalette.amber : GarivePalette.mint }
+}
+
+struct StatusBadge: View {
+    let status: String
+    var body: some View {
+        Text(status.replacingOccurrences(of: "_", with: " "))
+            .font(.caption2.weight(.semibold)).textCase(.uppercase).padding(.horizontal, 9).padding(.vertical, 5)
+            .background(color.opacity(0.14), in: Capsule()).foregroundStyle(color)
+    }
+    private var color: Color {
+        status.contains("input") ? GarivePalette.amber : status.contains("fail") ? GarivePalette.coral : GarivePalette.mint
+    }
+}
+
+private struct ConnectionBanner: View {
+    let state: MobileWorkState
+    var body: some View {
+        HStack {
+            Circle().fill(state.connection.name == "ONLINE" ? GarivePalette.mint : GarivePalette.amber).frame(width: 9, height: 9)
+            Text(state.connection.name == "ONLINE" ? "Connected · server work continues" : "Reconnecting · showing durable state")
+                .font(.subheadline.weight(.medium))
+            Spacer()
+        }.padding(13).background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+private struct EmptyWorkView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "sparkles.rectangle.stack").font(.system(size: 42)).foregroundStyle(GarivePalette.coral)
+            Text("Start work from anywhere").font(.title3.bold())
+            Text("Choose an agent, give it a goal, then leave the work running on your service.")
+                .multilineTextAlignment(.center).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity).padding(.vertical, 46)
+    }
+}
+#endif
