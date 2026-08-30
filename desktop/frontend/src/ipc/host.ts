@@ -97,7 +97,7 @@ export interface SetupReceipt {
 /** Opaque process-local Workspace selection; no filesystem path crosses IPC. */
 export interface WorkspaceGrant {
   readonly schema_version: 1; readonly workspace_id: string; readonly display_name: string;
-  readonly access: "enumerate"; readonly grant_revision: number;
+  readonly access: "enumerate" | "read_write"; readonly grant_revision: number;
   readonly state: "active"; readonly expires_at: string;
 }
 
@@ -119,7 +119,8 @@ export interface WorkspaceAuthorization {
 
 export interface WorkspaceAttachment {
   readonly api_version: "v1"; readonly session_id: string; readonly workspace_id: string;
-  readonly display_name: string; readonly grant_revision: number; readonly access: "enumerate";
+  readonly display_name: string; readonly grant_revision: number;
+  readonly access: "enumerate" | "read_write";
   readonly attached_position: number;
 }
 
@@ -220,6 +221,14 @@ export async function reauthorizeWorkspace(
 ): Promise<WorkspaceGrant | null> {
   if (!workspaceId) throw new Error("workspace_capability_invalid");
   return invoke<WorkspaceGrant | null>("reauthorize_workspace", { workspaceId });
+}
+
+export async function authorizeWorkspaceWrites(
+  workspaceId: string,
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceGrant | null> {
+  if (!workspaceId) throw new Error("workspace_capability_invalid");
+  return invoke<WorkspaceGrant | null>("authorize_workspace_writes", { workspaceId });
 }
 
 export async function verifyWorkspace(
@@ -325,5 +334,26 @@ export async function continueAgentTurn(
     suspensionId: suspension.suspension_id,
     sessionVersion: suspension.session_version,
     input,
+  });
+}
+
+/** Resolves one exact durable approval without overloading text continuation. */
+export async function resolveTurnApproval(
+  sessionId: string,
+  turnId: string,
+  suspension: HostSuspension,
+  approved: boolean,
+  invoke: Invoke = tauriInvoke,
+): Promise<HostResult> {
+  if (!sessionId || !turnId || !suspension.suspension_id
+      || suspension.kind !== "approval_required") {
+    throw new Error("invalid_command");
+  }
+  return invoke<HostResult>("resolve_turn_approval", {
+    sessionId,
+    turnId,
+    suspensionId: suspension.suspension_id,
+    sessionVersion: suspension.session_version,
+    approved,
   });
 }

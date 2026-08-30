@@ -3,7 +3,8 @@ import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
   createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
-  getWorkspaceRecoveryStatus, listWorkspaceAuthorizations, reauthorizeWorkspace, revokeWorkspace,
+  authorizeWorkspaceWrites, getWorkspaceRecoveryStatus, listWorkspaceAuthorizations,
+  reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
   runAgentTurnWithWorkspaceContext, verifyWorkspace,
 } from "./host";
 
@@ -143,6 +144,28 @@ describe("desktop Host IPC", () => {
       { command: "reauthorize_workspace", args: { workspaceId: "workspace-1" } },
     ]);
     expect(JSON.stringify(calls)).not.toContain("/");
+  });
+
+  it("uses typed write authorization and approval commands", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      calls.push({ command, args });
+      if (command === "authorize_workspace_writes") return { schema_version: 1,
+        workspace_id: "workspace-1", display_name: "Project", access: "read_write",
+        grant_revision: 2, state: "active", expires_at: "2026-08-30T15:30:00Z" } as T;
+      return { session_id: "session-1", turn_id: "turn-1", execution_id: "execution-2",
+        cursor: 19, text: "done", terminal: "completed" } as T;
+    };
+    const grant = await authorizeWorkspaceWrites("workspace-1", invoke);
+    await resolveTurnApproval("session-1", "turn-1", {
+      suspension_id: "suspension-1", session_version: 4, kind: "approval_required",
+    }, true, invoke);
+    expect(grant?.access).toBe("read_write");
+    expect(calls).toEqual([
+      { command: "authorize_workspace_writes", args: { workspaceId: "workspace-1" } },
+      { command: "resolve_turn_approval", args: { sessionId: "session-1", turnId: "turn-1",
+        suspensionId: "suspension-1", sessionVersion: 4, approved: true } },
+    ]);
   });
 
   it("durably attaches Workspace context before a Turn", async () => {
