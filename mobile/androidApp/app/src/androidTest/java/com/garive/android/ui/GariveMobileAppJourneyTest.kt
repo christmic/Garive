@@ -79,6 +79,7 @@ public class GariveMobileAppJourneyTest {
 
         compose.onNodeWithContentDescription("New task").performClick()
         compose.onNodeWithText("Start with a clear outcome").assertIsDisplayed()
+        compose.onNodeWithText("Start on server").assertIsDisplayed()
         compose.onNodeWithText("Analyze").performClick()
         compose.onNodeWithText("Start on server").assertIsEnabled()
         compose.onNodeWithText("Start on server").performClick()

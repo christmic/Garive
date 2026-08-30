@@ -438,6 +438,10 @@ walkthrough Host；Release 构建无法进入该模式。审批、新建、刷�
 `accessibility-extra-large`；空间不足时导航仍通过抽屉向无障碍服务暴露 Work、Sessions、Agents、
 Settings 语义标签；Android 平板与 iPad 常规宽度则使用常驻侧栏和独立工作区。
 
+Android 的 Sessions、新建任务和运行中 Conversation 三个核心遥控场景还绑定了截图 SHA-256、
+尺寸及当前 Compose/KMP/Demo Host 源码摘要。相关源码变化但未重新运行、检查并捕获这些场景时，
+证据校验器会直接失败，避免旧版底部导航或半展开 sheet 截图继续冒充当前候选。
+
 已经自动或本地验证：Gateway route/auth/race 测试、KMP JVM 测试、Android lint/APK/API 36
 界面流程（18 条加 4 条 opt-in 真实 Host journeys，含显式主题跨存储实例恢复、严格配对链接、整应用 Work → Sessions →
 create/start → cancel → append → approve/decline 及

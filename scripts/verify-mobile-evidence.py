@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import struct
 from pathlib import Path
@@ -12,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANUAL = ROOT / "docs/manual/mobile-user-guide.md"
 ASSETS = MANUAL.parent / "assets/mobile"
+CANDIDATE_EVIDENCE = ASSETS / "candidate-evidence.json"
 
 
 def png_size(path: Path) -> tuple[int, int]:
@@ -20,6 +23,54 @@ def png_size(path: Path) -> tuple[int, int]:
     if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
         raise ValueError(f"not a valid PNG: {path.relative_to(ROOT)}")
     return struct.unpack(">II", header[16:24])
+
+
+def digest_files(paths: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        digest.update(path.relative_to(ROOT).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def android_source_digest() -> str:
+    paths: list[Path] = []
+    for base in (
+        ROOT / "mobile/androidApp/app/src/main",
+        ROOT / "mobile/shared/src/commonMain",
+    ):
+        paths.extend(path for path in base.rglob("*") if path.is_file())
+    paths.extend((
+        ROOT / "mobile/androidApp/app/build.gradle.kts",
+        ROOT / "runtime/gateway/cmd/garive-mobile-demo-host/main.go",
+    ))
+    return digest_files(paths)
+
+
+def verify_candidate_evidence() -> None:
+    evidence = json.loads(CANDIDATE_EVIDENCE.read_text())
+    if evidence.get("schema_version") != 1:
+        raise ValueError("unsupported mobile candidate-evidence schema")
+    actual_source = android_source_digest()
+    if evidence.get("android_source_digest") != actual_source:
+        raise ValueError("Android core screenshots must be recaptured after candidate source changes")
+    required = {
+        "android-03-sessions.png",
+        "android-05-new-task.png",
+        "android-09-steering.png",
+    }
+    screenshots = evidence.get("screenshots", {})
+    if set(screenshots) != required:
+        raise ValueError("Android core candidate evidence is incomplete")
+    for name, expected in screenshots.items():
+        path = ASSETS / name
+        actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual_hash != expected.get("sha256"):
+            raise ValueError(f"candidate screenshot digest drift: {name}")
+        if list(png_size(path)) != [expected.get("width"), expected.get("height")]:
+            raise ValueError(f"candidate screenshot dimensions drift: {name}")
 
 
 def verify(artifacts: bool) -> None:
@@ -50,6 +101,7 @@ def verify(artifacts: bool) -> None:
         width, height = png_size(MANUAL.parent / item)
         if min(width, height) < 300:
             raise ValueError(f"undersized evidence {item}: {width}x{height}")
+    verify_candidate_evidence()
 
     for path in (
         ROOT / "mobile/androidApp/app/src/main/java/com/garive/android/MainActivity.kt",
