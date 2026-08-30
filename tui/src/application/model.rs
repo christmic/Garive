@@ -124,6 +124,8 @@ pub(crate) struct AppModel {
     pub(crate) session_count: usize,
     pub(crate) sessions: Vec<SessionSummary>,
     pub(crate) session_filter: String,
+    pub(crate) prompt_history: Vec<String>,
+    pub(crate) history_selection: usize,
     pub(crate) session_selection: usize,
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,

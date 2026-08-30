@@ -249,7 +249,7 @@ fn render_overlay(
         Overlay::CommandPalette => (" Command palette ", "› /new          Create session\n  /sessions     Switch session\n  /status       Connection details\n  /reconnect    Resume event stream\n  /help         Keyboard guide\n  /quit         Exit safely".into(), 10),
         Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
         Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
-        Overlay::PromptHistory => (" Prompt history ", "No matching local prompts\n\nEsc close".into(), 7),
+        Overlay::PromptHistory => (" Prompt history ", history_text(model), (model.prompt_history.len() as u16 + 5).clamp(7, 16)),
         Overlay::Suspension => (" Action required ", suspension_text(model), 9),
         Overlay::UnknownCommand => (" Unknown command ", format!("{}\n\nEnter  Exact retry     A  Abandon local record", model.notice.as_deref().unwrap_or("Nothing was sent to the Host.")), 8),
         Overlay::ErrorDetails => (" Status details ", model.notice.clone().unwrap_or_else(|| "No additional safe details.".into()), 7),
@@ -303,6 +303,31 @@ fn session_picker_text(model: &AppModel) -> String {
     }
     rows.push(String::new());
     rows.push("↑/↓ select   Enter open   Esc close".into());
+    rows.join("\n")
+}
+
+fn history_text(model: &AppModel) -> String {
+    let mut rows = model
+        .prompt_history
+        .iter()
+        .take(10)
+        .enumerate()
+        .map(|(index, text)| {
+            let marker = if index == model.history_selection {
+                "›"
+            } else {
+                " "
+            };
+            let first = text.lines().next().unwrap_or_default();
+            let preview = first.chars().take(46).collect::<String>();
+            format!("{marker} {preview}")
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        rows.push("  No local prompt history".into());
+    }
+    rows.push(String::new());
+    rows.push("↑/↓ select   Enter restore   Esc close".into());
     rows.join("\n")
 }
 

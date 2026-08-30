@@ -38,6 +38,14 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         StateStore::open(config.state_dir.clone(), config.ephemeral).map_err(map_state_error)?;
     let preferences = store.load_preferences().map_err(map_state_error)?;
     let pending = store.load_any_pending().map_err(map_state_error)?;
+    let (history, history_error) = if config.no_prompt_history {
+        (Vec::new(), false)
+    } else {
+        match store.load_history() {
+            Ok(value) => (value, false),
+            Err(_) => (Vec::new(), true),
+        }
+    };
     let mut config = config;
     if config.theme == crate::Theme::System {
         config.theme = preferences.theme;
@@ -50,7 +58,16 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     }
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
     if config.screen_reader {
-        return run_screen_reader(config, client, store, preferences, pending).await;
+        return run_screen_reader(
+            config,
+            client,
+            store,
+            preferences,
+            pending,
+            history,
+            history_error,
+        )
+        .await;
     }
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -65,7 +82,16 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     terminal.clear().map_err(|_| TuiError::TerminalIo)?;
 
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(config, client, sender, store, preferences, pending);
+    let mut state = RuntimeState::new(
+        config,
+        client,
+        sender,
+        store,
+        preferences,
+        pending,
+        history,
+        history_error,
+    );
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
     loop {
@@ -100,6 +126,8 @@ async fn run_screen_reader(
     store: StateStore,
     preferences: Preferences,
     pending: Option<PendingCommand>,
+    history: Vec<PromptHistoryEntry>,
+    history_error: bool,
 ) -> Result<(), TuiError> {
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -110,7 +138,16 @@ async fn run_screen_reader(
     )
     .map_err(map_terminal_error)?;
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(config, client, sender, store, preferences, pending);
+    let mut state = RuntimeState::new(
+        config,
+        client,
+        sender,
+        store,
+        preferences,
+        pending,
+        history,
+        history_error,
+    );
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
     let mut emitted = 0;
@@ -233,10 +270,20 @@ impl RuntimeState {
         store: StateStore,
         preferences: Preferences,
         pending: Option<PendingCommand>,
+        history: Vec<PromptHistoryEntry>,
+        history_error: bool,
     ) -> Self {
         let mut model = AppModel::default();
         model.boot = BootState::Loading;
         model.connection = ConnectionState::Connecting;
+        model.prompt_history = history
+            .into_iter()
+            .rev()
+            .map(|entry| entry.submitted_text)
+            .collect();
+        if history_error {
+            model.notice = Some("Corrupt prompt history was quarantined.".into());
+        }
         if pending.is_some() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             model.overlay = Some(Overlay::UnknownCommand);
@@ -365,6 +412,12 @@ impl RuntimeState {
                 };
                 if self.store.append_history(&entry).is_err() {
                     self.model.notice = Some("Prompt history could not be saved.".into());
+                } else {
+                    self.model
+                        .prompt_history
+                        .retain(|value| value != submitted_text);
+                    self.model.prompt_history.insert(0, submitted_text.into());
+                    self.model.prompt_history.truncate(500);
                 }
             }
         }

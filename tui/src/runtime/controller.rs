@@ -73,6 +73,14 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
                     .min(state.model.sessions.len().saturating_sub(1))
             }
             KeyCode::Enter if overlay == Overlay::SessionPicker => select_session(state),
+            KeyCode::Up if overlay == Overlay::PromptHistory => {
+                state.model.history_selection = state.model.history_selection.saturating_sub(1)
+            }
+            KeyCode::Down if overlay == Overlay::PromptHistory => {
+                state.model.history_selection = (state.model.history_selection + 1)
+                    .min(state.model.prompt_history.len().saturating_sub(1))
+            }
+            KeyCode::Enter if overlay == Overlay::PromptHistory => select_history(state),
             KeyCode::Enter if overlay == Overlay::Suspension => {
                 state.model.overlay = None;
             }
@@ -158,6 +166,18 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Esc if state.model.execution == ExecutionState::Following => cancel(state),
         _ => {}
     }
+}
+
+fn select_history(state: &mut RuntimeState) {
+    if let Some(text) = state
+        .model
+        .prompt_history
+        .get(state.model.history_selection)
+        .cloned()
+    {
+        let _ = state.model.composer.replace(&text);
+    }
+    state.model.overlay = None;
 }
 
 fn select_session(state: &mut RuntimeState) {
