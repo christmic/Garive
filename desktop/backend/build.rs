@@ -1,6 +1,7 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "set_desktop_menu_locale",
             "get_desktop_capabilities",
             "get_setup_state",
             "get_setup_catalogue",

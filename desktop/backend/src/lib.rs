@@ -27,7 +27,10 @@ pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
     DesktopArtifactExportTarget, DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE,
 };
-pub use desktop_menu::{build_desktop_menu, DesktopMenuIntent, DESKTOP_MENU_EVENT};
+pub use desktop_menu::{
+    build_desktop_menu, build_desktop_menu_for_locale, DesktopMenuIntent, DesktopMenuLocale,
+    DESKTOP_MENU_EVENT,
+};
 /// Immutable committed Artifact projection exposed to Desktop clients.
 pub use garive_runtime::HostArtifact as DesktopArtifact;
 /// Bounded committed Artifact page exposed to Desktop clients.

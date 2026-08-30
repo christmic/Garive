@@ -360,6 +360,7 @@ fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
     assert_eq!(capability["windows"], serde_json::json!(["main"]));
     let permissions = capability["permissions"].as_array().unwrap();
     let expected = [
+        "allow-set-desktop-menu-locale",
         "allow-get-desktop-capabilities",
         "allow-get-setup-state",
         "allow-get-setup-catalogue",
@@ -390,10 +391,15 @@ fn tauri_capability_admits_every_product_command_only_to_the_main_window() {
         "allow-run-agent-turn-with-workspace-context",
         "allow-run-agent-turn",
     ];
-    let admitted: Vec<_> = permissions.iter().filter_map(|value| value.as_str())
-        .filter(|value| value.starts_with("allow-")).collect();
+    let admitted: Vec<_> = permissions
+        .iter()
+        .filter_map(|value| value.as_str())
+        .filter(|value| value.starts_with("allow-"))
+        .collect();
     assert_eq!(admitted, expected);
-    assert!(permissions.iter().any(|value| value == "core:webview:allow-set-webview-zoom"));
+    assert!(permissions
+        .iter()
+        .any(|value| value == "core:webview:allow-set-webview-zoom"));
     assert!(capability.get("remote").is_none());
     authorize_setup_window("main").unwrap();
     assert_eq!(

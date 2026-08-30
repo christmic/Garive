@@ -339,6 +339,14 @@ Workspace display names, Agent identifiers, receipt content, or other durable
 facts. Missing catalogue entries fail visibly during tests; production must
 never render a raw localization key.
 
+The bundled frontend sends only the resolved `en`, `zh-Hans`, or QA `en-XA`
+locale through a dedicated data-free command. The backend rejects `system`,
+paths, and unknown values, then atomically rebuilds the complete native Garive,
+File, Edit, View, and Window menus—including standard platform items—without
+changing command identities or accelerators. The packaged capability manifest
+must admit this command and every registered product command to the `main`
+window only; direct Rust tests are not a substitute for that ACL parity gate.
+
 English and Simplified Chinese are user-facing release locales. `en-XA` is an
 expanded, accented pseudolocale available only in development/evidence modes or
 when already selected by an admitted QA preference. It may test layout but may

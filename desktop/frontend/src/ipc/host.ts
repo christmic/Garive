@@ -21,6 +21,16 @@ export interface DesktopCapabilities {
   readonly artifacts: boolean;
 }
 
+export type DesktopMenuLocale = "en" | "zh-Hans" | "en-XA";
+
+/** Rebuilds the system-native menu using one resolved, non-sensitive UI locale. */
+export async function setDesktopMenuLocale(
+  locale: DesktopMenuLocale,
+  invoke: Invoke = tauriInvoke,
+): Promise<void> {
+  await invoke<void>("set_desktop_menu_locale", { locale });
+}
+
 /** Installed immutable Agent definition exposed by H2. */
 export interface HostDefinition {
   readonly api_version: "v1"; readonly definition_id: string;

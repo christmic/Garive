@@ -529,6 +529,17 @@ fn get_session_timeline(
         .map_err(|error| error.code().to_owned())
 }
 
+#[tauri::command]
+fn set_desktop_menu_locale(app: tauri::AppHandle, locale: String) -> Result<(), String> {
+    let locale = garive_desktop::DesktopMenuLocale::from_id(&locale)
+        .ok_or_else(|| "invalid_locale".to_owned())?;
+    let menu = garive_desktop::build_desktop_menu_for_locale(&app, locale)
+        .map_err(|_| "menu_unavailable".to_owned())?;
+    app.set_menu(menu)
+        .map(|_| ())
+        .map_err(|_| "menu_unavailable".to_owned())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -597,6 +608,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_desktop_menu_locale,
             get_desktop_capabilities,
             get_setup_state,
             get_setup_catalogue,

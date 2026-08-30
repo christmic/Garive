@@ -4,6 +4,7 @@
   "description": "Allows the bundled main window to use Garive Desktop commands.",
   "windows": ["main"],
   "permissions": [
+    "allow-set-desktop-menu-locale",
     "allow-get-desktop-capabilities",
     "allow-get-setup-state",
     "allow-get-setup-catalogue",

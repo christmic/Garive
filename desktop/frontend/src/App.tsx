@@ -9,7 +9,8 @@ import {
   getArtifactPreview, getCompleteSessionTimeline, getDesktopCapabilities, getRecentSessions,
   getSessionTimeline, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
   listWorkspaceAuthorizations, reauthorizeWorkspace,
-  resolveTurnApproval, revokeWorkspace, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
+  resolveTurnApproval, revokeWorkspace, runAgentTurn, runAgentTurnWithWorkspaceContext,
+  setDesktopMenuLocale, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
   type WorkspaceAuthorization,
@@ -112,6 +113,9 @@ export function App() {
     [preferences]);
   useEffect(() => { document.documentElement.lang = locale === "en-XA" ? "en-XA" : locale; },
     [locale]);
+  useEffect(() => {
+    if (!visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
+  }, [locale]);
 
   const refreshRecents = useCallback(async () => {
     const sessions = await getRecentSessions();
