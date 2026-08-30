@@ -41,8 +41,8 @@ pub use system_provider::{
     DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
 pub use workspace::{
-    DesktopWorkspaceEntry, DesktopWorkspaceEntryPage, DesktopWorkspaceError, DesktopWorkspaceGrant,
-    DesktopWorkspaceService,
+    DesktopWorkspaceContextFile, DesktopWorkspaceEntry, DesktopWorkspaceEntryPage,
+    DesktopWorkspaceError, DesktopWorkspaceGrant, DesktopWorkspaceService,
 };
 
 /// Explicit operational identities and clock values owned by Desktop backend composition.

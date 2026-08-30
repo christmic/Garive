@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -8,6 +8,7 @@ use std::{
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 const MAX_ACTIVE_WORKSPACES: usize = 16;
@@ -15,6 +16,9 @@ const MAX_DISPLAY_NAME_BYTES: usize = 128;
 const MAX_ENTRIES_PER_PAGE: usize = 64;
 const MAX_SCANNED_ENTRIES: usize = 512;
 const MAX_CACHED_ENTRIES: usize = 4_096;
+const MAX_CONTEXT_FILES: usize = 8;
+const MAX_CONTEXT_FILE_BYTES: usize = 48 * 1_024;
+const MAX_CONTEXT_TOTAL_BYTES: usize = 60 * 1_024;
 const WORKSPACE_LIFETIME_SECONDS: u64 = 1_800;
 
 /// Opaque path-free public view of one process-local Workspace selection.
@@ -70,6 +74,27 @@ pub struct DesktopWorkspaceEntryPage {
     pub next_cursor: Option<String>,
     /// Whether the same directory has another page.
     pub has_more: bool,
+}
+
+/// Backend-only selected file content passed directly into Runtime admission.
+///
+/// Deliberately does not implement `Serialize`; React cannot receive this value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopWorkspaceContextFile {
+    /// Opaque owning Workspace identity.
+    pub workspace_id: String,
+    /// Exact grant revision used for the read.
+    pub grant_revision: u64,
+    /// Opaque selected entry identity.
+    pub entry_id: String,
+    /// Bounded presentation-only file label.
+    pub display_name: String,
+    /// Safe coarse content class.
+    pub kind: &'static str,
+    /// SHA-256 digest of the exact admitted UTF-8 bytes.
+    pub content_digest: String,
+    /// Exact bounded UTF-8 content for Runtime, never frontend IPC.
+    pub content_utf8: String,
 }
 
 /// Stable secret- and path-free Workspace failure.
@@ -358,6 +383,80 @@ impl DesktopWorkspaceService {
             has_more,
         })
     }
+
+    /// Reads explicitly selected text entries into a bounded non-serializable value.
+    pub fn read_context_files(
+        &self,
+        workspace_id: &str,
+        owner_window: &str,
+        entry_ids: &[String],
+    ) -> Result<Vec<DesktopWorkspaceContextFile>, DesktopWorkspaceError> {
+        if entry_ids.is_empty()
+            || entry_ids.len() > MAX_CONTEXT_FILES
+            || entry_ids.iter().collect::<BTreeSet<_>>().len() != entry_ids.len()
+        {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        let now = unix_seconds()?;
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let invalid = active.get(workspace_id).is_none_or(|workspace| {
+            workspace.owner_window != owner_window || workspace.expires_unix < now
+        });
+        if invalid {
+            active.remove(workspace_id);
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        let workspace = active
+            .get(workspace_id)
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        revalidate_directory(&workspace.canonical_root, workspace.identity)?;
+        let mut total_bytes = 0usize;
+        let mut context = Vec::with_capacity(entry_ids.len());
+        for entry_id in entry_ids {
+            let entry = workspace
+                .entries
+                .get(entry_id)
+                .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+            if entry.is_directory || !entry.public.selectable || entry.public.kind != "text" {
+                return Err(DesktopWorkspaceError::CapabilityInvalid);
+            }
+            let before = fs::symlink_metadata(&entry.canonical_path)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            if !before.is_file()
+                || before.file_type().is_symlink()
+                || file_identity(&before) != entry.identity
+                || usize::try_from(before.len()).map_or(true, |size| size > MAX_CONTEXT_FILE_BYTES)
+            {
+                return Err(DesktopWorkspaceError::Unavailable);
+            }
+            let bytes =
+                fs::read(&entry.canonical_path).map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            total_bytes = total_bytes
+                .checked_add(bytes.len())
+                .filter(|total| *total <= MAX_CONTEXT_TOTAL_BYTES)
+                .ok_or(DesktopWorkspaceError::BoundExceeded)?;
+            let after = fs::symlink_metadata(&entry.canonical_path)
+                .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+            if file_identity(&after) != entry.identity || after.len() != before.len() {
+                return Err(DesktopWorkspaceError::Unavailable);
+            }
+            let content_utf8 =
+                String::from_utf8(bytes).map_err(|_| DesktopWorkspaceError::CapabilityInvalid)?;
+            context.push(DesktopWorkspaceContextFile {
+                workspace_id: workspace_id.to_owned(),
+                grant_revision: workspace.public.grant_revision,
+                entry_id: entry_id.clone(),
+                display_name: entry.public.display_name.clone(),
+                kind: entry.public.kind,
+                content_digest: hex_digest(content_utf8.as_bytes()),
+                content_utf8,
+            });
+        }
+        Ok(context)
+    }
 }
 
 fn display_name(root: &Path) -> Result<String, DesktopWorkspaceError> {
@@ -423,6 +522,11 @@ fn parse_cursor(cursor: Option<&str>) -> Result<usize, DesktopWorkspaceError> {
             .and_then(|offset| offset.parse().ok())
             .ok_or(DesktopWorkspaceError::CapabilityInvalid),
     }
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn revalidate_directory(path: &Path, identity: FileIdentity) -> Result<(), DesktopWorkspaceError> {

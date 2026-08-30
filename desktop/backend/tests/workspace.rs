@@ -136,3 +136,54 @@ fn enumeration_omits_symlinks_and_rejects_forged_cursors_and_parents() {
         DesktopWorkspaceError::CapabilityInvalid
     );
 }
+
+#[test]
+fn selected_text_is_read_only_from_a_previously_enumerated_opaque_entry() {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("brief.md"), "hello 世界").unwrap();
+    fs::write(directory.path().join("binary.bin"), [0xff, 0x00]).unwrap();
+    let service = DesktopWorkspaceService::default();
+    let grant = service.admit_selected(directory.path(), "main").unwrap();
+    let page = service
+        .list_entries(&grant.workspace_id, "main", None, None, 8)
+        .unwrap();
+    let brief = page
+        .entries
+        .iter()
+        .find(|entry| entry.display_name == "brief.md")
+        .unwrap();
+    let context = service
+        .read_context_files(
+            &grant.workspace_id,
+            "main",
+            std::slice::from_ref(&brief.entry_id),
+        )
+        .unwrap();
+    assert_eq!(context.len(), 1);
+    assert_eq!(context[0].content_utf8, "hello 世界");
+    assert_eq!(context[0].workspace_id, grant.workspace_id);
+    assert_eq!(context[0].grant_revision, 1);
+    assert_eq!(context[0].content_digest.len(), 64);
+
+    let binary = page
+        .entries
+        .iter()
+        .find(|entry| entry.display_name == "binary.bin")
+        .unwrap();
+    assert_eq!(
+        service
+            .read_context_files(
+                &grant.workspace_id,
+                "main",
+                std::slice::from_ref(&binary.entry_id),
+            )
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+    assert_eq!(
+        service
+            .read_context_files(&grant.workspace_id, "main", &["entry-forged".into()])
+            .unwrap_err(),
+        DesktopWorkspaceError::CapabilityInvalid
+    );
+}
