@@ -5,12 +5,12 @@ use garive_ledger::{
     FactKind, LedgerError, RuntimeFactDisposition, SessionId, TurnId,
 };
 use garive_memory::{
-    prepare_memory_import, ContentBinding, DurableFactReference, HypothesisState, MemoryAuthority,
-    MemoryAuthorityBinding, MemoryAuthorizedScope, MemoryCommit, MemoryControlDocument,
-    MemoryDocumentLimits, MemoryErrorCode, MemoryIdentityAllocation, MemoryKind, MemoryProposal,
-    MemoryPurpose, MemoryQuery, MemoryRevisionClassification, MemoryRevisionScope, MemoryScope,
-    MemoryScopeClass, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
-    MemoryTypeDescriptor, MemoryTypeRegistry,
+    parse_memory_document, prepare_memory_import, ContentBinding, DurableFactReference,
+    HypothesisState, MemoryAuthority, MemoryAuthorityBinding, MemoryAuthorizedScope, MemoryCommit,
+    MemoryControlDocument, MemoryDocumentLimits, MemoryErrorCode, MemoryIdentityAllocation,
+    MemoryKind, MemoryProposal, MemoryPurpose, MemoryQuery, MemoryRevisionClassification,
+    MemoryRevisionScope, MemoryScope, MemoryScopeClass, MemorySensitivity, MemoryState,
+    MemoryStatus, MemoryTombstone, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use garive_runtime::{
     authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
@@ -232,6 +232,11 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
     )
     .unwrap();
+    let added = parse_memory_document(
+        b"---\nschema_version: 1\nrecord_ref: new.draft-new\nauthority: user_declared\nmemory_type: semantic\nmemory_role: preference\nscope: session\nscope_owner_b64: c2Vzc2lvbg\nlifecycle: active\nsensitivity: ordinary\n---\nnew user value\n",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
     let current = vec![garive_memory::MemoryCurrentEntry {
         record_id: "record".into(),
         revision_id: "revision-1".into(),
@@ -250,16 +255,23 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         1,
         &"b".repeat(64),
         1,
-        std::slice::from_ref(&edited),
+        &[edited.clone(), added.clone()],
         &current,
         &[MemoryAuthorizedScope {
             scope: MemoryScopeClass::Session,
             owner_id: "session".into(),
         }],
-        &[MemoryIdentityAllocation::Supersede {
-            record_id: "record".into(),
-            revision_id: "revision-2".into(),
-        }],
+        &[
+            MemoryIdentityAllocation::Supersede {
+                record_id: "record".into(),
+                revision_id: "revision-2".into(),
+            },
+            MemoryIdentityAllocation::Add {
+                draft_token: "draft-new".into(),
+                record_id: "record-z".into(),
+                revision_id: "revision-z".into(),
+            },
+        ],
     )
     .unwrap();
     let command = MemoryImportCommand::new(
@@ -267,7 +279,7 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         "import-receipt",
         "import-event",
         plan,
-        vec![edited],
+        vec![edited, added],
         128,
     )
     .unwrap();
@@ -324,6 +336,9 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
             "memory.committed",
             "memory.revision_classified",
             "memory.superseded",
+            "memory.proposed",
+            "memory.committed",
+            "memory.revision_classified",
         ]
     );
     let active = planned
@@ -333,6 +348,47 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         .find(|record| record.record_id() == "record" && record.status() == MemoryStatus::Active)
         .unwrap();
     assert_eq!(active.revision_id(), "revision-2");
+    ledger
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_fact_backed_journal BEFORE INSERT ON memory_control_journal \
+             BEGIN SELECT RAISE(FAIL, 'injected journal failure'); END;",
+        )
+        .unwrap();
+    assert!(ledger
+        .commit_memory_repository_import(&context, &grant, &command, planned)
+        .is_err());
+    assert_eq!(
+        ledger
+            .session_version(&SessionId::try_from("session").unwrap())
+            .unwrap(),
+        Some(2)
+    );
+    let unchanged = ledger
+        .read_memory_repository_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(unchanged.repository_revision, 1);
+    assert_eq!(
+        unchanged.documents[0].record_ref().revision_id(),
+        Some("revision-1")
+    );
+    ledger
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_fact_backed_journal;")
+        .unwrap();
+    let planned = plan_memory_repository_import(
+        &ledger,
+        &context,
+        &command,
+        &grant,
+        &classification_registry(),
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
     let receipt = ledger
         .commit_memory_repository_import(&context, &grant, &command, planned)
         .unwrap();
@@ -351,11 +407,17 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         )
         .unwrap();
     assert_eq!(projection.repository_revision, 2);
+    assert_eq!(projection.documents.len(), 2);
     assert_eq!(
         projection.documents[0].record_ref().revision_id(),
         Some("revision-2")
     );
     assert_eq!(projection.documents[0].content(), "user value\n");
+    assert_eq!(
+        projection.documents[1].record_ref().record_id(),
+        Some("record-z")
+    );
+    assert_eq!(projection.documents[1].content(), "new user value\n");
     let replay = ledger
         .commit_memory_repository_import(
             &context,
@@ -384,7 +446,7 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
             &reopened,
             &[MemoryPrefix {
                 session_id: SessionId::try_from("session").unwrap(),
-                through_position: 10,
+                through_position: 13,
             }],
             "namespace",
             MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
