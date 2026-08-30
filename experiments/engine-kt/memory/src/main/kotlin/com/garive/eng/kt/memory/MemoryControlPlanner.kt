@@ -132,19 +132,10 @@ private fun planExisting(
                 entry.recordId, entry.revisionId, document.documentDigest,
             )
         }
-        document.lifecycle != entry.lifecycle -> {
-            if (document.lifecycle != HypothesisState.ARCHIVED ||
-                entry.lifecycle != HypothesisState.COLD ||
-                document.contentDigest != entry.contentDigest || document.authority != entry.authority ||
-                entry.authority == MemoryAuthority.ORGANISATION_PUBLISHED
-            ) return MemoryControlError.FORBIDDEN_CHANGE
-            operations += MemoryImportOperation.Archive(
-                entry.recordId, entry.revisionId, document.documentDigest,
-            )
-        }
         document.contentDigest != entry.contentDigest -> {
             if (entry.authority == MemoryAuthority.ORGANISATION_PUBLISHED ||
-                document.authority != MemoryAuthority.USER_DECLARED
+                document.authority != MemoryAuthority.USER_DECLARED ||
+                document.lifecycle != HypothesisState.ACTIVE
             ) return MemoryControlError.FORBIDDEN_CHANGE
             val matches = allocations.filterIsInstance<MemoryIdentityAllocation.Supersede>()
                 .filter { it.recordId == entry.recordId }
@@ -153,6 +144,16 @@ private fun planExisting(
                 entry.recordId, entry.revisionId, matches.single().revisionId,
                 MemoryAuthority.USER_DECLARED, document.documentDigest,
                 entry.revisionId.takeIf { entry.authority == MemoryAuthority.AGENT_LEARNED },
+            )
+        }
+        document.lifecycle != entry.lifecycle -> {
+            if (document.lifecycle != HypothesisState.ARCHIVED ||
+                entry.lifecycle != HypothesisState.COLD ||
+                document.contentDigest != entry.contentDigest || document.authority != entry.authority ||
+                entry.authority == MemoryAuthority.ORGANISATION_PUBLISHED
+            ) return MemoryControlError.FORBIDDEN_CHANGE
+            operations += MemoryImportOperation.Archive(
+                entry.recordId, entry.revisionId, document.documentDigest,
             )
         }
         document.authority != entry.authority -> return MemoryControlError.FORBIDDEN_CHANGE

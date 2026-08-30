@@ -203,23 +203,10 @@ fn plan_existing(
             expected_active_revision_id: entry.revision_id.clone(),
             document_digest: document.document_digest(),
         });
-    } else if document.lifecycle() != entry.lifecycle {
-        if document.lifecycle() != HypothesisState::Archived
-            || entry.lifecycle != HypothesisState::Cold
-            || document.content_digest() != entry.content_digest
-            || document.authority() != entry.authority
-            || entry.authority == MemoryAuthority::OrganisationPublished
-        {
-            return Err(MemoryControlError::ForbiddenChange);
-        }
-        operations.push(MemoryImportOperation::Archive {
-            record_id: entry.record_id.clone(),
-            expected_active_revision_id: entry.revision_id.clone(),
-            document_digest: document.document_digest(),
-        });
     } else if document.content_digest() != entry.content_digest {
         if entry.authority == MemoryAuthority::OrganisationPublished
             || document.authority() != MemoryAuthority::UserDeclared
+            || document.lifecycle() != HypothesisState::Active
         {
             return Err(MemoryControlError::ForbiddenChange);
         }
@@ -244,6 +231,20 @@ fn plan_existing(
             document_digest: document.document_digest(),
             supersedes_learned_revision_id: (entry.authority == MemoryAuthority::AgentLearned)
                 .then(|| entry.revision_id.clone()),
+        });
+    } else if document.lifecycle() != entry.lifecycle {
+        if document.lifecycle() != HypothesisState::Archived
+            || entry.lifecycle != HypothesisState::Cold
+            || document.content_digest() != entry.content_digest
+            || document.authority() != entry.authority
+            || entry.authority == MemoryAuthority::OrganisationPublished
+        {
+            return Err(MemoryControlError::ForbiddenChange);
+        }
+        operations.push(MemoryImportOperation::Archive {
+            record_id: entry.record_id.clone(),
+            expected_active_revision_id: entry.revision_id.clone(),
+            document_digest: document.document_digest(),
         });
     } else if document.authority() != entry.authority {
         return Err(MemoryControlError::ForbiddenChange);

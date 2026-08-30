@@ -204,7 +204,7 @@ authorization lookup, or implicit merge.
 | Edited snapshot entry | Result |
 |---|---|
 | Existing `user_declared` content | New revision under the same record identity; prior revision stays attributable. |
-| Existing `agent_learned` content | New `user_declared` revision under the same record identity supersedes it and records the learned revision as provenance; learned evidence is not rewritten. |
+| Existing `agent_learned` content | New `user_declared` Active revision under the same record identity supersedes it and records the learned revision as provenance; learned evidence is not rewritten. |
 | Existing `organisation_published` content | Rejected; organization publication uses its owning channel. |
 | New entry | Allowed only as `user_declared` with an exact scope class/owner present in the authorized export scope set; no implicit scope hierarchy is used. |
 | Missing entry | No action. Absence is never deletion. |
@@ -215,6 +215,11 @@ Imports cannot set confidence/evidence tallies, source facts, promotion links,
 timestamps, use counts, exploration weights, or repository revisions. These are
 Engine/Runtime facts. Scope widening, lifecycle resurrection, identity change,
 and downgrade from user authority fail closed.
+
+Any content edit is planned before a lifecycle-only comparison and must render
+the new revision as `Active`; Candidate/Cold/Archived belongs to the replaced
+revision and is never copied onto the new user declaration. A content-identical
+Archive remains a lifecycle transition and is admitted only from `Cold`.
 
 ## Conflict and recovery
 
