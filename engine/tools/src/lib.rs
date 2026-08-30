@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod access;
 mod governed_outcome;
 mod governed_reducer;
 mod governed_types;
@@ -11,6 +12,10 @@ mod schema;
 mod schema_validate;
 mod unique_json;
 
+pub use access::{
+    AccessMode, AccessNamespace, AccessPolicyEntry, InvocationAccessSet, ResourceAccess,
+    ToolAccessPolicyV1,
+};
 pub use governed_outcome::{
     EffectState, ExecutionFact, GovernedAction, GovernedEffectFailure, GovernedFailureCode,
     GovernedObservation, GovernedToolResult, ObservationOutcome, PreparationRejectedFeedback,

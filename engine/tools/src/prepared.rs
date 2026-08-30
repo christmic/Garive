@@ -25,6 +25,8 @@ pub enum PreparationErrorCode {
     UnsupportedSchemaKeyword,
     /// A value cannot be represented by the admitted JCS surface.
     NonCanonicalValue,
+    /// A C5b access declaration, key, resolver result, or policy is invalid.
+    EffectAccessInvalid,
 }
 
 /// Deterministic JSON Schema assertion failure.
