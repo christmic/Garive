@@ -458,24 +458,104 @@ two pure-mode failure modes:
 ## ⑧ Retrieval quality — five gates
 
 Memory's **delivered shape is "a hypothesis with epistemic
-tags"**, not "an assertion". Five gates ensure the recall
-contract holds; none of them alone is sufficient.
+tags"**, not "an assertion". The recall contract is held by
+five gates + one **confidence formula** + one **three-way
+observability loop**.
+
+### Confidence formula — `conf = E × R × B × F`
+
+Recall uses **four composed factors**, not independent
+sampling:
+
+```
+conf = E × R × B × F
+```
+
+| Factor | Meaning | How it's computed | Default |
+|--------|---------|-------------------|----------|
+| **E** (Evidence) | Evidence strength | Direct quote `0.9` / paraphrase `0.7` / inference `0.5` | Determined by the extractor's `evidence` field |
+| **R** (Reproducibility) | How many independent sessions reproduced the same conclusion | `1 − (1 − r)^n`, where `n` = independent session count, `r` ≈ 0.6 single-session reliability | `n ≥ 3` to be considered `R ≥ 0.94` |
+| **B** (Best-fit / Boundary) | Match to current query | Vector + FTS score, fused | Per-query |
+| **F** (Freshness) | Time since last verification | `1 − (now − last_verified) / F_max_age` | `F_max_age` per type |
+
+The four are **multiplied**, not averaged — a single zero
+factor (e.g. `E = 0` for an unanchored inference) makes the
+whole conf zero. The product captures the **joint** hypothesis
+strength, not "averaged opinions".
+
+### Three-way observability — the recall → apply → verify loop
+
+Every link in the memory pipeline is a **queryable,
+replayable, attributable** row:
+
+```
+recall event ──→ "X memory items retrieved; conf ∈ [low, high]"
+                       │
+                  model uses `[mem:abc]` in response
+                       │
+                  recall event ──→ "mem:abc applied to intent X"
+                       │
+                  reality gate runs (real event matches?)
+                       │
+                  β + 1 (success)  or  β − 1 (failure)
+                       │
+                  conf recomputed via formula
+                       │
+                  state-machine transition (candidate → active)
+```
+
+Three **observability points** are mandatory:
+
+1. **Recall-side** — which entries were retrieved, with
+   conf. `recall.event` row in memory.db.
+2. **Apply-side** — which entries the model actually used
+   (`[mem:abc]` citation). `recall.apply` row.
+3. **Output-side** — which β updates happen, against which
+   sessions. `recall.outcome` row.
+
+The `recall.outcome` row is what feeds the `β` recalibration
+loop — **directly attributable** to the recall event + the
+apply event + the actual outcome. No vibes; everything is
+in a row.
+
+### Design principle — four properties
+
+The observability + formula + loop together give the
+memory layer **four properties** that distinguish it from
+"store and forget":
+
+> **可观测 (observability)**, **可计算 (computable)**,
+> **能归因 (attributable)**, **自适应 (adaptive)**.
+
+- **可观测** — every recall is a row; every apply is a row;
+  every outcome is a row.
+- **可计算** — conf is a function of (E, R, B, F), not vibes.
+- **能归因** — every conf value traces back to its inputs;
+  every β update traces back to the recall + apply + outcome
+  triple.
+- **自适应** — β is observed after every use; the conf formula
+  recalibrates weekly. The system learns its own reliability.
+
+### Five gates — complement the formula
+
+The formula computes conf; the five gates decide what
+memory can do at recall time.
 
 | # | Gate | What it does |
 |---|------|--------------|
-| 1 | **Evidence/lifecycle gate** | Exact authority, scope, lifecycle, evidence tallies, and selection-policy revision determine eligibility; no floating threshold is portable truth. |
-| 2 | **Freshness gate** | Versioned Runtime policy may mark stale identities or request re-verification. Lessons are exempt from time-only tombstone, not from falsification or corruption. |
-| 3 | **Cognitive-transparent injection** | The committed product retains record/revision/authority/lifecycle and audit references. Any user-facing wording is a versioned presentation contract, not invented prompt text. |
-| 4 | **Post-use verification loop** | A durable obligation plus reality-backed observation updates the tally. Contradiction never auto-rewrites content or silently changes authority. |
-| 5 | **Conflict presentation** | Known conflicts remain explicit bounded evidence. Silent winner selection or a conflict UI needs an accepted policy/presentation contract. |
+| 1 | **Confidence gate** | Below-threshold entries are not injected (or are tagged `low-confidence` so the model knows) |
+| 2 | **Freshness gate** | `facts.last_verified` expired → marked `stale` or re-verified; Lessons exempt from time-only tombstone |
+| 3 | **Cognitive-transparent injection** | Injection carries source + conf + "may be stale" wording so the model sees this is testimony, not certification |
+| 4 | **Post-use verification loop** | Recall contradicts reality → automatic conf down + state transition; candidate re-verifies |
+| 5 | **Conflict presentation** | Two contradicting entries → high-conf-first + conflict flag, or both surfaced |
 
 ### Three-party sharing — the shared accountability
 
 | Party | What it owns |
 |-------|--------------|
-| **Framework** (admission gates 1, 2, 5) | Evidence/lifecycle and freshness policy; conflict surfacing |
-| **Model** (using the memory) | Self-weighting; verifies when critical |
-| **Reality** (post-use loop, gate 4) | Closes the loop — the test that makes memory honest |
+| **Framework** (gates 1, 2, 3, 5 + formula inputs) | Confidence + freshness + conflict surfacing + observability log |
+| **Model** (using the memory) | Self-weighting; verifies when critical; treats low-conf as hypothesis |
+| **Reality** (gate 4 + β updates) | Closes the loop — the test that makes memory honest |
 
 **No single party guarantees accuracy** — and that's the
 whole point. **`agent_learned` is a falsifiable hypothesis**.
