@@ -773,6 +773,7 @@ fn project_timeline(
                         state: "running".into(),
                         user_text: String::new(),
                         completion_text: None,
+                        suspension: None,
                         content_truncated: false,
                         activities: Vec::new(),
                     });
@@ -781,6 +782,7 @@ fn project_timeline(
                     item.latest_position = fact.position;
                     item.state = "running".into();
                     item.completion_text = None;
+                    item.suspension = None;
                 }
             }
             "turn.input" => {
@@ -802,6 +804,9 @@ fn project_timeline(
                 let item = timeline_item(&mut items, turn_id)?;
                 item.latest_position = fact.position;
                 item.state = state.into();
+                if state != "suspended" {
+                    item.suspension = None;
+                }
             }
             "turn.completed" => {
                 let (text, truncated) = bounded_text(&completion_text(fact)?, max_text_bytes);
@@ -842,6 +847,17 @@ fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
         .last()
         .unwrap_or(0);
     (value[..boundary].to_owned(), true)
+}
+
+fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {
+    match kind {
+        RuntimeSuspensionKind::ApprovalRequired => "approval_required",
+        RuntimeSuspensionKind::ExternalInputRequired => "external_input_required",
+        RuntimeSuspensionKind::OperatorReconciliation => "operator_reconciliation",
+        RuntimeSuspensionKind::ResourceUnavailable => "resource_unavailable",
+        RuntimeSuspensionKind::PartialOutput => "partial_output",
+        RuntimeSuspensionKind::DelegationPending => "delegation_pending",
+    }
 }
 
 struct ContinueReplay<'a> {

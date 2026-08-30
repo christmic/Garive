@@ -244,10 +244,23 @@ pub struct TurnTimelineItem {
     pub user_text: String,
     /// Redacted committed response projection when completed.
     pub completion_text: Option<String>,
+    /// Restart-safe continuation coordinates when the Turn is suspended.
+    pub suspension: Option<TurnSuspensionView>,
     /// Whether bounded display content was truncated.
     pub content_truncated: bool,
     /// Latest committed H3 state for each activity owned by this Turn.
     pub activities: Vec<HostActivity>,
+}
+
+/// Minimal restart-safe public continuation coordinates.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnSuspensionView {
+    /// Exact durable suspension identity.
+    pub suspension_id: String,
+    /// Optimistic Session version required by continuation.
+    pub session_version: u64,
+    /// Stable public suspension kind.
+    pub kind: String,
 }
 
 /// One ascending bounded page of complete durable Turn projections.
