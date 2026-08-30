@@ -93,6 +93,11 @@ composer, caps width at 76 cells, and grows upward by two border rows plus at
 most five result rows. It never shifts conversation, composer, or cursor
 geometry. It is suppressed below `30x12`, for multiline/argument drafts, when
 the composer is not focused, and whenever a modal owns input.
+Its rows retain one cell of breathing room inside each vertical border. The
+command input is the identity and remains visible; help or unavailable detail
+uses only the remaining display-cell budget and ends with `…` when truncated.
+Truncation follows grapheme and Unicode display width, including CJK and
+combining sequences. Border and padding cells are outside pointer hit regions.
 The linear screen-reader component uses that same filtered order and marks the
 selected numbered row explicitly; it cannot maintain a separate list model.
 Command rows also consume the registry's shared availability result. A

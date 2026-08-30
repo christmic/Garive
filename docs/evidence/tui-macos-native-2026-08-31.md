@@ -242,6 +242,23 @@ reviewed monochrome `40x12` snapshot proves the compact fallback keeps only
 full hint set. The focused shipping PTY and strict all-target/all-feature
 Clippy passed again.
 
+Merge revision `15d942ae` closes the compact row and real pointer path. The
+command component now reserves one horizontal cell inside each border, keeps
+the canonical command visible, and truncates only secondary detail with an
+explicit `…` at grapheme-safe Unicode display width. English and CJK unit
+assertions bind the boundary; geometry tests prove that border/padding cells
+cannot activate a row. Updated dark, light, and mono `100x24` snapshots and the
+monochrome `40x12` boundary were reviewed.
+
+On native macOS arm64, 36 view tests, 19 snapshot/boundary tests, and all eight
+shipping-binary PTY cases passed on the containing source. A new `100x24`
+Expect PTY starts the shipping binary with `--mouse on`, types `/theme d`,
+observes `Use dark theme`, sends an SGR left click to the rendered suggestion
+row, and observes `/theme dark` without premature execution. It then executes,
+quits normally, and the transcript contains both `?1000h` and `?1000l`, proving
+mouse capture restoration. Strict all-target/all-feature Clippy passed with
+warnings denied; formatting and diff checks were clean.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

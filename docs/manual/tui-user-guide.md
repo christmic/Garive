@@ -151,8 +151,10 @@ execution: press Enter again to run the completed command. `/new` and
 
 The menu shows at most five rows, names why an action is unavailable, and does
 not move the conversation or composer. A mouse wheel moves its visible
-selection and a left click completes the hit row. It is hidden for multiline
-or argument text, small terminals below `30x12`, modal overlays, and
+selection and a left click completes the hit row; the border and surrounding
+padding do nothing. On a narrow screen, the command remains visible while its
+description ends with `…` at a safe Unicode boundary. The menu is hidden for
+multiline or argument text, small terminals below `30x12`, modal overlays, and
 screen-reader mode. Use `Ctrl+P` for help-text search or complete linear
 screen-reader discovery.
 

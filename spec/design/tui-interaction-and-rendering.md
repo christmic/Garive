@@ -291,6 +291,12 @@ only until the draft changes. Wheel/click hit testing derives from the same
 rendered window; modal, unfocused, multiline, smaller-than-`30x12`, and linear
 screen-reader states expose no inline menu.
 
+Each row reserves the command input before allocating width to secondary help
+or unavailable detail. Secondary text truncates with an explicit ellipsis at a
+Unicode display-cell boundary and never splits a grapheme. Rendering and hit
+testing consume one shared inner rectangle: the horizontal breathing room and
+border cannot activate a row, while every painted result row can.
+
 ## Session navigation
 
 Session rows show a bounded display label derived from committed public text,

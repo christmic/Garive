@@ -308,6 +308,16 @@ the `40x12` monochrome boundary retains completion and dismissal without
 clipping. The focused macOS shipping PTY and strict all-target/all-feature
 Clippy pass on the containing source.
 
+Merge revision `15d942ae` adds the command-row width and pointer contract.
+Reviewed dark, light, and mono `100x24` snapshots plus the monochrome `40x12`
+boundary bind the one-cell inner breathing room and explicit detail ellipsis.
+Pure tests bind grapheme-safe English/CJK display-width truncation and exclude
+padding from hit testing. On native macOS, 36 view tests, 19 snapshot/boundary
+tests, and all eight shipping-binary PTYs pass. The new Expect PTY enables SGR
+mouse capture, clicks the actually rendered `/theme dark` row, observes
+completion without execution, then proves mouse capture and terminal teardown.
+Strict all-target/all-feature Clippy passes with warnings denied.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the
