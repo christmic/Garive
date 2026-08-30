@@ -190,14 +190,15 @@ browser discovery.
 incremental observation fail stale rather than silently switching history. Its
 duration ceiling is 30 seconds and exact-access ceiling is one.
 
-`navigate` requires `expected_snapshot_id`, `destination_url`, separately
+`navigate` requires `expected_snapshot_id`, `target_revision`,
+`destination_url`, separately
 declared canonical `destination_origin`, `wait_until`, `timeout_ms`,
 `max_nodes`, and `max_text_bytes`. The pure resolver requires the URL origin to
 equal `destination_origin`; that origin is a separate `Network(origin, Write)`
 access. V1 canonical origins include an explicit port. `wait_until` is
 `dom_content_loaded | load | network_idle`; timeout is at most 120 seconds.
 
-`act` requires `expected_snapshot_id`, one action, and at most 16 explicit
+`act` requires `expected_snapshot_id`, `target_revision`, one action, and at most 16 explicit
 `allowed_navigation_origins`; an empty array means action-caused navigation is
 blocked. Exact action shapes are:
 

@@ -53,7 +53,7 @@ fn observe_binds_exact_page_read_and_navigation_binds_page_and_origin_writes() {
         .prepare(&ToolIntent::new(
             "call-nav",
             T2_BROWSER_NAVIGATE,
-            r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","destination_url":"https://example.com:443/path","destination_origin":"https://example.com:443","wait_until":"load","timeout_ms":1000,"max_nodes":100,"max_text_bytes":4096}"#,
+            r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","destination_url":"https://example.com:443/path","destination_origin":"https://example.com:443","wait_until":"load","timeout_ms":1000,"max_nodes":100,"max_text_bytes":4096}"#,
         ))
         .unwrap();
     let accesses = navigate.invocation_accesses().unwrap().values();
@@ -72,16 +72,16 @@ fn action_shapes_origins_and_scope_fail_closed() {
         .prepare(&ToolIntent::new(
             "call-act",
             T2_BROWSER_ACT,
-            r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"click","node_ref":"node-7","allowed_navigation_origins":["https://next.example:443"]}"#,
+            r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"click","node_ref":"node-7","allowed_navigation_origins":["https://next.example:443"]}"#,
         ))
         .unwrap();
     assert_eq!(valid.invocation_accesses().unwrap().values().len(), 2);
 
     for arguments in [
-        r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"click","allowed_navigation_origins":[]}"#,
-        r#"{"session_id":"session-1","page_id":"other","expected_snapshot_id":"snapshot-1","action":"reload","allowed_navigation_origins":[]}"#,
-        r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"press_key","key":"enter","text":"extra","allowed_navigation_origins":[]}"#,
-        r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"scroll","delta_x":0,"delta_y":0,"allowed_navigation_origins":[]}"#,
+        r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"click","allowed_navigation_origins":[]}"#,
+        r#"{"session_id":"session-1","page_id":"other","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"reload","allowed_navigation_origins":[]}"#,
+        r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"press_key","key":"enter","text":"extra","allowed_navigation_origins":[]}"#,
+        r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"scroll","delta_x":0,"delta_y":0,"allowed_navigation_origins":[]}"#,
     ] {
         assert_eq!(
             catalogue
@@ -100,7 +100,7 @@ fn destination_url_must_match_exact_canonical_origin() {
             .prepare(&ToolIntent::new(
                 "bad-nav",
                 T2_BROWSER_NAVIGATE,
-                r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","destination_url":"https://other.example:443/path","destination_origin":"https://example.com:443","wait_until":"load","timeout_ms":1000,"max_nodes":100,"max_text_bytes":4096}"#,
+                r#"{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","destination_url":"https://other.example:443/path","destination_origin":"https://example.com:443","wait_until":"load","timeout_ms":1000,"max_nodes":100,"max_text_bytes":4096}"#,
             ))
             .unwrap_err()
             .code(),

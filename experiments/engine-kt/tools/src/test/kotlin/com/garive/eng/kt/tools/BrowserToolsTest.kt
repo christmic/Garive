@@ -74,9 +74,9 @@ class BrowserToolsTest {
     fun unadmittedPageOriginMismatchAndInvalidActionShapeFailClosed() {
         val catalogue = catalogue()
         for (arguments in listOf(
-            """{"session_id":"session-1","page_id":"other","expected_snapshot_id":"snapshot-1","action":"reload","allowed_navigation_origins":[]}""",
-            """{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"scroll","delta_x":0,"delta_y":0,"allowed_navigation_origins":[]}""",
-            """{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","action":"click","allowed_navigation_origins":[]}""",
+            """{"session_id":"session-1","page_id":"other","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"reload","allowed_navigation_origins":[]}""",
+            """{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"scroll","delta_x":0,"delta_y":0,"allowed_navigation_origins":[]}""",
+            """{"session_id":"session-1","page_id":"page-1","expected_snapshot_id":"snapshot-1","target_revision":"nav-1","action":"click","allowed_navigation_origins":[]}""",
         )) {
             assertEquals(
                 PreparationErrorCode.EFFECT_ACCESS_INVALID,
