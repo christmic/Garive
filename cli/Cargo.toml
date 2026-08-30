@@ -10,6 +10,13 @@ publish = false
 garive-host-client = { path = "../clients/host-rs" }
 tokio.workspace = true
 
+[dev-dependencies]
+garive-core = { path = "../engine/core" }
+garive-ledger = { path = "../engine/ledger" }
+garive-llm = { path = "../engine/llm" }
+garive-runtime = { path = "../runtime/replica" }
+tempfile = "3.27.0"
+
 [[bin]]
 name = "garive"
 path = "src/main.rs"
