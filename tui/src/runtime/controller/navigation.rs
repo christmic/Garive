@@ -3,7 +3,7 @@ use crate::{
     input::{command_matches, parse_command, CommandParse, COMMAND_PALETTE},
 };
 
-use super::{execute_command, RuntimeState};
+use super::{actions::execute_command, RuntimeState};
 
 pub(super) fn cycle_focus(state: &mut RuntimeState, backwards: bool) {
     let next = next_focus(
