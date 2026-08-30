@@ -3,6 +3,8 @@ mod projection;
 mod read_cursor;
 mod read_model;
 mod service;
+mod timeline_projection;
+mod timeline_prompt;
 mod types;
 
 pub use http::{LiveHostServer, LiveHostServerError};
