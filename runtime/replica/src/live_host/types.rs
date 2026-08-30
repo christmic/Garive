@@ -125,6 +125,44 @@ pub struct HostEventPage {
     pub observed_max_position: u64,
 }
 
+/// One installed immutable Agent definition visible to product clients.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionSummary {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable installed definition identity.
+    pub definition_id: String,
+    /// Immutable installed definition revision.
+    pub definition_revision: String,
+    /// Sorted stable public capabilities available to new Sessions.
+    pub capabilities: Vec<String>,
+}
+
+/// One restart-safe durable Session navigation summary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionSummary {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable durable Session identity.
+    pub session_id: String,
+    /// Runtime-owned Agent instance bound to the Session.
+    pub agent_instance_id: String,
+    /// Immutable definition identity captured when the Session opened.
+    pub definition_id: String,
+    /// Immutable definition revision captured when the Session opened.
+    pub definition_revision: String,
+    /// Validated RFC 3339 timestamp of the Session open fact.
+    pub opened_at: String,
+    /// Frozen last durable position observed for the Session.
+    pub latest_position: u64,
+    /// Most recently started Turn identity, when present.
+    pub latest_turn_id: Option<String>,
+    /// Public lifecycle of the most recently started Turn, when present.
+    pub latest_turn_state: Option<String>,
+    /// Count of verified first-start Turns.
+    pub turn_count: u64,
+}
+
 /// Stable Host command/query failure with no secret or implementation text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveHostError {

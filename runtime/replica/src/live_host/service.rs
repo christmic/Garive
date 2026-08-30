@@ -18,9 +18,9 @@ use crate::{
 };
 
 use super::{
-    project_fact, CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput,
-    HostEventPage, InstalledAgent, LiveHostError, LiveHostLimits, LiveHostState,
-    TurnCommandResponse, TurnDispatcher,
+    project_fact, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse, HostClock,
+    HostContinuationInput, HostEventPage, InstalledAgent, LiveHostError, LiveHostLimits,
+    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -54,6 +54,38 @@ impl LiveHost {
     /// Returns explicit Host bounds used by HTTP parsing and event follow mode.
     pub fn limits(&self) -> LiveHostLimits {
         self.state.limits
+    }
+
+    /// Returns bounded installed-Agent discovery without granting new authority.
+    pub fn agent_definitions(&self) -> Vec<AgentDefinitionSummary> {
+        vec![AgentDefinitionSummary {
+            api_version: "v1",
+            definition_id: self.state.installed.definition_id.clone(),
+            definition_revision: self.state.installed.definition_revision.clone(),
+            capabilities: Vec::new(),
+        }]
+    }
+
+    /// Returns restart-safe Sessions ordered by open time and identity descending.
+    pub fn list_sessions(&self, limit: usize) -> Result<Vec<SessionSummary>, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let ledger = self.ledger()?;
+        let mut sessions = ledger
+            .list_sessions()
+            .map_err(map_sqlite)?
+            .into_iter()
+            .map(|session_id| self.project_session(&ledger, &session_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        sessions.sort_by(|left, right| {
+            right
+                .opened_at
+                .cmp(&left.opened_at)
+                .then_with(|| right.session_id.cmp(&left.session_id))
+        });
+        sessions.truncate(limit);
+        Ok(sessions)
     }
 
     /// Creates or exactly replays one durable Session creation command.
@@ -403,6 +435,60 @@ impl LiveHost {
             .map_err(|_| LiveHostError::InvalidRequest)
     }
 
+    fn project_session(
+        &self,
+        ledger: &SqliteLedger,
+        session_id: &SessionId,
+    ) -> Result<SessionSummary, LiveHostError> {
+        let binding = self.load_session(ledger, session_id)?;
+        let facts = ledger
+            .read_facts(session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let opened_at = facts
+            .first()
+            .ok_or(LiveHostError::CorruptState)?
+            .recorded_at
+            .clone();
+        chrono::DateTime::parse_from_rfc3339(&opened_at)
+            .map_err(|_| LiveHostError::CorruptState)?;
+        let mut turns: Vec<(TurnId, String)> = Vec::new();
+        for fact in &facts {
+            let Some(turn_id) = fact.turn_id.as_ref() else {
+                continue;
+            };
+            match fact.kind.as_str() {
+                "turn.started" => {
+                    let started: StartedCommand = decode_payload(fact)?;
+                    if started.kind == "start" {
+                        turns.push((turn_id.clone(), "running".into()));
+                    } else if turns.last().map(|turn| &turn.0) != Some(turn_id) {
+                        return Err(LiveHostError::CorruptState);
+                    } else {
+                        turns.last_mut().ok_or(LiveHostError::CorruptState)?.1 = "running".into();
+                    }
+                }
+                "turn.suspended" => set_latest_turn_state(&mut turns, turn_id, "suspended")?,
+                "turn.completed" => set_latest_turn_state(&mut turns, turn_id, "completed")?,
+                "turn.stopped" => set_latest_turn_state(&mut turns, turn_id, "stopped")?,
+                "turn.failed" => set_latest_turn_state(&mut turns, turn_id, "failed")?,
+                _ => {}
+            }
+        }
+        let latest = turns.last();
+        Ok(SessionSummary {
+            api_version: "v1",
+            session_id: session_id.as_str().to_owned(),
+            agent_instance_id: binding.agent_instance_id.as_str().to_owned(),
+            definition_id: binding.definition_id.as_str().to_owned(),
+            definition_revision: binding.definition_revision.as_str().to_owned(),
+            opened_at,
+            latest_position: binding.max_position,
+            latest_turn_id: latest.map(|turn| turn.0.as_str().to_owned()),
+            latest_turn_state: latest.map(|turn| turn.1.clone()),
+            turn_count: turns.len() as u64,
+        })
+    }
+
     fn load_session(
         &self,
         ledger: &SqliteLedger,
@@ -544,6 +630,19 @@ struct SessionBinding {
     snapshot_digest: String,
     session_version: u64,
     max_position: u64,
+}
+
+fn set_latest_turn_state(
+    turns: &mut [(TurnId, String)],
+    turn_id: &TurnId,
+    state: &str,
+) -> Result<(), LiveHostError> {
+    let latest = turns.last_mut().ok_or(LiveHostError::CorruptState)?;
+    if &latest.0 != turn_id {
+        return Err(LiveHostError::CorruptState);
+    }
+    latest.1 = state.to_owned();
+    Ok(())
 }
 
 struct ContinueReplay<'a> {

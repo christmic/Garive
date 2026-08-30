@@ -6,9 +6,9 @@ mod types;
 pub use http::{LiveHostServer, LiveHostServerError};
 pub use service::LiveHost;
 pub use types::{
-    CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
-    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, TurnCommandResponse,
-    TurnDispatchError, TurnDispatcher,
+    AgentDefinitionSummary, CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput,
+    HostEventPage, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, SessionSummary,
+    TurnCommandResponse, TurnDispatchError, TurnDispatcher,
 };
 
 pub(crate) use projection::project_fact;
