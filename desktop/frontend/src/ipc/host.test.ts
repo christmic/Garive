@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   getDesktopCapabilities, getRecentSessions, getSessionTimeline, runAgentTurn,
   attachWorkspaceToSession, cancelSetup, chooseWorkspace, commitSetup, continueAgentTurn,
-  createWorkSession, getSessionWorkspaces, getSetupCatalogue, listWorkspaceEntries, prepareSetup,
+  createWorkSession, detachWorkspaceFromSession, getSessionWorkspaces, getSetupCatalogue,
+  listWorkspaceEntries, prepareSetup,
   authorizeWorkspaceWrites, getWorkspaceRecoveryStatus, listWorkspaceAuthorizations,
   commitArtifactExport, getArtifactPreview, listArtifacts, prepareArtifactExport,
   reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
@@ -233,6 +234,23 @@ describe("desktop Host IPC", () => {
     expect(calls).toEqual([
       "create_work_session", "attach_workspace_to_session", "get_session_workspaces",
     ]);
+  });
+
+  it("commits an exact path-free Workspace detachment", async () => {
+    const invoke = async <T>(command: string, args: Record<string, unknown>) => {
+      expect(command).toBe("detach_workspace_from_session");
+      expect(args).toEqual({
+        sessionId: "session-1", workspaceId: "workspace-1", grantRevision: 7,
+      });
+      expect(Object.keys(args)).not.toContain("path");
+      return { api_version: "v1", session_id: "session-1", workspace_id: "workspace-1",
+        grant_revision: 7, outcome: "detached", detached_position: 9 } as T;
+    };
+    const receipt = await detachWorkspaceFromSession(
+      "session-1", "workspace-1", 7, invoke,
+    );
+    expect(receipt.outcome).toBe("detached");
+    expect(receipt.detached_position).toBe(9);
   });
 
   it("lists bounded opaque Workspace entry pages", async () => {

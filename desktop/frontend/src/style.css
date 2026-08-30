@@ -140,7 +140,10 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .composer:focus-within { border-color: rgba(49,95,207,.5); box-shadow: 0 18px 50px rgba(42,39,28,.12), 0 0 0 3px rgba(49,95,207,.08); }
 .composer.busy { opacity: .82; }
 .context-chips { display: flex; gap: 7px; padding: 11px 12px 0; overflow-x: auto; }
+.attached-workspaces { display: flex; gap: 7px; padding: 11px 12px 0; overflow-x: auto; }
 .context-chip { display: grid; grid-template-columns: 25px minmax(90px, 1fr) 23px; align-items: center; gap: 7px; max-width: 245px; min-height: 39px; padding: 4px 5px 4px 7px; border: 1px solid rgba(49,95,207,.18); border-radius: 10px; background: var(--accent-wash); }
+.workspace-chip { border-color: rgba(37,122,94,.2); background: rgba(37,122,94,.08); }
+.workspace-chip > svg { color: var(--green); }
 .context-chip > svg { width: 14px; color: var(--accent); }
 .context-chip strong, .context-chip small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-chip strong { font-size: 10.5px; font-weight: 620; }

@@ -160,6 +160,12 @@ export interface WorkspaceAttachment {
   readonly attached_position: number;
 }
 
+export interface WorkspaceDetachment {
+  readonly api_version: "v1"; readonly session_id: string; readonly workspace_id: string;
+  readonly grant_revision: number; readonly outcome: "detached" | "already_detached";
+  readonly detached_position: number;
+}
+
 export interface WorkspaceEntry {
   readonly schema_version: 1; readonly entry_id: string;
   readonly parent_entry_id: string | null;
@@ -377,6 +383,20 @@ export async function getSessionWorkspaces(
 ): Promise<readonly WorkspaceAttachment[]> {
   if (!sessionId) throw new Error("invalid_request");
   return invoke<WorkspaceAttachment[]>("get_session_workspaces", { sessionId });
+}
+
+export async function detachWorkspaceFromSession(
+  sessionId: string,
+  workspaceId: string,
+  grantRevision: number,
+  invoke: Invoke = tauriInvoke,
+): Promise<WorkspaceDetachment> {
+  if (!sessionId || !workspaceId || !Number.isSafeInteger(grantRevision) || grantRevision < 1) {
+    throw new Error("workspace_capability_invalid");
+  }
+  return invoke<WorkspaceDetachment>("detach_workspace_from_session", {
+    sessionId, workspaceId, grantRevision,
+  });
 }
 
 /** Invokes one typed Turn against the backend-owned embedded R1 composition. */

@@ -3,14 +3,14 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace, continueAgentTurn,
-  createWorkSession,
+  createWorkSession, detachWorkspaceFromSession,
   getArtifactPreview, getDesktopCapabilities, getRecentSessions, getSessionTimeline,
   getSessionWorkspaces, getWorkspaceRecoveryStatus, listArtifacts, listWorkspaceAuthorizations, reauthorizeWorkspace,
   resolveTurnApproval, runAgentTurn, runAgentTurnWithWorkspaceContext, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
   type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
   type WorkspaceAuthorization,
-  type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
+  type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import { Icon, type IconName } from "./ui/Icon";
@@ -87,7 +87,9 @@ export function App() {
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [preparedSessionId, setPreparedSessionId] = useState<string>();
+  const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
   const composer = useRef<HTMLTextAreaElement>(null);
+  const approvalAction = useRef<HTMLButtonElement>(null);
 
   const refreshRecents = useCallback(async () => {
     const sessions = await getRecentSessions();
@@ -290,6 +292,32 @@ export function App() {
     }
   };
 
+  const detachWorkspace = async (attachment: WorkspaceAttachment) => {
+    if (state.phase === "submitting" || detachingWorkspaceId) return;
+    setDetachingWorkspaceId(attachment.workspace_id);
+    try {
+      if (visualTest) {
+        dispatch({ type: "workspaces_loaded", sessionId: attachment.session_id,
+          workspaces: state.workspaces.filter((item) =>
+            item.workspace_id !== attachment.workspace_id) });
+      } else {
+        await detachWorkspaceFromSession(
+          attachment.session_id, attachment.workspace_id, attachment.grant_revision,
+        );
+        await loadSession(attachment.session_id);
+      }
+    } catch (cause) {
+      dispatch({ type: "submission_failed",
+        code: typeof cause === "string" ? cause : "host_failure" });
+    } finally {
+      setDetachingWorkspaceId(undefined);
+      requestAnimationFrame(() => {
+        if (composer.current?.disabled) approvalAction.current?.focus();
+        else composer.current?.focus();
+      });
+    }
+  };
+
   return <>
     <div className="app-shell" inert={Boolean(pickerGrant)} aria-hidden={Boolean(pickerGrant)}>
       <aside className="sidebar" aria-label="Primary navigation">
@@ -349,7 +377,9 @@ export function App() {
         {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit}
           startSuggestion={startSuggestion} dispatch={dispatch} context={selectedContext}
           openContext={openContext} authorizeOutputs={authorizeOutputs}
-          resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)} />
+          resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
+          detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
+          approvalAction={approvalAction} />
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
             : <SettingsScreen capabilities={state.capabilities} />}
@@ -365,7 +395,8 @@ export function App() {
 }
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
-  authorizeOutputs, resolveApproval, removeContext }: {
+  authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
+  approvalAction }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
@@ -376,6 +407,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   authorizeOutputs: () => Promise<void>;
   resolveApproval: (approved: boolean) => Promise<void>;
   removeContext: () => void;
+  detachWorkspace: (attachment: WorkspaceAttachment) => Promise<void>;
+  detachingWorkspaceId?: string;
+  approvalAction: React.RefObject<HTMLButtonElement | null>;
 }) {
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>Opening your workspace</h1><p>Recovering the local Runtime…</p></div>;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title="Garive could not start" body={errorCopy.desktop_unavailable} />;
@@ -405,10 +439,22 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <div className="approval-facts"><span><b>Scope</b>{approvalWorkspace?.access === "read_write" ? "Create one new file" : "Exact prepared operation"}</span>
               <span><b>Duration</b>Once · this prepared call only</span><span><b>Overwrite</b>Never</span></div>
             <p>A changed request, Workspace grant, or destination requires a new approval.</p></div>
-          <div className="approval-actions"><button type="button" autoFocus disabled={state.phase === "submitting"}
+          <div className="approval-actions"><button ref={approvalAction} type="button" autoFocus disabled={state.phase === "submitting"}
             onClick={() => void resolveApproval(false)}>Decline</button><button className="primary" type="button"
               disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>Approve once</button></div>
         </div>}
+        {state.workspaces.length > 0 && <div className="attached-workspaces"
+          aria-label="Workspaces attached to this work">
+          {state.workspaces.map((workspace) => <span className="context-chip workspace-chip"
+            key={`${workspace.workspace_id}-${workspace.grant_revision}`}>
+            <Icon name="work" /><span><strong dir="auto">{workspace.display_name}</strong>
+              <small>{workspace.access === "read_write" ? "Read and output" : "Read-only"} · attached</small></span>
+            <button type="button" title="Detach from this work"
+              aria-label="Detach Workspace from this work"
+              disabled={state.phase === "submitting" || Boolean(detachingWorkspaceId)}
+              onClick={() => void detachWorkspace(workspace)}>{detachingWorkspaceId === workspace.workspace_id
+                ? <span className="spinner" /> : <Icon name="close" />}</button>
+          </span>)}</div>}
         {context && <div className="context-chips" aria-label="Context selected for next Turn">
           {context.entries.map((entry) => <span className="context-chip" key={entry.entry_id}>
             <Icon name="file" /><span><strong dir="auto">{entry.display_name}</strong>
