@@ -215,6 +215,21 @@ impl EditorState {
         self.preferred_display_column = None;
     }
 
+    pub(crate) fn replace(&mut self, value: &str) -> Result<(), EditError> {
+        if value.len() > self.max_bytes || value.chars().any(is_unsafe_control) {
+            return Err(EditError::TooLarge {
+                excess_bytes: value.len().saturating_sub(self.max_bytes),
+            });
+        }
+        self.text = value.into();
+        self.cursor_grapheme = self.text.graphemes(true).count();
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+        self.undo.clear();
+        self.redo.clear();
+        Ok(())
+    }
+
     fn grapheme_len(&self) -> usize {
         self.text.graphemes(true).count()
     }

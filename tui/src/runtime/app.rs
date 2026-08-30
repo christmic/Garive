@@ -14,6 +14,7 @@ use crate::{
         AppModel, BootState, ConnectionState, ExecutionState, Overlay, TerminalSize, TimelineItem,
         TimelineRole,
     },
+    persistence::{PendingCommand, Preferences, StateError, StateStore},
     view, LaunchConfig, TuiError,
 };
 
@@ -32,6 +33,20 @@ const LIMITS: ClientLimits = ClientLimits {
 
 /// Runs the resident full-screen terminal client until the user confirms exit.
 pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
+    let store =
+        StateStore::open(config.state_dir.clone(), config.ephemeral).map_err(map_state_error)?;
+    let preferences = store.load_preferences().map_err(map_state_error)?;
+    let pending = store.load_any_pending().map_err(map_state_error)?;
+    let mut config = config;
+    if config.theme == crate::Theme::System {
+        config.theme = preferences.theme;
+    }
+    if config.mouse == crate::MouseMode::Auto {
+        config.mouse = preferences.mouse;
+    }
+    if !config.reduced_motion {
+        config.reduced_motion = preferences.reduced_motion;
+    }
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
     let mut guard = TerminalGuard::acquire(
         SystemTerminal::default(),
@@ -45,7 +60,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     terminal.clear().map_err(|_| TuiError::TerminalIo)?;
 
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(config, client, sender);
+    let mut state = RuntimeState::new(config, client, sender, store, preferences, pending);
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
     loop {
@@ -67,6 +82,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if let Some(task) = state.follow.take() {
         task.abort();
     }
+    state.persist_presentation();
     guard.restore().map_err(map_terminal_error)
 }
 
@@ -77,6 +93,9 @@ pub(super) struct RuntimeState {
     pub(super) model: AppModel,
     pub(super) follow: Option<JoinHandle<()>>,
     pub(super) serial: u64,
+    pub(super) store: StateStore,
+    pub(super) preferences: Preferences,
+    pub(super) pending: Option<PendingCommand>,
 }
 
 impl RuntimeState {
@@ -84,10 +103,17 @@ impl RuntimeState {
         config: LaunchConfig,
         client: LiveHostClient,
         sender: mpsc::Sender<HostMessage>,
+        store: StateStore,
+        preferences: Preferences,
+        pending: Option<PendingCommand>,
     ) -> Self {
         let mut model = AppModel::default();
         model.boot = BootState::Loading;
         model.connection = ConnectionState::Connecting;
+        if pending.is_some() {
+            model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
+            model.overlay = Some(Overlay::UnknownCommand);
+        }
         Self {
             config,
             client,
@@ -95,6 +121,9 @@ impl RuntimeState {
             model,
             follow: None,
             serial: 0,
+            store,
+            preferences,
+            pending,
         }
     }
 
@@ -115,9 +144,31 @@ impl RuntimeState {
         if let Some(task) = self.follow.take() {
             task.abort();
         }
+        self.persist_presentation();
         self.model.selected_session = Some(session_id.clone());
+        self.preferences.selected_session_id = Some(session_id.clone());
+        let draft = self
+            .preferences
+            .draft(&session_id)
+            .unwrap_or_default()
+            .to_owned();
+        let _ = self.model.composer.replace(&draft);
         self.model.connection = ConnectionState::Connecting;
         host::load_snapshot(self.client.clone(), session_id, self.sender.clone());
+    }
+
+    pub(super) fn persist_presentation(&mut self) {
+        if let Some(session) = self.model.selected_session.as_deref() {
+            self.preferences
+                .set_draft(session, self.model.composer.text());
+            self.preferences.selected_session_id = Some(session.into());
+        }
+        self.preferences.theme = self.config.theme;
+        self.preferences.mouse = self.config.mouse;
+        self.preferences.reduced_motion = self.config.reduced_motion;
+        if let Err(error) = self.store.save_preferences(&self.preferences) {
+            self.model.notice = Some(format!("Local state: {}", state_error_name(error)));
+        }
     }
 }
 
@@ -158,13 +209,18 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 BootState::Ready
             };
             state.model.connection = ConnectionState::Online;
-            let selected = state.config.session.clone().or_else(|| {
-                state
-                    .model
-                    .sessions
-                    .first()
-                    .map(|item| item.session_id.clone())
-            });
+            let selected = state
+                .config
+                .session
+                .clone()
+                .or_else(|| state.preferences.selected_session_id.clone())
+                .or_else(|| {
+                    state
+                        .model
+                        .sessions
+                        .first()
+                        .map(|item| item.session_id.clone())
+                });
             if let Some(id) = selected {
                 state.load(id);
             }
@@ -295,5 +351,18 @@ fn map_terminal_error(error: TerminalError) -> TuiError {
     match error {
         TerminalError::NotATerminal => TuiError::TerminalUnavailable,
         TerminalError::Setup | TerminalError::Restore => TuiError::TerminalIo,
+    }
+}
+
+fn map_state_error(_: StateError) -> TuiError {
+    TuiError::LocalState
+}
+
+fn state_error_name(error: StateError) -> &'static str {
+    match error {
+        StateError::Unavailable => "unavailable",
+        StateError::UnsafePermissions => "unsafe_permissions",
+        StateError::InvalidData => "invalid_data",
+        StateError::Conflict => "conflict",
     }
 }

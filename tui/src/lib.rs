@@ -22,6 +22,8 @@ pub enum TuiError {
     TerminalIo,
     /// The configured Host endpoint is invalid.
     InvalidHost,
+    /// Local presentation or recovery state could not be safely opened.
+    LocalState,
 }
 
 impl std::fmt::Display for TuiError {
@@ -30,6 +32,7 @@ impl std::fmt::Display for TuiError {
             Self::TerminalUnavailable => "an interactive terminal is required",
             Self::TerminalIo => "terminal operation failed",
             Self::InvalidHost => "invalid Host configuration",
+            Self::LocalState => "local state is unavailable or unsafe",
         })
     }
 }

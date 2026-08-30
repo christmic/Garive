@@ -70,6 +70,45 @@ impl StateStore {
         self.write_json(&path, value)
     }
 
+    pub(crate) fn load_pending(
+        &self,
+        session_id: Option<&str>,
+    ) -> Result<Option<PendingCommand>, StateError> {
+        let path = format!(
+            "pending/{}.v1.json",
+            session_key(session_id.unwrap_or("new"))
+        );
+        let value: Option<PendingCommand> = self.read_json(&path)?;
+        if let Some(value) = &value {
+            value.validate()?;
+        }
+        Ok(value)
+    }
+
+    pub(crate) fn load_any_pending(&self) -> Result<Option<PendingCommand>, StateError> {
+        let Some(root) = &self.root else {
+            return Ok(None);
+        };
+        let mut entries = fs::read_dir(root.join("pending"))
+            .map_err(|_| StateError::Unavailable)?
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".v1.json"))
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        if entries.len() > 1 {
+            return Err(StateError::Conflict);
+        }
+        let Some(entry) = entries.first() else {
+            return Ok(None);
+        };
+        validate_private_file_if_present(&entry.path())?;
+        let bytes = fs::read(entry.path()).map_err(|_| StateError::Unavailable)?;
+        let value: PendingCommand =
+            serde_json::from_slice(&bytes).map_err(|_| StateError::InvalidData)?;
+        value.validate()?;
+        Ok(Some(value))
+    }
+
     pub(crate) fn remove_pending(&self, session_id: Option<&str>) -> Result<(), StateError> {
         let Some(root) = &self.root else {
             return Ok(());

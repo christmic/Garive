@@ -62,13 +62,35 @@ impl Preferences {
             || self.drafts.iter().any(|value| {
                 value.session_id.is_empty()
                     || value.text.len() > 4_096
-                    || value.updated_at.is_empty()
+                    || !valid_time(&value.updated_at)
                     || !sessions.insert(&value.session_id)
             })
         {
             return Err(StateError::InvalidData);
         }
         Ok(())
+    }
+
+    pub(crate) fn draft(&self, session_id: &str) -> Option<&str> {
+        self.drafts
+            .iter()
+            .find(|value| value.session_id == session_id)
+            .map(|value| value.text.as_str())
+    }
+
+    pub(crate) fn set_draft(&mut self, session_id: &str, text: &str) {
+        self.drafts.retain(|value| value.session_id != session_id);
+        if !text.is_empty() && self.persist_drafts {
+            self.drafts.push(Draft {
+                session_id: session_id.into(),
+                text: text.into(),
+                updated_at: now(),
+            });
+            self.drafts
+                .sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+            self.drafts.truncate(32);
+        }
+        self.revision = self.revision.saturating_add(1);
     }
 }
 
@@ -110,7 +132,7 @@ impl PendingCommand {
             |value: &str| !value.is_empty() && value.len() <= 128 && value.is_ascii();
         if self.schema_version != 1
             || !valid_identity(&self.command_id)
-            || self.created_at.is_empty()
+            || !valid_time(&self.created_at)
             || self.request_digest.len() != 64
             || self.request_digest != digest_pending(self)?
         {
@@ -145,10 +167,18 @@ impl PromptHistoryEntry {
             || self.session_id.is_empty()
             || self.submitted_text.is_empty()
             || self.submitted_text.len() > 4_096
-            || self.submitted_at.is_empty()
+            || !valid_time(&self.submitted_at)
         {
             return Err(StateError::InvalidData);
         }
         Ok(())
     }
+}
+
+pub(crate) fn now() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+fn valid_time(value: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(value).is_ok()
 }
