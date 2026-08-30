@@ -2600,7 +2600,7 @@ view of three concerns and proposed feedback loops, not an execution topology.
                                        recall ranking
                                           │
                                           └──> next recall uses new conf
-     
+
      ┌─── distillation-loop (configured trigger, async) ────┐
      │                                                       │
      │  dream watermark ─────> episode distil ─────> facts/lessons │
