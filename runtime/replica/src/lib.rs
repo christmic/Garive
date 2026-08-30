@@ -11,6 +11,7 @@ mod effect_batch_facts;
 mod effect_batch_recovery;
 mod effect_batch_runtime;
 mod effect_batch_sqlite;
+mod goal_recovery;
 mod goal_runtime;
 mod live_host;
 mod local_composition;
@@ -82,6 +83,7 @@ pub use effect_batch_runtime::{
     EffectBatchPublisher, EffectBatchReport, EffectBatchRuntimeLimits, EffectCancellation,
 };
 pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
+pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{
     commit_goal_command, plan_create_goal, plan_goal_transition, GoalCommandContext,
     GoalRuntimeError, GoalRuntimeState, GoalRuntimeTransition, PlannedGoalCommand,
