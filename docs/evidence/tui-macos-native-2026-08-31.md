@@ -162,6 +162,33 @@ pulse phases. These are executable semantic/PTY evidence, not physical-window
 screenshots. The physical Terminal/iTerm2-class and admitted-PNG rows remain
 open.
 
+TUI merge revision `6f5f43c7` then replaced the mutable Markdown style flag
+with one bounded presentation component. Nested strong/emphasis/strike/link
+styles now compose and restore their enclosing style; headings restore normal
+body style; ordered lists retain their declared start; explicit links show a
+sanitized destination capped at 120 characters without OSC 8; and fenced code
+uses a semantic frame, bounded language label, four-cell tab expansion, and
+grapheme/display-width clipping with an explicit `…`. Copy source remains the
+unmodified Host text.
+
+The design follows direct source inspection rather than product observation.
+Codex `codex-rs/tui/src/markdown_render.rs:430-567` owns an inline-style stack,
+link state, code language, and structured tables, with nested-style/link tests
+in `markdown_render_tests.rs:717-768`. Grok Build independently separates
+style, parsing, hyperlinks, code metadata, streaming, and syntax across
+`xai-grok-markdown/src/`. Garive keeps its own smaller Host-safe renderer and
+does not copy either implementation or activate terminal hyperlinks.
+
+The integrated macOS candidate `9a96a8d5` contains that merge with no later TUI
+change. It enumerated 124 test cases and passed the complete package in 142.15
+seconds. Its six shipping-binary PTYs passed in 41.47 seconds and its production
+Runtime/file-SQLite/PTTY case in 68.55 seconds. Strict all-target Clippy passed
+in 6.46 seconds, and release `garive-tui` plus `visual_demo_host` linked in
+16.47 seconds. Unit assertions cover style restoration, visible links, ordered
+lists, code framing, tab expansion, CJK clipping, and terminal safety; reviewed
+dark/light/mono semantic style-run snapshots cover the rich component. These
+remain executable buffer evidence, not physical-window PNGs.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
