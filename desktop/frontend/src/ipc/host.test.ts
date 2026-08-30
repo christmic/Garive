@@ -52,6 +52,20 @@ describe("desktop Host IPC", () => {
     } as T))).rejects.toThrow("projection_failure");
   });
 
+  it("fails closed when a restored fixed prefix changes between pages", async () => {
+    let call = 0;
+    await expect(getCompleteSessionTimeline("session-1", async <T>() => {
+      call += 1;
+      return { api_version: "v1", session_id: "session-1",
+        scanned_through_position: call === 1 ? 50 : 80,
+        observed_max_position: call === 1 ? 80 : 81, has_more: call === 1,
+        items: [{ turn_id: `turn-${call}`, started_position: call,
+          latest_position: call === 1 ? 50 : 80, state: "completed", user_text: "work",
+          completion_text: "done", content_truncated: false, activities: [] }],
+      } as T;
+    })).rejects.toThrow("projection_failure");
+  });
+
   it("continues one exact durable text suspension", async () => {
     const result = await continueAgentTurn("session-1", "turn-1", {
       suspension_id: "suspension-1", session_version: 3, kind: "partial_output",

@@ -221,10 +221,14 @@ export async function getCompleteSessionTimeline(
 ): Promise<HostTimelinePage> {
   const items: HostTimelinePage["items"][number][] = [];
   let afterPosition = 0;
+  let observedMaxPosition: number | undefined;
   let latest: HostTimelinePage | undefined;
   for (let pageNumber = 0; pageNumber < 8; pageNumber += 1) {
     const page = await getSessionTimeline(sessionId, afterPosition, 64, invoke);
-    if (page.session_id !== sessionId || page.scanned_through_position < afterPosition) {
+    observedMaxPosition ??= page.observed_max_position;
+    if (page.session_id !== sessionId || page.scanned_through_position < afterPosition
+        || page.scanned_through_position > page.observed_max_position
+        || page.observed_max_position !== observedMaxPosition) {
       throw new Error("projection_failure");
     }
     items.push(...page.items);
@@ -257,10 +261,14 @@ export async function listAllArtifacts(
 ): Promise<HostArtifactPage> {
   const items: HostArtifact[] = [];
   let afterPosition = 0;
+  let observedMaxPosition: number | undefined;
   let latest: HostArtifactPage | undefined;
   for (let pageNumber = 0; pageNumber < 4; pageNumber += 1) {
     const page = await listArtifacts(sessionId, afterPosition, 64, invoke);
-    if (page.session_id !== sessionId || page.scanned_through_position < afterPosition) {
+    observedMaxPosition ??= page.observed_max_position;
+    if (page.session_id !== sessionId || page.scanned_through_position < afterPosition
+        || page.scanned_through_position > page.observed_max_position
+        || page.observed_max_position !== observedMaxPosition) {
       throw new Error("projection_failure");
     }
     items.push(...page.items);
