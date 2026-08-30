@@ -3,7 +3,8 @@
 use serde::Serialize;
 
 use crate::{
-    HypothesisState, MemoryAuthority, MemoryKind, MemoryScopeClass, MemorySensitivity, MemoryType,
+    control_plane::hex_sha256, HypothesisState, MemoryAuthority, MemoryKind, MemoryScopeClass,
+    MemorySensitivity, MemoryType,
 };
 
 /// Current Runtime-owned Memory projection row supplied to the pure planner.
@@ -158,6 +159,78 @@ pub struct MemoryImportPlan {
     pub erase_count: u64,
     /// Lowercase SHA-256 over the JCS plan without this field.
     pub plan_digest: String,
+}
+
+impl MemoryImportPlan {
+    /// Verifies counts, canonical operation order, uniqueness, and the JCS digest.
+    pub fn verify(&self) -> Result<(), crate::MemoryControlError> {
+        let counts = (
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Add { .. }))
+                .count() as u64,
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Supersede { .. }))
+                .count() as u64,
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Archive { .. }))
+                .count() as u64,
+            self.operations
+                .iter()
+                .filter(|v| matches!(v, MemoryImportOperation::Erase { .. }))
+                .count() as u64,
+        );
+        let ordered = self.operations.windows(2).all(|pair| {
+            pair[0].record_id() < pair[1].record_id()
+                || pair[0].record_id() == pair[1].record_id() && pair[0].rank() < pair[1].rank()
+        });
+        if self.export_id.is_empty()
+            || self.namespace_id.is_empty()
+            || self.through_revision == 0
+            || self.expected_repository_revision == 0
+            || !ordered
+            || counts
+                != (
+                    self.add_count,
+                    self.supersede_count,
+                    self.archive_count,
+                    self.erase_count,
+                )
+        {
+            return Err(crate::MemoryControlError::InvalidSnapshot);
+        }
+        let canonical = serde_jcs::to_vec(&self.preimage())
+            .map_err(|_| crate::MemoryControlError::InvalidSnapshot)?;
+        if hex_sha256(&canonical) != self.plan_digest {
+            return Err(crate::MemoryControlError::InvalidSnapshot);
+        }
+        Ok(())
+    }
+
+    /// Returns exact canonical operation JSON for the durable M2 journal binding.
+    pub fn canonical_operations_json(&self) -> Result<String, crate::MemoryControlError> {
+        self.verify()?;
+        serde_jcs::to_string(&self.operations)
+            .map_err(|_| crate::MemoryControlError::InvalidSnapshot)
+    }
+
+    fn preimage(&self) -> PlanPreimage<'_> {
+        PlanPreimage {
+            schema_version: 1,
+            export_id: &self.export_id,
+            namespace_id: &self.namespace_id,
+            through_revision: self.through_revision,
+            input_manifest_digest: &self.input_manifest_digest,
+            expected_repository_revision: self.expected_repository_revision,
+            operations: &self.operations,
+            add_count: self.add_count,
+            supersede_count: self.supersede_count,
+            archive_count: self.archive_count,
+            erase_count: self.erase_count,
+        }
+    }
 }
 
 #[derive(Serialize)]
