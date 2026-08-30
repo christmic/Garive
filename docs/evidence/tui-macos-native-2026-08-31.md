@@ -115,6 +115,23 @@ all-target Clippy completed in 5.16 seconds; the release shipping binary plus
 cover the shared action copy, but remain semantic buffer evidence rather than
 real terminal PNGs. The physical-window and admitted-PNG rows remain open.
 
+Merge revision `42104cf2` added the content-free semantic terminal-title
+component. Full-screen and linear presentation now share the grammar
+`Garive · <Workspace|Session N|Session active> · <connection> ·
+<execution>`; `Session N` is the currently admitted Host-page ordinal, never a
+Session identifier. Connection and execution values come from bounded typed
+state, so definition names, user or Agent content, internal identifiers, and
+error codes cannot enter the title. The terminal guard suppresses unchanged
+writes and restores the neutral `Garive` title on normal exit, drop, and unwind.
+
+The exact merged revision enumerated 112 test cases and passed the complete TUI
+package in 138.54 seconds. Its six shipping-binary PTY cases completed in 41.68
+seconds; the production Runtime/file-SQLite/PTTY case completed in 69.28
+seconds and asserted connecting, running, action-required, restarted-ready, and
+neutral-reset title transitions. Strict all-target Clippy completed in 4.31
+seconds, and the release shipping binary plus `visual_demo_host` linked in
+15.27 seconds. The physical-window and admitted-PNG rows remain open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

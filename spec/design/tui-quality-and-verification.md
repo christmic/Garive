@@ -250,9 +250,14 @@ physical terminal, tmux, and `TERM=dumb` rows remain open.
 
 The current macOS arm64 componentized candidate rerun is pinned in
 [`../../docs/evidence/tui-macos-native-2026-08-31.md`](../../docs/evidence/tui-macos-native-2026-08-31.md).
-Merge revision `0fa1dda8` covers release linking, all 103 listed TUI test cases,
+Merge revision `42104cf2` covers release linking, all 112 listed TUI test cases,
 strict Clippy, production Runtime/file-SQLite/PTTY execution, and six repeated
-shipping-binary PTY cases. These include SGR-mouse modal
+shipping-binary PTY cases. These include content-free semantic terminal titles
+shared by full-screen and linear presentation, bounded typed connection and
+execution state, Host-page ordinal labels rather than identifiers, unchanged
+write suppression, and neutral reset on normal exit, drop, and unwind. Real PTY
+coverage asserts live title transitions. The same evidence lineage also covers
+SGR-mouse modal
 activation/restoration, filtered screen-reader command activation, the same
 typed command-availability reason across visual, linear, and activation paths,
 and one typed action-overlay contract across controller activation, visual
