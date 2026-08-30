@@ -129,7 +129,19 @@ func (d *demoHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			d.error(w, http.StatusNotFound, "not_found")
 			return
 		}
-		item.State, item.Completion = "completed", "Approved. The agent resumed on the server and completed the release checks."
+		var body struct {
+			InputJSON string `json:"input_json"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || (body.InputJSON != "true" && body.InputJSON != "false") {
+			d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+			return
+		}
+		item.State = "completed"
+		if body.InputJSON == "true" {
+			item.Completion = "Approved. The agent resumed on the server and completed the release checks."
+		} else {
+			item.Completion = "Declined. The protected action was skipped and the decision was committed."
+		}
 		item.Position++
 		d.turnResponse(w, item)
 	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/turns/") && strings.HasSuffix(path, ":cancel"):
