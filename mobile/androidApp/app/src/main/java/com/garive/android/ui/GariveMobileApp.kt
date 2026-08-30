@@ -2,7 +2,11 @@ package com.garive.android.ui
 
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -37,6 +41,7 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
@@ -133,70 +138,25 @@ internal fun GariveMobileApp(
             onAbandonRetry = { confirmAbandonRetry = true },
         )
     } else {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                ModalDrawerSheet(
-                    modifier = Modifier.width(300.dp).fillMaxHeight(),
-                    drawerContainerColor = MaterialTheme.colorScheme.background,
-                ) {
-                    Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp, vertical = 24.dp)) {
-                        Text("Garive", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 14.dp))
-                        Text(
-                            "Remote · ${origin.remoteHost()}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        )
-                        navigationItems.forEach { item ->
-                            NavigationDrawerItem(
-                                label = { Text(item.label) },
-                                selected = state.destination == item.destination,
-                                icon = { Icon(item.icon, contentDescription = null) },
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                ),
-                                onClick = {
-                                    state = controller.selectDestination(item.destination)
-                                    scope.launch { drawerState.close() }
-                                },
-                            )
+        BoxWithConstraints {
+            val expanded = maxWidth >= 700.dp
+            val navigationContent: @Composable () -> Unit = {
+                RemoteNavigationContent(
+                    origin = origin,
+                    state = state,
+                    onDestination = {
+                        state = controller.selectDestination(it)
+                        if (!expanded) scope.launch { drawerState.close() }
+                    },
+                    onSession = {
+                        scope.launch {
+                            state = controller.openSession(it)
+                            if (!expanded) drawerState.close()
                         }
-                        Text(
-                            "Recent",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 14.dp, top = 24.dp, bottom = 8.dp),
-                        )
-                        state.sessions.take(4).forEach { session ->
-                            NavigationDrawerItem(
-                                label = {
-                                    Column {
-                                        Text(session.agentName, maxLines = 1)
-                                        Text(
-                                            session.status.label(),
-                                            color = statusColor(session.status),
-                                            style = MaterialTheme.typography.labelSmall,
-                                        )
-                                    }
-                                },
-                                selected = state.selectedSessionId == session.sessionId,
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                ),
-                                onClick = {
-                                    scope.launch {
-                                        state = controller.openSession(session.sessionId)
-                                        drawerState.close()
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            },
-        ) {
+                    },
+                )
+            }
+            val workspace: @Composable () -> Unit = {
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -214,11 +174,11 @@ internal fun GariveMobileApp(
                                 )
                             }
                         },
-                        navigationIcon = {
+                        navigationIcon = if (expanded) {{}} else {{
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                 Icon(Icons.Rounded.Menu, contentDescription = "Open navigation")
                             }
-                        },
+                        }},
                         actions = {
                             IconButton(onClick = {
                                 selectedAgent = state.agents.firstOrNull()
@@ -230,56 +190,77 @@ internal fun GariveMobileApp(
                     )
                 },
             ) { padding ->
-                Column(Modifier.padding(padding)) {
-                state.noticeCode?.let { code ->
-                    MobileNoticeBanner(
-                        code = code,
-                        pending = state.pendingCommand != null,
-                        onDismiss = { state = controller.dismissNotice() },
-                        onRetry = { scope.launch { state = controller.retryExact() } },
-                        onAbandonRetry = { confirmAbandonRetry = true },
-                    )
-                }
-                when (state.destination) {
-                    MobileDestination.WORK -> WorkScreen(
-                        state,
-                        onOpen = { scope.launch { state = controller.openSession(it) } },
-                        onNewTask = {
-                            selectedAgent = state.agents.firstOrNull()
-                            state = controller.beginTask()
-                            showNewTask = true
-                        },
-                        onRefresh = { scope.launch { state = controller.refresh() } },
-                    )
-                    MobileDestination.SESSIONS -> SessionsScreen(
-                        state,
-                        onOpen = { scope.launch { state = controller.openSession(it) } },
-                        onRefresh = { scope.launch { state = controller.refresh() } },
-                    )
-                    MobileDestination.AGENTS -> AgentsScreen(
-                        state,
-                        onStart = {
-                            selectedAgent = it
-                            state = controller.beginTask()
-                            showNewTask = true
-                        },
-                        onRefresh = { scope.launch { state = controller.refresh() } },
-                    )
-                    MobileDestination.SETTINGS -> SettingsScreen(
-                        origin, state, theme,
-                        onTheme = {
-                            state = controller.setTheme(it.wireName)
-                            onTheme(it)
-                        },
-                        openNotificationSettings,
-                        onSignOut = { confirmUnpair = true },
-                    )
-                    MobileDestination.CONVERSATION -> Unit
-                }
-                if (state.refreshing && state.sessions.isEmpty()) {
-                    CircularProgressIndicator(modifier = Modifier.padding(24.dp))
+                    Column(Modifier.padding(padding)) {
+                        state.noticeCode?.let { code ->
+                            MobileNoticeBanner(
+                                code = code,
+                                pending = state.pendingCommand != null,
+                                onDismiss = { state = controller.dismissNotice() },
+                                onRetry = { scope.launch { state = controller.retryExact() } },
+                                onAbandonRetry = { confirmAbandonRetry = true },
+                            )
+                        }
+                        when (state.destination) {
+                            MobileDestination.WORK -> WorkScreen(
+                                state,
+                                onOpen = { scope.launch { state = controller.openSession(it) } },
+                                onNewTask = {
+                                    selectedAgent = state.agents.firstOrNull()
+                                    state = controller.beginTask()
+                                    showNewTask = true
+                                },
+                                onRefresh = { scope.launch { state = controller.refresh() } },
+                            )
+                            MobileDestination.SESSIONS -> SessionsScreen(
+                                state,
+                                onOpen = { scope.launch { state = controller.openSession(it) } },
+                                onRefresh = { scope.launch { state = controller.refresh() } },
+                            )
+                            MobileDestination.AGENTS -> AgentsScreen(
+                                state,
+                                onStart = {
+                                    selectedAgent = it
+                                    state = controller.beginTask()
+                                    showNewTask = true
+                                },
+                                onRefresh = { scope.launch { state = controller.refresh() } },
+                            )
+                            MobileDestination.SETTINGS -> SettingsScreen(
+                                origin, state, theme,
+                                onTheme = {
+                                    state = controller.setTheme(it.wireName)
+                                    onTheme(it)
+                                },
+                                openNotificationSettings,
+                                onSignOut = { confirmUnpair = true },
+                            )
+                            MobileDestination.CONVERSATION -> Unit
+                        }
+                        if (state.refreshing && state.sessions.isEmpty()) {
+                            CircularProgressIndicator(modifier = Modifier.padding(24.dp))
+                        }
+                    }
                 }
             }
+            if (expanded) {
+                Row(Modifier.fillMaxSize()) {
+                    Surface(
+                        modifier = Modifier.width(300.dp).fillMaxHeight(),
+                        color = MaterialTheme.colorScheme.background,
+                        tonalElevation = 1.dp,
+                    ) { navigationContent() }
+                    Box(Modifier.weight(1f).fillMaxHeight()) { workspace() }
+                }
+            } else {
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        ModalDrawerSheet(
+                            modifier = Modifier.width(300.dp).fillMaxHeight(),
+                            drawerContainerColor = MaterialTheme.colorScheme.background,
+                        ) { navigationContent() }
+                    },
+                ) { workspace() }
             }
         }
     }
@@ -348,6 +329,65 @@ internal fun GariveMobileApp(
                 OutlinedButton(onClick = { confirmAbandonRetry = false }) { Text("Keep retry") }
             },
         )
+    }
+}
+
+@Composable
+private fun RemoteNavigationContent(
+    origin: String,
+    state: MobileWorkState,
+    onDestination: (MobileDestination) -> Unit,
+    onSession: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp, vertical = 24.dp)) {
+        Text(
+            "Garive",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(horizontal = 14.dp),
+        )
+        Text(
+            "Remote · ${origin.remoteHost()}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        )
+        navigationItems.forEach { item ->
+            NavigationDrawerItem(
+                label = { Text(item.label) },
+                selected = state.destination == item.destination,
+                icon = { Icon(item.icon, contentDescription = null) },
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                onClick = { onDestination(item.destination) },
+            )
+        }
+        Text(
+            "Recent",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 14.dp, top = 24.dp, bottom = 8.dp),
+        )
+        state.sessions.take(4).forEach { session ->
+            NavigationDrawerItem(
+                label = {
+                    Column {
+                        Text(session.agentName, maxLines = 1)
+                        Text(
+                            session.status.label(),
+                            color = statusColor(session.status),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                },
+                selected = state.selectedSessionId == session.sessionId,
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                onClick = { onSession(session.sessionId) },
+            )
+        }
     }
 }
 

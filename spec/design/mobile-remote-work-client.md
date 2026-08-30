@@ -251,6 +251,9 @@ does not retain the local credential.
 - Compact-width phones use the drawer as an overlay. Regular-width iPad uses a
   persistent approximately 300-point Remote sidebar and an independent detail
   navigation stack instead of stretching the phone column.
+- Android widths of at least 700 dp use the same persistent split-workspace
+  principle with an approximately 300 dp sidebar; smaller widths retain the
+  modal drawer.
 - `Needs you` rows come first with one clear action and safe context.
 - Running and recent Sessions use flat text-first rows, compact metadata, and
   a redundant status label/mark. Cards are reserved for decisions, composer,
