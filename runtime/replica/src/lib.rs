@@ -127,7 +127,8 @@ pub use observability_runtime::{
     ObservabilitySink, RedactionPolicy, ShutdownReport, SinkDisposition,
 };
 pub use plan_runtime::{
-    ActivePlanClaim, PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
+    commit_plan_command, plan_plan_transition, plan_propose_plan, ActivePlanClaim,
+    PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
     PlannedPlanCommand,
 };
 pub use runtime_turn::{

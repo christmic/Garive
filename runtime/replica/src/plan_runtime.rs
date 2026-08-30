@@ -3,6 +3,10 @@ use std::collections::BTreeMap;
 use garive_ledger::{CanonicalPayload, FactDraft};
 use garive_plan::{PlanSnapshot, PlanStepId};
 
+mod command;
+
+pub use command::{commit_plan_command, plan_plan_transition, plan_propose_plan};
+
 /// Authenticated metadata bound to one idempotent Plan command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanCommandContext {
