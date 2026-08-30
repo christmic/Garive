@@ -28,6 +28,24 @@ struct NewTaskView: View {
                         }
                     }
                 }
+                Section("Start with a clear outcome") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(mobileGoalStarters, id: \.label) { starter in
+                                Button { prompt = starter.prompt } label: {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(starter.label).font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(GarivePalette.coral)
+                                        Text(starter.prompt).font(.caption).foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.leading).lineLimit(2)
+                                    }
+                                    .frame(width: 210, alignment: .leading).padding(12)
+                                    .background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 14))
+                                }.buttonStyle(.plain)
+                            }
+                        }.padding(.vertical, 2)
+                    }
+                }
                 Section("Goal") {
                     TextEditor(text: $prompt).frame(minHeight: 150)
                     Text("Be specific about the outcome. The agent keeps working on your service if this app closes.")
@@ -64,6 +82,17 @@ struct NewTaskView: View {
     private var selectedID: String { definitionID.isEmpty ? agents.first?.definitionId ?? "" : definitionID }
     private let maxInputBytes = 16_384
 }
+
+struct MobileGoalStarter: Equatable {
+    let label: String
+    let prompt: String
+}
+
+let mobileGoalStarters = [
+    MobileGoalStarter(label: "Synthesize", prompt: "Turn notes into a clear decision memo"),
+    MobileGoalStarter(label: "Analyze", prompt: "Find the key patterns and recommend next steps"),
+    MobileGoalStarter(label: "Create", prompt: "Draft a polished project brief from my outline"),
+]
 
 struct ConversationView: View {
     @ObservedObject var model: MobileViewModel

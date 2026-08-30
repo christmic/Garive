@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -350,7 +353,7 @@ internal fun UnpairConfirmation(onDismiss: () -> Unit, onConfirm: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NewTaskSheet(
+internal fun NewTaskSheet(
     agents: List<MobileAgentCard>,
     selected: MobileAgentCard?,
     draft: String,
@@ -374,13 +377,34 @@ private fun NewTaskSheet(
                 "The Agent keeps running on your server after you leave the app.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            agents.forEach { agent ->
-                OutlinedButton(
-                    onClick = { onSelect(agent) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Text(if (selected == agent) "✓ ${agent.displayName}" else agent.displayName)
+            Text("Agent", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(agents, key = { it.definitionId }) { agent ->
+                    FilterChip(
+                        selected = selected == agent,
+                        onClick = { onSelect(agent) },
+                        label = { Text(agent.displayName) },
+                    )
+                }
+            }
+            Text("Start with a clear outcome", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(mobileGoalStarters, key = { it.label }) { starter ->
+                    OutlinedButton(
+                        onClick = { onDraft(starter.prompt) },
+                        modifier = Modifier.width(224.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            Text(starter.label, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                starter.prompt,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                            )
+                        }
+                    }
                 }
             }
             OutlinedTextField(
@@ -425,3 +449,11 @@ private val navigationItems = listOf(
 private const val MAX_MOBILE_INPUT_BYTES = 16_384
 
 private fun String.remoteHost(): String = removePrefix("https://").removePrefix("http://").substringBefore('/').ifBlank { "service" }
+
+internal data class MobileGoalStarter(val label: String, val prompt: String)
+
+internal val mobileGoalStarters: List<MobileGoalStarter> = listOf(
+    MobileGoalStarter("Synthesize", "Turn notes into a clear decision memo"),
+    MobileGoalStarter("Analyze", "Find the key patterns and recommend next steps"),
+    MobileGoalStarter("Create", "Draft a polished project brief from my outline"),
+)

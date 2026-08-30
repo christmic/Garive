@@ -8,6 +8,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.garive.mobile.model.MobileConnectionState
+import com.garive.mobile.model.MobileAgentCard
+import com.garive.mobile.model.MobileActivityItem
+import com.garive.mobile.model.MobileDecision
 import com.garive.mobile.model.MobileSessionCard
 import com.garive.mobile.model.MobileTurnItem
 import com.garive.mobile.model.MobileWorkState
@@ -62,6 +65,58 @@ public class SessionsScreenTest {
         assertFalse(copied.contains("private work"))
         assertFalse(copied.contains("http"))
         assertFalse(copied.contains("session", ignoreCase = true))
+    }
+
+    @Test
+    public fun newTaskStarterWritesTheDesktopAlignedOutcome(): Unit {
+        var draft = ""
+        val agent = MobileAgentCard("agent-a", "Mobile Orchestrator", "revision-a", emptyList())
+        compose.setContent {
+            GariveTheme {
+                NewTaskSheet(
+                    agents = listOf(agent), selected = agent, draft = draft,
+                    busy = false, online = true, onSelect = {}, onDraft = { draft = it },
+                    onDismiss = {}, onStart = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Synthesize").performClick()
+        compose.runOnIdle {
+            assertEquals("Turn notes into a clear decision memo", draft)
+        }
+    }
+
+    @Test
+    public fun approvalAndActivityRequireExplicitMobileActions(): Unit {
+        val decision = MobileDecision(
+            "suspension-a", 3, "approval_required", "Approval needed",
+            "Approve the release after verified mobile checks?", "Approve once",
+        )
+        val turn = MobileTurnItem(
+            "turn-a", "Finish the mobile release", "The release is ready for review.",
+            MobileWorkStatus.NEEDS_INPUT, 4, false, decision,
+            listOf(MobileActivityItem("activity-a", "Ran 4 checks", "completed", true, null)),
+        )
+        val state = MobileWorkState(
+            connection = MobileConnectionState.ONLINE,
+            sessions = listOf(session("session-a", "Mobile Orchestrator", MobileWorkStatus.NEEDS_INPUT)),
+            selectedSessionId = "session-a",
+            timeline = listOf(turn),
+        )
+        val responses = mutableListOf<String>()
+        compose.setContent {
+            GariveTheme {
+                ConversationScreen(state, {}, {}, {}, {}, {}, { responses += it }, {}, {})
+            }
+        }
+
+        compose.onNodeWithText("Decline").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Approve once").assertIsDisplayed().performClick()
+        compose.onAllNodesWithText("Ran 4 checks").assertCountEquals(0)
+        compose.onNodeWithText("Activity · 1").performClick()
+        compose.onNodeWithText("Ran 4 checks").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(listOf("false", "true"), responses) }
     }
 
     private fun session(id: String, agent: String, status: MobileWorkStatus): MobileSessionCard =

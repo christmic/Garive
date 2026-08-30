@@ -154,3 +154,12 @@ func newTaskPresentationPreservesExplicitAgentChoice() {
     #expect(!model.presentingNewTask)
     #expect(model.preferredDefinitionID == nil)
 }
+
+@Test
+func mobileGoalStartersMatchDesktopWorkOutcomes() {
+    #expect(mobileGoalStarters == [
+        MobileGoalStarter(label: "Synthesize", prompt: "Turn notes into a clear decision memo"),
+        MobileGoalStarter(label: "Analyze", prompt: "Find the key patterns and recommend next steps"),
+        MobileGoalStarter(label: "Create", prompt: "Draft a polished project brief from my outline"),
+    ])
+}
