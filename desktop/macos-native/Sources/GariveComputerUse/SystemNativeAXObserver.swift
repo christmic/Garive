@@ -1,3 +1,5 @@
+import ApplicationServices
+
 /// Prompt-free native Accessibility window enumeration and observation.
 public final class SystemNativeAXObserver {
     private let access: any NativeAXAccessing
@@ -63,8 +65,32 @@ public final class SystemNativeAXObserver {
             snapshot: snapshot,
             window: window,
             elements: read.elements,
-            ownerIdentifier: ObjectIdentifier(access)
+            ownerIdentifier: ObjectIdentifier(access),
+            bounds: bounds
         )
+    }
+
+    /// Revalidates and dispatches one exact snapshot-local semantic action.
+    public func perform(
+        action: NativeAXSemanticAction,
+        observation: NativeAXObservationBinding
+    ) throws -> NativeAXObservationBinding {
+        let nodeIndex = try validate(action: action, observation: observation)
+        let fresh = try revalidateForAction(observation, nodeIndex: nodeIndex)
+        guard observation.consume() else {
+            throw NativeAXActionFailure.snapshotStale
+        }
+        switch action {
+        case .press:
+            try access.performPress(on: fresh)
+        case let .setValue(_, value):
+            try access.setValue(value, on: fresh)
+        }
+        do {
+            return try observe(window: observation.window, bounds: observation.bounds)
+        } catch {
+            throw NativeAXActionFailure.actionUncertain
+        }
     }
 
     private func requireAccess(
@@ -92,6 +118,90 @@ public final class SystemNativeAXObserver {
             access.isSameElement($0, binding.element)
         }) else {
             throw NativeAXObservationFailure.targetChanged
+        }
+    }
+
+    private func validate(
+        action: NativeAXSemanticAction,
+        observation: NativeAXObservationBinding
+    ) throws -> Int {
+        guard observation.ownerIdentifier == ObjectIdentifier(access) else {
+            throw NativeAXActionFailure.targetChanged
+        }
+        let nodeIndex: Int
+        let requiredAction: NativeAXSemanticNode.SupportedAction
+        switch action {
+        case let .press(index):
+            nodeIndex = index
+            requiredAction = .press
+        case let .setValue(index, value):
+            guard value.count <= 32_768, value.utf8.count <= 131_072 else {
+                throw NativeAXActionFailure.invalidAction
+            }
+            nodeIndex = index
+            requiredAction = .setValue
+        }
+        guard observation.snapshot.nodes.indices.contains(nodeIndex),
+              observation.elements.indices.contains(nodeIndex)
+        else {
+            throw NativeAXActionFailure.nodeStale
+        }
+        let node = observation.snapshot.nodes[nodeIndex]
+        if case .setValue = action, node.valueSensitivity == .protected {
+            throw NativeAXActionFailure.sensitiveActionRequired
+        }
+        guard node.supportedActions.contains(requiredAction) else {
+            throw NativeAXActionFailure.actionUnsupported
+        }
+        return nodeIndex
+    }
+
+    private func revalidateForAction(
+        _ observation: NativeAXObservationBinding,
+        nodeIndex: Int
+    ) throws -> AXUIElement {
+        guard permissionState() == .granted else {
+            throw NativeAXActionFailure.permissionRevoked
+        }
+        do {
+            try requireCurrent(observation.window.applicationIdentity)
+            try requireWindow(observation.window)
+            let read = try access.semanticElement(
+                root: observation.window.element,
+                bounds: observation.bounds
+            )
+            let snapshot = try NativeAXSemanticSnapshotBuilder.build(
+                root: read.root,
+                bounds: observation.bounds
+            )
+            guard read.elements.count == snapshot.nodes.count,
+                  snapshot == observation.snapshot
+            else {
+                throw NativeAXActionFailure.snapshotStale
+            }
+            guard read.elements.indices.contains(nodeIndex),
+                  access.isSameElement(
+                      read.elements[nodeIndex],
+                      observation.elements[nodeIndex]
+                  )
+            else {
+                throw NativeAXActionFailure.nodeStale
+            }
+            try requireCurrent(observation.window.applicationIdentity)
+            try requireWindow(observation.window)
+            return read.elements[nodeIndex]
+        } catch let failure as NativeAXActionFailure {
+            throw failure
+        } catch NativeAXObservationFailure.permissionRequired {
+            throw NativeAXActionFailure.permissionRevoked
+        } catch NativeAXObservationFailure.targetChanged {
+            throw NativeAXActionFailure.targetChanged
+        } catch NativeAXObservationFailure.invalidBounds,
+                NativeAXObservationFailure.invalidNativeData,
+                NativeAXObservationFailure.resultBoundExceeded {
+            throw NativeAXActionFailure.snapshotStale
+        } catch {
+            throw NativeAXActionFailure.targetChanged
         }
     }
 }

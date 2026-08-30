@@ -7,6 +7,8 @@ final class NativeAXAccessProbe: NativeAXAccessing {
     var semanticElements: [AXUIElement]
     private(set) var windowsCallCount = 0
     private(set) var semanticCallCount = 0
+    private(set) var pressedElements: [AXUIElement] = []
+    private(set) var setValues: [(String, AXUIElement)] = []
 
     init(
         windowElements: [AXUIElement],
@@ -33,5 +35,13 @@ final class NativeAXAccessProbe: NativeAXAccessing {
     ) throws -> NativeAXReadResult {
         semanticCallCount += 1
         return NativeAXReadResult(root: semanticRoot, elements: semanticElements)
+    }
+
+    func performPress(on element: AXUIElement) throws {
+        pressedElements.append(element)
+    }
+
+    func setValue(_ value: String, on element: AXUIElement) throws {
+        setValues.append((value, element))
     }
 }

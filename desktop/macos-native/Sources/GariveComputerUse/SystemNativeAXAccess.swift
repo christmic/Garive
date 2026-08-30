@@ -11,6 +11,22 @@ final class SystemNativeAXAccess: NativeAXAccessing {
         CFEqual(left, right)
     }
 
+    func performPress(on element: AXUIElement) throws {
+        try requireActionSuccess(
+            AXUIElementPerformAction(element, kAXPressAction as CFString)
+        )
+    }
+
+    func setValue(_ value: String, on element: AXUIElement) throws {
+        try requireActionSuccess(
+            AXUIElementSetAttributeValue(
+                element,
+                kAXValueAttribute as CFString,
+                value as CFString
+            )
+        )
+    }
+
     func semanticElement(
         root: AXUIElement,
         bounds: NativeAXObservationBounds
@@ -190,5 +206,22 @@ final class SystemNativeAXAccess: NativeAXAccessing {
             width: dimensions.width,
             height: dimensions.height
         )
+    }
+
+    private func requireActionSuccess(_ error: AXError) throws {
+        switch error {
+        case .success:
+            return
+        case .apiDisabled:
+            throw NativeAXActionFailure.permissionRevoked
+        case .invalidUIElement:
+            throw NativeAXActionFailure.targetChanged
+        case .actionUnsupported, .attributeUnsupported:
+            throw NativeAXActionFailure.actionUnsupported
+        case .illegalArgument, .notEnoughPrecision:
+            throw NativeAXActionFailure.invalidAction
+        default:
+            throw NativeAXActionFailure.actionUncertain
+        }
     }
 }

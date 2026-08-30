@@ -1,4 +1,5 @@
 import ApplicationServices
+import Foundation
 
 /// Broker-private binding from one semantic snapshot to its exact AX objects.
 public final class NativeAXObservationBinding {
@@ -10,16 +11,29 @@ public final class NativeAXObservationBinding {
     let window: NativeAXWindowBinding
     let elements: [AXUIElement]
     let ownerIdentifier: ObjectIdentifier
+    let bounds: NativeAXObservationBounds
+    private let consumptionLock = NSLock()
+    private var consumed = false
 
     init(
         snapshot: NativeAXSemanticSnapshot,
         window: NativeAXWindowBinding,
         elements: [AXUIElement],
-        ownerIdentifier: ObjectIdentifier
+        ownerIdentifier: ObjectIdentifier,
+        bounds: NativeAXObservationBounds
     ) {
         self.snapshot = snapshot
         self.window = window
         self.elements = elements
         self.ownerIdentifier = ownerIdentifier
+        self.bounds = bounds
+    }
+
+    func consume() -> Bool {
+        consumptionLock.lock()
+        defer { consumptionLock.unlock() }
+        guard !consumed else { return false }
+        consumed = true
+        return true
     }
 }

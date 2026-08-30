@@ -7,4 +7,6 @@ protocol NativeAXAccessing: AnyObject {
         root: AXUIElement,
         bounds: NativeAXObservationBounds
     ) throws -> NativeAXReadResult
+    func performPress(on element: AXUIElement) throws
+    func setValue(_ value: String, on element: AXUIElement) throws
 }
