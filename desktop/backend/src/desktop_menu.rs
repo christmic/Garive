@@ -1,6 +1,68 @@
 /// Stable frontend event carrying one admitted native menu intent.
 pub const DESKTOP_MENU_EVENT: &str = "desktop-menu";
 
+/// Builds Garive's complete system-native application menu.
+pub fn build_desktop_menu<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> tauri::Result<tauri::menu::Menu<R>> {
+    use tauri::menu::{Menu, MenuItemBuilder, SubmenuBuilder};
+
+    let new_work = MenuItemBuilder::with_id(DesktopMenuIntent::NewWork.id(), "New Work")
+        .accelerator("CmdOrCtrl+N")
+        .build(app)?;
+    let search = MenuItemBuilder::with_id(DesktopMenuIntent::Search.id(), "Search Work…")
+        .accelerator("CmdOrCtrl+F")
+        .build(app)?;
+    let settings = MenuItemBuilder::with_id(DesktopMenuIntent::Settings.id(), "Settings…")
+        .accelerator("CmdOrCtrl+,")
+        .build(app)?;
+    let inspector =
+        MenuItemBuilder::with_id(DesktopMenuIntent::ToggleInspector.id(), "Toggle Inspector")
+            .accelerator("CmdOrCtrl+Shift+A")
+            .build(app)?;
+
+    let application = SubmenuBuilder::new(app, "Garive")
+        .about(None)
+        .separator()
+        .item(&settings)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    let file = SubmenuBuilder::new(app, "File")
+        .item(&new_work)
+        .item(&search)
+        .separator()
+        .close_window()
+        .build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+    let view = SubmenuBuilder::new(app, "View")
+        .item(&inspector)
+        .separator()
+        .fullscreen()
+        .build()?;
+    let window = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .bring_all_to_front()
+        .build()?;
+    Menu::with_items(app, &[&application, &file, &edit, &view, &window])
+}
+
 /// Safe action identities accepted from Garive's native application menu.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopMenuIntent {
