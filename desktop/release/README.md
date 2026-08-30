@@ -66,3 +66,19 @@ Publication additionally requires the update manifest/signature, SBOM, license
 inventory, SHA-256 checksum publication, rollback instructions, and a clean-Mac
 install/update/downgrade test. Until those artifacts and a real Apple identity
 exist, `spec/STATUS.md` remains active and no signed-release claim is valid.
+
+## Screenshot and manual evidence
+
+The accepted M01–M85 matrix is tracked without duplicating its ID list in code.
+Run the gate from the repository root:
+
+```sh
+node desktop/release/verify-desktop-evidence.mjs
+```
+
+The verifier derives the exact required IDs from A-DESKTOP-VE, rejects missing,
+duplicate, extra, or pending rows, binds every passing image to the candidate
+Git/package identity, checks required provenance and safety declarations, and
+recomputes every PNG SHA-256 under `docs/manual/assets/desktop`. The checked-in
+manifest intentionally starts red: it becomes green only after the real
+candidate capture matrix is complete.

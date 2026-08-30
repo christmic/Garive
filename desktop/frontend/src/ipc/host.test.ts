@@ -7,10 +7,20 @@ import {
   authorizeWorkspaceWrites, getWorkspaceRecoveryStatus, listWorkspaceAuthorizations,
   commitArtifactExport, getArtifactPreview, listAllArtifacts, listArtifacts, prepareArtifactExport,
   reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
-  runAgentTurn, runAgentTurnWithWorkspaceContext, verifyWorkspace,
+  runAgentTurn, runAgentTurnWithWorkspaceContext, setDesktopMenuLocale, verifyWorkspace,
 } from "./host";
 
 describe("desktop Host IPC", () => {
+  it("synchronizes only a resolved data-free native menu locale", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    await setDesktopMenuLocale("zh-Hans", async <T>(
+      command: string, args: Record<string, unknown>,
+    ) => {
+      calls.push({ command, args }); return undefined as T;
+    });
+    expect(calls).toEqual([{ command: "set_desktop_menu_locale", args: { locale: "zh-Hans" } }]);
+  });
+
   it("returns one typed embedded Runtime terminal", async () => {
     const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
     const expected = { session_id: "session-1", turn_id: "turn-1", execution_id: "execution-1",
