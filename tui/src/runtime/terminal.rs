@@ -2,7 +2,10 @@ use std::io::{self, IsTerminal, Stderr, Write};
 
 use crossterm::{
     cursor::Show,
-    event::{DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange},
+    event::{
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -10,6 +13,7 @@ use crossterm::{
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalOptions {
     pub(crate) screen_reader: bool,
+    pub(crate) mouse: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +33,8 @@ pub(crate) trait TerminalOps {
     fn disable_paste(&mut self) -> io::Result<()>;
     fn enable_focus(&mut self) -> io::Result<()>;
     fn disable_focus(&mut self) -> io::Result<()>;
+    fn enable_mouse(&mut self) -> io::Result<()>;
+    fn disable_mouse(&mut self) -> io::Result<()>;
     fn show_cursor(&mut self) -> io::Result<()>;
     fn flush(&mut self) -> io::Result<()>;
 }
@@ -39,6 +45,7 @@ pub(crate) struct TerminalGuard<O: TerminalOps> {
     alternate: bool,
     paste: bool,
     focus: bool,
+    mouse: bool,
     restored: bool,
 }
 
@@ -53,6 +60,7 @@ impl<O: TerminalOps> TerminalGuard<O> {
             alternate: false,
             paste: false,
             focus: false,
+            mouse: false,
             restored: false,
         };
         if guard.ops.enable_raw().is_err() {
@@ -67,6 +75,10 @@ impl<O: TerminalOps> TerminalGuard<O> {
         guard.paste = true;
         guard.step(|ops| ops.enable_focus())?;
         guard.focus = true;
+        if options.mouse {
+            guard.step(|ops| ops.enable_mouse())?;
+            guard.mouse = true;
+        }
         Ok(guard)
     }
 
@@ -76,6 +88,10 @@ impl<O: TerminalOps> TerminalGuard<O> {
         }
         self.restored = true;
         let mut failed = false;
+        if self.mouse {
+            failed |= self.ops.disable_mouse().is_err();
+            self.mouse = false;
+        }
         if self.focus {
             failed |= self.ops.disable_focus().is_err();
             self.focus = false;
@@ -160,6 +176,12 @@ impl TerminalOps for SystemTerminal {
     }
     fn disable_focus(&mut self) -> io::Result<()> {
         execute!(self.stderr, DisableFocusChange).map(|_| ())
+    }
+    fn enable_mouse(&mut self) -> io::Result<()> {
+        execute!(self.stderr, EnableMouseCapture).map(|_| ())
+    }
+    fn disable_mouse(&mut self) -> io::Result<()> {
+        execute!(self.stderr, DisableMouseCapture).map(|_| ())
     }
     fn show_cursor(&mut self) -> io::Result<()> {
         execute!(self.stderr, Show).map(|_| ())

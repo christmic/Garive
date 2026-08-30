@@ -1,4 +1,6 @@
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use crate::{
     application::{ExecutionState, Overlay, TerminalSize},
@@ -17,7 +19,37 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         Event::Paste(text) => {
             let _ = state.model.composer.insert(&text);
         }
+        Event::Mouse(mouse) => handle_mouse(mouse, state),
         Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(key, state),
+        _ => {}
+    }
+}
+
+fn handle_mouse(mouse: MouseEvent, state: &mut RuntimeState) {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            state.model.scroll_offset = state.model.scroll_offset.saturating_sub(3)
+        }
+        MouseEventKind::ScrollDown => {
+            state.model.scroll_offset =
+                (state.model.scroll_offset + 3).min(state.model.timeline.len().saturating_sub(1))
+        }
+        MouseEventKind::Down(MouseButton::Left)
+            if state.model.terminal_size.width >= 100
+                && mouse.column
+                    < if state.model.terminal_size.width >= 160 {
+                        34
+                    } else {
+                        28
+                    }
+                && mouse.row >= 3 =>
+        {
+            let index = ((mouse.row - 3) / 3) as usize;
+            if let Some(session) = state.model.sessions.get(index) {
+                state.model.session_selection = index;
+                state.load(session.session_id.clone());
+            }
+        }
         _ => {}
     }
 }

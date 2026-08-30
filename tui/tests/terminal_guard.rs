@@ -51,6 +51,12 @@ impl TerminalOps for FakeOps {
     fn disable_focus(&mut self) -> io::Result<()> {
         self.call("disable_focus")
     }
+    fn enable_mouse(&mut self) -> io::Result<()> {
+        self.call("enable_mouse")
+    }
+    fn disable_mouse(&mut self) -> io::Result<()> {
+        self.call("disable_mouse")
+    }
     fn show_cursor(&mut self) -> io::Result<()> {
         self.call("show_cursor")
     }
@@ -127,12 +133,38 @@ fn screen_reader_mode_never_enters_the_alternate_screen() {
         ops,
         TerminalOptions {
             screen_reader: true,
+            mouse: false,
         },
     )
     .unwrap();
     drop(guard);
     assert!(!calls.borrow().contains(&"enter_alt"));
     assert!(!calls.borrow().contains(&"leave_alt"));
+}
+
+#[test]
+fn mouse_capture_is_opt_in_and_restored_before_focus() {
+    let (ops, calls) = fake(None);
+    let guard = TerminalGuard::acquire(
+        ops,
+        TerminalOptions {
+            screen_reader: false,
+            mouse: true,
+        },
+    )
+    .unwrap();
+    drop(guard);
+    let calls = calls.borrow();
+    assert!(calls.contains(&"enable_mouse"));
+    let mouse = calls
+        .iter()
+        .position(|value| *value == "disable_mouse")
+        .unwrap();
+    let focus = calls
+        .iter()
+        .position(|value| *value == "disable_focus")
+        .unwrap();
+    assert!(mouse < focus);
 }
 
 #[test]

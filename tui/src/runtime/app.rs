@@ -56,6 +56,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         SystemTerminal::default(),
         TerminalOptions {
             screen_reader: config.screen_reader,
+            mouse: config.mouse == crate::MouseMode::On,
         },
     )
     .map_err(map_terminal_error)?;
@@ -104,6 +105,7 @@ async fn run_screen_reader(
         SystemTerminal::default(),
         TerminalOptions {
             screen_reader: true,
+            mouse: false,
         },
     )
     .map_err(map_terminal_error)?;
