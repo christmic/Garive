@@ -13,9 +13,15 @@ use garive_runtime::{
 use serde::Serialize;
 use tokio::sync::Mutex;
 
+mod setup;
 mod system_configuration;
 mod system_provider;
 
+pub use setup::{
+    DesktopSetupCatalogue, DesktopSetupError, DesktopSetupInput, DesktopSetupPlan,
+    DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService, DesktopSetupSummary,
+    SetupCredentialStore, SystemSetupCredentialStore,
+};
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,
 };

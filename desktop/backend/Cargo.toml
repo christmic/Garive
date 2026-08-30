@@ -20,8 +20,11 @@ garive-provider-profile = { path = "../../providers/profile" }
 garive-runtime = { path = "../../runtime/replica" }
 serde.workspace = true
 serde_json.workspace = true
+serde_jcs.workspace = true
+sha2.workspace = true
 tauri = { version = "2.11.5", features = [] }
 tokio.workspace = true
+url = "2.5.8"
 uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
