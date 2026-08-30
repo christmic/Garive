@@ -13,9 +13,9 @@ use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, To
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
     plan_core_terminal, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, HostClock, HostContinuationInput, InstalledActivityCatalogue,
-    InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits,
-    LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    EffectiveRuntimeLimits, HostClock, HostContinuationInput, HostReadLimits,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
+    LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -63,6 +63,10 @@ impl Harness {
     }
 
     fn with_h3(event_batch_size: u64, h3: bool) -> Self {
+        Self::with_read_limits(event_batch_size, h3, HostReadLimits::PRODUCT_DEFAULT)
+    }
+
+    fn with_read_limits(event_batch_size: u64, h3: bool, read_limits: HostReadLimits) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("host.sqlite3");
         let dispatcher = Arc::new(VerifyingDispatcher {
@@ -71,7 +75,7 @@ impl Harness {
         });
         let mut installed = installed();
         installed.public_activity_catalogue = h3.then(activity_catalogue);
-        let host = LiveHost::new(
+        let host = LiveHost::new_with_read_limits(
             &database,
             installed,
             LiveHostLimits {
@@ -86,6 +90,7 @@ impl Harness {
                     max_encoded_bytes_per_turn: 8_192,
                 }),
             },
+            read_limits,
             Arc::new(FixedClock),
             dispatcher.clone(),
         )
@@ -97,6 +102,63 @@ impl Harness {
             host,
         }
     }
+}
+
+#[test]
+fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
+    let text_limits = HostReadLimits {
+        max_user_text_bytes: 5,
+        ..HostReadLimits::PRODUCT_DEFAULT
+    };
+    let harness = Harness::with_read_limits(64, false, text_limits);
+    let session = harness
+        .host
+        .create_session("create-text-bound", "definition-main")
+        .unwrap();
+    harness
+        .host
+        .start_turn("start-text-bound", &session.session_id, "ééé")
+        .unwrap();
+    let page = harness
+        .host
+        .get_timeline(&session.session_id, 0, 4)
+        .unwrap();
+    assert_eq!(page.items[0].user_text, "éé");
+    assert!(page.items[0].content_truncated);
+
+    let response_bound = Harness::with_read_limits(
+        64,
+        false,
+        HostReadLimits {
+            max_response_bytes: 1,
+            ..HostReadLimits::PRODUCT_DEFAULT
+        },
+    );
+    assert_eq!(
+        response_bound.host.list_agent_definitions(),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+
+    let fact_bound = Harness::with_read_limits(
+        64,
+        false,
+        HostReadLimits {
+            max_facts: 2,
+            ..HostReadLimits::PRODUCT_DEFAULT
+        },
+    );
+    let session = fact_bound
+        .host
+        .create_session("create-fact-bound", "definition-main")
+        .unwrap();
+    fact_bound
+        .host
+        .start_turn("start-fact-bound", &session.session_id, "hello")
+        .unwrap();
+    assert_eq!(
+        fact_bound.host.get_session(&session.session_id),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
 }
 
 fn activity_catalogue() -> InstalledActivityCatalogue {
