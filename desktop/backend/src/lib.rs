@@ -7,8 +7,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use garive_llm::ModelPort;
 use garive_runtime::{
-    local_dispatch_queue, HostClock, InstalledAgent, LiveHost, LiveHostLimits, LocalDispatchQueue,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    local_dispatch_queue, HostClock, HostContinuationInput, InstalledAgent, LiveHost,
+    LiveHostLimits, LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalExecutionWorker, TurnCommandResponse,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -212,6 +213,38 @@ impl DesktopHost {
             .host
             .start_turn(&turn_id, &session_id, input)
             .map_err(|_| DesktopHostError::HostFailure)?;
+        self.finish_turn(session_id, turn).await
+    }
+
+    /// Continues one exact restart-safe text suspension and executes its fresh attempt.
+    pub async fn continue_turn(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        session_version: u64,
+        input: &str,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        let command_id = self.operations.command_id("continue")?;
+        let turn = self
+            .host
+            .continue_turn(
+                &command_id,
+                session_id,
+                turn_id,
+                suspension_id,
+                session_version,
+                HostContinuationInput::String(input),
+            )
+            .map_err(|_| DesktopHostError::HostFailure)?;
+        self.finish_turn(session_id.to_owned(), turn).await
+    }
+
+    async fn finish_turn(
+        &self,
+        session_id: String,
+        turn: TurnCommandResponse,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
         let attempt = self.operations.execution_attempt()?;
         self.queue
             .lock()
@@ -371,6 +404,33 @@ impl DesktopState {
             runtime.block_on(host.run_turn_in_session(
                 &definition_id,
                 session_id.as_deref(),
+                &input,
+            ))
+        })
+        .await
+        .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Continues a restart-safe text suspension on an isolated executor.
+    pub async fn continue_turn_isolated(
+        &self,
+        session_id: String,
+        turn_id: String,
+        suspension_id: String,
+        session_version: u64,
+        input: String,
+    ) -> Result<DesktopTurnResult, DesktopHostError> {
+        let host = self.installed_host()?;
+        tokio::task::spawn_blocking(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+            runtime.block_on(host.continue_turn(
+                &session_id,
+                &turn_id,
+                &suspension_id,
+                session_version,
                 &input,
             ))
         })
