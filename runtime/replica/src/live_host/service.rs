@@ -17,9 +17,10 @@ use crate::{
 };
 
 use super::{
-    project_fact, read_model, AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn,
-    CreateSessionResponse, HostClock, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
-    LiveHostLimits, LiveHostState, SessionViewV1, TurnCommandResponse, TurnDispatcher,
+    project_fact, read_cursor, read_model, AgentDefinitionPageV1, AgentDefinitionSummaryV1,
+    CommittedTurn, CreateSessionResponse, HostClock, HostEventPage, HostReadLimits, InstalledAgent,
+    LiveHostError, LiveHostLimits, LiveHostState, SessionPageV1, SessionViewV1,
+    TurnCommandResponse, TurnDispatcher,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -124,6 +125,74 @@ impl LiveHost {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         Ok(view)
+    }
+
+    /// Lists a reverse-opened page of verified durable Sessions.
+    pub fn list_sessions(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<SessionPageV1, LiveHostError> {
+        if limit == 0 || limit > self.state.read_limits.max_sessions {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let ledger = self.ledger()?;
+        let mut sessions = ledger
+            .list_sessions()
+            .map_err(map_sqlite)?
+            .into_iter()
+            .map(|id| {
+                let session = self.get_session(id.as_str())?.session;
+                let opened = chrono::DateTime::parse_from_rfc3339(&session.opened_at)
+                    .map_err(|_| LiveHostError::CorruptState)?;
+                Ok((opened, session))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        sessions.sort_by(|(left_time, left), (right_time, right)| {
+            right_time
+                .cmp(left_time)
+                .then_with(|| right.session_id.cmp(&left.session_id))
+        });
+        let sessions = sessions
+            .into_iter()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        let start = if let Some(token) = before {
+            let (opened_at, session_id) =
+                read_cursor::decode(token, &self.state.installed, self.state.read_limits)?;
+            sessions
+                .iter()
+                .position(|item| item.opened_at == opened_at && item.session_id == session_id)
+                .ok_or(LiveHostError::InvalidRequest)?
+                + 1
+        } else {
+            0
+        };
+        let end = start.saturating_add(limit).min(sessions.len());
+        let page_sessions = sessions[start..end].to_vec();
+        let next_before = if end < sessions.len() {
+            page_sessions
+                .last()
+                .map(|item| {
+                    read_cursor::encode(item, &self.state.installed, self.state.read_limits)
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let page = SessionPageV1 {
+            api_version: "v1",
+            sessions: page_sessions,
+            next_before,
+        };
+        if serde_json::to_vec(&page)
+            .map_err(|_| LiveHostError::CorruptState)?
+            .len()
+            > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        Ok(page)
     }
 
     /// Returns explicit Host bounds used by HTTP parsing and event follow mode.

@@ -1,5 +1,6 @@
 mod http;
 mod projection;
+mod read_cursor;
 mod read_model;
 mod service;
 mod types;
@@ -9,8 +10,8 @@ pub use service::LiveHost;
 pub use types::{
     AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
     HostClock, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent,
-    LiveHostLimits, SessionSummaryV1, SessionViewV1, TurnCommandResponse, TurnDispatchError,
-    TurnDispatcher,
+    LiveHostLimits, SessionPageV1, SessionSummaryV1, SessionViewV1, TurnCommandResponse,
+    TurnDispatchError, TurnDispatcher,
 };
 
 pub(crate) use projection::project_fact;

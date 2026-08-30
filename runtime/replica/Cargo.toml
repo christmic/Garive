@@ -23,6 +23,7 @@ garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 axum.workspace = true
+base64.workspace = true
 chrono.workspace = true
 futures.workspace = true
 reqwest.workspace = true

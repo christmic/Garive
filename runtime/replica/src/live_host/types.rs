@@ -141,6 +141,18 @@ pub struct SessionViewV1 {
     pub observed_max_position: u64,
 }
 
+/// Reverse-opened bounded page of verified durable Sessions.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionPageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Session summaries in the requested page.
+    pub sessions: Vec<SessionSummaryV1>,
+    /// Opaque cursor for the next older page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_before: Option<String>,
+}
+
 /// Explicit Runtime clock used to stamp durable Host commands.
 pub trait HostClock: Send + Sync {
     /// Returns one RFC 3339 observation time.
