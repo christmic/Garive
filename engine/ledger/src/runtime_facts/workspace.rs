@@ -82,6 +82,6 @@ fn attached(value: &Map<String, Value>) -> Result<(), LedgerError> {
     non_empty(value, "workspace_id")?;
     non_empty(value, "display_name")?;
     unsigned(value, "grant_revision", true)?;
-    enumeration(value, "access", &["enumerate"])?;
+    enumeration(value, "access", &["enumerate", "read_write"])?;
     Ok(())
 }

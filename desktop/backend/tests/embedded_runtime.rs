@@ -11,8 +11,10 @@ use garive_core::{
 };
 use garive_desktop::{
     DesktopHost, DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
-    DesktopWorkspaceContextFile, DesktopWorkspaceGrant,
+    DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory, DesktopWorkspaceGrant,
+    DesktopWorkspaceService,
 };
+use garive_ledger::SessionId;
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem,
     ModelObserver, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage,
@@ -20,7 +22,7 @@ use garive_llm::{
 };
 use garive_runtime::{
     EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy,
+    LocalExecutionPolicy, SqliteLedger,
 };
 use tempfile::tempdir;
 
@@ -112,6 +114,43 @@ impl ModelPort for SuspendingModel {
     }
 }
 
+struct WorkspaceWritingModel {
+    calls: AtomicU64,
+    arguments: String,
+}
+
+impl ModelPort for WorkspaceWritingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(InvokeOutcome::Completed {
+                items: if call < 2 {
+                    vec![ModelItem::ToolIntent {
+                        model_call_id: format!("write-call-{call}"),
+                        tool_name: "write_file".into(),
+                        arguments_json: self.arguments.clone(),
+                    }]
+                } else {
+                    vec![ModelItem::Text {
+                        text: "artifact committed".into(),
+                    }]
+                },
+                usage: usage(),
+                stop_reason: if call < 2 {
+                    ModelStopReason::ToolUse
+                } else {
+                    ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
 fn usage() -> ModelUsage {
     ModelUsage {
         input_tokens: TokenCount::Known(3),
@@ -123,7 +162,11 @@ fn usage() -> ModelUsage {
 }
 
 fn desktop_host(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHost {
-    DesktopHost::new(DesktopHostConfig {
+    DesktopHost::new(desktop_host_config(database, model)).expect("Desktop Host composition")
+}
+
+fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHostConfig {
+    DesktopHostConfig {
         database_path: database.to_owned(),
         installed_agent: InstalledAgent {
             definition_id: "definition-main".into(),
@@ -131,7 +174,7 @@ fn desktop_host(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHost {
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "desktop-main".into(),
             runtime_limits: EffectiveRuntimeLimits {
-                max_iterations: 2,
+                max_iterations: 4,
                 max_input_tokens: Some(64),
                 max_output_tokens: Some(16),
                 deadline_budget_ms: Some(2_000),
@@ -169,8 +212,7 @@ fn desktop_host(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHost {
         host_clock: Arc::new(FixedHostClock),
         model,
         operations: Arc::new(Operations(AtomicU64::new(1))),
-    })
-    .expect("Desktop Host composition")
+    }
 }
 
 #[tokio::test]
@@ -346,4 +388,91 @@ async fn selected_workspace_text_reaches_the_embedded_runtime_without_frontend_c
         .unwrap();
     assert_eq!(result.terminal, DesktopTerminal::Completed);
     assert_eq!(result.session_id, session_id);
+}
+
+#[tokio::test]
+async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact() {
+    let directory = tempdir().unwrap();
+    let workspace_path = directory.path().join("Workspace");
+    std::fs::create_dir(&workspace_path).unwrap();
+    let workspaces = DesktopWorkspaceService::default();
+    let selected = workspaces.admit_selected(&workspace_path, "main").unwrap();
+    let writable = workspaces
+        .authorize_writes(&selected.workspace_id, &workspace_path, "main")
+        .unwrap();
+    let database = directory.path().join("governed.db");
+    let arguments = serde_json::json!({
+        "workspace_id":writable.workspace_id,
+        "grant_revision":writable.grant_revision,
+        "artifact_name":"result.md",
+        "content_utf8":"durable artifact"
+    })
+    .to_string();
+    let model = Arc::new(WorkspaceWritingModel {
+        calls: AtomicU64::new(0),
+        arguments,
+    });
+    let factory = Arc::new(
+        DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces, "main").unwrap(),
+    );
+    let state = DesktopState::default();
+    state
+        .install(DesktopHost::new_governed(desktop_host_config(&database, model), factory).unwrap())
+        .unwrap();
+    let session_id = state.create_session("definition-main").unwrap();
+    state.attach_workspace(&session_id, &writable).unwrap();
+
+    let suspended = state
+        .run_turn_in_session_isolated(
+            "definition-main".into(),
+            Some(session_id.clone()),
+            "create the result".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(suspended.terminal, DesktopTerminal::Suspended);
+    let timeline = state.session_timeline(&session_id, 0, 8).unwrap();
+    let approval = timeline.items[0].suspension.as_ref().unwrap();
+    assert_eq!(approval.kind, "approval_required");
+
+    let completed = state
+        .continue_approval_isolated(
+            session_id.clone(),
+            suspended.turn_id,
+            approval.suspension_id.clone(),
+            approval.session_version,
+            true,
+        )
+        .await
+        .unwrap();
+    assert_eq!(completed.terminal, DesktopTerminal::Completed);
+    assert_eq!(completed.text, "artifact committed");
+    assert_eq!(
+        std::fs::read_to_string(workspace_path.join("result.md")).unwrap(),
+        "durable artifact"
+    );
+
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let watermark = ledger.session_watermark(&session).unwrap().unwrap();
+    let kinds = ledger
+        .read_facts(&session, 0, watermark.max_position, None)
+        .unwrap()
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    for required in [
+        "interaction.requested",
+        "interaction.resolved",
+        "effect.authorized",
+        "effect.started",
+        "effect.receipt",
+        "effect.completed",
+        "turn.completed",
+    ] {
+        assert!(
+            kinds.iter().any(|kind| kind == required),
+            "missing {required}"
+        );
+    }
 }
