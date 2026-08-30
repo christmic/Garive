@@ -16,6 +16,10 @@ use tokio::sync::Mutex;
 mod system_configuration;
 mod system_provider;
 
+/// Restart-safe durable Session summary exposed to Desktop clients.
+pub use garive_runtime::SessionSummary as DesktopSessionSummary;
+/// Restart-safe durable Turn timeline exposed to Desktop clients.
+pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,
 };
@@ -227,6 +231,28 @@ impl DesktopHost {
             text: terminal.1.text.clone(),
         })
     }
+
+    /// Returns the most recent durable Sessions from the embedded Runtime.
+    pub fn recent_sessions(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<DesktopSessionSummary>, DesktopHostError> {
+        self.host
+            .list_sessions(limit)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    /// Restores one durable conversation timeline from the embedded Runtime.
+    pub fn session_timeline(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<DesktopTimelinePage, DesktopHostError> {
+        self.host
+            .read_timeline(session_id, after_position, limit)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
 }
 
 fn terminal(event: &str) -> Option<DesktopTerminal> {
@@ -257,7 +283,7 @@ impl DesktopState {
             configured,
             agent_definition_id,
             multi_turn: configured,
-            durable_navigation: false,
+            durable_navigation: configured,
             activity: false,
             setup: false,
             workspaces: false,
@@ -344,5 +370,32 @@ impl DesktopState {
         })
         .await
         .map_err(|_| DesktopHostError::ExecutionFailure)?
+    }
+
+    /// Returns recent durable Sessions or reports missing system configuration.
+    pub fn recent_sessions(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<DesktopSessionSummary>, DesktopHostError> {
+        self.installed_host()?.recent_sessions(limit)
+    }
+
+    /// Restores one durable Session timeline or reports missing configuration.
+    pub fn session_timeline(
+        &self,
+        session_id: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<DesktopTimelinePage, DesktopHostError> {
+        self.installed_host()?
+            .session_timeline(session_id, after_position, limit)
+    }
+
+    fn installed_host(&self) -> Result<Arc<DesktopHost>, DesktopHostError> {
+        self.host
+            .lock()
+            .map_err(|_| DesktopHostError::InvalidConfiguration)?
+            .clone()
+            .ok_or(DesktopHostError::NotConfigured)
     }
 }

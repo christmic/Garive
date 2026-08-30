@@ -20,6 +20,28 @@ fn get_desktop_capabilities(
     state.capabilities()
 }
 
+#[tauri::command]
+fn get_recent_sessions(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    limit: usize,
+) -> Result<Vec<garive_desktop::DesktopSessionSummary>, String> {
+    state
+        .recent_sessions(limit)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
+fn get_session_timeline(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    after_position: u64,
+    limit: usize,
+) -> Result<garive_desktop::DesktopTimelinePage, String> {
+    state
+        .session_timeline(&session_id, after_position, limit)
+        .map_err(|error| error.code().to_owned())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -42,6 +64,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_desktop_capabilities,
+            get_recent_sessions,
+            get_session_timeline,
             run_agent_turn
         ])
         .run(tauri::generate_context!())

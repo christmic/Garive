@@ -133,6 +133,7 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
         state.capabilities().agent_definition_id.as_deref(),
         Some("definition-main")
     );
+    assert!(state.capabilities().durable_navigation);
     let result = state
         .run_turn_isolated("definition-main".into(), "hello desktop".into())
         .await
@@ -155,6 +156,20 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
     assert_eq!(continued.session_id, result.session_id);
     assert_ne!(continued.turn_id, result.turn_id);
     assert!(continued.cursor > result.cursor);
+
+    let recents = state.recent_sessions(8).expect("durable recents");
+    assert_eq!(recents.len(), 1);
+    assert_eq!(recents[0].session_id, result.session_id);
+    assert_eq!(recents[0].turn_count, 2);
+    let timeline = state
+        .session_timeline(&result.session_id, 0, 8)
+        .expect("durable timeline");
+    assert_eq!(timeline.items.len(), 2);
+    assert_eq!(timeline.items[0].user_text, "hello desktop");
+    assert_eq!(
+        timeline.items[1].completion_text.as_deref(),
+        Some("desktop durable answer")
+    );
 }
 
 #[tokio::test]
