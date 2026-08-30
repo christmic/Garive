@@ -115,6 +115,10 @@ adb shell am start -n com.garive.android/.MainActivity \
   --ez garive_walkthrough true
 ```
 
+For deterministic iOS screenshots, append one Debug-only destination flag:
+`--garive-walkthrough-sessions`, `--garive-walkthrough-agents`,
+`--garive-walkthrough-settings`, or `--garive-walkthrough-new-task`.
+
 The Swift and Kotlin entry points are compile/runtime gated by Debug builds;
 Release builds cannot select this path. Restart the walkthrough Host to restore
 its approval, running, and completed baseline Sessions.
