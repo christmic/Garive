@@ -7,7 +7,7 @@ use garive_ledger::{ExecutionId, SessionId, TurnId};
 use garive_memory::DurableFactReference;
 use garive_memory::{
     ContentBinding, MemoryAuthorizedScope, MemoryControlDocument, MemoryControlError,
-    MemoryImportOperation, MemoryImportPlan, MemoryRecordRef,
+    MemoryErasureTarget, MemoryImportOperation, MemoryImportPlan, MemoryRecordRef,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -75,10 +75,86 @@ pub struct MemoryRepositoryImportContext {
     pub authorization_fact: DurableFactReference,
     /// Verified receipt binding user-declared authority.
     pub authority_receipt_digest: String,
+    /// Runtime-owned policy snapshot; never supplied by Desktop.
+    pub policy: MemoryRepositoryImportPolicy,
+}
+
+/// Runtime-frozen physical erasure configuration for imports containing Erase.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryRepositoryErasurePolicy {
+    /// Exact configured erasure-policy revision.
+    pub policy_revision: String,
+    /// Canonical configured storage targets.
+    pub targets: Vec<MemoryErasureTarget>,
+}
+
+impl MemoryRepositoryErasurePolicy {
+    /// Validates non-empty canonical target order and configured policy identity.
+    pub fn new(
+        policy_revision: impl Into<String>,
+        targets: Vec<MemoryErasureTarget>,
+    ) -> Result<Self, MemoryRepositoryError> {
+        let value = Self {
+            policy_revision: policy_revision.into(),
+            targets,
+        };
+        if !valid_identity(&value.policy_revision)
+            || value.targets.is_empty()
+            || value.targets.len() > 64
+            || !value.targets.windows(2).all(|pair| {
+                pair[0].kind() < pair[1].kind()
+                    || pair[0].kind() == pair[1].kind() && pair[0].target_id() < pair[1].target_id()
+            })
+        {
+            return Err(MemoryRepositoryError::Unauthorized);
+        }
+        Ok(value)
+    }
+}
+
+/// Complete Runtime policy snapshot governing one fact-backed M2 import.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryRepositoryImportPolicy {
     /// Runtime-selected retention policy.
     pub retention_policy_digest: String,
     /// Runtime-selected M1 classification policy revision.
     pub classification_policy_revision: String,
+    /// Frozen M0 confidence metadata for explicit user declarations.
+    pub user_declared_confidence_basis_points: u16,
+    /// Platform-only aggregation policy, when Platform scope is admitted.
+    pub platform_aggregation_policy_digest: Option<String>,
+    /// Physical erasure configuration required only by Erase operations.
+    pub erasure: Option<MemoryRepositoryErasurePolicy>,
+}
+
+impl MemoryRepositoryImportPolicy {
+    /// Validates every configured policy binding without reading environment state.
+    pub fn new(
+        retention_policy_digest: impl Into<String>,
+        classification_policy_revision: impl Into<String>,
+        user_declared_confidence_basis_points: u16,
+        platform_aggregation_policy_digest: Option<String>,
+        erasure: Option<MemoryRepositoryErasurePolicy>,
+    ) -> Result<Self, MemoryRepositoryError> {
+        let value = Self {
+            retention_policy_digest: retention_policy_digest.into(),
+            classification_policy_revision: classification_policy_revision.into(),
+            user_declared_confidence_basis_points,
+            platform_aggregation_policy_digest,
+            erasure,
+        };
+        if !valid_digest(&value.retention_policy_digest)
+            || !valid_identity(&value.classification_policy_revision)
+            || value.user_declared_confidence_basis_points > 10_000
+            || value
+                .platform_aggregation_policy_digest
+                .as_deref()
+                .is_some_and(|digest| !valid_digest(digest))
+        {
+            return Err(MemoryRepositoryError::Unauthorized);
+        }
+        Ok(value)
+    }
 }
 
 impl MemoryRepositoryImportContext {
@@ -93,8 +169,7 @@ impl MemoryRepositoryImportContext {
         recorded_at: impl Into<String>,
         authorization_fact: DurableFactReference,
         authority_receipt_digest: impl Into<String>,
-        retention_policy_digest: impl Into<String>,
-        classification_policy_revision: impl Into<String>,
+        policy: MemoryRepositoryImportPolicy,
     ) -> Result<Self, MemoryRepositoryError> {
         let value = Self {
             session_id,
@@ -105,16 +180,13 @@ impl MemoryRepositoryImportContext {
             recorded_at: recorded_at.into(),
             authorization_fact,
             authority_receipt_digest: authority_receipt_digest.into(),
-            retention_policy_digest: retention_policy_digest.into(),
-            classification_policy_revision: classification_policy_revision.into(),
+            policy,
         };
         if value.expected_session_version == 0
             || value.through_position == 0
             || value.authorization_fact.session_id() != value.session_id.as_str()
             || value.authorization_fact.position() > value.through_position
             || !valid_digest(&value.authority_receipt_digest)
-            || !valid_digest(&value.retention_policy_digest)
-            || !valid_identity(&value.classification_policy_revision)
             || chrono::DateTime::parse_from_rfc3339(&value.recorded_at)
                 .ok()
                 .is_none_or(|time| {

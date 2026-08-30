@@ -7,7 +7,8 @@ use garive_memory::{
 };
 use garive_runtime::{
     MemoryControlRuntimeError, MemoryImportCommand, MemoryRepositoryError,
-    MemoryRepositoryImportContext, MemoryRepositoryStatus, SqliteLedger,
+    MemoryRepositoryImportContext, MemoryRepositoryImportPolicy, MemoryRepositoryStatus,
+    SqliteLedger,
 };
 use support::*;
 use tempfile::tempdir;
@@ -23,8 +24,8 @@ fn fact_backed_import_context_requires_exact_prefix_authority_and_policies() {
         "2026-08-30T12:00:00Z",
         DurableFactReference::new("session", 7, "confirmation", "a".repeat(64)).unwrap(),
         "b".repeat(64),
-        "c".repeat(64),
-        "classification-v1",
+        MemoryRepositoryImportPolicy::new("c".repeat(64), "classification-v1", 10_000, None, None)
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(valid.authorization_fact.position(), 7);
@@ -38,8 +39,14 @@ fn fact_backed_import_context_requires_exact_prefix_authority_and_policies() {
             "2026-08-30T12:00:00Z",
             DurableFactReference::new("foreign", 7, "confirmation", "a".repeat(64)).unwrap(),
             "b".repeat(64),
-            "c".repeat(64),
-            "classification-v1",
+            MemoryRepositoryImportPolicy::new(
+                "c".repeat(64),
+                "classification-v1",
+                10_000,
+                None,
+                None,
+            )
+            .unwrap(),
         ),
         Err(MemoryRepositoryError::Unauthorized),
     );
