@@ -8,7 +8,9 @@ publish = false
 
 [dependencies]
 clap.workspace = true
+crossterm.workspace = true
 garive-host-client = { path = "../clients/host-rs" }
+ratatui.workspace = true
 tokio.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
