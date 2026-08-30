@@ -54,6 +54,9 @@ impl DesktopConfigurationError {
 
 /// Validated non-secret snapshot read by Desktop startup.
 pub struct DesktopSystemConfiguration {
+    pub(crate) schema_version: u32,
+    pub(crate) configuration_revision: Option<u64>,
+    pub(crate) setup_id: Option<String>,
     pub(crate) database_path: PathBuf,
     pub(crate) installed_agent: InstalledAgentDocument,
     pub(crate) host: HostDocument,
@@ -88,8 +91,15 @@ impl DesktopSystemConfiguration {
         let value = unique_json(bytes)?;
         let raw: RawDocument = serde_json::from_value(value)
             .map_err(|_| DesktopConfigurationError::InvalidDocument)?;
-        if raw.schema_version != 1 {
-            return Err(DesktopConfigurationError::UnsupportedVersion);
+        match (
+            raw.schema_version,
+            raw.configuration_revision,
+            raw.setup_id.as_deref(),
+        ) {
+            (1, None, None) => {}
+            (2, Some(revision), Some(setup_id)) if revision > 0 && !setup_id.is_empty() => {}
+            (1 | 2, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
+            _ => return Err(DesktopConfigurationError::UnsupportedVersion),
         }
         let database_file = Path::new(&raw.database_file);
         if database_file.components().count() != 1
@@ -102,6 +112,9 @@ impl DesktopSystemConfiguration {
         }
         validate(&raw)?;
         Ok(Self {
+            schema_version: raw.schema_version,
+            configuration_revision: raw.configuration_revision,
+            setup_id: raw.setup_id,
             database_path: app_config_directory.join(database_file),
             installed_agent: raw.installed_agent,
             host: raw.host,
@@ -121,12 +134,31 @@ impl DesktopSystemConfiguration {
     pub fn profile_id(&self) -> &str {
         &self.execution.profile_id
     }
+
+    /// Returns the exact admitted stored schema version.
+    pub fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    /// Returns the committed C2 revision, absent for a legacy v1 document.
+    pub fn configuration_revision(&self) -> Option<u64> {
+        self.configuration_revision
+    }
+
+    /// Returns the opaque setup identity, absent for a legacy v1 document.
+    pub fn setup_id(&self) -> Option<&str> {
+        self.setup_id.as_deref()
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawDocument {
     schema_version: u32,
+    #[serde(default)]
+    configuration_revision: Option<u64>,
+    #[serde(default)]
+    setup_id: Option<String>,
     database_file: String,
     installed_agent: InstalledAgentDocument,
     host: HostDocument,
