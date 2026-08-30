@@ -325,7 +325,7 @@ fn transition(
                 Some(failure_code(payload)?.to_owned()),
             )
         }
-        "effect.uncertain" if state.public.state == "running" => (
+        "effect.uncertain" if state.public.state == "running" && state.receipt.is_none() => (
             "agent.activity.attention_required",
             "attention_required",
             false,
