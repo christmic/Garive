@@ -19,6 +19,7 @@ use crate::{
 };
 
 const CATALOGUE_REVISION: &str = "desktop-setup-catalogue-1";
+const BALANCED_PRESET_ID: &str = "desktop-balanced-v1";
 const MAX_TEXT_BYTES: usize = 256;
 const MAX_ENDPOINT_BYTES: usize = 2_048;
 const MAX_SECRET_BYTES: usize = 16_384;
@@ -38,8 +39,40 @@ pub struct DesktopSetupProfile {
     pub display_name_key: &'static str,
     /// Whether an optional explicit endpoint is accepted.
     pub endpoint_mode: &'static str,
+    /// Model selection accepts one exact caller-supplied identity.
+    pub model_mode: &'static str,
+    /// Stable localization key for the write-only credential field.
+    pub credential_label_key: &'static str,
     /// Stable neutral capabilities exposed by this profile.
     pub supported_capabilities: Vec<&'static str>,
+}
+
+/// One backend-owned immutable Runtime policy preset.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopSetupPreset {
+    /// Opaque preset identity submitted back to the backend.
+    pub preset_id: &'static str,
+    /// Stable frontend localization key.
+    pub display_name_key: &'static str,
+    /// Installed profiles accepted by this preset in stable order.
+    pub supported_profile_ids: Vec<&'static str>,
+}
+
+/// Complete non-zero setup input and lifecycle bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct DesktopSetupLimits {
+    /// Maximum installed profiles returned by the catalogue.
+    pub max_profiles: usize,
+    /// Maximum UTF-8 bytes accepted for one normal text field.
+    pub max_text_bytes: usize,
+    /// Maximum UTF-8 bytes accepted for an endpoint override.
+    pub max_endpoint_bytes: usize,
+    /// Maximum credential bytes accepted during commit.
+    pub max_secret_bytes: usize,
+    /// Maximum live prepared plans retained in memory.
+    pub max_plan_count: usize,
+    /// Lifetime of one prepared plan in whole seconds.
+    pub plan_lifetime_seconds: i64,
 }
 
 /// Redacted setup choices and backend-enforced limits.
@@ -51,12 +84,10 @@ pub struct DesktopSetupCatalogue {
     pub catalogue_revision: &'static str,
     /// Profiles sorted by opaque identity.
     pub profiles: Vec<DesktopSetupProfile>,
-    /// Maximum UTF-8 bytes accepted for one normal text field.
-    pub max_text_bytes: usize,
-    /// Maximum UTF-8 bytes accepted for an endpoint override.
-    pub max_endpoint_bytes: usize,
-    /// Maximum credential bytes accepted during commit.
-    pub max_secret_bytes: usize,
+    /// Backend-owned immutable Runtime policy presets.
+    pub presets: Vec<DesktopSetupPreset>,
+    /// Complete setup input and lifecycle bounds.
+    pub limits: DesktopSetupLimits,
 }
 
 /// Bounded user choices submitted for backend-owned setup planning.
@@ -69,6 +100,8 @@ pub struct DesktopSetupInput {
     pub caller_nonce: String,
     /// Catalogue revision observed by the caller.
     pub catalogue_revision: String,
+    /// Backend-owned immutable policy preset.
+    pub preset_id: String,
     /// Opaque installed connection profile.
     pub profile_id: String,
     /// Optional explicit endpoint override.
@@ -86,6 +119,8 @@ pub struct DesktopSetupInput {
 /// Redacted normalized choices shown for explicit setup review.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DesktopSetupSummary {
+    /// Opaque backend-owned policy preset.
+    pub preset_id: String,
     /// Opaque installed profile.
     pub profile_id: String,
     /// Fixed or caller-supplied endpoint selection mode.
@@ -113,6 +148,10 @@ pub struct DesktopSetupPlan {
     pub caller_nonce: String,
     /// Installed catalogue revision bound by this plan.
     pub catalogue_revision: &'static str,
+    /// Configuration revision observed while preparing, absent before v2.
+    pub expected_configuration_revision: Option<u64>,
+    /// Canonical current configuration digest, absent on first setup.
+    pub expected_configuration_digest: Option<String>,
     /// Digest of the complete private effective configuration.
     pub effective_configuration_digest: String,
     /// Canonical UTC instant after which this plan cannot commit.
@@ -182,6 +221,26 @@ pub enum DesktopSetupCancellation {
     Cancelled,
     /// The exact plan already committed and cannot be cancelled.
     AlreadyCommitted,
+}
+
+/// Redacted setup lifecycle state exposed to the Desktop frontend.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum DesktopSetupState {
+    /// No stored Desktop configuration exists.
+    NotConfigured,
+    /// One valid configuration exists; a new commit may require restart.
+    Configured {
+        /// Whether the process still runs the prior immutable Runtime snapshot.
+        restart_required: bool,
+    },
+    /// Stored configuration could not construct Runtime.
+    InvalidConfiguration {
+        /// Stable secret-free configuration failure code.
+        code: String,
+    },
+    /// Startup is classifying or repairing one staged setup.
+    SetupRecovering,
 }
 
 /// Backend-owned clock used to freeze and validate setup expiry.
@@ -279,6 +338,7 @@ pub struct DesktopSetupService<S> {
     credentials: S,
     clock: Arc<dyn SetupClock>,
     plans: Mutex<PreparedPlans>,
+    state: Mutex<DesktopSetupState>,
 }
 
 impl<S: SetupCredentialStore> DesktopSetupService<S> {
@@ -294,6 +354,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             credentials,
             clock,
             plans: Mutex::new(PreparedPlans::default()),
+            state: Mutex::new(DesktopSetupState::SetupRecovering),
         }
     }
 
@@ -307,19 +368,45 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
                     profile_id: ANTHROPIC_MESSAGES_PROFILE_ID,
                     display_name_key: "setup.profile.anthropic",
                     endpoint_mode: "optional_override",
+                    model_mode: "exact_id",
+                    credential_label_key: "setup.credential.connection",
                     supported_capabilities: vec!["text"],
                 },
                 DesktopSetupProfile {
                     profile_id: OPENAI_RESPONSES_PROFILE_ID,
                     display_name_key: "setup.profile.openai",
                     endpoint_mode: "optional_override",
+                    model_mode: "exact_id",
+                    credential_label_key: "setup.credential.connection",
                     supported_capabilities: vec!["text"],
                 },
             ],
-            max_text_bytes: MAX_TEXT_BYTES,
-            max_endpoint_bytes: MAX_ENDPOINT_BYTES,
-            max_secret_bytes: MAX_SECRET_BYTES,
+            presets: vec![DesktopSetupPreset {
+                preset_id: BALANCED_PRESET_ID,
+                display_name_key: "setup.preset.balanced",
+                supported_profile_ids: vec![
+                    ANTHROPIC_MESSAGES_PROFILE_ID,
+                    OPENAI_RESPONSES_PROFILE_ID,
+                ],
+            }],
+            limits: DesktopSetupLimits {
+                max_profiles: 2,
+                max_text_bytes: MAX_TEXT_BYTES,
+                max_endpoint_bytes: MAX_ENDPOINT_BYTES,
+                max_secret_bytes: MAX_SECRET_BYTES,
+                max_plan_count: MAX_PREPARED_PLANS,
+                plan_lifetime_seconds: PLAN_LIFETIME_SECONDS,
+            },
         }
+    }
+
+    /// Returns the current redacted setup lifecycle state.
+    pub fn state(&self) -> DesktopSetupState {
+        self.state.lock().map(|state| state.clone()).unwrap_or(
+            DesktopSetupState::InvalidConfiguration {
+                code: "setup_recovery_failed".to_owned(),
+            },
+        )
     }
 
     /// Validates choices and returns a redacted immutable review plan.
@@ -356,7 +443,10 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         }
         let setup_id = format!("setup-{}", Uuid::new_v4());
         let credential_ref = format!("credential-{}", Uuid::new_v4());
-        let revision = current_revision(&self.directory)?
+        let (expected_configuration_revision, expected_configuration_digest) =
+            current_configuration_binding(&self.directory)?;
+        let revision = expected_configuration_revision
+            .unwrap_or(0)
             .checked_add(1)
             .ok_or(DesktopSetupError::PlanStale)?;
         let configuration = configuration(&input, &setup_id, &credential_ref, revision);
@@ -368,6 +458,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             .ok_or(DesktopSetupError::PersistenceFailed)?
             .to_rfc3339_opts(SecondsFormat::Secs, true);
         let summary = DesktopSetupSummary {
+            preset_id: input.preset_id.clone(),
             profile_id: input.profile_id.clone(),
             endpoint_mode: if input.endpoint_override.is_some() {
                 "override"
@@ -380,13 +471,15 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             deployment_id: input.deployment_id.clone(),
             definition_id: input.definition_id.clone(),
         };
-        let public_value = json!({"schema_version":1,"setup_id":setup_id,"caller_nonce":input.caller_nonce,"catalogue_revision":CATALOGUE_REVISION,"effective_configuration_digest":effective_configuration_digest,"expires_at":expires_at,"summary":summary});
+        let public_value = json!({"schema_version":1,"setup_id":setup_id,"caller_nonce":input.caller_nonce,"catalogue_revision":CATALOGUE_REVISION,"expected_configuration_revision":expected_configuration_revision,"expected_configuration_digest":expected_configuration_digest,"effective_configuration_digest":effective_configuration_digest,"expires_at":expires_at,"summary":summary});
         let plan_digest = digest_value(&public_value)?;
         let public = DesktopSetupPlan {
             schema_version: 1,
             setup_id,
             caller_nonce: input.caller_nonce,
             catalogue_revision: CATALOGUE_REVISION,
+            expected_configuration_revision,
+            expected_configuration_digest,
             effective_configuration_digest,
             expires_at,
             summary,
@@ -444,7 +537,12 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         let revision = prepared.configuration["configuration_revision"]
             .as_u64()
             .ok_or(DesktopSetupError::PlanStale)?;
-        if current_revision(&self.directory)? != revision - 1 {
+        if current_configuration_binding(&self.directory)?
+            != (
+                prepared.public.expected_configuration_revision,
+                prepared.public.expected_configuration_digest.clone(),
+            )
+        {
             return Err(DesktopSetupError::PlanStale);
         }
         let mut journal = RecoveryJournal {
@@ -492,6 +590,12 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
         } else {
             remove_recovery(&self.directory)?;
         }
+        *self
+            .state
+            .lock()
+            .map_err(|_| DesktopSetupError::PersistenceFailed)? = DesktopSetupState::Configured {
+            restart_required: true,
+        };
         Ok(receipt)
     }
 
@@ -575,6 +679,7 @@ fn validate_input(input: &DesktopSetupInput) -> Result<(), DesktopSetupError> {
     ];
     if input.schema_version != 1
         || input.catalogue_revision != CATALOGUE_REVISION
+        || input.preset_id != BALANCED_PRESET_ID
         || !profile
         || texts
             .iter()
@@ -593,16 +698,20 @@ fn digest_value(value: &Value) -> Result<String, DesktopSetupError> {
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
-fn current_revision(directory: &std::path::Path) -> Result<u64, DesktopSetupError> {
+fn current_configuration_binding(
+    directory: &std::path::Path,
+) -> Result<(Option<u64>, Option<String>), DesktopSetupError> {
     let path = directory.join(DESKTOP_CONFIG_FILE);
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok((None, None)),
         Err(_) => return Err(DesktopSetupError::PersistenceFailed),
     };
     let config = DesktopSystemConfiguration::parse(&bytes, directory)
         .map_err(|_| DesktopSetupError::PersistenceFailed)?;
-    Ok(config.configuration_revision().unwrap_or(0))
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| DesktopSetupError::PersistenceFailed)?;
+    Ok((config.configuration_revision(), Some(digest_value(&value)?)))
 }
 
 fn current_credential_ref(

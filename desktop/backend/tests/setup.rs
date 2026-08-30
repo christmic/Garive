@@ -5,7 +5,8 @@ use std::sync::{
 
 use garive_desktop::{
     DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput, DesktopSetupService,
-    DesktopSystemConfiguration, SetupClock, SetupCredentialStore, OPENAI_RESPONSES_PROFILE_ID,
+    DesktopSetupState, DesktopSystemConfiguration, SetupClock, SetupCredentialStore,
+    OPENAI_RESPONSES_PROFILE_ID,
 };
 
 #[derive(Clone, Default)]
@@ -53,6 +54,7 @@ fn input(revision: &str) -> DesktopSetupInput {
         schema_version: 1,
         caller_nonce: format!("nonce-{revision}"),
         catalogue_revision: "desktop-setup-catalogue-1".into(),
+        preset_id: "desktop-balanced-v1".into(),
         profile_id: OPENAI_RESPONSES_PROFILE_ID.into(),
         endpoint_override: None,
         model_target_id: "desktop-target".into(),
@@ -70,8 +72,16 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
     let catalogue = service.catalogue();
     assert_eq!(catalogue.schema_version, 1);
     assert!(catalogue.profiles[0].profile_id < catalogue.profiles[1].profile_id);
+    assert_eq!(catalogue.presets.len(), 1);
+    assert_eq!(catalogue.presets[0].preset_id, "desktop-balanced-v1");
+    assert_eq!(catalogue.limits.max_plan_count, 16);
+    assert_eq!(catalogue.limits.plan_lifetime_seconds, 900);
+    assert_eq!(catalogue.profiles[0].model_mode, "exact_id");
 
     let plan = service.prepare(input("1")).unwrap();
+    assert_eq!(plan.summary.preset_id, "desktop-balanced-v1");
+    assert_eq!(plan.expected_configuration_revision, None);
+    assert_eq!(plan.expected_configuration_digest, None);
     assert_eq!(plan.summary.model_id, "gpt-5");
     assert_eq!(plan.plan_digest.len(), 64);
     let encoded = serde_json::to_string(&plan).unwrap();
@@ -94,6 +104,12 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
     assert_eq!(config.schema_version(), 2);
     assert_eq!(config.configuration_revision(), Some(1));
     assert_eq!(config.setup_id(), Some(plan.setup_id.as_str()));
+    assert_eq!(
+        service.state(),
+        DesktopSetupState::Configured {
+            restart_required: true
+        }
+    );
 }
 
 #[test]
