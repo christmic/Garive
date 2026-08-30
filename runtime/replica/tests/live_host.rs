@@ -300,6 +300,19 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
         .unwrap();
     assert_eq!(completed.events[0].event, "turn.completed");
     assert_eq!(completed.events[0].text, "done");
+    let timeline = harness
+        .host
+        .read_timeline(&session.session_id, 0, 1)
+        .unwrap();
+    assert_eq!(timeline.api_version, "v1");
+    assert_eq!(timeline.items.len(), 1);
+    assert_eq!(timeline.items[0].turn_id, started.turn_id);
+    assert_eq!(timeline.items[0].user_text, "hello");
+    assert_eq!(timeline.items[0].state, "completed");
+    assert_eq!(timeline.items[0].completion_text.as_deref(), Some("done"));
+    assert!(!timeline.items[0].content_truncated);
+    assert_eq!(timeline.observed_max_position, 6);
+    assert!(!timeline.has_more);
 
     let restarted = LiveHost::new(
         &harness.database,
@@ -312,6 +325,10 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
     assert_eq!(
         restarted.read_event_page(&session.session_id, 5).unwrap(),
         completed
+    );
+    assert_eq!(
+        restarted.read_timeline(&session.session_id, 0, 1).unwrap(),
+        timeline
     );
 }
 

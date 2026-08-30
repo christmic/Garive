@@ -18,9 +18,10 @@ use crate::{
 };
 
 use super::{
-    project_fact, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse, HostClock,
-    HostContinuationInput, HostEventPage, InstalledAgent, LiveHostError, LiveHostLimits,
-    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher,
+    completion_text, project_fact, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
+    HostClock, HostContinuationInput, HostEventPage, InstalledAgent, LiveHostError, LiveHostLimits,
+    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher, TurnTimelineItem,
+    TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -86,6 +87,45 @@ impl LiveHost {
         });
         sessions.truncate(limit);
         Ok(sessions)
+    }
+
+    /// Returns complete durable Turns changed after a caller watermark.
+    pub fn read_timeline(
+        &self,
+        session: &str,
+        after_position: u64,
+        limit: usize,
+    ) -> Result<TurnTimelinePage, LiveHostError> {
+        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if after_position > watermark.max_position {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
+        items.retain(|item| item.latest_position > after_position);
+        let has_more = items.len() > limit;
+        items.truncate(limit);
+        let scanned_through_position = items
+            .last()
+            .map_or(watermark.max_position, |item| item.latest_position);
+        Ok(TurnTimelinePage {
+            api_version: "v1",
+            session_id: session_id.as_str().to_owned(),
+            items,
+            scanned_through_position,
+            observed_max_position: watermark.max_position,
+            has_more,
+        })
     }
 
     /// Creates or exactly replays one durable Session creation command.
@@ -643,6 +683,96 @@ fn set_latest_turn_state(
     }
     latest.1 = state.to_owned();
     Ok(())
+}
+
+fn project_timeline(
+    facts: &[DurableFact],
+    max_text_bytes: usize,
+) -> Result<Vec<TurnTimelineItem>, LiveHostError> {
+    let mut items = Vec::new();
+    for fact in facts {
+        let Some(turn_id) = fact.turn_id.as_ref() else {
+            continue;
+        };
+        match fact.kind.as_str() {
+            "turn.started" => {
+                let started: StartedCommand = decode_payload(fact)?;
+                if started.kind == "start" {
+                    items.push(TurnTimelineItem {
+                        turn_id: turn_id.as_str().to_owned(),
+                        started_position: fact.position,
+                        latest_position: fact.position,
+                        state: "running".into(),
+                        user_text: String::new(),
+                        completion_text: None,
+                        content_truncated: false,
+                    });
+                } else {
+                    let item = timeline_item(&mut items, turn_id)?;
+                    item.latest_position = fact.position;
+                    item.state = "running".into();
+                    item.completion_text = None;
+                }
+            }
+            "turn.input" => {
+                let input: TurnInput = decode_payload(fact)?;
+                if input.input_kind == "trusted_user" {
+                    if digest(input.content.inline_utf8.as_bytes()) != input.content.digest {
+                        return Err(LiveHostError::CorruptState);
+                    }
+                    let (text, truncated) =
+                        bounded_text(&input.content.inline_utf8, max_text_bytes);
+                    let item = timeline_item(&mut items, turn_id)?;
+                    item.user_text = text;
+                    item.content_truncated |= truncated;
+                    item.latest_position = fact.position;
+                }
+            }
+            "turn.suspended" | "turn.stopped" | "turn.failed" => {
+                let state = fact.kind.as_str().trim_start_matches("turn.");
+                let item = timeline_item(&mut items, turn_id)?;
+                item.latest_position = fact.position;
+                item.state = state.into();
+            }
+            "turn.completed" => {
+                let (text, truncated) = bounded_text(&completion_text(fact)?, max_text_bytes);
+                let item = timeline_item(&mut items, turn_id)?;
+                item.latest_position = fact.position;
+                item.state = "completed".into();
+                item.completion_text = Some(text);
+                item.content_truncated |= truncated;
+            }
+            _ => {}
+        }
+    }
+    if items.iter().any(|item| item.user_text.is_empty()) {
+        return Err(LiveHostError::CorruptState);
+    }
+    Ok(items)
+}
+
+fn timeline_item<'a>(
+    items: &'a mut [TurnTimelineItem],
+    turn_id: &TurnId,
+) -> Result<&'a mut TurnTimelineItem, LiveHostError> {
+    items
+        .iter_mut()
+        .rev()
+        .find(|item| item.turn_id == turn_id.as_str())
+        .ok_or(LiveHostError::CorruptState)
+}
+
+fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_owned(), false);
+    }
+    let boundary = value
+        .char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index <= max_bytes)
+        .last()
+        .unwrap_or(0);
+    (value[..boundary].to_owned(), true)
 }
 
 struct ContinueReplay<'a> {

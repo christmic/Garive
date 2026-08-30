@@ -163,6 +163,42 @@ pub struct SessionSummary {
     pub turn_count: u64,
 }
 
+/// One complete durable Turn projection for conversation restoration.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelineItem {
+    /// Stable durable Turn identity.
+    pub turn_id: String,
+    /// Position of the verified first-start fact.
+    pub started_position: u64,
+    /// Frozen latest position that changed this Turn.
+    pub latest_position: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Trusted user text bound to the first start.
+    pub user_text: String,
+    /// Redacted committed response projection when completed.
+    pub completion_text: Option<String>,
+    /// Whether bounded display content was truncated.
+    pub content_truncated: bool,
+}
+
+/// One ascending bounded page of complete durable Turn projections.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelinePage {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Session owning every returned Turn.
+    pub session_id: String,
+    /// Ascending complete Turn projections.
+    pub items: Vec<TurnTimelineItem>,
+    /// Durable scan cursor for the next request.
+    pub scanned_through_position: u64,
+    /// Frozen maximum durable position used for this projection.
+    pub observed_max_position: u64,
+    /// Whether another bounded timeline page remains.
+    pub has_more: bool,
+}
+
 /// Stable Host command/query failure with no secret or implementation text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveHostError {
