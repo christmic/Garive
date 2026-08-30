@@ -206,6 +206,41 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     );
 }
 
+#[test]
+fn competing_sqlite_claims_have_one_winner_and_exact_command_replay() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("claim-race.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut first = SqliteLedger::open(&path).unwrap();
+    open_session(&mut first, &session);
+    let proposed = plan_propose_plan(&context("race-propose"), definition()).unwrap();
+    commit_plan_command(&mut first, session.clone(), 1, &proposed).unwrap();
+    let draft = recover(&first, &session);
+    let adopted = plan_plan_transition(
+        &draft,
+        1,
+        &context("race-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(&mut first, session.clone(), draft.session_version, &adopted).unwrap();
+    let state = recover(&first, &session);
+    let winner = claim(&state, "claim-a", 1, 10, 20, "race-winner");
+    let loser = claim(&state, "claim-b", 1, 10, 20, "race-loser");
+    let mut second = SqliteLedger::open(&path).unwrap();
+    commit_plan_command(&mut first, session.clone(), state.session_version, &winner).unwrap();
+    assert_eq!(
+        commit_plan_command(&mut second, session.clone(), state.session_version, &loser),
+        Err(PlanRuntimeError::RevisionConflict)
+    );
+    assert!(commit_plan_command(&mut first, session, 0, &winner).is_ok());
+}
+
 fn recover(ledger: &SqliteLedger, session: &SessionId) -> PlanRuntimeState {
     reconstruct_plan(
         ledger,
