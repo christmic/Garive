@@ -129,6 +129,10 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
     .expect("Desktop Host composition");
     let state = DesktopState::default();
     state.install(host).expect("one install");
+    assert_eq!(
+        state.capabilities().agent_definition_id.as_deref(),
+        Some("definition-main")
+    );
     let result = state
         .run_turn_isolated("definition-main".into(), "hello desktop".into())
         .await
@@ -157,6 +161,7 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
 async fn unconfigured_state_is_stable_and_secret_free() {
     let state = DesktopState::default();
     assert!(!state.capabilities().configured);
+    assert!(state.capabilities().agent_definition_id.is_none());
     let error = state
         .run_turn("definition", "private input")
         .await

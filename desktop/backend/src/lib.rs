@@ -86,10 +86,12 @@ pub struct DesktopTurnResult {
 }
 
 /// Truthful capability snapshot for the currently installed Desktop backend.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DesktopCapabilityManifest {
     /// Whether an embedded Runtime composition is installed and ready.
     pub configured: bool,
+    /// Public installed Agent definition accepted for new Sessions.
+    pub agent_definition_id: Option<String>,
     /// Whether the current process can continue a known durable Session.
     pub multi_turn: bool,
     /// Whether H2 durable Session discovery and timeline reload are installed.
@@ -135,6 +137,7 @@ impl DesktopHostError {
 /// One embedded R1 composition used behind Tauri state.
 pub struct DesktopHost {
     host: LiveHost,
+    definition_id: String,
     worker: LocalExecutionWorker,
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
@@ -146,6 +149,7 @@ impl DesktopHost {
         if config.database_path.as_os_str().is_empty() || config.dispatch_capacity == 0 {
             return Err(DesktopHostError::InvalidConfiguration);
         }
+        let definition_id = config.installed_agent.definition_id.clone();
         let (dispatcher, queue) = local_dispatch_queue(config.dispatch_capacity)
             .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let host = LiveHost::new(
@@ -161,6 +165,7 @@ impl DesktopHost {
                 .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         Ok(Self {
             host,
+            definition_id,
             worker,
             queue: Mutex::new(queue),
             operations: config.operations,
@@ -243,9 +248,14 @@ pub struct DesktopState {
 impl DesktopState {
     /// Returns only capabilities the installed backend can currently prove.
     pub fn capabilities(&self) -> DesktopCapabilityManifest {
-        let configured = self.host.lock().map(|slot| slot.is_some()).unwrap_or(false);
+        let (configured, agent_definition_id) = self.host.lock().map_or((false, None), |slot| {
+            slot.as_ref().map_or((false, None), |host| {
+                (true, Some(host.definition_id.clone()))
+            })
+        });
         DesktopCapabilityManifest {
             configured,
+            agent_definition_id,
             multi_turn: configured,
             durable_navigation: false,
             activity: false,

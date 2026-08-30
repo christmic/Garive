@@ -12,6 +12,7 @@ export interface HostResult {
 /** Backend-proved Desktop capability availability; false values remain gated. */
 export interface DesktopCapabilities {
   readonly configured: boolean;
+  readonly agent_definition_id?: string;
   readonly multi_turn: boolean;
   readonly durable_navigation: boolean;
   readonly activity: boolean;

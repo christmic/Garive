@@ -20,7 +20,7 @@ describe("desktop Host IPC", () => {
 
   it("loads a truthful capability snapshot", async () => {
     const expected = {
-      configured: true, multi_turn: true, durable_navigation: false,
+      configured: true, agent_definition_id: "definition-main", multi_turn: true, durable_navigation: false,
       activity: false, setup: false, workspaces: false, artifacts: false,
     };
     const result = await getDesktopCapabilities(async <T>(command: string, args: Record<string, unknown>) => {

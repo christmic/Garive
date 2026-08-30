@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { canSubmit, initialWorkState, reduceWork } from "./workspace";
 
 const capabilities = {
-  configured: true, multi_turn: true, durable_navigation: false,
+  configured: true, agent_definition_id: "definition-main", multi_turn: true, durable_navigation: false,
   activity: false, setup: false, workspaces: false, artifacts: false,
 };
 
