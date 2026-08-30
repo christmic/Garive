@@ -138,14 +138,30 @@ mobile-shared:
 
 mobile-ios: mobile-shared
     cd mobile/iosApp && swift test
+    cd mobile/iosApp && xcodebuild -project GariveIOS.xcodeproj -scheme GariveIOS -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/derived-data ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
 
 mobile-android:
-    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:lintDebug :app:assembleDebug
+    cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:lintDebug :app:assembleDebug :app:lintRelease :app:assembleRelease
 
 mobile-android-device: mobile-android
     cd mobile/androidApp && java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain :app:connectedDebugAndroidTest
 
-mobile: mobile-ios mobile-android
+mobile-evidence:
+    python3 scripts/verify-mobile-evidence.py
+
+mobile-artifacts: mobile
+    python3 scripts/verify-mobile-evidence.py --artifacts
+
+mobile-ios-ui simulator_udid:
+    cd mobile/iosApp && xcodebuild test -project GariveIOS.xcodeproj -scheme GariveIOS -configuration Debug -destination 'platform=iOS Simulator,id={{simulator_udid}}' CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO -only-testing:GariveIOSUITests
+
+mobile-android-install: mobile-android
+    adb install -r mobile/androidApp/app/build/outputs/apk/debug/app-debug.apk
+
+mobile-ios-install simulator_udid: mobile-ios
+    xcrun simctl install {{simulator_udid}} mobile/iosApp/build/derived-data/Build/Products/Debug-iphonesimulator/Garive.app
+
+mobile: mobile-ios mobile-android mobile-evidence
 
 apps: host-client web desktop mobile
     cargo test -p garive-cli -p garive-tui

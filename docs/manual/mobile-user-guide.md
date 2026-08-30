@@ -384,6 +384,19 @@ xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkt
 xcrun simctl launch booted com.garive.mobile --garive-walkthrough --garive-walkthrough-new-task
 ```
 
+从仓库根目录可用统一门禁重建并核对安装产物；校验器会拒绝缺失、非 PNG、尺寸过小、未被手册
+引用的截图，也会核对双端工程、移动 Spec、Debug APK、unsigned Release APK 和 arm64 Simulator App：
+
+```text
+just mobile-artifacts
+just mobile-android-install
+just mobile-ios-install <simulator-udid>
+python3 scripts/verify-mobile-evidence.py --artifacts
+```
+
+Android 的 Debug APK 可直接安装演示；Release APK 在本地门禁中保持 unsigned，必须由发布方签名后
+才能分发。iOS Simulator App 可直接冷安装；物理 iPhone 仍必须使用匹配团队和 entitlement 的签名。
+
 | 演示动作 | UI 入口 | 可观察服务端事实 |
 |---|---|---|
 | 新建并启动 | `+` → Agent → 快速目标/Outcome → Start | 新 Session 与第一条 running Turn |
