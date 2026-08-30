@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     num::NonZeroU32,
     path::PathBuf,
     sync::{
@@ -37,6 +37,9 @@ use garive_memory::{
     ContentBinding as MemoryContent, DurableFactReference, MemoryKind, MemoryPurpose, MemoryQuery,
     MemoryRecord, MemoryScope, MemoryScore, MemorySensitivity, MemoryStatus,
 };
+use garive_provider_anthropic::build_profile as build_anthropic_profile;
+use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy};
+use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
     commit_planned_turn, execute_durable_agent, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, plan_cancel_turn, plan_memory_retrieval,
@@ -46,8 +49,9 @@ use garive_runtime::{
     ExecutorFuture, ExecutorPort, KnowledgeAccessGrant, KnowledgeConnector,
     KnowledgeConnectorFuture, KnowledgeConnectorOutcome, MemoryRetrievalContext,
     ModelLifecycleContext, PreparedAgentCapabilities, PreparedExecution,
-    PreparedKnowledgeCapability, RuntimeCommandError, RuntimeCommandId, SkillActivationContext,
-    SqliteLedger, StartTurnCommand, TerminalPublicationError, TerminalPublisher,
+    PreparedKnowledgeCapability, RuntimeCommandError, RuntimeCommandId, RuntimeHttpLimits,
+    RuntimeModelHttpTransport, SkillActivationContext, SqliteLedger, StartTurnCommand,
+    TerminalPublicationError, TerminalPublisher,
 };
 use garive_skill::{
     ActivationMode, ActivationPolicy, ContentBinding, SkillActivationRequest, SkillDefinition,
@@ -60,6 +64,356 @@ use tempfile::tempdir;
 
 struct Context {
     positions: Vec<u64>,
+}
+
+struct LiveMemoryContext {
+    session_id: String,
+    prompt: String,
+}
+
+impl ContextPort for LiveMemoryContext {
+    fn read_candidates(
+        &mut self,
+        request: &ContextRequest,
+        _: u32,
+    ) -> Result<Vec<ContextCandidate>, ContextPortError> {
+        if request.session_id != self.session_id {
+            return Err(ContextPortError::PortFailure);
+        }
+        Ok(vec![ContextCandidate {
+            fact_ref: FactRef {
+                session_id: self.session_id.clone(),
+                position: 3,
+            },
+            kind: CandidateKind::UserInput,
+            retention: Retention::Required,
+            visibility: Visibility::Visible,
+            items: vec![ModelInputItem::Message {
+                role: garive_llm::ModelRole::User,
+                content: vec![ModelInputContent::Text(self.prompt.clone())],
+            }],
+        }])
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LiveMemoryCase {
+    None,
+    Correct,
+    SupersededConflict,
+}
+
+/// Explicit live acceptance: opt in with GARIVE_LIVE_API=1.
+#[tokio::test]
+#[ignore = "calls a real model through the configured loopback gateway"]
+async fn live_memory_ledger_improves_factual_work_and_rejects_stale_revision() {
+    assert_eq!(std::env::var("GARIVE_LIVE_API").as_deref(), Ok("1"));
+    let endpoint = std::env::var("GARIVE_LIVE_API_ENDPOINT")
+        .unwrap_or_else(|_| "http://127.0.0.1:9527/v1/messages".into());
+    let credential =
+        std::env::var("GARIVE_LIVE_API_KEY").unwrap_or_else(|_| "token9-loopback".into());
+    let transport = RuntimeModelHttpTransport::anthropic(
+        MessagesDeployment {
+            target_id: "target".into(),
+            model_id: "deepseek-v4-pro".into(),
+            capabilities: BTreeSet::from([ModelCapability::Text]),
+            default_max_output_tokens: Some(512),
+            media_bindings: BTreeMap::new(),
+            thinking: None,
+            error_policy: ProtocolErrorPolicy::default(),
+        },
+        build_anthropic_profile(&ConnectionInput::new(
+            EndpointSelection::Explicit(endpoint),
+            SecretValue::new(credential).unwrap(),
+            vec![],
+        ))
+        .unwrap(),
+        RuntimeHttpLimits {
+            connect_timeout_ms: 5_000,
+            request_timeout_ms: 120_000,
+            max_response_bytes: 1_048_576,
+        },
+    )
+    .unwrap();
+
+    let baseline = run_live_memory_case(&transport, LiveMemoryCase::None).await;
+    let correct = run_live_memory_case(&transport, LiveMemoryCase::Correct).await;
+    let conflict = run_live_memory_case(&transport, LiveMemoryCase::SupersededConflict).await;
+
+    let baseline_value = parse_live_json(&baseline.0);
+    let correct_value = parse_live_json(&correct.0);
+    let conflict_value = parse_live_json(&conflict.0);
+    assert_ne!(
+        baseline_value,
+        serde_json::json!({
+            "codename":"Amber Heron", "deploy_day":"Tuesday", "region":"Qingdao",
+            "evidence_record_ids":["client-brief"]
+        })
+    );
+    let expected = serde_json::json!({
+        "codename":"Amber Heron", "deploy_day":"Tuesday", "region":"Qingdao",
+        "evidence_record_ids":["client-brief"]
+    });
+    assert_eq!(correct_value, expected);
+    assert_eq!(conflict_value, expected);
+    assert!(!conflict.0.contains("Friday"));
+
+    println!(
+        "{}",
+        serde_json::json!({
+            "baseline":{"output":baseline.0,"input_tokens":baseline.1,"output_tokens":baseline.2},
+            "correct_memory":{"output":correct.0,"input_tokens":correct.1,"output_tokens":correct.2},
+            "superseded_conflict":{"output":conflict.0,"input_tokens":conflict.1,"output_tokens":conflict.2}
+        })
+    );
+}
+
+async fn run_live_memory_case(
+    transport: &RuntimeModelHttpTransport,
+    case: LiveMemoryCase,
+) -> (String, u64, u64) {
+    let directory = tempdir().unwrap();
+    let suffix = match case {
+        LiveMemoryCase::None => "none",
+        LiveMemoryCase::Correct => "correct",
+        LiveMemoryCase::SupersededConflict => "conflict",
+    };
+    let path = directory.path().join(format!("memory-{suffix}.sqlite3"));
+    let session = SessionId::try_from(format!("live-memory-{suffix}").as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = StartTurnCommand {
+        command_id: RuntimeCommandId::new(format!("start-{suffix}")).unwrap(),
+        session_id: session.clone(),
+        agent_instance_id: LedgerAgentId::try_from("agent").unwrap(),
+        definition_id: LedgerDefinitionId::try_from("definition").unwrap(),
+        definition_revision: LedgerRevision::try_from("revision").unwrap(),
+        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        trusted_input: "memory effectiveness acceptance".into(),
+        limits: EffectiveRuntimeLimits {
+            max_iterations: 1,
+            max_input_tokens: None,
+            max_output_tokens: Some(512),
+            deadline_budget_ms: None,
+        },
+        recorded_at: "2026-08-31T00:00:00Z".into(),
+    };
+    let plan = plan_start_turn(&start, 1).unwrap();
+    let execution = plan.execution_id.clone().unwrap();
+    ledger.commit(session.clone(), 1, plan.facts).unwrap();
+    let evidence = ledger.read_facts(&session, 2, 3, None).unwrap().remove(0);
+    let mut request = core_request(&session, &plan.turn_id, &execution);
+    request.context_request.max_utf8_bytes = 16_384;
+    request.model_output.max_output_tokens = Some(512);
+    request.limits.max_total_tokens = None;
+    request.limits.execution = ExecutionLimits::new(NonZeroU32::new(1).unwrap());
+    let config = DurableExecutionConfig {
+        session_id: session.clone(),
+        expected_session_version: 2,
+        model: ModelLifecycleContext {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            deployment_id: "token9-deepseek-pro".into(),
+            recovery_policy_revision: "live-memory-v1".into(),
+            max_attempts: 1,
+            recorded_at: "2026-08-31T00:00:01Z".into(),
+        },
+        lease: ExecutionLeaseRequest {
+            turn_id: plan.turn_id.clone(),
+            execution_id: execution.clone(),
+            owner_id: "live-memory-worker".into(),
+            lease_token: format!("live-memory-lease-{suffix}"),
+            now_ms: 1,
+            duration_ms: 180_000,
+        },
+    };
+    let reference = DurableFactReference::new(
+        session.as_str(),
+        evidence.position,
+        evidence.fact_id.as_str(),
+        evidence.payload.sha256(),
+    )
+    .unwrap();
+    let scope = MemoryScope::session(session.as_str()).unwrap();
+    let active_text = r#"{"codename":"Amber Heron","deploy_day":"Tuesday","region":"Qingdao"}"#;
+    let active = MemoryRecord::new(
+        "client-brief",
+        "revision-active",
+        "workspace",
+        scope.clone(),
+        MemoryKind::LearnedFact,
+        MemoryContent::from_inline(active_text),
+        vec![reference.clone()],
+        MemoryStatus::Active,
+        MemorySensitivity::Ordinary,
+        10_000,
+        4,
+        matches!(case, LiveMemoryCase::SupersededConflict).then(|| "revision-stale".into()),
+        None,
+    )
+    .unwrap();
+    let stale_text = r#"{"codename":"Amber Heron","deploy_day":"Friday","region":"Qingdao"}"#;
+    let stale = MemoryRecord::new(
+        "client-brief",
+        "revision-stale",
+        "workspace",
+        scope.clone(),
+        MemoryKind::LearnedFact,
+        MemoryContent::from_inline(stale_text),
+        vec![reference],
+        MemoryStatus::Superseded,
+        MemorySensitivity::Ordinary,
+        10_000,
+        3,
+        None,
+        None,
+    )
+    .unwrap();
+    let records = match case {
+        LiveMemoryCase::None => vec![],
+        LiveMemoryCase::Correct => vec![active],
+        LiveMemoryCase::SupersededConflict => vec![stale, active],
+    };
+    let scores = records
+        .iter()
+        .map(|record| {
+            MemoryScore::new(
+                record.record_id(),
+                record.revision_id(),
+                10_000,
+                record.content().inline_utf8().unwrap().len() as u64,
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let retrieval = (!records.is_empty()).then(|| {
+        let query = MemoryQuery::new(
+            format!("query-{suffix}"),
+            "workspace",
+            vec![scope],
+            MemoryPurpose::Context,
+            "exact-live-v1",
+            MemoryContent::from_inline("client brief"),
+            4,
+            "2026-08-31T00:00:01Z",
+            4,
+            4_096,
+            false,
+            None,
+        )
+        .unwrap();
+        plan_memory_retrieval(
+            &MemoryRetrievalContext {
+                turn_id: plan.turn_id.clone(),
+                execution_id: execution.clone(),
+                recorded_at: "2026-08-31T00:00:01Z".into(),
+            },
+            &records,
+            &scores,
+            &query,
+        )
+        .unwrap()
+    });
+    if matches!(case, LiveMemoryCase::SupersededConflict) {
+        let selected = retrieval.as_ref().unwrap().retrieval.matches.as_slice();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].revision_id(), "revision-active");
+    }
+    let prompt = "Return exactly one compact JSON object with keys codename, deploy_day, region, evidence_record_ids. Use only committed garive.memory evidence. If absent, use null and an empty evidence_record_ids array. Never infer values. evidence_record_ids must contain the record_id values actually used.";
+    let mut context = LiveMemoryContext {
+        session_id: session.as_str().into(),
+        prompt: prompt.into(),
+    };
+    let signals = Signals;
+    let mut events = Signals;
+    let mut publisher = Publisher {
+        path: path.clone(),
+        turn: plan.turn_id.clone(),
+        fail: false,
+        calls: 0,
+        expected_terminal: ["execution.completed", "turn.completed"],
+    };
+    let result = execute_durable_model_only_with_capabilities(
+        &mut ledger,
+        &config,
+        &request,
+        PreparedAgentCapabilities {
+            skill_activation: None,
+            memory_retrieval: retrieval,
+            knowledge_retrieval: None,
+        },
+        &mut context,
+        transport,
+        &mut events,
+        &signals,
+        &signals,
+        &mut publisher,
+    )
+    .await
+    .unwrap();
+    drop(ledger);
+    let restarted = SqliteLedger::open(&path).unwrap();
+    let facts = restarted.load_turn(&plan.turn_id).unwrap().facts;
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "memory.retrieval_recorded")
+            .count(),
+        usize::from(!records.is_empty())
+    );
+    if !records.is_empty() {
+        let memory = facts
+            .iter()
+            .find(|fact| fact.kind.as_str() == "memory.retrieval_recorded")
+            .unwrap();
+        let started = facts
+            .iter()
+            .find(|fact| fact.kind.as_str() == "model.started")
+            .unwrap();
+        assert!(memory.position < started.position);
+        if matches!(case, LiveMemoryCase::SupersededConflict) {
+            assert!(!memory.payload.as_json().contains("Friday"));
+            assert!(!memory.payload.as_json().contains("revision-stale"));
+        }
+    }
+    let (items, usage) = match result.report.outcome {
+        AgentOutcome::Completed {
+            response_items,
+            usage,
+        } => (response_items, usage),
+        outcome => panic!("unexpected live outcome: {outcome:?}"),
+    };
+    let text = items
+        .into_iter()
+        .find_map(|item| match item {
+            ModelItem::Text { text } => Some(text),
+            _ => None,
+        })
+        .unwrap();
+    (
+        text,
+        known_tokens(usage.input_tokens),
+        known_tokens(usage.output_tokens),
+    )
+}
+
+fn parse_live_json(text: &str) -> serde_json::Value {
+    serde_json::from_str(
+        text.trim()
+            .trim_start_matches("```json")
+            .trim_end_matches("```")
+            .trim(),
+    )
+    .unwrap_or_else(|error| panic!("invalid live JSON {error}: {text}"))
+}
+
+fn known_tokens(value: TokenCount) -> u64 {
+    match value {
+        TokenCount::Known(value) => value,
+        TokenCount::Unknown => 0,
+    }
 }
 impl ContextPort for Context {
     fn read_candidates(
