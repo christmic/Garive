@@ -8,7 +8,7 @@ use crate::{
     input::{
         command_matches, parse_command, parse_schema_input, Command, CommandParse, COMMAND_PALETTE,
     },
-    persistence::{now, PendingCommand, PendingKind},
+    persistence::{now, DiagnosticEvent, PendingCommand, PendingKind},
 };
 use serde_json::{json, Value};
 
@@ -773,6 +773,7 @@ fn retry_pending(state: &mut RuntimeState) {
         return;
     }
     state.retry_after_refresh = Some(pending.command_id.clone());
+    let _ = state.store.record_diagnostic(DiagnosticEvent::RetryQueued);
     state.model.overlay = None;
     state.model.notice = Some("Refreshing Host truth before exact retry…".into());
     if let Some(session_id) = pending.session_id {
@@ -783,6 +784,7 @@ fn retry_pending(state: &mut RuntimeState) {
 }
 
 pub(super) fn replay_pending(state: &mut RuntimeState, pending: PendingCommand) {
+    let _ = state.store.record_diagnostic(DiagnosticEvent::RetrySent);
     let text = pending
         .request_payload
         .get("text")

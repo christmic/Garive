@@ -12,7 +12,7 @@ mod store;
 use std::{fs, os::unix::fs::PermissionsExt};
 
 use serde_json::json;
-use store::{StateError, StateStore};
+use store::{DiagnosticEvent, StateError, StateStore};
 
 #[test]
 fn preferences_round_trip_atomically_with_private_permissions() {
@@ -63,6 +63,56 @@ fn startup_removes_only_grammatically_owned_abandoned_temps() {
     assert!(!preference_temp.exists());
     assert!(!pending_temp.exists());
     assert!(foreign.exists());
+}
+
+#[test]
+fn diagnostics_are_content_free_private_and_bounded_to_five_files() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let store = StateStore::open(Some(root.clone()), false).unwrap();
+    let canary = "secret-prompt-host-path-canary";
+    let mut preferences = Preferences {
+        selected_session_id: Some(canary.into()),
+        ..Preferences::default()
+    };
+    store.save_preferences(&mut preferences).unwrap();
+    store.record_diagnostic(DiagnosticEvent::Started).unwrap();
+    store
+        .record_diagnostic(DiagnosticEvent::HostFailure {
+            safe_code: "host_failure",
+        })
+        .unwrap();
+    let directory = root.join("diagnostics");
+    let active = directory.join("garive-tui.log");
+    let first = fs::read_to_string(&active).unwrap();
+    assert!(first.contains("tui_started"));
+    assert!(first.contains("host_failure"));
+    assert!(!first.contains(canary));
+    assert_eq!(
+        fs::metadata(&active).unwrap().permissions().mode() & 0o077,
+        0
+    );
+
+    for _ in 0..6 {
+        fs::write(&active, vec![b'x'; 1_048_576]).unwrap();
+        store
+            .record_diagnostic(DiagnosticEvent::RetryQueued)
+            .unwrap();
+    }
+    let files = fs::read_dir(directory)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("garive-tui.log")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(files.len(), 5);
+    assert!(files
+        .iter()
+        .all(|entry| fs::metadata(entry.path()).unwrap().len() <= 1_048_576));
 }
 
 #[test]

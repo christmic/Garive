@@ -19,7 +19,8 @@ use crate::{
         TerminalSize, TimelineItem, TimelineRole,
     },
     persistence::{
-        now, PendingCommand, PendingKind, Preferences, PromptHistoryEntry, StateError, StateStore,
+        now, DiagnosticEvent, PendingCommand, PendingKind, Preferences, PromptHistoryEntry,
+        StateError, StateStore,
     },
     view, LaunchConfig, TuiError,
 };
@@ -41,6 +42,7 @@ const LIMITS: ClientLimits = ClientLimits {
 pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let store =
         StateStore::open(config.state_dir.clone(), config.ephemeral).map_err(map_state_error)?;
+    let _ = store.record_diagnostic(DiagnosticEvent::Started);
     let preferences = store.load_preferences().map_err(map_state_error)?;
     let (pending, pending_quarantined) = store.load_pending().map_err(map_state_error)?;
     let (history, history_error) = if config.no_prompt_history {
@@ -115,6 +117,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     state.stop_tasks();
     state.persist_presentation();
     guard.restore().map_err(map_terminal_error)?;
+    let _ = state
+        .store
+        .record_diagnostic(DiagnosticEvent::TerminalRestored);
     interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
 }
 
@@ -165,6 +170,9 @@ async fn run_screen_reader(
     state.persist_presentation();
     write_linear("Garive exited. Terminal restored.")?;
     guard.restore().map_err(map_terminal_error)?;
+    let _ = state
+        .store
+        .record_diagnostic(DiagnosticEvent::TerminalRestored);
     interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
 }
 
@@ -910,6 +918,9 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                     Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
             }
             let code = error.code;
+            let _ = state.store.record_diagnostic(DiagnosticEvent::HostFailure {
+                safe_code: code.wire_name(),
+            });
             match operation {
                 HostOperation::Bootstrap => {
                     state.dispatch(AppAction::HostUnavailable {

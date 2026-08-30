@@ -12,6 +12,29 @@ use uuid::Uuid;
 use super::{PendingCommand, Preferences, PromptHistoryEntry};
 
 const MAX_FILE_BYTES: u64 = 2 * 1_024 * 1_024;
+const MAX_DIAGNOSTIC_BYTES: u64 = 1_024 * 1_024;
+const DIAGNOSTIC_GENERATIONS: usize = 4;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DiagnosticEvent {
+    Started,
+    HostFailure { safe_code: &'static str },
+    RetryQueued,
+    RetrySent,
+    TerminalRestored,
+}
+
+impl DiagnosticEvent {
+    fn wire(self) -> (&'static str, Option<&'static str>) {
+        match self {
+            Self::Started => ("tui_started", None),
+            Self::HostFailure { safe_code } => ("host_failure", Some(safe_code)),
+            Self::RetryQueued => ("retry_queued", None),
+            Self::RetrySent => ("retry_sent", None),
+            Self::TerminalRestored => ("terminal_restored", None),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StateError {
@@ -44,6 +67,7 @@ impl StateStore {
         create_private_directory(&root)?;
         create_private_directory(&root.join("pending"))?;
         create_private_directory(&root.join("quarantine"))?;
+        create_private_directory(&root.join("diagnostics"))?;
         cleanup_abandoned_temps(&root)?;
         Ok(Self { root: Some(root) })
     }
@@ -238,6 +262,40 @@ impl StateStore {
         })
     }
 
+    pub(crate) fn record_diagnostic(&self, event: DiagnosticEvent) -> Result<(), StateError> {
+        let Some(root) = &self.root else {
+            return Ok(());
+        };
+        let (kind, safe_code) = event.wire();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| StateError::Unavailable)?
+            .as_secs();
+        let mut value = serde_json::Map::new();
+        value.insert("schema_version".into(), 1.into());
+        value.insert("timestamp_unix".into(), timestamp.into());
+        value.insert("build_version".into(), env!("CARGO_PKG_VERSION").into());
+        value.insert("event".into(), kind.into());
+        value.insert("trace_id".into(), Uuid::new_v4().to_string().into());
+        if let Some(code) = safe_code {
+            value.insert("safe_code".into(), code.into());
+        }
+        let mut line = serde_json::to_vec(&value).map_err(|_| StateError::Unavailable)?;
+        line.push(b'\n');
+        with_lock(root, "diagnostics.lock", || {
+            let directory = root.join("diagnostics");
+            let active = directory.join("garive-tui.log");
+            let length = fs::metadata(&active).map_or(0, |metadata| metadata.len());
+            if length.saturating_add(line.len() as u64) > MAX_DIAGNOSTIC_BYTES {
+                rotate_diagnostics(&directory)?;
+            }
+            let mut file = private_append(&active)?;
+            file.write_all(&line)
+                .and_then(|_| file.sync_data())
+                .map_err(|_| StateError::Unavailable)
+        })
+    }
+
     fn read_json<T: DeserializeOwned>(&self, relative: &str) -> Result<Option<T>, StateError> {
         let Some(root) = &self.root else {
             return Ok(None);
@@ -388,6 +446,31 @@ fn is_owned_temporary_name(name: &str, pending: bool) -> bool {
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
+fn rotate_diagnostics(directory: &Path) -> Result<(), StateError> {
+    let oldest = directory.join(format!("garive-tui.log.{DIAGNOSTIC_GENERATIONS}"));
+    match fs::remove_file(oldest) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(StateError::Unavailable),
+    }
+    for generation in (1..DIAGNOSTIC_GENERATIONS).rev() {
+        let source = directory.join(format!("garive-tui.log.{generation}"));
+        let target = directory.join(format!("garive-tui.log.{}", generation + 1));
+        match fs::rename(source, target) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return Err(StateError::Unavailable),
+        }
+    }
+    let active = directory.join("garive-tui.log");
+    let first = directory.join("garive-tui.log.1");
+    match fs::rename(active, first) {
+        Ok(()) => sync_directory(directory),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(StateError::Unavailable),
+    }
+}
+
 fn default_root() -> Option<PathBuf> {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
@@ -446,6 +529,16 @@ fn private_open(path: &Path) -> Result<File, StateError> {
         .write(true)
         .create(true)
         .truncate(false)
+        .mode(0o600)
+        .open(path)
+        .map_err(|_| StateError::Unavailable)
+}
+#[cfg(unix)]
+fn private_append(path: &Path) -> Result<File, StateError> {
+    use std::os::unix::fs::OpenOptionsExt;
+    OpenOptions::new()
+        .append(true)
+        .create(true)
         .mode(0o600)
         .open(path)
         .map_err(|_| StateError::Unavailable)
