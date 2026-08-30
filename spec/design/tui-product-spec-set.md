@@ -12,11 +12,11 @@ dependencies, and release evidence.
 
 ## Why
 
-Garive's current TUI is a one-shot H1 client. The user-visible target is a
-resident, multi-Session, multi-turn terminal product with the interaction and
-operational maturity expected from current Codex and Grok Build TUIs. A single
-large document would mix ownership, interaction, persistence, and evidence;
-this set keeps each normative concern bounded while this index owns their DAG.
+Garive now has a resident, multi-Session, multi-turn terminal implementation.
+This Spec set remains its conformance contract while the remaining competitive,
+platform, crash-recovery, and evidence gates are closed. A single large
+document would mix ownership, interaction, persistence, and evidence; this set
+keeps each normative concern bounded while this index owns their DAG.
 
 ## Evidence basis
 
@@ -162,9 +162,11 @@ without changing Host truth. Host v1 changes are additive under H1/H2/H3.
 
 ## Status rule
 
-The Specs are accepted for implementation. TUI code and tests remain partial
-until their named packages land. `A-TUI` in `spec/STATUS.md` is the sole status
-row; this index does not create a second delivery board.
+The Specs are accepted and the resident implementation covers T1 through the
+principal T6 flow. T0 documentation synchronization and T7 completion evidence
+remain active until every named acceptance gate is executable and verified.
+`A-TUI` in `spec/STATUS.md` is the sole status row; this index does not create a
+second delivery board.
 
 ## See also
 

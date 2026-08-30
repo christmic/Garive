@@ -11,11 +11,11 @@ Host boundary that the terminal client consumes.
 
 ## Why
 
-The existing `garive-tui` is a one-shot line printer. A resident terminal
-client needs explicit decisions for event routing, terminal lifecycle, input,
-Session recovery, persistence, rendering, and testing. Those decisions must be
-derived from Garive's durable contracts and inspected implementations rather
-than product screenshots or remembered behavior.
+At the audit-start revision, `garive-tui` was a one-shot line printer. The
+resident replacement required explicit decisions for event routing, terminal
+lifecycle, input, Session recovery, persistence, rendering, and testing. Those
+decisions were derived from Garive's durable contracts and inspected
+implementations rather than product screenshots or remembered behavior.
 
 This note is evidence, not a Garive contract. Normative decisions belong in
 the focused TUI Specs linked below.
@@ -35,7 +35,11 @@ still authors its own types and code against its Host contract. The unpacked
 Claude material cannot establish absence, completeness, or a transferable
 implementation.
 
-## Garive baseline
+## Garive audit-start baseline
+
+This section records the state at the source-audit revision. It is intentionally
+historical; the closure table below points to the current implementation rather
+than silently rewriting what was originally inspected.
 
 ### Confirmed ownership
 
@@ -45,19 +49,22 @@ implementation.
 | Session, Turn, event positions, terminal outcomes, and continuation authority are durable Host truth. | `spec/design/host-api-v1.md`; `spec/design/host-read-model-v1.md` | TUI reducers never infer a terminal from EOF, timeout, or local process state. |
 | Mutation retry must reuse the same command identity and byte-equivalent request. | `spec/design/live-host-clients.md`; `clients/host-rs/src/client.rs:45-153` | Pending commands require an explicit lifecycle and optional crash-safe local record. |
 | Event positions may contain gaps; duplicates at or below the saved cursor are valid. | `clients/host-rs/src/reducer.rs:15-69` | Cursor reduction is monotonic but not contiguous. |
-| The current Rust client blocks until a terminal and exposes no read-model queries. | `clients/host-rs/src/client.rs:155-266`; `clients/host-rs/src/lib.rs:1-15` | A resident UI needs an async event bridge plus H2 query support; it cannot poll storage. |
-| The current binary always creates a Session, submits one Turn, prints events, and exits. | `tui/src/main.rs:1-71` | Existing code is a transport smoke client, not the target application architecture. |
-| Current TUI evidence uses a scripted TCP responder rather than Runtime composition. | `tui/tests/live_h1.rs:1-74`; `spec/STATUS.md` | It remains useful as a parser test but cannot close product E2E. |
+| The audit-start Rust client blocked until a terminal and exposed no read-model queries. | Audit revision `clients/host-rs/src/client.rs:155-266`; `clients/host-rs/src/lib.rs:1-15` | A resident UI needed an async event bridge plus H2 query support; it could not poll storage. |
+| The audit-start binary always created a Session, submitted one Turn, printed events, and exited. | Audit revision `tui/src/main.rs:1-71` | That code was a transport smoke client, not the target application architecture. |
+| Audit-start TUI evidence used a scripted TCP responder rather than Runtime composition. | Audit revision `tui/tests/live_h1.rs:1-74`; `spec/STATUS.md` | It was useful as a parser test but could not close product E2E. |
 
-### Existing contract gaps that block a complete TUI
+### Audit-start contract gaps and current closure
 
-| Gap | Required owner |
+| Audit-start gap | Current evidence |
 |---|---|
-| Installed Agent discovery, Session listing, and timeline reopen are specified but not implemented. | H2 Runtime projection and Rust Host client |
-| Public suspension coordinates and response schema are not available through the current H1 event alone. | H2 timeline projection plus typed continuation amendment |
-| Typed redacted activity is specified but not implemented. | H3 Runtime projection and Host client |
-| `LiveHostClient::continue_turn` accepts only raw string input. | Coordinated H1/H2 canonical JSON continuation slice |
-| Follow owns one whole-operation deadline and returns only at terminal. | TUI application effect adapter; the shared client may expose a streaming primitive without UI policy |
+| Installed Agent discovery, Session listing, and timeline reopen | H2 Runtime projection, strict cross-language fixtures, Rust client queries, and resident Session navigation tests |
+| Public suspension coordinates and response schema | H2 timeline suspension view, canonical typed continuation, schema-form tests, and production Runtime continuation E2E |
+| Typed redacted activity | H3 fixed-prefix projection, strict redaction fixtures, Rust client reduction, and Runtime activity tests |
+| Raw-string-only continuation | Exact RFC 8785 JSON continuation field and byte-identity client/Runtime tests |
+| Whole-operation terminal follow | Bounded incremental client stream plus supervised foreground/background TUI follow tasks |
+
+These dependencies are closed. `A-TUI` remains active for the independent T7
+completion gates listed in `tui-quality-and-verification.md`.
 
 ## Grok Build findings
 

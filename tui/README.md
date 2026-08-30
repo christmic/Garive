@@ -47,6 +47,11 @@ contain preferences, bounded drafts, prompt history, and exact pending-command
 recovery envelopes only. Unix state directories/files are enforced as
 `0700`/`0600`; `--ephemeral` requires confirmation before mutations.
 
+The verified native target is currently macOS arm64 with an xterm-compatible
+PTY. Linux and Windows source/build/native terminal support remain outside the
+verified claim until their named compatibility gates run; the current private
+state-store implementation intentionally fails compilation on non-Unix targets.
+
 ## Verify
 
 ```text
