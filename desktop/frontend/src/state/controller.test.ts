@@ -110,6 +110,7 @@ function runControllerCase(test: Record<string, unknown>): void {
     expect(starts).toHaveLength(2);
     expect(starts[1]?.commandId).toBe(test.expected_retried_command_id);
     expect(starts[1]?.requestDigest).toBe(test.expected_retried_request_digest);
+    expect(starts[1]?.text).toBe(starts[0]?.text);
   }
   if (test.expected_effect_binding !== undefined) {
     const effect = emitted.find((item) => item.kind === "continue_turn");

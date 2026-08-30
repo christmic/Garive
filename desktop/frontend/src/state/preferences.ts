@@ -38,7 +38,8 @@ const PREF_KEYS = new Set(["schema_version", "selected_session_id", "session_rai
   "activity_inspector", "theme", "composer_drafts"]);
 const DRAFT_KEYS = new Set(["session_id", "text"]);
 const PENDING_KEYS = new Set(["schema_version", "kind", "command_id", "semantic_request_digest",
-  "session_id", "turn_id", "issued_generation", "status"]);
+  "session_id", "turn_id", "issued_generation", "status", "definition_id", "after_position",
+  "suspension_id", "session_version", "response_schema_digest", "continuation_value_kind"]);
 
 export class JsonPreferenceAdapter {
   public constructor(private readonly port: PreferenceBytesPort, private readonly limits: PreferenceLimits) {
@@ -107,16 +108,37 @@ export function decodePendingCommand(bytes: Uint8Array, limits: PreferenceLimits
       !Number.isSafeInteger(value.issued_generation) || Number(value.issued_generation) < 0) fail();
   const digest = value.semantic_request_digest;
   if (typeof digest !== "string" || !/^[0-9a-f]{64}$/.test(digest)) fail();
-  return { kind: value.kind as PendingCommand["kind"], commandId: requiredId(value.command_id, limits),
+  const pending = { kind: value.kind as PendingCommand["kind"], commandId: requiredId(value.command_id, limits),
     requestDigest: digest, generation: Number(value.issued_generation),
     sessionId: optionalId(value.session_id, limits), turnId: optionalId(value.turn_id, limits),
+    definitionId: optionalId(value.definition_id, limits),
+    afterPosition: optionalNonnegative(value.after_position), suspensionId: optionalId(value.suspension_id, limits),
+    sessionVersion: optionalPositive(value.session_version),
+    responseSchemaDigest: optionalDigest(value.response_schema_digest),
+    continuationValueKind: value.continuation_value_kind as PendingCommand["continuationValueKind"],
     status: value.status as PendingCommand["status"] };
+  const continuation = Boolean(pending.suspensionId && pending.sessionVersion && pending.responseSchemaDigest &&
+    oneOf(pending.continuationValueKind, ["string", "json_boolean"]));
+  const noContinuation = pending.suspensionId === undefined && pending.sessionVersion === undefined &&
+    pending.responseSchemaDigest === undefined && pending.continuationValueKind === undefined;
+  const validShape = pending.kind === "create_session"
+    ? Boolean(pending.definitionId && !pending.sessionId && !pending.turnId && pending.afterPosition === undefined && noContinuation)
+    : pending.kind === "start_turn"
+      ? Boolean(!pending.definitionId && pending.sessionId && !pending.turnId && pending.afterPosition === undefined && noContinuation)
+      : pending.kind === "cancel_turn"
+        ? Boolean(!pending.definitionId && pending.sessionId && pending.turnId && pending.afterPosition !== undefined && noContinuation)
+        : Boolean(!pending.definitionId && pending.sessionId && pending.turnId && pending.afterPosition === undefined && continuation);
+  if (!validShape) fail();
+  return pending;
 }
 
 export function encodePendingCommand(value: PendingCommand, limits: PreferenceLimits): Uint8Array {
   const wire = { schema_version: 1, kind: value.kind, command_id: value.commandId,
     semantic_request_digest: value.requestDigest, session_id: value.sessionId, turn_id: value.turnId,
-    issued_generation: value.generation, status: value.status };
+    issued_generation: value.generation, status: value.status, definition_id: value.definitionId,
+    after_position: value.afterPosition, suspension_id: value.suspensionId,
+    session_version: value.sessionVersion, response_schema_digest: value.responseSchemaDigest,
+    continuation_value_kind: value.continuationValueKind };
   const bytes = new TextEncoder().encode(JSON.stringify(wire));
   decodePendingCommand(bytes, limits); return bytes;
 }
@@ -138,6 +160,21 @@ function requiredId(value: unknown, limits: PreferenceLimits): string {
 }
 function optionalId(value: unknown, limits: PreferenceLimits): string | undefined {
   return value === undefined ? undefined : requiredId(value, limits);
+}
+function optionalPositive(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) fail();
+  return Number(value);
+}
+function optionalNonnegative(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || Number(value) < 0) fail();
+  return Number(value);
+}
+function optionalDigest(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) fail();
+  return value;
 }
 function oneOf(value: unknown, values: readonly string[]): value is string { return typeof value === "string" && values.includes(value); }
 function validLimits(value: PreferenceLimits): boolean { return value.max_document_bytes > 0 && value.max_drafts > 0 && value.max_id_bytes > 0 && value.max_draft_bytes > 0; }

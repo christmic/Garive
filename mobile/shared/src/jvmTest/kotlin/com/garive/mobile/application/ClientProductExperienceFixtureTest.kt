@@ -113,6 +113,7 @@ public class ClientProductExperienceFixtureTest {
             val starts = emitted.filter { it.kind == EffectKind.START_TURN }
             assertEquals(2, starts.size); assertEquals(expected, starts[1].commandId)
             assertEquals(test.text("expected_retried_request_digest"), starts[1].requestDigest)
+            assertEquals(starts[0].text, starts[1].text)
         }
         test["expected_effect_binding"]?.jsonObject?.let { binding ->
             val effect = emitted.first { it.kind == EffectKind.CONTINUE_TURN }

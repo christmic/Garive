@@ -129,6 +129,7 @@ export class DesktopProductEffectPort implements ProductEffectPort {
   async #persist(effect: AppEffect, snapshot: AppViewState): Promise<PendingCommand> {
     const pending = snapshot.pending.find((value) => value.commandId === effect.commandId);
     if (!pending || pending.requestDigest !== effect.requestDigest || pending.kind !== effect.kind) protocol();
+    await this.#preferences.save(preferences(snapshot));
     await this.#preferences.savePending(pending); return pending;
   }
 

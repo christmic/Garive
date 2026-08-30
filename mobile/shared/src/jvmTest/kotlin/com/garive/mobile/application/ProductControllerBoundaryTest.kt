@@ -66,12 +66,14 @@ public class ProductControllerBoundaryTest {
         val pending = PendingCommand(CommandKind.START_TURN, "command-a", digest, 3,
             "session-a", status = PendingStatus.PENDING)
         val restored = reduceApp(booted.state, AppIntent.EffectResult(effect.effectId,
-            effect.generation, result = AppEffectPayload.PreferencesLoaded(null, emptyList(), pending)))
+            effect.generation, result = AppEffectPayload.PreferencesLoaded(null,
+                listOf(Draft("session-a", "restore me")), pending)))
         assertEquals("command-a", restored.state.pending.single().commandId)
         assertEquals(PendingStatus.UNKNOWN, restored.state.pending.single().status)
         val retried = reduceApp(restored.state, AppIntent.RetryPending("session-a"))
         assertEquals("command-a", retried.effects.single().commandId)
         assertEquals(digest, retried.effects.single().requestDigest)
+        assertEquals("restore me", retried.effects.single().text)
     }
 
     @Test
@@ -95,6 +97,17 @@ public class ProductControllerBoundaryTest {
         adapter.savePending(PendingCommand(CommandKind.START_TURN, "command-a", digest, 3,
             "session-a", status = PendingStatus.UNKNOWN))
         assertEquals("command-a", adapter.load().pending?.commandId)
+        adapter.savePending(PendingCommand(CommandKind.CREATE_SESSION, "command-create", digest, 3,
+            status = PendingStatus.UNKNOWN, definitionId = "definition-a"))
+        assertEquals("definition-a", adapter.load().pending?.definitionId)
+        adapter.savePending(PendingCommand(CommandKind.CANCEL_TURN, "command-cancel", digest, 3,
+            "session-a", "turn-a", PendingStatus.UNKNOWN, afterPosition = 0))
+        assertEquals(0, adapter.load().pending?.afterPosition)
+        adapter.savePending(PendingCommand(CommandKind.CONTINUE_TURN, "command-continue", digest, 3,
+            "session-a", "turn-a", PendingStatus.UNKNOWN, suspensionId = "suspension-a", sessionVersion = 4,
+            responseSchemaDigest = digest, continuationValueKind = ContinuationValueKind.JSON_BOOLEAN))
+        assertEquals("suspension-a", adapter.load().pending?.suspensionId)
+        assertEquals(ContinuationValueKind.JSON_BOOLEAN, adapter.load().pending?.continuationValueKind)
         port.pending = "{\"schema_version\":2}".encodeToByteArray()
         val loaded = adapter.load()
         assertTrue(loaded.reset); assertNull(loaded.pending); assertNull(port.pending)

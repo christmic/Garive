@@ -38,6 +38,9 @@ export interface PendingCommand {
   readonly kind: "create_session" | "start_turn" | "cancel_turn" | "continue_turn";
   readonly commandId: string; readonly requestDigest: string; readonly generation: number;
   readonly sessionId?: string; readonly turnId?: string; readonly status: PendingStatus;
+  readonly definitionId?: string; readonly afterPosition?: number; readonly suspensionId?: string;
+  readonly sessionVersion?: number; readonly responseSchemaDigest?: string;
+  readonly continuationValueKind?: ContinuationValueKind;
 }
 export type EffectKind = "load_preferences" | "save_preferences" | "load_definitions" |
   "load_session_page" | "load_timeline" | "follow_events" | "create_session" |
@@ -127,7 +130,8 @@ export function reduceApp(
         return notice(state, "validation", "definition_not_found");
       }
       return beginCommand(state, { kind: "create_session", commandId: intent.commandId,
-        requestDigest: intent.requestDigest, generation: state.generation, status: "pending" }, {
+        requestDigest: intent.requestDigest, generation: state.generation, status: "pending",
+        definitionId: intent.definitionId }, {
         kind: "create_session", commandId: intent.commandId, requestDigest: intent.requestDigest,
         definitionId: intent.definitionId,
       });
@@ -145,9 +149,17 @@ export function reduceApp(
       const pending = state.pending.find((item) => item.sessionId === intent.sessionId && item.status === "unknown")
         ?? state.pending.find((item) => item.sessionId === undefined && item.status === "unknown");
       if (!pending) return notice(state, "validation", "no_unknown_command");
+      const text = pending.kind === "start_turn" || pending.kind === "continue_turn"
+        ? state.drafts.find((item) => item.sessionId === pending.sessionId)?.text : undefined;
+      if ((pending.kind === "start_turn" || pending.kind === "continue_turn") && !text) {
+        return notice(state, "validation", "retry_payload_unavailable");
+      }
       const effect: Partial<AppEffect> & { kind: EffectKind } = { kind: pending.kind,
         sessionId: pending.sessionId, turnId: pending.turnId, commandId: pending.commandId,
-        requestDigest: pending.requestDigest };
+        requestDigest: pending.requestDigest, definitionId: pending.definitionId,
+        afterPosition: pending.afterPosition, suspensionId: pending.suspensionId,
+        sessionVersion: pending.sessionVersion, responseSchemaDigest: pending.responseSchemaDigest,
+        continuationValueKind: pending.continuationValueKind, text };
       return issueMany({ ...state, pending: replacePending(state.pending, { ...pending, status: "pending" }), notice: undefined }, [effect]);
     }
     case "cancel_turn":
@@ -158,6 +170,7 @@ export function reduceApp(
       return beginCommand({ ...state, execution: "cancelling" }, {
         kind: "cancel_turn", commandId: intent.commandId, requestDigest: intent.requestDigest,
         generation: state.generation, sessionId: intent.sessionId, turnId: intent.turnId, status: "pending",
+        afterPosition: state.cursor,
       }, { kind: "cancel_turn", sessionId: intent.sessionId, turnId: intent.turnId,
         commandId: intent.commandId, requestDigest: intent.requestDigest,
         afterPosition: state.cursor });
@@ -170,9 +183,13 @@ export function reduceApp(
       if (continuationValueKind === "json_boolean" && intent.input !== "true" && intent.input !== "false") {
         return notice(state, "validation", "invalid_suspension_response");
       }
-      return beginCommand({ ...state, execution: "continuing" }, {
+      const drafts = state.drafts.filter((item) => item.sessionId !== intent.sessionId);
+      drafts.push({ sessionId: intent.sessionId, text: intent.input });
+      return beginCommand({ ...state, drafts, execution: "continuing" }, {
         kind: "continue_turn", commandId: intent.commandId, requestDigest: intent.requestDigest,
         generation: state.generation, sessionId: intent.sessionId, turnId: intent.turnId, status: "pending",
+        suspensionId: suspension.suspensionId, sessionVersion: suspension.sessionVersion,
+        responseSchemaDigest: suspension.responseSchemaDigest, continuationValueKind,
       }, { kind: "continue_turn", sessionId: intent.sessionId, turnId: intent.turnId,
         commandId: intent.commandId, requestDigest: intent.requestDigest, text: intent.input,
         suspensionId: suspension.suspensionId, sessionVersion: suspension.sessionVersion,
@@ -238,7 +255,8 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
       generation: state.generation + 1, shell: "ready" as const };
     return issueWithPreference(base, [{ kind: "load_timeline", sessionId: result.sessionId }]);
   }
-  const drafts = effect.kind === "start_turn" ? state.drafts.filter((item) => item.sessionId !== result.sessionId) : state.drafts;
+  const clearsDraft = effect.kind === "start_turn" || effect.kind === "continue_turn";
+  const drafts = clearsDraft ? state.drafts.filter((item) => item.sessionId !== result.sessionId) : state.drafts;
   const timeline = effect.kind === "start_turn" && result.turnId &&
     !state.timeline.some((item) => item.turnId === result.turnId)
     ? [...state.timeline, { turnId: result.turnId, state: "running", latestPosition: result.committedPosition,
@@ -247,7 +265,7 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
     execution: "following" as const, notice: undefined };
   const follow = [{ kind: "follow_events" as const, sessionId: result.sessionId,
     afterPosition: result.committedPosition }];
-  return effect.kind === "start_turn" ? issueWithPreference(base, follow) : issueMany(base, follow);
+  return clearsDraft ? issueWithPreference(base, follow) : issueMany(base, follow);
 }
 
 function hostEvent(state: AppViewState, effect: AppEffect, result: Extract<AppEffectPayload, { type: "host_event" }>, limits: ControllerLimits): Reduction {

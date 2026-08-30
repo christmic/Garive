@@ -1,6 +1,7 @@
 package com.garive.mobile.preferences
 
 import com.garive.mobile.model.CommandKind
+import com.garive.mobile.model.ContinuationValueKind
 import com.garive.mobile.model.PendingCommand
 import com.garive.mobile.model.PendingStatus
 import kotlinx.serialization.json.*
@@ -125,8 +126,31 @@ public fun decodePendingCommand(bytes: ByteArray, limits: PreferenceLimits): Pen
     val digest = requiredText(value, "semantic_request_digest")
     val generation = value["issued_generation"]?.jsonPrimitive?.longOrNull ?: invalid()
     if (!HEX_DIGEST.matches(digest) || generation < 0) invalid()
-    return PendingCommand(kind, requiredId(requiredText(value, "command_id"), limits), digest, generation,
-        optionalId(value, "session_id", limits), optionalId(value, "turn_id", limits), status)
+    val pending = PendingCommand(kind, requiredId(requiredText(value, "command_id"), limits), digest, generation,
+        optionalId(value, "session_id", limits), optionalId(value, "turn_id", limits), status,
+        definitionId = optionalId(value, "definition_id", limits), afterPosition = optionalNonnegative(value, "after_position"),
+        suspensionId = optionalId(value, "suspension_id", limits), sessionVersion = optionalPositive(value, "session_version"),
+        responseSchemaDigest = value["response_schema_digest"]?.jsonPrimitive?.content?.also {
+            if (!HEX_DIGEST.matches(it)) invalid()
+        }, continuationValueKind = value["continuation_value_kind"]?.jsonPrimitive?.content?.let {
+            enumValue<ContinuationValueKind>(it) { candidate -> candidate.name.lowercase() }
+        })
+    val continuation = pending.suspensionId != null && pending.sessionVersion != null &&
+        pending.responseSchemaDigest != null && pending.continuationValueKind != null
+    val noContinuation = pending.suspensionId == null && pending.sessionVersion == null &&
+        pending.responseSchemaDigest == null && pending.continuationValueKind == null
+    val validShape = when (kind) {
+        CommandKind.CREATE_SESSION -> pending.definitionId != null && pending.sessionId == null && pending.turnId == null &&
+            pending.afterPosition == null && noContinuation
+        CommandKind.START_TURN -> pending.definitionId == null && pending.sessionId != null && pending.turnId == null &&
+            pending.afterPosition == null && noContinuation
+        CommandKind.CANCEL_TURN -> pending.definitionId == null && pending.sessionId != null && pending.turnId != null &&
+            pending.afterPosition != null && noContinuation
+        CommandKind.CONTINUE_TURN -> pending.definitionId == null && pending.sessionId != null && pending.turnId != null &&
+            pending.afterPosition == null && continuation
+    }
+    if (!validShape) invalid()
+    return pending
 }
 
 /** Encodes the separate exact pending-command record. */
@@ -135,6 +159,10 @@ public fun encodePendingCommand(value: PendingCommand, limits: PreferenceLimits)
         put("schema_version", 1); put("kind", value.kind.wireName); put("command_id", value.commandId)
         put("semantic_request_digest", value.requestDigest); value.sessionId?.let { put("session_id", it) }
         value.turnId?.let { put("turn_id", it) }; put("issued_generation", value.generation)
+        value.definitionId?.let { put("definition_id", it) }; value.afterPosition?.let { put("after_position", it) }
+        value.suspensionId?.let { put("suspension_id", it) }; value.sessionVersion?.let { put("session_version", it) }
+        value.responseSchemaDigest?.let { put("response_schema_digest", it) }
+        value.continuationValueKind?.let { put("continuation_value_kind", it.name.lowercase()) }
         put("status", value.status.wireName)
     }.toString().encodeToByteArray()
     decodePendingCommand(document, limits); return document
@@ -154,6 +182,18 @@ private fun requiredText(value: JsonObject, key: String): String =
 private fun requiredTextAllowEmpty(value: JsonObject, key: String): String = value[key]?.jsonPrimitive?.content ?: invalid()
 private fun optionalId(value: JsonObject, key: String, limits: PreferenceLimits): String? =
     value[key]?.let { requiredId(it.jsonPrimitive.content, limits) }
+private fun optionalPositive(value: JsonObject, key: String): Long? {
+    val raw = value[key] ?: return null
+    val parsed = raw.jsonPrimitive.longOrNull ?: invalid()
+    if (parsed <= 0) invalid()
+    return parsed
+}
+private fun optionalNonnegative(value: JsonObject, key: String): Long? {
+    val raw = value[key] ?: return null
+    val parsed = raw.jsonPrimitive.longOrNull ?: invalid()
+    if (parsed < 0) invalid()
+    return parsed
+}
 private fun requiredId(value: String, limits: PreferenceLimits): String {
     if (value.isEmpty() || value.encodeToByteArray().size > limits.maxIdBytes || value.any { it.code in 0..31 || it.code == 127 }) invalid()
     return value
@@ -163,4 +203,6 @@ private fun invalid(): Nothing = throw IllegalArgumentException("invalid_local_p
 private val HEX_DIGEST: Regex = Regex("[0-9a-f]{64}")
 private val PREF_KEYS: Set<String> = setOf("schema_version", "selected_session_id", "session_rail", "activity_inspector", "theme", "composer_drafts")
 private val DRAFT_KEYS: Set<String> = setOf("session_id", "text")
-private val PENDING_KEYS: Set<String> = setOf("schema_version", "kind", "command_id", "semantic_request_digest", "session_id", "turn_id", "issued_generation", "status")
+private val PENDING_KEYS: Set<String> = setOf("schema_version", "kind", "command_id", "semantic_request_digest",
+    "session_id", "turn_id", "issued_generation", "status", "definition_id", "after_position", "suspension_id",
+    "session_version", "response_schema_digest", "continuation_value_kind")

@@ -108,6 +108,12 @@ public data class PendingCommand(
     public val sessionId: String? = null,
     public val turnId: String? = null,
     public val status: PendingStatus,
+    public val definitionId: String? = null,
+    public val afterPosition: Long? = null,
+    public val suspensionId: String? = null,
+    public val sessionVersion: Long? = null,
+    public val responseSchemaDigest: String? = null,
+    public val continuationValueKind: ContinuationValueKind? = null,
 )
 
 /** Application-owned effect vocabulary. */

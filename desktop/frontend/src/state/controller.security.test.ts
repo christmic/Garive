@@ -61,14 +61,15 @@ describe("A-UX1 controller boundaries", () => {
     const booted = reduceApp(initialAppViewState(), { type: "boot" });
     const effect = booted.effects.find((item) => item.kind === "load_preferences")!;
     const restored = reduceApp(booted.state, { type: "effect_result", effectId: effect.effectId,
-      generation: effect.generation, result: { type: "preferences_loaded", drafts: [], pending: {
+      generation: effect.generation, result: { type: "preferences_loaded",
+        drafts: [{ sessionId: "session-a", text: "restore me" }], pending: {
         kind: "start_turn", commandId: "command-a", requestDigest: DIGEST, generation: 3,
         sessionId: "session-a", status: "pending",
       } } });
     expect(restored.state.pending).toEqual([expect.objectContaining({ commandId: "command-a", status: "unknown" })]);
     const retried = reduceApp(restored.state, { type: "retry_pending", sessionId: "session-a" });
     expect(retried.effects[0]).toEqual(expect.objectContaining({ kind: "start_turn",
-      commandId: "command-a", requestDigest: DIGEST }));
+      commandId: "command-a", requestDigest: DIGEST, text: "restore me" }));
   });
 
   it("coalesces preference writes while preserving the latest state", () => {
@@ -92,6 +93,17 @@ describe("A-UX1 controller boundaries", () => {
     await adapter.savePending({ kind: "start_turn", commandId: "command-a", requestDigest: DIGEST,
       generation: 3, sessionId: "session-a", status: "unknown" });
     expect((await adapter.load()).pending?.commandId).toBe("command-a");
+    await adapter.savePending({ kind: "create_session", commandId: "command-create", requestDigest: DIGEST,
+      generation: 3, definitionId: "definition-a", status: "unknown" });
+    expect((await adapter.load()).pending?.definitionId).toBe("definition-a");
+    await adapter.savePending({ kind: "cancel_turn", commandId: "command-cancel", requestDigest: DIGEST,
+      generation: 3, sessionId: "session-a", turnId: "turn-a", afterPosition: 0, status: "unknown" });
+    expect((await adapter.load()).pending).toEqual(expect.objectContaining({ turnId: "turn-a", afterPosition: 0 }));
+    await adapter.savePending({ kind: "continue_turn", commandId: "command-continue", requestDigest: DIGEST,
+      generation: 3, sessionId: "session-a", turnId: "turn-a", suspensionId: "suspension-a",
+      sessionVersion: 4, responseSchemaDigest: DIGEST, continuationValueKind: "json_boolean", status: "unknown" });
+    expect((await adapter.load()).pending).toEqual(expect.objectContaining({ suspensionId: "suspension-a",
+      sessionVersion: 4, responseSchemaDigest: DIGEST, continuationValueKind: "json_boolean" }));
     port.pending = new TextEncoder().encode("{\"schema_version\":2}");
     const loaded = await adapter.load();
     expect(loaded.reset).toBe(true); expect(loaded.pending).toBeUndefined(); expect(port.pending).toBeUndefined();

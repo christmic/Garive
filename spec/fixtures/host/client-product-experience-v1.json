@@ -110,7 +110,7 @@
         {"intent":{"type":"continue_suspension","session_id":"session-a","turn_id":"turn-a","input":"approved","command_id":"command-continue-a","request_digest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}},
         {"resolve":{"effect_kind":"continue_turn","result":{"type":"command_succeeded","session_id":"session-a","turn_id":"turn-a","committed_position":13}}}
       ],
-      "expected_effects": ["continue_turn","follow_events"],
+      "expected_effects": ["continue_turn","follow_events","save_preferences"],
       "expected_effect_binding": {"suspension_id":"suspension-a","session_version":12,"response_schema_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","continuation_value_kind":"string"},
       "expected_state": {"configuration":"configured","shell":"ready","generation":7,"definition_ids":["definition-main"],"session_ids":["session-a"],"selected_session_id":"session-a","timeline":[{"turn_id":"turn-a","state":"suspended","latest_position":11,"suspension_id":"suspension-a","session_version":12,"response_schema_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],"cursor":13,"drafts":[],"execution":"following","pending":[],"activities":[],"notice":null}
     }

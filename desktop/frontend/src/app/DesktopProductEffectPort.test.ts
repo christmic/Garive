@@ -67,7 +67,9 @@ describe("DesktopProductEffectPort", () => {
         committed_position: 9 } as T;
     };
     const pending = { kind: "continue_turn" as const, commandId: "command-1", requestDigest: DIGEST,
-      generation: 1, sessionId: "session-1", turnId: "turn-1", status: "pending" as const };
+      generation: 1, sessionId: "session-1", turnId: "turn-1", status: "pending" as const,
+      suspensionId: "suspension-1", sessionVersion: 8, responseSchemaDigest: DIGEST,
+      continuationValueKind: "json_boolean" as const };
     const port = new DesktopProductEffectPort(invoke, new MemoryPreferences());
     await first(port, { ...effect("continue_turn"), sessionId: "session-1", turnId: "turn-1",
       suspensionId: "suspension-1", sessionVersion: 8, continuationValueKind: "json_boolean",

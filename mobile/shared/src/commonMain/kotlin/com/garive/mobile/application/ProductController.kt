@@ -74,7 +74,8 @@ public fun reduceApp(
             notice(state, AppErrorKind.VALIDATION, "definition_not_found")
         } else beginCommand(
             state,
-            PendingCommand(CommandKind.CREATE_SESSION, intent.commandId, intent.requestDigest, state.generation, status = PendingStatus.PENDING),
+            PendingCommand(CommandKind.CREATE_SESSION, intent.commandId, intent.requestDigest, state.generation,
+                status = PendingStatus.PENDING, definitionId = intent.definitionId),
             EffectDraft(EffectKind.CREATE_SESSION, commandId = intent.commandId, requestDigest = intent.requestDigest, definitionId = intent.definitionId),
         )
         is AppIntent.SubmitDraft -> submitDraft(state, intent, limits)
@@ -84,7 +85,7 @@ public fun reduceApp(
         ) notice(state, AppErrorKind.VALIDATION, "turn_not_found") else beginCommand(
             state.copy(execution = ExecutionState.CANCELLING),
             PendingCommand(CommandKind.CANCEL_TURN, intent.commandId, intent.requestDigest, state.generation,
-                intent.sessionId, intent.turnId, PendingStatus.PENDING),
+                intent.sessionId, intent.turnId, PendingStatus.PENDING, afterPosition = state.cursor),
             EffectDraft(EffectKind.CANCEL_TURN, sessionId = intent.sessionId, turnId = intent.turnId,
                 commandId = intent.commandId, requestDigest = intent.requestDigest, afterPosition = state.cursor),
         )
@@ -139,9 +140,18 @@ private fun retryPending(state: AppViewState, intent: AppIntent.RetryPending): R
     val pending = state.pending.firstOrNull { it.sessionId == intent.sessionId && it.status == PendingStatus.UNKNOWN }
         ?: state.pending.firstOrNull { it.sessionId == null && it.status == PendingStatus.UNKNOWN }
         ?: return notice(state, AppErrorKind.VALIDATION, "no_unknown_command")
+    val text = if (pending.kind in setOf(CommandKind.START_TURN, CommandKind.CONTINUE_TURN)) {
+        state.drafts.firstOrNull { it.sessionId == pending.sessionId }?.text
+    } else null
+    if (pending.kind in setOf(CommandKind.START_TURN, CommandKind.CONTINUE_TURN) && text == null) {
+        return notice(state, AppErrorKind.VALIDATION, "retry_payload_unavailable")
+    }
     val effect = EffectDraft(
         kind = effectKind(pending.kind), sessionId = pending.sessionId, turnId = pending.turnId,
-        commandId = pending.commandId, requestDigest = pending.requestDigest,
+        commandId = pending.commandId, requestDigest = pending.requestDigest, text = text,
+        definitionId = pending.definitionId, afterPosition = pending.afterPosition,
+        suspensionId = pending.suspensionId, sessionVersion = pending.sessionVersion,
+        responseSchemaDigest = pending.responseSchemaDigest, continuationValueKind = pending.continuationValueKind,
     )
     return issueMany(
         state.copy(pending = replacePending(state.pending, pending.copy(status = PendingStatus.PENDING)), notice = null),
@@ -158,10 +168,13 @@ private fun continueSuspension(state: AppViewState, intent: AppIntent.ContinueSu
     if (valueKind == ContinuationValueKind.JSON_BOOLEAN && intent.input !in setOf("true", "false")) {
         return notice(state, AppErrorKind.VALIDATION, "invalid_suspension_response")
     }
+    val drafts = state.drafts.filterNot { it.sessionId == intent.sessionId } + Draft(intent.sessionId, intent.input)
     return beginCommand(
-        state.copy(execution = ExecutionState.CONTINUING),
+        state.copy(execution = ExecutionState.CONTINUING, drafts = drafts),
         PendingCommand(CommandKind.CONTINUE_TURN, intent.commandId, intent.requestDigest, state.generation,
-            intent.sessionId, intent.turnId, PendingStatus.PENDING),
+            intent.sessionId, intent.turnId, PendingStatus.PENDING, suspensionId = suspension.suspensionId,
+            sessionVersion = suspension.sessionVersion, responseSchemaDigest = suspension.responseSchemaDigest,
+            continuationValueKind = valueKind),
         EffectDraft(EffectKind.CONTINUE_TURN, sessionId = intent.sessionId, turnId = intent.turnId,
             commandId = intent.commandId, requestDigest = intent.requestDigest, text = intent.input,
             suspensionId = suspension.suspensionId, sessionVersion = suspension.sessionVersion,
@@ -234,7 +247,8 @@ private fun commandSucceeded(state: AppViewState, effect: AppEffect, result: App
             listOf(EffectDraft(EffectKind.LOAD_TIMELINE, sessionId = result.sessionId)),
         )
     }
-    val drafts = if (effect.kind == EffectKind.START_TURN) state.drafts.filterNot { it.sessionId == result.sessionId } else state.drafts
+    val clearsDraft = effect.kind in setOf(EffectKind.START_TURN, EffectKind.CONTINUE_TURN)
+    val drafts = if (clearsDraft) state.drafts.filterNot { it.sessionId == result.sessionId } else state.drafts
     val timeline = if (effect.kind == EffectKind.START_TURN && result.turnId != null && state.timeline.none { it.turnId == result.turnId }) {
         state.timeline + TimelineItem(result.turnId, "running", result.committedPosition,
             userText = effect.text.orEmpty())
@@ -242,7 +256,7 @@ private fun commandSucceeded(state: AppViewState, effect: AppEffect, result: App
     val base = state.copy(pending = pending, drafts = drafts, timeline = timeline, cursor = result.committedPosition,
         execution = ExecutionState.FOLLOWING, notice = null)
     val follow = listOf(EffectDraft(EffectKind.FOLLOW_EVENTS, sessionId = result.sessionId, afterPosition = result.committedPosition))
-    return if (effect.kind == EffectKind.START_TURN) issueWithPreference(base, follow) else issueMany(base, follow)
+    return if (clearsDraft) issueWithPreference(base, follow) else issueMany(base, follow)
 }
 
 private fun hostEvent(
