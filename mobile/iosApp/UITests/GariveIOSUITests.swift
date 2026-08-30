@@ -99,6 +99,28 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testSessionsSearchAndStatusFilterChangeTheVisibleWork() throws {
+        let app = walkthroughApp("--garive-walkthrough-sessions")
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["Sessions"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Incident Responder"].exists)
+        XCTAssertTrue(app.staticTexts["Product Reviewer"].exists)
+
+        let search = app.searchFields["Agent or session"]
+        XCTAssertTrue(search.waitForExistence(timeout: 2))
+        search.tap()
+        search.typeText("Product")
+        XCTAssertTrue(app.staticTexts["Product Reviewer"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["Incident Responder"].exists)
+
+        search.buttons["Clear text"].tap()
+        app.buttons["Working"].tap()
+        XCTAssertTrue(app.staticTexts["Incident Responder"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["Product Reviewer"].exists)
+    }
+
+    @MainActor
     func testSettingsDiagnosticsAndConfirmedUnpairReturnToPairing() throws {
         let app = walkthroughApp("--garive-walkthrough-settings")
         app.launch()
