@@ -2,6 +2,7 @@ package com.garive.android
 
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -15,6 +16,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assume.assumeTrue
+import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,6 +96,28 @@ public class LiveHostJourneyTest {
                     "Declined. The protected action was skipped and the decision was committed.",
                 ).fetchSemanticsNodes().isNotEmpty()
             }
+        }
+    }
+
+    @Test
+    public fun opensTheNativeShareChooserFromAConversation(): Unit {
+        requireLiveHost()
+        val context = cleanContext()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val chooser = instrumentation.addMonitor(IntentFilter(Intent.ACTION_CHOOSER), null, false)
+        try {
+            ActivityScenario.launch<MainActivity>(walkthroughIntent(context, "design-review")).use {
+                compose.waitUntil(8_000) {
+                    compose.onAllNodesWithText("Review the mobile interaction design.")
+                        .fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.onNodeWithContentDescription("Share conversation").performClick()
+                val chooserActivity = instrumentation.waitForMonitorWithTimeout(chooser, 3_000)
+                assertNotNull(chooserActivity)
+                instrumentation.runOnMainSync { chooserActivity?.finish() }
+            }
+        } finally {
+            instrumentation.removeMonitor(chooser)
         }
     }
 

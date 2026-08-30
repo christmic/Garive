@@ -121,6 +121,21 @@ final class GariveIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testShareConversationOpensTheNativeShareSheet() throws {
+        let app = walkthroughApp(
+            "--garive-walkthrough-conversation",
+            "--garive-walkthrough-session", "design-review"
+        )
+        app.launch()
+
+        let share = app.buttons["Share conversation"]
+        XCTAssertTrue(share.waitForExistence(timeout: 8))
+        share.tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.cells["Copy"].exists)
+    }
+
+    @MainActor
     func testSettingsDiagnosticsAndConfirmedUnpairReturnToPairing() throws {
         let app = walkthroughApp("--garive-walkthrough-settings")
         app.launch()

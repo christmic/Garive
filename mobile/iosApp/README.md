@@ -52,13 +52,14 @@ xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
   CODE_SIGNING_ALLOWED=NO clean build
 ```
 
-The six UI tests require `go run ./cmd/garive-mobile-demo-host` from
-`runtime/gateway/` for the five connected journeys. They exercise secure
+The seven UI tests require `go run ./cmd/garive-mobile-demo-host` from
+`runtime/gateway/` for the six connected journeys. They exercise secure
 pairing fields, the Remote drawer, Sessions search/status filtering, new-task starters and enabled
 server submit control plus an actual loopback create/start, cancellation and
 second-Turn append in the opened Conversation, collapsed Activity, approve/decline and cancellation
 confirmation, committed real-Host `Approve once` and `Decline` results, safe
-diagnostics, notification entry, and confirmed unpair.
+diagnostics, notification entry, the native system share sheet with its Copy
+activity, and confirmed unpair.
 The Settings journey additionally selects Light, Dark, and System and verifies
 the native segmented-control state after every change.
 Swift contract tests also require pairing links to pass the same shared remote

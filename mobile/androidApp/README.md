@@ -57,7 +57,8 @@ network journey. It starts the real repository Debug Host, establishes
 `adb reverse`, then proves create/start, cancel and second-Turn append through
 the installed Activity rather than a UI test double. It also opens independent
 seeded suspensions, commits both `Approve once` and `Decline`, and verifies both
-Host completions.
+Host completions. A fourth opt-in journey opens a rendered Conversation and
+verifies that its share control launches Android's native chooser.
 An active-app `garive://pair` journey verifies singleTop delivery, exact query
 shape, shared HTTPS-origin canonicalization, visible service confirmation, and
 an enabled explicit connection action.
