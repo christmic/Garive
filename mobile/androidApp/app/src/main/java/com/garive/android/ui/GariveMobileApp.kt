@@ -64,6 +64,7 @@ internal fun GariveMobileApp(
     var showNewTask by remember { mutableStateOf(false) }
     var selectedAgent by remember { mutableStateOf<MobileAgentCard?>(null) }
     var confirmCancel by remember { mutableStateOf(false) }
+    var confirmUnpair by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val showNavigationLabels = LocalDensity.current.fontScale < 1.6f
 
@@ -133,10 +134,8 @@ internal fun GariveMobileApp(
                     )
                     MobileDestination.SETTINGS -> SettingsScreen(
                         origin, state, theme, onTheme, openNotificationSettings,
-                    ) {
-                        controller.signOut()
-                        onSignOut()
-                    }
+                        onSignOut = { confirmUnpair = true },
+                    )
                     MobileDestination.CONVERSATION -> Unit
                 }
                 if (state.refreshing && state.sessions.isEmpty()) {
@@ -182,6 +181,28 @@ internal fun GariveMobileApp(
             },
         )
     }
+
+    if (confirmUnpair) {
+        UnpairConfirmation(
+            onDismiss = { confirmUnpair = false },
+            onConfirm = {
+                confirmUnpair = false
+                controller.signOut()
+                onSignOut()
+            },
+        )
+    }
+}
+
+@Composable
+internal fun UnpairConfirmation(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Unpair this device?") },
+        text = { Text("This removes access from this phone. Agent work and history remain on your service.") },
+        confirmButton = { Button(onClick = onConfirm) { Text("Unpair device") } },
+        dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Keep paired") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
