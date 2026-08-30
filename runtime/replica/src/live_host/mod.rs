@@ -13,8 +13,9 @@ pub use types::{
     AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostActivity, HostClock,
     HostContinuationInput, HostEventPage, HostReadLimits, InstalledActivityCatalogue,
     InstalledActivityDescriptor, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1, TurnCommandResponse,
-    TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1,
+    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
+    TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
 };
 
 pub(crate) use activity_projection::project_activities;
