@@ -13,7 +13,7 @@ use garive_runtime::{
     CancellationEvidence, ConcurrentExecutorDispatch, ConcurrentExecutorPort,
     EffectBatchAdmissionContext, EffectBatchDispatcher, EffectBatchPublisher,
     EffectBatchRuntimeLimits, EffectCancellation, ExecutorDispatchError, PreparedExecution,
-    SqliteLedger,
+    SqliteEffectBatchPublisher, SqliteLedger,
 };
 use garive_tools::{
     plan_effect_batch, AccessMode, AccessNamespace, AccessPolicyEntry, EffectBatchLimitsV1,
@@ -440,6 +440,184 @@ fn admission_facts_commit_prepared_v2_authorizations_then_exact_plan() {
         plan_effect_batch_admission(&context, &plan, &stale).unwrap_err(),
         BatchRuntimeError::InvalidBinding,
     );
+}
+
+struct SqlExecutor {
+    path: std::path::PathBuf,
+    turn: TurnId,
+}
+
+impl ConcurrentExecutorPort for SqlExecutor {
+    fn prepare(&self, invocation: &AuthorizedBatchInvocation) -> Result<PreparedExecution, String> {
+        Ok(PreparedExecution {
+            executor_id: "confined-read".into(),
+            executor_revision: "1".into(),
+            dispatch_attempt_id: format!("attempt-{}", invocation.invocation_id.as_str()),
+        })
+    }
+
+    fn dispatch<'a>(
+        &'a self,
+        command: ConcurrentExecutorDispatch,
+        _: EffectCancellation,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<ExecutionFact, ExecutorDispatchError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            let ledger = SqliteLedger::open(&self.path).unwrap();
+            let snapshot = ledger.load_turn(&self.turn).unwrap();
+            assert!(snapshot.facts.iter().any(|fact| {
+                fact.kind.as_str() == "effect.started"
+                    && fact.tool_invocation_id.as_ref().map(|id| id.as_str())
+                        == Some(command.invocation_id.as_str())
+            }));
+            let content = json!({"tool":command.prepared.tool_name()});
+            let result_digest = CanonicalPayload::from_value(&content)
+                .unwrap()
+                .sha256()
+                .to_owned();
+            Ok(ExecutionFact::Completed {
+                receipt: Some(EffectReceipt {
+                    receipt_id: ReceiptId::new(command.receipt_id).unwrap(),
+                    invocation_id: command.invocation_id,
+                    prepared_digest: command.prepared.input_digest().into(),
+                    grant_id: command.grant.grant_id,
+                    executor_id: command.execution.executor_id,
+                    executor_revision: command.execution.executor_revision,
+                    terminal_classification: TerminalClassification::Completed,
+                    result_digest,
+                }),
+                content,
+                truncated: false,
+            })
+        })
+    }
+
+    fn cancellation_evidence(&self, _: &ToolInvocationId) -> CancellationEvidence {
+        CancellationEvidence::Unknown
+    }
+}
+
+#[tokio::test]
+async fn sqlite_publisher_commits_started_before_dispatch_and_ordered_observations() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("batch.db");
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    let session = SessionId::try_from("session-sql").unwrap();
+    let turn = TurnId::try_from("turn-sql").unwrap();
+    let execution = ExecutionId::try_from("execution-sql").unwrap();
+    let initial = ledger
+        .commit(
+            session.clone(),
+            0,
+            vec![
+                raw_fact("open-sql", "session.opened", None, None, json!({})),
+                raw_fact(
+                    "turn-sql",
+                    "turn.started",
+                    Some(&turn),
+                    None,
+                    turn_payload(),
+                ),
+                raw_fact(
+                    "execution-sql",
+                    "execution.started",
+                    Some(&turn),
+                    Some(&execution),
+                    execution_payload(),
+                ),
+            ],
+        )
+        .unwrap();
+    let invocations = invocations(3);
+    let plan = plan_effect_batch(
+        &invocations
+            .iter()
+            .map(|value| value.prepared.clone())
+            .collect::<Vec<_>>(),
+        &EffectBatchLimitsV1::new(3, 1, 3, 3, 1536).unwrap(),
+    )
+    .unwrap();
+    let context = EffectBatchAdmissionContext {
+        turn_id: turn.clone(),
+        execution_id: execution,
+        max_parallel_reads: 3,
+        max_buffered_result_bytes: 1536,
+        recorded_at: "2026-08-30T00:00:00Z".into(),
+    };
+    let admission = plan_effect_batch_admission(&context, &plan, &invocations).unwrap();
+    let admitted = ledger
+        .commit(session.clone(), initial.session_version, admission.facts)
+        .unwrap();
+    let executor = SqlExecutor {
+        path,
+        turn: turn.clone(),
+    };
+    let mut publisher = SqliteEffectBatchPublisher::new(
+        &mut ledger,
+        session,
+        admitted.session_version,
+        context,
+        plan.plan_digest(),
+    )
+    .unwrap();
+    EffectBatchDispatcher::new(limits(30))
+        .unwrap()
+        .execute(
+            &plan,
+            &invocations,
+            limits(30),
+            &EffectCancellation::default(),
+            &executor,
+            &mut publisher,
+        )
+        .await
+        .unwrap();
+    drop(publisher);
+    let kinds: Vec<_> = ledger
+        .load_turn(&turn)
+        .unwrap()
+        .facts
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect();
+    assert_eq!(
+        &kinds[9..],
+        [
+            "effect.started",
+            "effect.started",
+            "effect.started",
+            "effect.receipt",
+            "effect.completed",
+            "effect.observation",
+            "effect.receipt",
+            "effect.completed",
+            "effect.observation",
+            "effect.receipt",
+            "effect.completed",
+            "effect.observation",
+        ]
+    );
+}
+
+fn turn_payload() -> Value {
+    json!({
+        "command_id":"command","kind":"start","agent_instance_id":"agent",
+        "definition_id":"definition","definition_revision":"revision",
+        "snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "trusted_input_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    })
+}
+
+fn execution_payload() -> Value {
+    json!({
+        "snapshot_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "through_position":0,"completed_iterations":0,"limits":{"max_iterations":1},"recovery_ordinal":0
+    })
 }
 
 fn raw_fact(
