@@ -1,7 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    text::Line,
+    text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap},
 };
 
@@ -12,8 +12,19 @@ use crate::{
 };
 
 use super::{
-    palette, presentation::suspension_copy, primitives::centered_popup, safe_text, short_tail,
+    palette,
+    presentation::suspension_copy,
+    primitives::{centered_popup, key_hints},
+    safe_text, short_tail,
+    style::{session_state_style, Palette},
 };
+
+struct OverlaySpec {
+    title: &'static str,
+    content: Text<'static>,
+    height: u16,
+    width: u16,
+}
 
 pub(super) fn render_overlay(
     model: &AppModel,
@@ -23,41 +34,22 @@ pub(super) fn render_overlay(
     buffer: &mut Buffer,
 ) {
     let colors = palette(theme);
-    let (title, content, height) = match overlay {
-        Overlay::CommandPalette => (
-            " Command palette ",
-            palette_text(model),
-            (COMMAND_PALETTE.len() as u16 + 7).clamp(12, 22),
-        ),
-        Overlay::Help => (" Keyboard guide ", "Enter  Send message       Ctrl+J  New line\nCtrl+N Create session      Ctrl+S  Sessions\nCtrl+P Command palette     Ctrl+R  Prompt history\nEsc    Cancel running turn Ctrl+Q  Quit\n\nAll durable truth comes from the local Garive Host.".into(), 10),
-        Overlay::SessionPicker => (" Switch session ", session_picker_text(model), (model.sessions.len() as u16 + 5).clamp(7, 16)),
-        Overlay::PromptHistory => (" Prompt history ", history_text(model), (model.prompt_history.len() as u16 + 5).clamp(7, 16)),
-        Overlay::Suspension => (" Action required ", suspension_text(model), 14),
-        Overlay::UnknownCommand => (" Unknown command ", format!("{}\n\nEnter  Exact retry     A  Abandon local record", model.notice.as_deref().unwrap_or("Nothing was sent to the Host.")), 8),
-        Overlay::ErrorDetails => (" Status details ", model.notice.clone().unwrap_or_else(|| "No additional safe details.".into()), 7),
-        Overlay::EphemeralConfirmation => (" Ephemeral mode ", "A lost response cannot be recovered after exit.\n\nEnter  Accept for this run     Esc  Cancel".into(), 7),
-        Overlay::QuitConfirmation => (" Quit Garive? ", "Your Sessions stay durable in the Host.\n\nEnter  Quit     Esc  Keep working".into(), 7),
-    };
-    let popup_width = if overlay == Overlay::CommandPalette {
-        74
-    } else {
-        62
-    };
+    let spec = overlay_spec(model, overlay, colors);
     let popup = centered_popup(
         area,
-        popup_width.min(area.width.saturating_sub(4)),
-        height.min(area.height.saturating_sub(2)),
+        spec.width.min(area.width.saturating_sub(4)),
+        spec.height.min(area.height.saturating_sub(2)),
     );
     buffer.set_style(area, colors.modal_backdrop);
     Clear.render(popup, buffer);
     let block = Block::default()
-        .title(Line::styled(title, colors.title))
+        .title(Line::styled(spec.title, colors.title))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(colors.overlay_border)
         .padding(Padding::new(2, 2, 1, 1));
     let inner = block.inner(popup);
-    Paragraph::new(content)
+    Paragraph::new(spec.content)
         .block(block)
         .style(colors.normal)
         .wrap(Wrap { trim: false })
@@ -72,6 +64,87 @@ pub(super) fn render_overlay(
     }
 }
 
+fn overlay_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> OverlaySpec {
+    match overlay {
+        Overlay::CommandPalette => OverlaySpec {
+            title: " Command palette ",
+            content: palette_text(model, colors),
+            height: (COMMAND_PALETTE.len() as u16 + 7).clamp(12, 22),
+            width: 74,
+        },
+        Overlay::Help => OverlaySpec {
+            title: " Keyboard guide ",
+            content: help_text(colors),
+            height: 10,
+            width: 62,
+        },
+        Overlay::SessionPicker => OverlaySpec {
+            title: " Switch session ",
+            content: session_picker_text(model, colors),
+            height: (model.sessions.len() as u16 + 5).clamp(7, 16),
+            width: 62,
+        },
+        Overlay::PromptHistory => OverlaySpec {
+            title: " Prompt history ",
+            content: history_text(model, colors),
+            height: (model.prompt_history.len() as u16 + 5).clamp(7, 16),
+            width: 62,
+        },
+        Overlay::Suspension => OverlaySpec {
+            title: " Action required ",
+            content: suspension_text(model, colors),
+            height: 12,
+            width: 62,
+        },
+        Overlay::UnknownCommand => OverlaySpec {
+            title: " Unknown command ",
+            content: action_text(
+                model
+                    .notice
+                    .as_deref()
+                    .unwrap_or("Nothing was sent to the Host."),
+                &[("Enter", "exact retry"), ("A", "abandon local record")],
+                colors,
+            ),
+            height: 7,
+            width: 62,
+        },
+        Overlay::ErrorDetails => OverlaySpec {
+            title: " Status details ",
+            content: action_text(
+                model
+                    .notice
+                    .as_deref()
+                    .unwrap_or("No additional safe details."),
+                &[("Esc", "close")],
+                colors,
+            ),
+            height: 7,
+            width: 62,
+        },
+        Overlay::EphemeralConfirmation => OverlaySpec {
+            title: " Ephemeral mode ",
+            content: action_text(
+                "A lost response cannot be recovered after exit.",
+                &[("Enter", "accept for this run"), ("Esc", "cancel")],
+                colors,
+            ),
+            height: 7,
+            width: 62,
+        },
+        Overlay::QuitConfirmation => OverlaySpec {
+            title: " Quit Garive? ",
+            content: action_text(
+                "Your Sessions stay durable in the Host.",
+                &[("Enter", "quit"), ("Esc", "keep working")],
+                colors,
+            ),
+            height: 7,
+            width: 62,
+        },
+    }
+}
+
 fn selection_row(model: &AppModel, overlay: Overlay) -> Option<u16> {
     let selection = match overlay {
         Overlay::CommandPalette => model.command_selection,
@@ -82,16 +155,9 @@ fn selection_row(model: &AppModel, overlay: Overlay) -> Option<u16> {
     u16::try_from(selection).ok()?.checked_add(1)
 }
 
-fn session_picker_text(model: &AppModel) -> String {
+fn session_picker_text(model: &AppModel, colors: Palette) -> Text<'static> {
     let filter = model.session_filter.to_lowercase();
-    let mut rows = vec![format!(
-        "Filter  {}",
-        if model.session_filter.is_empty() {
-            "type to search".into()
-        } else {
-            safe_text(&model.session_filter)
-        }
-    )];
+    let mut rows = vec![search_line("Filter", &model.session_filter, colors)];
     rows.extend(
         model
             .sessions
@@ -108,39 +174,50 @@ fn session_picker_text(model: &AppModel) -> String {
                 } else {
                     " "
                 };
-                format!(
-                    "{marker} {} · {}   {}",
-                    super::short_id(&session.definition_id),
-                    short_tail(&session.session_id),
-                    session.latest_turn_state.as_deref().unwrap_or("new")
-                )
+                let state = session.latest_turn_state.as_deref().unwrap_or("new");
+                Line::from(vec![
+                    Span::styled(format!("{marker} "), colors.selected),
+                    Span::styled(
+                        format!(
+                            "{} · {}   ",
+                            super::short_id(&session.definition_id),
+                            short_tail(&session.session_id)
+                        ),
+                        colors.normal,
+                    ),
+                    Span::styled(state.to_owned(), session_state_style(state, colors)),
+                ])
             })
             .collect::<Vec<_>>(),
     );
     if rows.len() == 1 {
-        rows.push("  No matching Sessions".into());
+        rows.push(Line::styled("  No matching Sessions", colors.muted));
     }
-    rows.push(String::new());
+    rows.push(Line::default());
     rows.push(if model.sessions_loading {
-        "Loading older Sessions…".into()
+        Line::styled("Loading older Sessions…", colors.muted)
     } else if model.sessions_next_before.is_some() {
-        "↑/↓ select · ↓ at end loads more · Enter open · Esc close".into()
+        key_hints(
+            &[
+                ("↑/↓", "select"),
+                ("↓", "load more"),
+                ("Enter", "open"),
+                ("Esc", "close"),
+            ],
+            colors,
+        )
     } else {
-        "↑/↓ select   Enter open   Esc close".into()
+        key_hints(
+            &[("↑/↓", "select"), ("Enter", "open"), ("Esc", "close")],
+            colors,
+        )
     });
-    rows.join("\n")
+    Text::from(rows)
 }
 
-fn history_text(model: &AppModel) -> String {
+fn history_text(model: &AppModel, colors: Palette) -> Text<'static> {
     let filter = model.history_filter.to_lowercase();
-    let mut rows = vec![format!(
-        "Search  {}",
-        if model.history_filter.is_empty() {
-            "type to search".into()
-        } else {
-            safe_text(&model.history_filter)
-        }
-    )];
+    let mut rows = vec![search_line("Search", &model.history_filter, colors)];
     rows.extend(
         model
             .prompt_history
@@ -156,27 +233,26 @@ fn history_text(model: &AppModel) -> String {
                 };
                 let first = text.lines().next().unwrap_or_default();
                 let preview = first.chars().take(46).collect::<String>();
-                format!("{marker} {preview}")
+                Line::from(vec![
+                    Span::styled(format!("{marker} "), colors.selected),
+                    Span::styled(preview, colors.normal),
+                ])
             })
             .collect::<Vec<_>>(),
     );
     if rows.len() == 1 {
-        rows.push("  No local prompt history".into());
+        rows.push(Line::styled("  No local prompt history", colors.muted));
     }
-    rows.push(String::new());
-    rows.push("↑/↓ select   Enter restore   Esc close".into());
-    rows.join("\n")
+    rows.push(Line::default());
+    rows.push(key_hints(
+        &[("↑/↓", "select"), ("Enter", "restore"), ("Esc", "close")],
+        colors,
+    ));
+    Text::from(rows)
 }
 
-fn palette_text(model: &AppModel) -> String {
-    let mut rows = vec![format!(
-        "Search  {}",
-        if model.command_filter.is_empty() {
-            "type to search".into()
-        } else {
-            safe_text(&model.command_filter)
-        }
-    )];
+fn palette_text(model: &AppModel, colors: Palette) -> Text<'static> {
+    let mut rows = vec![search_line("Search", &model.command_filter, colors)];
     rows.extend(
         COMMAND_PALETTE
             .iter()
@@ -199,26 +275,90 @@ fn palette_text(model: &AppModel) -> String {
                     }
                     _ => "",
                 };
-                format!("{marker} {name:<12} {help}{disabled}")
+                Line::from(vec![
+                    Span::styled(format!("{marker} "), colors.selected),
+                    Span::styled(format!("{name:<12} "), colors.accent),
+                    Span::styled((*help).to_owned(), colors.normal),
+                    Span::styled(disabled.to_owned(), colors.muted),
+                ])
             })
             .collect::<Vec<_>>(),
     );
     if rows.len() == 1 {
-        rows.push("  No matching commands".into());
+        rows.push(Line::styled("  No matching commands", colors.muted));
     }
-    rows.push(String::new());
-    rows.push("↑/↓ select   Enter run   Esc close".into());
-    rows.join("\n")
+    rows.push(Line::default());
+    rows.push(key_hints(
+        &[("↑/↓", "select"), ("Enter", "run"), ("Esc", "close")],
+        colors,
+    ));
+    Text::from(rows)
 }
 
-fn suspension_text(model: &AppModel) -> String {
+fn suspension_text(model: &AppModel, colors: Palette) -> Text<'static> {
     let copy = suspension_copy(model.suspension.as_ref());
-    let message = copy
-        .message
-        .map(|value| format!("\n{}\n", safe_text(&value)))
-        .unwrap_or_default();
-    format!(
-        "!  {}\n{}{}\n\nResponse\n{}\n\nEnter  Respond now     Ctrl+Q  Leave safely",
-        copy.title, copy.context, message, copy.guidance
-    )
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("!  ", colors.warning),
+            Span::styled(copy.title, colors.title),
+        ]),
+        Line::styled(copy.context, colors.normal),
+    ];
+    if let Some(message) = copy.message {
+        lines.push(Line::styled(safe_text(&message), colors.normal));
+    }
+    lines.extend([
+        Line::default(),
+        Line::styled("Response", colors.title),
+        Line::styled(copy.guidance, colors.normal),
+        Line::default(),
+        key_hints(
+            &[("Enter", "respond now"), ("Ctrl+Q", "leave safely")],
+            colors,
+        ),
+    ]);
+    Text::from(lines)
+}
+
+fn help_text(colors: Palette) -> Text<'static> {
+    Text::from(vec![
+        key_hints(&[("Enter", "send"), ("Ctrl+J", "new line")], colors),
+        key_hints(&[("Ctrl+N", "new Session"), ("Ctrl+S", "Sessions")], colors),
+        key_hints(
+            &[("Ctrl+P", "commands"), ("Ctrl+R", "prompt history")],
+            colors,
+        ),
+        key_hints(&[("Esc", "cancel Turn"), ("Ctrl+Q", "quit")], colors),
+        Line::default(),
+        Line::styled(
+            "Durable truth comes from the local Garive Host.",
+            colors.muted,
+        ),
+    ])
+}
+
+fn action_text(body: &str, actions: &[(&str, &str)], colors: Palette) -> Text<'static> {
+    Text::from(vec![
+        Line::styled(safe_text(body), colors.normal),
+        Line::default(),
+        key_hints(actions, colors),
+    ])
+}
+
+fn search_line(label: &str, value: &str, colors: Palette) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label}  "), colors.title),
+        Span::styled(
+            if value.is_empty() {
+                "type to search".into()
+            } else {
+                safe_text(value)
+            },
+            if value.is_empty() {
+                colors.placeholder
+            } else {
+                colors.normal
+            },
+        ),
+    ])
 }
