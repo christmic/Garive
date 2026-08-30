@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     valid_digest, GoalCriterion, GoalCriterionId, GoalDefinitionV1, GoalError, GoalErrorCode,
@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// Closed evidence family matching the four G1 criterion variants.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalEvidenceKind {
     /// Schema-validated user response evidence.
@@ -24,7 +24,7 @@ pub enum GoalEvidenceKind {
 }
 
 /// Exact evidence reference evaluated at a frozen commit version.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct GoalEvidenceV1 {
     evidence_id: GoalEvidenceId,
     criterion_id: GoalCriterionId,

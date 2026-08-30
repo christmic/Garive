@@ -120,6 +120,20 @@ fn definition_digest_is_canonical_and_objective_sensitive() {
     );
 }
 
+#[test]
+fn canonical_definition_round_trips_and_noncanonical_input_is_rejected() {
+    let original = definition("goal-1", "Ship the slice");
+    let json = original.canonical_json().unwrap();
+    let decoded = GoalDefinitionV1::from_canonical_json(&json).unwrap();
+    assert_eq!(decoded, original);
+    assert_eq!(
+        GoalDefinitionV1::from_canonical_json(&format!(" {json}"))
+            .unwrap_err()
+            .code(),
+        GoalErrorCode::GoalInvalid
+    );
+}
+
 fn definition(goal_id: &str, objective: &str) -> GoalDefinitionV1 {
     GoalDefinitionV1::new(
         GoalId::new(goal_id).unwrap(),

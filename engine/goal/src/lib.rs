@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod lifecycle;
@@ -18,7 +18,7 @@ const CONTRACT_VERSION: u8 = 1;
 macro_rules! identity {
     ($name:ident, $label:literal) => {
         #[doc = concat!("Non-empty opaque ", $label, " identity.")]
-        #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+        #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
         #[serde(transparent)]
         pub struct $name(String);
 
@@ -76,7 +76,8 @@ impl GoalError {
 }
 
 /// Exact capability revision available to one Goal.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GoalCapabilityReference {
     name: String,
     exact_revision: String,
@@ -101,7 +102,8 @@ impl GoalCapabilityReference {
 }
 
 /// Bounded scope references; workspace values are opaque Runtime capabilities.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GoalScopeV1 {
     session_id: Option<String>,
     workspace_capability_ids: BTreeSet<String>,
@@ -130,7 +132,8 @@ impl GoalScopeV1 {
 }
 
 /// Explicit non-zero hard bounds for one Goal definition.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GoalBoundsV1 {
     max_attempts: u32,
     max_plan_revisions: u32,
@@ -167,7 +170,7 @@ impl GoalBoundsV1 {
 }
 
 /// Closed success criterion set; all declared criteria must be satisfied.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum GoalCriterion {
     /// Explicit schema-bound user acceptance.
@@ -216,6 +219,9 @@ impl GoalCriterion {
     }
 
     fn validate(&self) -> bool {
+        if self.criterion_id().as_str().is_empty() {
+            return false;
+        }
         match self {
             Self::UserAcceptance {
                 response_schema_digest,
@@ -236,7 +242,10 @@ impl GoalCriterion {
                 subject_digest,
                 ..
             } => !fact_kind.is_empty() && valid_digest(subject_digest),
-            Self::ChildGoals { child_goal_ids, .. } => !child_goal_ids.is_empty(),
+            Self::ChildGoals { child_goal_ids, .. } => {
+                !child_goal_ids.is_empty()
+                    && child_goal_ids.iter().all(|value| !value.as_str().is_empty())
+            }
         }
     }
 }
@@ -271,11 +280,18 @@ impl GoalDefinitionV1 {
         let ids: BTreeSet<_> = criteria.iter().map(GoalCriterion::criterion_id).collect();
         let capability_values: Vec<_> = capability_references.into_iter().collect();
         let capabilities: BTreeSet<_> = capability_values.iter().cloned().collect();
-        if objective.is_empty()
+        if goal_id.as_str().is_empty()
+            || objective.is_empty()
             || criteria.is_empty()
             || ids.len() != criteria.len()
             || criteria.iter().any(|criterion| !criterion.validate())
             || capability_values.len() != capabilities.len()
+            || capability_values
+                .iter()
+                .any(|value| value.name.is_empty() || value.exact_revision.is_empty())
+            || parent_goal_id
+                .as_ref()
+                .is_some_and(|value| value.as_str().is_empty())
             || parent_goal_id.as_ref() == Some(&goal_id)
         {
             return Err(GoalError::new(GoalErrorCode::GoalInvalid));
@@ -303,12 +319,61 @@ impl GoalDefinitionV1 {
         &self.criteria
     }
 
+    /// Reconstructs and revalidates one exact canonical definition document.
+    pub fn from_canonical_json(json: &str) -> Result<Self, GoalError> {
+        let raw: RawGoalDefinitionV1 =
+            serde_json::from_str(json).map_err(|_| GoalError::new(GoalErrorCode::GoalInvalid))?;
+        if raw.contract != DEFINITION_CONTRACT || raw.version != CONTRACT_VERSION {
+            return Err(GoalError::new(GoalErrorCode::GoalInvalid));
+        }
+        let scope = GoalScopeV1::new(raw.scope.session_id, raw.scope.workspace_capability_ids)?;
+        let bounds = GoalBoundsV1::new(
+            raw.bounds.max_attempts,
+            raw.bounds.max_plan_revisions,
+            raw.bounds.max_child_goals,
+            raw.bounds.token_budget,
+            raw.bounds.duration_budget_ms,
+        )?;
+        let value = Self::new(
+            raw.goal_id,
+            raw.objective,
+            raw.criteria,
+            scope,
+            bounds,
+            raw.parent_goal_id,
+            raw.capability_references,
+        )?;
+        if value.canonical_json()? != json {
+            return Err(GoalError::new(GoalErrorCode::GoalInvalid));
+        }
+        Ok(value)
+    }
+
+    /// Returns the exact RFC 8785 definition document stored by Runtime.
+    pub fn canonical_json(&self) -> Result<String, GoalError> {
+        serde_jcs::to_string(self).map_err(|_| GoalError::new(GoalErrorCode::GoalInvalid))
+    }
+
     /// Returns lowercase SHA-256 over the RFC 8785 canonical definition.
     pub fn digest(&self) -> Result<String, GoalError> {
         let bytes =
             serde_jcs::to_vec(self).map_err(|_| GoalError::new(GoalErrorCode::GoalInvalid))?;
         Ok(format!("{:x}", Sha256::digest(bytes)))
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawGoalDefinitionV1 {
+    contract: String,
+    version: u8,
+    goal_id: GoalId,
+    objective: String,
+    criteria: Vec<GoalCriterion>,
+    scope: GoalScopeV1,
+    bounds: GoalBoundsV1,
+    parent_goal_id: Option<GoalId>,
+    capability_references: Vec<GoalCapabilityReference>,
 }
 
 fn valid_digest(value: &str) -> bool {
