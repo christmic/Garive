@@ -1,8 +1,47 @@
 import Testing
+import Foundation
 @testable import GariveIOS
 #if canImport(GariveShared)
 @preconcurrency import GariveShared
 #endif
+
+@Test
+func connectionStoreClearsGrantAndRotatesDeviceIdentity() throws {
+    let suffix = UUID().uuidString
+    let suite = "garive-tests-\(suffix)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    let store = ConnectionStore(
+        defaults: defaults,
+        originKey: "origin-\(suffix)",
+        service: "com.garive.tests.\(suffix)",
+        account: "grant-\(suffix)",
+        deviceKeyTag: "com.garive.tests.device.\(suffix)"
+    )
+    defer {
+        store.clear()
+        defaults.removePersistentDomain(forName: suite)
+    }
+    let secret = "grant-that-must-never-appear-in-defaults"
+    let firstDeviceKey = try store.devicePublicKey()
+
+    try store.save(ConnectionCredentials(
+        origin: "https://agent.example.test",
+        accessGrant: secret
+    ))
+
+    #expect(store.load() == ConnectionCredentials(
+        origin: "https://agent.example.test",
+        accessGrant: secret
+    ))
+    #expect(!defaults.dictionaryRepresentation().values.contains {
+        String(describing: $0).contains(secret)
+    })
+
+    store.clear()
+
+    #expect(store.load() == nil)
+    #expect(try store.devicePublicKey() != firstDeviceKey)
+}
 
 @Test
 func commandIdentitiesAreUnique() {

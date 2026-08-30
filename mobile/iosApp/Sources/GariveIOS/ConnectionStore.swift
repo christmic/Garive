@@ -8,11 +8,24 @@ struct ConnectionCredentials: Equatable {
 
 final class ConnectionStore {
     private let defaults: UserDefaults
-    private let originKey = "mobile.remote.origin"
-    private let service = "com.garive.mobile.remote"
-    private let account = "access-grant"
+    private let originKey: String
+    private let service: String
+    private let account: String
+    private let deviceKeyTag: String
 
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    init(
+        defaults: UserDefaults = .standard,
+        originKey: String = "mobile.remote.origin",
+        service: String = "com.garive.mobile.remote",
+        account: String = "access-grant",
+        deviceKeyTag: String = "com.garive.mobile.remote.device.v1"
+    ) {
+        self.defaults = defaults
+        self.originKey = originKey
+        self.service = service
+        self.account = account
+        self.deviceKeyTag = deviceKeyTag
+    }
 
     func load() -> ConnectionCredentials? {
         guard let origin = defaults.string(forKey: originKey),
@@ -75,8 +88,6 @@ final class ConnectionStore {
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }
-
-    private var deviceKeyTag: String { "com.garive.mobile.remote.device.v1" }
 
     private func deviceKeyQuery(returnReference: Bool) -> [String: Any] {
         var query: [String: Any] = [
