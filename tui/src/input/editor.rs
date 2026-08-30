@@ -27,6 +27,12 @@ pub(crate) struct EditorState {
     max_bytes: usize,
 }
 
+impl Default for EditorState {
+    fn default() -> Self {
+        Self::new(4_096)
+    }
+}
+
 impl EditorState {
     pub(crate) fn new(max_bytes: usize) -> Self {
         Self {

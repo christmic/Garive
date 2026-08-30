@@ -1,5 +1,7 @@
 #[path = "../src/application/mod.rs"]
 mod application;
+#[path = "../src/input/mod.rs"]
+mod input;
 
 use application::{
     reduce, AppAction, AppModel, BootState, ConnectionState, EffectResult, EffectValue,

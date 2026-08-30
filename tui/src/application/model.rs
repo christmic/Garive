@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::input::EditorState;
+
 use super::{EffectId, EffectKind};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -72,6 +74,29 @@ pub(crate) enum BootState {
     Degraded,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum ExecutionState {
+    #[default]
+    Idle,
+    Following,
+    Suspended,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TimelineRole {
+    User,
+    Agent,
+    Status,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TimelineItem {
+    pub(crate) position: u64,
+    pub(crate) role: TimelineRole,
+    pub(crate) text: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PendingEffect {
     pub(crate) generation: u64,
@@ -92,6 +117,10 @@ pub(crate) struct AppModel {
     pub(crate) quit_requested: bool,
     pub(crate) definition_count: usize,
     pub(crate) session_count: usize,
+    pub(crate) selected_session: Option<String>,
+    pub(crate) timeline: Vec<TimelineItem>,
+    pub(crate) execution: ExecutionState,
+    pub(crate) composer: EditorState,
     pub(crate) stale_result_count: u64,
     pub(crate) next_effect_id: u64,
     pub(crate) pending_effects: BTreeMap<EffectId, PendingEffect>,
