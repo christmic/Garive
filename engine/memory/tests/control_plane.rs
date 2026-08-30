@@ -46,6 +46,41 @@ fn exact_identities_round_trip_and_crlf_normalizes() {
 }
 
 #[test]
+fn repository_fields_build_the_same_canonical_document() {
+    let built = garive_memory::MemoryControlDocument::from_repository_record(
+        "mem-01",
+        "rev-04",
+        MemoryAuthority::UserDeclared,
+        MemoryType::Semantic,
+        MemoryKind::Preference,
+        MemoryScopeClass::AgentInstance,
+        "agent-01",
+        HypothesisState::Active,
+        MemorySensitivity::Ordinary,
+        "Prefer concise status updates.\r\n\r\n",
+        limits(),
+    )
+    .unwrap();
+    assert_eq!(built.render(), DOCUMENT);
+    assert_eq!(
+        garive_memory::MemoryControlDocument::from_repository_record(
+            "mem-01",
+            "rev-04",
+            MemoryAuthority::AgentLearned,
+            MemoryType::Semantic,
+            MemoryKind::Preference,
+            MemoryScopeClass::Session,
+            "session",
+            HypothesisState::Candidate,
+            MemorySensitivity::Ordinary,
+            "",
+            limits(),
+        ),
+        Err(MemoryControlError::InvalidSnapshot),
+    );
+}
+
+#[test]
 fn new_and_erasure_forms_are_exact() {
     let new = DOCUMENT.replace("existing.bWVtLTAx.cmV2LTA0", "new.draft_1");
     assert_eq!(

@@ -22,6 +22,27 @@ class MemoryControlPlaneTest {
     }
 
     @Test
+    fun `repository fields build the same canonical document`() {
+        val built = assertIs<MemoryControlResult.Success<MemoryControlDocument>>(
+            MemoryControlDocument.fromRepositoryRecord(
+                "mem-01", "rev-04", MemoryAuthority.USER_DECLARED, MemoryType.SEMANTIC,
+                MemoryKind.PREFERENCE, MemoryScopeClass.AGENT_INSTANCE, "agent-01",
+                HypothesisState.ACTIVE, MemorySensitivity.ORDINARY,
+                "Prefer concise status updates.\r\n\r\n", limits,
+            ),
+        ).value
+        assertEquals(DOCUMENT, built.render())
+        assertEquals(
+            MemoryControlError.INVALID_SNAPSHOT,
+            assertIs<MemoryControlResult.Failure>(MemoryControlDocument.fromRepositoryRecord(
+                "mem-01", "rev-04", MemoryAuthority.AGENT_LEARNED, MemoryType.SEMANTIC,
+                MemoryKind.PREFERENCE, MemoryScopeClass.SESSION, "session",
+                HypothesisState.CANDIDATE, MemorySensitivity.ORDINARY, "", limits,
+            )).error,
+        )
+    }
+
+    @Test
     fun `new and erasure forms are exact`() {
         val added = success(DOCUMENT.replace("existing.bWVtLTAx.cmV2LTA0", "new.draft_1"))
         assertEquals(MemoryRecordRef.New("draft_1"), added.recordRef)

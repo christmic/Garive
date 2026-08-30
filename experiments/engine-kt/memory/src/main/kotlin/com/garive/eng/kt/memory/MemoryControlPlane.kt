@@ -91,6 +91,42 @@ public data class MemoryControlDocument(
         append("---\n")
         append(content)
     }
+
+    public companion object {
+        /** Builds one canonical current document from admitted repository fields. */
+        @Suppress("LongParameterList")
+        public fun fromRepositoryRecord(
+            recordId: String,
+            revisionId: String,
+            authority: MemoryAuthority,
+            memoryType: MemoryType,
+            memoryRole: MemoryKind,
+            scope: MemoryScopeClass,
+            scopeOwnerId: String,
+            lifecycle: HypothesisState,
+            sensitivity: MemorySensitivity,
+            content: String,
+            limits: MemoryDocumentLimits,
+        ): MemoryControlResult<MemoryControlDocument> {
+            if (!validDecodedIdentity(recordId, limits.maxIdBytes) ||
+                !validDecodedIdentity(revisionId, limits.maxIdBytes) ||
+                !validDecodedIdentity(scopeOwnerId, limits.maxIdBytes) ||
+                ('\r' in content && '\r' in content.replace("\r\n", "\n"))
+            ) return failureControl(MemoryControlError.INVALID_SNAPSHOT)
+            val normalized = content.replace("\r\n", "\n").trimEnd('\n') + "\n"
+            if (normalized == "\n") return failureControl(MemoryControlError.INVALID_SNAPSHOT)
+            if (normalized.encodeToByteArray().size > limits.maxContentBytes) {
+                return failureControl(MemoryControlError.BOUND_EXCEEDED)
+            }
+            val document = MemoryControlDocument(
+                MemoryRecordRef.Existing(recordId, revisionId), authority, memoryType, memoryRole,
+                scope, scopeOwnerId, lifecycle, sensitivity, false, normalized,
+            )
+            return if (document.render().encodeToByteArray().size > limits.maxDocumentBytes) {
+                failureControl(MemoryControlError.BOUND_EXCEEDED)
+            } else MemoryControlResult.Success(document)
+        }
+    }
 }
 
 /** Parses strict M2 front matter and normalizes CRLF/content termination. */
@@ -200,6 +236,9 @@ private fun decodeIdentity(value: String, maxBytes: Int): String? = try {
 } catch (_: IllegalArgumentException) {
     null
 }
+
+private fun validDecodedIdentity(value: String, maxBytes: Int): Boolean =
+    value.isNotEmpty() && value.encodeToByteArray().size <= maxBytes && value.trim() == value
 
 private fun validControlToken(value: String, maxBytes: Int): Boolean =
     value.isNotEmpty() && value.length <= maxBytes && value.all {

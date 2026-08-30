@@ -62,6 +62,7 @@ pub(super) fn read_projection(
         documents.push(document);
     }
     integrity::verify_revision_content(connection, namespace_id)?;
+    integrity::verify_repository_sources(connection, namespace_id)?;
     Ok(MemoryControlProjection {
         namespace_id: namespace_id.to_owned(),
         repository_revision: revision,
@@ -137,6 +138,11 @@ pub(super) fn commit_import(
         .map_err(MemoryControlRuntimeError::from)?;
     if !grant.admits_action(&command.plan().namespace_id, MemoryControlAction::Import) {
         return Err(MemoryControlRuntimeError::Unauthorized);
+    }
+    if integrity::namespace_source_mode(transaction, &command.plan().namespace_id)?.as_deref()
+        == Some("fact_backed")
+    {
+        return Err(MemoryControlRuntimeError::ForbiddenChange);
     }
     if let Some(receipt) = replay(transaction, command)? {
         return Ok(receipt);

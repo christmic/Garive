@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use garive_ledger::CommitResult;
 use garive_memory::{
     ContentBinding, MemoryAuthorizedScope, MemoryControlDocument, MemoryControlError,
     MemoryImportPlan,
@@ -35,6 +36,53 @@ pub struct MemoryControlProjection {
     pub repository_revision: u64,
     /// Canonical current documents ordered by raw record identity.
     pub documents: Vec<MemoryControlDocument>,
+}
+
+/// Atomic result of one fact-backed Memory repository write or exact replay.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryRepositoryCommitResult {
+    /// Durable Ledger coordinates for the source fact batch.
+    pub ledger: CommitResult,
+    /// Repository revision observed before the original commit.
+    pub previous_repository_revision: u64,
+    /// Repository revision containing the committed Memory revision.
+    pub committed_repository_revision: u64,
+}
+
+/// Stable production repository availability, integrity, concurrency, or authority failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryRepositoryError {
+    /// The configured repository or required content resolver is unavailable.
+    Unavailable,
+    /// Source facts and the current projection cannot be reconciled.
+    Corrupt,
+    /// A fixed prefix or repository revision changed before commit.
+    Stale,
+    /// Namespace, scope, content, or action authority is absent.
+    Unauthorized,
+}
+
+impl MemoryRepositoryError {
+    /// Returns the accepted M2-C2 public failure code.
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::Unavailable => "memory_repository_unavailable",
+            Self::Corrupt => "memory_repository_corrupt",
+            Self::Stale => "memory_repository_stale",
+            Self::Unauthorized => "memory_repository_unauthorized",
+        }
+    }
+}
+
+impl From<MemoryControlRuntimeError> for MemoryRepositoryError {
+    fn from(value: MemoryControlRuntimeError) -> Self {
+        match value {
+            MemoryControlRuntimeError::PersistenceFailed => Self::Unavailable,
+            MemoryControlRuntimeError::StaleSnapshot => Self::Stale,
+            MemoryControlRuntimeError::Unauthorized => Self::Unauthorized,
+            _ => Self::Corrupt,
+        }
+    }
 }
 
 impl MemoryControlGrant {

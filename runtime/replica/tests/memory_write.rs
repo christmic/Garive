@@ -6,17 +6,18 @@ use garive_ledger::{
 };
 use garive_memory::{
     ContentBinding, DurableFactReference, HypothesisState, MemoryAuthority, MemoryAuthorityBinding,
-    MemoryCommit, MemoryErrorCode, MemoryKind, MemoryProposal, MemoryPurpose, MemoryQuery,
-    MemoryRevisionClassification, MemoryRevisionScope, MemoryScope, MemoryScopeClass,
-    MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone, MemoryType,
-    MemoryTypeDescriptor, MemoryTypeRegistry,
+    MemoryAuthorizedScope, MemoryCommit, MemoryDocumentLimits, MemoryErrorCode, MemoryKind,
+    MemoryProposal, MemoryPurpose, MemoryQuery, MemoryRevisionClassification, MemoryRevisionScope,
+    MemoryScope, MemoryScopeClass, MemorySensitivity, MemoryState, MemoryStatus, MemoryTombstone,
+    MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use garive_runtime::{
     authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
     plan_memory_tombstone, plan_memory_write, reconstruct_memory_state, verify_memory_evidence,
-    MemoryAccessGrant, MemoryPrefix, MemoryTombstoneContext, MemoryTombstoneReason,
-    MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError,
-    SqliteLedger, SqliteLedgerError,
+    MemoryAccessGrant, MemoryControlAction, MemoryControlGrant, MemoryControlRuntimeError,
+    MemoryPrefix, MemoryRepositoryCommitError, MemoryRepositoryError, MemoryTombstoneContext,
+    MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection,
+    RuntimeCommandError, SqliteLedger, SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -171,7 +172,7 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         .payload
         .sha256()
         .to_owned();
-    let proposal = proposal(None, "dark mode", &evidence_digest);
+    let initial_proposal = proposal(None, "dark mode", &evidence_digest);
     let classification = MemoryRevisionClassification::new(
         MemoryKind::Preference,
         MemoryAuthorityBinding::new(MemoryAuthority::AgentLearned, None).unwrap(),
@@ -184,7 +185,7 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
     let planned = plan_classified_memory_write(
         &context(3),
         &MemoryState::default(),
-        &proposal,
+        &initial_proposal,
         commit("record", "revision-1", 5, None),
         &session,
         "classification",
@@ -211,12 +212,158 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         serde_json::from_str(planned.facts[2].payload.as_json()).unwrap();
     assert_eq!(classification_payload["source_commit"]["position"], 5);
     assert_eq!(classification_payload["scope_owner_id"], "session");
-    let result = ledger.commit(session.clone(), 1, planned.facts).unwrap();
-    assert_eq!(result.positions, vec![4, 5, 6]);
+    ledger
+        .connection_for_test()
+        .execute_batch(
+            "CREATE TRIGGER fail_memory_source BEFORE INSERT ON memory_control_sources \
+             BEGIN SELECT RAISE(ABORT, 'injected'); END;",
+        )
+        .unwrap();
+    assert!(matches!(
+        ledger.commit_classified_memory_write(
+            session.clone(),
+            1,
+            planned,
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        ),
+        Err(MemoryRepositoryCommitError::Repository(
+            MemoryRepositoryError::Unavailable
+        )),
+    ));
+    assert_eq!(
+        ledger
+            .session_watermark(&session)
+            .unwrap()
+            .unwrap()
+            .max_position,
+        3
+    );
+    ledger
+        .connection_for_test()
+        .execute_batch("DROP TRIGGER fail_memory_source;")
+        .unwrap();
+
+    let planned = plan_classified_memory_write(
+        &context(3),
+        &MemoryState::default(),
+        &initial_proposal,
+        commit("record", "revision-1", 5, None),
+        &session,
+        "classification",
+        &classification,
+    )
+    .unwrap();
+    let result = ledger
+        .commit_classified_memory_write(
+            session.clone(),
+            1,
+            planned,
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.ledger.positions, vec![4, 5, 6]);
+    assert_eq!(
+        (
+            result.previous_repository_revision,
+            result.committed_repository_revision
+        ),
+        (0, 1)
+    );
+    let grant = MemoryControlGrant::new(
+        "namespace",
+        [MemoryControlAction::Export],
+        [MemoryAuthorizedScope {
+            scope: MemoryScopeClass::Session,
+            owner_id: "session".into(),
+        }],
+    )
+    .unwrap();
+    let projection = ledger
+        .read_memory_control_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(projection.repository_revision, 1);
+    assert_eq!(projection.documents[0].content(), "dark mode\n");
+    assert_eq!(
+        projection.documents[0].authority(),
+        MemoryAuthority::AgentLearned
+    );
+
+    let replay = plan_classified_memory_write(
+        &context(3),
+        &MemoryState::default(),
+        &initial_proposal,
+        commit("record", "revision-1", 5, None),
+        &session,
+        "classification",
+        &classification,
+    )
+    .unwrap();
+    let replay = ledger
+        .commit_classified_memory_write(
+            session.clone(),
+            1,
+            replay,
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(replay.ledger.disposition, CommitDisposition::Replayed);
+    assert_eq!(
+        (
+            replay.previous_repository_revision,
+            replay.committed_repository_revision
+        ),
+        (0, 1)
+    );
     drop(ledger);
-    let ledger = SqliteLedger::open(directory.path().join("classified.sqlite3")).unwrap();
+    let mut ledger = SqliteLedger::open(directory.path().join("classified.sqlite3")).unwrap();
     let facts = ledger.read_facts(&session, 0, 6, None).unwrap();
     assert_eq!(facts[5].kind.as_str(), "memory.revision_classified");
+    let recovered = reconstruct_memory_state(
+        &ledger,
+        &[MemoryPrefix {
+            session_id: session.clone(),
+            through_position: 6,
+        }],
+    )
+    .unwrap();
+    let changed = proposal(Some("revision-1"), "light mode", &evidence_digest);
+    let superseding = plan_classified_memory_write(
+        &context(6),
+        &recovered,
+        &changed,
+        commit("record", "revision-2", 8, Some("revision-1")),
+        &session,
+        "classification-2",
+        &classification,
+    )
+    .unwrap();
+    let superseding = ledger
+        .commit_classified_memory_write(
+            session.clone(),
+            2,
+            superseding,
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(superseding.ledger.positions, vec![7, 8, 9, 10]);
+    assert_eq!(superseding.committed_repository_revision, 2);
+    let projection = ledger
+        .read_memory_control_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(projection.repository_revision, 2);
+    assert_eq!(
+        projection.documents[0].record_ref().revision_id(),
+        Some("revision-2")
+    );
+    assert_eq!(projection.documents[0].content(), "light mode\n");
 
     let mismatched = MemoryRevisionClassification::new(
         MemoryKind::Preference,
@@ -231,7 +378,7 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         plan_classified_memory_write(
             &context(3),
             &MemoryState::default(),
-            &proposal,
+            &initial_proposal,
             commit("record", "revision-1", 5, None),
             &session,
             "classification",
@@ -240,6 +387,21 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         .err()
         .unwrap(),
         RuntimeCommandError::InvalidCommand,
+    );
+    ledger
+        .connection_for_test()
+        .execute(
+            "UPDATE memory_control_sources SET source_payload_digest=?1 WHERE revision_id='revision-2'",
+            ["b".repeat(64)],
+        )
+        .unwrap();
+    assert_eq!(
+        ledger.read_memory_control_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        ),
+        Err(MemoryControlRuntimeError::PersistenceFailed),
     );
 }
 

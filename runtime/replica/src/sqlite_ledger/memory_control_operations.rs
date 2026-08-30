@@ -308,7 +308,7 @@ pub(super) fn insert_current(
     transaction.execute("INSERT INTO memory_control_current(namespace_id,record_id,revision_id,lifecycle,document_markdown,document_digest,updated_sequence) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![namespace,record,revision,lifecycle(document.lifecycle()),document.render(),document.document_digest(),encode_u64(sequence)]).map(|_| ()).map_err(|_| MemoryControlRuntimeError::PersistenceFailed)
 }
 
-fn replace_current(
+pub(super) fn replace_current(
     transaction: &Transaction<'_>,
     namespace: &str,
     record: &str,

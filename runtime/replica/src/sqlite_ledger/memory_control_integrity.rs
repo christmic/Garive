@@ -50,6 +50,146 @@ pub(super) fn namespace_revision_connection(
     namespace_revision_inner(connection, namespace_id)
 }
 
+pub(super) fn namespace_source_mode(
+    connection: &Connection,
+    namespace_id: &str,
+) -> Result<Option<String>, MemoryControlRuntimeError> {
+    connection
+        .query_row(
+            "SELECT source_mode FROM memory_namespaces WHERE namespace_id=?1",
+            [namespace_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)
+}
+
+pub(super) fn verify_repository_sources(
+    connection: &Connection,
+    namespace_id: &str,
+) -> Result<(), MemoryControlRuntimeError> {
+    let mode = namespace_source_mode(connection, namespace_id)?
+        .ok_or(MemoryControlRuntimeError::PersistenceFailed)?;
+    let source_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM memory_control_sources WHERE namespace_id=?1",
+            [namespace_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    if mode == "isolated" {
+        return if source_count == 0 {
+            Ok(())
+        } else {
+            Err(MemoryControlRuntimeError::PersistenceFailed)
+        };
+    }
+    let revision_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM memory_control_revisions WHERE namespace_id=?1",
+            [namespace_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    if source_count != revision_count {
+        return Err(MemoryControlRuntimeError::PersistenceFailed);
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT s.record_id,s.revision_id,s.source_session_id,s.source_position,\
+         s.source_fact_id,s.source_payload_digest,s.classification_fact_id,\
+         s.classification_payload_digest,f.session_id,f.position,f.kind,f.payload_sha256,\
+         c.session_id,c.kind,c.payload_json,c.payload_sha256 \
+         FROM memory_control_sources s \
+         JOIN ledger_facts f ON f.fact_id=s.source_fact_id \
+         JOIN ledger_facts c ON c.fact_id=s.classification_fact_id \
+         WHERE s.namespace_id=?1 ORDER BY s.record_id,s.revision_id",
+        )
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    let rows = statement
+        .query_map([namespace_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Vec<u8>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, Vec<u8>>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, String>(11)?,
+                row.get::<_, String>(12)?,
+                row.get::<_, String>(13)?,
+                row.get::<_, String>(14)?,
+                row.get::<_, String>(15)?,
+            ))
+        })
+        .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+    for row in rows {
+        let (
+            record,
+            revision,
+            source_session,
+            source_position,
+            source_id,
+            source_digest,
+            classification_id,
+            classification_digest,
+            fact_session,
+            fact_position,
+            fact_kind,
+            fact_digest,
+            classification_session,
+            classification_kind,
+            classification_json,
+            stored_classification_digest,
+        ) = row.map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        let classification: Value = serde_json::from_str(&classification_json)
+            .map_err(|_| MemoryControlRuntimeError::PersistenceFailed)?;
+        let reference = classification
+            .get("source_commit")
+            .and_then(Value::as_object)
+            .ok_or(MemoryControlRuntimeError::PersistenceFailed)?;
+        if source_session != fact_session
+            || source_position != fact_position
+            || source_id
+                != reference
+                    .get("fact_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            || source_session
+                != reference
+                    .get("session_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            || decode_u64(&source_position)?
+                != reference
+                    .get("position")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+            || source_digest != fact_digest
+            || source_digest
+                != reference
+                    .get("payload_digest")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+            || fact_kind != "memory.committed"
+            || classification_kind != "memory.revision_classified"
+            || classification_session != source_session
+            || classification_digest != stored_classification_digest
+            || classification.get("record_id").and_then(Value::as_str) != Some(record.as_str())
+            || classification.get("revision_id").and_then(Value::as_str) != Some(revision.as_str())
+            || classification_id.is_empty()
+        {
+            return Err(MemoryControlRuntimeError::PersistenceFailed);
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn verify_revision_content(
     connection: &Connection,
     namespace_id: &str,

@@ -101,7 +101,7 @@ pub use local_worker::{
 };
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,
-    MemoryImportCommand, MemoryImportReceipt,
+    MemoryImportCommand, MemoryImportReceipt, MemoryRepositoryCommitResult, MemoryRepositoryError,
 };
 pub use memory_export::{MemoryExportCommand, MemoryExportReceipt, MemoryExportTarget};
 pub use memory_export_io::export_memory_snapshot;
@@ -132,6 +132,7 @@ pub use scheduler_runtime::{
     ScheduleRuntimeState, ScheduleTickConfig, ScheduleTickOutcome,
 };
 pub use sqlite_ledger::{
-    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, ScheduleLease, ScheduleLeaseError,
-    ScheduleLeaseRequest, SessionWatermark, SqliteLedger, SqliteLedgerError,
+    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryRepositoryCommitError,
+    ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger,
+    SqliteLedgerError,
 };

@@ -108,6 +108,7 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
             .execute_batch(
                 "DROP TABLE execution_leases; \
                  DROP TABLE schedule_leases; \
+                 DROP TABLE memory_control_sources; \
                  DROP TABLE memory_control_current; \
                  DROP TABLE memory_control_revisions; \
                  DROP TABLE memory_control_journal; \
@@ -124,7 +125,7 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let leases: u32 = migrated
             .connection_for_test()
             .query_row(
@@ -151,18 +152,18 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(memory_tables, 4);
+        assert_eq!(memory_tables, 5);
         migrated
             .connection_for_test()
             .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (5, ?1)",
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (6, ?1)",
                 ["2026-08-29T00:00:00Z"],
             )
             .unwrap();
     }
     assert!(matches!(
         SqliteLedger::open(path),
-        Err(SqliteLedgerError::UnsupportedSchema(5))
+        Err(SqliteLedgerError::UnsupportedSchema(6))
     ));
 }
 

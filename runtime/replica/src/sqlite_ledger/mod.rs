@@ -11,6 +11,7 @@ mod memory_control;
 mod memory_control_integrity;
 mod memory_control_operations;
 mod memory_export;
+mod memory_repository;
 mod migrations;
 mod schedule_lease;
 mod storage;
@@ -49,6 +50,15 @@ pub enum SqliteLedgerError {
     Lease(ExecutionLeaseError),
     /// A schedule-side commit no longer owns its operational occurrence lease.
     ScheduleLease(ScheduleLeaseError),
+}
+
+/// Ledger or repository-projection failure from one atomic classified write.
+#[derive(Debug)]
+pub enum MemoryRepositoryCommitError {
+    /// Portable Ledger validation, concurrency, integrity, or storage failure.
+    Ledger(SqliteLedgerError),
+    /// Fact-to-repository decoding, precondition, or projection failure.
+    Repository(crate::MemoryRepositoryError),
 }
 
 impl SqliteLedger {
@@ -181,6 +191,42 @@ impl SqliteLedger {
             commit_transaction(&transaction, session_id, expected_session_version, drafts)?;
         transaction.commit()?;
         Ok(result)
+    }
+
+    /// Atomically commits one classified M0/M1 write and its canonical M2 projection.
+    pub fn commit_classified_memory_write(
+        &mut self,
+        session_id: SessionId,
+        expected_session_version: u64,
+        planned: crate::PlannedMemoryWrite,
+        limits: garive_memory::MemoryDocumentLimits,
+    ) -> Result<crate::MemoryRepositoryCommitResult, MemoryRepositoryCommitError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryCommitError::Ledger)?;
+        let drafts = planned.facts;
+        let result = commit_transaction(
+            &transaction,
+            session_id.clone(),
+            expected_session_version,
+            drafts.clone(),
+        )
+        .map_err(MemoryRepositoryCommitError::Ledger)?;
+        let (previous_repository_revision, committed_repository_revision) =
+            memory_repository::apply(&transaction, &session_id, &result, &drafts, limits)
+                .map_err(crate::MemoryRepositoryError::from)
+                .map_err(MemoryRepositoryCommitError::Repository)?;
+        transaction
+            .commit()
+            .map_err(SqliteLedgerError::from)
+            .map_err(MemoryRepositoryCommitError::Ledger)?;
+        Ok(crate::MemoryRepositoryCommitResult {
+            ledger: result,
+            previous_repository_revision,
+            committed_repository_revision,
+        })
     }
 
     /// Acquires or renews one latest-active Execution lease transactionally.
@@ -478,5 +524,25 @@ impl From<rusqlite::Error> for SqliteLedgerError {
 impl From<LedgerError> for SqliteLedgerError {
     fn from(value: LedgerError) -> Self {
         Self::Domain(value)
+    }
+}
+
+impl fmt::Display for MemoryRepositoryCommitError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ledger(error) => write!(formatter, "{error}"),
+            Self::Repository(error) => {
+                write!(formatter, "Memory repository error: {}", error.wire_name())
+            }
+        }
+    }
+}
+
+impl Error for MemoryRepositoryCommitError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Ledger(error) => Some(error),
+            Self::Repository(_) => None,
+        }
     }
 }

@@ -147,6 +147,62 @@ pub struct MemoryControlDocument {
 }
 
 impl MemoryControlDocument {
+    /// Builds one canonical current document from admitted repository fields.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_repository_record(
+        record_id: impl Into<String>,
+        revision_id: impl Into<String>,
+        authority: MemoryAuthority,
+        memory_type: MemoryType,
+        memory_role: MemoryKind,
+        scope: MemoryScopeClass,
+        scope_owner_id: impl Into<String>,
+        lifecycle: HypothesisState,
+        sensitivity: MemorySensitivity,
+        content: impl Into<String>,
+        limits: MemoryDocumentLimits,
+    ) -> Result<Self, MemoryControlError> {
+        let record_id = record_id.into();
+        let revision_id = revision_id.into();
+        let scope_owner_id = scope_owner_id.into();
+        let raw_content = content.into();
+        if !valid_decoded_identity(&record_id, limits.max_id_bytes)
+            || !valid_decoded_identity(&revision_id, limits.max_id_bytes)
+            || !valid_decoded_identity(&scope_owner_id, limits.max_id_bytes)
+            || (raw_content.contains('\r') && raw_content.replace("\r\n", "\n").contains('\r'))
+        {
+            return Err(MemoryControlError::InvalidSnapshot);
+        }
+        let normalized = raw_content.replace("\r\n", "\n");
+        let content = format!("{}\n", normalized.trim_end_matches('\n'));
+        if content == "\n" {
+            return Err(MemoryControlError::InvalidSnapshot);
+        }
+        if content.len() > limits.max_content_bytes {
+            return Err(MemoryControlError::BoundExceeded);
+        }
+        let document = Self {
+            record_ref: MemoryRecordRef::Existing {
+                record_id,
+                revision_id,
+            },
+            authority,
+            memory_type,
+            memory_role,
+            scope,
+            scope_owner_id,
+            lifecycle,
+            sensitivity,
+            erase: false,
+            content,
+        };
+        if document.render().len() > limits.max_document_bytes {
+            Err(MemoryControlError::BoundExceeded)
+        } else {
+            Ok(document)
+        }
+    }
+
     /// Returns the exact existing identity or new-entry token.
     pub const fn record_ref(&self) -> &MemoryRecordRef {
         &self.record_ref

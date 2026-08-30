@@ -132,6 +132,29 @@ CREATE INDEX memory_current_by_lifecycle
     ON memory_control_current(namespace_id, lifecycle, record_id);
 "#;
 
+const MIGRATION_5: &str = r#"
+ALTER TABLE memory_namespaces ADD COLUMN source_mode TEXT NOT NULL DEFAULT 'isolated'
+    CHECK(source_mode IN ('isolated', 'fact_backed'));
+
+CREATE TABLE memory_control_sources (
+    namespace_id TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    revision_id TEXT NOT NULL,
+    source_session_id TEXT NOT NULL,
+    source_position BLOB NOT NULL CHECK(length(source_position) = 8),
+    source_fact_id TEXT NOT NULL UNIQUE,
+    source_payload_digest TEXT NOT NULL CHECK(length(source_payload_digest) = 64),
+    classification_fact_id TEXT NOT NULL UNIQUE,
+    classification_payload_digest TEXT NOT NULL CHECK(length(classification_payload_digest) = 64),
+    repository_revision BLOB NOT NULL CHECK(length(repository_revision) = 8),
+    PRIMARY KEY(namespace_id, record_id, revision_id),
+    FOREIGN KEY(namespace_id, record_id, revision_id)
+        REFERENCES memory_control_revisions(namespace_id, record_id, revision_id),
+    FOREIGN KEY(source_fact_id) REFERENCES ledger_facts(fact_id),
+    FOREIGN KEY(classification_fact_id) REFERENCES ledger_facts(fact_id)
+) STRICT;
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -143,7 +166,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         [],
         |row| row.get(0),
     )?;
-    if version > 4 {
+    if version > 5 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -185,6 +208,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 4;
+    }
+    if version == 4 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_5)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (5, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;
