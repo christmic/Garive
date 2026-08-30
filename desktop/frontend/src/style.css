@@ -9,8 +9,8 @@
   --line: rgba(45, 43, 35, .1);
   --line-strong: rgba(45, 43, 35, .17);
   --text: #272723;
-  --muted: #74736d;
-  --subtle: #9a9890;
+  --muted: #686760;
+  --subtle: #74736d;
   --accent: #315fcf;
   --accent-dark: #244cae;
   --accent-wash: #e8edfb;
@@ -446,6 +446,19 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
   .workspace-sheet > footer > p { max-width: 220px; }
 }
 
+@media (max-width: 480px) {
+  .app-shell, .app-shell:has(.inspector) { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { display: none; }
+  .main-surface, .topbar, .work-surface, .conversation, .composer-wrap, .composer, .timeline { min-width: 0; max-width: 100%; }
+  .local-badge { display: none; }
+  .inspector { width: 100%; }
+  .composer-wrap { padding-inline: 8px; }
+  .composer-toolbar, .composer-tools { flex-wrap: wrap; }
+  .timeline { width: calc(100% - 16px); }
+  .approval-card { grid-template-columns: 28px minmax(0, 1fr); }
+  .approval-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
 }
@@ -465,7 +478,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
   .spinner { border-color: GrayText; border-top-color: Highlight; }
 }
 
-.theme-dark { color: #e8e7e2; background: #191a18; --paper: #1d1e1c; --paper-strong: #242522; --sidebar: #191a18; --line: rgba(255,255,255,.08); --line-strong: rgba(255,255,255,.15); --text: #e8e7e2; --muted: #a09f99; --subtle: #777873; --accent: #7c9ff1; --accent-dark: #6389e5; --accent-wash: #252f49; --shadow: 0 18px 50px rgba(0,0,0,.28); }
+.theme-dark { color: #e8e7e2; background: #191a18; --paper: #1d1e1c; --paper-strong: #242522; --sidebar: #191a18; --line: rgba(255,255,255,.08); --line-strong: rgba(255,255,255,.15); --text: #e8e7e2; --muted: #a09f99; --subtle: #92938d; --accent: #7c9ff1; --accent-dark: #6389e5; --accent-wash: #252f49; --shadow: 0 18px 50px rgba(0,0,0,.28); }
 .theme-dark .topbar { background: rgba(29,30,28,.86); }
 .theme-dark .brand-mark { color: white; }
 .theme-dark .new-work, .theme-dark .suggestion-grid button, .theme-dark .agent-card, .theme-dark .settings-card { background: rgba(255,255,255,.035); }
