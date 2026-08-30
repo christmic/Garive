@@ -30,6 +30,7 @@ import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n"
 import { shouldSubmitComposer } from "./composer";
 import { nextDesktopZoom } from "./zoom";
 import { useDesktopProduct } from "./app/useDesktopProduct";
+import type { ProductEffectPort } from "./app/ProductRuntime";
 import type { AppIntent } from "./state/controller";
 
 type Screen = "work" | "search" | "agents" | "settings";
@@ -94,7 +95,14 @@ const visualArtifactPreview = {
   truncated: false,
 } satisfies ArtifactPreview;
 
-export function App() {
+export interface AppProps {
+  readonly client?: "desktop" | "web";
+  readonly webCapabilities?: WorkState["capabilities"];
+  readonly createProductPort?: () => ProductEffectPort;
+}
+
+export function App({ client = "desktop", webCapabilities, createProductPort }: AppProps = {}) {
+  const desktop = client === "desktop";
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
   const [recents, setRecents] = useState<readonly RecentItem[]>([]);
@@ -117,7 +125,8 @@ export function App() {
   });
   const desktopUpdateClient = useRef<DesktopUpdateClient | null>(null);
   const product = useDesktopProduct(state.capabilities
-    ? state.capabilities.configured ? "configured" : "not_configured" : undefined, !visualTest);
+    ? state.capabilities.configured ? "configured" : "not_configured" : undefined, !visualTest,
+    createProductPort);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -130,10 +139,10 @@ export function App() {
   useEffect(() => { document.documentElement.lang = locale === "en-XA" ? "en-XA" : locale; },
     [locale]);
   useEffect(() => {
-    if (!visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
-  }, [locale]);
+    if (desktop && !visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
+  }, [desktop, locale]);
   useEffect(() => {
-    if (!state.capabilities) return;
+    if (!desktop || !state.capabilities) return;
     if (visualTest) {
       setDesktopUpdate({ kind: "unavailable", currentVersion: "0.1.0" });
       return;
@@ -150,7 +159,7 @@ export function App() {
       }));
     });
     return () => { cancelled = true; unsubscribe(); };
-  }, [state.capabilities?.updater]);
+  }, [desktop, state.capabilities?.updater]);
 
   const runUpdateAction = () => {
     const client = desktopUpdateClient.current;
@@ -258,15 +267,22 @@ export function App() {
       }
       return;
     }
+    if (!desktop) {
+      dispatch({ type: "capabilities_loaded", capabilities: webCapabilities ?? {
+        configured: false, multi_turn: false, durable_navigation: false, activity: false,
+        setup: false, workspaces: false, artifacts: false, updater: false,
+      } });
+      return;
+    }
     void getDesktopCapabilities()
       .then((capabilities) => {
         dispatch({ type: "capabilities_loaded", capabilities });
       })
       .catch(() => dispatch({ type: "capabilities_failed" }));
-  }, []);
+  }, [desktop, webCapabilities]);
 
   useEffect(() => {
-    if (visualTest) return;
+    if (!desktop || visualTest) return;
     let active = true;
     let stop: (() => void) | undefined;
     void listen<unknown>(DESKTOP_MENU_EVENT, (event) => {
@@ -290,7 +306,7 @@ export function App() {
       else unlisten();
     }).catch(() => undefined);
     return () => { active = false; stop?.(); };
-  }, [beginNewWork]);
+  }, [beginNewWork, desktop]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
