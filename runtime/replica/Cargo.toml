@@ -34,6 +34,7 @@ sha2.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+garive-host-client = { path = "../../clients/host-rs" }
 garive-provider-profile = { path = "../../providers/profile" }
 serde_json.workspace = true
 tempfile = "3.27.0"

@@ -1363,6 +1363,7 @@ dependencies = [
  "garive-adapter-anthropic-messages",
  "garive-adapter-openai-responses",
  "garive-core",
+ "garive-host-client",
  "garive-knowledge",
  "garive-ledger",
  "garive-llm",
