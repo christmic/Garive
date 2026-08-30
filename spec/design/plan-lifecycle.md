@@ -214,6 +214,10 @@ reconciliation`; it never embeds user text or credentials.
 Command receipt and corresponding state facts commit atomically. Claims use
 monotonic lease readings; durable facts retain portable recorded-at values
 only for audit. Projections validate topology/digest before applying progress.
+The public Runtime transition planner rejects a standalone Step Start. Runtime
+must compose the Plan mutation with the C6 Turn/Execution start batch; recovery
+requires their persisted SQLite commit versions, command identity, Turn,
+Execution and snapshot digest to match before accepting the prefix.
 
 ## Recovery
 
