@@ -77,8 +77,8 @@ The additive Proto field allocation is exact:
 | `TurnTimelineItemV1` | `turn_id=1`, `started_position=2`, `latest_position=3`, `state=4`, `user_text=5`, optional `completion_text=6`, optional `suspension=7`, `content_truncated=8`, H3 repeated `activities=9` |
 | `TurnTimelinePageV1` | `api_version=1`, `session_id=2`, `items=3` repeated message, `scanned_through_position=4`, `observed_max_position=5`, `has_more=6` |
 
-All unspecified scalar types are `string`; positions, versions, and counts are
-`uint64`. Message fields use message presence. Optional scalar fields use Proto
+All unspecified scalar types, including immutable Definition revisions, are
+`string`; positions, Session versions, and counts are `uint64`. Message fields use message presence. Optional scalar fields use Proto
 `optional`, not empty-string sentinels. H3 field 9 is coordinated in the same
 Host v1 tag audit but remains absent until H3 is implemented.
 
