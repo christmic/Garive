@@ -310,4 +310,64 @@ mod tests {
         ));
         assert_eq!(std::fs::read_to_string(destination).unwrap(), "original");
     }
+
+    #[test]
+    fn destination_race_preserves_existing_bytes_and_cleans_temporary() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("raced.md");
+        let service = DesktopArtifactExportService::default();
+        let target = service.admit_selected(&destination, "main").unwrap();
+        std::fs::write(&destination, "concurrent").unwrap();
+        let bytes = b"artifact";
+        assert_eq!(
+            service.export(
+                &target.export_target_id,
+                "main",
+                "artifact-1",
+                1,
+                &digest(bytes),
+                bytes,
+            ),
+            Err(DesktopArtifactExportError::TargetExists)
+        );
+        assert_eq!(std::fs::read_to_string(destination).unwrap(), "concurrent");
+        assert!(std::fs::read_dir(directory.path())
+            .unwrap()
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".garive-export-")));
+    }
+
+    #[test]
+    fn wrong_owner_or_digest_consumes_authority_without_creating_a_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("copy.md");
+        let service = DesktopArtifactExportService::default();
+        let target = service.admit_selected(&destination, "main").unwrap();
+        assert_eq!(
+            service.export(
+                &target.export_target_id,
+                "other",
+                "artifact-1",
+                1,
+                &digest(b"artifact"),
+                b"artifact",
+            ),
+            Err(DesktopArtifactExportError::Invalid)
+        );
+        assert!(!destination.exists());
+        assert_eq!(
+            service.export(
+                &target.export_target_id,
+                "main",
+                "artifact-1",
+                1,
+                &digest(b"artifact"),
+                b"artifact",
+            ),
+            Err(DesktopArtifactExportError::Invalid)
+        );
+    }
 }
