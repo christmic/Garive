@@ -56,8 +56,13 @@ func run() error {
 		MaxHeaderBytes:    16 * 1024,
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS13},
 	}
+	wakeInterval, err := time.ParseDuration(environment("GARIVE_WAKE_POLL_INTERVAL", "3s"))
+	if err != nil || wakeInterval < time.Second || wakeInterval > time.Minute {
+		return errors.New("invalid wake monitor configuration")
+	}
 	shutdownContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go handler.RunWakeMonitor(shutdownContext, wakeInterval, 64)
 	go func() {
 		<-shutdownContext.Done()
 		deadline, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -118,7 +123,7 @@ func safeError(err error) string {
 	switch err.Error() {
 	case "runtime origin must be a bare loopback HTTP origin", "pairing code or admin token is outside bounds",
 		"TLS certificate configuration is required", "invalid runtime configuration",
-		"invalid APNs configuration", "invalid FCM configuration":
+		"invalid APNs configuration", "invalid FCM configuration", "invalid wake monitor configuration":
 		return err.Error()
 	default:
 		return "service_failure"

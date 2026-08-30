@@ -113,20 +113,27 @@ func (s *Server) dispatchWake(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_wake_hint")
 		return
 	}
-	raw := make([]byte, 32)
-	if _, err := io.ReadFull(s.random, raw); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "entropy_unavailable")
+	if err := s.sendWake(r.Context(), request); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "push_unavailable")
 		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) sendWake(ctx context.Context, request dispatchWakeRequest) error {
+	raw := make([]byte, 32)
+	s.mu.Lock()
+	if _, err := io.ReadFull(s.random, raw); err != nil {
+		s.mu.Unlock()
+		return err
 	}
 	routeToken := base64.RawURLEncoding.EncodeToString(raw)
 	digest := sha256.Sum256([]byte(routeToken))
 
-	s.mu.Lock()
 	value := s.devices[request.DeviceID]
 	if !s.active(value) || value.push == nil || s.pushSender == nil {
 		s.mu.Unlock()
-		writeError(w, http.StatusServiceUnavailable, "push_unavailable")
-		return
+		return io.EOF
 	}
 	registration := *value.push
 	s.wakeRoutes[digest] = wakeRoute{
@@ -136,14 +143,13 @@ func (s *Server) dispatchWake(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	hint := MobileWakeHint{SchemaVersion: 1, RouteToken: routeToken, Category: request.Category, CollapseKey: request.Category}
-	if err := s.pushSender.Send(r.Context(), registration, hint); err != nil {
+	if err := s.pushSender.Send(ctx, registration, hint); err != nil {
 		s.mu.Lock()
 		delete(s.wakeRoutes, digest)
 		s.mu.Unlock()
-		writeError(w, http.StatusServiceUnavailable, "push_unavailable")
-		return
+		return err
 	}
-	w.WriteHeader(http.StatusAccepted)
+	return nil
 }
 
 func (s *Server) resolveWake(w http.ResponseWriter, r *http.Request) {
