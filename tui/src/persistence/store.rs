@@ -44,6 +44,7 @@ impl StateStore {
         create_private_directory(&root)?;
         create_private_directory(&root.join("pending"))?;
         create_private_directory(&root.join("quarantine"))?;
+        cleanup_abandoned_temps(&root)?;
         Ok(Self { root: Some(root) })
     }
 
@@ -331,6 +332,60 @@ fn with_lock<T>(
         (Err(error), _) => Err(error),
         (Ok(_), Err(error)) => Err(error),
     }
+}
+
+fn cleanup_abandoned_temps(root: &Path) -> Result<(), StateError> {
+    with_lock(root, "state.lock", || {
+        with_lock(root, "history.lock", || {
+            with_lock(root, "pending.lock", || {
+                cleanup_temp_directory(root, false)?;
+                cleanup_temp_directory(&root.join("pending"), true)
+            })
+        })
+    })
+}
+
+fn cleanup_temp_directory(directory: &Path, pending: bool) -> Result<(), StateError> {
+    let entries = fs::read_dir(directory).map_err(|_| StateError::Unavailable)?;
+    let mut removed = false;
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !is_owned_temporary_name(name, pending) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|_| StateError::Unavailable)?;
+        if !metadata.file_type().is_file() {
+            continue;
+        }
+        fs::remove_file(entry.path()).map_err(|_| StateError::Unavailable)?;
+        removed = true;
+    }
+    if removed {
+        sync_directory(directory)?;
+    }
+    Ok(())
+}
+
+fn is_owned_temporary_name(name: &str, pending: bool) -> bool {
+    let Some((stem, suffix)) = name.rsplit_once(".tmp-") else {
+        return false;
+    };
+    if Uuid::parse_str(suffix).is_err() {
+        return false;
+    }
+    if !pending {
+        return matches!(stem, "preferences.v1" | "prompt-history.v1");
+    }
+    let Some(key) = stem.strip_suffix(".v1") else {
+        return false;
+    };
+    key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn default_root() -> Option<PathBuf> {

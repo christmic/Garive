@@ -43,6 +43,29 @@ fn preferences_round_trip_atomically_with_private_permissions() {
 }
 
 #[test]
+fn startup_removes_only_grammatically_owned_abandoned_temps() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let _ = StateStore::open(Some(root.clone()), false).unwrap();
+    let suffix = uuid::Uuid::new_v4();
+    let preference_temp = root.join(format!("preferences.v1.tmp-{suffix}"));
+    let pending_temp = root
+        .join("pending")
+        .join(format!("{}.v1.tmp-{suffix}", "a".repeat(64)));
+    let foreign = root.join(format!("customer-data.tmp-{suffix}"));
+    for path in [&preference_temp, &pending_temp, &foreign] {
+        fs::write(path, b"stale").unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    let _ = StateStore::open(Some(root), false).unwrap();
+
+    assert!(!preference_temp.exists());
+    assert!(!pending_temp.exists());
+    assert!(foreign.exists());
+}
+
+#[test]
 fn pending_digest_is_exact_and_conflicts_are_refused() {
     let temporary = tempfile::tempdir().unwrap();
     let store = StateStore::open(Some(temporary.path().join("state")), false).unwrap();
