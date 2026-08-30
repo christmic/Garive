@@ -109,7 +109,7 @@ internal fun GariveMobileApp(
                 }
                 context.startActivity(Intent.createChooser(intent, "Share Agent work"))
             },
-            onContinue = { scope.launch { state = controller.continueLatest(state.draft.ifBlank { "approved" }) } },
+            onContinue = { input -> scope.launch { state = controller.continueLatest(input) } },
             onRetry = { scope.launch { state = controller.retryExact() } },
             onAbandonRetry = { confirmAbandonRetry = true },
         )

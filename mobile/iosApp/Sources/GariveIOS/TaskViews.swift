@@ -183,10 +183,7 @@ private struct TurnView: View {
                 }.padding(14).background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 15))
             }
             if let decision = turn.decision {
-                DecisionCard(decision: decision, response: $response, enabled: controlsEnabled) {
-                    let input = decision.kind.lowercased().contains("approval") ? "true" : response
-                    respond(input)
-                }
+                DecisionCard(decision: decision, response: $response, enabled: controlsEnabled, submit: respond)
             }
             HStack {
                 StatusBadge(status: turn.status.name.lowercased())
@@ -215,7 +212,7 @@ private struct DecisionCard: View {
     let decision: MobileDecision
     @Binding var response: String
     let enabled: Bool
-    let submit: () -> Void
+    let submit: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -224,9 +221,15 @@ private struct DecisionCard: View {
             if !decision.kind.lowercased().contains("approval") {
                 TextField("Your response", text: $response).textFieldStyle(.roundedBorder)
             }
-            Button(decision.actionLabel, action: submit).buttonStyle(.borderedProminent)
-                .disabled(!enabled || response.utf8.count > 16_384 ||
-                    (!decision.kind.lowercased().contains("approval") && response.isEmpty))
+            if decision.kind.lowercased().contains("approval") {
+                HStack {
+                    Button("Decline") { submit("false") }.buttonStyle(.bordered)
+                    Button("Approve once") { submit("true") }.buttonStyle(.borderedProminent)
+                }.disabled(!enabled)
+            } else {
+                Button(decision.actionLabel) { submit(response) }.buttonStyle(.borderedProminent)
+                    .disabled(!enabled || response.utf8.count > 16_384 || response.isEmpty)
+            }
         }.padding(17).background(GarivePalette.amber.opacity(0.09), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(GarivePalette.amber.opacity(0.35)))
     }

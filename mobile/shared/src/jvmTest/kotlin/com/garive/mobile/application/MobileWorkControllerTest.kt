@@ -70,9 +70,22 @@ public class MobileWorkControllerTest {
         controller.boot()
         controller.openSession("session-1")
 
-        controller.continueLatest("approved")
+        controller.continueLatest("true")
 
         assertEquals("true", host.continuationInput)
+        assertEquals(true, host.continuationIsJson)
+    }
+
+    @Test
+    public fun approvalCanBeExplicitlyDeclined(): Unit = runBlocking {
+        val host = FakeMobileHost()
+        val controller = MobileWorkController(host, identities())
+        controller.boot()
+        controller.openSession("session-1")
+
+        controller.continueLatest("false")
+
+        assertEquals("false", host.continuationInput)
         assertEquals(true, host.continuationIsJson)
     }
 

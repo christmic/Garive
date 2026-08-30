@@ -185,12 +185,20 @@ public class MobileWorkController(
         val decision = turn.decision
             ?: return@withLock notice("validation_decision_required")
         val inputJson = decision.kind == "approval_required"
+        val admittedInput = if (inputJson) {
+            when (input) {
+                "true", "false" -> input
+                else -> return@withLock notice("validation_decision_boolean_required")
+            }
+        } else {
+            input
+        }
         val operation = PendingOperation.Continue(
             sessionId,
             turn.turnId,
             decision.suspensionId,
             decision.sessionVersion,
-            if (inputJson) "true" else input,
+            admittedInput,
             inputJson,
             identities.nextId(),
         )

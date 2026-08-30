@@ -51,7 +51,7 @@ internal fun ConversationScreen(
     onSend: () -> Unit,
     onCancel: () -> Unit,
     onShare: () -> Unit,
-    onContinue: () -> Unit,
+    onContinue: (String) -> Unit,
     onRetry: () -> Unit,
     onAbandonRetry: () -> Unit,
 ) {
@@ -280,7 +280,7 @@ private fun DecisionComposer(
     action: String,
     draft: String,
     onDraft: (String) -> Unit,
-    onContinue: () -> Unit,
+    onContinue: (String) -> Unit,
     busy: Boolean,
     enabled: Boolean,
 ) {
@@ -308,13 +308,28 @@ private fun DecisionComposer(
                     shape = RoundedCornerShape(16.dp),
                 )
             }
-            Button(
-                onClick = onContinue,
-                enabled = enabled && !busy && (approval || draft.isNotBlank()) &&
-                    draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(action)
+            if (approval) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { onContinue("false") },
+                        enabled = enabled && !busy,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Decline") }
+                    Button(
+                        onClick = { onContinue("true") },
+                        enabled = enabled && !busy,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Approve once") }
+                }
+            } else {
+                Button(
+                    onClick = { onContinue(draft) },
+                    enabled = enabled && !busy && draft.isNotBlank() &&
+                        draft.encodeToByteArray().size <= MAX_MOBILE_INPUT_BYTES,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(action)
+                }
             }
         }
     }
