@@ -6,6 +6,7 @@
 mod core_bridge;
 mod delegation_runtime;
 mod effect_batch_facts;
+mod effect_batch_recovery;
 mod effect_batch_runtime;
 mod effect_batch_sqlite;
 mod live_host;
@@ -62,6 +63,9 @@ pub use delegation_runtime::{
 };
 pub use effect_batch_facts::{
     plan_effect_batch_admission, EffectBatchAdmissionContext, PlannedEffectBatchAdmission,
+};
+pub use effect_batch_recovery::{
+    reconstruct_effect_batch_recovery, EffectBatchMemberRecovery, RecoveredEffectBatch,
 };
 pub use effect_batch_runtime::{
     AuthorizedBatchInvocation, BatchRuntimeError, BatchTerminal, CancellationEvidence,

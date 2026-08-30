@@ -1,6 +1,6 @@
 //! Pure deterministic C5b conflict graph and batch planner.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -67,7 +67,7 @@ impl EffectBatchLimitsV1 {
 }
 
 /// One ordered deterministic execution step.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectBatchStep {
     /// One call that Runtime must execute sequentially.
