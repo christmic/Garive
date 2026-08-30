@@ -39,10 +39,11 @@ fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> 
             "response_schema_digest",
             "expiry_code",
         ],
-        EMPTY,
+        &["response_schema"],
     )?;
     identities(value, &["interaction_id", "suspension_id"])?;
     digests(value, &["prepared_digest", "response_schema_digest"])?;
+    optional_content(value, "response_schema")?;
     enumeration(value, "kind", &["approval", "external_input"])?;
     enumeration(
         value,

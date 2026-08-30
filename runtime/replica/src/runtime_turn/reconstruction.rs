@@ -1,4 +1,4 @@
-use garive_ledger::{ExecutionId, TurnSnapshot};
+use garive_ledger::{CanonicalPayload, ExecutionId, TurnSnapshot};
 use serde_json::{Map, Value};
 
 use super::types::{
@@ -254,6 +254,10 @@ fn pending_interaction(
                 interaction_id: interaction_id.to_owned(),
                 prepared_digest: text(&request, "prepared_digest")?.to_owned(),
                 response_schema_digest: text(&request, "response_schema_digest")?.to_owned(),
+                response_schema: request
+                    .get("response_schema")
+                    .map(content_value)
+                    .transpose()?,
                 expiry: InteractionExpiry::parse(text(&request, "expiry_code")?)?,
             });
         }
@@ -263,6 +267,22 @@ fn pending_interaction(
         1 => Ok(pending.pop()),
         _ => Err(RuntimeCommandError::CorruptLedger),
     }
+}
+
+fn content_value(value: &Value) -> Result<Value, RuntimeCommandError> {
+    let binding = value
+        .as_object()
+        .ok_or(RuntimeCommandError::CorruptLedger)?;
+    let inline = text(binding, "inline_utf8")?;
+    let digest = text(binding, "digest")?;
+    let decoded: Value =
+        serde_json::from_str(inline).map_err(|_| RuntimeCommandError::CorruptLedger)?;
+    let canonical =
+        CanonicalPayload::from_value(&decoded).map_err(|_| RuntimeCommandError::CorruptLedger)?;
+    if canonical.as_json() != inline || canonical.sha256() != digest {
+        return Err(RuntimeCommandError::CorruptLedger);
+    }
+    Ok(decoded)
 }
 
 fn reconciliation_target(
