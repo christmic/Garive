@@ -2,12 +2,20 @@
 
 use std::{
     fs,
+    io::{Read, Write},
+    net::{SocketAddr, TcpListener, TcpStream},
     process::{Child, Command, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
     time::{Duration, Instant},
 };
 
-use garive_adapter_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport};
+use garive_adapter_browser_cdp::{
+    CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport, CdpWaitUntil,
+};
 
 const CHROME: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
@@ -20,6 +28,87 @@ impl Drop for ManagedBrowser {
     }
 }
 
+struct LocalPageServer {
+    address: SocketAddr,
+    stop: Arc<AtomicBool>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl LocalPageServer {
+    fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("fixture listener");
+        listener.set_nonblocking(true).expect("nonblocking fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        let worker = thread::spawn(move || {
+            while !worker_stop.load(Ordering::Acquire) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ = stream.set_nonblocking(false);
+                        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+                        serve(&mut stream, address);
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        Self {
+            address,
+            stop,
+            worker: Some(worker),
+        }
+    }
+
+    fn start_url(&self) -> String {
+        format!("http://{}/start", self.address)
+    }
+
+    fn final_url(&self) -> String {
+        format!("http://{}/form", self.address)
+    }
+}
+
+impl Drop for LocalPageServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = TcpStream::connect(self.address);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+fn serve(stream: &mut TcpStream, address: SocketAddr) {
+    let mut request = [0_u8; 8_192];
+    let size = stream.read(&mut request).unwrap_or(0);
+    let request = String::from_utf8_lossy(&request[..size]);
+    let path = request.split_whitespace().nth(1).unwrap_or("/");
+    let (status, headers, body) = match path {
+        "/start" => (
+            "302 Found",
+            format!("Location: http://{address}/form\r\n"),
+            "",
+        ),
+        "/form" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            r#"<!doctype html><title>Garive native fixture</title><main><label>Account <input aria-label="Account name"></label><button>Submit form</button><div id="shadow"></div></main><script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<button>Shadow action</button>';</script>"#,
+        ),
+        _ => ("204 No Content", String::new(), ""),
+    };
+    let response = format!(
+        "HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.flush();
+}
+
 #[tokio::test]
 #[ignore = "requires an installed local Google Chrome; run explicitly for native evidence"]
 async fn managed_chrome_version_target_attach_and_ax_tree() {
@@ -28,6 +117,7 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         "Chrome is not installed"
     );
     let profile = tempfile::tempdir().expect("temporary managed profile");
+    let page_server = LocalPageServer::start();
     let child = Command::new(CHROME)
         .args([
             "--headless=new",
@@ -72,9 +162,26 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .enable_accessibility(&session)
         .await
         .expect("enable accessibility");
+    let navigation = client
+        .navigate(&session, &page_server.start_url(), CdpWaitUntil::Load)
+        .await
+        .expect("redirected navigation");
+    assert_eq!(navigation.final_url, page_server.final_url());
     let tree = client
         .full_ax_tree(&session, None, 64, 10_000, 1_048_576)
         .await
         .expect("AX tree");
     assert!(!tree.nodes.is_empty());
+    assert!(tree
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Submit form")));
+    assert!(tree
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Account name")));
+    assert!(tree
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Shadow action")));
 }

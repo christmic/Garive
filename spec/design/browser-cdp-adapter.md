@@ -82,8 +82,10 @@ the observation can pass the common bounds validator.
 The first native baseline is automated as an explicit macOS ignored gate. It
 launches an installed Chrome with a temporary dedicated profile and random
 debugging port, reads that child process's capability endpoint, and proves
-version/create-blank-target/flat-attach/enable-Accessibility/non-empty-full-tree.
-This baseline does not satisfy the remaining page/action matrix by itself.
+version/create-blank-target/flat-attach/enable-Accessibility, a loopback 302
+with exact final URL, and a full tree containing form and open-shadow-root
+controls. This baseline does not satisfy the remaining frame/action/fault
+matrix by itself.
 
 ## Meta
 
