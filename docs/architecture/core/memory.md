@@ -401,11 +401,202 @@ is a raw material none of the four frameworks have access to
 failures to memory; without this pipeline, an agent's memory
 is **shallow** by definition.
 
-## ⑤ Data model + storage
+## ⑤ Data model + storage — type registry + entry shape + hot/cold split
 
-M0 owns stable record/revision/query/proposal identities, exact content and
-evidence bindings, authority, scope, sensitivity, and revision status. M1 adds
-the orthogonal hypothesis lifecycle and integer evidence tallies; portable
+### MemoryTypeRegistry — kind philosophy's third application
+
+The same governance pattern that gave us the **kind registry**
+(`ledger.md`) and the **EventCatalog** (`loop.md`) gives us the
+**MemoryTypeRegistry** here — third application of the pattern:
+
+```
+kind registry      → ledger kind governance
+EventCatalog        → event vocabulary governance
+MemoryTypeRegistry  → memory entry type governance
+```
+
+All three are **append-only vocabularies** of declared entries
+with a fixed shape. None of them is "a code skeleton extended
+by classes" — entries are **registered**, not extended.
+
+### Per-type 4 fields (every entry registers all four)
+
+| Field | Question it answers |
+|-------|----------------------|
+| **Lifespan rules** (semantic level) | When does the entry expire? How does it decay? When is it retired? |
+| **Distillation relations** | Who can distil into whom? |
+| **Recall profile** | When does the entry surface? What budget share? What ranking weight? |
+| **Inject kind** | When this entry injects into the surface, what `kind` does it carry? (`memory.fact` / `memory.lesson` / etc.) |
+
+```python
+class MemoryType:
+    name:           str            # 'memory.lesson' / 'memory.fact' / etc.
+    lifespan:       Lifespan       # retention + decay + retirement
+    distillation:   list[Transition]  # who can distil into whom
+    recall_profile: RecallProfile   # trigger + budget + rank
+    inject_kind:    str            # surface-level kind when injected
+```
+
+The **mtype field** on every memory entry is the **handle**.
+Strategies are dispatched by `mtype` — `MemoryTypeRegistry`
+is the table, the runtime is the lookup. Adding a new type =
+one row, not one class. **The runtime does not invent types.**
+
+### Lifespan rules — semantic level (memory-specific)
+
+The ① angle set **4 memory types**; **each has a different lifespan**:
+
+| Type | Lifetime | Decay | Retirement |
+|------|----------|-------|------------|
+| `memory.episode` | Medium (months) | Dream distillation down-weights; **not auto-archived** until N days cold | `dream` |
+| `memory.fact` | Long | **last_verified** decay (`F`); `dream` re-verifies | Superseded by new fact / user override |
+| `memory.lesson` | **Permanent** (lessons are negative knowledge) | **No time-only tombstone**; falsified only by explicit re-verification | Active lessons are exempt from auto-decay |
+| `memory.playbook` | Long | Versioned; expires when tool chain changes | Use-feedback (rare → downrank) |
+
+The **type table** encodes the difference — `memory.lesson` has
+**no decay** because the runtime never invents that policy;
+it reads the table.
+
+### Distillation relations — who can distil into whom
+
+```
+memory.episode  ──(dream)──>  memory.fact
+memory.episode  ──(dream)──>  memory.lesson
+memory.fact     ──(verified)─>  memory.playbook
+memory.playbook ──(superseded)>  memory.playbook (newer version)
+```
+
+The **direction** is encoded: episode → fact / lesson (raw →
+distilled), fact → playbook (verified → reusable workflow).
+The runtime dispatches `dream` per this table.
+
+### Recall profile — when and how
+
+| Profile field | What it controls |
+|--------------|------------------|
+| **Default trigger** | turn-start / risk-action / dream / explicit-ask |
+| **Budget share** | what fraction of the surface the recall can consume (default 10%) |
+| **Ranking weight** | multiplier in the RRF fusion (per `mtype`) |
+| **Inject kind** | surface-level kind (e.g. `memory.lesson`, `memory.fact`) |
+
+### Inject kind — surface-level shape
+
+When a memory entry is recalled, the surface sees it as an
+entry with an **`mtype` → `inject_kind` mapping**. The user
+sees the entry's **kind** (not the raw mtype) — so `memory.lesson`
+appears as a `memory.lesson` block in the surface.
+
+### Add a type = one row, no code change
+
+The contract test for the registry:
+
+```python
+def test_memory_type_registry_consistent():
+    for mtype, type_def in registry.items():
+        assert type_def.inject_kind in entry_kinds, \
+            f"{mtype} injects {type_def.inject_kind} not in entry_kinds"
+        assert type_def.lifespan.retention >= 0
+        assert type_def.lifespan.retention <= type_def.lifespan.decay_threshold
+```
+
+### Entry shape — preview
+
+```python
+class MemoryEntry:
+    id:              uuid          # global identity
+    mtype:           str           # 'memory.lesson' / 'memory.fact' / ...
+    content:         Value         # mtype-specific payload
+    provenance:      Provenance    # source_session + source_seq + scope markers
+    confidence:      float         # 0..1, post-Bayesian (E * R * B * F)
+    last_verified:   int64         # unix ms; reset on every use-feedback
+    scope:           Scope         # {tenant, user, project}
+    examples:        list[Example]  # success_in / failure_in / boundary
+```
+
+`provenance.source_session + source_seq` are the **ledger's
+global addressing** — every memory entry is traceable to its
+origin. `examples` carries the boundary cases from
+CBR (case-based reasoning) which are the inputs to `dream`'s
+distillation.
+
+### Hot / cold split — letta-style implementation
+
+The hot layer is **always-on recall candidates**:
+- `active` + `promoted` entries
+- inject candidates **every turn** via `derive`'s memory menu
+- small (~ tens of entries)
+- "in the agent's mind" — ready to recall
+
+The cold layer is **retrieval-only**:
+- `cold` + `archived` entries
+- **searchable** but not auto-injected
+- large (hundreds of entries; full bank)
+- "the agent's filing cabinet"
+
+The split is **letta-inspired**: core memory (hot, always-on)
+vs archival memory (cold, retrieved-on-demand). The split
+is implemented by `MemoryTypeRegistry.recall_profile` (hot
+trigger) + `Lifespan` (which entries are still hot).
+
+```
+┌────────────────────────────────────────────────────────┐
+│           HOT LAYER (always-on)                         │
+│   active / promoted entries                             │
+│   small — tens of entries                              │
+│   injected into the surface every turn                   │
+│   injected as menu (compact) + cited as [mem:abc]       │
+└────────────────────┬───────────────────────────────────┘
+                     │ recall promotion by use-feedback
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│           COLD LAYER (retrieval-only)                    │
+│   cold / archived / graduated (memory → knowledge)      │
+│   large — hundreds of entries                          │
+│   searchable via vector / FTS / recency                  │
+│   the agent pulls on demand                              │
+└────────────────────────────────────────────────────────┘
+```
+
+### Distillation trigger — dual-line wiring
+
+Distillation is **two lines** running in parallel:
+
+- **Real-time insurance line** — at **session end**,
+  lightweight extraction runs immediately (cheap, synchronous
+  within the session-close flow). This guarantees **fresh
+  episodes don't get lost**.
+- **Deep-distillation line** — `dream` watermark runs on
+  a **time + volume gate** (`≥ min_hours` AND `≥ min_sessions`).
+  This is the **heavy** batch — runs in cheap/medium model,
+  produces the durable `memory.fact` / `memory.lesson`
+  extractions.
+
+Both lines are **off the conversation's hot path** —
+neither blocks the user's next turn. The real-time line
+ensures no data loss between sessions; the deep line ensures
+quality of the distillation.
+
+```
+session end ────────► real-time extract ──────► episodes + key facts
+                                                       │
+                                                       ▼
+                                              candidate (queued)
+                                                       │
+                          dream watermark ──►  batch distill  │
+                          (≥ min_hours AND               │
+                          ≥ min_sessions)                ▼
+                                              facts / lessons / facts-merge
+                                                       │
+                                                       ▼
+                                              state transition
+                                              candidate → active
+```
+
+The two lines feed the **same** queue; `dream` is the
+eventual consumer of both. The real-time line keeps the
+queue fresh; the deep line keeps it distilled.
+
+
 state does not use floating confidence as truth or authority.
 
 The production adapter currently persists Memory projections transactionally
