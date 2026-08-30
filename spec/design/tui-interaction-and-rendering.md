@@ -166,7 +166,11 @@ EditorState {
 Cursor movement and deletion operate on extended grapheme clusters. Vertical
 movement preserves display column using Unicode width, not UTF-8 byte or scalar
 count. The cursor never lands inside a grapheme. Selection ranges use grapheme
-boundaries and convert to byte ranges only at the final edit.
+boundaries and convert to byte ranges only at the final edit or presentation
+boundary. The composer renderer styles complete graphemes inside that range;
+CJK, emoji ZWJ, and combining sequences cannot be partially selected. The
+selection remains explicit in monochrome through reverse video and stays
+aligned while the composer wraps or scrolls.
 
 | Operation | Required behavior |
 |---|---|

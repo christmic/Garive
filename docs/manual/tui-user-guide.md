@@ -142,6 +142,10 @@ Garive does not invent or persist provider/model choices in the TUI.
 | `Ctrl+Z` / `Ctrl+Y` | Undo or redo. |
 | `Ctrl+C` | Clear a selection, then a nonempty draft, then ask to quit on a second empty press. |
 
+Selected composer text is visibly highlighted in dark and light themes and
+uses reverse video in monochrome. Selection follows complete displayed
+characters, so CJK, emoji families, and combining marks are never split.
+
 Typing `/` at the first column of a focused, single-line composer opens a
 compact command menu above it. Continue typing to narrow by command prefix.
 Use Up/Down (or Shift+Tab) to move, Tab or Enter to complete, and Escape to

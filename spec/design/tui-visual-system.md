@@ -41,6 +41,10 @@ or state wording. The rail's row cadence and visible window also define its
 pointer hit boxes; controllers do not duplicate layout coordinates.
 The context footer lives in `view/footer.rs` and derives its hints from the
 same focus, execution, and responsive state used by input routing.
+The composer lives in `view/composer.rs`. It consumes the editor's admitted
+byte range, styles whole rendered graphemes, and owns its frame, viewport, and
+cursor geometry. Dark/light selection uses the semantic selection surface;
+mono uses reverse video. Selection may not be communicated by color alone.
 All time-varying presentation lives in `view/motion.rs`. An active connection
 or execution may use its calm single-cell pulse; reduced motion uses the same
 text and semantic style with a stable glyph. Screens cannot invent local frame
@@ -54,7 +58,7 @@ sequences or schedule their own redraw loops.
 | Session rail | empty/populated; selected; terminal/running/action/failed; overflow |
 | Conversation | empty/live/scrolled/newer updates; user/Agent/activity/notice cells |
 | Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped and syntax-aware code; responsive table grid/records |
-| Composer | idle/focused/frozen/action response; placeholder/draft/over-limit |
+| Composer | idle/focused/frozen/action response; placeholder/draft/over-limit; visible grapheme selection |
 | Context footer | idle/running/notice/recovery; tiny/full width collapse |
 | Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
 | Command suggestions | prefix/selected/disabled/dismissed; composer-anchored, nonmodal, at most five rows |

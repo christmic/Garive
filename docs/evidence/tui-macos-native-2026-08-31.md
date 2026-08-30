@@ -259,6 +259,20 @@ quits normally, and the transcript contains both `?1000h` and `?1000l`, proving
 mouse capture restoration. Strict all-target/all-feature Clippy passed with
 warnings denied; formatting and diff checks were clean.
 
+Merge revision `c9b22f76` extracts the composer into a bounded presentation
+component and makes existing Shift-selection behavior visible. The editor
+exports only a validated selected byte range; rendering walks extended
+graphemes and never splits CJK or combining sequences. Reviewed style-run
+snapshots bind the selected/unselected boundary in dark, light, and mono; mono
+uses reverse video and does not depend on color.
+
+On native macOS arm64, eight editor tests, 37 view tests, all 19
+snapshot/boundary tests, and all nine shipping-binary PTYs passed. The added
+Expect PTY starts the real binary at `100x24` in mono, types `a界b`, sends two
+xterm Shift+Left sequences, and observes an emitted reverse-video `界` before
+normal quit and alternate-screen restoration. Strict all-target/all-feature
+Clippy passed with warnings denied; formatting and diff checks were clean.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

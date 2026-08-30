@@ -194,6 +194,14 @@ dismissal, while retaining a separate searchable command palette. Garive does
 not adopt Codex's command set, attachments, shell mode, model selection, or
 approval shapes without corresponding Host authority.
 
+Direct inspection of `bottom_pane/textarea.rs` and its `textarea/` modules at
+the pinned revision found cursor, wrapping, paste, undo, and Vim behavior but
+no range-selection state or selected-text renderer. Pi's pinned
+`packages/tui/src/components/editor.ts` likewise declares only lines and cursor
+position in its editor state. Garive's Shift-selection model and visible
+grapheme-safe selection are therefore a Garive-authored requirement, not a
+behavior inferred from either product or copied from those sources.
+
 ### Pi corroboration
 
 At Pi revision `11b5403fade1`, `packages/tui/src/components/editor.ts:276-365`

@@ -318,6 +318,17 @@ mouse capture, clicks the actually rendered `/theme dark` row, observes
 completion without execution, then proves mouse capture and terminal teardown.
 Strict all-target/all-feature Clippy passes with warnings denied.
 
+Merge revision `c9b22f76` makes composer selection an explicit component
+contract. `view/composer.rs` now owns frame, viewport, styled editor text, and
+cursor geometry, while the editor exposes only its validated grapheme-aligned
+byte range. Eight editor tests and 37 view tests bind combining/CJK boundaries,
+selection visibility, and mono reverse video. Three reviewed semantic style-run
+snapshots bind dark, light, and monochrome tokens. All 19 snapshot/boundary
+tests and nine shipping-binary macOS PTYs pass; the new Expect case types
+`a界b`, sends two real Shift+Left sequences, observes reverse-video `界`, and
+proves alternate-screen restoration. Strict all-target/all-feature Clippy,
+formatting, and diff checks pass.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

@@ -79,7 +79,7 @@ tui/src/
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
     linear.rs            screen-reader presentation components
-    composer.rs          editor and validation
+    composer.rs          editor text, selection, viewport, frame, and cursor rendering
     navigation.rs        Session/Agent navigation
     overlay.rs           help, command, Session, error, suspension overlays
     overlay/geometry.rs  popup, visible-window, and pointer geometry
