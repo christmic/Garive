@@ -114,6 +114,9 @@ observability-runtime: observability-boundaries
 goal-runtime: goal-boundaries
     cargo test -p garive-runtime --test goal_runtime
 
+plan-runtime: plan-boundaries
+    cargo test -p garive-runtime --test plan_runtime
+
 kotlin-experiment:
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
@@ -191,7 +194,7 @@ build: codegen architecture
     cargo build --workspace
     cd experiments/engine-kt && java -classpath gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain --no-daemon --console=plain build
 
-verify: test-layout conformance protocol-adapters runtime-host local-runtime host-client knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime goal-runtime kotlin-experiment apps rust
+verify: test-layout conformance protocol-adapters runtime-host local-runtime host-client knowledge-runtime scheduler-runtime multiagent-runtime observability-runtime goal-runtime plan-runtime kotlin-experiment apps rust
 
 bench:
     cargo test -p bench
