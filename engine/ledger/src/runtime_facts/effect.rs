@@ -138,6 +138,32 @@ pub(super) fn validate_prepared_v3(value: &Map<String, Value>) -> Result<(), Led
     Ok(())
 }
 
+pub(super) fn validate_authorized_v2(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "prepared_contract_version",
+            "prepared_digest",
+            "grant_id",
+            "authority_revision",
+            "constraints_digest",
+            "granted_requirements",
+        ],
+        EMPTY,
+    )?;
+    if value
+        .get("prepared_contract_version")
+        .and_then(Value::as_u64)
+        != Some(3)
+    {
+        return Err(LedgerError::InvalidFact);
+    }
+    digest(value, "prepared_digest")?;
+    identities(value, &["grant_id", "authority_revision"])?;
+    digest(value, "constraints_digest")?;
+    content(value, "granted_requirements")
+}
+
 fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,

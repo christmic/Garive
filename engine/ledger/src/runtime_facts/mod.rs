@@ -86,7 +86,12 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     }
     let effect_prepared_v2 = kind == "effect.prepared" && fact.schema_version == 2;
     let effect_prepared_v3 = kind == "effect.prepared" && fact.schema_version == 3;
-    if fact.schema_version != 1 && !effect_prepared_v2 && !effect_prepared_v3 {
+    let effect_authorized_v2 = kind == "effect.authorized" && fact.schema_version == 2;
+    if fact.schema_version != 1
+        && !effect_prepared_v2
+        && !effect_prepared_v3
+        && !effect_authorized_v2
+    {
         return Ok(RuntimeFactDisposition::Opaque);
     }
     if fact.turn_id.is_some()
@@ -125,6 +130,8 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
         effect::validate_prepared_v2(object(&payload)?)?;
     } else if effect_prepared_v3 {
         effect::validate_prepared_v3(object(&payload)?)?;
+    } else if effect_authorized_v2 {
+        effect::validate_authorized_v2(object(&payload)?)?;
     } else if f0_family {
         f0::validate(kind, object(&payload)?)?;
     } else if delegation_family {
@@ -144,7 +151,7 @@ pub fn validate_runtime_fact(fact: &FactDraft) -> Result<RuntimeFactDisposition,
     } else {
         turn::validate(kind, object(&payload)?)?;
     }
-    Ok(if effect_prepared_v2 {
+    Ok(if effect_prepared_v2 || effect_authorized_v2 {
         RuntimeFactDisposition::AppliedV2
     } else if effect_prepared_v3 {
         RuntimeFactDisposition::AppliedV3

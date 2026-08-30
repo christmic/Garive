@@ -24,7 +24,7 @@ class RuntimeFactPayloadsTest {
     @Test
     fun `every C6 payload fixture is applied at its declared version`() {
         val cases = document.getValue("valid_cases").jsonArray
-        assertEquals(104, cases.size)
+        assertEquals(105, cases.size)
         cases.forEach { case ->
             val value = case.jsonObject
             val schema = value["schema_version"]?.jsonPrimitive?.content?.toUInt() ?: 1u
@@ -81,7 +81,7 @@ class RuntimeFactPayloadsTest {
                 assertInvalid(fact(case, schema).withPayload(payload), case.text("kind"))
             }
         }
-        assertEquals(78, count)
+        assertEquals(79, count)
     }
 
     @Test

@@ -406,6 +406,15 @@ effect.authorized.v1 {
   granted_requirements: ContentBinding
 }
 
+effect.authorized.v2 {
+  prepared_contract_version: 3
+  prepared_digest: Digest
+  grant_id: GrantId
+  authority_revision: non-empty string
+  constraints_digest: Digest
+  granted_requirements: ContentBinding
+}
+
 effect.denied.v1 {
   prepared_digest: Digest
   code: "authorization_denied" | "replacement_required"
@@ -481,7 +490,8 @@ The three F0 facts are also Turn/Execution/Tool-Invocation scoped. An Allow
 decision requires `constraints_digest` and forbids `safe_code`; Deny and
 InteractionRequired require their exact `safe_code` and forbid constraints.
 `sandbox.bound` and `sandbox.preflighted` are legal only after Allow and the
-matching `effect.authorized`. Their prepared, policy, decision, binding, grant,
+matching `effect.authorized.v2`; v2 repeats the exact Allow constraints digest
+and identifies Prepared contract v3. Their prepared, policy, decision, binding, grant,
 executor and dispatch identities must match exactly. `effect.started` requires
 the matching successful preflight and repeats its prepared/grant/executor/
 dispatch bindings. V1/v2 Prepared Calls can never enter this F0 chain.

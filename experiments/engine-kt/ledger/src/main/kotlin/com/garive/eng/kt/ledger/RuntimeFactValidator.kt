@@ -31,7 +31,8 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
     }
     val effectPreparedV2 = kind == "effect.prepared" && fact.schemaVersion == 2u
     val effectPreparedV3 = kind == "effect.prepared" && fact.schemaVersion == 3u
-    if (fact.schemaVersion != 1u && !effectPreparedV2 && !effectPreparedV3) {
+    val effectAuthorizedV2 = kind == "effect.authorized" && fact.schemaVersion == 2u
+    if (fact.schemaVersion != 1u && !effectPreparedV2 && !effectPreparedV3 && !effectAuthorizedV2) {
         return LedgerResult.Success(RuntimeFactDisposition.OPAQUE)
     }
     if ((fact.turnId != null) != !(memorySessionScoped || schedulerFamily || goalFamily || planFamily) ||
@@ -46,6 +47,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
         when {
             effectPreparedV2 -> validateEffectPreparedV2(payload)
             effectPreparedV3 -> validateEffectPreparedV3(payload)
+            effectAuthorizedV2 -> validateEffectAuthorizedV2(payload)
             f0Family -> validateF0Fact(kind, payload)
             goalFamily -> validateGoalFact(kind, payload)
             planFamily -> validatePlanFact(kind, payload)
@@ -60,7 +62,7 @@ public fun validateRuntimeFact(fact: FactDraft): LedgerResult<RuntimeFactDisposi
         }
         LedgerResult.Success(
             when {
-                effectPreparedV2 -> RuntimeFactDisposition.APPLIED_V2
+                effectPreparedV2 || effectAuthorizedV2 -> RuntimeFactDisposition.APPLIED_V2
                 effectPreparedV3 -> RuntimeFactDisposition.APPLIED_V3
                 else -> RuntimeFactDisposition.APPLIED_V1
             },

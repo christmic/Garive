@@ -68,6 +68,20 @@ internal fun validateEffectPreparedV3(value: JsonObject) {
     )
 }
 
+internal fun validateEffectAuthorizedV2(value: JsonObject) {
+    value.exact(
+        setOf(
+            "prepared_contract_version", "prepared_digest", "grant_id", "authority_revision",
+            "constraints_digest", "granted_requirements",
+        ),
+    )
+    require(value.ulong("prepared_contract_version") == 3uL)
+    value.digest("prepared_digest")
+    value.identities("grant_id", "authority_revision")
+    value.digest("constraints_digest")
+    value.content("granted_requirements")
+}
+
 private fun JsonObject.interactionRequested() {
     exact(
         setOf(

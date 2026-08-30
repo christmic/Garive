@@ -145,7 +145,7 @@ Runtime commits `sandbox.bound` and successful `sandbox.preflighted` before
 The durable chain is exact and invocation-scoped:
 
 ```text
-effect.prepared.v3 -> safety.decided(Allow) -> effect.authorized
+effect.prepared.v3 -> safety.decided(Allow) -> effect.authorized.v2
   -> sandbox.bound -> sandbox.preflighted -> effect.started
 ```
 
