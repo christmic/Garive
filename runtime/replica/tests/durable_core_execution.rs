@@ -117,7 +117,7 @@ async fn live_memory_ledger_improves_factual_work_and_rejects_stale_revision() {
             target_id: "target".into(),
             model_id: "deepseek-v4-pro".into(),
             capabilities: BTreeSet::from([ModelCapability::Text]),
-            default_max_output_tokens: Some(512),
+            default_max_output_tokens: Some(2_048),
             media_bindings: BTreeMap::new(),
             thinking: None,
             error_policy: ProtocolErrorPolicy::default(),
@@ -195,7 +195,7 @@ async fn run_live_memory_case(
         limits: EffectiveRuntimeLimits {
             max_iterations: 1,
             max_input_tokens: None,
-            max_output_tokens: Some(512),
+            max_output_tokens: Some(2_048),
             deadline_budget_ms: None,
         },
         recorded_at: "2026-08-31T00:00:00Z".into(),
@@ -206,7 +206,7 @@ async fn run_live_memory_case(
     let evidence = ledger.read_facts(&session, 2, 3, None).unwrap().remove(0);
     let mut request = core_request(&session, &plan.turn_id, &execution);
     request.context_request.max_utf8_bytes = 16_384;
-    request.model_output.max_output_tokens = Some(512);
+    request.model_output.max_output_tokens = Some(2_048);
     request.limits.max_total_tokens = None;
     request.limits.execution = ExecutionLimits::new(NonZeroU32::new(1).unwrap());
     let config = DurableExecutionConfig {

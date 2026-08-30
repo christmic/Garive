@@ -49,6 +49,10 @@ The test also verifies:
 
 Provider-reported token usage varied materially between identical runs. It is
 recorded for cost observation, but is not treated as the quality verdict.
+An initial 512-token output bound also produced one legitimate Runtime
+suspension after two passes; the fixed acceptance budget is 2,048 because this
+reasoning model reported as many as 1,442 output tokens for the compact answer.
+Two consecutive runs passed after that correction.
 
 ## Run command
 
