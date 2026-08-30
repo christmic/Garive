@@ -24,3 +24,26 @@ func remoteConfigurationRequiresAnAccessGrant() {
     }
 #endif
 }
+
+@Test @MainActor
+func pairingLinksRequireExactFreshFields() {
+    let defaults = UserDefaults(suiteName: "garive-test-\(UUID())")!
+    let model = MobileViewModel(store: ConnectionStore(defaults: defaults))
+    let expiry = Int(Date().timeIntervalSince1970) + 300
+    var components = URLComponents()
+    components.scheme = "garive"
+    components.host = "pair"
+    components.queryItems = [
+        URLQueryItem(name: "origin", value: "https://agent.example.test/"),
+        URLQueryItem(name: "code", value: "one-time-code"),
+        URLQueryItem(name: "exp", value: String(expiry)),
+        URLQueryItem(name: "name", value: "Test service"),
+    ]
+    model.acceptPairingURL(components.url!)
+    #expect(model.pairingSuggestion?.serviceName == "Test service")
+
+    components.queryItems?.append(URLQueryItem(name: "code", value: "duplicate"))
+    model.acceptPairingURL(components.url!)
+    #expect(model.pairingSuggestion == nil)
+    #expect(model.errorCode == "invalid_pairing_link")
+}
