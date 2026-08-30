@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "policy_revision": "computer-policy-1",
+  "targets": [
+    {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1"}
+  ],
+  "valid_cases": [
+    {
+      "tool_name": "garive.computer.observe",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","max_nodes":100,"max_text_bytes":4096,"capture":"none","max_capture_bytes":1024,"max_capture_pixels":1000},
+      "prepared_digest": "100bf45a65d0ae8ef0c2a8d2a4730955ff5d0ef40d387f8bbe648ff538b9b6f2",
+      "accesses": [{"namespace":"runtime","resource_key":"computer:desktop-1:app-1:window-1","mode":"read"}]
+    },
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","expected_snapshot_id":"snapshot-1","target_revision":"window-rev-1","action":"press","node_ref":"node-1"},
+      "prepared_digest": "aa2e990d1dc0399c8d1e55520a747f4f45c0811cbc7efb378bbe72d0e693881d",
+      "accesses": [{"namespace":"runtime","resource_key":"computer:desktop-1:app-1:window-1","mode":"write"}]
+    },
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","expected_snapshot_id":"snapshot-1","target_revision":"window-rev-1","action":"click_point","display_id":"display-1","point_x":200,"point_y":200,"snapshot_pixel_width":1000,"snapshot_pixel_height":800,"scale_milli":2000,"visible_frame_x":100,"visible_frame_y":100,"visible_frame_width":500,"visible_frame_height":400},
+      "prepared_digest": "c9b10c9e535ca11c71bf803277f50a71fc837d9bd6edb49ffc0e51b6dbaf2ad5",
+      "accesses": [{"namespace":"runtime","resource_key":"computer:desktop-1:app-1:window-1","mode":"write"}]
+    }
+  ],
+  "invalid_cases": [
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"other","expected_snapshot_id":"snapshot-1","target_revision":"window-rev-1","action":"press","node_ref":"node-1"},
+      "error": "effect_access_invalid"
+    },
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","expected_snapshot_id":"snapshot-1","target_revision":"window-rev-1","action":"press","node_ref":"node-1","point_x":10},
+      "error": "effect_access_invalid"
+    },
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","expected_snapshot_id":"snapshot-1","target_revision":"window-rev-1","action":"click_point","display_id":"display-1","point_x":600,"point_y":200,"snapshot_pixel_width":1000,"snapshot_pixel_height":800,"scale_milli":2000,"visible_frame_x":100,"visible_frame_y":100,"visible_frame_width":500,"visible_frame_height":400},
+      "error": "effect_access_invalid"
+    },
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","expected_snapshot_id":"snapshot-1","action":"press","node_ref":"node-1"},
+      "error": "arguments_schema_mismatch"
+    },
+    {
+      "tool_name": "garive.computer.act",
+      "arguments": {"desktop_session_id":"desktop-1","application_id":"app-1","window_id":"window-1","expected_snapshot_id":"snapshot-1","target_revision":"window-rev-1","action":"press_key","key":"return"},
+      "error": "arguments_schema_mismatch"
+    }
+  ]
+}

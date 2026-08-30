@@ -254,6 +254,32 @@ garive.computer.observe@1
 garive.computer.act@1
 ```
 
+Both tools bind exactly one Runtime resource
+`computer:{desktop_session_id}:{application_id}:{window_id}`. These are opaque
+Runtime identifiers of at most 128 portable ASCII characters; platform
+adapters map them to verified code-sign/audit-token/window identities. The
+catalogue receives the exact admitted targets and policy revision explicitly.
+
+`observe` requires `max_nodes <= 10,000`, `max_text_bytes <= 1,048,576`,
+`capture = none | window`, `max_capture_bytes <= 8,388,608`, and
+`max_capture_pixels <= 16,777,216`. Capture bounds are explicit even when
+capture is `none`, so changing capture posture changes the Prepared Call.
+
+`act` requires `expected_snapshot_id`, `target_revision`, and one exact action
+shape. Semantic actions are `press(node_ref)`,
+`set_value(node_ref,value)`, `type_text(node_ref,text)`,
+`press_key(key)`, and non-zero `scroll(node_ref,delta_x,delta_y)`. They reject
+every coordinate field; an unsupported AX action never switches to pixels.
+
+Coordinate actions are `move_pointer`, `click_point`, and `drag`. Each binds
+`display_id`, snapshot pixel width/height, `scale_milli`, and visible-frame
+origin/size. Points use snapshot-local integer pixels, must lie inside the
+half-open visible frame, and the frame itself must fit inside the snapshot.
+Drag binds distinct start/end points and both must pass the same check.
+Display identity uses the same portable opaque-ID grammar. Missing geometry,
+mixed semantic fields, zero movement, out-of-frame points, and an unadmitted
+target fail during preparation.
+
 `observe` is read-only. `act` supports the closed set:
 
 `Press`, `SetValue`, `TypeText`, `PressKey`, `Scroll`, `MovePointer`,

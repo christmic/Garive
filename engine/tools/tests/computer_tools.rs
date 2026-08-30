@@ -2,6 +2,7 @@ use garive_tools::{
     AccessMode, AccessNamespace, BuiltinT2ComputerCatalogue, ComputerTargetScope,
     PreparationErrorCode, ReplayClass, ToolIntent, T2_COMPUTER_ACT, T2_COMPUTER_OBSERVE,
 };
+use serde_json::Value;
 
 fn catalogue() -> BuiltinT2ComputerCatalogue {
     BuiltinT2ComputerCatalogue::new(
@@ -107,5 +108,62 @@ fn unadmitted_target_and_zero_length_drag_fail_closed() {
                 .code(),
             PreparationErrorCode::EffectAccessInvalid
         );
+    }
+}
+
+#[test]
+fn shared_fixture_matches_exact_computer_preparation() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../spec/fixtures/agent/computer-tools-v1.json"
+    ))
+    .unwrap();
+    let catalogue = BuiltinT2ComputerCatalogue::new(
+        fixture["policy_revision"].as_str().unwrap(),
+        fixture["targets"].as_array().unwrap().iter().map(|target| {
+            ComputerTargetScope::new(
+                target["desktop_session_id"].as_str().unwrap(),
+                target["application_id"].as_str().unwrap(),
+                target["window_id"].as_str().unwrap(),
+            )
+            .unwrap()
+        }),
+    )
+    .unwrap();
+    for case in fixture["valid_cases"].as_array().unwrap() {
+        let prepared = catalogue
+            .prepare(&ToolIntent::new(
+                "fixture-call",
+                case["tool_name"].as_str().unwrap(),
+                case["arguments"].to_string(),
+            ))
+            .unwrap();
+        assert_eq!(prepared.input_digest(), case["prepared_digest"]);
+        let access = &prepared.invocation_accesses().unwrap().values()[0];
+        let expected = &case["accesses"][0];
+        assert_eq!(access.namespace(), AccessNamespace::Runtime);
+        assert_eq!(access.resource_key(), expected["resource_key"]);
+        assert_eq!(
+            access.mode(),
+            if expected["mode"] == "read" {
+                AccessMode::Read
+            } else {
+                AccessMode::Write
+            }
+        );
+    }
+    for case in fixture["invalid_cases"].as_array().unwrap() {
+        let error = catalogue
+            .prepare(&ToolIntent::new(
+                "fixture-bad",
+                case["tool_name"].as_str().unwrap(),
+                case["arguments"].to_string(),
+            ))
+            .unwrap_err();
+        let expected = match case["error"].as_str().unwrap() {
+            "effect_access_invalid" => PreparationErrorCode::EffectAccessInvalid,
+            "arguments_schema_mismatch" => PreparationErrorCode::ArgumentsSchemaMismatch,
+            value => panic!("unknown fixture error {value}"),
+        };
+        assert_eq!(error.code(), expected);
     }
 }

@@ -1,8 +1,13 @@
 package com.garive.eng.kt.tools
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class ComputerToolsTest {
     @Test
@@ -58,6 +63,59 @@ class ComputerToolsTest {
                 assertIs<ToolContractResult.Failure>(
                     catalogue().prepare(ToolIntent("bad", T2_COMPUTER_ACT, arguments)),
                 ).error.code,
+            )
+        }
+    }
+
+    @Test
+    fun sharedFixtureMatchesRustDigestsAccessesAndFailures() {
+        val fixture = Json.parseToJsonElement(
+            File(System.getProperty("garive.repo.root"), "spec/fixtures/agent/computer-tools-v1.json").readText(),
+        ).jsonObject
+        val catalogue = assertIs<ToolContractResult.Success<BuiltinT2ComputerCatalogue>>(
+            BuiltinT2ComputerCatalogue.create(
+                fixture.getValue("policy_revision").jsonPrimitive.content,
+                fixture.getValue("targets").jsonArray.map { target ->
+                    val value = target.jsonObject
+                    assertIs<ToolContractResult.Success<ComputerTargetScope>>(
+                        ComputerTargetScope.create(
+                            value.getValue("desktop_session_id").jsonPrimitive.content,
+                            value.getValue("application_id").jsonPrimitive.content,
+                            value.getValue("window_id").jsonPrimitive.content,
+                        ),
+                    ).value
+                },
+            ),
+        ).value
+        fixture.getValue("valid_cases").jsonArray.forEach { element ->
+            val case = element.jsonObject
+            val prepared = catalogue.prepare(
+                ToolIntent(
+                    "fixture-call",
+                    case.getValue("tool_name").jsonPrimitive.content,
+                    case.getValue("arguments").toString(),
+                ),
+            ).success()
+            assertEquals(case.getValue("prepared_digest").jsonPrimitive.content, prepared.inputDigest)
+            val expected = case.getValue("accesses").jsonArray.single().jsonObject
+            val access = requireNotNull(prepared.invocationAccesses).values.single()
+            assertEquals(expected.getValue("namespace").jsonPrimitive.content, access.namespace.wireName)
+            assertEquals(expected.getValue("resource_key").jsonPrimitive.content, access.resourceKey)
+            assertEquals(expected.getValue("mode").jsonPrimitive.content, access.mode.wireName)
+        }
+        fixture.getValue("invalid_cases").jsonArray.forEach { element ->
+            val case = element.jsonObject
+            assertEquals(
+                case.getValue("error").jsonPrimitive.content,
+                assertIs<ToolContractResult.Failure>(
+                    catalogue.prepare(
+                        ToolIntent(
+                            "fixture-bad",
+                            case.getValue("tool_name").jsonPrimitive.content,
+                            case.getValue("arguments").toString(),
+                        ),
+                    ),
+                ).error.code.wireName,
             )
         }
     }
