@@ -54,3 +54,23 @@ fn terminal_controls_and_bidi_overrides_never_enter_the_model() {
     }
     editor.insert("isolate\u{2066}x\u{2069}").unwrap();
 }
+
+#[test]
+fn multiline_navigation_preserves_display_column_and_word_boundaries() {
+    let mut editor = EditorState::new(100);
+    editor.insert("ab 界\nx\nhello world").unwrap();
+    editor.move_line_start(false);
+    assert_eq!(editor.display_column(), 0);
+    editor.move_up(false);
+    assert_eq!(editor.display_column(), 0);
+    editor.move_line_end(false);
+    assert_eq!(editor.display_column(), 1);
+    editor.move_up(false);
+    assert_eq!(editor.display_column(), 1);
+    editor.move_word_right(false);
+    assert_eq!(editor.display_column(), 3);
+    editor.move_word_left(false);
+    assert_eq!(editor.display_column(), 0);
+    editor.move_down(false);
+    assert_eq!(editor.display_column(), 0);
+}

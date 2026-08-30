@@ -132,6 +132,60 @@ impl EditorState {
         self.preferred_display_column = None;
     }
 
+    pub(crate) fn move_up(&mut self, selecting: bool) {
+        self.move_vertical(-1, selecting);
+    }
+
+    pub(crate) fn move_down(&mut self, selecting: bool) {
+        self.move_vertical(1, selecting);
+    }
+
+    pub(crate) fn move_line_start(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
+        let start = self.text[..byte].rfind('\n').map_or(0, |value| value + 1);
+        self.cursor_grapheme = self.text[..start].graphemes(true).count();
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn move_line_end(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
+        let end = self.text[byte..]
+            .find('\n')
+            .map_or(self.text.len(), |value| byte + value);
+        self.cursor_grapheme = self.text[..end].graphemes(true).count();
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn move_word_left(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        let mut cursor = self.cursor_grapheme;
+        while cursor > 0 && graphemes[cursor - 1].chars().all(char::is_whitespace) {
+            cursor -= 1;
+        }
+        while cursor > 0 && !graphemes[cursor - 1].chars().all(char::is_whitespace) {
+            cursor -= 1;
+        }
+        self.cursor_grapheme = cursor;
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn move_word_right(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        let mut cursor = self.cursor_grapheme;
+        while cursor < graphemes.len() && !graphemes[cursor].chars().all(char::is_whitespace) {
+            cursor += 1;
+        }
+        while cursor < graphemes.len() && graphemes[cursor].chars().all(char::is_whitespace) {
+            cursor += 1;
+        }
+        self.cursor_grapheme = cursor;
+        self.preferred_display_column = None;
+    }
+
     pub(crate) fn undo(&mut self) -> bool {
         let Some(previous) = self.undo.pop() else {
             return false;
@@ -201,6 +255,40 @@ impl EditorState {
         } else {
             self.selection_anchor = None;
         }
+    }
+
+    fn move_vertical(&mut self, direction: i8, selecting: bool) {
+        let current_line = self.cursor_line();
+        let line_count = self.line_count();
+        let target_line = if direction < 0 {
+            current_line.saturating_sub(1)
+        } else {
+            (current_line + 1).min(line_count.saturating_sub(1))
+        };
+        if target_line == current_line {
+            return;
+        }
+        self.prepare_selection(selecting);
+        let lines = self.text.split('\n').collect::<Vec<_>>();
+        let column = self
+            .preferred_display_column
+            .unwrap_or_else(|| self.display_column());
+        self.preferred_display_column = Some(column);
+        let prefix_graphemes = lines[..target_line]
+            .iter()
+            .map(|line| line.graphemes(true).count() + 1)
+            .sum::<usize>();
+        let mut width = 0;
+        let mut in_line = 0;
+        for grapheme in lines[target_line].graphemes(true) {
+            let next = width + UnicodeWidthStr::width(grapheme);
+            if next > column {
+                break;
+            }
+            width = next;
+            in_line += 1;
+        }
+        self.cursor_grapheme = prefix_graphemes + in_line;
     }
 
     fn checkpoint(&mut self) {

@@ -78,6 +78,14 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Delete => {
             state.model.composer.delete();
         }
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => state
+            .model
+            .composer
+            .move_word_left(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::ALT) => state
+            .model
+            .composer
+            .move_word_right(key.modifiers.contains(KeyModifiers::SHIFT)),
         KeyCode::Left => state
             .model
             .composer
@@ -86,6 +94,22 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             .model
             .composer
             .move_right(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Up => state
+            .model
+            .composer
+            .move_up(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Down => state
+            .model
+            .composer
+            .move_down(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Home => state
+            .model
+            .composer
+            .move_line_start(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::End if !key.modifiers.contains(KeyModifiers::CONTROL) => state
+            .model
+            .composer
+            .move_line_end(key.modifiers.contains(KeyModifiers::SHIFT)),
         KeyCode::Enter => submit(state),
         KeyCode::PageUp => state.model.scroll_offset = state.model.scroll_offset.saturating_sub(5),
         KeyCode::PageDown | KeyCode::End => {
