@@ -16,6 +16,7 @@ use tokio::sync::Mutex;
 
 mod artifact_export;
 mod desktop_menu;
+mod product_store;
 mod setup;
 mod system_configuration;
 mod system_provider;
@@ -43,6 +44,7 @@ pub use garive_runtime::HostWorkspaceDetachment as DesktopWorkspaceDetachment;
 pub use garive_runtime::SessionSummary as DesktopSessionSummary;
 /// Restart-safe durable Turn timeline exposed to Desktop clients.
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
+pub use product_store::{DesktopProductStore, DesktopProductStoreError, MAX_PRODUCT_STORE_BYTES};
 pub use setup::{
     authorize_setup_window, DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError,
     DesktopSetupInput, DesktopSetupLimits, DesktopSetupPlan, DesktopSetupPreset,
