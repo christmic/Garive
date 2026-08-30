@@ -267,6 +267,12 @@ final component, owner window, five-minute expiry, and exact Artifact
 coordinates; no path crosses React. Export rechecks the committed source digest,
 writes a same-directory temporary file, fsyncs, atomically creates the new
 target, fsyncs the directory, consumes the capability, and returns a receipt.
+Before creating the temporary, Desktop atomically journals only the bounded
+opaque target ID—never a destination path. A crash leaves that ID recoverable.
+On the next explicit native selection of the same destination directory,
+Desktop removes only the exact ID-derived temporary and clears the journal.
+It cannot scan or reopen arbitrary export directories at launch because that
+would broaden the operator's one-shot authority.
 Reveal applies only to an artifact already backed by an active Workspace grant.
 
 ## Product interaction
@@ -310,7 +316,8 @@ At startup, Runtime reconciles grant/bookmark journals before Agent mutation:
 - stale bookmark -> mark Workspace unavailable, preserve history;
 - revoked grant with bookmark -> retry bounded cleanup;
 - started effect without conclusive receipt -> suspend for reconciliation;
-- artifact temporary without commit -> remove;
+- pending path-free export ID -> remove its exact temporary on the next explicit
+  authorization of the owning directory, then clear the journal;
 - committed artifact with missing index projection -> rebuild from receipt.
 
 All recovery is bounded and idempotent. The UI exposes `Unavailable` or
