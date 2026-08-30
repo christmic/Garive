@@ -124,8 +124,19 @@ describe("Desktop work state", () => {
     const state = reduceWork({ ...initialWorkState, capabilities }, { type: "product_projected", view });
     expect(state.sessionId).toBe("session-1");
     expect(state.phase).toBe("submitting");
+    expect(state.execution).toBe("following");
     expect(state.draft).toBe("next");
     expect(state.messages).toEqual([{ id: "user-turn-1", role: "user", text: "hello" }]);
     expect(state.activities[0]?.activity_id).toBe("activity-1");
+  });
+
+  it("preserves disconnected execution truth for an explicit reconnect action", () => {
+    const view = { ...initialAppViewState(), shell: "ready" as const,
+      selectedSessionId: "session-1", timelineSessionId: "session-1",
+      execution: "disconnected" as const, sessions: [{ sessionId: "session-1" }] };
+    const state = reduceWork({ ...initialWorkState, capabilities }, { type: "product_projected", view });
+    expect(state.boot).toBe("ready");
+    expect(state.phase).toBe("idle");
+    expect(state.execution).toBe("disconnected");
   });
 });

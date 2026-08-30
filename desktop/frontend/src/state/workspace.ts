@@ -17,6 +17,7 @@ export interface WorkState {
   readonly boot: BootState;
   readonly capabilities?: DesktopCapabilities;
   readonly phase: WorkPhase;
+  readonly execution: AppViewState["execution"];
   readonly sessionId?: string;
   readonly messages: readonly WorkMessage[];
   readonly activities: readonly HostActivity[];
@@ -48,6 +49,7 @@ export type WorkEvent =
 export const initialWorkState: WorkState = {
   boot: "loading",
   phase: "idle",
+  execution: "idle",
   messages: [],
   activities: [],
   artifacts: [],
@@ -67,12 +69,13 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
     case "draft_changed":
       return { ...state, draft: event.value, error: undefined };
     case "submission_started":
-      return { ...state, phase: "submitting", error: undefined };
+      return { ...state, phase: "submitting", execution: "submitting", error: undefined };
     case "submission_succeeded": {
       const ordinal = state.messages.length;
       return {
         ...state,
         phase: "idle",
+        execution: "idle",
         sessionId: event.result.session_id,
         draft: "",
         error: undefined,
@@ -89,11 +92,12 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
       };
     }
     case "submission_failed":
-      return { ...state, phase: "idle", error: event.code };
+      return { ...state, phase: "idle", execution: "idle", error: event.code };
     case "session_loaded":
       return {
         ...state,
         phase: "idle",
+        execution: "idle",
         sessionId: event.timeline.session_id,
         messages: timelineMessages(event.timeline),
         activities: event.timeline.items.flatMap((item) => item.activities),
@@ -138,6 +142,7 @@ function projectProduct(state: WorkState, view: AppViewState): WorkState {
       : view.shell === "unavailable" ? "unavailable" : "ready",
     phase: ["submitting", "following", "cancelling", "reconnecting", "continuing"]
       .includes(view.execution) ? "submitting" : "idle",
+    execution: view.execution,
     sessionId, draft, messages: productMessages(view),
     activities: view.activities.map((activity) => ({ api_version: "v1",
       activity_id: activity.activityId, kind: activity.kind, label_key: activity.labelKey ?? "agent.activity.updated",
