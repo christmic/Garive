@@ -21,8 +21,9 @@ import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
 import {
   readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
-  type DesktopPreferences, type DesktopTheme,
+  type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
+import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
@@ -98,6 +99,8 @@ export function App() {
   const [preferences, setPreferences] = useState(readDesktopPreferences);
   const [systemDark, setSystemDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const locale = resolveDesktopLocale(preferences.locale);
+  const t = useMemo(() => createTranslator(locale), [locale]);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
 
@@ -109,6 +112,8 @@ export function App() {
   }, []);
   useEffect(() => { try { writeDesktopPreferences(preferences); } catch { /* optional */ } },
     [preferences]);
+  useEffect(() => { document.documentElement.lang = locale === "en-XA" ? "en-XA" : locale; },
+    [locale]);
 
   const refreshRecents = useCallback(async () => {
     const sessions = await getRecentSessions();
@@ -368,16 +373,16 @@ export function App() {
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
         <button className="new-work" type="button" onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
-          <Icon name="plus" /><span>New work</span><kbd>⌘N</kbd>
+          <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
-          <NavItem icon="work" label="Work" selected={screen === "work"} onClick={() => setScreen("work")} />
-          <NavItem icon="search" label="Search" selected={screen === "search"}
+          <NavItem icon="work" label={t("nav.work")} selected={screen === "work"} onClick={() => setScreen("work")} />
+          <NavItem icon="search" label={t("nav.search")} selected={screen === "search"}
             disabled={!state.capabilities?.durable_navigation} hint="Search durable work (⌘K)"
             onClick={() => setScreen("search")} />
         </nav>
         <div className="sidebar-section">
-          <div className="section-label"><span>Recents</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">Live</span>}</div>
+          <div className="section-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation && <span className="beta-tag">Live</span>}</div>
           {recents.length > 0 ? recents.map((recent) => (
             <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
@@ -392,12 +397,12 @@ export function App() {
           ) : <p className="sidebar-empty">Durable work will appear here.</p>}
         </div>
         <div className="sidebar-section library">
-          <div className="section-label">Library</div>
-          <NavItem icon="agent" label="Agents" selected={screen === "agents"} onClick={() => setScreen("agents")} />
+          <div className="section-label">{t("nav.library")}</div>
+          <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"} onClick={() => setScreen("agents")} />
           <NavItem icon="memory" label="Memory" disabled hint="Requires M2-D" />
         </div>
         <div className="sidebar-footer">
-          <NavItem icon="settings" label="Settings" selected={screen === "settings"} onClick={() => setScreen("settings")} />
+          <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"} onClick={() => setScreen("settings")} />
           <div className={`runtime-state ${state.capabilities?.configured ? "online" : "offline"}`}>
             <span className="status-dot" /><span>{state.capabilities?.configured ? "Local Runtime ready" : "Setup required"}</span>
           </div>
@@ -406,7 +411,7 @@ export function App() {
 
       <main className="main-surface">
         <header className="topbar" data-tauri-drag-region>
-          <div className="topbar-title"><span>{screen === "work" ? title : screen === "search" ? "Search" : screen === "agents" ? "Agents" : "Settings"}</span>
+          <div className="topbar-title"><span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {screen === "work" && <span className="local-badge"><span />Local</span>}
             {visualTest && <span className="local-badge qa-badge">QA preview</span>}
           </div>
@@ -427,7 +432,7 @@ export function App() {
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} />
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
-              setPreferences={setPreferences} />}
+              setPreferences={setPreferences} t={t} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} />}
     </div>
@@ -721,10 +726,11 @@ function SearchScreen({ recents, titles, onOpen }: {
 
 function SetupRequired() { return <StatusCard icon="shield" title="Connect the local Runtime" body="Garive found no Desktop configuration. The secure guided setup is not installed in this build yet; add desktop-v1.json and its credential to the macOS Keychain, then restart." action="View setup status" />; }
 function AgentsScreen({ definition }: { definition?: string }) { return <section className="content-page"><p className="eyebrow">INSTALLED LOCALLY</p><h1>Your Agents</h1><p>Agents define the stable behavior and capabilities available to new work.</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? "No Agent configured"}</h2><p>{definition ? "Ready for local text work" : "Complete Desktop configuration to install an Agent."}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{definition ? "Ready" : "Unavailable"}</span></div></section>; }
-function SettingsScreen({ capabilities, preferences, setPreferences }: {
+function SettingsScreen({ capabilities, preferences, setPreferences, t }: {
   capabilities?: WorkState["capabilities"];
   preferences: DesktopPreferences;
   setPreferences: React.Dispatch<React.SetStateAction<DesktopPreferences>>;
+  t: (key: MessageKey) => string;
 }) {
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
   const [authorizations, setAuthorizations] = useState<readonly WorkspaceAuthorization[]>([]);
@@ -802,10 +808,13 @@ function SettingsScreen({ capabilities, preferences, setPreferences }: {
   };
   const rows = [["Multi-turn work", capabilities?.multi_turn], ["Durable recents", capabilities?.durable_navigation], ["Committed activity", capabilities?.activity], ["Secure guided setup", capabilities?.setup], ["Local workspaces", capabilities?.workspaces], ["Artifact previews", capabilities?.artifacts]] as const;
   const recoveryReady = workspaceRecovery?.state === "ready";
-  return <section className="content-page settings-page"><p className="eyebrow">DESKTOP</p><h1>Settings</h1>
-    <div className="settings-card"><h2>Appearance</h2><p>Match macOS automatically or keep an explicit theme and information density.</p>
-      <div className="setting-row"><span>Theme</span><ThemeOptions value={preferences.theme} onChange={(theme) => setPreferences((current) => ({ ...current, theme }))} /></div>
-      <div className="setting-row"><span>Density</span><DensityOptions value={preferences.density} onChange={(density) => setPreferences((current) => ({ ...current, density }))} /></div>
+  return <section className="content-page settings-page"><p className="eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.title")}</h1>
+    <div className="settings-card"><h2>{t("settings.appearance.title")}</h2><p>{t("settings.appearance.description")}</p>
+      <div className="setting-row"><span>{t("settings.theme")}</span><ThemeOptions value={preferences.theme} onChange={(theme) => setPreferences((current) => ({ ...current, theme }))} t={t} /></div>
+      <div className="setting-row"><span>{t("settings.density")}</span><DensityOptions value={preferences.density} onChange={(density) => setPreferences((current) => ({ ...current, density }))} t={t} /></div>
+    </div>
+    <div className="settings-card"><h2>{t("settings.language.title")}</h2><p>{t("settings.language.description")}</p>
+      <div className="setting-row"><span>{t("settings.language.label")}</span><LocaleOptions value={preferences.locale} onChange={(locale) => setPreferences((current) => ({ ...current, locale }))} t={t} /></div>
     </div>
     <div className="settings-card"><h2>Local Runtime</h2><p>Capabilities are reported by the backend. Unavailable features remain gated.</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{label}</span><span className={available ? "state-chip ready" : "state-chip"}>{available ? "Available" : "Not installed"}</span></div>)}</div>
     {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>Workspace access</h2><p>Folder access is restored from read-only bookmarks stored in macOS Keychain. No filesystem path enters this interface.</p><div className="setting-row"><span>Authorization recovery</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} restored` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} needs access` : "Index unavailable" : "Checking…"}</span></div>
@@ -816,26 +825,40 @@ function SettingsScreen({ capabilities, preferences, setPreferences }: {
     <div className="settings-card"><h2>Privacy</h2><p>Provider configuration and credentials stay in the Rust backend and macOS Keychain. This interface receives no secret, endpoint, database path, bookmark data, or raw Runtime fact.</p></div></section>;
 }
 
-function ThemeOptions({ value, onChange }: {
-  value: DesktopTheme; onChange: (value: DesktopTheme) => void;
+function ThemeOptions({ value, onChange, t }: {
+  value: DesktopTheme; onChange: (value: DesktopTheme) => void; t: (key: MessageKey) => string;
 }) {
   return <span className="preference-options" role="radiogroup" aria-label="Color theme">
     {(["system", "light", "dark"] as const).map((theme) => <label className={value === theme ? "selected" : ""} key={theme}>
       <input className="sr-only" type="radio" name="desktop-theme" value={theme}
         checked={value === theme} onChange={() => onChange(theme)} />
-      {theme === "system" ? "System" : theme === "light" ? "Light" : "Dark"}
+      {t(`settings.theme.${theme}`)}
     </label>)}
   </span>;
 }
 
-function DensityOptions({ value, onChange }: {
-  value: DesktopDensity; onChange: (value: DesktopDensity) => void;
+function DensityOptions({ value, onChange, t }: {
+  value: DesktopDensity; onChange: (value: DesktopDensity) => void; t: (key: MessageKey) => string;
 }) {
   return <span className="preference-options" role="radiogroup" aria-label="Interface density">
     {(["comfortable", "compact"] as const).map((density) => <label className={value === density ? "selected" : ""} key={density}>
       <input className="sr-only" type="radio" name="desktop-density" value={density}
         checked={value === density} onChange={() => onChange(density)} />
-      {density === "comfortable" ? "Comfortable" : "Compact"}
+      {t(`settings.density.${density}`)}
+    </label>)}
+  </span>;
+}
+function LocaleOptions({ value, onChange, t }: {
+  value: DesktopLocalePreference; onChange: (value: DesktopLocalePreference) => void;
+  t: (key: MessageKey) => string;
+}) {
+  const locales: readonly DesktopLocalePreference[] = import.meta.env.DEV
+    ? ["system", "en", "zh-Hans", "en-XA"] : ["system", "en", "zh-Hans"];
+  return <span className="preference-options" role="radiogroup" aria-label={t("settings.language.label")}>
+    {locales.map((locale) => <label className={value === locale ? "selected" : ""} key={locale}>
+      <input className="sr-only" type="radio" name="desktop-locale" value={locale}
+        checked={value === locale} onChange={() => onChange(locale)} />
+      {t(`settings.language.${locale}`)}
     </label>)}
   </span>;
 }
