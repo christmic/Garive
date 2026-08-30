@@ -763,9 +763,15 @@ fn configuration(
 ) -> Value {
     let snapshot_digest = format!(
         "{:x}",
-        Sha256::digest(format!("garive-desktop-agent-v1\n{}", input.definition_id).as_bytes())
+        Sha256::digest(
+            format!(
+                "garive-desktop-agent-v2\n{}\nactivity-labels-1\n[]",
+                input.definition_id
+            )
+            .as_bytes()
+        )
     );
-    json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":input.definition_id,"definition_revision":"revision-1","snapshot_digest":snapshot_digest,"agent_instance_namespace":format!("desktop-{setup_id}"),"max_iterations":12,"max_input_tokens":131072,"max_output_tokens":8192,"deadline_budget_ms":600000},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000})
+    json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":input.definition_id,"definition_revision":"revision-1","snapshot_digest":snapshot_digest,"agent_instance_namespace":format!("desktop-{setup_id}"),"max_iterations":12,"max_input_tokens":131072,"max_output_tokens":8192,"deadline_budget_ms":600000,"public_activity_catalogue":{"schema_version":1,"catalogue_revision":"activity-labels-1","descriptors":[]}},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100,"activity":{"max_activities_per_turn":32,"max_activity_facts":512,"max_label_bytes":128,"max_activity_id_bytes":128,"max_encoded_bytes_per_turn":32768}},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000})
 }
 
 fn atomic_write(path: PathBuf, temporary: PathBuf, bytes: &[u8]) -> Result<(), DesktopSetupError> {

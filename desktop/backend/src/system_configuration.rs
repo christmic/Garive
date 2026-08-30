@@ -183,6 +183,24 @@ pub(crate) struct InstalledAgentDocument {
     pub(crate) max_input_tokens: Option<u64>,
     pub(crate) max_output_tokens: Option<u64>,
     pub(crate) deadline_budget_ms: Option<u64>,
+    #[serde(default)]
+    pub(crate) public_activity_catalogue: Option<ActivityCatalogueDocument>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ActivityCatalogueDocument {
+    pub(crate) schema_version: u32,
+    pub(crate) catalogue_revision: String,
+    pub(crate) descriptors: Vec<ActivityDescriptorDocument>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ActivityDescriptorDocument {
+    pub(crate) tool_name: String,
+    pub(crate) tool_revision: String,
+    pub(crate) label_key: String,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +209,18 @@ pub(crate) struct HostDocument {
     pub(crate) max_command_bytes: usize,
     pub(crate) event_batch_size: u64,
     pub(crate) event_poll_interval_ms: u64,
+    #[serde(default)]
+    pub(crate) activity: Option<ActivityLimitsDocument>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ActivityLimitsDocument {
+    pub(crate) max_activities_per_turn: usize,
+    pub(crate) max_activity_facts: usize,
+    pub(crate) max_label_bytes: usize,
+    pub(crate) max_activity_id_bytes: usize,
+    pub(crate) max_encoded_bytes_per_turn: usize,
 }
 
 #[derive(Deserialize)]
@@ -285,6 +315,7 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
         || raw.host.max_command_bytes == 0
         || raw.host.event_batch_size == 0
         || raw.host.event_poll_interval_ms == 0
+        || raw.installed_agent.public_activity_catalogue.is_some() != raw.host.activity.is_some()
         || raw.execution.max_context_items == 0
         || raw.execution.max_context_utf8_bytes == 0
         || raw.execution.max_model_attempts == 0
@@ -298,7 +329,44 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
     {
         return Err(DesktopConfigurationError::InvalidValue);
     }
+    if let (Some(catalogue), Some(limits)) = (
+        &raw.installed_agent.public_activity_catalogue,
+        raw.host.activity,
+    ) {
+        let keys = catalogue
+            .descriptors
+            .iter()
+            .map(|item| (item.tool_name.as_str(), item.tool_revision.as_str()))
+            .collect::<Vec<_>>();
+        if catalogue.schema_version != 1
+            || catalogue.catalogue_revision.is_empty()
+            || keys.windows(2).any(|pair| pair[0] >= pair[1])
+            || catalogue.descriptors.iter().any(|item| {
+                item.tool_name.is_empty()
+                    || item.tool_revision.is_empty()
+                    || !valid_label(&item.label_key, limits.max_label_bytes)
+            })
+            || limits.max_activities_per_turn == 0
+            || limits.max_activity_facts == 0
+            || limits.max_label_bytes == 0
+            || limits.max_activity_id_bytes == 0
+            || limits.max_encoded_bytes_per_turn == 0
+        {
+            return Err(DesktopConfigurationError::InvalidValue);
+        }
+    }
     Ok(())
+}
+
+fn valid_label(value: &str, maximum: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+        && !value.contains("..")
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_')
+        })
 }
 
 fn valid_output_limit(execution: &ExecutionDocument) -> bool {

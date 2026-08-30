@@ -115,6 +115,22 @@ fn contradictory_policy_options_fail_closed() {
     );
 }
 
+#[test]
+fn h3_catalogue_and_projection_limits_must_be_installed_together() {
+    let mut value: serde_json::Value = serde_json::from_slice(FIXTURE).unwrap();
+    value["host"]["activity"] = serde_json::json!({
+        "max_activities_per_turn": 8,
+        "max_activity_facts": 64,
+        "max_label_bytes": 128,
+        "max_activity_id_bytes": 128,
+        "max_encoded_bytes_per_turn": 8192
+    });
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidValue
+    );
+}
+
 fn parse(bytes: &[u8]) -> Result<DesktopSystemConfiguration, DesktopConfigurationError> {
     DesktopSystemConfiguration::parse(bytes, Path::new("/tmp/garive-config"))
 }

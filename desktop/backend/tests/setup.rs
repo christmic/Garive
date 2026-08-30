@@ -94,6 +94,12 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
     assert_eq!(config.schema_version(), 2);
     assert_eq!(config.configuration_revision(), Some(1));
     assert_eq!(config.setup_id(), Some(plan.setup_id.as_str()));
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["installed_agent"]["public_activity_catalogue"]["schema_version"],
+        1
+    );
+    assert_eq!(value["host"]["activity"]["max_activities_per_turn"], 32);
 }
 
 #[test]
