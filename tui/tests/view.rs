@@ -140,3 +140,24 @@ fn agent_markdown_is_structured_and_terminal_safe() {
     assert!(rendered.contains("│ <script>bad</script>�[2J"));
     assert!(!rendered.contains('\u{1b}'));
 }
+
+#[test]
+fn multiline_composer_keeps_the_cursor_inside_its_scrolled_viewport() {
+    let mut model = AppModel::default();
+    model
+        .composer
+        .replace("one\ntwo\nthree\nfour\nfive")
+        .unwrap();
+    let area = Rect::new(0, 0, 40, 12);
+    let mut buffer = Buffer::empty(area);
+    let cursor = view::render_cached(
+        &model,
+        Theme::Mono,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    )
+    .unwrap();
+    assert!(cursor.1 < area.height - 1);
+    assert!(frame(&model, 40, 12).contains("five"));
+}

@@ -478,8 +478,11 @@ fn render_composer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buff
     } else {
         Text::from(safe_text(model.composer.text()))
     };
+    let (_, scroll) = composer_visual_cursor(model, inner.width, inner.height);
     Paragraph::new(text)
         .style(colors.normal)
+        .wrap(Wrap { trim: false })
+        .scroll((scroll, 0))
         .render(inner, buffer);
 }
 
@@ -703,10 +706,27 @@ fn composer_cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
     if inner_width == 0 || inner_height == 0 {
         return None;
     }
-    Some((
-        area.x + 2 + (model.composer.display_column() as u16).min(inner_width - 1),
-        area.y + 1 + (model.composer.cursor_line() as u16).min(inner_height - 1),
-    ))
+    let ((column, row), scroll) = composer_visual_cursor(model, inner_width, inner_height);
+    Some((area.x + 2 + column, area.y + 1 + row.saturating_sub(scroll)))
+}
+
+fn composer_visual_cursor(model: &AppModel, width: u16, height: u16) -> ((u16, u16), u16) {
+    let width = width.max(1);
+    let lines_before = model
+        .composer
+        .text()
+        .lines()
+        .take(model.composer.cursor_line())
+        .map(|line| {
+            let columns = unicode_width::UnicodeWidthStr::width(line) as u16;
+            columns.max(1).div_ceil(width)
+        })
+        .sum::<u16>();
+    let display_column = model.composer.display_column().min(u16::MAX as usize) as u16;
+    let row = lines_before.saturating_add(display_column / width);
+    let column = display_column % width;
+    let scroll = row.saturating_sub(height.saturating_sub(1));
+    ((column, row), scroll)
 }
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {

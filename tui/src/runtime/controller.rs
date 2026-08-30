@@ -171,14 +171,22 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
             KeyCode::Char('l') if state.model.focus == FocusTarget::Conversation => {
                 state.force_redraw = true;
             }
-            KeyCode::Home => {
+            KeyCode::Home if state.model.focus == FocusTarget::Conversation => {
                 state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
                 state.model.jump_to_oldest();
             }
-            KeyCode::End => {
+            KeyCode::End if state.model.focus == FocusTarget::Conversation => {
                 state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
                 state.model.follow_latest();
             }
+            KeyCode::Home => state
+                .model
+                .composer
+                .move_document_start(key.modifiers.contains(KeyModifiers::SHIFT)),
+            KeyCode::End => state
+                .model
+                .composer
+                .move_document_end(key.modifiers.contains(KeyModifiers::SHIFT)),
             KeyCode::Char('z') => {
                 state.model.composer.undo();
             }
@@ -198,6 +206,12 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Char(character) => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Composer));
             let _ = state.model.composer.insert(&character.to_string());
+        }
+        KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+            state.model.composer.delete_word_left();
+        }
+        KeyCode::Delete if key.modifiers.contains(KeyModifiers::ALT) => {
+            state.model.composer.delete_word_right();
         }
         KeyCode::Backspace => {
             state.model.composer.backspace();

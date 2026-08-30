@@ -71,7 +71,10 @@ impl EditorState {
     }
 
     pub(crate) fn insert(&mut self, value: &str) -> Result<(), EditError> {
-        let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+        let normalized = value
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('\t', "    ");
         if normalized.chars().any(is_unsafe_control) {
             return Err(EditError::UnsafeControl);
         }
@@ -179,6 +182,38 @@ impl EditorState {
             cursor += 1;
         }
         self.cursor_grapheme = cursor;
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn delete_word_left(&mut self) -> bool {
+        if self.has_selection() {
+            return self.delete_selection();
+        }
+        let end = self.cursor_grapheme;
+        self.move_word_left(true);
+        self.selection_anchor = Some(end);
+        self.delete_selection()
+    }
+
+    pub(crate) fn delete_word_right(&mut self) -> bool {
+        if self.has_selection() {
+            return self.delete_selection();
+        }
+        let start = self.cursor_grapheme;
+        self.move_word_right(true);
+        self.selection_anchor = Some(start);
+        self.delete_selection()
+    }
+
+    pub(crate) fn move_document_start(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        self.cursor_grapheme = 0;
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn move_document_end(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        self.cursor_grapheme = self.grapheme_len();
         self.preferred_display_column = None;
     }
 

@@ -70,6 +70,20 @@ fn terminal_controls_and_bidi_overrides_never_enter_the_model() {
 }
 
 #[test]
+fn word_deletion_document_motion_and_tab_expansion_are_grapheme_safe() {
+    let mut editor = EditorState::new(1_024);
+    editor.insert("one 界界 three\tend").unwrap();
+    assert_eq!(editor.text(), "one 界界 three    end");
+    editor.move_document_start(false);
+    editor.move_word_right(false);
+    assert!(editor.delete_word_right());
+    assert_eq!(editor.text(), "one three    end");
+    editor.move_document_end(false);
+    assert!(editor.delete_word_left());
+    assert_eq!(editor.text(), "one three    ");
+}
+
+#[test]
 fn multiline_navigation_preserves_display_column_and_word_boundaries() {
     let mut editor = EditorState::new(100);
     editor.insert("ab 界\nx\nhello world").unwrap();
