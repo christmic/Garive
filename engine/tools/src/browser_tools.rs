@@ -1,6 +1,7 @@
 //! Exact T2 browser definitions and pure session/origin bindings.
 
 use serde_json::{json, Value};
+use url::{Host, Url};
 
 use crate::{
     AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
@@ -67,6 +68,12 @@ impl BuiltinT2BrowserCatalogue {
         let policy_revision = policy_revision.into();
         let pages = pages.into_iter().collect::<Vec<_>>();
         let origins = origins.into_iter().map(Into::into).collect::<Vec<_>>();
+        if origins
+            .iter()
+            .any(|origin| canonical_http_origin(origin).as_deref() != Some(origin.as_str()))
+        {
+            return Err(access_error());
+        }
         let mut definitions = vec![
             observe_definition(&policy_revision, &pages)?,
             navigate_definition(&policy_revision, &pages, &origins)?,
@@ -122,7 +129,9 @@ impl ToolAccessResolver for BrowserResolver<'_> {
             T2_BROWSER_OBSERVE => {}
             T2_BROWSER_NAVIGATE => {
                 let origin = text(arguments, "destination_origin")?;
-                if url_origin(text(arguments, "destination_url")?) != Some(origin) {
+                if canonical_http_origin(text(arguments, "destination_url")?).as_deref()
+                    != Some(origin)
+                {
                     return Err(access_error());
                 }
                 accesses.push(ResourceAccess::new(
@@ -340,15 +349,37 @@ fn integer(value: &Value, field: &str) -> Result<i64, PreparationError> {
         .ok_or_else(access_error)
 }
 
-fn url_origin(url: &str) -> Option<&str> {
-    let scheme_end = url.find("://")?;
-    if !matches!(&url[..scheme_end], "http" | "https") {
+/// Returns one normalized HTTP(S) origin only when the URL has an explicit port.
+pub fn canonical_http_origin(value: &str) -> Option<String> {
+    let scheme_end = value.find("://")?;
+    let parsed = Url::parse(value).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
         return None;
     }
-    let authority_end = url[scheme_end + 3..]
-        .find(['/', '?', '#'])
-        .map_or(url.len(), |index| scheme_end + 3 + index);
-    Some(&url[..authority_end])
+    let authority = value[scheme_end + 3..].split(['/', '?', '#']).next()?;
+    let port_text = if authority.starts_with('[') {
+        let close = authority.find(']')?;
+        authority.get(close + 1..)?.strip_prefix(':')?
+    } else {
+        authority.rsplit_once(':')?.1
+    };
+    if port_text.is_empty() || !port_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let port = port_text.parse::<u16>().ok().filter(|port| *port > 0)?;
+    if parsed.port_or_known_default() != Some(port) {
+        return None;
+    }
+    let host = match parsed.host()? {
+        Host::Domain(host) => host.to_owned(),
+        Host::Ipv4(host) => host.to_string(),
+        Host::Ipv6(host) => format!("[{host}]"),
+    };
+    let origin = format!("{}://{host}:{port}", parsed.scheme());
+    (origin.len() <= 512).then_some(origin)
 }
 
 fn token(value: &str) -> bool {

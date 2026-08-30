@@ -31,8 +31,9 @@ pub use batch::{
     EffectBatchIntent, EffectBatchLimitsV1, EffectBatchPlanV1, EffectBatchStep,
 };
 pub use browser_tools::{
-    BrowserPageScope, BuiltinT2BrowserCatalogue, T2_BROWSER_ACT, T2_BROWSER_NAVIGATE,
-    T2_BROWSER_OBSERVE, T2_BROWSER_RESOLVER_REVISION, T2_BROWSER_TOOL_REVISION,
+    canonical_http_origin, BrowserPageScope, BuiltinT2BrowserCatalogue, T2_BROWSER_ACT,
+    T2_BROWSER_NAVIGATE, T2_BROWSER_OBSERVE, T2_BROWSER_RESOLVER_REVISION,
+    T2_BROWSER_TOOL_REVISION,
 };
 pub use computer_tools::{
     BuiltinT2ComputerCatalogue, ComputerTargetScope, T2_COMPUTER_ACT, T2_COMPUTER_OBSERVE,

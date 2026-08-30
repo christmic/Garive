@@ -55,6 +55,11 @@ same main frame's `frameNavigated` event and returns the committed final URL for
 Runtime redirect-origin revalidation. The early `Page.navigate` response alone
 is never treated as completion.
 
+Engine and Runtime share one parsed canonical HTTP(S) origin function. It
+requires an explicit valid port, rejects URL user information, normalizes host
+and IP representation, and compares the committed final URL against the exact
+prepared origin. CDP URL acceptance alone never grants Network authority.
+
 ## Semantic observation
 
 The adapter enables Accessibility and requests `getFullAXTree` with an explicit

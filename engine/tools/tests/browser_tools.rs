@@ -1,6 +1,7 @@
 use garive_tools::{
-    AccessMode, AccessNamespace, BrowserPageScope, BuiltinT2BrowserCatalogue, PreparationErrorCode,
-    ReplayClass, ToolIntent, T2_BROWSER_ACT, T2_BROWSER_NAVIGATE, T2_BROWSER_OBSERVE,
+    canonical_http_origin, AccessMode, AccessNamespace, BrowserPageScope,
+    BuiltinT2BrowserCatalogue, PreparationErrorCode, ReplayClass, ToolIntent, T2_BROWSER_ACT,
+    T2_BROWSER_NAVIGATE, T2_BROWSER_OBSERVE,
 };
 use serde_json::Value;
 
@@ -106,6 +107,28 @@ fn destination_url_must_match_exact_canonical_origin() {
             .code(),
         PreparationErrorCode::EffectAccessInvalid
     );
+}
+
+#[test]
+fn canonical_origin_rejects_ambiguous_authority_and_requires_explicit_port() {
+    assert_eq!(
+        canonical_http_origin("HTTPS://EXAMPLE.COM:443/path?q=1#part"),
+        Some("https://example.com:443".into())
+    );
+    assert_eq!(
+        canonical_http_origin("http://[::1]:8080/path"),
+        Some("http://[::1]:8080".into())
+    );
+    for value in [
+        "https://example.com/path",
+        "https://user@example.com:443/path",
+        "https://example.com:443@evil.test:443/path",
+        "https://example.com:0/path",
+        "file:///tmp/value",
+        "https://example.com:65536/path",
+    ] {
+        assert_eq!(canonical_http_origin(value), None, "{value}");
+    }
 }
 
 #[test]

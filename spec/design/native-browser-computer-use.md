@@ -197,6 +197,11 @@ declared canonical `destination_origin`, `wait_until`, `timeout_ms`,
 equal `destination_origin`; that origin is a separate `Network(origin, Write)`
 access. V1 canonical origins include an explicit port. `wait_until` is
 `dom_content_loaded | load | network_idle`; timeout is at most 120 seconds.
+Canonicalization parses the complete HTTP(S) URL, rejects user information and
+missing, zero or out-of-range explicit ports, normalizes scheme, host and IP
+representation, and returns `scheme://host:port`. Both the frozen origin
+catalogue and every destination use that exact representation; authority string
+slicing is not an origin security boundary.
 
 `act` requires `expected_snapshot_id`, `target_revision`, one action, and at most 16 explicit
 `allowed_navigation_origins`; an empty array means action-caused navigation is
