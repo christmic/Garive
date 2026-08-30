@@ -100,8 +100,8 @@ client. It performs no target/session discovery. Observe enables Accessibility
 once, applies the requested bounds, maps the AX tree and retains only the
 current private snapshot binding.
 
-Preflight supports navigate plus `click`, `type_text`, `clear`, `press_key` and
-`scroll`. It resolves
+Preflight supports navigate plus `click`, `type_text`, `clear`, `press_key`,
+`scroll`, `go_back`, `go_forward`, and `reload`. It resolves
 the exact semantic operation and hashes canonical command, adapter and backend
 evidence into the frozen binding. Dispatch recomputes that binding, invalidates
 the old snapshot before crossing CDP, executes exactly once and returns a
@@ -115,14 +115,24 @@ without trustworthy terminal evidence after dispatch is
 backend node and refreshes the bounded AX tree before input; changed focus
 returns `native_focus_changed` without input. Scroll gets the current
 `Page.getLayoutMetrics` visual viewport and emits one `mouseWheel` event at its
-center, so tool input never controls pointer coordinates. Every act freezes the
+center, so tool input never controls pointer coordinates. It returns completed
+only after a bounded metrics poll proves a possible movement changed the page
+position; an already reached layout boundary is a valid no-movement result, and
+a possible movement without settlement evidence is uncertain. Every act freezes the
 sorted canonical allowed-navigation origins and compares the current
 `Page.getNavigationHistory` entry before and after input. A changed committed
 entry rotates the target revision; an origin outside that frozen set returns a
 trustworthy `browser_origin_denied` receipt, while loss before post-action
-history is uncertain. A later observe, explicitly chained from the prior
-snapshot, creates the next observation. Select and explicit history commands
-stay unsupported until their bindings land.
+history is uncertain. Observe also binds the exact current history-entry
+identity privately, so an ambient page-history change makes the prior snapshot
+stale before input. Back and forward derive their exact destination from the
+bounded current history and reject an inadmissible destination origin before
+dispatch; a missing adjacent entry is a trustworthy unsupported result. Reload
+discards stale queued load events and waits for a fresh load event. All three
+history mutations cross the boundary once, prove the resulting current entry,
+and rotate the revision. A later observe, explicitly chained from the prior
+snapshot, creates the next observation. Select stays unsupported until its
+semantic binding lands.
 
 ## Acceptance
 
@@ -147,11 +157,14 @@ using an unexposed backend identity and observes the resulting AX-name change.
 The same gate inserts Unicode text and clears the textbox, observing both AX
 states. Runtime separately proves the exact click binding gate; text-action
 binding now passes the same exact gate. Mock-transport concrete-port gates cover
-observe, navigate/click/type/clear/key/scroll and success/failed/uncertain binding
-invalidation. A second managed-Chrome gate passes initial observation,
-same-origin redirected navigation, completed receipt, target-revision rotation
-and fresh semantic observation through the concrete Runtime port itself. This
-baseline does not satisfy the remaining frame/action/fault matrix by itself.
+observe, navigate/click/type/clear/key/scroll/back/forward/reload,
+ambient-history stale detection, pre-dispatch origin denial and
+success/failed/uncertain binding invalidation. A second managed-Chrome gate
+passes initial observation, same-origin redirected navigation, completed
+receipt, target-revision rotation, fresh semantic observation, focused Enter
+activation and effect-aware viewport scroll through the concrete Runtime port
+itself. This baseline does not satisfy the remaining frame/action/fault matrix
+by itself.
 
 ## Meta
 

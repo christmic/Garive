@@ -91,6 +91,25 @@ fn mapping_rejects_missing_or_cyclic_parent_evidence() {
         ),
         Err(NativeProtocolError::ReceiptInvalid)
     );
+    let mut first = node("first", Some("root"), "textbox", false);
+    first.properties.push(CdpAxProperty {
+        name: "focused".into(),
+        value: json!({"value":true}),
+    });
+    let mut second = node("second", Some("root"), "textbox", false);
+    second.properties.push(CdpAxProperty {
+        name: "focused".into(),
+        value: json!({"value":true}),
+    });
+    assert_eq!(
+        map_cdp_ax_tree(
+            context(),
+            &CdpAxTree {
+                nodes: vec![first, second, node("root", None, "RootWebArea", false)]
+            }
+        ),
+        Err(NativeProtocolError::ReceiptInvalid)
+    );
     assert_eq!(
         map_cdp_ax_tree(
             context(),
@@ -115,14 +134,15 @@ fn private_binding_resolves_only_the_exact_snapshot_node_revision_and_action() {
         name: "focused".into(),
         value: json!({"type":"booleanOrUndefined","value":true}),
     });
+    let mut root = node("root-cdp", None, "RootWebArea", false);
+    root.properties.push(CdpAxProperty {
+        name: "focused".into(),
+        value: json!({"type":"booleanOrUndefined","value":true}),
+    });
     let mapped = map_cdp_ax_tree_with_binding(
         context(),
         &CdpAxTree {
-            nodes: vec![
-                button,
-                textbox,
-                node("root-cdp", None, "RootWebArea", false),
-            ],
+            nodes: vec![button, textbox, root],
         },
     )
     .expect("mapped observation");

@@ -39,7 +39,11 @@ The Runtime-owned concrete-port gate independently launched a fresh managed
 Chrome profile, created and attached one blank target, observed its initial
 snapshot through `CdpNativeAdapterPort`, navigated the same-origin redirect
 through governed preflight/dispatch, verified the completed receipt and then
-observed the form from a new target revision. It passed 1 test in 0.61 seconds;
+observed the form from a new target revision. It then clicked the exact semantic
+button, used portable Enter against revalidated browser focus, proved the second
+activation in a fresh AX observation, and accepted viewport scroll only after
+layout metrics proved real movement and the resulting scroll effect was observed.
+It passed 1 test in 0.87 seconds;
 strict Runtime test-target Clippy and warning-free Rustdoc also passed.
 
 ```sh
@@ -53,15 +57,19 @@ preflight, bound navigate/click/type/clear dispatch, receipt validation,
 post-success invalidation and post-dispatch connection-loss classification as
 uncertain with the old binding invalidated. Same-origin redirect rotates the
 opaque target revision; cross-origin redirect produces a trustworthy failed
-receipt with `browser_origin_denied`.
+receipt with `browser_origin_denied`. The gate also proves focused key
+revalidation, settled viewport scroll, private current-history stale detection,
+exact back success, forward origin denial before dispatch, and reload waiting
+for a fresh load event before revision rotation.
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
 actual click, Unicode text insertion and clear. Snapshot/node freshness is
 deliberately enforced by Runtime's exact target/snapshot/revision binding; it
 is not delegated to CDP backend-node lifetime. Click, type-text and clear
 binding cases pass in the Runtime unit gate. The real managed-Chrome concrete
-port gate now binds initial observation, governed navigation, receipt and fresh
-observation/revision evidence. Cross-origin frames, select/key/scroll/history actions,
-popups, downloads, protected-field redaction in the real browser, attachment
+port gate now binds initial observation, governed navigation, click, focused
+Enter activation, settled scroll, receipts and fresh observation/revision
+evidence. Cross-origin frames, select and real-browser history actions, popups,
+downloads, protected-field redaction in the real browser, attachment
 loss and durable Started/crash fault injection remain open. This is not a
 complete Browser Use claim.

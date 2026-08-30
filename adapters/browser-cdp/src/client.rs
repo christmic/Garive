@@ -1,6 +1,9 @@
 //! Typed admitted CDP client operations for managed Browser observation.
 
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use serde_json::{json, Map, Value};
 use url::Url;
@@ -8,6 +11,35 @@ use url::Url;
 use crate::{CdpProtocolError, CdpTransport, CdpTransportError};
 
 const MAX_ACTION_TEXT_BYTES: usize = 32_768;
+const MAX_SCROLL_DELTA: u64 = 100_000;
+const MAX_LAYOUT_EXTENT: f64 = 10_000_000.0;
+const SCROLL_SETTLE_ATTEMPTS: usize = 50;
+const SCROLL_SETTLE_INTERVAL: Duration = Duration::from_millis(10);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CdpViewportMetrics {
+    page_x: f64,
+    page_y: f64,
+    client_width: f64,
+    client_height: f64,
+    content_width: f64,
+    content_height: f64,
+}
+
+impl CdpViewportMetrics {
+    fn can_move(self, delta_x: i64, delta_y: i64) -> bool {
+        let max_x = (self.content_width - self.client_width).max(0.0);
+        let max_y = (self.content_height - self.client_height).max(0.0);
+        (delta_x > 0 && self.page_x < max_x)
+            || (delta_x < 0 && self.page_x > 0.0)
+            || (delta_y > 0 && self.page_y < max_y)
+            || (delta_y < 0 && self.page_y > 0.0)
+    }
+
+    fn position_changed(self, other: Self) -> bool {
+        self.page_x != other.page_x || self.page_y != other.page_y
+    }
+}
 
 /// Browser protocol/build evidence returned by `Browser.getVersion`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,6 +161,15 @@ pub struct CdpHistoryEntry {
     pub url: String,
 }
 
+/// Bounded top-level navigation history for one attached page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpNavigationHistory {
+    /// Current entry index.
+    pub current_index: usize,
+    /// Ordered bounded entries.
+    pub entries: Vec<CdpHistoryEntry>,
+}
+
 /// Sequential typed client over one exact managed-browser transport.
 pub struct CdpClient {
     transport: CdpTransport,
@@ -201,6 +242,14 @@ impl CdpClient {
         self.transport
             .call("Page.enable", json!({}), Some(session_id.into()))
             .await?;
+        for method in [
+            "Page.domContentEventFired",
+            "Page.loadEventFired",
+            "Page.lifecycleEvent",
+            "Page.frameNavigated",
+        ] {
+            self.transport.discard_events(method, Some(session_id));
+        }
         if wait_until == CdpWaitUntil::NetworkIdle {
             self.transport
                 .call(
@@ -285,6 +334,15 @@ impl CdpClient {
         &mut self,
         session_id: &str,
     ) -> Result<CdpHistoryEntry, CdpTransportError> {
+        let history = self.navigation_history(session_id).await?;
+        Ok(history.entries[history.current_index].clone())
+    }
+
+    /// Returns the bounded ordered top-level navigation history.
+    pub async fn navigation_history(
+        &mut self,
+        session_id: &str,
+    ) -> Result<CdpNavigationHistory, CdpTransportError> {
         validate_id(session_id)?;
         let result = self
             .transport
@@ -294,26 +352,55 @@ impl CdpClient {
                 Some(session_id.into()),
             )
             .await?;
-        let entries = result
-            .get("entries")
-            .and_then(Value::as_array)
-            .filter(|entries| !entries.is_empty() && entries.len() <= 10_000)
-            .ok_or_else(protocol)?;
-        let index = result
-            .get("currentIndex")
-            .and_then(Value::as_u64)
-            .and_then(|index| usize::try_from(index).ok())
-            .filter(|index| *index < entries.len())
-            .ok_or_else(protocol)?;
-        let entry = entries[index].as_object().ok_or_else(protocol)?;
-        Ok(CdpHistoryEntry {
-            id: entry
-                .get("id")
-                .and_then(Value::as_i64)
-                .filter(|id| *id >= 0)
-                .ok_or_else(protocol)?,
-            url: object_text(entry, "url", 32_768)?,
-        })
+        parse_navigation_history(&result)
+    }
+
+    /// Moves to one exact history entry and proves it became current.
+    pub async fn navigate_to_history_entry(
+        &mut self,
+        session_id: &str,
+        entry_id: i64,
+    ) -> Result<CdpHistoryEntry, CdpTransportError> {
+        validate_id(session_id)?;
+        if entry_id < 0 {
+            return Err(protocol());
+        }
+        self.transport
+            .call(
+                "Page.navigateToHistoryEntry",
+                json!({"entryId":entry_id}),
+                Some(session_id.into()),
+            )
+            .await?;
+        for _ in 0..16 {
+            let current = self.current_history_entry(session_id).await?;
+            if current.id == entry_id {
+                return Ok(current);
+            }
+            tokio::task::yield_now().await;
+        }
+        Err(CdpTransportError::Timeout)
+    }
+
+    /// Reloads the attached page and waits for a fresh load event.
+    pub async fn reload(&mut self, session_id: &str) -> Result<CdpHistoryEntry, CdpTransportError> {
+        validate_id(session_id)?;
+        self.transport
+            .call("Page.enable", json!({}), Some(session_id.into()))
+            .await?;
+        self.transport
+            .discard_events("Page.loadEventFired", Some(session_id));
+        self.transport
+            .call(
+                "Page.reload",
+                json!({"ignoreCache":false}),
+                Some(session_id.into()),
+            )
+            .await?;
+        self.transport
+            .wait_for_event("Page.loadEventFired", Some(session_id))
+            .await?;
+        self.current_history_entry(session_id).await
     }
 
     /// Clicks one adapter-private backend node through its current rendered box.
@@ -442,33 +529,19 @@ impl CdpClient {
     ) -> Result<(), CdpTransportError> {
         validate_id(session_id)?;
         if (delta_x == 0 && delta_y == 0)
-            || delta_x.unsigned_abs() > 100_000
-            || delta_y.unsigned_abs() > 100_000
+            || delta_x.unsigned_abs() > MAX_SCROLL_DELTA
+            || delta_y.unsigned_abs() > MAX_SCROLL_DELTA
         {
             return Err(protocol());
         }
-        let metrics = self
-            .transport
-            .call("Page.getLayoutMetrics", json!({}), Some(session_id.into()))
-            .await?;
-        let viewport = metrics
-            .get("visualViewport")
-            .and_then(Value::as_object)
-            .ok_or_else(protocol)?;
-        let extent = |field| {
-            viewport
-                .get(field)
-                .and_then(Value::as_f64)
-                .filter(|value| value.is_finite() && *value > 0.0 && *value <= 10_000_000.0)
-                .ok_or_else(protocol)
-        };
+        let before = self.viewport_metrics(session_id).await?;
         self.transport
             .call(
                 "Input.dispatchMouseEvent",
                 json!({
                     "type":"mouseWheel",
-                    "x":extent("clientWidth")? / 2.0,
-                    "y":extent("clientHeight")? / 2.0,
+                    "x":before.client_width / 2.0,
+                    "y":before.client_height / 2.0,
                     "deltaX":delta_x,
                     "deltaY":delta_y,
                     "button":"none",
@@ -477,7 +550,28 @@ impl CdpClient {
                 Some(session_id.into()),
             )
             .await?;
-        Ok(())
+        if !before.can_move(delta_x, delta_y) {
+            return Ok(());
+        }
+        for _ in 0..SCROLL_SETTLE_ATTEMPTS {
+            tokio::time::sleep(SCROLL_SETTLE_INTERVAL).await;
+            let after = self.viewport_metrics(session_id).await?;
+            if before.position_changed(after) {
+                return Ok(());
+            }
+        }
+        Err(CdpTransportError::Timeout)
+    }
+
+    async fn viewport_metrics(
+        &mut self,
+        session_id: &str,
+    ) -> Result<CdpViewportMetrics, CdpTransportError> {
+        let result = self
+            .transport
+            .call("Page.getLayoutMetrics", json!({}), Some(session_id.into()))
+            .await?;
+        parse_viewport_metrics(&result)
     }
 
     /// Returns the one focused AX backend node under explicit observation bounds.
@@ -501,10 +595,35 @@ impl CdpClient {
                 })
             })
             .collect::<Vec<_>>();
-        if focused.len() > 1 {
+        let by_id = tree
+            .nodes
+            .iter()
+            .map(|node| (node.node_id.as_str(), node))
+            .collect::<BTreeMap<_, _>>();
+        if by_id.len() != tree.nodes.len() {
             return Err(protocol());
         }
-        focused
+        let deepest = focused
+            .iter()
+            .filter_map(|candidate| {
+                let has_focused_descendant = focused.iter().try_fold(false, |found, other| {
+                    if found || candidate.node_id == other.node_id {
+                        Ok(found)
+                    } else {
+                        raw_ax_ancestor(candidate.node_id.as_str(), other, &by_id)
+                    }
+                });
+                match has_focused_descendant {
+                    Ok(false) => Some(Ok(*candidate)),
+                    Ok(true) => None,
+                    Err(error) => Some(Err(error)),
+                }
+            })
+            .collect::<Result<Vec<_>, CdpTransportError>>()?;
+        if deepest.len() > 1 {
+            return Err(protocol());
+        }
+        deepest
             .first()
             .map(|node| node.backend_dom_node_id.ok_or_else(protocol))
             .transpose()
@@ -777,7 +896,7 @@ fn portable_key_fields(
     key: CdpPortableKey,
 ) -> (&'static str, &'static str, u16, Option<&'static str>) {
     match key {
-        CdpPortableKey::Enter => ("Enter", "Enter", 13, None),
+        CdpPortableKey::Enter => ("Enter", "Enter", 13, Some("\r")),
         CdpPortableKey::Tab => ("Tab", "Tab", 9, None),
         CdpPortableKey::Escape => ("Escape", "Escape", 27, None),
         CdpPortableKey::Backspace => ("Backspace", "Backspace", 8, None),
@@ -798,12 +917,93 @@ fn optional_len(value: &Option<String>) -> usize {
     value.as_ref().map_or(0, String::len)
 }
 
+fn parse_navigation_history(result: &Value) -> Result<CdpNavigationHistory, CdpTransportError> {
+    let entries = result
+        .get("entries")
+        .and_then(Value::as_array)
+        .filter(|entries| !entries.is_empty() && entries.len() <= 10_000)
+        .ok_or_else(protocol)?;
+    let current_index = result
+        .get("currentIndex")
+        .and_then(Value::as_u64)
+        .and_then(|index| usize::try_from(index).ok())
+        .filter(|index| *index < entries.len())
+        .ok_or_else(protocol)?;
+    let entries = entries
+        .iter()
+        .map(|entry| {
+            let entry = entry.as_object().ok_or_else(protocol)?;
+            Ok(CdpHistoryEntry {
+                id: entry
+                    .get("id")
+                    .and_then(Value::as_i64)
+                    .filter(|id| *id >= 0)
+                    .ok_or_else(protocol)?,
+                url: object_text(entry, "url", 32_768)?,
+            })
+        })
+        .collect::<Result<Vec<_>, CdpTransportError>>()?;
+    Ok(CdpNavigationHistory {
+        current_index,
+        entries,
+    })
+}
+
 fn property_truthy(value: &Value) -> bool {
     value.get("value").is_some_and(|value| match value {
         Value::Bool(value) => *value,
         Value::String(value) => !value.is_empty() && value != "false",
         Value::Number(value) => value.as_i64() != Some(0),
         _ => false,
+    })
+}
+
+fn raw_ax_ancestor(
+    candidate: &str,
+    descendant: &CdpAxNode,
+    by_id: &BTreeMap<&str, &CdpAxNode>,
+) -> Result<bool, CdpTransportError> {
+    let mut current = descendant.parent_id.as_deref();
+    let mut visited = BTreeSet::new();
+    while let Some(parent) = current {
+        if !visited.insert(parent) {
+            return Err(protocol());
+        }
+        if parent == candidate {
+            return Ok(true);
+        }
+        current = by_id.get(parent).ok_or_else(protocol)?.parent_id.as_deref();
+    }
+    Ok(false)
+}
+
+fn parse_viewport_metrics(value: &Value) -> Result<CdpViewportMetrics, CdpTransportError> {
+    let viewport = value
+        .get("visualViewport")
+        .and_then(Value::as_object)
+        .ok_or_else(protocol)?;
+    let content = value
+        .get("contentSize")
+        .and_then(Value::as_object)
+        .ok_or_else(protocol)?;
+    let coordinate = |object: &Map<String, Value>, field| {
+        object
+            .get(field)
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0 && *value <= MAX_LAYOUT_EXTENT)
+            .ok_or_else(protocol)
+    };
+    let extent = |object: &Map<String, Value>, field| {
+        coordinate(object, field)
+            .and_then(|value| (value > 0.0).then_some(value).ok_or_else(protocol))
+    };
+    Ok(CdpViewportMetrics {
+        page_x: coordinate(viewport, "pageX")?,
+        page_y: coordinate(viewport, "pageY")?,
+        client_width: extent(viewport, "clientWidth")?,
+        client_height: extent(viewport, "clientHeight")?,
+        content_width: extent(content, "width")?,
+        content_height: extent(content, "height")?,
     })
 }
 

@@ -94,3 +94,86 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
     assert_eq!(history.url, "https://example.test:443/current");
     server.await.expect("server");
 }
+
+#[tokio::test]
+async fn history_move_and_reload_prove_the_exact_current_entry() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        let entries = json!([
+            {"id":1,"url":"https://example.test:443/one"},
+            {"id":2,"url":"https://example.test:443/two"},
+            {"id":3,"url":"https://example.test:443/three"}
+        ]);
+        let initial = reply(
+            &mut socket,
+            json!({"currentIndex":1,"entries":entries.clone()}),
+        )
+        .await;
+        assert_eq!(initial["method"], "Page.getNavigationHistory");
+        let move_command = reply(&mut socket, json!({})).await;
+        assert_eq!(move_command["method"], "Page.navigateToHistoryEntry");
+        assert_eq!(move_command["params"]["entryId"], 1);
+        reply(
+            &mut socket,
+            json!({"currentIndex":0,"entries":entries.clone()}),
+        )
+        .await;
+
+        let Message::Text(enable) = socket.next().await.expect("enable").expect("frame") else {
+            panic!("text command required")
+        };
+        let enable: Value = serde_json::from_slice(enable.as_bytes()).expect("enable json");
+        assert_eq!(enable["method"], "Page.enable");
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.loadEventFired","params":{},"sessionId":"session-1"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("stale load event");
+        socket
+            .send(Message::Text(
+                json!({"id":enable["id"],"result":{},"sessionId":"session-1"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("enable response");
+        let reload = reply(&mut socket, json!({})).await;
+        assert_eq!(reload["method"], "Page.reload");
+        assert_eq!(reload["params"]["ignoreCache"], false);
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.loadEventFired","params":{},"sessionId":"session-1"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("fresh load event");
+        reply(&mut socket, json!({"currentIndex":0,"entries":entries})).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let mut client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let history = client
+        .navigation_history("session-1")
+        .await
+        .expect("history");
+    assert_eq!(history.current_index, 1);
+    assert_eq!(history.entries.len(), 3);
+    let moved = client
+        .navigate_to_history_entry("session-1", 1)
+        .await
+        .expect("history move");
+    assert_eq!(moved.id, 1);
+    let reloaded = client.reload("session-1").await.expect("reload");
+    assert_eq!(reloaded.id, 1);
+    server.await.expect("server");
+}

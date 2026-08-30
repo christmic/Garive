@@ -100,7 +100,7 @@ fn serve(stream: &mut TcpStream, address: SocketAddr) {
         "/form" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
-            r#"<!doctype html><title>Runtime port fixture</title><main><label>Account <input aria-label="Account name"></label><button onclick="this.setAttribute('aria-label','Submitted')">Submit form</button></main>"#,
+            r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button></main></body>"#,
         ),
         _ => ("204 No Content", String::new(), ""),
     };
@@ -227,4 +227,86 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Account name")));
+
+    let submit = after
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Submit form"))
+        .expect("submit")
+        .node_ref
+        .clone();
+    let click = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-click").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after.snapshot_id.clone(),
+        target_revision: after.target_revision.clone(),
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":submit.as_str(),
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let click_binding = port.preflight_action(&click).expect("click preflight");
+    port.dispatch_action(&click, &click_binding)
+        .await
+        .expect("click receipt");
+    let after_click = port
+        .observe(&target, Some(&after.snapshot_id), bounds)
+        .await
+        .expect("post-click observation");
+    let submitted = after_click
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Submitted 1"))
+        .expect("submitted button");
+    assert_eq!(after_click.focused_node.as_ref(), Some(&submitted.node_ref));
+
+    let key = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-key").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after_click.snapshot_id.clone(),
+        target_revision: after_click.target_revision.clone(),
+        prepared_input: json!({
+            "action":"press_key",
+            "key":"enter",
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let key_binding = port.preflight_action(&key).expect("key preflight");
+    port.dispatch_action(&key, &key_binding)
+        .await
+        .expect("key receipt");
+    let after_key = port
+        .observe(&target, Some(&after_click.snapshot_id), bounds)
+        .await
+        .expect("post-key observation");
+    assert!(after_key
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Submitted 2")));
+
+    let scroll = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-scroll").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after_key.snapshot_id.clone(),
+        target_revision: after_key.target_revision.clone(),
+        prepared_input: json!({
+            "action":"scroll",
+            "delta_x":0,
+            "delta_y":600,
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let scroll_binding = port.preflight_action(&scroll).expect("scroll preflight");
+    port.dispatch_action(&scroll, &scroll_binding)
+        .await
+        .expect("scroll receipt");
+    let after_scroll = port
+        .observe(&target, Some(&after_key.snapshot_id), bounds)
+        .await
+        .expect("post-scroll observation");
+    assert!(after_scroll
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Scrolled")));
 }

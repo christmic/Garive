@@ -38,6 +38,13 @@ fn history(id: i64, url: &str) -> Value {
     json!({"currentIndex":0,"entries":[{"id":id,"url":url}]})
 }
 
+fn histories(current_index: usize) -> Value {
+    json!({"currentIndex":current_index,"entries":[
+        {"id":1,"url":"https://one.test:443/page"},
+        {"id":2,"url":"https://two.test:443/page"}
+    ]})
+}
+
 #[tokio::test]
 async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -63,6 +70,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             reply(&mut socket, history(1, "https://fixture.test:443/form")).await["method"],
             "Page.getNavigationHistory"
         );
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(
             reply(&mut socket, json!({})).await["method"],
             "DOM.scrollIntoViewIfNeeded"
@@ -86,6 +94,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
         let insert = reply(&mut socket, json!({})).await;
         assert_eq!(insert["method"], "Input.insertText");
@@ -99,6 +108,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             ]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
         for _ in 0..3 {
@@ -239,6 +249,7 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
             {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
         ]});
         reply(&mut socket, focused_tree.clone()).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(
             reply(&mut socket, focused_tree.clone()).await["method"],
             "Accessibility.getFullAXTree"
@@ -253,9 +264,13 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, focused_tree).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         let metrics = reply(
             &mut socket,
-            json!({"visualViewport":{"clientWidth":1000,"clientHeight":600}}),
+            json!({
+                "visualViewport":{"pageX":0,"pageY":0,"clientWidth":1000,"clientHeight":600},
+                "contentSize":{"width":1000,"height":1800}
+            }),
         )
         .await;
         assert_eq!(metrics["method"], "Page.getLayoutMetrics");
@@ -265,6 +280,15 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
         assert_eq!(scroll["params"]["x"], 500.0);
         assert_eq!(scroll["params"]["y"], 300.0);
         assert_eq!(scroll["params"]["deltaY"], 120);
+        let settled = reply(
+            &mut socket,
+            json!({
+                "visualViewport":{"pageX":0,"pageY":120,"clientWidth":1000,"clientHeight":600},
+                "contentSize":{"width":1000,"height":1800}
+            }),
+        )
+        .await;
+        assert_eq!(settled["method"], "Page.getLayoutMetrics");
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
     });
     let config = CdpAdapterConfig::new(
@@ -339,6 +363,7 @@ async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
             ]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -406,6 +431,7 @@ async fn action_navigation_revalidates_the_committed_history_origin() {
             {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
         ]});
         reply(&mut socket, focused_tree.clone()).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, focused_tree).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, json!({})).await;
@@ -468,6 +494,283 @@ async fn action_navigation_revalidates_the_committed_history_origin() {
 }
 
 #[tokio::test]
+async fn history_back_moves_only_to_a_prevalidated_origin() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
+        )
+        .await;
+        reply(&mut socket, histories(1)).await;
+        reply(&mut socket, histories(1)).await;
+        let movement = reply(&mut socket, json!({})).await;
+        assert_eq!(movement["method"], "Page.navigateToHistoryEntry");
+        assert_eq!(movement["params"]["entryId"], 1);
+        reply(&mut socket, histories(0)).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-history-back",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("history-back").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"go_back",
+            "allowed_navigation_origins":["https://one.test:443"]
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("receipt");
+    assert_eq!(receipt.terminal_classification, "completed");
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn history_forward_denial_returns_a_receipt_without_dispatch() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
+        )
+        .await;
+        reply(&mut socket, histories(0)).await;
+        reply(&mut socket, histories(0)).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-history-denied",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("history-forward-denied").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({"action":"go_forward","allowed_navigation_origins":[]}),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("failed receipt");
+    assert_eq!(receipt.terminal_classification, "failed");
+    assert_eq!(
+        receipt.failure_code.as_deref(),
+        Some("browser_origin_denied")
+    );
+    assert_eq!(port.preflight_action(&command), Ok(binding));
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn reload_waits_for_load_and_rotates_the_snapshot_revision() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
+        )
+        .await;
+        reply(&mut socket, histories(0)).await;
+        reply(&mut socket, histories(0)).await;
+        assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.enable");
+        assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.reload");
+        socket
+            .send(Message::Text(
+                json!({"method":"Page.loadEventFired","params":{},"sessionId":"cdp-session"})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("load event");
+        reply(&mut socket, histories(0)).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-reload",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("history-reload").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"reload",
+            "allowed_navigation_origins":["https://one.test:443"]
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("receipt");
+    assert_eq!(receipt.terminal_classification, "completed");
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn external_history_change_makes_the_observed_snapshot_stale_before_input() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"button","ignored":false,"role":{"value":"button"},"backendDOMNodeId":42,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, history(2, "https://fixture.test:443/changed")).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-external-navigation",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let button = observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "button")
+        .expect("button");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("external-navigation-stale").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":button.node_ref.as_str(),
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    assert_eq!(
+        port.dispatch_action(&command, &binding).await,
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}
+
+#[tokio::test]
 async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
@@ -483,6 +786,7 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
             ]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         let Message::Text(_) = socket.next().await.expect("dispatch").expect("frame") else {
             panic!("text dispatch required")
@@ -551,6 +855,8 @@ async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.enable");
         let Message::Text(message) = socket.next().await.expect("navigate").expect("frame") else {
             panic!("text navigation required")
@@ -581,11 +887,13 @@ async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
             ))
             .await
             .expect("navigate response");
+        reply(&mut socket, history(2, "https://example.com:443/final")).await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"new-root","ignored":false,"role":{"value":"RootWebArea"},"name":{"value":"Final"}}]}),
         )
         .await;
+        reply(&mut socket, history(2, "https://example.com:443/final")).await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -655,6 +963,8 @@ async fn cross_origin_redirect_returns_a_failed_receipt_and_invalidates_snapshot
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, json!({})).await;
         let Message::Text(message) = socket.next().await.expect("navigate").expect("frame") else {
             panic!("text navigation required")
@@ -684,6 +994,7 @@ async fn cross_origin_redirect_returns_a_failed_receipt_and_invalidates_snapshot
             ))
             .await
             .expect("navigate response");
+        reply(&mut socket, history(2, "https://denied.test:443/final")).await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),

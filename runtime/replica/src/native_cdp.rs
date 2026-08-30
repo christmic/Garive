@@ -240,10 +240,23 @@ pub fn map_cdp_ax_tree_with_binding(
             })
         })
         .collect::<Vec<_>>();
-    if focused.len() > 1 {
+    let deepest_focus = focused
+        .iter()
+        .filter(|candidate| {
+            !focused.iter().any(|other| {
+                candidate.node_id != other.node_id
+                    && semantic_ancestor(
+                        candidate.node_id.as_str(),
+                        other.node_id.as_str(),
+                        &semantic_parent,
+                    )
+            })
+        })
+        .collect::<Vec<_>>();
+    if deepest_focus.len() > 1 {
         return Err(NativeProtocolError::ReceiptInvalid);
     }
-    let focused_node = focused
+    let focused_node = deepest_focus
         .first()
         .map(|node| references[node.node_id.as_str()].clone());
     let mut redacted_field_count = 0_u32;
@@ -337,6 +350,21 @@ fn nearest_visible_parent<'a>(
         current = parent.parent_id.as_deref();
     }
     Ok(None)
+}
+
+fn semantic_ancestor(
+    candidate: &str,
+    descendant: &str,
+    semantic_parent: &BTreeMap<&str, Option<&str>>,
+) -> bool {
+    let mut current = semantic_parent.get(descendant).copied().flatten();
+    while let Some(parent) = current {
+        if parent == candidate {
+            return true;
+        }
+        current = semantic_parent.get(parent).copied().flatten();
+    }
+    false
 }
 
 fn node_reference(

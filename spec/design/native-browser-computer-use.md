@@ -239,7 +239,15 @@ Press-key binds the snapshot's unique focused semantic node and revalidates the
 same adapter-private backend focus immediately before input; absent, ambiguous
 or changed focus fails before input. Scroll is bound to the page snapshot and
 the adapter derives its event point from the current browser-reported visual
-viewport center. Key names use a portable closed catalogue; text is one bounded UTF-8 value.
+viewport center. A possible scroll completes only after bounded layout metrics
+prove page-position movement; an existing edge may complete without movement,
+and missing settlement evidence is uncertain. Back and forward derive one exact
+adjacent entry from bounded browser history and prevalidate its origin; reload
+waits for a fresh load event. Every history mutation proves the resulting
+current entry, invalidates the prior snapshot, and rotates the target revision.
+The private observation binding includes current history identity, so ambient
+history changes make old input stale. Key names use a portable closed catalogue;
+text is one bounded UTF-8 value.
 Coordinates are not accepted by browser v1. File upload requires a separate
 opaque workspace file capability. Download requires a separately authorized
 Artifact target and receipt; it never writes to ambient Downloads.

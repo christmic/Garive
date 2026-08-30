@@ -65,6 +65,17 @@ impl CdpTransport {
         self.events.pop_front()
     }
 
+    /// Discards queued events for one exact method/session before a new operation begins.
+    pub fn discard_events(&mut self, method: &str, session_id: Option<&str>) {
+        self.events.retain(|event| {
+            !matches!(event, CdpIncoming::Event {
+                method: queued,
+                session_id: queued_session,
+                ..
+            } if queued == method && queued_session.as_deref() == session_id)
+        });
+    }
+
     /// Waits for one exact event method/session while retaining bounded unrelated events.
     pub async fn wait_for_event(
         &mut self,

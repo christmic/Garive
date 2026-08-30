@@ -123,7 +123,10 @@ async fn portable_key_and_viewport_scroll_use_only_closed_native_fields() {
         }
         let metrics = next(
             &mut socket,
-            json!({"visualViewport":{"clientWidth":1280,"clientHeight":720}}),
+            json!({
+                "visualViewport":{"pageX":0,"pageY":0,"clientWidth":1280,"clientHeight":720},
+                "contentSize":{"width":1600,"height":2400}
+            }),
         )
         .await;
         assert_eq!(metrics["method"], "Page.getLayoutMetrics");
@@ -134,6 +137,15 @@ async fn portable_key_and_viewport_scroll_use_only_closed_native_fields() {
         assert_eq!(scroll["params"]["y"], 360.0);
         assert_eq!(scroll["params"]["deltaX"], -5);
         assert_eq!(scroll["params"]["deltaY"], 80);
+        let settled = next(
+            &mut socket,
+            json!({
+                "visualViewport":{"pageX":0,"pageY":80,"clientWidth":1280,"clientHeight":720},
+                "contentSize":{"width":1600,"height":2400}
+            }),
+        )
+        .await;
+        assert_eq!(settled["method"], "Page.getLayoutMetrics");
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
