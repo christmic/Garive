@@ -246,7 +246,21 @@ fn inline_command_suggestions_render_above_composer_without_a_modal_backdrop() {
     assert!(rendered.contains("Commands"));
     assert!(rendered.contains("/theme dark"));
     assert!(rendered.contains("/theme light"));
+    assert!(rendered.contains("↑/↓ select"));
+    assert!(rendered.contains("Tab complete"));
+    assert!(rendered.contains("Esc close"));
+    assert!(!rendered.contains("Enter send"));
     assert!(!rendered.contains("Search"));
+
+    model.terminal_size = application::TerminalSize {
+        width: 40,
+        height: 12,
+    };
+    model.composer.replace("/theme d").unwrap();
+    let compact = frame(&model, 40, 12);
+    assert!(compact.contains("Tab complete"));
+    assert!(compact.contains("Esc close"));
+    assert!(!compact.contains("↑/↓ select"));
 }
 
 #[test]

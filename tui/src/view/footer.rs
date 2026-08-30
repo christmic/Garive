@@ -20,6 +20,15 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
             Span::styled(" ● ", colors.notice),
             Span::styled(notice, colors.normal),
         ])
+    } else if model.command_suggestions_active() {
+        if area.width < 60 {
+            key_hints(&[("Tab", "complete"), ("Esc", "close")], colors)
+        } else {
+            key_hints(
+                &[("↑/↓", "select"), ("Tab", "complete"), ("Esc", "close")],
+                colors,
+            )
+        }
     } else {
         focus_hints(model, area.width, colors)
     };

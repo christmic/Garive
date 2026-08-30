@@ -50,6 +50,10 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         command_suggestion_frame(Theme::Mono)
     );
     insta::assert_snapshot!(
+        "command_suggestions_compact_mono_40x12",
+        command_suggestion_frame_at(Theme::Mono, 40, 12)
+    );
+    insta::assert_snapshot!(
         "markdown_table_narrow_dark",
         markdown_table_narrow_preview(Theme::Dark)
     );
@@ -200,15 +204,16 @@ fn product_model() -> AppModel {
 }
 
 fn command_suggestion_frame(theme: Theme) -> String {
+    command_suggestion_frame_at(theme, 100, 24)
+}
+
+fn command_suggestion_frame_at(theme: Theme, width: u16, height: u16) -> String {
     let mut model = product_model();
     model.execution = ExecutionState::Idle;
-    model.terminal_size = application::TerminalSize {
-        width: 100,
-        height: 24,
-    };
+    model.terminal_size = application::TerminalSize { width, height };
     model.composer.replace("/theme ").unwrap();
     model.command_suggestion_selection = 1;
-    frame(&model, theme, 100, 24)
+    frame(&model, theme, width, height)
 }
 
 fn session(id: &str, state: &str, turns: u64) -> SessionSummary {

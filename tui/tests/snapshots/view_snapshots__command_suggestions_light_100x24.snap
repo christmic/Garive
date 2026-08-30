@@ -25,4 +25,4 @@ expression: "command_suggestion_frame(Theme::Light)"
                            │╔ Compose ═════════════════════════════════════════════════════════════╗
                            │║ /theme                                                               ║
   Ctrl+N new · Ctrl+S list │╚══════════════════════════════════════════════════════════════════════╝
-                           │  Enter send   Ctrl+J newline   Ctrl+P commands   ? help     7 / 4096 B
+                           │  ↑/↓ select   Tab complete   Esc close                      7 / 4096 B
