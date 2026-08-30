@@ -5,6 +5,7 @@
 
 mod core_bridge;
 mod delegation_runtime;
+mod effect_batch_runtime;
 mod live_host;
 mod local_composition;
 mod local_recovery;
@@ -56,6 +57,11 @@ pub use delegation_runtime::{
     plan_delegation_authorization, plan_delegation_child_cancellation, plan_delegation_child_start,
     plan_delegation_child_terminal, plan_delegation_denial, plan_delegation_observation,
     plan_delegation_request, DelegationChildStartCommand, DelegationRuntimeError,
+};
+pub use effect_batch_runtime::{
+    AuthorizedBatchInvocation, BatchRuntimeError, BatchTerminal, CancellationEvidence,
+    ConcurrentExecutorDispatch, ConcurrentExecutorPort, EffectBatchDispatcher,
+    EffectBatchPublisher, EffectBatchReport, EffectBatchRuntimeLimits, EffectCancellation,
 };
 pub use live_host::{
     CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
