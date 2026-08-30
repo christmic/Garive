@@ -16,10 +16,11 @@ adapter/browser revision in evidence and fails closed when a required command
 is unavailable. It never treats the online tip-of-tree document as a mutable
 runtime dependency.
 
-V1 admits only `Browser.getVersion`, managed blank-page `Target.createTarget`, flat `Target.attachToTarget`,
-`Accessibility.enable|disable|getFullAXTree`, bounded Page navigation/history,
-and bounded Input key/mouse dispatch. A future semantic element operation may
-add a constrained typed builder, but v1 does not expose `Runtime.evaluate`,
+V1 admits only `Browser.getVersion`, managed blank-page `Target.createTarget`,
+flat `Target.attachToTarget`, `Accessibility.enable|disable|getFullAXTree`,
+bounded Page navigation/history, `DOM.scrollIntoViewIfNeeded|getBoxModel`, and
+bounded Input key/mouse dispatch. Every semantic element operation needs a
+constrained typed builder; v1 does not expose `Runtime.evaluate`,
 `Runtime.callFunctionOn`, arbitrary scripts or unknown CDP methods.
 
 ## Construction and scope
@@ -80,9 +81,11 @@ Core observation.
 
 - pure config/wire tests reject remote/discovered endpoints, invalid limits,
   unknown commands, oversized frames and mixed terminals;
-- a local managed Chromium suite proves AX tree bounds, stale snapshots/nodes,
-  navigation/redirect origin checks, shadow DOM, cross-origin frame opacity,
-  popups, forms, redaction and attachment loss;
+- Runtime unit gates prove stale target/snapshot/revision/node rejection before
+  dispatch; adapter gates must not rely on CDP backend-node lifetime for this;
+- a local managed Chromium suite proves AX tree bounds,
+  navigation/redirect-origin checks, shadow DOM, cross-origin frame opacity,
+  popups, forms/actions, redaction and attachment loss;
 - dispatch fault injection proves no blind replay after Started;
 - no bundled Chromium, ambient personal profile, environment configuration or
   Computer Use fallback.
@@ -92,8 +95,10 @@ launches an installed Chrome with a temporary dedicated profile and random
 debugging port, reads that child process's capability endpoint, and proves
 version/create-blank-target/flat-attach/enable-Accessibility, a loopback 302
 with exact final URL, and a full tree containing form and open-shadow-root
-controls. This baseline does not satisfy the remaining frame/action/fault
-matrix by itself.
+controls. It also clicks the form button through the typed adapter operation
+using an unexposed backend identity and observes the resulting AX-name change.
+Runtime separately proves the exact semantic binding gate. This baseline does
+not satisfy the remaining frame/action/fault matrix by itself.
 
 ## Meta
 

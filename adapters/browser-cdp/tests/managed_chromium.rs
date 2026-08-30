@@ -97,7 +97,7 @@ fn serve(stream: &mut TcpStream, address: SocketAddr) {
         "/form" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
-            r#"<!doctype html><title>Garive native fixture</title><main><label>Account <input aria-label="Account name"></label><button>Submit form</button><div id="shadow"></div></main><script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<button>Shadow action</button>';</script>"#,
+            r#"<!doctype html><title>Garive native fixture</title><main><label>Account <input aria-label="Account name"></label><button onclick="this.setAttribute('aria-label','Submitted')">Submit form</button><div id="shadow"></div></main><script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<button>Shadow action</button>';</script>"#,
         ),
         _ => ("204 No Content", String::new(), ""),
     };
@@ -184,4 +184,22 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Shadow action")));
+    let submit = tree
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Submit form"))
+        .and_then(|node| node.backend_dom_node_id)
+        .expect("submit backend node");
+    client
+        .click_backend_node(&session, submit)
+        .await
+        .expect("semantic click");
+    let after_click = client
+        .full_ax_tree(&session, None, 64, 10_000, 1_048_576)
+        .await
+        .expect("post-click AX tree");
+    assert!(after_click
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Submitted")));
 }
