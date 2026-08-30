@@ -14,14 +14,14 @@ public class MainActivityTest {
     public val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    public fun liveHostShellRendersCompleteInitialSurface(): Unit {
+    public fun securePairingRendersCompleteInitialSurface(): Unit {
         listOf(
-            "Garive Agent",
-            "Loopback Host URL",
-            "Agent definition",
-            "Message",
-            "Run Agent",
-            "Ready",
+            "Pair your server",
+            "Keep Agent work moving securely when your computer is out of reach.",
+            "Service address",
+            "Access code",
+            "Connect securely",
+            "Remote connections require HTTPS. Garive never stores the access code in preferences or logs.",
         ).forEach { label -> compose.onNodeWithText(label).assertIsDisplayed() }
     }
 }
