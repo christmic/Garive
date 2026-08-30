@@ -30,12 +30,16 @@ type Config struct {
 	Transport     http.RoundTripper
 	Now           func() time.Time
 	Random        io.Reader
+	PushSender    PushSender
+	WakeTTL       time.Duration
 }
 
 type grant struct {
 	deviceID string
+	platform string
 	expires  time.Time
 	revoked  bool
+	push     *PushRegistration
 }
 
 type Server struct {
@@ -47,11 +51,14 @@ type Server struct {
 	transport    http.RoundTripper
 	now          func() time.Time
 	random       io.Reader
+	pushSender   PushSender
+	wakeTTL      time.Duration
 
 	mu            sync.RWMutex
 	pairingUnused bool
 	grants        map[[32]byte]*grant
 	devices       map[string]*grant
+	wakeRoutes    map[[32]byte]wakeRoute
 }
 
 func New(config Config) (*Server, error) {
@@ -78,12 +85,16 @@ func New(config Config) (*Server, error) {
 	if config.Random == nil {
 		config.Random = rand.Reader
 	}
+	if config.WakeTTL <= 0 {
+		config.WakeTTL = 10 * time.Minute
+	}
 	return &Server{
 		runtime: config.RuntimeOrigin, pairingHash: sha256.Sum256([]byte(config.PairingCode)),
 		adminHash: sha256.Sum256([]byte(config.AdminToken)), grantTTL: config.GrantTTL,
 		maxBodyBytes: config.MaxBodyBytes, transport: config.Transport, now: config.Now,
-		random: config.Random, pairingUnused: true, grants: make(map[[32]byte]*grant),
-		devices: make(map[string]*grant),
+		random: config.Random, pushSender: config.PushSender, wakeTTL: config.WakeTTL,
+		pairingUnused: true, grants: make(map[[32]byte]*grant), devices: make(map[string]*grant),
+		wakeRoutes: make(map[[32]byte]wakeRoute),
 	}, nil
 }
 
@@ -95,6 +106,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.pair(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/mobile/grants/self:revoke":
 		s.revokeSelf(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/mobile/push/registrations":
+		s.registerPush(w, r)
+	case r.Method == http.MethodDelete && r.URL.Path == "/v1/mobile/push/registrations/self":
+		s.unregisterPush(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/mobile/wake-hints":
+		s.dispatchWake(w, r)
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/mobile/wake/") && strings.HasSuffix(r.URL.Path, ":resolve"):
+		s.resolveWake(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/mobile/devices/") && strings.HasSuffix(r.URL.Path, ":revoke"):
 		s.revoke(w, r)
 	case admittedRoute.MatchString(r.URL.Path) && admittedMethod(r.Method, r.URL.Path):
@@ -159,7 +178,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	}
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	deviceID := base64.RawURLEncoding.EncodeToString(deviceBytes)
-	value := &grant{deviceID: deviceID, expires: s.now().Add(s.grantTTL)}
+	value := &grant{deviceID: deviceID, platform: request.Platform, expires: s.now().Add(s.grantTTL)}
 	s.grants[sha256.Sum256([]byte(token))] = value
 	s.devices[deviceID] = value
 	s.pairingUnused = false

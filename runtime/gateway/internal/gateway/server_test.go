@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -19,6 +20,17 @@ const (
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
+
+type recordedPush struct {
+	registration PushRegistration
+	hint         MobileWakeHint
+}
+
+func (record *recordedPush) Send(_ context.Context, registration PushRegistration, hint MobileWakeHint) error {
+	record.registration = registration
+	record.hint = hint
+	return nil
+}
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)
@@ -120,6 +132,62 @@ func TestDeviceCanRevokeItsOwnGrant(t *testing.T) {
 	assertError(t, serve(server, http.MethodGet, "/v1/agent-definitions", "", grant), http.StatusUnauthorized, "authentication_required")
 }
 
+func TestPushRegistrationDispatchAndSingleUseResolution(t *testing.T) {
+	push := &recordedPush{}
+	server := newPushServer(t, push)
+	grant, deviceID := pair(t, server)
+	registration := `{"api_version":"v1","transport":"apns","token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
+	if got := serve(server, http.MethodPost, "/v1/mobile/push/registrations", registration, grant); got.Code != http.StatusNoContent {
+		t.Fatalf("register status = %d body = %s", got.Code, got.Body.String())
+	}
+	dispatch := `{"api_version":"v1","device_id":"` + deviceID + `","destination":"session","session_id":"session_1","category":"attention"}`
+	if got := serve(server, http.MethodPost, "/v1/mobile/wake-hints", dispatch, adminToken); got.Code != http.StatusAccepted {
+		t.Fatalf("dispatch status = %d body = %s", got.Code, got.Body.String())
+	}
+	if push.registration.Transport != "apns" || push.hint.SchemaVersion != 1 || push.hint.Category != "attention" ||
+		push.hint.CollapseKey != "attention" || len(push.hint.RouteToken) != 43 {
+		t.Fatalf("unsafe or invalid push: %#v %#v", push.registration, push.hint)
+	}
+	resolvePath := "/v1/mobile/wake/" + push.hint.RouteToken + ":resolve"
+	resolved := serve(server, http.MethodPost, resolvePath, "", grant)
+	if resolved.Code != http.StatusOK || !strings.Contains(resolved.Body.String(), `"session_id":"session_1"`) {
+		t.Fatalf("resolve status = %d body = %s", resolved.Code, resolved.Body.String())
+	}
+	assertError(t, serve(server, http.MethodPost, resolvePath, "", grant), http.StatusNotFound, "wake_hint_not_found")
+}
+
+func TestPushRegistrationIsPlatformBoundAndUnregisters(t *testing.T) {
+	server := newPushServer(t, &recordedPush{})
+	grant, deviceID := pair(t, server)
+	fcm := `{"api_version":"v1","transport":"fcm","token":"long-enough-provider-token"}`
+	assertError(t, serve(server, http.MethodPost, "/v1/mobile/push/registrations", fcm, grant), http.StatusBadRequest, "invalid_push_registration")
+	apns := `{"api_version":"v1","transport":"apns","token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
+	if got := serve(server, http.MethodPost, "/v1/mobile/push/registrations", apns, grant); got.Code != http.StatusNoContent {
+		t.Fatalf("register status = %d", got.Code)
+	}
+	if got := serve(server, http.MethodDelete, "/v1/mobile/push/registrations/self", "", grant); got.Code != http.StatusNoContent {
+		t.Fatalf("unregister status = %d", got.Code)
+	}
+	dispatch := `{"api_version":"v1","device_id":"` + deviceID + `","destination":"settings","category":"connection_security"}`
+	assertError(t, serve(server, http.MethodPost, "/v1/mobile/wake-hints", dispatch, adminToken), http.StatusServiceUnavailable, "push_unavailable")
+}
+
+func TestWakeTokenIsDeviceBoundAndExpires(t *testing.T) {
+	now := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
+	push := &recordedPush{}
+	server := newPushServerAt(t, push, func() time.Time { return now })
+	grant, deviceID := pair(t, server)
+	register := `{"api_version":"v1","transport":"apns","token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}`
+	serve(server, http.MethodPost, "/v1/mobile/push/registrations", register, grant)
+	dispatch := `{"api_version":"v1","device_id":"` + deviceID + `","destination":"session","session_id":"session_1","category":"completed"}`
+	serve(server, http.MethodPost, "/v1/mobile/wake-hints", dispatch, adminToken)
+
+	path := "/v1/mobile/wake/" + push.hint.RouteToken + ":resolve"
+	assertError(t, serve(server, http.MethodPost, path, "", "other-grant-at-least-twenty-characters"), http.StatusNotFound, "wake_hint_not_found")
+	now = now.Add(11 * time.Minute)
+	assertError(t, serve(server, http.MethodPost, path, "", grant), http.StatusNotFound, "wake_hint_not_found")
+}
+
 func TestRouteAndMethodAdmission(t *testing.T) {
 	server := newServer(t, okTransport(), time.Now)
 	grant, _ := pair(t, server)
@@ -136,6 +204,26 @@ func newServer(t *testing.T, transport http.RoundTripper, now func() time.Time) 
 	server, err := New(Config{
 		RuntimeOrigin: runtime, PairingCode: pairingCode, AdminToken: adminToken,
 		GrantTTL: 30 * 24 * time.Hour, Transport: transport, Now: now, Random: random,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server
+}
+
+func newPushServer(t *testing.T, sender PushSender) *Server {
+	t.Helper()
+	return newPushServerAt(t, sender, time.Now)
+}
+
+func newPushServerAt(t *testing.T, sender PushSender, now func() time.Time) *Server {
+	t.Helper()
+	runtime, _ := url.Parse("http://127.0.0.1:4317")
+	server, err := New(Config{
+		RuntimeOrigin: runtime, PairingCode: pairingCode, AdminToken: adminToken,
+		GrantTTL: 30 * 24 * time.Hour, WakeTTL: 10 * time.Minute,
+		Transport: okTransport(), Now: now, Random: bytes.NewReader(bytes.Repeat([]byte{0x5a}, 512)),
+		PushSender: sender,
 	})
 	if err != nil {
 		t.Fatal(err)
