@@ -53,13 +53,13 @@ recovery envelopes only. Unix state directories/files are enforced as
 `%LOCALAPPDATA%\Garive\tui`. `--ephemeral` requires confirmation before
 mutations.
 
-The verified native target is currently macOS arm64 with an xterm-compatible
-PTY. The complete Windows target now passes source-level all-target check and
-strict Clippy, including its private-state backend. Windows native linking,
-ACL execution, and ConPTY interaction remain outside the verified claim until
-their named native gates run. The complete Linux x86_64 target also passes
-source-level all-target check and strict Clippy; Linux native linking, execution,
-and PTY behavior remain open.
+Verified native targets currently include macOS arm64 and Linux arm64 with an
+xterm-compatible PTY; the Linux run covers the shipping binary and production
+Runtime/SQLite round trip. The complete Windows target passes source-level
+all-target check and strict Clippy, including its private-state backend, while
+native linking, ACL execution, and ConPTY remain open. Linux x86_64 likewise
+passes complete source-level checking and strict Clippy, but its native
+execution, physical terminal, tmux, and `TERM=dumb` gates remain open.
 
 ## Verify
 

@@ -6,13 +6,13 @@ Host, and it rebuilds conversation state from Host read models after restart.
 
 ## Support status
 
-The currently verified native environment is macOS arm64 with an
-xterm-compatible pseudo-terminal. The full-screen client requires interactive
-stdin and stderr. The complete Windows target passes source-level all-target
-check and strict Clippy, but Windows native linking, ACL execution, and ConPTY
-behavior are not yet a supported claim. The complete Linux x86_64 target also
-passes source-level all-target check and strict Clippy, but Linux native
-linking, execution, and terminal behavior remain unverified.
+The verified native environments are macOS arm64 and Linux arm64 with an
+xterm-compatible pseudo-terminal. Linux arm64 evidence includes the shipping
+binary and production Runtime/SQLite round trip. The full-screen client
+requires interactive stdin and stderr. Windows passes source-level all-target
+check and strict Clippy, but native linking, ACL execution, and ConPTY remain
+open. Linux x86_64 also passes those source-level gates; its native execution,
+physical-terminal, tmux, and `TERM=dumb` gates remain unverified.
 
 The TUI does not start a Runtime, select provider credentials, or read the
 Runtime database. A configured Runtime Host must already be listening on an

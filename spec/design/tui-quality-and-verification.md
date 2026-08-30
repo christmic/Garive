@@ -227,6 +227,7 @@ is a scheduled/release gate after the shorter deterministic harness passes.
 | Platform | Build gate | Native/PTY gate |
 |---|---|---|
 | macOS arm64 | workspace build/test | Apple Terminal plus one of iTerm2/WezTerm/Kitty; tmux |
+| Linux arm64 | native workspace build/test verified | xterm-compatible automated PTY verified; physical emulator, tmux, and `TERM=dumb` remain open |
 | Linux x86_64 | workspace build/test; source-level all-target check and strict Clippy are necessary but not sufficient | xterm-compatible PTY; tmux; `TERM=dumb` refusal/linear fallback |
 | Windows x86_64 | MSVC build/test; source-level all-target check and strict Clippy are necessary but not sufficient | Windows Terminal ConPTY; ACL execution; signal-equivalent restore |
 
@@ -237,8 +238,11 @@ execution, ACL, or ConPTY rows.
 
 The corresponding Linux source-level result is pinned in
 [`../../docs/evidence/tui-linux-cross-build-2026-08-30.md`](../../docs/evidence/tui-linux-cross-build-2026-08-30.md).
-It also covers every TUI target but does not close native linking, execution,
-PTY, tmux, or `TERM=dumb` rows.
+It covers every x86_64 TUI target but does not close native x86_64 linking or
+execution. Native Linux arm64 linking, full tests, production Runtime/SQLite,
+and automated PTY evidence are pinned in
+[`../../docs/evidence/tui-linux-native-2026-08-30.md`](../../docs/evidence/tui-linux-native-2026-08-30.md);
+physical terminal, tmux, and `TERM=dumb` rows remain open.
 
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
