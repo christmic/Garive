@@ -112,6 +112,7 @@ fn limits(timeout_ms: u64) -> EffectBatchRuntimeLimits {
 struct Publisher {
     events: Vec<String>,
     started: Arc<Mutex<HashSet<String>>>,
+    fail_terminal: Option<usize>,
 }
 
 impl EffectBatchPublisher for Publisher {
@@ -137,7 +138,11 @@ impl EffectBatchPublisher for Publisher {
         _: &BatchTerminal,
     ) -> Result<(), BatchRuntimeError> {
         self.events.push(format!("terminal:{index}"));
-        Ok(())
+        if self.fail_terminal == Some(index) {
+            Err(BatchRuntimeError::DurabilityFailure)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -241,6 +246,7 @@ async fn run(mode: Mode, cancellation: EffectCancellation) -> (Publisher, Vec<Ba
     let mut publisher = Publisher {
         events: Vec::new(),
         started,
+        fail_terminal: None,
     };
     let report = EffectBatchDispatcher::new(limits(30))
         .unwrap()
@@ -331,4 +337,44 @@ async fn timeout_cancellation_uncertainty_and_result_bounds_are_explicit() {
     assert!(oversized
         .iter()
         .all(|value| *value == BatchTerminal::ResultBoundExceeded));
+}
+
+#[tokio::test]
+async fn terminal_durability_failure_stops_later_publication() {
+    let invocations = invocations(3);
+    let plan = plan_effect_batch(
+        &invocations
+            .iter()
+            .map(|value| value.prepared.clone())
+            .collect::<Vec<_>>(),
+        &EffectBatchLimitsV1::new(3, 1, 3, 3, 1536).unwrap(),
+    )
+    .unwrap();
+    let started = Arc::new(Mutex::new(HashSet::new()));
+    let executor = Executor {
+        mode: Mode::Complete(vec![3, 2, 1]),
+        started: started.clone(),
+    };
+    let mut publisher = Publisher {
+        events: Vec::new(),
+        started,
+        fail_terminal: Some(1),
+    };
+    let error = EffectBatchDispatcher::new(limits(30))
+        .unwrap()
+        .execute(
+            &plan,
+            &invocations,
+            limits(30),
+            &EffectCancellation::default(),
+            &executor,
+            &mut publisher,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error, BatchRuntimeError::DurabilityFailure);
+    assert_eq!(
+        publisher.events,
+        ["start:0", "start:1", "start:2", "terminal:0", "terminal:1"]
+    );
 }
