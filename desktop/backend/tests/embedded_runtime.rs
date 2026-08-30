@@ -162,7 +162,17 @@ fn usage() -> ModelUsage {
 }
 
 fn desktop_host(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHost {
-    DesktopHost::new(desktop_host_config(database, model)).expect("Desktop Host composition")
+    desktop_host_with_ordinal(database, model, 1)
+}
+
+fn desktop_host_with_ordinal(
+    database: &Path,
+    model: Arc<dyn ModelPort>,
+    first_operation: u64,
+) -> DesktopHost {
+    let mut config = desktop_host_config(database, model);
+    config.operations = Arc::new(Operations(AtomicU64::new(first_operation)));
+    DesktopHost::new(config).expect("Desktop Host composition")
 }
 
 fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHostConfig {
@@ -267,6 +277,57 @@ async fn typed_ipc_core_runs_an_embedded_durable_agent() {
         timeline.items[1].completion_text.as_deref(),
         Some("desktop durable answer")
     );
+}
+
+#[tokio::test]
+async fn product_reopens_after_process_restart_and_commits_a_second_turn() {
+    let directory = tempdir().expect("temp directory");
+    let database = directory.path().join("product-restart.db");
+    let first_process = DesktopState::default();
+    first_process
+        .install(desktop_host_with_ordinal(
+            &database,
+            Arc::new(CompletingModel),
+            1,
+        ))
+        .expect("first process installs");
+    let first = first_process
+        .run_turn_isolated("definition-main".into(), "first durable request".into())
+        .await
+        .expect("first Turn completes");
+    assert_eq!(first.terminal, DesktopTerminal::Completed);
+    drop(first_process);
+
+    let restarted = DesktopState::default();
+    restarted
+        .install(desktop_host_with_ordinal(
+            &database,
+            Arc::new(CompletingModel),
+            100,
+        ))
+        .expect("restarted process installs");
+    let reopened = restarted
+        .session_timeline(&first.session_id, 0, 8)
+        .expect("Session reopens from Ledger");
+    assert_eq!(reopened.items.len(), 1);
+    assert_eq!(reopened.items[0].user_text, "first durable request");
+
+    let second = restarted
+        .run_turn_in_session_isolated(
+            "definition-main".into(),
+            Some(first.session_id.clone()),
+            "second durable request".into(),
+        )
+        .await
+        .expect("second Turn completes");
+    assert_eq!(second.session_id, first.session_id);
+    assert_ne!(second.turn_id, first.turn_id);
+    let final_timeline = restarted
+        .session_timeline(&first.session_id, 0, 8)
+        .expect("two-Turn timeline restores");
+    assert_eq!(final_timeline.items.len(), 2);
+    assert_eq!(final_timeline.items[1].user_text, "second durable request");
+    assert!(final_timeline.items[1].latest_position > reopened.items[0].latest_position);
 }
 
 #[tokio::test]
