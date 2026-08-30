@@ -353,6 +353,24 @@ fn shared_setup_fixture_freezes_catalogue_plans_and_redaction() {
 }
 
 #[test]
+fn tauri_capability_limits_setup_commands_to_the_main_window() {
+    let capability: serde_json::Value =
+        serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
+    assert_eq!(capability["windows"], serde_json::json!(["main"]));
+    let permissions = capability["permissions"].as_array().unwrap();
+    for permission in [
+        "allow-get-setup-state",
+        "allow-get-setup-catalogue",
+        "allow-prepare-setup",
+        "allow-commit-setup",
+        "allow-cancel-setup",
+    ] {
+        assert!(permissions.iter().any(|value| value == permission));
+    }
+    assert!(capability.get("remote").is_none());
+}
+
+#[test]
 fn invalid_input_secret_and_replayed_commit_are_stable_and_idempotent() {
     let directory = tempfile::tempdir().unwrap();
     let service =
