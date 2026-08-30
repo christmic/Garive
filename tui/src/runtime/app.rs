@@ -25,7 +25,7 @@ use crate::{
 };
 
 use super::{
-    controller::handle_terminal,
+    controller::{handle_terminal, replay_pending},
     host::{self, HostMessage, HostOperation},
     SystemTerminal, TerminalError, TerminalGuard, TerminalOptions,
 };
@@ -274,6 +274,7 @@ pub(super) struct RuntimeState {
     follow_sequence: u64,
     pub(super) force_redraw: bool,
     pub(super) last_empty_ctrl_c: Option<Instant>,
+    pub(super) retry_after_refresh: Option<String>,
 }
 
 struct BackgroundFollow {
@@ -342,6 +343,7 @@ impl RuntimeState {
             follow_sequence: 0,
             force_redraw: false,
             last_empty_ctrl_c: None,
+            retry_after_refresh: None,
         }
     }
 
@@ -695,6 +697,7 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             if let Some(id) = selected {
                 state.load(id);
             }
+            replay_queued_create(state);
         }
         HostMessage::SessionPageLoaded {
             sessions,
@@ -747,10 +750,11 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             }
             state.follow = Some(host::follow(
                 state.client.clone(),
-                session_id,
+                session_id.clone(),
                 follow_position,
                 state.sender.clone(),
             ));
+            replay_queued_for_session(state, &session_id);
         }
         HostMessage::SnapshotLoaded { .. } => {}
         HostMessage::SessionCreated {
@@ -896,6 +900,15 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             ));
         }
         HostMessage::Failed { operation, error } => {
+            let refresh_failed = match &operation {
+                HostOperation::Bootstrap => true,
+                HostOperation::Snapshot { request_id } => *request_id == state.snapshot_request,
+                _ => false,
+            };
+            if refresh_failed && state.retry_after_refresh.take().is_some() {
+                state.model.notice =
+                    Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
+            }
             let code = error.code;
             match operation {
                 HostOperation::Bootstrap => {
@@ -952,6 +965,42 @@ fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             }
         }
     }
+}
+
+fn replay_queued_create(state: &mut RuntimeState) {
+    let Some(command_id) = state.retry_after_refresh.clone() else {
+        return;
+    };
+    let Some(pending) = state
+        .pending
+        .iter()
+        .find(|pending| {
+            pending.command_id == command_id && pending.kind == PendingKind::CreateSession
+        })
+        .cloned()
+    else {
+        return;
+    };
+    state.retry_after_refresh = None;
+    replay_pending(state, pending);
+}
+
+fn replay_queued_for_session(state: &mut RuntimeState, session_id: &str) {
+    let Some(command_id) = state.retry_after_refresh.clone() else {
+        return;
+    };
+    let Some(pending) = state
+        .pending
+        .iter()
+        .find(|pending| {
+            pending.command_id == command_id && pending.session_id.as_deref() == Some(session_id)
+        })
+        .cloned()
+    else {
+        return;
+    };
+    state.retry_after_refresh = None;
+    replay_pending(state, pending);
 }
 
 fn apply_event(event: HostEvent, state: &mut RuntimeState) {

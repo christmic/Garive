@@ -766,6 +766,23 @@ fn retry_pending(state: &mut RuntimeState) {
         state.model.overlay = Some(Overlay::ErrorDetails);
         return;
     };
+    if pending.validate().is_err() {
+        state.model.notice =
+            Some("The pending command digest is invalid; retry was blocked.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    }
+    state.retry_after_refresh = Some(pending.command_id.clone());
+    state.model.overlay = None;
+    state.model.notice = Some("Refreshing Host truth before exact retry…".into());
+    if let Some(session_id) = pending.session_id {
+        state.load(session_id);
+    } else {
+        host::bootstrap(state.client.clone(), state.sender.clone());
+    }
+}
+
+pub(super) fn replay_pending(state: &mut RuntimeState, pending: PendingCommand) {
     let text = pending
         .request_payload
         .get("text")
