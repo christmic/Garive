@@ -23,8 +23,30 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "execution.suspended" => suspended(value, false),
         "execution.stopped" => stopped(value, false),
         "execution.failed" => failed(value, false),
+        "execution.effect_batch_planned" => effect_batch_planned(value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn effect_batch_planned(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "plan_digest",
+            "conflict_graph_digest",
+            "ordered_prepared_digests",
+            "steps",
+            "max_parallel_reads",
+            "max_buffered_result_bytes",
+        ],
+        EMPTY,
+    )?;
+    digest(value, "plan_digest")?;
+    digest(value, "conflict_graph_digest")?;
+    content(value, "ordered_prepared_digests")?;
+    content(value, "steps")?;
+    unsigned(value, "max_parallel_reads", true)?;
+    unsigned(value, "max_buffered_result_bytes", true)
 }
 
 fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {

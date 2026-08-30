@@ -16,8 +16,8 @@ use serde::de::DeserializeOwned;
 use tokio::net::TcpListener;
 
 use super::{
-    validate_key, AgentDefinitionPage, CancelTurnBody, ContinueTurnBody, CreateSessionBody,
-    ErrorBody, LiveHost, LiveHostError, LiveHostEvent, SessionPage, StartTurnBody,
+    validate_key, CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHost,
+    LiveHostError, LiveHostEvent, StartTurnBody,
 };
 
 const IDEMPOTENCY_KEY: &str = "idempotency-key";
@@ -41,10 +41,10 @@ impl LiveHostServer {
         let local_addr = listener.local_addr().map_err(LiveHostServerError::Io)?;
         let app = Router::new()
             .route("/v1/agent-definitions", get(agent_definitions))
-            .route("/v1/sessions", get(list_sessions).post(create_session))
-            .route("/v1/sessions/:session_id", get(get_session))
+            .route("/v1/sessions", post(create_session).get(session_page))
+            .route("/v1/sessions/:session_id", get(session_view))
+            .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
-            .route("/v1/sessions/:session_id/timeline", get(timeline))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
             .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot))
@@ -74,48 +74,44 @@ impl LiveHostServer {
     }
 }
 
-async fn agent_definitions(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
-    if query.is_some_and(|value| !value.is_empty()) {
-        return error_response(LiveHostError::InvalidRequest);
-    }
-    command_response(Ok(AgentDefinitionPage {
-        api_version: "v1",
-        definitions: host.agent_definitions(),
-    }))
+async fn agent_definitions(State(host): State<LiveHost>) -> Response {
+    command_response(host.list_agent_definitions())
 }
 
-async fn list_sessions(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
-    let limit = match parse_single_limit(query.as_deref()) {
+async fn session_view(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
+    let result = tokio::task::spawn_blocking(move || host.get_session(&session_id))
+        .await
+        .map_err(|_| LiveHostError::DurabilityUnavailable)
+        .and_then(|result| result);
+    command_response(result)
+}
+
+async fn session_page(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
+    let (limit, before) = match parse_session_query(query.as_deref()) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
-    command_response(host.list_sessions(limit).map(|sessions| SessionPage {
-        api_version: "v1",
-        sessions,
-        next_before: None,
-    }))
-}
-
-async fn get_session(
-    State(host): State<LiveHost>,
-    Path(session_id): Path<String>,
-    RawQuery(query): RawQuery,
-) -> Response {
-    if query.is_some_and(|value| !value.is_empty()) {
-        return error_response(LiveHostError::InvalidRequest);
-    }
-    command_response(host.get_session(&session_id))
+    let result = tokio::task::spawn_blocking(move || host.list_sessions(limit, before.as_deref()))
+        .await
+        .map_err(|_| LiveHostError::DurabilityUnavailable)
+        .and_then(|result| result);
+    command_response(result)
 }
 
 async fn mobile_wake_snapshot(State(host): State<LiveHost>, RawQuery(query): RawQuery) -> Response {
-    let (limit, before) = match parse_wake_query(query.as_deref()) {
+    let (limit, before) = match parse_session_query(query.as_deref()) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
-    command_response(host.mobile_wake_page(limit, before.as_deref()))
+    let result =
+        tokio::task::spawn_blocking(move || host.mobile_wake_page(limit, before.as_deref()))
+            .await
+            .map_err(|_| LiveHostError::DurabilityUnavailable)
+            .and_then(|result| result);
+    command_response(result)
 }
 
-async fn timeline(
+async fn turn_timeline(
     State(host): State<LiveHost>,
     Path(session_id): Path<String>,
     RawQuery(query): RawQuery,
@@ -124,7 +120,12 @@ async fn timeline(
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
-    command_response(host.read_timeline(&session_id, after_position, limit))
+    let result =
+        tokio::task::spawn_blocking(move || host.get_timeline(&session_id, after_position, limit))
+            .await
+            .map_err(|_| LiveHostError::DurabilityUnavailable)
+            .and_then(|result| result);
+    command_response(result)
 }
 
 /// Failure while constructing or serving the local Host listener.
@@ -332,55 +333,60 @@ fn parse_event_query(query: Option<&str>) -> Result<u64, LiveHostError> {
     }
 }
 
-fn parse_single_limit(query: Option<&str>) -> Result<usize, LiveHostError> {
-    let value = query.ok_or(LiveHostError::InvalidRequest)?;
-    let raw = value
-        .strip_prefix("limit=")
+fn parse_session_query(query: Option<&str>) -> Result<(usize, Option<String>), LiveHostError> {
+    let query = query
+        .filter(|value| !value.is_empty())
         .ok_or(LiveHostError::InvalidRequest)?;
-    if raw.is_empty() || raw.contains('&') {
-        return Err(LiveHostError::InvalidRequest);
+    let mut limit = None;
+    let mut before = None;
+    for pair in query.split('&') {
+        if let Some(raw) = pair.strip_prefix("limit=") {
+            if limit.is_some() || raw.is_empty() {
+                return Err(LiveHostError::InvalidRequest);
+            }
+            limit = Some(raw.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+        } else if let Some(raw) = pair.strip_prefix("before=") {
+            if before.is_some()
+                || raw.is_empty()
+                || !raw
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            {
+                return Err(LiveHostError::InvalidRequest);
+            }
+            before = Some(raw.to_owned());
+        } else {
+            return Err(LiveHostError::InvalidRequest);
+        }
     }
-    raw.parse().map_err(|_| LiveHostError::InvalidRequest)
+    Ok((limit.ok_or(LiveHostError::InvalidRequest)?, before))
 }
 
 fn parse_timeline_query(query: Option<&str>) -> Result<(u64, usize), LiveHostError> {
+    let query = query
+        .filter(|value| !value.is_empty())
+        .ok_or(LiveHostError::InvalidRequest)?;
     let mut after_position = None;
     let mut limit = None;
-    for pair in query.ok_or(LiveHostError::InvalidRequest)?.split('&') {
-        let (key, value) = pair.split_once('=').ok_or(LiveHostError::InvalidRequest)?;
-        match key {
-            "after_position" if after_position.is_none() => {
-                after_position = Some(value.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+    for pair in query.split('&') {
+        if let Some(raw) = pair.strip_prefix("after_position=") {
+            if after_position.is_some() || raw.is_empty() {
+                return Err(LiveHostError::InvalidRequest);
             }
-            "limit" if limit.is_none() => {
-                limit = Some(value.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+            after_position = Some(raw.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+        } else if let Some(raw) = pair.strip_prefix("limit=") {
+            if limit.is_some() || raw.is_empty() {
+                return Err(LiveHostError::InvalidRequest);
             }
-            _ => return Err(LiveHostError::InvalidRequest),
+            limit = Some(raw.parse().map_err(|_| LiveHostError::InvalidRequest)?);
+        } else {
+            return Err(LiveHostError::InvalidRequest);
         }
     }
     Ok((
         after_position.ok_or(LiveHostError::InvalidRequest)?,
         limit.ok_or(LiveHostError::InvalidRequest)?,
     ))
-}
-
-fn parse_wake_query(query: Option<&str>) -> Result<(usize, Option<String>), LiveHostError> {
-    let mut limit = None;
-    let mut before = None;
-    for pair in query.ok_or(LiveHostError::InvalidRequest)?.split('&') {
-        let (key, value) = pair.split_once('=').ok_or(LiveHostError::InvalidRequest)?;
-        match key {
-            "limit" if limit.is_none() => {
-                limit = Some(value.parse().map_err(|_| LiveHostError::InvalidRequest)?);
-            }
-            "before" if before.is_none() && !value.is_empty() => {
-                validate_key(value)?;
-                before = Some(value.to_owned());
-            }
-            _ => return Err(LiveHostError::InvalidRequest),
-        }
-    }
-    Ok((limit.ok_or(LiveHostError::InvalidRequest)?, before))
 }
 
 fn command_response<T: serde::Serialize>(result: Result<T, LiveHostError>) -> Response {
@@ -399,6 +405,7 @@ fn error_response(error: LiveHostError) -> Response {
         }
         LiveHostError::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
         LiveHostError::DurabilityUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        LiveHostError::ReadBoundExceeded => StatusCode::PAYLOAD_TOO_LARGE,
         LiveHostError::CorruptState => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (

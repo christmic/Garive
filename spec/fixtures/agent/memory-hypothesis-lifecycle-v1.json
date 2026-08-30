@@ -52,6 +52,8 @@
   ],
   "obligation": {
     "obligation_id":"obligation-1","record_id":"r4","revision_id":"v4",
+    "recall_fact":{"session_id":"session-observe","position":"119","fact_id":"fact-recall","payload_digest":"6666666666666666666666666666666666666666666666666666666666666666"},
+    "selection_id":"selection-observe",
     "application_fact":{"session_id":"session-observe","position":"120","fact_id":"fact-application","payload_digest":"7777777777777777777777777777777777777777777777777777777777777777"},
     "expected_outcome_digest":"8888888888888888888888888888888888888888888888888888888888888888",
     "application_scope_digest":"9999999999999999999999999999999999999999999999999999999999999999",

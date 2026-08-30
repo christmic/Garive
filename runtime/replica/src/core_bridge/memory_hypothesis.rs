@@ -222,10 +222,14 @@ pub struct MemoryObligationContext {
 /// Encodes an application claim as an open durable obligation.
 pub fn plan_memory_obligation(
     context: &MemoryObligationContext,
+    recall_fact: &DurableFact,
+    application_fact: &DurableFact,
     obligation: &MemoryObligation,
 ) -> Result<FactDraft, RuntimeCommandError> {
     validate_text(&context.namespace_id)?;
     validate_time(&context.recorded_at)?;
+    validate_application_chain(context, recall_fact, application_fact, obligation)?;
+    let recall = obligation.recall_fact();
     let application = obligation.application_fact();
     fact(
         "memory.obligation_opened",
@@ -234,6 +238,9 @@ pub fn plan_memory_obligation(
         json!({
             "obligation_id": obligation.obligation_id(), "namespace_id": context.namespace_id,
             "record_id": obligation.record_id(), "revision_id": obligation.revision_id(),
+            "recall_fact": {"session_id": recall.session_id(), "position": recall.position(),
+                "fact_id": recall.fact_id(), "payload_digest": recall.payload_digest()},
+            "selection_id": obligation.selection_id(),
             "application_fact": {"session_id": application.session_id(), "position": application.position(),
                 "fact_id": application.fact_id(), "payload_digest": application.payload_digest()},
             "expected_outcome_digest": obligation.expected_outcome_digest(),
@@ -243,6 +250,56 @@ pub fn plan_memory_obligation(
         }),
         &context.recorded_at,
     )
+}
+
+fn validate_application_chain(
+    context: &MemoryObligationContext,
+    recall_fact: &DurableFact,
+    application_fact: &DurableFact,
+    obligation: &MemoryObligation,
+) -> Result<(), RuntimeCommandError> {
+    if recall_fact.kind.as_str() != "memory.recall_recorded"
+        || recall_fact.turn_id.as_ref() != Some(&context.turn_id)
+        || recall_fact.execution_id.as_ref() != Some(&context.execution_id)
+        || application_fact.turn_id.as_ref() != Some(&context.turn_id)
+        || application_fact.execution_id.as_ref() != Some(&context.execution_id)
+        || !matches_reference(recall_fact, obligation.recall_fact())
+        || !matches_reference(application_fact, obligation.application_fact())
+    {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let value: Value = serde_json::from_str(recall_fact.payload.as_json())
+        .map_err(|_| RuntimeCommandError::InvalidCommand)?;
+    let object = value
+        .as_object()
+        .ok_or(RuntimeCommandError::InvalidCommand)?;
+    let matching_items = object
+        .get("items")
+        .and_then(Value::as_array)
+        .ok_or(RuntimeCommandError::InvalidCommand)?
+        .iter()
+        .filter(|item| {
+            item.as_object().is_some_and(|item| {
+                item.get("record_id").and_then(Value::as_str) == Some(obligation.record_id())
+                    && item.get("revision_id").and_then(Value::as_str)
+                        == Some(obligation.revision_id())
+            })
+        })
+        .count();
+    if text(object, "namespace_id")? != context.namespace_id
+        || text(object, "selection_id")? != obligation.selection_id()
+        || matching_items != 1
+    {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    Ok(())
+}
+
+fn matches_reference(fact: &DurableFact, reference: &garive_memory::DurableFactReference) -> bool {
+    fact.session_id.as_str() == reference.session_id()
+        && fact.position == reference.position()
+        && fact.fact_id.as_str() == reference.fact_id()
+        && fact.payload.sha256() == reference.payload_digest()
 }
 
 /// Session-scoped ownership for an asynchronous observation batch.

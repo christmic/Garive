@@ -428,19 +428,30 @@ fn continuation_and_limit_properties_hold() {
 #[test]
 fn snapshot_v2_binds_one_complete_sorted_public_tool_catalogue() {
     let fixture = fixture();
+    let v2 = &fixture["snapshot_v2"];
     let v1 = definition(&fixture);
     let mut contracts = v1.contract_versions().clone();
     contracts.insert("effective_snapshot".into(), 2);
     let definition = rebuild(&v1, v1.instruction_sources().to_vec(), contracts).unwrap();
     let mut candidates = registry(&fixture);
     candidates.public_tool_activity_catalogue = Some(PublicToolActivityCatalogue {
-        schema_version: 1,
-        catalogue_revision: "activity-labels-1".into(),
-        descriptors: vec![PublicToolActivityDescriptor {
-            tool_name: "read_file".into(),
-            tool_revision: "1".into(),
-            label_key: "agent.activity.read_file".into(),
-        }],
+        schema_version: v2["public_tool_activity_catalogue"]["schema_version"]
+            .as_u64()
+            .unwrap() as u32,
+        catalogue_revision: v2["public_tool_activity_catalogue"]["catalogue_revision"]
+            .as_str()
+            .unwrap()
+            .into(),
+        descriptors: v2["public_tool_activity_catalogue"]["descriptors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| PublicToolActivityDescriptor {
+                tool_name: item["tool_name"].as_str().unwrap().into(),
+                tool_revision: item["tool_revision"].as_str().unwrap().into(),
+                label_key: item["label_key"].as_str().unwrap().into(),
+            })
+            .collect(),
     });
     let mut policy = product_policy(&fixture);
     policy
@@ -452,6 +463,10 @@ fn snapshot_v2_binds_one_complete_sorted_public_tool_catalogue() {
     assert_eq!(
         snapshot.public_tool_activity_catalogue().unwrap(),
         candidates.public_tool_activity_catalogue.as_ref().unwrap()
+    );
+    assert_eq!(
+        snapshot.snapshot_digest(),
+        v2["expected_snapshot_digest"].as_str().unwrap()
     );
     assert_ne!(
         snapshot.snapshot_digest(),

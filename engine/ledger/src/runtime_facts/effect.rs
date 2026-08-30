@@ -27,6 +27,55 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
     }
 }
 
+pub(super) fn validate_prepared_v2(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "prepared_contract_version",
+            "prepared_digest",
+            "tool_name",
+            "tool_revision",
+            "replay_class",
+            "model_call_id",
+            "access_policy_revision",
+            "access_resolver_revision",
+            "invocation_accesses",
+            "max_result_bytes",
+        ],
+        EMPTY,
+    )?;
+    if value
+        .get("prepared_contract_version")
+        .and_then(Value::as_u64)
+        != Some(2)
+    {
+        return Err(LedgerError::InvalidFact);
+    }
+    digest(value, "prepared_digest")?;
+    identities(
+        value,
+        &[
+            "tool_name",
+            "tool_revision",
+            "model_call_id",
+            "access_policy_revision",
+            "access_resolver_revision",
+        ],
+    )?;
+    enumeration(
+        value,
+        "replay_class",
+        &[
+            "read_only",
+            "idempotent",
+            "receipt_recoverable",
+            "never_replay",
+        ],
+    )?;
+    content(value, "invocation_accesses")?;
+    super::values::unsigned(value, "max_result_bytes", true)
+}
+
 fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
@@ -40,10 +89,11 @@ fn interaction_requested(value: &Map<String, Value>) -> Result<(), LedgerError> 
             "response_schema_digest",
             "expiry_code",
         ],
-        EMPTY,
+        &["response_schema"],
     )?;
     identities(value, &["interaction_id", "suspension_id"])?;
     digests(value, &["prepared_digest", "response_schema_digest"])?;
+    optional_content(value, "response_schema")?;
     enumeration(value, "kind", &["approval", "external_input"])?;
     enumeration(
         value,

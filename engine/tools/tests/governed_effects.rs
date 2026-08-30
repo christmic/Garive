@@ -3,10 +3,10 @@ use std::{fs, path::PathBuf};
 use garive_tools::{
     reduce_preparation_failure, AuthorizationVerdict, DispatchAttemptId, EffectReceipt,
     EffectState, ExecutionCapability, ExecutionFact, ExecutionRequirements, GovernedAction,
-    GovernedEffect, GovernedFailureCode, GovernedToolResult, GrantId, InteractionId,
-    InteractionKind, InteractionRequest, InteractionResolution, InvocationGrant, ReceiptId,
-    ReplayClass, SuspensionRequirement, TerminalClassification, ToolCatalog, ToolDefinition,
-    ToolFeedback, ToolIntent, ToolInvocationId,
+    GovernedEffect, GovernedEffectFailure, GovernedFailureCode, GovernedToolResult, GrantId,
+    InteractionId, InteractionKind, InteractionRequest, InteractionResolution, InvocationGrant,
+    ReceiptId, ReplayClass, SuspensionRequirement, TerminalClassification, ToolCatalog,
+    ToolDefinition, ToolFeedback, ToolIntent, ToolInvocationId,
 };
 use serde_json::Value;
 
@@ -270,6 +270,21 @@ fn shared_governed_scenarios_match() {
             );
         }
     }
+}
+
+#[test]
+fn interaction_prompt_must_match_the_public_v1_schema() {
+    let fixture = fixture();
+    let invocation = ToolInvocationId::new(fixture["invocation_id"].as_str().unwrap()).unwrap();
+    let (mut reducer, _) = GovernedEffect::new(invocation, prepared(&fixture));
+    let mut request = interaction(&fixture);
+    request.prompt = serde_json::json!({"message":"untyped"});
+    assert_eq!(
+        reducer.apply_authorization(AuthorizationVerdict::InteractionRequired(request)),
+        GovernedAction::Fail(GovernedEffectFailure {
+            code: GovernedFailureCode::InteractionConflict,
+        })
+    );
 }
 
 #[test]

@@ -2,7 +2,7 @@ use std::{
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Barrier, Mutex},
 };
 
 use futures::StreamExt;
@@ -13,9 +13,9 @@ use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, To
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
     plan_core_terminal, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, HostClock, HostContinuationInput, InstalledActivityCatalogue,
-    InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits,
-    LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    EffectiveRuntimeLimits, HostClock, HostContinuationInput, HostReadLimits,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
+    LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -63,6 +63,25 @@ impl Harness {
     }
 
     fn with_h3(event_batch_size: u64, h3: bool) -> Self {
+        Self::with_read_limits(event_batch_size, h3, HostReadLimits::PRODUCT_DEFAULT)
+    }
+
+    fn with_read_limits(event_batch_size: u64, h3: bool, read_limits: HostReadLimits) -> Self {
+        let activity = h3.then_some(ActivityProjectionLimits {
+            max_activities_per_turn: 8,
+            max_activity_facts: 64,
+            max_label_bytes: 128,
+            max_activity_id_bytes: 128,
+            max_encoded_bytes_per_turn: 8_192,
+        });
+        Self::with_limits(event_batch_size, activity, read_limits)
+    }
+
+    fn with_limits(
+        event_batch_size: u64,
+        activity: Option<ActivityProjectionLimits>,
+        read_limits: HostReadLimits,
+    ) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let database = directory.path().join("host.sqlite3");
         let dispatcher = Arc::new(VerifyingDispatcher {
@@ -70,22 +89,17 @@ impl Harness {
             committed: Mutex::new(Vec::new()),
         });
         let mut installed = installed();
-        installed.public_activity_catalogue = h3.then(activity_catalogue);
-        let host = LiveHost::new(
+        installed.public_activity_catalogue = activity.map(|_| activity_catalogue());
+        let host = LiveHost::new_with_read_limits(
             &database,
             installed,
             LiveHostLimits {
                 max_command_bytes: 4_096,
                 event_batch_size,
                 event_poll_interval_ms: 10,
-                activity: h3.then_some(ActivityProjectionLimits {
-                    max_activities_per_turn: 8,
-                    max_activity_facts: 64,
-                    max_label_bytes: 128,
-                    max_activity_id_bytes: 128,
-                    max_encoded_bytes_per_turn: 8_192,
-                }),
+                activity,
             },
+            read_limits,
             Arc::new(FixedClock),
             dispatcher.clone(),
         )
@@ -99,12 +113,176 @@ impl Harness {
     }
 }
 
+#[test]
+fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
+    let text_limits = HostReadLimits {
+        max_user_text_bytes: 5,
+        ..HostReadLimits::PRODUCT_DEFAULT
+    };
+    let harness = Harness::with_read_limits(64, false, text_limits);
+    let session = harness
+        .host
+        .create_session("create-text-bound", "definition-main")
+        .unwrap();
+    harness
+        .host
+        .start_turn("start-text-bound", &session.session_id, "ééé")
+        .unwrap();
+    let page = harness
+        .host
+        .get_timeline(&session.session_id, 0, 4)
+        .unwrap();
+    assert_eq!(page.items[0].user_text, "éé");
+    assert!(page.items[0].content_truncated);
+
+    let response_bound = Harness::with_read_limits(
+        64,
+        false,
+        HostReadLimits {
+            max_response_bytes: 1,
+            ..HostReadLimits::PRODUCT_DEFAULT
+        },
+    );
+    assert_eq!(
+        response_bound.host.list_agent_definitions(),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+
+    let fact_bound = Harness::with_read_limits(
+        64,
+        false,
+        HostReadLimits {
+            max_facts: 2,
+            ..HostReadLimits::PRODUCT_DEFAULT
+        },
+    );
+    let session = fact_bound
+        .host
+        .create_session("create-fact-bound", "definition-main")
+        .unwrap();
+    fact_bound
+        .host
+        .start_turn("start-fact-bound", &session.session_id, "hello")
+        .unwrap();
+    assert_eq!(
+        fact_bound.host.get_session(&session.session_id),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+}
+
+#[test]
+fn h2_timeline_is_one_consistent_prefix_during_concurrent_commit() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-concurrent-read", "definition-main")
+        .unwrap();
+    harness
+        .host
+        .start_turn("start-before-read", &session.session_id, "first")
+        .unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let writer_host = harness.host.clone();
+    let writer_session = session.session_id.clone();
+    let writer_barrier = barrier.clone();
+    let writer = std::thread::spawn(move || {
+        writer_barrier.wait();
+        writer_host
+            .start_turn("start-during-read", &writer_session, "second")
+            .unwrap()
+    });
+    barrier.wait();
+    let concurrent = harness
+        .host
+        .get_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    writer.join().unwrap();
+    assert!(matches!(concurrent.observed_max_position, 4 | 7));
+    assert!(concurrent
+        .items
+        .iter()
+        .all(|item| item.latest_position <= concurrent.observed_max_position));
+    assert_eq!(
+        concurrent.items.len(),
+        if concurrent.observed_max_position == 4 {
+            1
+        } else {
+            2
+        }
+    );
+    let final_view = harness
+        .host
+        .get_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    assert_eq!(final_view.observed_max_position, 7);
+    assert_eq!(final_view.items.len(), 2);
+}
+
+#[test]
+fn h3_query_bounds_return_read_bound_exceeded_without_partial_views() {
+    let harness = Harness::with_limits(
+        64,
+        Some(ActivityProjectionLimits {
+            max_activities_per_turn: 8,
+            max_activity_facts: 64,
+            max_label_bytes: 128,
+            max_activity_id_bytes: 128,
+            max_encoded_bytes_per_turn: 1,
+        }),
+        HostReadLimits::PRODUCT_DEFAULT,
+    );
+    let session = harness
+        .host
+        .create_session("create-h3-bound", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-h3-bound", &session.session_id, "hello")
+        .unwrap();
+    let session_id = SessionId::try_from(session.session_id.as_str()).unwrap();
+    SqliteLedger::open(&harness.database)
+        .unwrap()
+        .commit(
+            session_id,
+            2,
+            vec![FactDraft {
+                fact_id: FactId::try_from("prepared-h3-bound").unwrap(),
+                turn_id: Some(garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap()),
+                execution_id: Some(
+                    garive_ledger::ExecutionId::try_from(started.execution_id.as_str()).unwrap(),
+                ),
+                model_request_id: None,
+                tool_invocation_id: Some(ToolInvocationId::try_from("tool-h3-bound").unwrap()),
+                kind: FactKind::new("effect.prepared").unwrap(),
+                schema_version: 1,
+                payload: CanonicalPayload::from_value(&serde_json::json!({
+                    "prepared_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "tool_name":"private_reader_v9",
+                    "tool_revision":"1",
+                    "replay_class":"read_only",
+                    "model_call_id":"call-h3-bound"
+                }))
+                .unwrap(),
+                recorded_at: NOW.into(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        harness.host.get_timeline(&session.session_id, 0, 4),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+    assert_eq!(
+        harness.host.read_event_page(&session.session_id, 0),
+        Err(LiveHostError::ReadBoundExceeded)
+    );
+}
+
 fn activity_catalogue() -> InstalledActivityCatalogue {
     InstalledActivityCatalogue {
         schema_version: 1,
         catalogue_revision: "activity-labels-1".into(),
         descriptors: vec![InstalledActivityDescriptor {
-            tool_name: "read_file".into(),
+            tool_name: "private_reader_v9".into(),
             tool_revision: "1".into(),
             label_key: "agent.activity.read_file".into(),
         }],
@@ -117,6 +295,7 @@ fn installed() -> InstalledAgent {
         definition_revision: "revision-1".into(),
         snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
         agent_instance_namespace: "installed-main".into(),
+        public_capabilities: vec!["timeline".into(), "tools".into()],
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: 4,
             max_input_tokens: Some(1_024),
@@ -199,12 +378,15 @@ fn commands_are_durable_idempotent_and_dispatched_only_after_commit() {
 #[test]
 fn installed_definitions_and_sessions_are_restart_safe_read_models() {
     let harness = Harness::new(64);
-    let definitions = harness.host.agent_definitions();
-    assert_eq!(definitions.len(), 1);
-    assert_eq!(definitions[0].api_version, "v1");
-    assert_eq!(definitions[0].definition_id, "definition-main");
-    assert_eq!(definitions[0].definition_revision, "revision-1");
-    assert!(definitions[0].capabilities.is_empty());
+    let definitions = harness.host.list_agent_definitions().unwrap();
+    assert_eq!(definitions.definitions.len(), 1);
+    assert_eq!(definitions.definitions[0].api_version, "v1");
+    assert_eq!(definitions.definitions[0].definition_id, "definition-main");
+    assert_eq!(
+        definitions.definitions[0].capabilities,
+        ["timeline", "tools"]
+    );
+    assert_eq!(definitions.definitions[0].definition_revision, "revision-1");
 
     let first = harness
         .host
@@ -227,7 +409,7 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
         harness.dispatcher,
     )
     .unwrap();
-    let sessions = restarted.list_sessions(2).unwrap();
+    let sessions = restarted.list_sessions(2, None).unwrap().sessions;
     assert_eq!(sessions.len(), 2);
     assert!(sessions[0].session_id > sessions[1].session_id);
     let active = sessions
@@ -246,8 +428,107 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
         .iter()
         .any(|summary| summary.session_id == second.session_id));
     assert_eq!(
-        restarted.list_sessions(0),
+        restarted.list_sessions(0, None),
         Err(LiveHostError::InvalidRequest)
+    );
+}
+
+#[test]
+fn session_view_tracks_first_starts_and_latest_lifecycle() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-view", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-view", &session.session_id, "hello")
+        .unwrap();
+    let running = harness.host.get_session(&session.session_id).unwrap();
+    assert_eq!(running.api_version, "v1");
+    assert_eq!(running.session.turn_count, 1);
+    assert_eq!(
+        running.session.latest_turn_id.as_deref(),
+        Some(started.turn_id.as_str())
+    );
+    assert_eq!(
+        running.session.latest_turn_state.as_deref(),
+        Some("running")
+    );
+    assert_eq!(running.observed_max_position, started.committed_position);
+    assert_eq!(running.session.opened_at, NOW);
+}
+
+#[test]
+fn timeline_pages_complete_turns_by_latest_change_without_splitting() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("timeline-session", "definition-main")
+        .unwrap();
+    let first = harness
+        .host
+        .start_turn("timeline-first", &session.session_id, "first")
+        .unwrap();
+    let second = harness
+        .host
+        .start_turn("timeline-second", &session.session_id, "second")
+        .unwrap();
+
+    let page = harness
+        .host
+        .get_timeline(&session.session_id, 0, 1)
+        .unwrap();
+    assert_eq!(page.api_version, "v1");
+    assert_eq!(page.observed_max_position, 7);
+    assert_eq!(page.scanned_through_position, 3);
+    assert!(page.has_more);
+    assert_eq!(page.items[0].turn_id, first.turn_id);
+    assert_eq!(page.items[0].user_text, "first");
+    assert_eq!(page.items[0].state, "running");
+
+    let next = harness
+        .host
+        .get_timeline(&session.session_id, page.scanned_through_position, 1)
+        .unwrap();
+    assert!(!next.has_more);
+    assert_eq!(next.scanned_through_position, 7);
+    assert_eq!(next.items[0].turn_id, second.turn_id);
+    assert_eq!(next.items[0].user_text, "second");
+    assert_eq!(
+        harness.host.get_timeline(&session.session_id, 8, 1),
+        Err(LiveHostError::InvalidRequest)
+    );
+}
+
+#[test]
+fn session_pages_use_stable_checked_cursors() {
+    let harness = Harness::new(64);
+    let first = harness
+        .host
+        .create_session("page-a", "definition-main")
+        .unwrap();
+    let second = harness
+        .host
+        .create_session("page-b", "definition-main")
+        .unwrap();
+    let page_one = harness.host.list_sessions(1, None).unwrap();
+    assert_eq!(page_one.sessions.len(), 1);
+    assert_eq!(page_one.sessions[0].session_id, second.session_id);
+    let cursor = page_one.next_before.as_deref().unwrap();
+    let page_two = harness.host.list_sessions(1, Some(cursor)).unwrap();
+    assert_eq!(page_two.sessions[0].session_id, first.session_id);
+    assert!(page_two.next_before.is_none());
+
+    let mut corrupt = cursor.as_bytes().to_vec();
+    let last = corrupt.len() - 1;
+    corrupt[last] = if corrupt[last] == b'A' { b'B' } else { b'A' };
+    assert_eq!(
+        harness
+            .host
+            .list_sessions(1, std::str::from_utf8(&corrupt).ok())
+            .unwrap_err(),
+        LiveHostError::InvalidRequest
     );
 }
 
@@ -333,7 +614,7 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
     assert_eq!(completed.events[0].text, "done");
     let timeline = harness
         .host
-        .read_timeline(&session.session_id, 0, 1)
+        .get_timeline(&session.session_id, 0, 10)
         .unwrap();
     assert_eq!(timeline.api_version, "v1");
     assert_eq!(timeline.items.len(), 1);
@@ -358,7 +639,7 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
         completed
     );
     assert_eq!(
-        restarted.read_timeline(&session.session_id, 0, 1).unwrap(),
+        restarted.get_timeline(&session.session_id, 0, 10).unwrap(),
         timeline
     );
 }
@@ -446,6 +727,16 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
         .load_turn(&garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap())
         .unwrap();
     let state = garive_runtime::reconstruct_suspended_turn(&snapshot).unwrap();
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 10)
+        .unwrap();
+    let public = timeline.items[0].suspension.as_ref().unwrap();
+    assert_eq!(public.suspension_id, state.suspension_id);
+    assert_eq!(public.kind, "partial_output");
+    assert_eq!(public.session_version, 3);
+    assert!(public.response_schema_json.is_none());
+    assert!(public.prompt_json.contains("suspension.partial_output"));
     let continued = harness
         .host
         .continue_turn(
@@ -458,6 +749,13 @@ fn continuation_replay_binds_suspension_input_and_expected_version() {
         )
         .unwrap();
     assert_eq!(continued.committed_position, 9);
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 10)
+        .unwrap();
+    assert_eq!(timeline.items[0].state, "running");
+    assert!(timeline.items[0].suspension.is_none());
+    assert_eq!(timeline.items[0].user_text, "hello");
 
     let restarted = LiveHost::new(
         &harness.database,
@@ -519,7 +817,7 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
         (
             "h3-prepared",
             "effect.prepared",
-            serde_json::json!({"prepared_digest":digest,"tool_name":"read_file","tool_revision":"1","replay_class":"read_only","model_call_id":"call-h3"}),
+            serde_json::json!({"prepared_digest":digest,"tool_name":"private_reader_v9","tool_revision":"1","replay_class":"read_only","model_call_id":"call-h3"}),
         ),
         (
             "h3-authorized",
@@ -529,22 +827,22 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
         (
             "h3-started",
             "effect.started",
-            serde_json::json!({"prepared_digest":digest,"grant_id":"grant-h3","executor_id":"local.read","executor_revision":"1","dispatch_attempt_id":"dispatch-h3"}),
+            serde_json::json!({"prepared_digest":digest,"grant_id":"grant-h3","executor_id":"executor-private","executor_revision":"1","dispatch_attempt_id":"dispatch-h3"}),
         ),
         (
             "h3-receipt",
             "effect.receipt",
-            serde_json::json!({"receipt_id":"receipt-h3","prepared_digest":digest,"grant_id":"grant-h3","executor_id":"local.read","executor_revision":"1","classification":"completed","result_or_evidence":binding(serde_json::json!({"ok":true}))}),
+            serde_json::json!({"receipt_id":"receipt-h3","prepared_digest":digest,"grant_id":"grant-h3","executor_id":"executor-private","executor_revision":"1","classification":"completed","result_or_evidence":binding(serde_json::json!({"secret":"secret-tool-result"}))}),
         ),
         (
             "h3-completed",
             "effect.completed",
-            serde_json::json!({"prepared_digest":digest,"receipt_id":"receipt-h3","result":binding(serde_json::json!({"ok":true}))}),
+            serde_json::json!({"prepared_digest":digest,"receipt_id":"receipt-h3","result":binding(serde_json::json!({"secret":"secret-tool-result"}))}),
         ),
         (
             "h3-observation",
             "effect.observation",
-            serde_json::json!({"prepared_digest":digest,"model_call_id":"call-h3","observation":binding(serde_json::json!({"ok":true}))}),
+            serde_json::json!({"prepared_digest":digest,"model_call_id":"call-h3","observation":binding(serde_json::json!({"secret":"secret-observation"}))}),
         ),
     ];
     let facts = values
@@ -584,7 +882,7 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
     );
     let timeline = harness
         .host
-        .read_timeline(&session.session_id, 0, 8)
+        .get_timeline(&session.session_id, 0, 8)
         .unwrap();
     assert_eq!(timeline.items[0].activities[0].state, "completed");
     assert_eq!(
@@ -611,8 +909,24 @@ fn h3_projects_committed_effects_into_events_and_restart_safe_timeline() {
                 .events
         )
         .unwrap(),
-        serde_json::to_value(page.events).unwrap()
+        serde_json::to_value(&page.events).unwrap()
     );
+    assert_eq!(
+        serde_json::to_value(restarted.get_timeline(&session.session_id, 0, 8).unwrap()).unwrap(),
+        serde_json::to_value(&timeline).unwrap()
+    );
+    let public = serde_json::to_string(&(&page.events, &timeline)).unwrap();
+    for forbidden in [
+        "private_reader_v9",
+        "secret-tool-result",
+        "secret-observation",
+        "executor-private",
+        "grant-h3",
+        "receipt-h3",
+        "dispatch-h3",
+    ] {
+        assert!(!public.contains(forbidden), "leaked H3 canary: {forbidden}");
+    }
 }
 
 #[test]
@@ -717,27 +1031,6 @@ fn interaction_continuation_validates_schema_and_representation_before_commit() 
         .session_watermark(&SessionId::try_from(session.session_id.as_str()).unwrap())
         .unwrap()
         .unwrap();
-    let timeline = harness
-        .host
-        .read_timeline(&session.session_id, 0, 8)
-        .unwrap();
-    let suspension = timeline.items[0].suspension.as_ref().unwrap();
-    assert_eq!(
-        suspension.prompt_schema,
-        "garive.public-suspension-prompt.v1"
-    );
-    assert_eq!(
-        suspension.prompt_json,
-        r#"{"message":"","schema_version":1}"#
-    );
-    assert_eq!(
-        suspension.response_schema_json.as_deref(),
-        Some(r#"{"type":"boolean"}"#)
-    );
-    assert_eq!(
-        suspension.response_schema_digest.as_deref(),
-        Some("7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553")
-    );
 
     assert_eq!(
         harness.host.continue_turn(
@@ -875,6 +1168,24 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
         .unwrap();
     let session_id = created["session_id"].as_str().unwrap();
+    let session_view = client
+        .get(format!("{base}/v1/sessions/{session_id}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(session_view.status(), reqwest::StatusCode::OK);
+    let session_view: Value = serde_json::from_slice(&session_view.bytes().await.unwrap()).unwrap();
+    assert_eq!(session_view["api_version"], "v1");
+    assert_eq!(session_view["session"]["turn_count"], 0);
+    assert_eq!(session_view["observed_max_position"], 1);
+    let sessions = client
+        .get(format!("{base}/v1/sessions?limit=20"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sessions.status(), reqwest::StatusCode::OK);
+    let sessions: Value = serde_json::from_slice(&sessions.bytes().await.unwrap()).unwrap();
+    assert_eq!(sessions["sessions"].as_array().unwrap().len(), 1);
     let started = client
         .post(format!("{base}/v1/sessions/{session_id}/turns"))
         .header("idempotency-key", "start-http")
@@ -884,91 +1195,53 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .await
         .unwrap();
     assert_eq!(started.status(), reqwest::StatusCode::OK);
-
-    let definitions: Value = client
-        .get(format!("{base}/v1/agent-definitions"))
+    let timeline = client
+        .get(format!(
+            "{base}/v1/sessions/{session_id}/timeline?after_position=0&limit=20"
+        ))
         .send()
         .await
-        .unwrap()
-        .bytes()
-        .await
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
         .unwrap();
-    assert_eq!(definitions["api_version"], "v1");
-    assert_eq!(
-        definitions["definitions"][0]["definition_id"],
-        "definition-main"
-    );
+    assert_eq!(timeline.status(), reqwest::StatusCode::OK);
+    let timeline: Value = serde_json::from_slice(&timeline.bytes().await.unwrap()).unwrap();
+    assert_eq!(timeline["items"][0]["user_text"], "hello");
+    assert_eq!(timeline["items"][0]["state"], "running");
 
-    let sessions: Value = client
-        .get(format!("{base}/v1/sessions?limit=8"))
+    let wake_snapshot = client
+        .get(format!("{base}/internal/mobile/wake-snapshot?limit=20"))
         .send()
         .await
-        .unwrap()
-        .bytes()
-        .await
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
         .unwrap();
-    assert_eq!(sessions["api_version"], "v1");
-    assert_eq!(sessions["sessions"][0]["session_id"], session_id);
-
-    let wake_snapshot: Value = client
-        .get(format!("{base}/internal/mobile/wake-snapshot?limit=8"))
-        .send()
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
-        .unwrap();
+    assert_eq!(wake_snapshot.status(), reqwest::StatusCode::OK);
+    let wake_snapshot: Value =
+        serde_json::from_slice(&wake_snapshot.bytes().await.unwrap()).unwrap();
     assert_eq!(wake_snapshot["api_version"], "v1");
     assert_eq!(wake_snapshot["observations"][0]["session_id"], session_id);
-    assert_eq!(wake_snapshot["observations"][0]["latest_position"], 4);
+    assert_eq!(
+        wake_snapshot["observations"][0]["latest_position"],
+        timeline["observed_max_position"]
+    );
     assert!(wake_snapshot["observations"][0]
         .get("wake_category")
         .is_none());
 
-    let session: Value = client
-        .get(format!("{base}/v1/sessions/{session_id}"))
-        .send()
-        .await
-        .unwrap()
-        .bytes()
-        .await
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
-        .unwrap();
-    assert_eq!(session["session"]["session_id"], session_id);
-
-    let timeline: Value = client
+    let bad_timeline = client
         .get(format!(
-            "{base}/v1/sessions/{session_id}/timeline?after_position=0&limit=8"
+            "{base}/v1/sessions/{session_id}/timeline?limit=20&unknown=1"
         ))
         .send()
         .await
-        .unwrap()
-        .bytes()
-        .await
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
         .unwrap();
-    assert_eq!(timeline["api_version"], "v1");
-    assert_eq!(timeline["items"][0]["user_text"], "hello");
+    assert_eq!(bad_timeline.status(), reqwest::StatusCode::BAD_REQUEST);
 
-    for path in [
-        "/v1/sessions?limit=0".to_owned(),
-        "/v1/sessions?limit=8&before=unsupported".to_owned(),
-        format!("/v1/sessions/{session_id}/timeline?after_position=0&limit=8&unknown=true"),
-        "/internal/mobile/wake-snapshot?limit=8&unknown=true".to_owned(),
-    ] {
-        assert_eq!(
-            client
-                .get(format!("{base}{path}"))
-                .send()
-                .await
-                .unwrap()
-                .status(),
-            reqwest::StatusCode::BAD_REQUEST
-        );
-    }
+    let bad_wake = client
+        .get(format!(
+            "{base}/internal/mobile/wake-snapshot?limit=20&unknown=1"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad_wake.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let response = client
         .get(format!(

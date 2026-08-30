@@ -16,6 +16,8 @@ pub struct InstalledAgent {
     pub snapshot_digest: String,
     /// Stable namespace used while deriving installed Agent instance identities.
     pub agent_instance_namespace: String,
+    /// Sorted stable public capabilities available to newly created Sessions.
+    pub public_capabilities: Vec<String>,
     /// Effective Runtime limits frozen into each first Execution.
     pub runtime_limits: EffectiveRuntimeLimits,
     /// Optional snapshot-bound H3 public label catalogue.
@@ -70,6 +72,211 @@ pub struct LiveHostLimits {
     pub event_poll_interval_ms: u64,
     /// Optional H3 projection bounds; absence keeps H3 unavailable.
     pub activity: Option<ActivityProjectionLimits>,
+}
+
+/// Independent bounds for client-safe Host read projections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HostReadLimits {
+    /// Maximum installed definitions in one response.
+    pub max_definitions: usize,
+    /// Maximum Sessions in one page.
+    pub max_sessions: usize,
+    /// Maximum complete Turns in one timeline page.
+    pub max_timeline_items: usize,
+    /// Maximum durable facts scanned for one projection.
+    pub max_facts: usize,
+    /// Maximum encoded JSON response bytes.
+    pub max_response_bytes: usize,
+    /// Maximum projected user input bytes per Turn.
+    pub max_user_text_bytes: usize,
+    /// Maximum projected completion bytes per Turn.
+    pub max_completion_bytes: usize,
+    /// Maximum public suspension prompt or schema bytes.
+    pub max_prompt_bytes: usize,
+    /// Maximum decoded or encoded Session cursor bytes.
+    pub max_cursor_bytes: usize,
+}
+
+impl HostReadLimits {
+    /// Product-safe local defaults used by compatibility construction.
+    pub const PRODUCT_DEFAULT: Self = Self {
+        max_definitions: 64,
+        max_sessions: 100,
+        max_timeline_items: 100,
+        max_facts: 8_192,
+        max_response_bytes: 2 * 1_024 * 1_024,
+        max_user_text_bytes: 64 * 1_024,
+        max_completion_bytes: 1_024 * 1_024,
+        max_prompt_bytes: 64 * 1_024,
+        max_cursor_bytes: 2_048,
+    };
+
+    pub(crate) fn valid(self) -> bool {
+        self.max_definitions > 0
+            && self.max_sessions > 0
+            && self.max_timeline_items > 0
+            && self.max_facts > 0
+            && self.max_response_bytes > 0
+            && self.max_user_text_bytes > 0
+            && self.max_completion_bytes > 0
+            && self.max_prompt_bytes > 0
+            && self.max_cursor_bytes > 0
+    }
+}
+
+/// One installed Agent definition safe for client discovery.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionSummaryV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Immutable Agent definition identity.
+    pub definition_id: String,
+    /// Immutable Agent definition revision.
+    pub definition_revision: String,
+    /// Sorted stable public capability names.
+    pub capabilities: Vec<String>,
+}
+
+/// Bounded installed Agent definition result.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDefinitionPageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Installed definitions in stable identity order.
+    pub definitions: Vec<AgentDefinitionSummaryV1>,
+}
+
+/// Restart-safe summary of one verified durable Session prefix.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionSummaryV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable durable Session identity.
+    pub session_id: String,
+    /// Runtime-owned Agent instance identity.
+    pub agent_instance_id: String,
+    /// Immutable installed definition identity.
+    pub definition_id: String,
+    /// Immutable installed definition revision.
+    pub definition_revision: String,
+    /// RFC 3339 time from the verified opening fact.
+    pub opened_at: String,
+    /// Frozen highest durable Session position.
+    pub latest_position: u64,
+    /// Most recently first-started Turn, when any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_turn_id: Option<String>,
+    /// Stable lifecycle of the latest Turn, when any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_turn_state: Option<String>,
+    /// Count of verified first-start facts.
+    pub turn_count: u64,
+}
+
+/// One exact Session summary at a frozen durable watermark.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionViewV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Verified Session summary.
+    pub session: SessionSummaryV1,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
+}
+
+/// Reverse-opened bounded page of verified durable Sessions.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionPageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Session summaries in the requested page.
+    pub sessions: Vec<SessionSummaryV1>,
+    /// Opaque cursor for the next older page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_before: Option<String>,
+}
+
+/// Content-free Session transition state consumed only by the mobile Gateway.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MobileWakeObservation {
+    pub session_id: String,
+    pub latest_position: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wake_category: Option<&'static str>,
+}
+
+/// Bounded private Runtime snapshot used for Gateway transition detection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MobileWakePage {
+    pub api_version: &'static str,
+    pub observations: Vec<MobileWakeObservation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_before: Option<String>,
+}
+
+/// Restart-safe public coordinates for one resumable Turn.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SuspensionViewV1 {
+    /// Exact durable suspension identity.
+    pub suspension_id: String,
+    /// Session version required by optimistic continuation.
+    pub session_version: u64,
+    /// Stable suspension family.
+    pub kind: String,
+    /// Exact public prompt schema identity.
+    pub prompt_schema: &'static str,
+    /// Canonical RFC 8785 public prompt JSON.
+    pub prompt_json: String,
+    /// Lowercase SHA-256 of `prompt_json`.
+    pub prompt_digest: String,
+    /// Canonical portable response schema for interactive suspensions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_schema_json: Option<String>,
+    /// Lowercase SHA-256 of `response_schema_json`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_schema_digest: Option<String>,
+}
+
+/// One complete Turn projected from a verified fixed Session prefix.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelineItemV1 {
+    /// Stable durable Turn identity.
+    pub turn_id: String,
+    /// Position of the first `turn.started` fact.
+    pub started_position: u64,
+    /// Latest lifecycle or continuation position for this Turn.
+    pub latest_position: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Exact verified first trusted-user input.
+    pub user_text: String,
+    /// Redacted terminal response text when completed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_text: Option<String>,
+    /// Current restart-safe suspension coordinates when suspended.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suspension: Option<SuspensionViewV1>,
+    /// Whether display text was explicitly bounded by Runtime.
+    pub content_truncated: bool,
+    /// Latest committed public state for every activity owned by this Turn.
+    pub activities: Vec<HostActivity>,
+}
+
+/// Bounded ascending page of complete durable Turn projections.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnTimelinePageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Complete changed Turns in ascending latest-change order.
+    pub items: Vec<TurnTimelineItemV1>,
+    /// Highest durable position fully scanned for this page.
+    pub scanned_through_position: u64,
+    /// Frozen Session watermark used by this response.
+    pub observed_max_position: u64,
+    /// Whether another bounded scan is required.
+    pub has_more: bool,
 }
 
 /// Explicit Runtime clock used to stamp durable Host commands.
@@ -191,155 +398,6 @@ pub struct HostEventPage {
     pub observed_max_position: u64,
 }
 
-/// One installed immutable Agent definition visible to product clients.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct AgentDefinitionSummary {
-    /// Exact Host API version.
-    pub api_version: &'static str,
-    /// Stable installed definition identity.
-    pub definition_id: String,
-    /// Immutable installed definition revision.
-    pub definition_revision: String,
-    /// Sorted stable public capabilities available to new Sessions.
-    pub capabilities: Vec<String>,
-}
-
-/// Bounded installed-Agent discovery response.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct AgentDefinitionPage {
-    /// Exact Host API version.
-    pub api_version: &'static str,
-    /// Installed definitions visible to this Host.
-    pub definitions: Vec<AgentDefinitionSummary>,
-}
-
-/// One restart-safe durable Session navigation summary.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct SessionSummary {
-    /// Exact Host API version.
-    pub api_version: &'static str,
-    /// Stable durable Session identity.
-    pub session_id: String,
-    /// Runtime-owned Agent instance bound to the Session.
-    pub agent_instance_id: String,
-    /// Immutable definition identity captured when the Session opened.
-    pub definition_id: String,
-    /// Immutable definition revision captured when the Session opened.
-    pub definition_revision: String,
-    /// Validated RFC 3339 timestamp of the Session open fact.
-    pub opened_at: String,
-    /// Frozen last durable position observed for the Session.
-    pub latest_position: u64,
-    /// Most recently started Turn identity, when present.
-    pub latest_turn_id: Option<String>,
-    /// Public lifecycle of the most recently started Turn, when present.
-    pub latest_turn_state: Option<String>,
-    /// Count of verified first-start Turns.
-    pub turn_count: u64,
-}
-
-/// Reverse-opened bounded Session navigation response.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct SessionPage {
-    /// Exact Host API version.
-    pub api_version: &'static str,
-    /// Ordered durable Session summaries.
-    pub sessions: Vec<SessionSummary>,
-    /// Opaque next-page cursor; absent until cursor pagination is admitted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_before: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct MobileWakeObservation {
-    pub session_id: String,
-    pub latest_position: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wake_category: Option<&'static str>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct MobileWakePage {
-    pub api_version: &'static str,
-    pub observations: Vec<MobileWakeObservation>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_before: Option<String>,
-}
-
-/// One exact Session frozen at a durable watermark.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct SessionView {
-    /// Exact Host API version.
-    pub api_version: &'static str,
-    /// Requested durable Session summary.
-    pub session: SessionSummary,
-    /// Frozen maximum position used for the projection.
-    pub observed_max_position: u64,
-}
-
-/// One complete durable Turn projection for conversation restoration.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct TurnTimelineItem {
-    /// Stable durable Turn identity.
-    pub turn_id: String,
-    /// Position of the verified first-start fact.
-    pub started_position: u64,
-    /// Frozen latest position that changed this Turn.
-    pub latest_position: u64,
-    /// Stable public lifecycle state.
-    pub state: String,
-    /// Trusted user text bound to the first start.
-    pub user_text: String,
-    /// Redacted committed response projection when completed.
-    pub completion_text: Option<String>,
-    /// Restart-safe continuation coordinates when the Turn is suspended.
-    pub suspension: Option<TurnSuspensionView>,
-    /// Whether bounded display content was truncated.
-    pub content_truncated: bool,
-    /// Latest committed H3 state for each activity owned by this Turn.
-    pub activities: Vec<HostActivity>,
-}
-
-/// Restart-safe public continuation coordinates and redacted typed prompt.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct TurnSuspensionView {
-    /// Exact durable suspension identity.
-    pub suspension_id: String,
-    /// Optimistic Session version required by continuation.
-    pub session_version: u64,
-    /// Stable public suspension kind.
-    pub kind: String,
-    /// Stable public prompt schema identity.
-    pub prompt_schema: &'static str,
-    /// Canonical RFC 8785 public prompt JSON.
-    pub prompt_json: String,
-    /// Lowercase SHA-256 digest of the public prompt.
-    pub prompt_digest: String,
-    /// Canonical portable response schema when the interaction is typed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_schema_json: Option<String>,
-    /// Digest of the canonical response schema when present.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_schema_digest: Option<String>,
-}
-
-/// One ascending bounded page of complete durable Turn projections.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct TurnTimelinePage {
-    /// Exact Host API version.
-    pub api_version: &'static str,
-    /// Session owning every returned Turn.
-    pub session_id: String,
-    /// Ascending complete Turn projections.
-    pub items: Vec<TurnTimelineItem>,
-    /// Durable scan cursor for the next request.
-    pub scanned_through_position: u64,
-    /// Frozen maximum durable position used for this projection.
-    pub observed_max_position: u64,
-    /// Whether another bounded timeline page remains.
-    pub has_more: bool,
-}
-
 /// Stable Host command/query failure with no secret or implementation text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LiveHostError {
@@ -355,6 +413,8 @@ pub enum LiveHostError {
     PreconditionFailed,
     /// SQLite could not complete a required durable operation.
     DurabilityUnavailable,
+    /// A verified read projection cannot fit configured public bounds.
+    ReadBoundExceeded,
     /// Persisted content failed integrity or exact Host schema validation.
     CorruptState,
 }
@@ -369,6 +429,7 @@ impl LiveHostError {
             Self::ConcurrentModification => "concurrent_modification",
             Self::PreconditionFailed => "precondition_failed",
             Self::DurabilityUnavailable => "durability_unavailable",
+            Self::ReadBoundExceeded => "read_bound_exceeded",
             Self::CorruptState => "corrupt_state",
         }
     }
@@ -382,6 +443,7 @@ impl LiveHostError {
             Self::ConcurrentModification => "the durable Session changed concurrently",
             Self::PreconditionFailed => "the durable lifecycle does not admit this command",
             Self::DurabilityUnavailable => "the durable store is unavailable",
+            Self::ReadBoundExceeded => "the Host read result exceeds configured bounds",
             Self::CorruptState => "the durable Host state failed validation",
         }
     }
@@ -436,6 +498,7 @@ pub(crate) struct LiveHostState {
     pub database_path: PathBuf,
     pub installed: InstalledAgent,
     pub limits: LiveHostLimits,
+    pub read_limits: HostReadLimits,
     pub clock: Arc<dyn HostClock>,
     pub dispatcher: Arc<dyn TurnDispatcher>,
 }

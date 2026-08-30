@@ -18,11 +18,14 @@ use crate::{
 };
 
 use super::{
-    completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
-    CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage, InstalledAgent,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, SessionView,
-    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    project_activities, project_fact, AgentDefinitionPageV1, AgentDefinitionSummaryV1,
+    CommittedTurn, CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState,
+    SessionPageV1, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnTimelinePageV1,
 };
+use super::{read_cursor, read_model, timeline_projection};
+
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// Durable local Host command service shared by in-process and HTTP clients.
 #[derive(Clone)]
@@ -39,89 +42,158 @@ impl LiveHost {
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
     ) -> Result<Self, LiveHostError> {
+        Self::new_with_read_limits(
+            database_path,
+            installed,
+            limits,
+            HostReadLimits::PRODUCT_DEFAULT,
+            clock,
+            dispatcher,
+        )
+    }
+
+    /// Constructs a Host with explicit independent H2 projection bounds.
+    pub fn new_with_read_limits(
+        database_path: impl AsRef<Path>,
+        installed: InstalledAgent,
+        limits: LiveHostLimits,
+        read_limits: HostReadLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+    ) -> Result<Self, LiveHostError> {
         validate_installed(&installed, limits)?;
+        if !read_limits.valid() {
+            return Err(LiveHostError::InvalidRequest);
+        }
         SqliteLedger::open(database_path.as_ref()).map_err(map_sqlite)?;
         Ok(Self {
             state: Arc::new(LiveHostState {
                 database_path: database_path.as_ref().to_owned(),
                 installed,
                 limits,
+                read_limits,
                 clock,
                 dispatcher,
             }),
         })
     }
 
-    /// Returns explicit Host bounds used by HTTP parsing and event follow mode.
-    pub fn limits(&self) -> LiveHostLimits {
-        self.state.limits
-    }
-
-    /// Returns bounded installed-Agent discovery without granting new authority.
-    pub fn agent_definitions(&self) -> Vec<AgentDefinitionSummary> {
-        vec![AgentDefinitionSummary {
+    /// Lists installed Agent definitions without exposing Runtime configuration.
+    pub fn list_agent_definitions(&self) -> Result<AgentDefinitionPageV1, LiveHostError> {
+        let page = AgentDefinitionPageV1 {
             api_version: "v1",
-            definition_id: self.state.installed.definition_id.clone(),
-            definition_revision: self.state.installed.definition_revision.clone(),
-            capabilities: Vec::new(),
-        }]
+            definitions: vec![AgentDefinitionSummaryV1 {
+                api_version: "v1",
+                definition_id: self.state.installed.definition_id.clone(),
+                definition_revision: self.state.installed.definition_revision.clone(),
+                capabilities: self.state.installed.public_capabilities.clone(),
+            }],
+        };
+        if page.definitions.len() > self.state.read_limits.max_definitions
+            || serde_json::to_vec(&page)
+                .map_err(|_| LiveHostError::CorruptState)?
+                .len()
+                > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        Ok(page)
     }
 
-    /// Returns restart-safe Sessions ordered by open time and identity descending.
-    pub fn list_sessions(&self, limit: usize) -> Result<Vec<SessionSummary>, LiveHostError> {
-        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+    /// Reads one verified Session summary at an exact durable watermark.
+    pub fn get_session(&self, session: &str) -> Result<SessionViewV1, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let view = read_model::project_session(
+            &session_id,
+            watermark.max_position,
+            &facts,
+            &self.state.installed,
+            self.state.read_limits,
+        )?;
+        if serde_json::to_vec(&view)
+            .map_err(|_| LiveHostError::CorruptState)?
+            .len()
+            > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        Ok(view)
+    }
+
+    /// Lists a reverse-opened page of verified durable Sessions.
+    pub fn list_sessions(
+        &self,
+        limit: usize,
+        before: Option<&str>,
+    ) -> Result<SessionPageV1, LiveHostError> {
+        if limit == 0 || limit > self.state.read_limits.max_sessions {
             return Err(LiveHostError::InvalidRequest);
         }
-        let ledger = self.ledger()?;
-        let mut sessions = ledger
+        let mut sessions = self
+            .ledger()?
             .list_sessions()
             .map_err(map_sqlite)?
             .into_iter()
-            .map(|session_id| self.project_session(&ledger, &session_id))
+            .map(|id| {
+                let session = self.get_session(id.as_str())?.session;
+                let opened = chrono::DateTime::parse_from_rfc3339(&session.opened_at)
+                    .map_err(|_| LiveHostError::CorruptState)?;
+                Ok((opened, session))
+            })
             .collect::<Result<Vec<_>, _>>()?;
-        sessions.sort_by(|left, right| {
-            right
-                .opened_at
-                .cmp(&left.opened_at)
+        sessions.sort_by(|(left_time, left), (right_time, right)| {
+            right_time
+                .cmp(left_time)
                 .then_with(|| right.session_id.cmp(&left.session_id))
         });
-        sessions.truncate(limit);
-        Ok(sessions)
+        let sessions = sessions
+            .into_iter()
+            .map(|(_, session)| session)
+            .collect::<Vec<_>>();
+        let start = before.map_or(Ok(0), |token| {
+            let key = read_cursor::decode(token, &self.state.installed, self.state.read_limits)?;
+            sessions
+                .iter()
+                .position(|item| item.opened_at == key.0 && item.session_id == key.1)
+                .map(|index| index + 1)
+                .ok_or(LiveHostError::InvalidRequest)
+        })?;
+        let end = start.saturating_add(limit).min(sessions.len());
+        let page_sessions = sessions[start..end].to_vec();
+        let next_before = (end < sessions.len())
+            .then(|| page_sessions.last())
+            .flatten()
+            .map(|item| read_cursor::encode(item, &self.state.installed, self.state.read_limits))
+            .transpose()?;
+        let page = SessionPageV1 {
+            api_version: "v1",
+            sessions: page_sessions,
+            next_before,
+        };
+        ensure_response_bound(&page, self.state.read_limits.max_response_bytes)?;
+        Ok(page)
     }
 
+    /// Projects content-free durable transition coordinates for the private Gateway monitor.
     pub(crate) fn mobile_wake_page(
         &self,
         limit: usize,
         before: Option<&str>,
     ) -> Result<super::MobileWakePage, LiveHostError> {
-        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
-            return Err(LiveHostError::InvalidRequest);
-        }
-        let ledger = self.ledger()?;
-        let mut sessions = ledger
-            .list_sessions()
-            .map_err(map_sqlite)?
-            .into_iter()
-            .map(|session_id| self.project_session(&ledger, &session_id))
-            .collect::<Result<Vec<_>, _>>()?;
-        sessions.sort_by(|left, right| {
-            right
-                .opened_at
-                .cmp(&left.opened_at)
-                .then_with(|| right.session_id.cmp(&left.session_id))
-        });
-        let start = match before {
-            None => 0,
-            Some(cursor) => sessions
-                .iter()
-                .position(|session| session.session_id == cursor)
-                .map(|index| index + 1)
-                .ok_or(LiveHostError::InvalidRequest)?,
-        };
-        let end = start.saturating_add(limit).min(sessions.len());
-        let next_before =
-            (end < sessions.len() && end > start).then(|| sessions[end - 1].session_id.clone());
-        let observations = sessions[start..end]
+        let page = self.list_sessions(limit, before)?;
+        let observations = page
+            .sessions
             .iter()
             .map(|session| super::MobileWakeObservation {
                 session_id: session.session_id.clone(),
@@ -137,30 +209,18 @@ impl LiveHost {
         Ok(super::MobileWakePage {
             api_version: "v1",
             observations,
-            next_before,
+            next_before: page.next_before,
         })
     }
 
-    /// Returns one exact restart-safe Session view.
-    pub fn get_session(&self, session: &str) -> Result<SessionView, LiveHostError> {
-        let session_id = identity::<SessionId>(session)?;
-        let ledger = self.ledger()?;
-        let summary = self.project_session(&ledger, &session_id)?;
-        Ok(SessionView {
-            api_version: "v1",
-            observed_max_position: summary.latest_position,
-            session: summary,
-        })
-    }
-
-    /// Returns complete durable Turns changed after a caller watermark.
-    pub fn read_timeline(
+    /// Reads a bounded page of complete Turns from one frozen Session prefix.
+    pub fn get_timeline(
         &self,
         session: &str,
         after_position: u64,
         limit: usize,
-    ) -> Result<TurnTimelinePage, LiveHostError> {
-        if limit == 0 || limit > self.state.limits.event_batch_size as usize {
+    ) -> Result<TurnTimelinePageV1, LiveHostError> {
+        if limit == 0 || limit > self.state.read_limits.max_timeline_items {
             return Err(LiveHostError::InvalidRequest);
         }
         let session_id = identity::<SessionId>(session)?;
@@ -169,53 +229,58 @@ impl LiveHost {
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
-        if after_position > watermark.max_position {
+        if after_position > MAX_SAFE_JSON_INTEGER || after_position > watermark.max_position {
             return Err(LiveHostError::InvalidRequest);
+        }
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER
+            || watermark.session_version > MAX_SAFE_JSON_INTEGER
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
         }
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
-        let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
-        if let (Some(catalogue), Some(limits)) = (
+        read_model::project_session(
+            &session_id,
+            watermark.max_position,
+            &facts,
+            &self.state.installed,
+            self.state.read_limits,
+        )?;
+        let activities = match (
             self.state.installed.public_activity_catalogue.as_ref(),
             self.state.limits.activity,
         ) {
-            let mut activities = project_activities(&facts, catalogue, limits)?.by_turn;
-            for item in &mut items {
-                item.activities = activities.remove(&item.turn_id).unwrap_or_default();
-                if let Some(position) = item
-                    .activities
-                    .iter()
-                    .map(|activity| activity.source_position)
-                    .max()
-                {
-                    item.latest_position = item.latest_position.max(position);
-                }
+            (Some(catalogue), Some(limits)) => {
+                project_activities(&facts, catalogue, limits)?.by_turn
             }
-            if !activities.is_empty() {
-                return Err(LiveHostError::CorruptState);
-            }
+            (None, None) => Default::default(),
+            _ => return Err(LiveHostError::CorruptState),
+        };
+        let page =
+            timeline_projection::project_timeline(timeline_projection::TimelineProjectionInput {
+                session_id: &session_id,
+                observed_max_position: watermark.max_position,
+                session_version: watermark.session_version,
+                after_position,
+                limit,
+                facts: &facts,
+                activities,
+                limits: self.state.read_limits,
+            })?;
+        if serde_json::to_vec(&page)
+            .map_err(|_| LiveHostError::CorruptState)?
+            .len()
+            > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
         }
-        for item in items.iter_mut().filter(|item| item.state == "suspended") {
-            let turn_id = identity::<TurnId>(&item.turn_id)?;
-            let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite_query)?;
-            let suspended = reconstruct_suspended_turn(&snapshot).map_err(map_runtime)?;
-            item.suspension = Some(public_suspension(suspended)?);
-        }
-        items.retain(|item| item.latest_position > after_position);
-        let has_more = items.len() > limit;
-        items.truncate(limit);
-        let scanned_through_position = items
-            .last()
-            .map_or(watermark.max_position, |item| item.latest_position);
-        Ok(TurnTimelinePage {
-            api_version: "v1",
-            session_id: session_id.as_str().to_owned(),
-            items,
-            scanned_through_position,
-            observed_max_position: watermark.max_position,
-            has_more,
-        })
+        Ok(page)
+    }
+
+    /// Returns explicit Host bounds used by HTTP parsing and event follow mode.
+    pub fn limits(&self) -> LiveHostLimits {
+        self.state.limits
     }
 
     /// Creates or exactly replays one durable Session creation command.
@@ -521,12 +586,18 @@ impl LiveHost {
         session: &str,
         after_position: u64,
     ) -> Result<HostEventPage, LiveHostError> {
+        if after_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::InvalidRequest);
+        }
         let session_id = identity::<SessionId>(session)?;
         let ledger = self.ledger()?;
         let watermark = ledger
             .session_watermark(&session_id)
             .map_err(map_sqlite)?
             .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
         if after_position > watermark.max_position {
             return Err(LiveHostError::InvalidRequest);
         }
@@ -601,60 +672,6 @@ impl LiveHost {
         chrono::DateTime::parse_from_rfc3339(&value)
             .map(|_| value)
             .map_err(|_| LiveHostError::InvalidRequest)
-    }
-
-    fn project_session(
-        &self,
-        ledger: &SqliteLedger,
-        session_id: &SessionId,
-    ) -> Result<SessionSummary, LiveHostError> {
-        let binding = self.load_session(ledger, session_id)?;
-        let facts = ledger
-            .read_facts(session_id, 0, binding.max_position, None)
-            .map_err(map_sqlite)?;
-        let opened_at = facts
-            .first()
-            .ok_or(LiveHostError::CorruptState)?
-            .recorded_at
-            .clone();
-        chrono::DateTime::parse_from_rfc3339(&opened_at)
-            .map_err(|_| LiveHostError::CorruptState)?;
-        let mut turns: Vec<(TurnId, String)> = Vec::new();
-        for fact in &facts {
-            let Some(turn_id) = fact.turn_id.as_ref() else {
-                continue;
-            };
-            match fact.kind.as_str() {
-                "turn.started" => {
-                    let started: StartedCommand = decode_payload(fact)?;
-                    if started.kind == "start" {
-                        turns.push((turn_id.clone(), "running".into()));
-                    } else if turns.last().map(|turn| &turn.0) != Some(turn_id) {
-                        return Err(LiveHostError::CorruptState);
-                    } else {
-                        turns.last_mut().ok_or(LiveHostError::CorruptState)?.1 = "running".into();
-                    }
-                }
-                "turn.suspended" => set_latest_turn_state(&mut turns, turn_id, "suspended")?,
-                "turn.completed" => set_latest_turn_state(&mut turns, turn_id, "completed")?,
-                "turn.stopped" => set_latest_turn_state(&mut turns, turn_id, "stopped")?,
-                "turn.failed" => set_latest_turn_state(&mut turns, turn_id, "failed")?,
-                _ => {}
-            }
-        }
-        let latest = turns.last();
-        Ok(SessionSummary {
-            api_version: "v1",
-            session_id: session_id.as_str().to_owned(),
-            agent_instance_id: binding.agent_instance_id.as_str().to_owned(),
-            definition_id: binding.definition_id.as_str().to_owned(),
-            definition_revision: binding.definition_revision.as_str().to_owned(),
-            opened_at,
-            latest_position: binding.max_position,
-            latest_turn_id: latest.map(|turn| turn.0.as_str().to_owned()),
-            latest_turn_state: latest.map(|turn| turn.1.clone()),
-            turn_count: turns.len() as u64,
-        })
     }
 
     fn load_session(
@@ -798,162 +815,6 @@ struct SessionBinding {
     snapshot_digest: String,
     session_version: u64,
     max_position: u64,
-}
-
-fn set_latest_turn_state(
-    turns: &mut [(TurnId, String)],
-    turn_id: &TurnId,
-    state: &str,
-) -> Result<(), LiveHostError> {
-    let latest = turns.last_mut().ok_or(LiveHostError::CorruptState)?;
-    if &latest.0 != turn_id {
-        return Err(LiveHostError::CorruptState);
-    }
-    latest.1 = state.to_owned();
-    Ok(())
-}
-
-fn project_timeline(
-    facts: &[DurableFact],
-    max_text_bytes: usize,
-) -> Result<Vec<TurnTimelineItem>, LiveHostError> {
-    let mut items = Vec::new();
-    for fact in facts {
-        let Some(turn_id) = fact.turn_id.as_ref() else {
-            continue;
-        };
-        match fact.kind.as_str() {
-            "turn.started" => {
-                let started: StartedCommand = decode_payload(fact)?;
-                if started.kind == "start" {
-                    items.push(TurnTimelineItem {
-                        turn_id: turn_id.as_str().to_owned(),
-                        started_position: fact.position,
-                        latest_position: fact.position,
-                        state: "running".into(),
-                        user_text: String::new(),
-                        completion_text: None,
-                        suspension: None,
-                        content_truncated: false,
-                        activities: Vec::new(),
-                    });
-                } else {
-                    let item = timeline_item(&mut items, turn_id)?;
-                    item.latest_position = fact.position;
-                    item.state = "running".into();
-                    item.completion_text = None;
-                    item.suspension = None;
-                }
-            }
-            "turn.input" => {
-                let input: TurnInput = decode_payload(fact)?;
-                if input.input_kind == "trusted_user" {
-                    if digest(input.content.inline_utf8.as_bytes()) != input.content.digest {
-                        return Err(LiveHostError::CorruptState);
-                    }
-                    let (text, truncated) =
-                        bounded_text(&input.content.inline_utf8, max_text_bytes);
-                    let item = timeline_item(&mut items, turn_id)?;
-                    item.user_text = text;
-                    item.content_truncated |= truncated;
-                    item.latest_position = fact.position;
-                }
-            }
-            "turn.suspended" | "turn.stopped" | "turn.failed" => {
-                let state = fact.kind.as_str().trim_start_matches("turn.");
-                let item = timeline_item(&mut items, turn_id)?;
-                item.latest_position = fact.position;
-                item.state = state.into();
-                if state != "suspended" {
-                    item.suspension = None;
-                }
-            }
-            "turn.completed" => {
-                let (text, truncated) = bounded_text(&completion_text(fact)?, max_text_bytes);
-                let item = timeline_item(&mut items, turn_id)?;
-                item.latest_position = fact.position;
-                item.state = "completed".into();
-                item.completion_text = Some(text);
-                item.content_truncated |= truncated;
-            }
-            _ => {}
-        }
-    }
-    if items.iter().any(|item| item.user_text.is_empty()) {
-        return Err(LiveHostError::CorruptState);
-    }
-    Ok(items)
-}
-
-fn timeline_item<'a>(
-    items: &'a mut [TurnTimelineItem],
-    turn_id: &TurnId,
-) -> Result<&'a mut TurnTimelineItem, LiveHostError> {
-    items
-        .iter_mut()
-        .rev()
-        .find(|item| item.turn_id == turn_id.as_str())
-        .ok_or(LiveHostError::CorruptState)
-}
-
-fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
-    if value.len() <= max_bytes {
-        return (value.to_owned(), false);
-    }
-    let boundary = value
-        .char_indices()
-        .map(|(index, _)| index)
-        .take_while(|index| *index <= max_bytes)
-        .last()
-        .unwrap_or(0);
-    (value[..boundary].to_owned(), true)
-}
-
-fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {
-    match kind {
-        RuntimeSuspensionKind::ApprovalRequired => "approval_required",
-        RuntimeSuspensionKind::ExternalInputRequired => "external_input_required",
-        RuntimeSuspensionKind::OperatorReconciliation => "operator_reconciliation",
-        RuntimeSuspensionKind::ResourceUnavailable => "resource_unavailable",
-        RuntimeSuspensionKind::PartialOutput => "partial_output",
-        RuntimeSuspensionKind::DelegationPending => "delegation_pending",
-    }
-}
-
-fn public_suspension(
-    state: crate::SuspendedTurnState,
-) -> Result<TurnSuspensionView, LiveHostError> {
-    let kind = suspension_kind(state.suspension_kind);
-    let (prompt_json, prompt_digest, response_schema_json, response_schema_digest) =
-        if let Some(interaction) = state.interaction {
-            let prompt = serde_jcs::to_string(&interaction.prompt)
-                .map_err(|_| LiveHostError::CorruptState)?;
-            let prompt_digest = format!("{:x}", Sha256::digest(prompt.as_bytes()));
-            (
-                prompt,
-                prompt_digest,
-                Some(
-                    serde_jcs::to_string(&interaction.response_schema)
-                        .map_err(|_| LiveHostError::CorruptState)?,
-                ),
-                Some(interaction.response_schema_digest),
-            )
-        } else {
-            let prompt = serde_jcs::to_string(&json!({"kind":kind,"schema_version":1}))
-                .map_err(|_| LiveHostError::CorruptState)?;
-            let digest = format!("{:x}", Sha256::digest(prompt.as_bytes()));
-            (prompt, digest, None, None)
-        };
-    Ok(TurnSuspensionView {
-        suspension_id: state.suspension_id,
-        session_version: state.session_version,
-        kind: kind.into(),
-        prompt_schema: "garive.public-suspension-prompt.v1",
-        prompt_json,
-        prompt_digest,
-        response_schema_json,
-        response_schema_digest,
-    })
 }
 
 struct ContinueReplay<'a> {
@@ -1146,6 +1007,11 @@ fn validate_installed(
         || limits.event_batch_size == 0
         || limits.event_poll_interval_ms == 0
         || installed.public_activity_catalogue.is_some() != limits.activity.is_some()
+        || installed.public_capabilities.iter().any(String::is_empty)
+        || installed
+            .public_capabilities
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
     {
         return Err(LiveHostError::InvalidRequest);
     }
@@ -1187,6 +1053,21 @@ fn validate_installed(
         }
     }
     Ok(())
+}
+
+fn ensure_response_bound<T: serde::Serialize>(
+    value: &T,
+    max_bytes: usize,
+) -> Result<(), LiveHostError> {
+    if serde_json::to_vec(value)
+        .map_err(|_| LiveHostError::CorruptState)?
+        .len()
+        > max_bytes
+    {
+        Err(LiveHostError::ReadBoundExceeded)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), LiveHostError> {

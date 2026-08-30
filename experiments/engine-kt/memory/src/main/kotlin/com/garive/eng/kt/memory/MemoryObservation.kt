@@ -20,6 +20,8 @@ public data class MemoryObligation private constructor(
     public val obligationId: String,
     public val recordId: String,
     public val revisionId: String,
+    public val recallFact: DurableFactReference,
+    public val selectionId: String,
     public val applicationFact: DurableFactReference,
     public val expectedOutcomeDigest: String,
     public val applicationScopeDigest: String,
@@ -31,17 +33,19 @@ public data class MemoryObligation private constructor(
         @Suppress("LongParameterList")
         public fun create(
             obligationId: String, recordId: String, revisionId: String,
+            recallFact: DurableFactReference, selectionId: String,
             applicationFact: DurableFactReference, expectedOutcomeDigest: String,
             applicationScopeDigest: String, attributionPolicyRevision: String,
             expiresAtPosition: ULong,
         ): MemoryContractResult<MemoryObligation> =
-            if (!validId(obligationId) || !validId(recordId) || !validId(revisionId) ||
+            if (!validId(obligationId) || !validId(recordId) || !validId(revisionId) || !validId(selectionId) ||
                 !validDigest(expectedOutcomeDigest) || !validDigest(applicationScopeDigest) ||
                 !validText(attributionPolicyRevision, MAX_REFERENCE_BYTES) ||
+                recallFact.position >= applicationFact.position ||
                 expiresAtPosition <= applicationFact.position
             ) failure(MemoryErrorCode.INVALID_MEMORY)
             else MemoryContractResult.Success(
-                MemoryObligation(obligationId, recordId, revisionId, applicationFact,
+                MemoryObligation(obligationId, recordId, revisionId, recallFact, selectionId, applicationFact,
                     expectedOutcomeDigest, applicationScopeDigest, attributionPolicyRevision, expiresAtPosition),
             )
     }

@@ -74,6 +74,7 @@ fn reconstructs_only_committed_durable_start_values() {
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "local-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 2,
                 max_input_tokens: Some(20),
@@ -136,6 +137,7 @@ fn invalid_explicit_values_and_uncommitted_prefix_fail_before_model() {
             definition_revision: "revision-1".into(),
             snapshot_digest: "a".repeat(64),
             agent_instance_namespace: "local-main".into(),
+            public_capabilities: Vec::new(),
             runtime_limits: EffectiveRuntimeLimits {
                 max_iterations: 2,
                 max_input_tokens: Some(20),

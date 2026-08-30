@@ -305,16 +305,17 @@ fn invalid_intent_is_committed_as_feedback_before_retry() {
 
 #[test]
 fn governed_suspension_and_governed_failure_fail_closed() {
-    let interaction =
-        GovernedToolResult::Suspend(SuspensionRequirement::Interaction(InteractionRequest {
+    let interaction = GovernedToolResult::Suspend(SuspensionRequirement::Interaction(
+        InteractionRequest {
             interaction_id: InteractionId::new("interaction").unwrap(),
             invocation_id: ToolInvocationId::new("invocation").unwrap(),
             prepared_digest: "digest".into(),
             kind: InteractionKind::Approval,
-            prompt: json!({"message":"approve"}),
+            prompt: json!({"schema_version":1,"title_key":"approval.title","message_text":"approve","action_label_key":"approval.allow","cancel_label_key":"approval.deny"}),
             response_schema: json!({"type":"boolean"}),
             expiry_policy: "none".into(),
-        }));
+        },
+    ));
     let (report, _, _) = run(tool_outcome("read_file"), interaction, 5);
     assert!(matches!(
         report.outcome,

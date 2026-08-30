@@ -18,8 +18,24 @@ internal fun validateTurnFact(kind: String, value: JsonObject) {
         "execution.suspended" -> value.suspended(false)
         "execution.stopped" -> value.stopped(false)
         "execution.failed" -> value.failed(false)
+        "execution.effect_batch_planned" -> value.effectBatchPlanned()
         else -> throw IllegalArgumentException()
     }
+}
+
+private fun JsonObject.effectBatchPlanned() {
+    exact(
+        setOf(
+            "plan_digest", "conflict_graph_digest", "ordered_prepared_digests", "steps",
+            "max_parallel_reads", "max_buffered_result_bytes",
+        ),
+    )
+    digest("plan_digest")
+    digest("conflict_graph_digest")
+    content("ordered_prepared_digests")
+    content("steps")
+    ulong("max_parallel_reads", nonzero = true)
+    ulong("max_buffered_result_bytes", nonzero = true)
 }
 
 private fun JsonObject.started() {

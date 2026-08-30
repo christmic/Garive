@@ -1,6 +1,6 @@
 use garive_proto::com::garive::host::v1::{
     AgentDefinitionPageV1, AgentDefinitionSummaryV1, ContinueTurnRequestV1, CreateSessionRequestV1,
-    HostActivityV1, HostEventV1, SessionPageV1, SessionSummaryV1, SuspensionViewV1,
+    HostActivityV1, HostEventV1, SessionPageV1, SessionSummaryV1, SessionViewV1, SuspensionViewV1,
     TurnCommandResponseV1, TurnTimelineItemV1, TurnTimelinePageV1,
 };
 use prost::Message;
@@ -57,6 +57,144 @@ fn generated_host_v1_round_trips_live_commands_events_and_responses() {
     assert_eq!(
         TurnCommandResponseV1::decode(response.encode_to_vec().as_slice()).unwrap(),
         response
+    );
+}
+
+fn varint(bytes: &[u8], cursor: &mut usize) -> u64 {
+    let mut output = 0;
+    for shift in (0..64).step_by(7) {
+        let byte = bytes[*cursor];
+        *cursor += 1;
+        output |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return output;
+        }
+    }
+    panic!("invalid protobuf varint")
+}
+
+fn top_level_tags<M: Message>(value: &M) -> Vec<u32> {
+    let bytes = value.encode_to_vec();
+    let mut cursor = 0;
+    let mut tags = Vec::new();
+    while cursor < bytes.len() {
+        let key = varint(&bytes, &mut cursor);
+        tags.push((key >> 3) as u32);
+        match key & 7 {
+            0 => _ = varint(&bytes, &mut cursor),
+            1 => cursor += 8,
+            2 => cursor += varint(&bytes, &mut cursor) as usize,
+            5 => cursor += 4,
+            wire => panic!("unsupported protobuf wire type {wire}"),
+        }
+    }
+    tags
+}
+
+#[test]
+fn host_read_and_activity_tag_allocation_is_exact() {
+    let definition = AgentDefinitionSummaryV1 {
+        api_version: "v1".into(),
+        definition_id: "d".into(),
+        definition_revision: "r".into(),
+        capabilities: vec!["c".into()],
+    };
+    assert_eq!(top_level_tags(&definition), [1, 2, 3, 4]);
+    assert_eq!(
+        top_level_tags(&AgentDefinitionPageV1 {
+            api_version: "v1".into(),
+            definitions: vec![definition],
+        }),
+        [1, 2]
+    );
+    let session = SessionSummaryV1 {
+        api_version: "v1".into(),
+        session_id: "s".into(),
+        agent_instance_id: "a".into(),
+        definition_id: "d".into(),
+        definition_revision: "r".into(),
+        opened_at: "t".into(),
+        latest_position: 1,
+        latest_turn_id: Some("t".into()),
+        latest_turn_state: Some("future".into()),
+        turn_count: 1,
+    };
+    assert_eq!(top_level_tags(&session), (1..=10).collect::<Vec<_>>());
+    assert_eq!(
+        top_level_tags(&SessionPageV1 {
+            api_version: "v1".into(),
+            sessions: vec![session.clone()],
+            next_before: Some("c".into()),
+        }),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        top_level_tags(&SessionViewV1 {
+            api_version: "v1".into(),
+            session: Some(session),
+            observed_max_position: 1,
+        }),
+        [1, 2, 3]
+    );
+    let suspension = SuspensionViewV1 {
+        suspension_id: "s".into(),
+        session_version: 1,
+        kind: "future".into(),
+        prompt_schema: "p".into(),
+        prompt_json: vec![1],
+        prompt_digest: "d".into(),
+        response_schema_json: Some(vec![1]),
+        response_schema_digest: Some("d".into()),
+    };
+    assert_eq!(top_level_tags(&suspension), (1..=8).collect::<Vec<_>>());
+    let activity = HostActivityV1 {
+        api_version: "v1".into(),
+        activity_id: "a".into(),
+        kind: "future".into(),
+        label_key: "l".into(),
+        state: "future".into(),
+        source_position: 1,
+        terminal: true,
+        safe_code: Some("future".into()),
+    };
+    assert_eq!(top_level_tags(&activity), (1..=8).collect::<Vec<_>>());
+    assert_eq!(
+        top_level_tags(&TurnTimelineItemV1 {
+            turn_id: "t".into(),
+            started_position: 1,
+            latest_position: 1,
+            state: "future".into(),
+            user_text: "u".into(),
+            completion_text: Some("c".into()),
+            suspension: Some(suspension),
+            content_truncated: true,
+            activities: vec![activity.clone()],
+        }),
+        (1..=9).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        top_level_tags(&TurnTimelinePageV1 {
+            api_version: "v1".into(),
+            session_id: "s".into(),
+            items: vec![TurnTimelineItemV1::default()],
+            scanned_through_position: 1,
+            observed_max_position: 1,
+            has_more: true,
+        }),
+        (1..=6).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        top_level_tags(&HostEventV1 {
+            api_version: "v1".into(),
+            session_id: "s".into(),
+            position: 1,
+            event: "future".into(),
+            turn_id: "t".into(),
+            execution_id: "e".into(),
+            text: "x".into(),
+            activity: Some(activity),
+        }),
+        (1..=8).collect::<Vec<_>>()
     );
 }
 

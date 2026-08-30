@@ -1,171 +1,194 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    fs,
+    io::{Read, Write},
+    net::{SocketAddr, TcpListener},
     process::Command,
-    sync::{mpsc, Arc},
     thread,
 };
 
-use garive_core::{AgentOutcome, ExecutionReport, UsageSummary};
-use garive_ledger::{ExecutionId, SessionId, TurnId};
-use garive_llm::{ModelItem, TokenCount};
-use garive_runtime::{
-    plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError,
-    TurnDispatcher,
-};
-use tempfile::TempDir;
-use tokio::sync::oneshot;
+#[test]
+fn shipping_tui_boots_and_restores_a_real_pty() {
+    let (address, server) = empty_host();
+
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("pty.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args([
+            "-c",
+            r#"
+                set timeout 5
+                log_file -noappend $env(GARIVE_TUI_LOG)
+                spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+                expect -exact "\033\[6n"
+                send "\033\[1;1R"
+                expect { "Garive" {} timeout { exit 2 } }
+                send "\003"
+                after 100
+                send "\003"
+                expect { "Garive?" {} timeout { exit 3 } }
+                send "\r"
+                expect { eof {} timeout { exit 4 } }
+            "#,
+        ])
+        .status()
+        .expect("expect must launch the shipping binary in a PTY");
+    server.join().unwrap();
+    assert!(status.success());
+    let output = fs::read(&transcript).unwrap();
+    let text = String::from_utf8_lossy(&output);
+    assert!(text.contains("Garive"));
+    assert!(text.contains("Press Ctrl+C"));
+    assert!(text.contains("Garive?"));
+    assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
+    assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
+    assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
+}
 
 #[test]
-fn tui_renders_ordered_real_h1_events_and_terminal() {
-    let server = runtime_host();
-    let output = Command::new(env!("CARGO_BIN_EXE_garive-tui"))
-        .args([&server.url, "definition-1", "private prompt"])
-        .output()
-        .expect("TUI must launch");
-    server.stop();
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let session = stdout
-        .find("       1  session.created")
-        .expect("Session event");
-    let started = stdout.find("       2  turn.started").expect("Turn event");
-    let completed = stdout
-        .find("       6  turn.completed")
-        .expect("terminal event");
-    assert!(session < started && started < completed);
-    assert!(stdout.contains("Agent: durable answer"));
-    assert!(stdout.contains("completed @ position 6"));
-}
-
-struct RuntimeHost {
-    url: String,
-    shutdown: oneshot::Sender<()>,
-    task: thread::JoinHandle<()>,
-    _directory: TempDir,
-}
-
-impl RuntimeHost {
-    fn stop(self) {
-        self.shutdown.send(()).unwrap();
-        self.task.join().unwrap();
-    }
-}
-
-struct FixedClock;
-
-impl HostClock for FixedClock {
-    fn recorded_at(&self) -> String {
-        "2026-08-30T00:00:00Z".into()
-    }
-}
-
-struct CompletingDispatcher {
-    database: PathBuf,
-}
-
-impl TurnDispatcher for CompletingDispatcher {
-    fn dispatch(&self, turn: &CommittedTurn) -> Result<(), TurnDispatchError> {
-        let usage = || UsageSummary {
-            input_tokens: TokenCount::Known(1),
-            output_tokens: TokenCount::Known(2),
-            estimated: false,
-        };
-        let facts = plan_core_terminal(
-            &CoreTerminalContext {
-                turn_id: TurnId::try_from(turn.turn_id.as_str()).unwrap(),
-                execution_id: ExecutionId::try_from(turn.execution_id.as_str()).unwrap(),
-                recorded_at: "2026-08-30T00:00:01Z".into(),
-            },
-            &ExecutionReport {
-                outcome: AgentOutcome::Completed {
-                    response_items: vec![ModelItem::Text {
-                        text: "durable answer".into(),
-                    }],
-                    usage: usage(),
-                },
-                completed_iterations: 1,
-                usage: usage(),
-            },
-        )
+fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("linear.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
+            expect "Garive. Connecting"
+            expect "Connection online"
+            send "\020"
+            expect "Command palette."
+            expect "1. /new: Create session"
+            send "\033"
+            send "\021"
+            send "\r"
+            expect "Terminal restored."
+            expect eof
+        "#])
+        .status()
         .unwrap();
-        SqliteLedger::open(&self.database)
-            .unwrap()
-            .commit(
-                SessionId::try_from(turn.session_id.as_str()).unwrap(),
-                turn.session_version,
-                facts,
-            )
-            .unwrap();
-        Ok(())
-    }
+    server.join().unwrap();
+    assert!(status.success());
+    let output = fs::read(&transcript).unwrap();
+    let text = String::from_utf8_lossy(&output);
+    assert!(text.contains("Connection online"));
+    assert!(text.contains("Command palette."));
+    assert!(!text.contains("\x1b[6n"));
+    assert!(!text.contains("\x1b[2J"));
+    assert!(!text.contains("\x1b[?1049h"));
+    assert!(text.contains("\x1b[?2004l"));
 }
 
-fn runtime_host() -> RuntimeHost {
-    let directory = tempfile::tempdir().unwrap();
-    let database = directory.path().join("host.sqlite3");
-    let (ready_tx, ready_rx) = mpsc::channel();
-    let task = thread::spawn(move || {
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                let host = LiveHost::new(
-                    &database,
-                    installed(),
-                    LiveHostLimits {
-                        max_command_bytes: 4096,
-                        event_batch_size: 64,
-                        event_poll_interval_ms: 5,
-                        activity: None,
-                    },
-                    Arc::new(FixedClock),
-                    Arc::new(CompletingDispatcher {
-                        database: database.clone(),
-                    }),
-                )
-                .unwrap();
-                let server =
-                    LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
-                        .await
-                        .unwrap();
-                let (shutdown_tx, shutdown_rx) = oneshot::channel();
-                ready_tx
-                    .send((format!("http://{}/", server.local_addr()), shutdown_tx))
-                    .unwrap();
-                server
-                    .serve(async move {
-                        let _ = shutdown_rx.await;
-                    })
-                    .await
-                    .unwrap();
-            });
+#[test]
+fn termination_signal_restores_the_shipping_terminal() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("signal.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            set child $spawn_id
+            exec kill -TERM [exp_pid -i $child]
+            expect eof
+            catch wait result
+            set code [lindex $result 3]
+            if {$code != 143} { exit 5 }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("\x1b[?1049l"));
+    assert!(text.contains("\x1b[?2004l"));
+    assert!(text.contains("\x1b[?1004l"));
+}
+
+#[test]
+fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("resize.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            send "draft survives"
+            exec stty rows 7 columns 19 < $spawn_out(slave,name)
+            expect "Need 20"
+            exec stty rows 12 columns 40 < $spawn_out(slave,name)
+            expect "draft survives"
+            exec stty rows 28 columns 160 < $spawn_out(slave,name)
+            expect "draft survives"
+            send "\021"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("Need 20"));
+    assert!(text.contains("draft"));
+    assert!(text.contains("survives"));
+    assert!(text.contains("\x1b[?1049l"));
+}
+
+fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        for _ in 0..2 {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 8_192];
+            let read = socket.read(&mut request).unwrap();
+            let request = String::from_utf8_lossy(&request[..read]);
+            let body = if request.contains("GET /v1/agent-definitions ") {
+                r#"{"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"definition-1","definition_revision":"revision-1","capabilities":[]}]}"#
+            } else if request.contains("GET /v1/sessions?") {
+                r#"{"api_version":"v1","sessions":[],"next_before":null}"#
+            } else {
+                panic!("unexpected request line")
+            };
+            socket.write_all(json_response(body).as_bytes()).unwrap();
+        }
     });
-    let (url, shutdown) = ready_rx.recv().unwrap();
-    RuntimeHost {
-        url,
-        shutdown,
-        task,
-        _directory: directory,
-    }
+    (address, server)
 }
 
-fn installed() -> InstalledAgent {
-    InstalledAgent {
-        definition_id: "definition-1".into(),
-        definition_revision: "revision-1".into(),
-        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
-        agent_instance_namespace: "installed-main".into(),
-        runtime_limits: EffectiveRuntimeLimits {
-            max_iterations: 4,
-            max_input_tokens: None,
-            max_output_tokens: None,
-            deadline_budget_ms: None,
-        },
-        public_activity_catalogue: None,
-    }
+fn json_response(body: &str) -> String {
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
 }

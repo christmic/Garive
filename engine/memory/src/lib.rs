@@ -10,6 +10,7 @@ mod control_plane;
 mod control_snapshot;
 mod control_snapshot_values;
 mod erasure;
+mod feedback_quality;
 mod hypothesis;
 mod lifecycle;
 mod maintenance;
@@ -42,6 +43,10 @@ pub use control_snapshot_values::{
 pub use erasure::{
     record_memory_erasure, ErasureDisposition, ErasureTargetKind, ErasureTargetStatus,
     MemoryErasureReceipt, MemoryErasureRequest, MemoryErasureTarget, MemoryErasureTargetResult,
+};
+pub use feedback_quality::{
+    evaluate_recall_feedback_quality, RecallFeedbackOutcome, RecallFeedbackQualityRequest,
+    RecallFeedbackQualitySummary, RecallFeedbackRow,
 };
 pub use hypothesis::{
     import_m0_classification, ImportedMemoryClassification, MemoryAuthority,

@@ -298,6 +298,7 @@ interaction.requested.v1 {
   prepared_digest: Digest
   kind: "approval" | "external_input"
   prompt: ContentBinding
+  response_schema?: ContentBinding
   response_schema_digest: Digest
   expiry_code: "none" | "turn_deadline" | "policy_deadline"
 }
@@ -316,6 +317,12 @@ interaction.cancelled.v1 {
   reason: "user" | "expired" | "turn_cancelled" | "operator"
 }
 ```
+
+`response_schema` is present on newly admitted interaction requests and binds
+the exact portable JSON Schema needed for restart-safe client continuation.
+Readers accept its absence only for compatibility with earlier v1 facts; such
+a pending interaction cannot be continued through a typed public client
+because a digest alone is insufficient to validate a response.
 
 The outer fact binds `tool_invocation_id` for all three. Resolution/cancellation
 is terminal exactly once and must match the requested digest/schema.

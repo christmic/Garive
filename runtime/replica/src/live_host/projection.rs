@@ -68,7 +68,7 @@ fn decode<T: for<'de> Deserialize<'de>>(fact: &DurableFact) -> Result<T, LiveHos
     serde_json::from_str(fact.payload.as_json()).map_err(|_| LiveHostError::CorruptState)
 }
 
-fn display_text(content: &Content) -> Result<String, LiveHostError> {
+pub(super) fn display_text(content: &Content) -> Result<String, LiveHostError> {
     let value =
         serde_json::from_str(&content.inline_utf8).map_err(|_| LiveHostError::CorruptState)?;
     let canonical =
@@ -85,14 +85,6 @@ fn display_text(content: &Content) -> Result<String, LiveHostError> {
             _ => None,
         })
         .collect())
-}
-
-pub(crate) fn completion_text(fact: &DurableFact) -> Result<String, LiveHostError> {
-    if fact.kind.as_str() != "turn.completed" {
-        return Err(LiveHostError::CorruptState);
-    }
-    let payload: Completed = decode(fact)?;
-    display_text(&payload.response)
 }
 
 #[derive(Deserialize)]
@@ -117,7 +109,7 @@ struct Completed {
 }
 
 #[derive(Deserialize)]
-struct Content {
+pub(super) struct Content {
     digest: String,
     inline_utf8: String,
 }

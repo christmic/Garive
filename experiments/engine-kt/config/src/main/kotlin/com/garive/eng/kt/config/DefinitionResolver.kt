@@ -71,6 +71,22 @@ private fun effectiveLimitsJson(value: EffectiveLimits): JsonObject {
     return JsonObject(fields)
 }
 
+private fun publicActivityJson(value: PublicToolActivityCatalogue): JsonObject = JsonObject(
+    mapOf(
+        "schema_version" to JsonPrimitive(value.schemaVersion),
+        "catalogue_revision" to JsonPrimitive(value.catalogueRevision),
+        "descriptors" to JsonArray(value.descriptors.map { descriptor ->
+            JsonObject(
+                mapOf(
+                    "tool_name" to JsonPrimitive(descriptor.toolName),
+                    "tool_revision" to JsonPrimitive(descriptor.toolRevision),
+                    "label_key" to JsonPrimitive(descriptor.labelKey),
+                ),
+            )
+        }),
+    ),
+)
+
 private fun definitionJson(value: AgentDefinition): JsonObject = JsonObject(
     mapOf(
         "definition_id" to JsonPrimitive(value.definitionId),
@@ -142,6 +158,9 @@ private fun snapshotJson(value: EffectiveAgentSnapshot, includeDigest: Boolean):
         "limits" to effectiveLimitsJson(value.limits),
         "contract_versions" to JsonObject(value.contractVersions.mapValues { JsonPrimitive(it.value) }),
     )
+    value.publicToolActivityCatalogue?.let {
+        fields["public_tool_activity_catalogue"] = publicActivityJson(it)
+    }
     if (includeDigest) fields["snapshot_digest"] = JsonPrimitive(value.snapshotDigest)
     return JsonObject(fields)
 }
@@ -186,6 +205,41 @@ private fun tightened(requested: Long?, cap: Long?, path: String): Long? = when 
     else -> requested
 }
 
+private fun publicActivityCatalogue(
+    definition: AgentDefinition,
+    registry: ResolutionRegistry,
+    tools: List<ToolDefinition>,
+): Pair<Long, PublicToolActivityCatalogue?> {
+    val version = definition.contractVersions["effective_snapshot"] ?: 1
+    if (version == 1L) {
+        if (registry.publicToolActivityCatalogue != null) {
+            abort(ResolutionErrorCode.INVALID_DEFINITION, "/public_tool_activity_catalogue")
+        }
+        return 1L to null
+    }
+    if (version != 2L) {
+        abort(ResolutionErrorCode.UNSUPPORTED_CONTRACT_VERSION, "/contract_versions/effective_snapshot")
+    }
+    val catalogue = registry.publicToolActivityCatalogue
+        ?: abort(ResolutionErrorCode.REFERENCE_NOT_FOUND, "/public_tool_activity_catalogue")
+    val keys = catalogue.descriptors.map { it.toolName to it.toolRevision }
+    val ordered = keys.zipWithNext().all { (left, right) ->
+        left.first < right.first || (left.first == right.first && left.second < right.second)
+    }
+    val labelGrammar = Regex("[a-z0-9_]+(?:\\.[a-z0-9_]+)*")
+    val complete = catalogue.descriptors.size == tools.size && tools.all { tool ->
+        catalogue.descriptors.any { it.toolName == tool.name && it.toolRevision == tool.revision }
+    }
+    if (
+        catalogue.schemaVersion != 1 || catalogue.catalogueRevision.isEmpty() ||
+        catalogue.catalogueRevision.length > 128 || !ordered || !complete ||
+        catalogue.descriptors.any { it.labelKey.length !in 1..128 || !labelGrammar.matches(it.labelKey) }
+    ) {
+        abort(ResolutionErrorCode.INVALID_DEFINITION, "/public_tool_activity_catalogue")
+    }
+    return 2L to catalogue
+}
+
 /** Resolves exact Runtime candidates into one immutable Turn-bound snapshot. */
 public fun resolveDefinition(definition: AgentDefinition, registry: ResolutionRegistry, policy: ProductPolicy): DefinitionResult<EffectiveAgentSnapshot> = try {
     definition.contractVersions.forEach { (name, version) -> if (version !in policy.admittedContractVersions[name].orEmpty()) abort(ResolutionErrorCode.UNSUPPORTED_CONTRACT_VERSION, "/contract_versions/$name") }
@@ -207,9 +261,10 @@ public fun resolveDefinition(definition: AgentDefinition, registry: ResolutionRe
     val context = exactOne(registry.contextPolicies.filter { it.policyId == definition.contextPolicy.policyId && it.exactRevision == definition.contextPolicy.exactRevision }, true, "/context_policy")!!
     if (policy.limitCaps.maxIterations > definition.limits.maxIterations) abort(ResolutionErrorCode.POLICY_INCOMPATIBLE, "/limits/max_iterations")
     val limits = EffectiveLimits(policy.limitCaps.maxIterations, tightened(definition.limits.maxInputTokens, policy.limitCaps.maxInputTokens, "/limits/max_input_tokens"), tightened(definition.limits.maxOutputTokens, policy.limitCaps.maxOutputTokens, "/limits/max_output_tokens"), tightened(definition.limits.deadlineBudgetMs, policy.limitCaps.deadlineBudgetMs, "/limits/deadline_budget_ms"))
+    val (snapshotVersion, activityCatalogue) = publicActivityCatalogue(definition, registry, tools)
     val definitionEnvelope = JsonObject(mapOf("contract" to JsonPrimitive("garive.agent-definition"), "version" to JsonPrimitive(1), "definition" to definitionJson(definition)))
-    val emptyDigest = EffectiveAgentSnapshot(definition.definitionId, definition.revision, digest(definitionEnvelope, "/definition"), resolveInstructions(definition, registry), resolveRoles(definition, registry), EffectiveCapabilitySnapshot(tools, descriptors), effectiveGovernance, ResolvedContextPolicy(context.policyId, context.exactRevision, context.descriptorDigest), limits, definition.contractVersions, "")
-    val preimage = JsonObject(mapOf("contract" to JsonPrimitive("garive.effective-agent-snapshot"), "version" to JsonPrimitive(1)) + snapshotJson(emptyDigest, false))
+    val emptyDigest = EffectiveAgentSnapshot(definition.definitionId, definition.revision, digest(definitionEnvelope, "/definition"), resolveInstructions(definition, registry), resolveRoles(definition, registry), EffectiveCapabilitySnapshot(tools, descriptors), effectiveGovernance, ResolvedContextPolicy(context.policyId, context.exactRevision, context.descriptorDigest), limits, definition.contractVersions, activityCatalogue, "")
+    val preimage = JsonObject(mapOf("contract" to JsonPrimitive("garive.effective-agent-snapshot"), "version" to JsonPrimitive(snapshotVersion)) + snapshotJson(emptyDigest, false))
     DefinitionResult.Success(emptyDigest.copy(snapshotDigest = digest(preimage, "/snapshot")))
 } catch (failure: ResolutionAbort) {
     DefinitionResult.Failure(failure.error)

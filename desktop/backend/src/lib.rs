@@ -13,9 +13,18 @@ use garive_runtime::{
 use serde::Serialize;
 use tokio::sync::Mutex;
 
+mod setup;
 mod system_configuration;
 mod system_provider;
 
+pub use setup::{
+    authorize_setup_window, DesktopSetupCancellation, DesktopSetupCatalogue, DesktopSetupError,
+    DesktopSetupInput, DesktopSetupLimits, DesktopSetupPlan, DesktopSetupPreset,
+    DesktopSetupProfile, DesktopSetupReceipt, DesktopSetupService, DesktopSetupState,
+    DesktopSetupSummary, NoSetupCommitFaults, SensitiveSetupCredential, SetupClock,
+    SetupCommitFaults, SetupCommitStage, SetupCredentialStore, SetupIdentitySource,
+    SystemSetupClock, SystemSetupCredentialStore, SystemSetupIdentitySource,
+};
 pub use system_configuration::{
     DesktopConfigurationError, DesktopSystemConfiguration, MAX_DESKTOP_CONFIG_BYTES,
 };

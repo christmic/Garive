@@ -41,6 +41,20 @@ public data class ContextPolicyCandidate(
     public val descriptorDigest: String,
 )
 
+/** One exact Tool-to-public-label mapping used only by H3 projection. */
+public data class PublicToolActivityDescriptor(
+    public val toolName: String,
+    public val toolRevision: String,
+    public val labelKey: String,
+)
+
+/** Complete immutable H3 label catalogue included in snapshot v2. */
+public data class PublicToolActivityCatalogue(
+    public val schemaVersion: Int,
+    public val catalogueRevision: String,
+    public val descriptors: List<PublicToolActivityDescriptor>,
+)
+
 /** Frozen Runtime registry view used for one resolution attempt. */
 public data class ResolutionRegistry(
     public val instructions: List<InstructionResource>,
@@ -49,6 +63,7 @@ public data class ResolutionRegistry(
     public val capabilityDescriptors: List<CapabilityDescriptor>,
     public val governancePolicies: List<GovernancePolicyCandidate>,
     public val contextPolicies: List<ContextPolicyCandidate>,
+    public val publicToolActivityCatalogue: PublicToolActivityCatalogue? = null,
 )
 
 /** Product and actor ceilings applied without mutating the definition. */
@@ -116,6 +131,7 @@ public data class EffectiveAgentSnapshot(
     public val contextPolicy: ResolvedContextPolicy,
     public val limits: EffectiveLimits,
     public val contractVersions: Map<String, Long>,
+    public val publicToolActivityCatalogue: PublicToolActivityCatalogue? = null,
     public val snapshotDigest: String,
 ) {
     /** Validates that continuation reuses the exact durable binding. */

@@ -15,7 +15,11 @@ private val runtimeFactCases by lazy {
         .jsonObject.getValue("valid_cases").jsonArray
 }
 
-internal fun runtimePayload(kind: String): JsonElement = runtimeFactCases
-    .firstOrNull { it.jsonObject.getValue("kind").jsonPrimitive.content == kind }
+internal fun runtimePayload(kind: String, schemaVersion: UInt = 1u): JsonElement = runtimeFactCases
+    .firstOrNull {
+        val value = it.jsonObject
+        value.getValue("kind").jsonPrimitive.content == kind &&
+            (value["schema_version"]?.jsonPrimitive?.content?.toUIntOrNull() ?: 1u) == schemaVersion
+    }
     ?.jsonObject?.getValue("payload")
     ?: JsonObject(emptyMap())

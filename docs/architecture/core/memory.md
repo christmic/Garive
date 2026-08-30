@@ -67,6 +67,84 @@ lets "the next session pick up where the last left off".
 Runtime (process, surface, cache) is **disposable**; memory
 is **persistent**.
 
+### Five shapes of knowledge — what storage is for
+
+Memory is not one thing. The system admits **five shapes
+of knowledge**, each with its own storage substrate and
+recall mechanism. The Memory bank is the *integration
+layer* over all five; no single substrate covers all five.
+
+| Shape | What it captures | Where it lives | How it's recalled |
+|-------|-------------------|-----------------|-------------------|
+| **Tacit intuition** | "This is what usually works" — the implicit pattern the LLM / human carries but cannot fully articulate | **LLM weights + human brain** | **Never in the system** — by definition, tacit knowledge is what cannot be externalised. Memory works around it; it does not capture it. |
+| **Similarity knowledge** | "This looks like that" — semantic / topical neighbours | **Vector index** + FTS | Hybrid recall — `B = α_v · vector_score + α_t · fts_score`, RRF fusion (⑥) |
+| **Structural knowledge** | "A caused B, which contradicts C, which distilled from D" | **Memory graph** (typed links in `MemoryTypeRegistry`) | One-hop / two-hop traversal under the recall profile (⑤ Memory graph) |
+| **Normative knowledge** | "This is the rule / contract / schema / policy" | **Schemas + Specs + contracts + configs** | Versioned references — bound by exact digest, not by similarity |
+| **Episodic / raw** | "This is what actually happened, in what order, with what evidence" | **Ledger** (durable facts) | Source-of-truth replay — `source_session + source_seq`, no transformation in the recall chain |
+
+The five are **not peers**:
+
+- **Tacit** is the limit of the system — the goal is to
+  externalise enough of it that the system does not have
+  to guess, not to capture it.
+- **Similarity** is for **fuzzy retrieval** — find entries
+  that *look like* what the query is about.
+- **Structural** is for **causal traversal** — find
+  entries that *connect to* what the query is about.
+- **Normative** is for **constraint enforcement** —
+  answers "what is allowed?", not "what is similar?".
+- **Episodic** is for **ground-truth replay** — the
+  ledger is the raw material the other four are built
+  from, and the audit trail they all trace back to.
+
+#### Where Memory sits in the five
+
+Memory is the **integration layer** over three of the
+five shapes, the **adjacent reference** to a fourth, and
+the **explicit non-capturer** of the fifth:
+
+| Shape | Memory's relation | Why |
+|-------|-------------------|-----|
+| Similarity | **Native** — vector + FTS index, ⑥ hybrid recall | Primary fuzzy retrieval mechanism |
+| Structural | **Native** — typed link fields, one-hop / two-hop traversal | Causal / lineage reasoning |
+| Normative | **Adjacent** — entries reference norms by exact digest, never interpret them | Constraints are contracts, not recall candidates |
+| Tacit | **Out of scope** — by definition, cannot be externalised | The system works around it; the LLM weights carry what cannot be written down |
+
+Memory entries are therefore built from **similarity +
+structural + episodic**, with **normative as a digest
+reference** and **tacit excluded**. This is the design
+boundary — it is not "we cannot add normative / tacit"
+but "they belong to different substrates with different
+contracts".
+
+#### Why this matters for recall design
+
+Each shape demands a different recall mechanism; the
+Memory bank is what unifies them under one query surface:
+
+- **Similarity recall** needs Thompson exploration,
+  conf gating and the exploration slot (⑥).
+- **Structural recall** needs one-hop / two-hop budget,
+  typed-edge vocabulary and edge-versioned re-binding
+  (⑤ Graph storage strategy).
+- **Episodic recall** needs the exact `source_session +
+  source_seq` reference to bind the entry to its durable
+  fact; no transformation, no summarisation in the
+  recall chain (⑤ Entry shape).
+- **Normative recall** is **not** a recall problem at all
+  — it is a contract binding. The agent asks "what is the
+  current version of policy X?" and the system answers
+  with the exact digest; no similarity, no traversal.
+
+> **Memory is one bank with five shapes behind it.**
+> The system's power is in the **integration**, not in
+> any single shape. A bank with only vectors is
+> similarity-blind to causes; a bank with only graphs is
+> similarity-blind to paraphrase; a bank with only the
+> ledger is similarity-blind to memory itself. The five
+> shapes are why memory is hard, and why the integration
+> is worth doing.
+
 ### Four types — borrowed from cognitive science
 
 | Type | Content | Primary source | Lifetime |
@@ -354,6 +432,61 @@ The write-side admission check uses only the three
 questions (does it generalise? is it stable? is it already
 present?) to filter obvious irrelevance.
 
+### First-use guarantee — three ways a new entry gets observed
+
+A new memory entry starts life with **no observations** and
+therefore no calibrated posterior. Without intervention it
+would never enter the top-K — Thompson sampling widens the
+posterior but doesn't **force** an observation. The
+extraction pipeline binds **three layered guarantees** so
+a new entry has at least one chance to produce an
+observation before being demoted.
+
+#### 1. Extract-time verification
+
+The bounded extractor runs an internal verification step
+**before** emitting a Candidate. An entry that fails the
+verification is rejected at the extractor and never
+reaches the candidate queue; an entry that survives is
+"smell-checked" but **not** truth-attested. The
+verification is a cheap plausibility filter, not a reality
+check — it catches obvious falsehoods without claiming the
+survivor is true.
+
+#### 2. Thompson sampling at rerank
+
+Once admitted as a Candidate, the entry enters the normal
+rerank pool. Its wide posterior makes `p ~ Beta(α, β)`
+volatile enough to occasionally win a top-K slot.
+**No new mechanism needed** — exploration is automatic
+through the same sampler that drives ⑥'s rerank stage.
+
+#### 3. Candidate bonus + transparent injection
+
+When a Candidate entry wins a top-K slot, the inject
+stage applies a **bounded presentation bonus** and the
+surface carries an explicit `first-use` /
+`awaiting-verification` label. The model sees the entry
+is **tentative** — a fresh hypothesis that needs
+world-checking, not a certified fact. The bonus is a
+surface-level marker (e.g. `mtype = memory.candidate`),
+**not a ranking weight** — the entry's position in top-K
+is still governed by Thompson + relevance.
+
+The three guarantees are **layered**, not exclusive:
+
+- Extractor filter cuts the obviously-wrong candidates.
+- Thompson sampling surfaces the plausible-but-uncertain
+  ones.
+- The candidate label makes the uncertainty visible so the
+  model can decide whether to verify.
+
+> **"Extract wide, trust slow"** also means **"make the
+> first use observable"**. A new entry that never gets
+> recalled can never produce an outcome, and an entry
+> that never produces an outcome can never earn trust —
+> the three guarantees are how the trust gate ever opens.
+
 ### Item state machine — promotion / demotion / archival
 
 ```text
@@ -401,12 +534,705 @@ is a raw material none of the four frameworks have access to
 failures to memory; without this pipeline, an agent's memory
 is **shallow** by definition.
 
-## ⑤ Data model + storage
+## ⑤ Data model + storage — governed registry and lifecycle projections
 
-M0 owns stable record/revision/query/proposal identities, exact content and
-evidence bindings, authority, scope, sensitivity, and revision status. M1 adds
-the orthogonal hypothesis lifecycle and integer evidence tallies; portable
-state does not use floating confidence as truth or authority.
+### MemoryTypeRegistry — kind philosophy's third application
+
+The same governance pattern that gave us the **kind registry**
+(`ledger.md`) and the **EventCatalog** (`loop.md`) gives us the
+**MemoryTypeRegistry** here — third application of the pattern:
+
+```
+kind registry      → ledger kind governance
+EventCatalog        → event vocabulary governance
+MemoryTypeRegistry  → memory entry type governance
+```
+
+All three are versioned closed vocabularies. A registry row selects admitted
+code and policy; it cannot inject a class, script, or executable type. Adding a
+type requires a versioned enum, compatible policy implementations and shared
+fixtures, not only a configuration row.
+
+### Exact descriptor fields
+
+| Field | Question it answers |
+|-------|----------------------|
+| **Allowed roles / authorities** | Which M0 roles and exact authority bindings this type admits. |
+| **Lifecycle / retention policy revisions** | Which implemented, versioned policies govern state and retention. |
+| **Recall profile revision** | Which implemented selection profile may produce bounded candidates. |
+| **Surface kind** | Which admitted C2 item kind represents the retained product. |
+
+```python
+MemoryTypeDescriptor {
+  type, allowed_roles, admitted_authorities
+  lifecycle_policy_revision, recall_profile_revision
+  retention_policy_revision, surface_kind
+}
+```
+
+The memory type is the handle into this closed registry. Runtime does not invent
+types or interpret unknown policy strings as behavior.
+
+### Lifespan rules — semantic level (memory-specific)
+
+The ① angle sets four memory types with different lifecycle intent. Durations,
+decay functions and thresholds below are research questions, not defaults:
+
+| Type | Lifetime | Decay | Retirement |
+|------|----------|-------|------------|
+| `memory.episode` | Medium intent | Distillation may propose derived Candidates; it never silently down-weights the source. | Explicit lifecycle policy only. |
+| `memory.fact` | Long intent | Reality-backed observations update the exact tally. | Supersession/user correction remains explicit. |
+| `memory.lesson` | Long intent | No time-only tombstone. | Falsification, forget, corruption or explicit policy. |
+| `memory.playbook` | Toolchain-bound | Toolchain revision change makes it eligible for Candidate/Cold. | Explicit lifecycle policy only. |
+
+The descriptor selects an implemented policy revision; arbitrary table values
+cannot introduce new lifecycle arithmetic.
+
+### Distillation relations — research map
+
+```
+memory.episode  ──(dream)──>  memory.fact
+memory.episode  ──(dream)──>  memory.lesson
+memory.fact     ──(verified)─>  memory.playbook
+memory.playbook ──(superseded)>  memory.playbook (newer version)
+```
+
+The direction is useful as a candidate-extraction map. Each edge can only emit
+an evidence-bound Candidate or Noop through an admitted extractor revision; it
+does not activate, merge, supersede, delete or promote a revision.
+
+### Memory graph — entry-level plus relation-level
+
+#### Truth, derivatives, and views — the SSOT hierarchy
+
+The system's **truth** is exactly two layers, in this
+order:
+
+```
+truth  =  ledger  ∪  memory entries (with evidence anchors)
+```
+
+Anything else is a **derivative** — a projection built on
+top of truth, used for fast access or for
+representation, but **never the source of authority**.
+The Memory graph is one such derivative:
+
+```
+truth    =  ledger + memory entries (evidence anchors)
+              │
+              ├──► similarity index  (vector + FTS)         ← view
+              ├──► memory graph      (typed links)          ← view
+              └──► menu / shadow / search surfaces          ← views
+```
+
+#### The graph is a view
+
+The graph does **not** store facts. It stores **typed
+references** to facts the ledger has already committed.
+An edge is `(source_ref, relation_type, target_ref)`,
+where each `Ref` resolves to an M0 `record_id +
+revision_id` and a durable fact position. If the graph
+disagrees with the ledger, the ledger wins — the graph
+is re-bound, not the other way around.
+
+This is why the graph can be **demand-driven and
+rebuildable**. Because it is a view:
+
+- A new edge type enters through the demand loop (below)
+  and is **built from existing facts**. The graph never
+  invents relations the ledger hasn't seen.
+- A failed / outdated edge is **dropped and rebuilt**
+  from the ledger. The graph does not accumulate "stale
+  facts" because the graph stores no facts.
+- The worst case — total graph corruption — is
+  **rebuild from ledger**. Every typed edge can be
+  re-extracted by replaying the ledger's committed
+  facts through the admitted extractor revision. The
+  graph is **regenerable**; the ledger is not.
+
+#### Why this matters for the recall chain
+
+The recall chain trusts the **truth layer** and treats
+graph outputs as **advisory**:
+
+- Entry-level recall + ledger references are
+  **authoritative** — they are facts the system has
+  committed.
+- Graph traversal results are **suggestive** — they
+  surface connections that may or may not be load-
+  bearing for the current query. The recall chain may
+  use them to **expand** a candidate set, not to
+  **replace** one.
+- When graph and entry-level disagree, entry-level +
+  ledger win. The graph's lossiness is structural; the
+  ledger's auditability is structural.
+
+This is the **SSOT contract** that keeps the system
+honest:
+
+> **Truth = ledger + memory entries (evidence anchors).**
+> Everything else (vector index, graph, menu, shadow,
+> surface) is a **view**. A view can be rebuilt from
+> truth; truth cannot be rebuilt from a view.
+> **When in doubt, rebuild.**
+
+---
+
+Entry-level recall finds entries by **similarity**. Causal
+recall finds entries by **how they connect**. The two are
+complementary views of the same bank:
+
+- **Entry-level** — `memory_search` returns the entries
+  whose vector / FTS match the query, with Thompson
+  exploration and conf gating. This is angle ⑥.
+- **Relation-level** — `memory_graph_query` returns the
+  entries reachable from a seed through admitted edge
+  types: distillation lineage, supersession, causal links,
+  evidence chain, contradiction. This is a **causal /
+  structural** traversal, not a similarity search.
+
+The two coexist. Similarity finds "what looks like this";
+the graph finds "what caused this, what did this cause,
+what contradicts this, what distilled into this". A
+typical recall benefits from both: similarity finds the
+relevant entry, the graph traces **why** the entry was
+created, **what** it contradicts, and **what** distilled
+from it.
+
+#### Edge types — admitted vocabulary
+
+```
+# Distillation lineage  (admitted in v1 — ledger mirror)
+episode    --distilled_to-->   fact
+episode    --distilled_to-->   lesson
+fact       --promoted_to-->    playbook
+playbook   --superseded_by-->  playbook (newer revision)
+
+# Evidence chain        (admitted in v1 — ledger mirror)
+entry      --evidence_ref-->   DurableFactReference
+
+# Causal / structural   (demand-driven — not pre-admitted)
+entry_a    --causes-->         entry_b       # "X fails because Y"
+entry_a    --contradicts-->    entry_b       # incompatible claims
+entry_a    --supports-->       entry_b       # reinforces a claim
+```
+
+Each edge is an **admitted durable fact** —
+`memory.relation_recorded` with the exact source / target
+revision, the relation type (closed vocabulary, not free
+text), the evidence reference, and the versioned
+extractor revision that emitted it. Edges do not invent
+relationships — they are admitted through the same
+evidence-anchored admission gate as entries, and they are
+revisioned so a superseded entry's outgoing edges can be
+re-bound to the new revision without rewriting history.
+
+#### Why it is worth doing
+
+- **Causal traversal**: "lesson A was distilled from
+  episode X, which was contradicted by observation Y,
+  which came from session S42 position 317" — the agent
+  follows the chain, not the similarity. Without the
+  graph, this reconstruction is impossible; with it, it's
+  one bounded query.
+- **Multi-hop reasoning**: "find all lessons that
+  contradict this fact AND were distilled from episodes
+  in the same topic cluster" — pure vector / FTS cannot
+  answer this; graph traversal can.
+- **Audit trail**: every entry has a known provenance
+  chain. The graph is the **explicit lineage** the audit
+  needs to verify distillation integrity, and the path
+  the reactivation recheck follows when an Archived
+  entry is lifted back to Active.
+
+#### What stays in v1 vs demand-driven
+
+- **In v1 (ledger mirrors only)**: distillation lineage
+  edges (episode → fact / lesson, fact → playbook),
+  supersession edges (playbook → playbook), and
+  evidence-ref edges are admitted because they are
+  **already implicit in the M0/M1 ledger facts** — the
+  graph is the typed projection of facts the system has
+  already committed, not a new semantic layer. No new
+  semantic edge type is admitted in v1 ahead of
+  measured demand.
+- **Demand-driven**: causal / contradiction / support
+  edges are **not pre-admitted**. They enter the
+  vocabulary only when the recall chain surfaces a
+  repeated failure pattern that the new edge type
+  would close (see "Demand-driven growth" below). The
+  registry stays closed; the proposal pipeline stays
+  open. New edge types are grown, not built.
+
+> **The graph in v1 is the typed mirror of ledger facts
+> the system already has. Every other edge type must
+> earn its place through recall failure, proposal,
+> admission, and regression — never through pre-design.**
+
+> **Entry-level recall finds similarities; the memory
+> graph finds connections.** The two views are queried
+> separately and composed by the recall chain — a hybrid
+> query can ask "give me the top-K similar entries, then
+> for each, list its causal predecessors and
+> contradicting siblings". Entry recall is the **what**;
+> the graph is the **why**.
+
+### Graph storage strategy — typed links, not a graph engine
+
+Graph storage is **not** a separate graph database
+(Neo4j, Memgraph, etc.). The graph is built on top of
+**typed link fields** declared in the `MemoryTypeRegistry`:
+
+- Each entry kind declares the link field types it
+  admits: `distilled_from: Ref[]`, `supersedes: Ref`,
+  `contradicts: Ref[]`, `evidence_refs: Ref[]` — **closed
+  vocabularies**, not free text. The vocabulary lives in
+  the same registry that already governs `inject_kind`,
+  `retention_policy_revision` and the rest.
+- Link fields are typed exactly like other M0 fields
+  (canonical JSON, JCS digest, versioned schema). An
+  edge is just another durable field, not a parallel
+  database.
+- Traversal is a bounded query type over the existing
+  ledger; one-hop / two-hop walks run under the same
+  recall profile that gates entry recall (budgets,
+  truncation, exact integers).
+
+#### Why typed links, not a graph engine
+
+- **SSOT for ledger durability**: graph state shares the
+  same commit / restart / receipt guarantees as entry
+  state. A separate engine would require cross-database
+  coordination that the current M0 adapter does not
+  guarantee (⑤ footnote on `memory.db`).
+- **Versioned type vocabulary**: adding a new edge type
+  is a `MemoryTypeRegistry` schema change, not a database
+  migration. The closed vocabulary keeps edge meaning
+  portable across Rust / Kotlin and keeps it from drifting
+  into free-text noise.
+- **Bounded traversal cost**: one-hop / two-hop queries
+  have a known fan-out bound. A general graph engine
+  invites unbounded pattern matching; typed links keep
+  the traversal shape explicit and budgetable.
+
+#### Traversal depth — one-hop and two-hop
+
+The recall graph query admits **two depths** under a
+frozen profile:
+
+- **One-hop** — return the seed entry plus every entry
+  directly linked through an admitted edge type. Used
+  for "what does this contradict / what distilled into
+  this / what supersedes this" — single-step lineage.
+- **Two-hop** — from the seed, follow one edge, then
+  from each neighbour follow another. Used for "lesson A
+  contradicts fact B, which was distilled from episode X"
+  — multi-step reasoning.
+
+Deeper traversals remain evaluation-gated. The graph
+itself is **deeper than two hops**; the recall profile
+only exposes **what the budget can afford**. Going from
+two hops to three hops requires a versioned profile
+revision and measured regression on precision / cost.
+This is the budget boundary that keeps graph queries from
+silently turning into unbounded pattern matches.
+
+#### Where to borrow, where to build
+
+- **Borrowed (design)**: closed-vocabulary edge
+  semantics (RDF / property-graph literature), the
+  one-hop / two-hop budget pattern (knowledge-graph
+  query research), the typed-link-as-field shape (schema-
+  driven relations, not free-form triples).
+- **Built (infrastructure / algorithms)**: the durable
+  storage itself (M0 ledger + typed link fields), the
+  traversal implementation (bounded query type over the
+  ledger), the admission / lifecycle integration (graph
+  edges pass the same evidence-anchored gate as
+  entries), and the cross-language Rust / Kotlin parity.
+- **Open for deeper design**: deeper traversal patterns
+  (three+ hops, conditional walks), multi-entry query
+  language (graph + similarity composition), conflict-
+  resolution strategies (when traversal surfaces
+  contradicting subgraphs), hot-cache vs cold-traversal
+  split for popular subgraphs, and representation of
+  **negative knowledge** — "this fact was attempted and
+  failed" — as a first-class edge.
+
+> **Graph storage is a typed-field problem, not a
+> graph-database problem.** The vocabulary is a
+> `MemoryTypeRegistry` concern; the storage is an M0
+> concern; the traversal is a recall-profile concern.
+> Three ownerships, one bank.
+
+### Limits of the graph — what graphs don't do
+
+The graph is **necessary but not sufficient**. Admitting
+it into v1 does not mean it solves memory; it means
+memory gains a complementary mechanism. Six honest
+limits frame what the graph can and cannot do.
+
+#### 1. Extraction boundary — only entity-relation pairs
+
+Only content that can be cut into **(subject,
+relation, object)** triples enters the graph. Sentences
+that resist this cut — long narratives, conditional
+prose, qualitative reasoning, explanations with
+embedded metaphor — become **orphans**: they remain in
+entry-level recall (vectors) but never produce a typed
+edge.
+
+This is not a defect of the extractor; it is the **form
+of the data**. Memory admits this through admission — an
+entry whose content cannot yield an admitted edge still
+has its `evidence_refs` edges and its `mtype` lineage,
+but it cannot acquire a `causes` / `contradicts` /
+`supports` edge because no admitted extractor revision
+can produce one with evidence grounding.
+
+#### 2. Formalisation is lossy
+
+`natural language → triple` **drops** tone, condition,
+hedging, register, and the qualitative middle. A lesson
+like "method X usually fails under condition Y, but
+sometimes works in odd contexts" becomes
+`(X, causes, fail) | (Y, condition_of, fail)` — the
+**usually**, the **sometimes**, the **odd** all
+disappear. The entry-level text still carries them; the
+graph does not. Recall chains that depend on tone /
+hedge / register must route through **entry-level +
+text**, not through the graph.
+
+The graph's lossiness is **structural**, not a bug to
+fix. The fix is to **route around** it: keep the graph
+for what it captures cleanly, keep the entry text for
+everything else.
+
+#### 3. Ontology drift
+
+The `MemoryTypeRegistry` vocabulary is **predefined**,
+closed, versioned. Real content does not respect closed
+vocabularies — it invents new categories faster than
+any registry can enumerate them. An extractor that meets
+an un-named relation type has three choices, all bad:
+
+- **Force-fit** — emit an edge with the closest existing
+  type, producing a silent semantic drift. Rejected —
+  this corrupts the closed vocabulary.
+- **Reject** — drop the edge, lose the signal. Acceptable
+  when the lost edge is not load-bearing.
+- **Propose** — emit a `relation_type_proposed` Candidate
+  for the registry to admit. This is the **admitted**
+  path. The proposal carries the extractor revision,
+  evidence references and a draft digest; registry
+  admission is an explicit, versioned decision.
+
+The registry stays closed; the **proposal pipeline**
+stays open. New types enter only through admission,
+never through silent vocabulary expansion.
+
+#### 4. Reasoning boundary — resultative, not full
+
+The graph supports **resultative** reasoning — what
+directly causes / contradicts / supports what. It is
+**weak** at:
+
+- **Default reasoning** — "what is usually true when
+  nothing else is known" is not in the graph; it lives
+  in similarity (entry-level) or in tacit knowledge.
+- **Analogical reasoning** — "this is like that" is
+  similarity's job; the graph has no analogue matcher.
+- **Provenance reasoning** — "where did this fact come
+  from, and what does its history tell me" is partly
+  ledger-backed (Episodic shape) and partly entry-level
+  (Evidence chain); the graph's `evidence_refs` is one
+  signal, not the whole story.
+
+A recall chain that asks for default / analogical /
+provenance reasoning **must compose** graph with
+entry-level + ledger. Pure-graph reasoning under-
+delivers on these three.
+
+#### 5. Maintenance cost — graph rots without feedback
+
+A graph without a feedback loop **rots**: stale edges
+stay, contradictions accumulate, dead branches grow.
+The Memory graph does not escape this — it inherits the
+same feedback mechanisms the entry-level bank already
+has:
+
+- **Reactivity from observations** — when an
+  observation falsifies a lesson, the graph edges from
+  that lesson (`causes`, `supports`) are re-evaluated; a
+  confirmed falsification may invalidate downstream
+  `supports` edges transitively.
+- **Audit-driven re-binding** — when the periodic audit
+  (⑦ Lessons) re-evaluates quiet lessons, the outgoing
+  edges are re-bound to the new revision.
+- **Versioned re-bind on supersession** — every
+  supersession emits a new edge that re-points from the
+  new revision, so the graph never silently refers to a
+  tombstoned entry.
+
+A graph without these mechanisms is just a frozen
+snapshot of one extractor run. With them, the graph is
+**continuously re-grounded** in observations and audit,
+which is what keeps it from rotting.
+
+#### 6. Graph is supply, not consumption
+
+The graph is **supplied to the LLM**, not used by it
+directly. The LLM composes the answer from entry-level
+recall + ledger references + graph traversal +
+similarity, all surfaced through the same recall
+contract. The graph itself does not output prose; it
+**feeds** the recall chain that feeds the surface that
+feeds the model.
+
+This also means **personalised knowledge resists
+graphisation**. A user's preferences, habits, hedges,
+pet peeves, conversational patterns — these live in
+similarity (vector) and in entry-level (text), not in
+typed triples. The graph captures the **structural
+backbone** of memory; the personal layer rides on top
+through other shapes.
+
+> **The graph is necessary for causal traversal; it is
+> not sufficient for memory.** Admitting it into v1 is
+> admitting one shape of five; the other four
+> (similarity, normative, episodic, tacit) carry what
+> the graph cannot. The limits are not failures to fix
+> — they are the boundary that defines what the graph
+> is for.
+
+### Demand-driven growth — the graph is grown, not built
+
+The graph is **demand-driven**, not pre-built. v1 admits
+only the edges that are **already implicit in the M0/M1
+ledger facts** — `distilled_from`, `supersedes`,
+`evidence_refs` — because they are mirrors of facts the
+ledger has already committed. **No new semantic edge
+type** is admitted in v1 ahead of measured demand. The
+graph's vocabulary in v1 is the **trace of facts the
+system already has**, not the seed of facts it might
+one day want.
+
+The growth path runs in a closed loop:
+
+1. **Recall failure surfaces the gap.** A repeated
+   failure pattern — "this query keeps returning the
+   right entry but the model never connects it to its
+   cause" / "two contradicting entries keep both
+   surfacing" / "the lineage from episode to lesson is
+   missing in the menu" — is logged through the recall
+   chain's outcome record. The failure is
+   **demand signal**, not a hypothesis.
+2. **Proposal emitted.** The recall-failure analysis (or
+   an admitted extractor revision observing the same
+   gap) emits a `relation_type_proposed` Candidate
+   naming the missing edge type, the evidence
+   references, and the specific failures it would
+   close. The proposal carries its extractor revision
+   and a draft digest.
+3. **Registry admits.** The `MemoryTypeRegistry`
+   admits the edge type through a versioned schema
+   change. Only at this point does the typed link
+   field become available in entry shapes; only at this
+   point do extractors start emitting it.
+4. **Regression proves the closure.** The new edge type
+   is exercised under a frozen recall profile;
+   precision / cost improvements are measured against
+   the prior baseline. The edge type **stays admitted**
+   only if regression is positive; otherwise the
+   proposal is reverted and the edge is dropped.
+
+The graph therefore grows **one typed edge at a time**,
+each backed by a recall failure it closes. The registry
+never expands without an explicit admission gate. New
+edge types are **earned**, not declared.
+
+This is the **opposite** of building a full ontology
+first and finding uses for it. The ontology is the
+**trace** of the recall failures the system has
+already encountered; the graph is its **distillation**.
+Pre-built ontologies rot because nothing in them is
+connected to a measured problem; demand-driven edges
+persist because every admitted type has a closure it
+can claim.
+
+> **The graph is not designed top-down; it is grown
+> bottom-up from the system's own recall failures.**
+> v1 admits only the edges that already exist in the
+> ledger. Every other edge type must earn its place
+> through the closed loop: failure → proposal →
+> admission → regression. The vocabulary is the
+> **trace** of problems the system has already solved;
+> nothing enters ahead of measured demand.
+
+### Recall profile — questions bound by a versioned policy
+
+| Profile field | What it controls |
+|--------------|------------------|
+| **Trigger** | Which effective-snapshot purpose may request a product; risk-action remains unadmitted. |
+| **Budget** | Exact item/UTF-8/token limits shared with C2; there is no default percentage. |
+| **Ranking** | Exact policy revision and integer components; no RRF weight is selected by M1. |
+| **Inject kind** | surface-level kind (e.g. `memory.lesson`, `memory.fact`) |
+
+### Inject kind — surface-level shape
+
+When a memory entry is recalled, the surface sees it as an
+entry with an **`mtype` → `inject_kind` mapping**. The user
+sees the entry's **kind** (not the raw mtype) — so `memory.lesson`
+appears as a `memory.lesson` block in the surface.
+
+### Add a type = code, policy, registry row and fixtures
+
+The following sketch is only an intuition. The normative M1 tests additionally
+require exact type coverage, canonical order, allowed roles/authorities and
+known policy revisions:
+
+```python
+def test_memory_type_registry_consistent():
+    for mtype, type_def in registry.items():
+        assert type_def.inject_kind in entry_kinds, \
+            f"{mtype} injects {type_def.inject_kind} not in entry_kinds"
+        assert type_def.lifespan.retention >= 0
+        assert type_def.lifespan.retention <= type_def.lifespan.decay_threshold
+```
+
+### Entry shape — research notation mapped to M0/M1
+
+```python
+class MemoryEntry:
+    id:              uuid          # global identity
+    mtype:           str           # 'memory.lesson' / 'memory.fact' / ...
+    content:         Value         # mtype-specific payload
+    provenance:      Provenance    # source_session + source_seq + scope markers
+    evidence_tally:  EvidenceTally # exact verified/falsified/neutral integers
+    last_observed:   uint64        # durable position, not a wall-clock guess
+    scope:           ScopeBinding  # opaque Runtime-authorised owner
+    boundary_cases:  Candidates    # immutable evidence-bound proposals
+```
+
+The actual identity is M0 `record_id + revision_id`; provenance is one or more
+exact `DurableFactReference` values containing Session, position, fact ID and
+payload digest. Boundary cases do not mutate an entry in place. Floating
+confidence may be a versioned display projection but is not stored truth,
+authority or lifecycle permission.
+
+### Hot / cold split — lifecycle projection, not another state machine
+
+The ordinary eligible set contains `Active` entries. A bounded menu/detail
+product may be requested under the effective snapshot and offered to C2; it is
+not injected every turn.
+
+`Cold` entries require explicit detail lookup or policy-governed reactivation.
+`Archived` entries are excluded from menus and require an admitted detail
+purpose that explicitly includes them. `Candidate` requires frozen exploration.
+`Promoted` is excluded from normal Memory recall because Knowledge owns the
+published revision.
+
+The split is Letta-inspired product vocabulary implemented by M1 state plus a
+versioned recall profile. Counts and storage sizes are explicit configured
+bounds, not "tens" or "hundreds" contracts.
+
+```
+┌────────────────────────────────────────────────────────┐
+│           ORDINARY ELIGIBLE SET                         │
+│   active entries under frozen scope/policy/bounds       │
+│   committed product -> C2 retained or dropped           │
+└────────────────────┬───────────────────────────────────┘
+                     │ explicit lifecycle policy
+                     ▼
+┌────────────────────────────────────────────────────────┐
+│           COLD LAYER (retrieval-only)                    │
+│   cold; archived only for admitted detail purpose        │
+│   promoted is owned and recalled by Knowledge            │
+│   Runtime candidate ports remain replaceable             │
+└────────────────────────────────────────────────────────┘
+```
+
+### Reactivation — application-driven promotion out of Cold/Archive
+
+`Cold` and `Archived` entries are **not** forgotten — they
+are **outside the injection window**. Forget means
+"withdraw from injection"; it does not mean "delete" or
+"un-queryable".
+
+| State | Framework injects? | Tool / UI queries? |
+|-------|--------------------|--------------------|
+| **Active** | ✅ under the frozen recall profile | ✅ |
+| **Cold** | ❌ | ✅; **successful application → promoted to Active** |
+| **Archived** | ❌ | ✅ only through an admitted detail purpose that names Archive as eligible; successful application → promoted through the receipted reactivation path |
+
+**Successful application triggers reactivation**. The
+recall chain records `recall.apply` against a Cold or
+Archived entry; the outcome (Verified / in-scope
+Falsified) drives a normal β update **and** emits a
+lifecycle event:
+
+- **Cold → Active** is the **direct** path. An admitted
+  `recall.apply` whose outcome is Verified or in-scope
+  Falsified lifts the entry back to Active. The
+  reactivation is receipted but does not require a fresh
+  admission check — Cold is a recall-eligibility
+  projection, not a trust loss.
+- **Archived → Active** is the **indirect** path. The
+  recall itself must arrive through an **admitted detail
+  purpose** that already names Archive as eligible —
+  ordinary recall cannot reach Archive. The successful
+  application triggers an admission-shape recheck
+  (anchors valid, scope granted, recall profile permits)
+  before the entry is lifted, because Archive implies the
+  entry was deliberately demoted and should not silently
+  re-enter the active set without policy acknowledgement.
+  This recheck is **the "mechanism inside"** that keeps
+  Archive from leaking back into Active through an
+  unrelated recall.
+
+**Reactivation is not implicit**. The lifecycle event is
+explicit, not a side effect of a successful outcome. The
+recall chain emits a receipted `memory.lifecycle_event`
+fact that re-runs the admission checks; the entry is not
+silently rewritten.
+
+> **Forget is a withdraw-from-injection, not a delete.**
+> Cold and Archived entries are queryable through ordinary
+> tools and UI. A successful application is the natural
+> promotion path back to Active — direct for Cold,
+> admission-validated for Archive.
+
+### Distillation sources — dual proposals, one admission path
+
+Two sources may propose candidates asynchronously:
+
+- **Session-end source** — after the durable Session prefix closes, a bounded
+  extractor may emit a `SessionEnd` Candidate or safe Noop. It is best effort
+  and cannot block Session closure or guarantee capture.
+- **Scheduled-distillation source** — consumes one exact Session prefix,
+  extractor revision, watermark and batch digest. Cadence and volume gates are
+  explicit Runtime configuration with no built-in defaults.
+
+Both sources are asynchronous to a completed Turn. Either uses the ordinary
+configured model/Provider boundary or an admitted deterministic extractor port;
+there is no built-in cheap/medium model.
+
+```
+session end ────────► bounded extract ────────► Candidate / Noop
+                                                       │
+                                                       ▼
+                                              candidate (queued)
+                                                       │
+                          exact watermark ──► batch extract   │
+                          + fixed prefix/revision             ▼
+                                              Candidate / Noop
+                                                       │
+                                                       ▼
+                                              normal M0/M1 admission
+```
+
+The two sources converge only at the normal decision/admission boundary. Neither
+directly writes, merges, activates, archives, deletes or promotes a revision.
 
 The production adapter currently persists Memory projections transactionally
 with the Runtime SQLite store so Memory facts and visibility obey
@@ -484,6 +1310,169 @@ recall is cheap and recall-oriented (high recall); rerank
 is expensive and precision-oriented. The two together give
 the best of both.
 
+### Recall chain — conf + staleness are computed, not stored
+
+The recall chain reads `conf` from each candidate and lets
+it participate in two distinct roles: **gating** (drop or
+demote) and **annotation** (mark the surface entry). The
+freshness factor `F` is **lazy**: it is computed at recall
+time from `now − last_verified`, never persisted as a
+stored column.
+
+| Stage | Reads | Computes | Role |
+|-------|-------|----------|------|
+| **Coarse** (vector / FTS / recency) | entry identity, `mtype`, content index, `last_verified` | per-query `B` only | RRF fusion produces top-K |
+| **Rerank** | identity, per-entry `α`, `β` | Thompson sample `p ~ Beta(α, β)` blended with `B` | orders top-K by exploration-aware relevance — **ranking does not see conf** |
+| **Filter** | full `conf = E × R × B × F`, `F` | gate 1 (conf threshold), gate 2 (freshness) | **gating** — drop below-threshold or mark `low-confidence`; mark `stale` if `F < threshold`; lessons exempt from time-only staleness |
+| **Inject** | `conf`, `staleness` | gate 3 (transparent injection) | **annotation** — surface entry carries `conf`, `staleness`, and provenance |
+
+**Why lazy `F`**: `F = 1 − (now − last_verified) / F_max_age`
+is a function of the recall clock. Storing it would freeze
+the value to write-time, which is meaningless when the
+recall clock advances. `last_verified` itself is a durable
+position (M0 `last_observed`), not a wall-clock guess —
+only an admitted `memory.observation_recorded` fact may
+advance it.
+
+### E is admission-time only
+
+`E` is **structural**, not temporal — it cannot decay or
+go stale, but it can be **voided** by admitted lifecycle
+events. The four cases where `E` is re-evaluated:
+
+| Event | What happens to `E` |
+|-------|---------------------|
+| **Admission** | `E = 0` (anchor-less) → entry rejected at the M0/M1 boundary |
+| **Supersession** | New revision replaces the old; the new entry's `E` is recomputed from its own anchor; the old entry is tombstoned, not refreshed |
+| **Forget / corruption** | Authorized forget, retention or corruption event → entry tombstoned and removed from the eligible set; `E` is not "decayed" but **nullified by event** |
+| **Falsification** (`β + 1`) | `E` unchanged; `R` drops; the anchor is still valid — what changed is the claim's truth-rate, not its evidence |
+
+`E` is never recomputed at recall. The recall chain reads
+`E` from the durable fact (or from the entry's admitted
+revision); recall is **read-only** with respect to evidence
+structure. If the anchor is retracted, the entry's
+lifecycle state removes it from the eligible set before
+`E` is even consulted — recall never has to ask "is this
+anchor still good?", because admission and lifecycle
+already answered that question.
+
+**Two roles, one value**:
+
+- **Gating** is a binary/ternary decision: above threshold
+  → inject; below threshold → drop or mark
+  `low-confidence`.
+- **Annotation** is a label the surface carries: `conf`,
+  `staleness`, `mtype`, provenance. The model sees
+  testimony, not certification.
+
+The two roles are independent: a below-threshold entry that
+is still injected must be **explicitly** marked
+`low-confidence` so the model knows. A high-`conf` entry
+with expired `F` is gated as `stale` (or refreshed via
+re-verify) without affecting its `R`. `E` (evidence
+anchor) cannot go stale because it is structural, not
+temporal — `E = 0` is rejected at admission, not at
+recall.
+
+> **Recall chain reads conf from the durable fact and
+> computes F lazily at recall. The conf participates in
+> gating (drop / demote) and annotation (surface label).**
+> Storing F would corrupt the calibration — the formula is
+> a function of the recall clock, not a write-time snapshot.
+
+### Exposure bias — the cold-start trap
+
+A new memory entry starts with `R = 1 / (1 + 1) = 0.5`
+(uniform prior) and an anchor-driven `E`. **If ranking
+uses the posterior mean `R` as a weight**, low-`R` entries
+are sorted behind high-`R` entries, never produce a
+`recall.event`, never update β, and never move `R`. This
+is the **exposure-bias death loop**:
+
+```
+conf low → ranked low → not recalled → no outcome → β stays low → conf stays low
+```
+
+The recall chain breaks this loop through **three role
+separations** that keep ranking, gating, and exploration
+independent.
+
+#### 1. Ranking ≠ gating
+
+`conf` is **not** a ranking weight. The rerank stage uses
+only **relevance** (`B`) and a Thompson sample of the
+posterior `R` (below). `conf`'s role is **only gating** at
+the filter stage. The two paths do not share a formula:
+a high-`conf` entry with poor `B` does not outrank a
+low-`conf` entry with strong `B`, and a low-`conf` entry
+with strong `B` is not excluded from the top-K just
+because its `R` is low.
+
+#### 2. Thompson sampling at rerank
+
+Instead of using the posterior mean `R = α / (α + β)` as
+a sorting weight, the ranker draws **one** sample per
+candidate per recall:
+
+```
+p_i ~ Beta(α_i, β_i)
+score_i = w_B · B(query, entry_i)  +  w_T · p_i
+```
+
+- **Few observations** → posterior is wide → sampled `p`
+  is volatile → occasionally high → occasionally wins a
+  top-K slot.
+- **Many observations** → posterior narrows → sampled `p`
+  converges on `R` → stable, evidence-driven ranking.
+
+New entries get exploration **for free** without an
+explicit cold-start policy. The exploration rate is
+governed entirely by the data — the width of each
+entry's posterior — not by a hand-tuned schedule.
+
+#### 3. Exploration slot in top-K
+
+One top-K position is **reserved** for the
+highest-uncertainty candidate that did not already win a
+slot, regardless of its Thompson score. This prevents
+Thompson draws from being dominated by high-traffic
+entries and guarantees every entry a periodic chance to
+surface. The slot covers **Thompson variance, not
+Thompson mean** — its purpose is to **probe the tail** of
+the posterior, not to substitute for relevance.
+
+### Monitoring — never-recalled ratio as recall health
+
+The exposure-bias trap is **observable**: entries that
+never produce a `recall.event` are systematically
+invisible to the feedback loop. The recall-health metric
+is:
+
+```
+never_recalled_ratio = entries_with_zero_recall_events / total_active_entries
+```
+
+- A **rising** ratio signals ranking is too concentrated
+  on popular items.
+- A **non-zero floor is expected** — some entries are too
+  niche, too stale, or too duplicate-of-existing to ever
+  match. The metric is the **rate of change**, not the
+  absolute value.
+- Weekly regression correlates this ratio with the
+  Thompson `w_T` weight and the exploration-slot coverage
+  to find the calibration that keeps the bank's coverage
+  healthy.
+
+> **Ranking uses relevance + Thompson exploration, not
+> conf. conf gates, Thompson explores, monitoring closes
+> the loop.** The death loop is broken because the way
+> entries get observed is independent of how confident
+> they currently are. Thompson weights, exploration-slot
+> coverage, and the never-recalled metric remain
+> evaluation-gated policy candidates — they enter the
+> recall profile only after measured regression proves
+> they beat the current integer baseline.
+
 ### Query expansion — research candidate
 
 A single query often misses relevant entries because the
@@ -543,6 +1532,69 @@ The recall menu is the discoverability product the framework may offer to C2:
 The **menu's only job** is to make recall possible: the
 agent sees **what's available** and decides **whether to pull**.
 Detail is on demand (recall tool / knowledge lookups).
+
+### Menu shadow — existence signal for Cold / Archived
+
+Cold and Archived entries are **outside the injection
+window**, but their **existence** is still discoverable.
+The menu adds a **shadow** layer that surfaces counts
+without bodies, so the agent knows the bank has more than
+what's in the menu:
+
+```
+<memory_menu scope="user=abc">
+  <active>                                <-- menu as today
+    <category kind="memory.lesson" entries=12 high_conf=8>
+      "X fails because Y" (mem:abc, conf=0.9, T-3d)
+      ...
+  </active>
+  <shadow>                                <-- existence markers
+    <category kind="memory.lesson" archived=8 cold=5>
+      "8 archived, 5 cold — pull on demand via memory_search"
+    <category kind="memory.fact" archived=42>
+      "42 archived facts (older context)"
+    ...
+  </shadow>
+</memory_menu>
+```
+
+The shadow:
+
+- Does **not** include titles or bodies — only the
+  **count** and the **category**.
+- Does **not** add ranking weight or conf — its sole
+  purpose is **existence signaling**, not candidate
+  injection.
+- Lets the agent decide: "there are 42 archived facts;
+  is what I'm looking for probably one of them?" — and
+  call `memory_search` (cross-layer) to find out.
+
+### Cross-layer search — memory_search spans every layer
+
+The recall tool surface and the injection surface are
+**distinct** views of the same bank:
+
+| Surface | What it queries | Where it lives |
+|---------|-----------------|----------------|
+| `memory_search` | **Active + Cold + Archived** (Archive only via an admitted detail purpose) | Agent pull — any time |
+| `memory_detail` | One specific entry by ID | Agent pull — drill-down |
+| Memory menu `<active>` | Active only — titles + meta | Framework push at turn start |
+| Memory menu `<shadow>` | Cold + Archived — counts only | Framework push at turn start |
+| Memory detail injection | Body of selected entry | Framework push after agent pull / menu drill-in |
+
+`memory_search` spans every layer **by design**. Cold and
+Archived are not second-class citizens from the search
+tool's point of view; they are second-class only from the
+**injection window's** point of view. The admission-shape
+recheck on reactivation (⑥ Reactivation) is what keeps
+Archive from leaking back into injection without policy
+acknowledgement — **not** what makes it unsearchable.
+
+> **Forget is a withdraw-from-injection, not a delete.**
+> The menu's shadow keeps Cold/Archived **discoverable**;
+> `memory_search` keeps them **queryable**; only the
+> injection window excludes them. Three independent
+> surfaces, one bank.
 
 ### Read-path audit — three observation rows per recall
 
@@ -1056,6 +2108,43 @@ of the memory lifecycle:
 Bloat is intercepted at **every** of the four gates, with exact decisions and
 bounds owned by M1 rather than prose defaults here.
 
+### Lessons — length cap and audit-protected exemption
+
+`memory.lesson` is exempt from time-only tombstone — a
+lesson about a failure that the agent still re-discovers
+every time stays fresh because the **use** itself is the
+re-verification. This is correct, but it has a side
+effect: lessons accumulate. Without bound, the lesson
+bank grows unboundedly and the menu's `memory.lesson`
+category drowns in old-but-not-stale items. The lesson
+type therefore has its **own three defenses**, layered on
+top of the general anti-bloat table:
+
+| # | Defense | What it does |
+|---|---------|--------------|
+| 1 | **Byte / count cap per scope** | Lessons have an explicit quota (count + UTF-8 bytes per scope). Hitting the cap forces a periodic merge or supersession decision. Numeric values are Runtime policy and require measured admission; they are not defaults here. |
+| 2 | **Periodic merge** | Two semantically-similar lessons with non-conflicting content → one merged lesson with combined evidence references and `merged_from` lineage. Conflicting lessons → both retained with a `conflict_marker`. |
+| 3 | **Periodic audit — reactivation probe** | The audit specifically re-checks whether long-quiet lessons still belong in Active. A lesson with `recall.event = 0` for `T_quiet` and no `recall.apply` is **not** auto-demoted (decay-exempt), but the audit **explicitly** takes one of three actions: probe-recall it to generate a fresh observation, retire it through an admitted `Cool` event, or document it as **retained-by-policy**. |
+
+The audit closes the **pathological-forgetting** loop. A
+lesson that is correct but rarely matched by current
+recall must not be silently tombstoned by a memory-lint
+pass that only checks `recall.event` counts. The audit is
+the **explicit policy decision** that keeps the lesson in
+the bank — a missing audit, not a missing recall, is what
+removes a lesson. Pathological forgetting is the failure
+mode where **the lint pass runs without an audit** and
+treats "never recalled" as "no longer useful", which is
+censored-data reasoning (angle ⑧).
+
+> **Lessons are exempt from time-only tombstone, not
+> exempt from length policy and not exempt from audit.**
+> Length cap + merge keep the bank bounded; the periodic
+> audit is the explicit policy mechanism that prevents
+> pathological forgetting of correct-but-quiet lessons.
+> The audit result is a durable `memory.audit_recorded`
+> fact that names the action taken per quiet lesson.
+
 ## Anomaly handling — memory error vs context mismatch
 
 When a failure happens, the first question is **why**:
@@ -1301,7 +2390,7 @@ Garive is *where the updates come from*.
 
 | Gap | Who's stronger | Garive's stance |
 |-----|----------------|-----------------|
-| **Knowledge-graph structure** (multi-hop relational inference) | Zep | **Acknowledged** — entries + vectors; relational inference is weak. v2 candidate, not in personal-agent scope yet. |
+| **Knowledge-graph structure** (multi-hop relational inference) | Zep | **Partial** — distillation lineage, supersession and evidence-ref edges are admitted in v1; causal / contradiction / support edges are evaluation-gated pending extractor revisions and measured regression. Entry-level recall remains the primary path; the graph is a complementary traversal. |
 | **Memory editability / transparency** (`CLAUDE.md`-style) | codex / CC | M2 is accepted and active: bounded Markdown snapshot, explicit dry-run plan, authority-safe atomic import, and erasure receipts. Product UI evidence remains open. |
 | **Representative product evidence** | mature memory products | Core semantics and synthetic quality gates exist; representative longitudinal recall quality and the M2 user workflow remain open evidence. |
 
@@ -1511,7 +2600,7 @@ view of three concerns and proposed feedback loops, not an execution topology.
                                        recall ranking
                                           │
                                           └──> next recall uses new conf
-     
+
      ┌─── distillation-loop (configured trigger, async) ────┐
      │                                                       │
      │  dream watermark ─────> episode distil ─────> facts/lessons │
@@ -1605,6 +2694,6 @@ configuration, durable commit, recovery, erasure and Knowledge receipts.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: **mixed maturity** — M0 and M1-A through M1-G are verified; M1-H and
-  M2 remain accepted and active. Knowledge-graph structure, representative longitudinal
+- Status: **mixed maturity** — M0 and M1-A through M1-H are verified; M2
+  remains accepted and active. Knowledge-graph structure, representative longitudinal
   quality, and unpromoted numeric/mechanism proposals remain research.

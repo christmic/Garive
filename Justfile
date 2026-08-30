@@ -138,6 +138,34 @@ mobile: mobile-ios mobile-android
 apps: host-client web desktop mobile
     cargo test -p garive-cli -p garive-tui
 
+tui-unit:
+    cargo test -p garive-tui --test architecture --test args --test application_reducer --test commands --test editor --test schema_form --test clipboard --test product_fixture --test view --test terminal_guard
+
+tui-snapshots:
+    cargo test -p garive-tui --test view_snapshots
+
+tui-contract:
+    cargo test -p garive-host-client
+
+tui-persistence:
+    cargo test -p garive-tui --test persistence
+
+tui-runtime-e2e:
+    cargo test -p garive-tui --test production_runtime
+
+tui-pty:
+    cargo test -p garive-tui --test live_h1
+
+tui-bench:
+    cargo test -p garive-tui --test performance -- --nocapture
+
+tui-boundaries:
+    @if rg -n 'OPENAI_API_KEY|ANTHROPIC_API_KEY|rusqlite|garive_runtime|std::env::var[^;]*(HOST|ENDPOINT|MODEL|DATABASE)' tui/src; then echo 'TUI production code crossed a configuration or Runtime boundary' >&2; exit 1; fi
+    cargo clippy -p garive-tui --lib -- -D warnings
+
+tui: tui-unit tui-snapshots tui-contract tui-persistence tui-runtime-e2e tui-pty tui-bench tui-boundaries
+    cargo test -p garive-tui
+
 rust:
     cargo fmt --check
     cargo clippy --workspace --all-targets -- -D warnings

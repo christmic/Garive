@@ -303,6 +303,26 @@ the lowest canonical access index.
 - source scans prove no speculative, write-parallel, environment-discovery, or
   unbounded buffering path is reachable.
 
+## Implementation evidence
+
+Verified on 2026-08-30:
+
+- Rust and experimental Kotlin Ledger projections admit the exact Prepared v2
+  and plan facts, require authorization plus one committed plan, and enforce
+  model-order Started transitions.
+- Runtime provides pure admission facts, a shared bounded dispatcher, ordered
+  SQLite terminal/observation publication, and restart reconstruction that
+  revalidates the persisted plan digest rather than invoking the planner.
+- Runtime tests enumerate every three-member completion permutation, use a
+  paused clock for queue/invocation timeout and cancellation grace, cover
+  partial-start restart, durability loss, invalid receipts, uncertainty and
+  result bounds, and prove sequential/parallel terminal equality.
+- The real Unix read executor uses a frozen directory descriptor, component
+  exactness checks and `openat` with `NOFOLLOW`; tests reject symlink escape and
+  case aliases and prove dispatch observes its committed Started fact.
+- Source-boundary tests reject environment discovery, speculative dispatch,
+  unbounded file reads and detached batch tasks.
+
 ## See also
 
 - [`prepared-tool-call.md`](prepared-tool-call.md) — C4 immutable call and digest.
@@ -314,4 +334,4 @@ the lowest canonical access index.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-30
-- Status: accepted
+- Status: accepted, implemented and verified

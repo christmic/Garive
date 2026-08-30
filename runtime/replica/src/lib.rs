@@ -3,8 +3,14 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+#[cfg(unix)]
+mod confined_read_executor;
 mod core_bridge;
 mod delegation_runtime;
+mod effect_batch_facts;
+mod effect_batch_recovery;
+mod effect_batch_runtime;
+mod effect_batch_sqlite;
 mod live_host;
 mod local_composition;
 mod local_recovery;
@@ -18,6 +24,8 @@ mod runtime_turn;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
+#[cfg(unix)]
+pub use confined_read_executor::ConfinedFileReadExecutor;
 pub use core_bridge::{
     authorize_memory_query, authorize_memory_write, canonical_model_request_digest,
     decode_committed_memory_recall, derive_knowledge_recovery, execute_durable_agent,
@@ -57,13 +65,25 @@ pub use delegation_runtime::{
     plan_delegation_child_terminal, plan_delegation_denial, plan_delegation_observation,
     plan_delegation_request, DelegationChildStartCommand, DelegationRuntimeError,
 };
+pub use effect_batch_facts::{
+    plan_effect_batch_admission, EffectBatchAdmissionContext, PlannedEffectBatchAdmission,
+};
+pub use effect_batch_recovery::{
+    reconstruct_effect_batch_recovery, EffectBatchMemberRecovery, RecoveredEffectBatch,
+};
+pub use effect_batch_runtime::{
+    AuthorizedBatchInvocation, BatchRuntimeError, BatchTerminal, CancellationEvidence,
+    ConcurrentExecutorDispatch, ConcurrentExecutorPort, EffectBatchDispatcher,
+    EffectBatchPublisher, EffectBatchReport, EffectBatchRuntimeLimits, EffectCancellation,
+};
+pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
 pub use live_host::{
-    ActivityProjectionLimits, AgentDefinitionPage, AgentDefinitionSummary, CommittedTurn,
+    ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummaryV1, CommittedTurn,
     CreateSessionResponse, HostActivity, HostClock, HostContinuationInput, HostEventPage,
-    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError, SessionPage,
-    SessionSummary, SessionView, TurnCommandResponse, TurnDispatchError, TurnDispatcher,
-    TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
+    LiveHost, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,
+    SessionPageV1, SessionSummaryV1, SessionViewV1, SuspensionViewV1, TurnCommandResponse,
+    TurnDispatchError, TurnDispatcher, TurnTimelineItemV1, TurnTimelinePageV1,
 };
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
