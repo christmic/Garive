@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod application;
 mod args;
 
 pub use args::{parse_launch_config, LaunchConfig, LaunchParseError, MouseMode, Theme};
