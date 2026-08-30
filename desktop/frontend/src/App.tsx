@@ -4,15 +4,14 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace, continueAgentTurn,
-  createWorkSession, detachWorkspaceFromSession,
-  getArtifactPreview, getCompleteSessionTimeline, getDesktopCapabilities, getRecentSessions,
-  getSessionTimeline, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
+  attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace,
+  detachWorkspaceFromSession,
+  getArtifactPreview, getDesktopCapabilities, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
   listWorkspaceAuthorizations, reauthorizeWorkspace,
-  resolveTurnApproval, revokeWorkspace, runAgentTurn, runAgentTurnWithWorkspaceContext,
+  resolveTurnApproval, revokeWorkspace, runAgentTurnWithWorkspaceContext,
   setDesktopMenuLocale, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
-  type HostArtifact, type HostArtifactPage, type HostSessionSummary, type HostTimelinePage,
+  type HostArtifact, type HostArtifactPage, type HostTimelinePage,
   type WorkspaceAuthorization,
   type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
@@ -28,12 +27,19 @@ import {
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { shouldSubmitComposer } from "./composer";
 import { nextDesktopZoom } from "./zoom";
+import { useDesktopProduct } from "./app/useDesktopProduct";
+import type { AppIntent } from "./state/controller";
 
 type Screen = "work" | "search" | "agents" | "settings";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
 interface SelectedContext {
   readonly grant: WorkspaceGrant;
   readonly entries: readonly WorkspaceEntry[];
+}
+interface RecentItem {
+  readonly session_id: string; readonly definition_id?: string; readonly opened_at?: string;
+  readonly latest_turn_state?: "running" | "completed" | "suspended" | "stopped" | "failed";
+  readonly turn_count?: number;
 }
 
 const errorKeys: Record<string, MessageKey> = {
@@ -88,11 +94,10 @@ const visualArtifactPreview = {
 export function App() {
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
-  const [recents, setRecents] = useState<readonly HostSessionSummary[]>([]);
+  const [recents, setRecents] = useState<readonly RecentItem[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
-  const [preparedSessionId, setPreparedSessionId] = useState<string>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
   const [preferences, setPreferences] = useState(readDesktopPreferences);
   const [systemDark, setSystemDark] = useState(() =>
@@ -102,6 +107,10 @@ export function App() {
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
+  const pendingDraft = useRef("");
+  const submitAfterSession = useRef(false);
+  const product = useDesktopProduct(state.capabilities
+    ? state.capabilities.configured ? "configured" : "not_configured" : undefined, !visualTest);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -117,27 +126,71 @@ export function App() {
     if (!visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
   }, [locale]);
 
-  const refreshRecents = useCallback(async () => {
-    const sessions = await getRecentSessions();
-    setRecents(sessions);
-    const titles = await Promise.all(sessions.map(async (session) => {
-      try {
-        const timeline = await getSessionTimeline(session.session_id);
-        return [session.session_id, timeline.items[0]?.user_text ?? ""] as const;
-      } catch { return [session.session_id, ""] as const; }
-    }));
-    setRecentTitles(Object.fromEntries(titles));
-  }, []);
-
-  const loadSession = useCallback(async (sessionId: string) => {
-    const timeline = await getCompleteSessionTimeline(sessionId);
-    dispatch({ type: "session_loaded", timeline });
+  const loadSessionExtras = useCallback(async (sessionId: string) => {
     const [artifacts, workspaces] = await Promise.all([
       listAllArtifacts(sessionId), getSessionWorkspaces(sessionId),
     ]);
     dispatch({ type: "artifacts_loaded", page: artifacts });
     dispatch({ type: "workspaces_loaded", sessionId, workspaces });
   }, []);
+
+  useEffect(() => {
+    if (!product.view) return;
+    dispatch({ type: "product_projected", view: product.view });
+    setRecents(product.view.sessions.map((session) => ({ session_id: session.sessionId,
+      definition_id: session.definitionId, opened_at: session.openedAt,
+      latest_turn_state: admittedTurnState(session.state), turn_count: session.turnCount })));
+    const selected = product.view.selectedSessionId;
+    if (selected) {
+      const first = product.view.timeline[0]?.userText;
+      if (first) setRecentTitles((current) => ({ ...current, [selected]: first }));
+    }
+  }, [product.view]);
+
+  useEffect(() => {
+    const sessionId = product.view?.selectedSessionId;
+    if (!sessionId || product.view?.timelineSessionId !== sessionId) return;
+    void loadSessionExtras(sessionId).catch(() => undefined);
+  }, [loadSessionExtras, product.view?.selectedSessionId, product.view?.timelineSessionId]);
+
+  useEffect(() => {
+    const sessionId = product.view?.selectedSessionId;
+    if (!sessionId || !pendingDraft.current) return;
+    const text = pendingDraft.current; pendingDraft.current = "";
+    product.dispatch({ type: "edit_draft", sessionId, text });
+    if (submitAfterSession.current) {
+      submitAfterSession.current = false;
+      void issueStartTurn(product.dispatch, sessionId, text);
+    }
+  }, [product.dispatch, product.view?.selectedSessionId]);
+
+  const ensureProductSession = useCallback(async () => {
+    if (visualTest || product.view?.selectedSessionId || product.view?.pending.length) return;
+    const definitionId = product.view?.definitions[0]?.definitionId
+      ?? state.capabilities?.agent_definition_id;
+    if (!definitionId) return;
+    const commandId = commandIdentity("create");
+    product.dispatch({ type: "create_session", definitionId, commandId,
+      requestDigest: await semanticDigest({ kind: "create_session", definitionId }) });
+  }, [product.dispatch, product.view, state.capabilities?.agent_definition_id]);
+
+  const beginNewWork = useCallback(() => {
+    dispatch({ type: "new_work" }); pendingDraft.current = "";
+    setSelectedContext(undefined); setScreen("work");
+    void ensureProductSession();
+    requestAnimationFrame(() => composer.current?.focus());
+  }, [ensureProductSession]);
+
+  const workDispatch = useCallback<WorkDispatch>((event) => {
+    if (!visualTest && event.type === "draft_changed") {
+      const sessionId = product.view?.selectedSessionId;
+      if (sessionId) product.dispatch({ type: "edit_draft", sessionId, text: event.value });
+      else { pendingDraft.current = event.value; void ensureProductSession(); }
+    } else if (!visualTest && event.type === "error_dismissed") {
+      product.dispatch({ type: "dismiss_notice" });
+    }
+    dispatch(event);
+  }, [ensureProductSession, product.dispatch, product.view?.selectedSessionId]);
 
   useEffect(() => {
     if (visualTest) {
@@ -170,12 +223,9 @@ export function App() {
     void getDesktopCapabilities()
       .then((capabilities) => {
         dispatch({ type: "capabilities_loaded", capabilities });
-        if (capabilities.durable_navigation) {
-          void refreshRecents().catch(() => setRecents([]));
-        }
       })
       .catch(() => dispatch({ type: "capabilities_failed" }));
-  }, [refreshRecents]);
+  }, []);
 
   useEffect(() => {
     if (visualTest) return;
@@ -184,9 +234,7 @@ export function App() {
     void listen<unknown>(DESKTOP_MENU_EVENT, (event) => {
       const intent = decodeDesktopMenuIntent(event.payload);
       if (intent === "desktop.new-work") {
-        dispatch({ type: "new_work" }); setSelectedContext(undefined);
-        setPreparedSessionId(undefined); setScreen("work");
-        requestAnimationFrame(() => composer.current?.focus());
+        beginNewWork();
       } else if (intent === "desktop.search") setScreen("search");
       else if (intent === "desktop.settings") setScreen("settings");
       else if (intent === "desktop.toggle-inspector") {
@@ -204,15 +252,13 @@ export function App() {
       else unlisten();
     }).catch(() => undefined);
     return () => { active = false; stop?.(); };
-  }, []);
+  }, [beginNewWork]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
       if (!event.metaKey) return;
       if (event.key.toLowerCase() === "n") {
-        event.preventDefault(); dispatch({ type: "new_work" }); setSelectedContext(undefined);
-        setPreparedSessionId(undefined); setScreen("work");
-        requestAnimationFrame(() => composer.current?.focus());
+        event.preventDefault(); beginNewWork();
       }
       if (event.key === ",") { event.preventDefault(); setScreen("settings"); }
       if (event.key.toLowerCase() === "k") { event.preventDefault(); setScreen("search"); }
@@ -223,7 +269,7 @@ export function App() {
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, []);
+  }, [beginNewWork]);
 
   const title = useMemo(() => {
     const first = state.messages.find((message) => message.role === "user")?.text;
@@ -249,36 +295,46 @@ export function App() {
       return;
     }
     try {
-      const suspended = [...state.messages].reverse().find((message) => message.suspension);
-      let result;
-      if (suspended?.suspension && state.sessionId) {
-        result = await continueAgentTurn(state.sessionId, suspended.id, suspended.suspension, input);
+      const sessionId = product.view?.selectedSessionId;
+      if (!sessionId) {
+        pendingDraft.current = input; submitAfterSession.current = true;
+        await ensureProductSession(); return;
+      }
+      const suspended = product.view.timeline.find((item) => item.state === "suspended")?.suspension;
+      if (suspended) {
+        const commandId = commandIdentity("continue");
+        product.dispatch({ type: "continue_suspension", sessionId,
+          turnId: product.view.timeline.find((item) => item.suspension === suspended)!.turnId,
+          input, commandId, requestDigest: await semanticDigest({ kind: "continue_turn",
+            sessionId, suspensionId: suspended.suspensionId, input }) });
       } else if (selectedContext) {
-        const sessionId = state.sessionId ?? preparedSessionId ?? await createWorkSession(definition);
-        if (!state.sessionId && !preparedSessionId) setPreparedSessionId(sessionId);
         await attachWorkspaceToSession(sessionId, selectedContext.grant.workspace_id);
-        result = await runAgentTurnWithWorkspaceContext(
+        await runAgentTurnWithWorkspaceContext(
           definition, sessionId, input, selectedContext.grant.workspace_id,
           selectedContext.entries.map((entry) => entry.entry_id),
         );
+        product.dispatch({ type: "select_session", sessionId });
       } else {
-        result = await runAgentTurn(definition, input, state.sessionId ?? preparedSessionId);
-      }
-      if (suspended || result.terminal === "suspended" || state.capabilities?.activity
-          || state.capabilities?.artifacts) {
-        await loadSession(result.session_id);
-      } else {
-        dispatch({ type: "submission_succeeded", input, result });
-      }
-      if (state.capabilities?.durable_navigation) {
-        void refreshRecents().catch(() => undefined);
+        await issueStartTurn(product.dispatch, sessionId, input);
       }
       setSelectedContext(undefined);
-      setPreparedSessionId(undefined);
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
     }
   };
+
+  const cancelTurn = async () => {
+    const sessionId = product.view?.selectedSessionId;
+    const turn = product.view?.timeline.find((item) => item.state === "running");
+    if (!sessionId || !turn || product.view?.pending.length) return;
+    const commandId = commandIdentity("cancel");
+    product.dispatch({ type: "cancel_turn", sessionId, turnId: turn.turnId, commandId,
+      requestDigest: await semanticDigest({ kind: "cancel_turn", sessionId, turnId: turn.turnId,
+        throughPosition: String(product.view.cursor) }) });
+  };
+
+  const retryPending = () => product.dispatch({ type: "retry_pending",
+    sessionId: product.view?.selectedSessionId });
 
   const openContext = async () => {
     try {
@@ -326,23 +382,22 @@ export function App() {
       const result = await resolveTurnApproval(
         state.sessionId, message.id, message.suspension, approved,
       );
-      await loadSession(result.session_id);
-      void refreshRecents().catch(() => undefined);
+      product.dispatch({ type: "select_session", sessionId: result.session_id });
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "host_failure" });
     }
   };
 
   const startSuggestion = (text: string) => {
-    dispatch({ type: "draft_changed", value: text });
+    workDispatch({ type: "draft_changed", value: text });
     requestAnimationFrame(() => composer.current?.focus());
   };
 
   const openRecent = async (sessionId: string) => {
     setScreen("work");
-    setSelectedContext(undefined); setPreparedSessionId(undefined);
+    setSelectedContext(undefined);
     try {
-      await loadSession(sessionId);
+      product.dispatch({ type: "select_session", sessionId });
     } catch (cause) {
       dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "projection_failure" });
     }
@@ -360,7 +415,7 @@ export function App() {
         await detachWorkspaceFromSession(
           attachment.session_id, attachment.workspace_id, attachment.grant_revision,
         );
-        await loadSession(attachment.session_id);
+        product.dispatch({ type: "select_session", sessionId: attachment.session_id });
       }
     } catch (cause) {
       dispatch({ type: "submission_failed",
@@ -381,7 +436,7 @@ export function App() {
       <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
-        <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={() => { dispatch({ type: "new_work" }); setSelectedContext(undefined); setPreparedSessionId(undefined); setScreen("work"); requestAnimationFrame(() => composer.current?.focus()); }}>
+        <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
@@ -433,7 +488,8 @@ export function App() {
         </header>
 
         {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit}
-          startSuggestion={startSuggestion} dispatch={dispatch} context={selectedContext}
+          startSuggestion={startSuggestion} dispatch={workDispatch} context={selectedContext}
+          cancelTurn={cancelTurn} retryPending={retryPending}
           openContext={openContext} authorizeOutputs={authorizeOutputs}
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
@@ -443,7 +499,7 @@ export function App() {
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} t={t} />}
       </main>
-      {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={dispatch} t={t} />}
+      {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch} t={t} />}
     </div>
     {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest} t={t}
       onCancel={() => { setPickerGrant(undefined);
@@ -456,10 +512,12 @@ export function App() {
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
   authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
-  approvalAction, t }: {
+  approvalAction, cancelTurn, retryPending, t }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
+  cancelTurn: () => Promise<void>;
+  retryPending: () => void;
   startSuggestion: (text: string) => void;
   dispatch: WorkDispatch;
   context?: SelectedContext;
@@ -491,6 +549,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} t={t} />}
     </div>
     {state.error && <div className="error-banner" role="alert"><Icon name="warning" /><span>{t(errorKeys[state.error] ?? "error.default")}</span>
+      {state.error === "mutation_outcome_unknown" && <button type="button" onClick={retryPending}>{t("workspace.retry")}</button>}
       <button type="button" onClick={() => dispatch({ type: "error_dismissed" })} aria-label={t("error.dismiss")}><Icon name="close" /></button></div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
@@ -541,6 +600,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <span className="access-pill"><Icon name="shield" />{needsInput ? t("work.composer.resume")
               : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
                 : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></div>
+          {state.phase === "submitting" && <button className="secondary-button" type="button"
+            onClick={() => void cancelTurn()}>Request stop</button>}
           <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
             {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
           </button>
@@ -724,7 +785,7 @@ function activityIcon(state: string): IconName {
 }
 
 function SearchScreen({ recents, titles, onOpen, t }: {
-  recents: readonly HostSessionSummary[];
+  recents: readonly RecentItem[];
   titles: Readonly<Record<string, string>>;
   onOpen: (sessionId: string) => Promise<void>;
   t: (key: MessageKey) => string;
@@ -888,8 +949,12 @@ function LocaleOptions({ value, onChange, t }: {
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
 function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} aria-label={label} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
-function recentLabel(session: HostSessionSummary) {
-  const opened = new Date(session.opened_at);
+function admittedTurnState(value?: string): RecentItem["latest_turn_state"] {
+  return value === "running" || value === "completed" || value === "suspended"
+    || value === "stopped" || value === "failed" ? value : undefined;
+}
+function recentLabel(session: RecentItem) {
+  const opened = new Date(session.opened_at ?? "");
   return Number.isNaN(opened.valueOf())
     ? "Durable work"
     : `Work · ${opened.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
@@ -902,4 +967,23 @@ function downloadMarkdown(id: string, text: string) {
   anchor.download = `garive-result-${id.slice(0, 12)}.md`;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+async function issueStartTurn(
+  dispatch: (intent: AppIntent) => void, sessionId: string, input: string,
+): Promise<void> {
+  const commandId = commandIdentity("turn");
+  dispatch({ type: "submit_draft", sessionId, commandId,
+    requestDigest: await semanticDigest({ kind: "start_turn", sessionId, input }) });
+}
+
+function commandIdentity(purpose: string): string {
+  return `desktop-${purpose}-${crypto.randomUUID()}`;
+}
+
+async function semanticDigest(value: Record<string, string>): Promise<string> {
+  const keys = Object.keys(value).sort();
+  const canonical = `{${keys.map((key) => `${JSON.stringify(key)}:${JSON.stringify(value[key])}`).join(",")}}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
