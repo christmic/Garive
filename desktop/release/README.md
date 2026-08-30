@@ -62,10 +62,28 @@ The release audit requires all of the following:
 The build log must also be warning-free; failed stripping, missing architecture,
 skipped signing, or skipped notarization is a failed public-release run.
 
+Bind the verified Universal DMG to deterministic supply-chain materials from
+the same clean Git revision:
+
+```sh
+python3 desktop/release/build-release-materials.py \
+  target/universal-apple-darwin/release/bundle/dmg/Garive_0.1.0_universal.dmg
+```
+
+The generator reruns the bundle audit, requires exactly the `arm64` and
+`x86_64` slices, and writes a CycloneDX 1.6 SBOM, production third-party
+license inventory, `SHA256SUMS`, provenance, and rollback boundary under
+`target/desktop-release/<digest-prefix>`. It rejects dirty revisions,
+symlinks, external packages/output, undeclared dependency licenses, digest
+mismatches, and overwrites. Pass `--mode release` only for the signed and
+notarized candidate because that mode invokes every public release gate.
+
 Publication additionally requires the update manifest/signature, SBOM, license
 inventory, SHA-256 checksum publication, rollback instructions, and a clean-Mac
 install/update/downgrade test. Until those artifacts and a real Apple identity
 exist, `spec/STATUS.md` remains active and no signed-release claim is valid.
+Garive Desktop does not yet implement an updater; generated materials record
+that boundary and never substitute for update or downgrade evidence.
 
 ## Screenshot and manual evidence
 
