@@ -252,6 +252,32 @@ fn installed_definitions_and_sessions_are_restart_safe_read_models() {
 }
 
 #[test]
+fn session_view_tracks_first_starts_and_latest_lifecycle() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-view", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-view", &session.session_id, "hello")
+        .unwrap();
+    let running = harness.host.get_session(&session.session_id).unwrap();
+    assert_eq!(running.api_version, "v1");
+    assert_eq!(running.session.turn_count, 1);
+    assert_eq!(
+        running.session.latest_turn_id.as_deref(),
+        Some(started.turn_id.as_str())
+    );
+    assert_eq!(
+        running.session.latest_turn_state.as_deref(),
+        Some("running")
+    );
+    assert_eq!(running.observed_max_position, started.committed_position);
+    assert_eq!(running.session.opened_at, NOW);
+}
+
+#[test]
 fn event_projection_advances_over_gaps_and_replays_terminal_text() {
     let harness = Harness::new(1);
     let session = harness

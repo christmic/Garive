@@ -17,12 +17,13 @@ use crate::{
     StartTurnCommand,
 };
 
+use super::read_model;
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionPageV1,
     AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
     HostClock, HostContinuationInput, HostEventPage, HostReadLimits, InstalledAgent, LiveHostError,
-    LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, TurnCommandResponse,
-    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary, SessionViewV1,
+    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -96,6 +97,37 @@ impl LiveHost {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         Ok(page)
+    }
+
+    /// Reads one verified Session summary at an exact durable watermark.
+    pub fn get_session(&self, session: &str) -> Result<SessionViewV1, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > self.state.read_limits.max_facts as u64 {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        let view = read_model::project_session(
+            &session_id,
+            watermark.max_position,
+            &facts,
+            &self.state.installed,
+            self.state.read_limits,
+        )?;
+        if serde_json::to_vec(&view)
+            .map_err(|_| LiveHostError::CorruptState)?
+            .len()
+            > self.state.read_limits.max_response_bytes
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        Ok(view)
     }
 
     /// Returns explicit Host bounds used by HTTP parsing and event follow mode.

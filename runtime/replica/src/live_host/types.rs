@@ -144,6 +144,44 @@ pub struct AgentDefinitionPageV1 {
     pub definitions: Vec<AgentDefinitionSummaryV1>,
 }
 
+/// Restart-safe summary of one verified durable Session prefix.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionSummaryV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable durable Session identity.
+    pub session_id: String,
+    /// Runtime-owned Agent instance identity.
+    pub agent_instance_id: String,
+    /// Immutable installed definition identity.
+    pub definition_id: String,
+    /// Immutable installed definition revision.
+    pub definition_revision: String,
+    /// RFC 3339 time from the verified opening fact.
+    pub opened_at: String,
+    /// Frozen highest durable Session position.
+    pub latest_position: u64,
+    /// Most recently first-started Turn, when any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_turn_id: Option<String>,
+    /// Stable lifecycle of the latest Turn, when any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_turn_state: Option<String>,
+    /// Count of verified first-start facts.
+    pub turn_count: u64,
+}
+
+/// One exact Session summary at a frozen durable watermark.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionViewV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Verified Session summary.
+    pub session: SessionSummaryV1,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
+}
+
 /// Explicit Runtime clock used to stamp durable Host commands.
 pub trait HostClock: Send + Sync {
     /// Returns one RFC 3339 observation time.

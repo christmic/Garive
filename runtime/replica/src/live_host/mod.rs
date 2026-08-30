@@ -1,6 +1,7 @@
 mod activity_projection;
 mod http;
 mod projection;
+mod read_model;
 mod service;
 mod types;
 
@@ -11,8 +12,8 @@ pub use types::{
     AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostActivity, HostClock,
     HostContinuationInput, HostEventPage, HostReadLimits, InstalledActivityCatalogue,
     InstalledActivityDescriptor, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    SessionSummary, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelinePage,
+    SessionSummary, SessionSummaryV1, SessionViewV1, TurnCommandResponse, TurnDispatchError,
+    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
 pub(crate) use activity_projection::project_activities;
