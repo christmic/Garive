@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -48,6 +49,7 @@ internal fun ConversationScreen(
     onDraft: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
+    onShare: () -> Unit,
     onContinue: () -> Unit,
     onRetry: () -> Unit,
     onAbandonRetry: () -> Unit,
@@ -68,6 +70,11 @@ internal fun ConversationScreen(
                     color = latest?.status?.let { statusColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelMedium,
                 )
+            }
+            if (state.timeline.isNotEmpty()) {
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
+                }
             }
             if (latest?.status in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT)) {
                 IconButton(onClick = onCancel) {
@@ -152,6 +159,17 @@ internal fun ConversationScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+internal fun conversationTranscript(state: MobileWorkState): String = state.timeline.joinToString("\n\n") { turn ->
+    buildString {
+        append("You\n")
+        append(turn.userText)
+        turn.responseText?.takeIf(String::isNotBlank)?.let { response ->
+            append("\n\nAgent\n")
+            append(response)
         }
     }
 }

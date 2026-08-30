@@ -9,10 +9,12 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.garive.mobile.model.MobileConnectionState
 import com.garive.mobile.model.MobileSessionCard
+import com.garive.mobile.model.MobileTurnItem
 import com.garive.mobile.model.MobileWorkState
 import com.garive.mobile.model.MobileWorkStatus
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 
 public class SessionsScreenTest {
     @get:Rule
@@ -34,6 +36,21 @@ public class SessionsScreenTest {
         compose.onAllNodesWithText("Alpha Agent").assertCountEquals(0)
         compose.onNodeWithText("Working").performClick()
         compose.onAllNodesWithText("Beta Agent").assertCountEquals(0)
+    }
+
+    @Test
+    public fun explicitShareTranscriptContainsOnlyRenderedConversation(): Unit {
+        val state = MobileWorkState(
+            selectedSessionId = "private-session-id",
+            timeline = listOf(
+                MobileTurnItem(
+                    "private-turn-id", "Check release", "Release is healthy",
+                    MobileWorkStatus.COMPLETED, 4, false, null, emptyList(),
+                ),
+            ),
+        )
+
+        assertEquals("You\nCheck release\n\nAgent\nRelease is healthy", conversationTranscript(state))
     }
 
     private fun session(id: String, agent: String, status: MobileWorkStatus): MobileSessionCard =

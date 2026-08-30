@@ -1,5 +1,6 @@
 package com.garive.android.ui
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -68,6 +70,7 @@ internal fun GariveMobileApp(
     var confirmUnpair by remember { mutableStateOf(false) }
     var confirmAbandonRetry by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val showNavigationLabels = LocalDensity.current.fontScale < 1.6f
 
     LaunchedEffect(controller, wakeRoute) {
@@ -98,6 +101,13 @@ internal fun GariveMobileApp(
             onDraft = { state = controller.editDraft(it) },
             onSend = { scope.launch { state = controller.sendTurn(state.draft) } },
             onCancel = { confirmCancel = true },
+            onShare = {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, conversationTranscript(state))
+                }
+                context.startActivity(Intent.createChooser(intent, "Share Agent work"))
+            },
             onContinue = { scope.launch { state = controller.continueLatest(state.draft.ifBlank { "approved" }) } },
             onRetry = { scope.launch { state = controller.retryExact() } },
             onAbandonRetry = { confirmAbandonRetry = true },

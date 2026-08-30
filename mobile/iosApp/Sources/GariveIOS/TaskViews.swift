@@ -94,6 +94,12 @@ struct ConversationView: View {
         .navigationTitle(title)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Done") { model.select(.work); dismiss() } }
+            if !state.timeline.isEmpty {
+                ToolbarItem {
+                    ShareLink(item: transcript) { Image(systemName: "square.and.arrow.up") }
+                        .accessibilityLabel("Share conversation")
+                }
+            }
             ToolbarItem {
                 Button(role: .destructive) { confirmingCancel = true } label: { Image(systemName: "stop.circle") }
                     .accessibilityLabel("Stop current work")
@@ -112,6 +118,16 @@ struct ConversationView: View {
 
     private var title: String {
         state.sessions.first(where: { $0.sessionId == state.selectedSessionId })?.agentName ?? "Session"
+    }
+
+    private var transcript: String {
+        state.timeline.map { turn in
+            var value = "You\n\(turn.userText)"
+            if let response = turn.responseText, !response.isEmpty {
+                value += "\n\nAgent\n\(response)"
+            }
+            return value
+        }.joined(separator: "\n\n")
     }
 }
 
