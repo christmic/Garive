@@ -226,7 +226,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         .unwrap()
         .clone();
     let timeline = host.get_timeline(session.as_str(), 0, 10).unwrap();
-    assert_eq!(timeline.items[0].user_text, "hello durable tui");
+    assert_eq!(timeline.items[0].user_text, "hello durable\n耐久 tui");
     assert_eq!(
         timeline.items[0].completion_text.as_deref(),
         Some("answer from production runtime")
@@ -255,7 +255,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     let restart_log = temporary.path().join("restart.log");
     assert!(run_expect(address, &state, &restart_log, true));
     let restarted = fs::read_to_string(restart_log).unwrap();
-    assert!(restarted.contains("You: hello durable tui"));
+    assert!(restarted.contains("You: hello durable\n耐久 tui"));
     assert!(restarted.contains("Garive: answer from production runtime"));
     assert!(SqliteLedger::open(&database)
         .unwrap()
@@ -273,7 +273,8 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             set timeout 8
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
-            expect "You: hello durable tui"
+            expect "You: hello durable"
+            expect "耐久 tui"
             expect "Garive: answer from production runtime"
             expect "You: second question"
             expect "Garive: answer after continuation"
@@ -290,7 +291,17 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "definition-m"
-            send "hello durable tui\r"
+            encoding system utf-8
+            send -- "\033\[200~"
+            send -- "hello durable\n\u8010\u4e45 tuX"
+            send -- "\033\[201~"
+            after 200
+            send "\177"
+            send "i\r"
+            send "?"
+            expect "Keyboard guide"
+            after 300
+            send "\033"
             expect "answer from production runtime"
             send "second question\r"
             expect "Action required"
