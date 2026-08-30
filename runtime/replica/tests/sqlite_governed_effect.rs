@@ -46,7 +46,7 @@ impl AuthorityPort for Authority {
                 },
                 Decision::Interaction => AuthorityDecision::InteractionRequired {
                     kind: InteractionKind::Approval,
-                    prompt: json!({"message":"approve"}),
+                    prompt: json!({"schema_version":1,"title_key":"approval.title","message_text":"approve","action_label_key":"approval.allow","cancel_label_key":"approval.deny"}),
                     response_schema: json!({"type":"boolean"}),
                     expiry_code: "none".into(),
                 },

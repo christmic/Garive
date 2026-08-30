@@ -74,7 +74,7 @@
     "invocation_id": "invocation-1",
     "prepared_digest": "d41189c24e0b9ec741d587fd8ca9624d8e8c35f88ed2e193482db552de43ee07",
     "kind": "approval",
-    "prompt": {"title": "Approve file read", "risk": "read_only"},
+    "prompt": {"schema_version": 1, "title_key": "tool.read.approval.title", "message_text": "Approve file read", "action_label_key": "approval.allow", "cancel_label_key": "approval.deny"},
     "response_schema": {"type": "boolean"},
     "expiry_policy": "turn_bound"
   },
