@@ -5,5 +5,6 @@
 
 mod application;
 mod args;
+mod input;
 
 pub use args::{parse_launch_config, LaunchConfig, LaunchParseError, MouseMode, Theme};

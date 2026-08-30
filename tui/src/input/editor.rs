@@ -1,0 +1,211 @@
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
+const MAX_UNDO_OPERATIONS: usize = 100;
+const MAX_UNDO_BYTES: usize = 256 * 1_024;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Snapshot {
+    text: String,
+    cursor: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EditError {
+    TooLarge { excess_bytes: usize },
+    UnsafeControl,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EditorState {
+    text: String,
+    cursor_grapheme: usize,
+    selection_anchor: Option<usize>,
+    preferred_display_column: Option<usize>,
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
+    max_bytes: usize,
+}
+
+impl EditorState {
+    pub(crate) fn new(max_bytes: usize) -> Self {
+        Self {
+            text: String::new(),
+            cursor_grapheme: 0,
+            selection_anchor: None,
+            preferred_display_column: None,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            max_bytes,
+        }
+    }
+
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub(crate) fn cursor_grapheme(&self) -> usize {
+        self.cursor_grapheme
+    }
+
+    pub(crate) fn display_column(&self) -> usize {
+        let byte = grapheme_byte(&self.text, self.cursor_grapheme);
+        let line = self.text[..byte]
+            .rsplit_once('\n')
+            .map_or(&self.text[..byte], |v| v.1);
+        UnicodeWidthStr::width(line)
+    }
+
+    pub(crate) fn insert(&mut self, value: &str) -> Result<(), EditError> {
+        let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+        if normalized.chars().any(is_unsafe_control) {
+            return Err(EditError::UnsafeControl);
+        }
+        if normalized.is_empty() && !self.has_selection() {
+            return Ok(());
+        }
+        let (start, end) = self.selection_bytes();
+        let new_len = self.text.len() - (end - start) + normalized.len();
+        if new_len > self.max_bytes {
+            return Err(EditError::TooLarge {
+                excess_bytes: new_len - self.max_bytes,
+            });
+        }
+        self.checkpoint();
+        self.text.replace_range(start..end, &normalized);
+        self.cursor_grapheme =
+            self.text[..start].graphemes(true).count() + normalized.graphemes(true).count();
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+        Ok(())
+    }
+
+    pub(crate) fn backspace(&mut self) -> bool {
+        if self.has_selection() {
+            return self.delete_selection();
+        }
+        if self.cursor_grapheme == 0 {
+            return false;
+        }
+        self.selection_anchor = Some(self.cursor_grapheme - 1);
+        self.delete_selection()
+    }
+
+    pub(crate) fn delete(&mut self) -> bool {
+        if self.has_selection() {
+            return self.delete_selection();
+        }
+        if self.cursor_grapheme == self.grapheme_len() {
+            return false;
+        }
+        self.selection_anchor = Some(self.cursor_grapheme + 1);
+        self.delete_selection()
+    }
+
+    pub(crate) fn move_left(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        self.cursor_grapheme = self.cursor_grapheme.saturating_sub(1);
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn move_right(&mut self, selecting: bool) {
+        self.prepare_selection(selecting);
+        self.cursor_grapheme = (self.cursor_grapheme + 1).min(self.grapheme_len());
+        self.preferred_display_column = None;
+    }
+
+    pub(crate) fn undo(&mut self) -> bool {
+        let Some(previous) = self.undo.pop() else {
+            return false;
+        };
+        self.redo.push(self.snapshot());
+        self.restore(previous);
+        true
+    }
+
+    pub(crate) fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        self.undo.push(self.snapshot());
+        self.restore(next);
+        true
+    }
+
+    fn grapheme_len(&self) -> usize {
+        self.text.graphemes(true).count()
+    }
+
+    fn has_selection(&self) -> bool {
+        self.selection_anchor
+            .is_some_and(|anchor| anchor != self.cursor_grapheme)
+    }
+
+    fn selection_bytes(&self) -> (usize, usize) {
+        let anchor = self.selection_anchor.unwrap_or(self.cursor_grapheme);
+        let (start, end) = (
+            anchor.min(self.cursor_grapheme),
+            anchor.max(self.cursor_grapheme),
+        );
+        (
+            grapheme_byte(&self.text, start),
+            grapheme_byte(&self.text, end),
+        )
+    }
+
+    fn delete_selection(&mut self) -> bool {
+        let (start, end) = self.selection_bytes();
+        if start == end {
+            return false;
+        }
+        self.checkpoint();
+        self.text.replace_range(start..end, "");
+        self.cursor_grapheme = self.text[..start].graphemes(true).count();
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+        true
+    }
+
+    fn prepare_selection(&mut self, selecting: bool) {
+        if selecting {
+            self.selection_anchor.get_or_insert(self.cursor_grapheme);
+        } else {
+            self.selection_anchor = None;
+        }
+    }
+
+    fn checkpoint(&mut self) {
+        self.undo.push(self.snapshot());
+        self.redo.clear();
+        while self.undo.len() > MAX_UNDO_OPERATIONS
+            || self.undo.iter().map(|item| item.text.len()).sum::<usize>() > MAX_UNDO_BYTES
+        {
+            self.undo.remove(0);
+        }
+    }
+
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            text: self.text.clone(),
+            cursor: self.cursor_grapheme,
+        }
+    }
+
+    fn restore(&mut self, snapshot: Snapshot) {
+        self.text = snapshot.text;
+        self.cursor_grapheme = snapshot.cursor;
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+    }
+}
+
+fn grapheme_byte(text: &str, index: usize) -> usize {
+    text.grapheme_indices(true)
+        .nth(index)
+        .map_or(text.len(), |(byte, _)| byte)
+}
+
+fn is_unsafe_control(character: char) -> bool {
+    (character.is_control() && character != '\n' && character != '\t')
+        || matches!(character, '\u{202a}'..='\u{202e}')
+}
