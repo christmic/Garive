@@ -235,6 +235,13 @@ An Agent snapshot includes an explicit subset of exact tool revisions. Runtime
 refuses a definition without a matching executor binding before the snapshot
 is usable. UI catalogue descriptions are projections, never executable source.
 
+A concrete executor receives the same frozen catalogue instance (or an
+equivalent snapshot-bound immutable value) used by `ToolPreparationPort`. Its
+preflight re-prepares normalized arguments and requires the complete Prepared
+Call to match before `effect.started`; matching only a tool name/revision is
+insufficient. Dispatch also rechecks the executor ID, revision and deterministic
+dispatch-attempt binding selected by preflight.
+
 ## Stable safe terminal codes
 
 T1 uses existing preparation/governance failures plus:

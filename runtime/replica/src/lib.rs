@@ -4,6 +4,8 @@
 #![deny(missing_docs)]
 
 #[cfg(unix)]
+mod builtin_workspace_executor;
+#[cfg(unix)]
 mod confined_read_executor;
 mod core_bridge;
 mod delegation_runtime;
@@ -32,6 +34,8 @@ mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
+#[cfg(unix)]
+pub use builtin_workspace_executor::{BuiltinWorkspaceExecutor, T1_WORKSPACE_EXECUTOR_ID};
 #[cfg(unix)]
 pub use confined_read_executor::ConfinedFileReadExecutor;
 pub use core_bridge::{
