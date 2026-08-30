@@ -167,6 +167,12 @@ Read-only tools land before mutation and process tools. This is delivery order,
 not permission inheritance: installing all five still grants none of them to
 an Agent Definition.
 
+Browser and Computer Use form the next native tool slice. Browser work uses a
+browser-native semantic session and snapshot-local nodes; desktop interaction
+uses operating-system Accessibility and screen/input APIs through a native
+broker. Neither silently falls back to shell commands or unbound pixel clicks.
+Their exact observe/action/receipt protocol is defined by T2.
+
 ## Durable truth
 
 Goal, Plan and safety facts enter the same Runtime Ledger transaction model as
@@ -196,7 +202,8 @@ sandbox, production worker or storage parity.
 3. freeze Goal lifecycle, commands, facts and projection;
 4. freeze Plan validation, revision and step reduction;
 5. add write/process tools with journals, fault injection and recovery;
-6. integrate Goal/Plan context, Host projections and clients.
+6. add native Browser/Computer Use observation and action adapters;
+7. integrate Goal/Plan context, Host projections and clients.
 
 Each increment must keep existing C4/C5/C5b/C6 behavior green and land in a
 small reversible batch.

@@ -42,6 +42,9 @@ planned without reopening a narrower completed row.
 | C7-B | Exact provider counter composition | accepted | accepted | documented | implemented | verified | done | Keep all four corpus routes, fail-closed boundaries, secret-invariant/non-secret-variant digest tests and no-implicit-loader scan green; a live publication run remains C7 evidence. |
 | C7-C | Publication-grade context-pressure runner | accepted | accepted | documented | implemented | verified | done | Keep strict tagged configs, permanent command non-publication, OS credential resolution, clean Git attestation and bounded no-retry HTTPS loopback/failure gates green; a live credentialed run remains C7 evidence. |
 | C7 | Measured context compression | draft | missing | missing | missing | missing | gated | Publish and review a C7-A baseline before accepting thresholds or algorithms. |
+| F0 | Sandbox enforcement and safety governance | accepted | accepted | documented | partial | partial | active | Portable Rust/Kotlin profiles and the shared canonical fixture are implemented; bind them into Prepared calls and add Runtime safety/binding facts, native preflight and recovery evidence. |
+| G1 | Durable Goal lifecycle | accepted | accepted | missing | missing | missing | active | Implement shared Rust/Kotlin values/reducer, L0 facts, SQLite projection and restart/race evidence. |
+| PL1 | Durable executable Plan | accepted | accepted | missing | missing | missing | planned | Follow G1 with shared DAG/readiness semantics, claims, recovery and C6/F0 binding. |
 | L0 | Durable Ledger vocabulary and state | accepted | accepted | documented | implemented | verified | done | Keep exact C6 payloads, lifecycle ownership, iteration/abandon transitions, and shared Rust/Kotlin matrices green. |
 | L1-R | SQLite Ledger adapter | accepted | accepted | documented | implemented | verified | done | Keep v1→v4/future-schema gates, execution/schedule fenced writes, file restart matrices, and all shared ledger scenarios green. |
 | L1-K | Kotlin PostgreSQL experiment | accepted | accepted | documented | implemented | verified | done | Keep real PostgreSQL shared scenarios, writer-race normalization, migration refusal, and admitted recovery-host subset green. |
@@ -88,7 +91,7 @@ planned without reopening a narrower completed row.
 | Memory M2 | accepted | accepted | partial | partial | partial | active | M2-A/B and the isolated M2-C storage adapter are complete. Close M2-C2 production repository projection before enabling M2-D over real Agent Memory. |
 | Memory M2-A/B | accepted | accepted | documented | implemented | verified | done | Keep exact-identity documents, canonical manifest/layout validation, authority-safe ordered plans and shared Rust/Kotlin digests green. |
 | Memory M2-C | accepted | accepted | documented | implemented | verified | done | Keep the isolated exact-grant storage adapter, namespace journal transactions, canonical receipts, content-scrubbing erasure and fsynced export crash/replay matrices green. |
-| Memory M2-C2 | accepted | accepted | documented | missing | missing | active | Bind committed M0/M1 facts and M2 journal operations to one production current projection before any client advertises Memory control. |
+| Memory M2-C2 | accepted | accepted | documented | implemented | verified | done | Keep complete-prefix fact-backed Add/Supersede/Archive/Erase planning, one-revision atomic commit, operation ordinals, journal rollback and independent reconstruction evidence green. |
 | Memory M2-D | accepted | accepted | missing | missing | missing | planned | Add Desktop-native opaque file capabilities, bounded review/confirmation IPC and durable receipt recovery after M2-C2. |
 | Knowledge | accepted | accepted | documented | implemented | verified | done | Keep shared Rust/Kotlin request/evidence/failure/capability-admission fixtures, exact L0 transitions, source authority, connector commit ordering, C2 attribution, and SQLite recovery green. |
 | Skill | accepted | accepted | documented | implemented | verified | done | Keep exact digest/order/bounds and capability-admission fixtures, Rust/Kotlin narrowing, L0 validation, and SQLite commit-before-C2/restart evidence green. |
@@ -99,6 +102,8 @@ planned without reopening a narrower completed row.
 | Creativity CR-B | accepted | accepted | documented | implemented | verified | done | Keep compatible-dialect model ports, OS credential references, exact clean Git attestation, transport failure matrix and content-free evidence v2 gates green; execute and review real external runs separately. |
 | Evaluation | accepted | accepted | documented | implemented | verified | done | Keep exact rational score, duplicate/bound failures, baseline provenance and pure-Engine boundary gates green. |
 | Observability | accepted | accepted | documented | implemented | verified | done | Keep the shared Rust/Kotlin catalogue, canonical digest, forbidden-label properties, explicit Runtime limits, commit-position, sampling, priority, backpressure, redaction-canary and bounded-shutdown gates green. |
+| T1 Built-in tools | accepted | accepted | missing | missing | missing | planned | Implement exact catalogue/resolvers, confined read/list/search, journaled patch and sandboxed process executor in delivery order. |
+| T2 Browser/Computer Use | accepted | accepted | missing | missing | missing | planned | Implement semantic fixtures, browser-native adapter contract suite, then macOS XPC Accessibility/ScreenCapture/input broker and packaged permission evidence. |
 
 ## Update checklist
 
@@ -115,6 +120,7 @@ planned without reopening a narrower completed row.
 - [`design/agent-platform-delivery.md`](design/agent-platform-delivery.md) — platform acceptance contract.
 - [`design/agent-capability-spec-set.md`](design/agent-capability-spec-set.md) — draft post-H1 capability review set.
 - [`design/agent-product-increment-spec-set.md`](design/agent-product-increment-spec-set.md) — complete active increment contract/fixture coverage.
+- [`design/agent-foundation-capability-spec-set.md`](design/agent-foundation-capability-spec-set.md) — Sandbox/Safety, Goal, Plan and built-in/native tool delivery order.
 - [`design/desktop-system-configuration.md`](design/desktop-system-configuration.md) — backend-only Desktop configuration contract.
 - [`design/desktop-update-lifecycle.md`](design/desktop-update-lifecycle.md) — signed update, no-downgrade and restart reconciliation contract.
 - [`../.agents/testing.md`](../.agents/testing.md) — evidence levels and repository gates.

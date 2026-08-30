@@ -106,6 +106,7 @@ implementations.
 | `engine/core/` | Bounded Agent kernel. |
 | `engine/llm/` | Provider-neutral model contract; concrete adapters live outside Engine. |
 | `engine/tools/` | Tool definitions, immutable prepared calls, and neutral ports. |
+| `engine/goal/`, `engine/plan/` | Durable Goal and Plan portable values/reducers; Runtime owns identities, claims and persistence. |
 | `engine/ledger/` | Durable-fact vocabulary and storage ports; Runtime supplies storage adapters. |
 | `engine/memory/`, `engine/knowledge/` | Agent memory/knowledge policy, evidence, and retrieval contracts. |
 | `engine/skill/`, `engine/multiagent/` | Skill/delegation semantics and neutral execution ports. |

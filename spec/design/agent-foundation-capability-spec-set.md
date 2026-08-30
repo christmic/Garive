@@ -34,7 +34,8 @@ non-interchangeable identities.
 | 2 | G1 | [`goal-lifecycle.md`](goal-lifecycle.md) | D0/L0/C6 | shared lifecycle/digest fixture; SQLite restart/race tests |
 | 3 | PL1 | [`plan-lifecycle.md`](plan-lifecycle.md) | G1/D0/C5/L0 | shared DAG/revision fixture; claim/replan/recovery tests |
 | 4 | T1 | [`basic-tools.md`](basic-tools.md) | F0/C4/C5b | catalogue fixtures and real confined executor tests |
-| 5 | F1 | Runtime composition and client projection amendment | F0/G1/PL1/T1/H2/H3 | real local end-to-end and restart flow |
+| 5 | T2 | [`native-browser-computer-use.md`](native-browser-computer-use.md) | F0/C5/T1 | browser contract suite and native packaged-adapter tests |
+| 6 | F1 | Runtime composition and client projection amendment | F0/G1/PL1/T1/T2/H2/H3 | real local end-to-end and restart flow |
 
 The referenced slice Specs must be accepted before their behavior is claimed.
 This index fixes their ownership, dependency order and evidence floor.
@@ -68,6 +69,7 @@ Only C5 authorization for the exact Prepared Call can reach an executor.
 | `spec/fixtures/agent/goal-lifecycle-v1.json` | identity/revision validation, criteria, transitions, evidence, conflicts | Rust/Kotlin Goal |
 | `spec/fixtures/agent/plan-lifecycle-v1.json` | topology, canonical digest, readiness, carry-forward and transition failures | Rust/Kotlin Plan |
 | `spec/fixtures/agent/basic-tools-v1.json` | definitions, schemas, access resolution, canonical ordering, limits | Rust/Kotlin Tools |
+| `spec/fixtures/agent/native-control-v1.json` | snapshots, stale references, action bindings, sensitivity and failures | Rust/Kotlin Tools |
 
 Fixture equality is canonical only for bytes explicitly named by the child
 Spec. Runtime sandbox behavior is capability evidence and cannot be proved by
@@ -135,6 +137,9 @@ Stable classes are grouped by owner:
   `plan_binding_stale`, `step_not_ready`, `step_claim_conflict`,
   `step_evidence_conflict`;
 - T1 uses existing C4/C5 codes plus tool-specific safe terminal codes.
+- T2: `native_snapshot_stale`, `native_node_stale`,
+  `native_permission_required`, `native_action_uncertain` and focused
+  browser/native failure classes.
 
 Diagnostic text is not a compatibility key. Public failures contain no raw
 path, command, environment, credential, policy rule or executor diagnostic.

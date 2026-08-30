@@ -76,6 +76,8 @@ resolves references and freezes an effective execution input before Core runs.
 | `core` | Kernel execution protocol, iteration control, outcome reduction, portable events. | Session/recovery, storage, concrete adapters. |
 | `llm` | Provider-neutral request/items/stream/outcome/usage/capability values and model port. | HTTP, credentials, product failover, or retry-budget selection. |
 | `tools` | Tool definitions, model intents, validation, immutable prepared calls, neutral results. | Authorization facts, sandboxes, process execution. |
+| `goal` | Goal definitions, success evidence requirements and pure lifecycle semantics. | Actor identity, persistence, clocks or automatic success. |
+| `plan` | Goal-bound Plan topology, digests, readiness and pure transition semantics. | Claims, workers, leases, authorization or scheduling infrastructure. |
 | `ledger` | Durable-fact vocabulary and query/append ports required by Engine policies. | SQLite schema, transactions, backup. |
 | `memory` | Memory candidates, retrieval intent, ranking/policy contracts. | Persistent store or automatic authority over prompts. |
 | `knowledge` | Sources, citations, evidence and retrieval contracts. | Network clients, indexes, product truth. |

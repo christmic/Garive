@@ -30,6 +30,7 @@ land with executable slices.
 | [`core/ledger.md`](core/ledger.md) | Accepted L0/L1 ownership plus unadmitted storage/research variants. |
 | [`core/provider-adapter.md`](core/provider-adapter.md) | Provider-neutral model boundary and provider recovery. |
 | [`core/effect-layer.md`](core/effect-layer.md) | Accepted C4–C6 ownership plus unadmitted mechanism research. |
+| [`core/agent-foundation-capabilities.md`](core/agent-foundation-capabilities.md) | Accepted Sandbox/Safety, Goal, Plan and built-in/native tool architecture. |
 | [`core/compression.md`](core/compression.md) | Context-pressure and compression policy research. |
 | [`core/derive-testing.md`](core/derive-testing.md) | Derive correctness and quality test design. |
 | [`core/assemble-testing.md`](core/assemble-testing.md) | Provider assembly contract test design. |

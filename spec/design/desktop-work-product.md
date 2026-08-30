@@ -395,11 +395,12 @@ made from `vite build` or `cargo check` alone.
 
 ## Non-goals
 
-Foundation does not imply cloud sync, team accounts, browser/computer use,
-voice, Scheduler, or remote mobile access. Work does not grant broad disk or
-shell authority. Matching the product quality of work-oriented competitors
-does not mean copying their cloud architecture, visual identity, hidden model
-behavior, or unsupported feature catalogue.
+The A-DESKTOP-WORK foundation does not itself imply cloud sync, team accounts,
+voice, Scheduler, remote mobile access, or the separately accepted T2
+Browser/Computer Use capability. Work does not grant broad disk, shell,
+browser, Accessibility or input authority. Matching the product quality of
+work-oriented competitors does not mean copying their cloud architecture,
+visual identity, hidden model behavior, or unsupported feature catalogue.
 
 ## Meta
 

@@ -29,6 +29,7 @@ provisional mechanisms so a rough idea is not mistaken for a contract.
 | 7 | [`derive-testing.md`](derive-testing.md) | Correctness, property, retention, and equivalence testing for derive. | mixed: admitted gates implemented; numeric research remains |
 | 8 | [`assemble-testing.md`](assemble-testing.md) | Provider assembly contract tests. | mixed: admitted gates implemented; broader research remains |
 | 9 | [`memory.md`](memory.md) | Memory classification, lifecycle, distillation and retention research. | mixed: M0/M1 delivered; M2 accepted; quality/graph research |
+| 10 | [`agent-foundation-capabilities.md`](agent-foundation-capabilities.md) | Sandbox/Safety, durable Goal/Plan, built-in tools and native-control boundary. | accepted |
 
 ## Settled boundaries
 
@@ -124,6 +125,10 @@ A mechanism is ready for `spec/` when it has:
   — accepted client-safe navigation and timeline read model.
 - [`../../../spec/design/client-product-experience.md`](../../../spec/design/client-product-experience.md)
   — accepted product client state, interaction, UI, and accessibility contract.
+- [`../../../spec/design/agent-foundation-capability-spec-set.md`](../../../spec/design/agent-foundation-capability-spec-set.md)
+  — accepted Sandbox/Safety, Goal, Plan and tool delivery/evidence order.
+- [`../../../spec/design/native-browser-computer-use.md`](../../../spec/design/native-browser-computer-use.md)
+  — accepted browser-native and operating-system-native interaction contract.
 
 ## Meta
 

@@ -28,6 +28,7 @@ domain models.
 | C4 prepared call | supported | experimental | schema/normalization/digest fixtures |
 | C5 governed effect reduction | supported | experimental | semantic state scenarios; no Kotlin executor claim |
 | C5b-A deterministic batch plan | supported | experimental | canonical access/graph/plan fixture + sequential-order properties; no Kotlin executor claim |
+| F0 sandbox requirement semantics | supported | experimental | canonical profile/coverage fixture; no Kotlin sandbox claim |
 | C6 Runtime | supported | admitted PostgreSQL recovery subset | shared public decisions + independent native crash evidence |
 | C7 compression | planned | not admitted | measured admission decision required |
 | P2-VX-ATC token count | supported | experimental | provider request/response/profile fixture + native tests |
@@ -65,6 +66,10 @@ Runtime stores, connectors, child lifecycle, workers or exporters.
 | Q0 Scheduler | supported | experimental | recurrence/misfire fixtures + native tests |
 | MA0 Multi-Agent | supported | experimental | intent/budget/result fixtures + native tests |
 | O0 Observability | supported | experimental | catalogue/redaction/unit fixtures + native tests |
+| F0 Sandbox requirements | supported | experimental | portable control/canonical digest fixture only |
+| G1 Goal | planned | planned | lifecycle/digest fixture required |
+| PL1 Plan | planned | planned | DAG/readiness/digest fixture required |
+| T1/T2 tool semantics | planned | planned | definition/action fixtures; no Kotlin native executor claim |
 
 ## Shared source of behavior
 
