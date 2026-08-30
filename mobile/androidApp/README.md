@@ -31,10 +31,12 @@ From this directory, with Android SDK 36 installed:
 
 ```text
 java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
-  org.gradle.wrapper.GradleWrapperMain app:assembleDebug
+  org.gradle.wrapper.GradleWrapperMain app:lintDebug app:assembleDebug \
+  app:lintRelease app:assembleRelease
 ```
 
-With an API 36 device or emulator attached, run the native UI gate:
+The checked-in Gradle memory limit is also required by the optimized Release
+pipeline. With an API 36 device or emulator attached, run the native UI gate:
 
 ```text
 java -classpath ../../experiments/engine-kt/gradle/wrapper/gradle-wrapper.jar \
