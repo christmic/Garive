@@ -93,6 +93,7 @@ struct SettingsView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
     @Binding var theme: String
+    @State private var confirmUnpair = false
 
     private var origin: String { model.credentials?.origin ?? "—" }
     private var host: String { URL(string: origin)?.host ?? "—" }
@@ -102,6 +103,13 @@ struct SettingsView: View {
     private var walkthroughBottom: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--garive-walkthrough-settings-bottom")
+#else
+        false
+#endif
+    }
+    private var walkthroughUnpairConfirmation: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--garive-walkthrough-unpair-confirmation")
 #else
         false
 #endif
@@ -145,7 +153,7 @@ struct SettingsView: View {
                     LabeledContent("Connection", value: state.connection.name.lowercased())
                 }
                 Section {
-                    Button("Unpair this device", role: .destructive) { model.signOut() }
+                    Button("Unpair this device", role: .destructive) { confirmUnpair = true }
                 }
                 .id("unpair")
             }
@@ -153,6 +161,19 @@ struct SettingsView: View {
             .onAppear {
                 guard walkthroughBottom else { return }
                 DispatchQueue.main.async { proxy.scrollTo("unpair", anchor: .bottom) }
+            }
+            .onAppear {
+                if walkthroughUnpairConfirmation { confirmUnpair = true }
+            }
+            .confirmationDialog(
+                "Unpair this device?",
+                isPresented: $confirmUnpair,
+                titleVisibility: .visible
+            ) {
+                Button("Unpair device", role: .destructive) { model.signOut() }
+                Button("Keep paired", role: .cancel) {}
+            } message: {
+                Text("This removes access from this phone. Agent work and history remain on your service.")
             }
         }
     }
