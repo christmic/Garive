@@ -367,5 +367,5 @@ fn sampled_out(signal: &AgentSignal, digest: &str, denominator: u64) -> bool {
         return false;
     }
     let prefix = u64::from_str_radix(&digest[..16], 16).expect("SHA-256 prefix");
-    prefix % denominator != 0
+    !prefix.is_multiple_of(denominator)
 }

@@ -163,7 +163,7 @@ impl LedgerState {
                 return Err(LedgerError::InvalidTransition);
             }
             previous = fact.position;
-            if kinds.map_or(true, |values| values.contains(&fact.kind)) {
+            if kinds.is_none_or(|values| values.contains(&fact.kind)) {
                 output.push(fact.clone());
             }
         }

@@ -183,8 +183,7 @@ pub fn summarize_creativity(
     }
     let mut identities = BTreeSet::new();
     let mut pairs = Vec::with_capacity(expected_tasks);
-    for pair in evidence.chunks_exact(2) {
-        let (control, alternatives) = (&pair[0], &pair[1]);
+    for [control, alternatives] in evidence.as_chunks::<2>().0 {
         if control.arm != CreativityArm::Control
             || alternatives.arm != CreativityArm::BoundedAlternatives
             || control.task_id != alternatives.task_id
