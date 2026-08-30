@@ -130,14 +130,6 @@ pub(super) fn palette(theme: Theme) -> Palette {
     }
 }
 
-pub(super) fn connection_icon(value: ConnectionState) -> &'static str {
-    if value == ConnectionState::Online {
-        "●"
-    } else {
-        "○"
-    }
-}
-
 pub(super) fn connection_name(value: ConnectionState) -> &'static str {
     match value {
         ConnectionState::Connecting => "connecting",
@@ -164,15 +156,6 @@ pub(super) fn execution_style(value: ExecutionState, colors: Palette) -> Style {
         ExecutionState::Following => colors.accent_chip,
         ExecutionState::Suspended => colors.warning_chip,
         ExecutionState::Failed => colors.danger_chip,
-    }
-}
-
-pub(super) fn execution_name(value: ExecutionState) -> &'static str {
-    match value {
-        ExecutionState::Idle => "ready",
-        ExecutionState::Following => "running",
-        ExecutionState::Suspended => "action required",
-        ExecutionState::Failed => "failed",
     }
 }
 

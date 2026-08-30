@@ -40,6 +40,10 @@ or state wording. The rail's row cadence and visible window also define its
 pointer hit boxes; controllers do not duplicate layout coordinates.
 The context footer lives in `view/footer.rs` and derives its hints from the
 same focus, execution, and responsive state used by input routing.
+All time-varying presentation lives in `view/motion.rs`. An active connection
+or execution may use its calm single-cell pulse; reduced motion uses the same
+text and semantic style with a stable glyph. Screens cannot invent local frame
+sequences or schedule their own redraw loops.
 
 ## Composite components
 
@@ -90,6 +94,10 @@ and controller intent. Their height is derived from the sanitized multiline
 body at the actual popup width; wrapping must never hide the primary or escape
 action. Durable uncertainty is titled `Command result unknown`, not the
 ambiguous `Unknown command`.
+
+Motion ticks are scheduled only while a typed state has a visible animated
+variant. Idle, suspended, failed, disconnected, and screen-reader views do not
+run an animation timer. Terminal titles never animate.
 
 ## Conformance
 

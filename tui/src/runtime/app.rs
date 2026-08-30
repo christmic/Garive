@@ -45,6 +45,7 @@ const LIMITS: ClientLimits = ClientLimits {
     max_events: 16_384,
     follow_deadline_ms: 120_000,
 };
+const MOTION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(160);
 
 /// Runs the resident full-screen terminal client until the user confirms exit.
 pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
@@ -114,11 +115,15 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = EventStream::new();
     let mut interrupted = None;
+    let mut motion_tick = 0_u64;
+    let mut motion_clock = tokio::time::interval(MOTION_INTERVAL);
+    motion_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    motion_clock.tick().await;
     loop {
         guard
             .set_title(&view::terminal_title(&state.model))
             .map_err(map_terminal_error)?;
-        draw(&mut terminal, &mut state)?;
+        draw(&mut terminal, &mut state, motion_tick)?;
         if state.model.quit_requested {
             break;
         }
@@ -134,6 +139,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             signal = shutdown.recv() => {
                 interrupted = Some(signal);
                 break;
+            }
+            _ = motion_clock.tick(), if view::status_motion_enabled(&state.model, state.config.reduced_motion) => {
+                motion_tick = motion_tick.wrapping_add(1);
             }
         }
     }
@@ -207,6 +215,7 @@ impl ShutdownSignal {
 fn draw(
     terminal: &mut Terminal<CrosstermBackend<io::Stderr>>,
     state: &mut RuntimeState,
+    motion_tick: u64,
 ) -> Result<(), TuiError> {
     if std::mem::take(&mut state.bell_requested) {
         terminal
@@ -228,13 +237,25 @@ fn draw(
                     height: area.height,
                 }),
             );
-            if let Some(cursor) = view::render_cached(
-                &state.model,
-                state.config.theme,
-                area,
-                frame.buffer_mut(),
-                &mut state.render_cache,
-            ) {
+            let cursor = if state.config.reduced_motion {
+                view::render_cached(
+                    &state.model,
+                    state.config.theme,
+                    area,
+                    frame.buffer_mut(),
+                    &mut state.render_cache,
+                )
+            } else {
+                view::render_cached_with_motion(
+                    &state.model,
+                    state.config.theme,
+                    view::MotionFrame::animated(motion_tick),
+                    area,
+                    frame.buffer_mut(),
+                    &mut state.render_cache,
+                )
+            };
+            if let Some(cursor) = cursor {
                 frame.set_cursor_position(cursor);
             }
         })
