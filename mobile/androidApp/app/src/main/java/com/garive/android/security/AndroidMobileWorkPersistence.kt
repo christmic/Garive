@@ -3,7 +3,7 @@ package com.garive.android.security
 import android.content.Context
 import com.garive.mobile.application.MobileWorkPersistence
 
-/** App-private restart storage for one bounded non-credential pending mutation. */
+/** App-private restart storage for bounded navigation/drafts and one pending mutation. */
 internal class AndroidMobileWorkPersistence(context: Context) : MobileWorkPersistence {
     private val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
@@ -23,9 +23,18 @@ internal class AndroidMobileWorkPersistence(context: Context) : MobileWorkPersis
         }.commit()
     }
 
+    override fun readPreferencesRecord(): String? = preferences.getString(PREFERENCES_RECORD, null)
+
+    override fun writePreferencesRecord(value: String?) {
+        preferences.edit().apply {
+            if (value == null) remove(PREFERENCES_RECORD) else putString(PREFERENCES_RECORD, value)
+        }.commit()
+    }
+
     private companion object {
         const val PREFERENCES = "garive_mobile_pending_v1"
         const val RECORD = "record"
         const val PAYLOAD = "payload"
+        const val PREFERENCES_RECORD = "preferences"
     }
 }

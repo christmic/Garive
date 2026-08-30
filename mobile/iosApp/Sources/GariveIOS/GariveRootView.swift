@@ -30,6 +30,8 @@ struct GariveRootView: View {
         }
         .tint(GarivePalette.coral)
         .preferredColorScheme(theme == "dark" ? .dark : theme == "light" ? .light : nil)
+        .onAppear { model.setTheme(theme) }
+        .onChange(of: theme) { _, value in model.setTheme(value) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, model.state != nil { model.refresh() }
         }

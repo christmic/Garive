@@ -162,6 +162,30 @@ public class MobileWorkControllerTest {
         assertNull(persistence.payload)
     }
 
+    @Test
+    public fun navigationAndSessionDraftSurviveRestartAndClearAfterCommit(): Unit = runBlocking {
+        val persistence = MemoryMobileWorkPersistence()
+        val first = MobileWorkController(FakeMobileHost(), identities(), persistence = persistence)
+        first.boot()
+        first.openSession("session-1")
+        first.editDraft("Continue the exact investigation")
+        first.selectDestination(MobileDestination.SETTINGS)
+
+        val restored = MobileWorkController(FakeMobileHost(), identities(), persistence = persistence)
+        val booted = restored.boot()
+
+        assertEquals(MobileDestination.SETTINGS, booted.destination)
+        assertEquals("session-1", booted.selectedSessionId)
+        assertEquals("Continue the exact investigation", restored.openSession("session-1").draft)
+
+        restored.sendTurn("Continue the exact investigation")
+        val afterCommit = MobileWorkController(FakeMobileHost(), identities(), persistence = persistence).boot()
+        assertEquals("", afterCommit.draft)
+
+        restored.signOut()
+        assertNull(persistence.preferences)
+    }
+
     private fun identities(): CommandIdentitySource {
         var next = 0
         return CommandIdentitySource { "command-${++next}" }
@@ -171,7 +195,10 @@ public class MobileWorkControllerTest {
 private class MemoryMobileWorkPersistence(
     var record: String? = null,
     var payload: String? = null,
+    var preferences: String? = null,
 ) : MobileWorkPersistence {
+    override fun readPreferencesRecord(): String? = preferences
+    override fun writePreferencesRecord(value: String?) { preferences = value }
     override fun readPendingRecord(): String? = record
     override fun writePendingRecord(value: String?) { record = value }
     override fun readPendingPayload(): String? = payload

@@ -35,6 +35,10 @@ public class MobileWorkController(
     private var viewState: MobileWorkState = MobileWorkState()
     private var pendingOperation: PendingOperation? = null
     private var restoredPending: Boolean = false
+    private var restoredPreferences: Boolean = false
+    private var preferenceTheme: String = "system"
+    private val sessionDrafts: LinkedHashMap<String, String> = linkedMapOf()
+    private var newTaskDraft: String = ""
 
     init {
         require(pageLimit > 0 && maxInputBytes > 0)
@@ -45,6 +49,7 @@ public class MobileWorkController(
 
     /** Loads installed Agents, durable Sessions, and the selected timeline. */
     public suspend fun boot(): MobileWorkState = lock.withLock {
+        restorePreferencesLocked()
         restorePendingLocked()
         viewState = viewState.copy(connection = MobileConnectionState.CONNECTING, refreshing = true)
         refreshLocked()
@@ -59,12 +64,47 @@ public class MobileWorkController(
     /** Selects a stable top-level destination. */
     public fun selectDestination(destination: MobileDestination): MobileWorkState {
         viewState = viewState.copy(destination = destination, noticeCode = null)
+        savePreferencesLocked()
+        return viewState
+    }
+
+    /** Starts a native new-task composition without leaking another Session's draft. */
+    public fun beginTask(): MobileWorkState {
+        viewState = viewState.copy(
+            selectedSessionId = null,
+            timeline = emptyList(),
+            timelineCursor = 0,
+            draft = newTaskDraft,
+            noticeCode = null,
+        )
+        savePreferencesLocked()
+        return viewState
+    }
+
+    /** Mirrors the native appearance choice into the strict preference document. */
+    public fun setTheme(theme: String): MobileWorkState {
+        require(theme in setOf("system", "light", "dark"))
+        preferenceTheme = theme
+        savePreferencesLocked()
         return viewState
     }
 
     /** Updates the current bounded composer draft. */
     public fun editDraft(text: String): MobileWorkState {
         viewState = viewState.copy(draft = text, noticeCode = null)
+        if (text.encodeToByteArray().size <= maxInputBytes) {
+            val sessionId = viewState.selectedSessionId
+            if (sessionId == null) {
+                newTaskDraft = text
+            } else if (text.isEmpty()) {
+                sessionDrafts.remove(sessionId)
+            } else {
+                sessionDrafts.remove(sessionId)
+                sessionDrafts[sessionId] = text
+                while (sessionDrafts.size > 20) sessionDrafts.remove(sessionDrafts.keys.first())
+            }
+            savePreferencesLocked()
+        }
         return viewState
     }
 
@@ -78,8 +118,10 @@ public class MobileWorkController(
                 selectedSessionId = sessionId,
                 timeline = timeline.items.map(::turnItem),
                 timelineCursor = timeline.observed_max_position,
+                draft = sessionDrafts[sessionId].orEmpty(),
                 noticeCode = null,
             )
+            savePreferencesLocked()
         } catch (error: CancellationException) {
             throw error
         } catch (error: HostClientException) {
@@ -173,6 +215,10 @@ public class MobileWorkController(
             pendingCommand = null,
             noticeCode = "pending_retry_abandoned",
         )
+        operation.sessionId?.let { sessionId ->
+            operation.payload()?.let { sessionDrafts[sessionId] = it }
+        }
+        savePreferencesLocked()
         return viewState
     }
 
@@ -197,6 +243,9 @@ public class MobileWorkController(
     public fun signOut(): MobileWorkState {
         pendingOperation = null
         clearPending(persistence)
+        persistence.writePreferencesRecord(null)
+        sessionDrafts.clear()
+        newTaskDraft = ""
         viewState = MobileWorkState(connection = MobileConnectionState.SIGNED_OUT)
         return viewState
     }
@@ -237,10 +286,12 @@ public class MobileWorkController(
                         selectedSessionId = sessionId,
                         draft = "",
                     )
+                    newTaskDraft = ""
                 }
                 is PendingOperation.Start -> {
                     host.startTurn(operation.commandId, operation.sessionId, operation.text)
                     viewState = viewState.copy(draft = "")
+                    sessionDrafts.remove(operation.sessionId)
                 }
                 is PendingOperation.Cancel -> host.cancelTurn(
                     operation.commandId,
@@ -258,6 +309,10 @@ public class MobileWorkController(
                     operation.inputJson,
                 )
             }
+            if (operation is PendingOperation.Continue) {
+                sessionDrafts.remove(operation.sessionId)
+                viewState = viewState.copy(draft = "")
+            }
             val sessionId = when (operation) {
                 is PendingOperation.CreateAndStart -> operation.sessionId
                 else -> operation.sessionId
@@ -271,6 +326,7 @@ public class MobileWorkController(
                 pendingCommand = null,
                 noticeCode = null,
             )
+            savePreferencesLocked()
         } catch (error: CancellationException) {
             throw error
         } catch (error: HostClientException) {
@@ -322,6 +378,31 @@ public class MobileWorkController(
                 pendingCommand = operation.publicValue(),
             )
         }
+    }
+
+    private fun restorePreferencesLocked(): Unit {
+        if (restoredPreferences) return
+        restoredPreferences = true
+        val restored = restoreMobilePreferences(persistence)
+        preferenceTheme = restored.theme
+        sessionDrafts.clear()
+        sessionDrafts.putAll(restored.drafts)
+        viewState = viewState.copy(
+            destination = restored.destination,
+            selectedSessionId = restored.selectedSessionId,
+            draft = restored.selectedSessionId?.let(sessionDrafts::get).orEmpty(),
+        )
+    }
+
+    private fun savePreferencesLocked(): Unit {
+        if (!restoredPreferences) return
+        saveMobilePreferences(
+            persistence,
+            viewState.destination,
+            viewState.selectedSessionId,
+            preferenceTheme,
+            sessionDrafts,
+        )
     }
 
     private fun applyFailure(error: HostClientException): MobileWorkState {

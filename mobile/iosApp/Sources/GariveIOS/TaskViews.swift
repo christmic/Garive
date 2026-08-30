@@ -55,7 +55,9 @@ struct NewTaskView: View {
                         ? model.preferredDefinitionID ?? ""
                         : agents.first?.definitionId ?? ""
                 }
+                prompt = model.state?.draft ?? ""
             }
+            .onChange(of: prompt) { _, value in model.editDraft(value) }
         }.presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
     }
 
@@ -67,7 +69,6 @@ struct ConversationView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
     @Environment(\.dismiss) private var dismiss
-    @State private var composer = ""
     @State private var confirmingCancel = false
     @State private var confirmingAbandonRetry = false
 
@@ -103,13 +104,11 @@ struct ConversationView: View {
                 }
             }
             Composer(
-                text: $composer,
+                text: Binding(get: { state.draft }, set: { value in model.editDraft(value) }),
                 sending: state.pendingCommand != nil,
                 enabled: state.connection == .online
             ) {
-                let value = composer
-                composer = ""
-                model.send(value)
+                model.send(state.draft)
             }
         }
         .background(GarivePalette.ink)

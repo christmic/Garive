@@ -45,9 +45,35 @@ public class MobileWorkPersistenceTest {
         assertNull(persistence.payload)
     }
 
+    @Test
+    public fun preferencesRoundTripStrictBoundedNavigationAndDrafts(): Unit {
+        val persistence = MemoryPersistence()
+        saveMobilePreferences(
+            persistence,
+            com.garive.mobile.model.MobileDestination.SESSIONS,
+            "session-a",
+            "dark",
+            linkedMapOf("session-a" to "resume this work"),
+        )
+
+        val restored = restoreMobilePreferences(persistence)
+
+        assertEquals(com.garive.mobile.model.MobileDestination.SESSIONS, restored.destination)
+        assertEquals("session-a", restored.selectedSessionId)
+        assertEquals("dark", restored.theme)
+        assertEquals("resume this work", restored.drafts["session-a"])
+
+        persistence.preferences = persistence.preferences!!.dropLast(1) + ",\"unknown\":true}"
+        assertEquals(RestoredMobilePreferences(), restoreMobilePreferences(persistence))
+        assertNull(persistence.preferences)
+    }
+
     private class MemoryPersistence : MobileWorkPersistence {
         var record: String? = null
         var payload: String? = null
+        var preferences: String? = null
+        override fun readPreferencesRecord(): String? = preferences
+        override fun writePreferencesRecord(value: String?) { preferences = value }
         override fun readPendingRecord(): String? = record
         override fun writePendingRecord(value: String?) { record = value }
         override fun readPendingPayload(): String? = payload

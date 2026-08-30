@@ -58,4 +58,16 @@ public class AndroidConnectionStoreTest {
         assertNull(pending.readPendingRecord())
         assertNull(pending.readPendingPayload())
     }
+
+    @Test
+    public fun boundedPreferencesRoundTripAndClearIndependently(): Unit {
+        val persistence = AndroidMobileWorkPersistence(context)
+        val document = """{"schema_version":1,"selected_destination":"work"}"""
+
+        persistence.writePreferencesRecord(document)
+        assertEquals(document, persistence.readPreferencesRecord())
+
+        persistence.writePreferencesRecord(null)
+        assertNull(persistence.readPreferencesRecord())
+    }
 }

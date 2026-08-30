@@ -75,6 +75,7 @@ internal fun GariveMobileApp(
 
     LaunchedEffect(controller, wakeRoute) {
         state = controller.boot()
+        state = controller.setTheme(theme.wireName)
         wakeRoute?.let { route ->
             state = if (route.destination == "session" && route.sessionId != null) {
                 controller.openSession(route.sessionId!!)
@@ -138,7 +139,11 @@ internal fun GariveMobileApp(
                     MobileDestination.WORK -> WorkScreen(
                         state,
                         onOpen = { scope.launch { state = controller.openSession(it) } },
-                        onNewTask = { selectedAgent = state.agents.firstOrNull(); showNewTask = true },
+                        onNewTask = {
+                            selectedAgent = state.agents.firstOrNull()
+                            state = controller.beginTask()
+                            showNewTask = true
+                        },
                         onRefresh = { scope.launch { state = controller.refresh() } },
                     )
                     MobileDestination.SESSIONS -> SessionsScreen(
@@ -148,11 +153,20 @@ internal fun GariveMobileApp(
                     )
                     MobileDestination.AGENTS -> AgentsScreen(
                         state,
-                        onStart = { selectedAgent = it; showNewTask = true },
+                        onStart = {
+                            selectedAgent = it
+                            state = controller.beginTask()
+                            showNewTask = true
+                        },
                         onRefresh = { scope.launch { state = controller.refresh() } },
                     )
                     MobileDestination.SETTINGS -> SettingsScreen(
-                        origin, state, theme, onTheme, openNotificationSettings,
+                        origin, state, theme,
+                        onTheme = {
+                            state = controller.setTheme(it.wireName)
+                            onTheme(it)
+                        },
+                        openNotificationSettings,
                         onSignOut = { confirmUnpair = true },
                     )
                     MobileDestination.CONVERSATION -> Unit

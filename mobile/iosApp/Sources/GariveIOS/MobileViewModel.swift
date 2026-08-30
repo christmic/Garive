@@ -136,7 +136,10 @@ final class MobileViewModel: ObservableObject {
     func refresh() { perform { callback in self.controller?.refresh(completionHandler: callback) } }
     func open(_ id: String) { perform { callback in self.controller?.openSession(sessionId: id, completionHandler: callback) } }
     func send(_ text: String) { perform { callback in self.controller?.sendTurn(text: text, completionHandler: callback) } }
+    func editDraft(_ text: String) { state = controller?.editDraft(text: text) }
+    func setTheme(_ theme: String) { state = controller?.setTheme(theme: theme) }
     func showNewTask(definitionID: String? = nil) {
+        state = controller?.beginTask()
         preferredDefinitionID = definitionID
         presentingNewTask = true
     }

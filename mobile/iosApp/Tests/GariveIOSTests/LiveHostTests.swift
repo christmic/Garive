@@ -50,19 +50,24 @@ func pendingMutationStorageRoundTripsAndClears() throws {
     let persistence = UserDefaultsMobileWorkPersistence(
         defaults: defaults,
         recordKey: "record",
-        payloadKey: "payload"
+        payloadKey: "payload",
+        preferencesKey: "preferences"
     )
     defer { defaults.removePersistentDomain(forName: suite) }
 
     persistence.writePendingPayload(value: "exact input")
     persistence.writePendingRecord(value: "{\"schema_version\":1}")
+    persistence.writePreferencesRecord(value: "{\"schema_version\":1}")
 
     #expect(persistence.readPendingPayload() == "exact input")
     #expect(persistence.readPendingRecord() == "{\"schema_version\":1}")
+    #expect(persistence.readPreferencesRecord() == "{\"schema_version\":1}")
     persistence.writePendingRecord(value: nil)
     persistence.writePendingPayload(value: nil)
+    persistence.writePreferencesRecord(value: nil)
     #expect(persistence.readPendingRecord() == nil)
     #expect(persistence.readPendingPayload() == nil)
+    #expect(persistence.readPreferencesRecord() == nil)
 }
 
 @Test

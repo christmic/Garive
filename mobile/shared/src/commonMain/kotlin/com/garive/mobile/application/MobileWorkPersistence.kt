@@ -13,8 +13,10 @@ import okio.ByteString.Companion.encodeUtf8
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/** Platform-owned storage for one bounded ambiguous mutation and its exact input. */
+/** Platform-owned storage for bounded restart state and one ambiguous mutation. */
 public interface MobileWorkPersistence {
+    public fun readPreferencesRecord(): String?
+    public fun writePreferencesRecord(value: String?)
     public fun readPendingRecord(): String?
     public fun writePendingRecord(value: String?)
     public fun readPendingPayload(): String?
@@ -23,6 +25,8 @@ public interface MobileWorkPersistence {
 
 /** Default used by tests or embedders that intentionally do not retain work across restart. */
 public object EphemeralMobileWorkPersistence : MobileWorkPersistence {
+    override fun readPreferencesRecord(): String? = null
+    override fun writePreferencesRecord(value: String?): Unit = Unit
     override fun readPendingRecord(): String? = null
     override fun writePendingRecord(value: String?): Unit = Unit
     override fun readPendingPayload(): String? = null

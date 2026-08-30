@@ -120,15 +120,24 @@ final class UserDefaultsMobileWorkPersistence: NSObject, MobileWorkPersistence {
     private let defaults: UserDefaults
     private let recordKey: String
     private let payloadKey: String
+    private let preferencesKey: String
 
     init(
         defaults: UserDefaults = .standard,
         recordKey: String = "mobile.pending.record.v1",
-        payloadKey: String = "mobile.pending.payload.v1"
+        payloadKey: String = "mobile.pending.payload.v1",
+        preferencesKey: String = "mobile.preferences.v1"
     ) {
         self.defaults = defaults
         self.recordKey = recordKey
         self.payloadKey = payloadKey
+        self.preferencesKey = preferencesKey
+    }
+
+    func readPreferencesRecord() -> String? { defaults.string(forKey: preferencesKey) }
+    func writePreferencesRecord(value: String?) {
+        if let value { defaults.set(value, forKey: preferencesKey) }
+        else { defaults.removeObject(forKey: preferencesKey) }
     }
 
     func readPendingRecord() -> String? { defaults.string(forKey: recordKey) }
