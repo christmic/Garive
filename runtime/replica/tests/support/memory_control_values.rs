@@ -11,7 +11,7 @@ pub const EMPTY_DIGEST: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934c
 pub fn originals() -> Vec<MemoryControlDocument> {
     vec![
         document("mem-a", "rev-a", "user_declared", "active", false, "old a"),
-        document("mem-b", "rev-b", "user_declared", "active", false, "old b"),
+        document("mem-b", "rev-b", "user_declared", "cold", false, "old b"),
         document("mem-c", "rev-c", "user_declared", "active", false, "old c"),
     ]
 }

@@ -297,7 +297,7 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
     .unwrap();
     let grant = MemoryControlGrant::new(
         "namespace",
-        [MemoryControlAction::Import],
+        [MemoryControlAction::Import, MemoryControlAction::Export],
         [MemoryAuthorizedScope {
             scope: MemoryScopeClass::Session,
             owner_id: "session".into(),
@@ -333,6 +333,65 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         .find(|record| record.record_id() == "record" && record.status() == MemoryStatus::Active)
         .unwrap();
     assert_eq!(active.revision_id(), "revision-2");
+    let receipt = ledger
+        .commit_memory_repository_import(&context, &grant, &command, planned)
+        .unwrap();
+    assert_eq!(
+        (
+            receipt.previous_repository_revision,
+            receipt.committed_repository_revision
+        ),
+        (1, 2)
+    );
+    let projection = ledger
+        .read_memory_repository_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(projection.repository_revision, 2);
+    assert_eq!(
+        projection.documents[0].record_ref().revision_id(),
+        Some("revision-2")
+    );
+    assert_eq!(projection.documents[0].content(), "user value\n");
+    let replay = ledger
+        .commit_memory_repository_import(
+            &context,
+            &grant,
+            &command,
+            garive_runtime::PlannedMemoryRepositoryImport {
+                facts: Vec::new(),
+                next_state: MemoryState::default(),
+                erasure_requests: Vec::new(),
+            },
+        )
+        .unwrap();
+    assert_eq!(replay, receipt);
+    drop(ledger);
+    let reopened = SqliteLedger::open(directory.path().join("import-plan.sqlite3")).unwrap();
+    let restarted = reopened
+        .read_memory_repository_projection(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(restarted, projection);
+    assert_eq!(
+        reconstruct_memory_repository_projection(
+            &reopened,
+            &[MemoryPrefix {
+                session_id: SessionId::try_from("session").unwrap(),
+                through_position: 10,
+            }],
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        )
+        .unwrap(),
+        projection,
+    );
 }
 
 #[test]
