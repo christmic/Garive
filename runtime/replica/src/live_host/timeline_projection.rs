@@ -13,16 +13,30 @@ use super::{
 
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
+pub(super) struct TimelineProjection<'a> {
+    pub session_id: &'a SessionId,
+    pub observed_max_position: u64,
+    pub session_version: u64,
+    pub after_position: u64,
+    pub limit: usize,
+    pub facts: &'a [DurableFact],
+    pub limits: HostReadLimits,
+    pub catalogue: &'a PublicToolActivityCatalogueV1,
+}
+
 pub(super) fn project_timeline(
-    session_id: &SessionId,
-    observed_max_position: u64,
-    session_version: u64,
-    after_position: u64,
-    limit: usize,
-    facts: &[DurableFact],
-    limits: HostReadLimits,
-    catalogue: &PublicToolActivityCatalogueV1,
+    input: TimelineProjection<'_>,
 ) -> Result<TurnTimelinePageV1, LiveHostError> {
+    let TimelineProjection {
+        session_id,
+        observed_max_position,
+        session_version,
+        after_position,
+        limit,
+        facts,
+        limits,
+        catalogue,
+    } = input;
     if limit == 0
         || limit > limits.max_timeline_items
         || facts.len() > limits.max_facts

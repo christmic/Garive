@@ -254,16 +254,17 @@ impl LiveHost {
             &self.state.installed,
             self.state.read_limits,
         )?;
-        let page = timeline_projection::project_timeline(
-            &session_id,
-            watermark.max_position,
-            watermark.session_version,
-            after_position,
-            limit,
-            &facts,
-            self.state.read_limits,
-            &self.state.activity_catalogue,
-        )?;
+        let page =
+            timeline_projection::project_timeline(timeline_projection::TimelineProjection {
+                session_id: &session_id,
+                observed_max_position: watermark.max_position,
+                session_version: watermark.session_version,
+                after_position,
+                limit,
+                facts: &facts,
+                limits: self.state.read_limits,
+                catalogue: &self.state.activity_catalogue,
+            })?;
         if serde_json::to_vec(&page)
             .map_err(|_| LiveHostError::CorruptState)?
             .len()
