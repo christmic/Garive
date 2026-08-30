@@ -13,6 +13,7 @@ mod prepared;
 mod sandbox;
 mod schema;
 mod schema_validate;
+mod t1_patch;
 mod unique_json;
 
 pub use access::{
@@ -45,3 +46,4 @@ pub use prepared::{
 };
 pub use sandbox::{SandboxControl, SandboxRequirementsV1};
 pub use schema::{validate_portable_value, validate_portable_value_schema};
+pub use t1_patch::{apply_t1_patch, t1_patch_targets, T1PatchError};

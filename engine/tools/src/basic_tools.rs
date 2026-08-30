@@ -5,10 +5,10 @@ use std::collections::BTreeSet;
 use serde_json::{json, Value};
 
 use crate::{
-    AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
-    InvocationAccessSet, PreparationError, PreparationErrorCode, PreparedToolCall, ReplayClass,
-    ResourceAccess, SandboxControl, SandboxRequirementsV1, ToolAccessPolicyV1, ToolAccessResolver,
-    ToolCatalog, ToolDefinition, ToolIntent,
+    t1_patch_targets, AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability,
+    ExecutionRequirements, InvocationAccessSet, PreparationError, PreparationErrorCode,
+    PreparedToolCall, ReplayClass, ResourceAccess, SandboxControl, SandboxRequirementsV1,
+    ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog, ToolDefinition, ToolIntent,
 };
 
 /// Exact immutable revision shared by every T1 definition.
@@ -168,47 +168,9 @@ fn patch_accesses(arguments: &Value) -> Result<InvocationAccessSet, PreparationE
 }
 
 fn patch_targets(patch: &str) -> Result<BTreeSet<String>, PreparationError> {
-    let body = patch
-        .strip_prefix("*** Begin Patch\n")
-        .and_then(|value| {
-            value
-                .strip_suffix("\n*** End Patch")
-                .or_else(|| value.strip_suffix("\n*** End Patch\n"))
-        })
-        .ok_or_else(access_error)?;
-    let mut targets = BTreeSet::new();
-    let mut current = None;
-    let mut has_hunk = false;
-    let mut has_change = false;
-    for line in body.lines() {
-        if let Some(path) = line.strip_prefix("*** Update File: ") {
-            if current.is_some() && (!has_hunk || !has_change) {
-                return Err(access_error());
-            }
-            if path.is_empty() || path == "." || !targets.insert(path.to_owned()) {
-                return Err(access_error());
-            }
-            ResourceAccess::new(AccessNamespace::Filesystem, path, AccessMode::Write)?;
-            current = Some(path);
-            has_hunk = false;
-            has_change = false;
-        } else if line.starts_with("@@") {
-            if current.is_none() {
-                return Err(access_error());
-            }
-            has_hunk = true;
-        } else if line.starts_with(['+', '-']) && current.is_some() && has_hunk {
-            has_change = true;
-        } else if line.starts_with("*** ")
-            || current.is_none()
-            || !has_hunk
-            || !(line.starts_with([' ', '+', '-']) || line == "\\ No newline at end of file")
-        {
-            return Err(access_error());
-        }
-    }
-    if targets.is_empty() || !has_hunk || !has_change {
-        return Err(access_error());
+    let targets = t1_patch_targets(patch).map_err(|_| access_error())?;
+    for path in &targets {
+        ResourceAccess::new(AccessNamespace::Filesystem, path, AccessMode::Write)?;
     }
     Ok(targets)
 }

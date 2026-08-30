@@ -174,8 +174,13 @@ The pure resolver parses the patch, rejects paths not byte-equal to
 in canonical order. Rename, delete, binary patch, mode change, absolute path,
 symlink target, undeclared file and overlapping hunk are unsupported in v1.
 Target extraction admits only `*** Begin Patch`, `*** Update File:`, one or
-more `@@` hunk markers, changed/context lines and `*** End Patch`. Every target
-must contain a hunk and at least one added or removed line. Each
+more exact `@@` hunk markers, changed/context lines and `*** End Patch`. Every
+hunk has at least one context or removed anchor and at least one added or
+removed line. At execution, each old hunk sequence must occur exactly once at
+or after the preceding hunk; absent, repeated or reordered anchors fail before
+mutation. Existing terminal-newline posture is preserved unless the final
+affected line carries `\\ No newline at end of file`. Every target must contain
+a hunk. Each
 `before_digest` is exactly 64 lowercase hexadecimal SHA-256 characters.
 
 Requirements are `FilesystemRead + FilesystemWrite`; replay is
