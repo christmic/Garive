@@ -18,6 +18,45 @@ pub struct InstalledAgent {
     pub agent_instance_namespace: String,
     /// Effective Runtime limits frozen into each first Execution.
     pub runtime_limits: EffectiveRuntimeLimits,
+    /// Optional snapshot-bound H3 public label catalogue.
+    pub public_activity_catalogue: Option<InstalledActivityCatalogue>,
+}
+
+/// One snapshot-bound tool identity to public localization-key mapping.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstalledActivityDescriptor {
+    /// Runtime-private provider-neutral tool name.
+    pub tool_name: String,
+    /// Exact immutable tool revision.
+    pub tool_revision: String,
+    /// Public stable localization key.
+    pub label_key: String,
+}
+
+/// Complete immutable H3 catalogue installed with one Agent snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InstalledActivityCatalogue {
+    /// Exact catalogue schema version.
+    pub schema_version: u32,
+    /// Immutable catalogue revision.
+    pub catalogue_revision: String,
+    /// Canonically sorted unique descriptors.
+    pub descriptors: Vec<InstalledActivityDescriptor>,
+}
+
+/// Independent bounds for reconstructing and encoding H3 activity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ActivityProjectionLimits {
+    /// Maximum activities projected for one Turn.
+    pub max_activities_per_turn: usize,
+    /// Maximum activity-related facts scanned in one fixed prefix.
+    pub max_activity_facts: usize,
+    /// Maximum UTF-8 bytes in one public localization key.
+    pub max_label_bytes: usize,
+    /// Maximum UTF-8 bytes in one opaque activity identity.
+    pub max_activity_id_bytes: usize,
+    /// Maximum canonical JSON bytes across one Turn's activities.
+    pub max_encoded_bytes_per_turn: usize,
 }
 
 /// Explicit bounds for Host command bodies, event pages, and follow polling.
@@ -29,6 +68,8 @@ pub struct LiveHostLimits {
     pub event_batch_size: u64,
     /// Non-zero delay between SQLite checks while following events.
     pub event_poll_interval_ms: u64,
+    /// Optional H3 projection bounds; absence keeps H3 unavailable.
+    pub activity: Option<ActivityProjectionLimits>,
 }
 
 /// Explicit Runtime clock used to stamp durable Host commands.
@@ -112,6 +153,31 @@ pub struct LiveHostEvent {
     pub execution_id: String,
     /// Redacted display text for a committed completion.
     pub text: String,
+    /// Redacted committed H3 state when this event represents activity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity: Option<HostActivity>,
+}
+
+/// One bounded redacted committed Agent activity state.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HostActivity {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Opaque Session-scoped activity identity.
+    pub activity_id: String,
+    /// Stable activity class.
+    pub kind: String,
+    /// Snapshot-bound public localization key.
+    pub label_key: String,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Exact committed source position.
+    pub source_position: u64,
+    /// Authoritative known-state terminal marker.
+    pub terminal: bool,
+    /// Optional admitted stable safe code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safe_code: Option<String>,
 }
 
 /// One bounded durable scan used by replay and SSE follow mode.
@@ -180,6 +246,8 @@ pub struct TurnTimelineItem {
     pub completion_text: Option<String>,
     /// Whether bounded display content was truncated.
     pub content_truncated: bool,
+    /// Latest committed H3 state for each activity owned by this Turn.
+    pub activities: Vec<HostActivity>,
 }
 
 /// One ascending bounded page of complete durable Turn projections.

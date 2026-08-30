@@ -50,11 +50,13 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
                 max_output_tokens: None,
                 deadline_budget_ms: None,
             },
+            public_activity_catalogue: None,
         },
         LiveHostLimits {
             max_command_bytes: 4096,
             event_batch_size: 64,
             event_poll_interval_ms: 5,
+            activity: None,
         },
         Arc::new(FixedClock),
         Arc::new(NoopDispatcher),

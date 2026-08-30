@@ -18,10 +18,10 @@ use crate::{
 };
 
 use super::{
-    completion_text, project_fact, AgentDefinitionSummary, CommittedTurn, CreateSessionResponse,
-    HostClock, HostContinuationInput, HostEventPage, InstalledAgent, LiveHostError, LiveHostLimits,
-    LiveHostState, SessionSummary, TurnCommandResponse, TurnDispatcher, TurnTimelineItem,
-    TurnTimelinePage,
+    completion_text, project_activities, project_fact, AgentDefinitionSummary, CommittedTurn,
+    CreateSessionResponse, HostClock, HostContinuationInput, HostEventPage, InstalledAgent,
+    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionSummary,
+    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
 };
 
 /// Durable local Host command service shared by in-process and HTTP clients.
@@ -112,6 +112,36 @@ impl LiveHost {
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
         let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
+        if let (Some(catalogue), Some(limits)) = (
+            self.state.installed.public_activity_catalogue.as_ref(),
+            self.state.limits.activity,
+        ) {
+            let mut activities = project_activities(&facts, catalogue, limits)?.by_turn;
+            for item in &mut items {
+                item.activities = activities.remove(&item.turn_id).unwrap_or_default();
+                if let Some(position) = item
+                    .activities
+                    .iter()
+                    .map(|activity| activity.source_position)
+                    .max()
+                {
+                    item.latest_position = item.latest_position.max(position);
+                }
+            }
+            if !activities.is_empty() {
+                return Err(LiveHostError::CorruptState);
+            }
+        }
+        for item in items.iter_mut().filter(|item| item.state == "suspended") {
+            let turn_id = identity::<TurnId>(&item.turn_id)?;
+            let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite_query)?;
+            let suspended = reconstruct_suspended_turn(&snapshot).map_err(map_runtime)?;
+            item.suspension = Some(TurnSuspensionView {
+                suspension_id: suspended.suspension_id,
+                session_version: suspended.session_version,
+                kind: suspension_kind(suspended.suspension_kind).into(),
+            });
+        }
         items.retain(|item| item.latest_position > after_position);
         let has_more = items.len() > limit;
         items.truncate(limit);
@@ -450,13 +480,51 @@ impl LiveHost {
         let through = after_position
             .saturating_add(self.state.limits.event_batch_size)
             .min(watermark.max_position);
+        let activity_enabled = self.state.limits.activity.is_some();
         let facts = ledger
-            .read_facts(&session_id, after_position, through, None)
+            .read_facts(
+                &session_id,
+                if activity_enabled { 0 } else { after_position },
+                through,
+                None,
+            )
             .map_err(map_sqlite)?;
-        let events = facts
-            .iter()
-            .filter_map(|fact| project_fact(fact).transpose())
-            .collect::<Result<Vec<_>, _>>()?;
+        let activities = match (
+            self.state.installed.public_activity_catalogue.as_ref(),
+            self.state.limits.activity,
+        ) {
+            (Some(catalogue), Some(limits)) => {
+                Some(project_activities(&facts, catalogue, limits)?.events)
+            }
+            (None, None) => None,
+            _ => return Err(LiveHostError::CorruptState),
+        };
+        let mut events = Vec::new();
+        for fact in facts.iter().filter(|fact| fact.position > after_position) {
+            if let Some(activity) = activities
+                .as_ref()
+                .and_then(|items| items.get(&fact.position))
+            {
+                events.push(LiveHostEvent {
+                    api_version: "v1",
+                    session_id: fact.session_id.as_str().to_owned(),
+                    position: fact.position,
+                    event: activity.event.into(),
+                    turn_id: fact
+                        .turn_id
+                        .as_ref()
+                        .map_or_else(String::new, |value| value.as_str().to_owned()),
+                    execution_id: fact
+                        .execution_id
+                        .as_ref()
+                        .map_or_else(String::new, |value| value.as_str().to_owned()),
+                    text: String::new(),
+                    activity: Some(activity.activity.clone()),
+                });
+            } else if let Some(event) = project_fact(fact)? {
+                events.push(event);
+            }
+        }
         Ok(HostEventPage {
             events,
             scanned_through_position: through,
@@ -706,6 +774,7 @@ fn project_timeline(
                         user_text: String::new(),
                         completion_text: None,
                         content_truncated: false,
+                        activities: Vec::new(),
                     });
                 } else {
                     let item = timeline_item(&mut items, turn_id)?;
@@ -964,11 +1033,48 @@ fn validate_installed(
         || limits.max_command_bytes == 0
         || limits.event_batch_size == 0
         || limits.event_poll_interval_ms == 0
+        || installed.public_activity_catalogue.is_some() != limits.activity.is_some()
     {
-        Err(LiveHostError::InvalidRequest)
-    } else {
-        Ok(())
+        return Err(LiveHostError::InvalidRequest);
     }
+    if let (Some(catalogue), Some(activity)) =
+        (&installed.public_activity_catalogue, limits.activity)
+    {
+        let keys = catalogue
+            .descriptors
+            .iter()
+            .map(|item| (item.tool_name.as_str(), item.tool_revision.as_str()))
+            .collect::<Vec<_>>();
+        let valid_label = |value: &str| {
+            !value.is_empty()
+                && value.len() <= activity.max_label_bytes
+                && !value.starts_with('.')
+                && !value.ends_with('.')
+                && !value.contains("..")
+                && value.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'.' | b'_')
+                })
+        };
+        if catalogue.schema_version != 1
+            || catalogue.catalogue_revision.is_empty()
+            || keys.windows(2).any(|pair| pair[0] >= pair[1])
+            || catalogue.descriptors.iter().any(|item| {
+                item.tool_name.is_empty()
+                    || item.tool_revision.is_empty()
+                    || !valid_label(&item.label_key)
+            })
+            || activity.max_activities_per_turn == 0
+            || activity.max_activity_facts == 0
+            || activity.max_label_bytes == 0
+            || activity.max_activity_id_bytes == 0
+            || activity.max_encoded_bytes_per_turn == 0
+        {
+            return Err(LiveHostError::InvalidRequest);
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_key(value: &str) -> Result<(), LiveHostError> {
