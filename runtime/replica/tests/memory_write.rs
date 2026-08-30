@@ -13,11 +13,12 @@ use garive_memory::{
 };
 use garive_runtime::{
     authorize_memory_query, authorize_memory_write, plan_classified_memory_write,
-    plan_memory_tombstone, plan_memory_write, reconstruct_memory_state, verify_memory_evidence,
-    MemoryAccessGrant, MemoryControlAction, MemoryControlGrant, MemoryControlRuntimeError,
-    MemoryPrefix, MemoryRepositoryCommitError, MemoryRepositoryError, MemoryTombstoneContext,
-    MemoryTombstoneReason, MemoryWriteContext, MemoryWriteDecision, MemoryWriteRejection,
-    RuntimeCommandError, SqliteLedger, SqliteLedgerError,
+    plan_memory_tombstone, plan_memory_write, reconstruct_memory_repository_projection,
+    reconstruct_memory_state, verify_memory_evidence, MemoryAccessGrant, MemoryControlAction,
+    MemoryControlGrant, MemoryControlRuntimeError, MemoryPrefix, MemoryRepositoryCommitError,
+    MemoryRepositoryError, MemoryTombstoneContext, MemoryTombstoneReason, MemoryWriteContext,
+    MemoryWriteDecision, MemoryWriteRejection, RuntimeCommandError, SqliteLedger,
+    SqliteLedgerError,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -364,6 +365,29 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         Some("revision-2")
     );
     assert_eq!(projection.documents[0].content(), "light mode\n");
+    let rebuilt = reconstruct_memory_repository_projection(
+        &ledger,
+        &[MemoryPrefix {
+            session_id: session.clone(),
+            through_position: 10,
+        }],
+        "namespace",
+        MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rebuilt, projection);
+    assert_eq!(
+        reconstruct_memory_repository_projection(
+            &ledger,
+            &[MemoryPrefix {
+                session_id: session.clone(),
+                through_position: 8,
+            }],
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+        ),
+        Err(MemoryErrorCode::CorruptMemoryState),
+    );
 
     let mismatched = MemoryRevisionClassification::new(
         MemoryKind::Preference,
