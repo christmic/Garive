@@ -39,8 +39,8 @@ pub use governed_effect::SqliteGovernedEffectPort;
 pub use governed_effect_types::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
     ExecutorDispatchError, ExecutorFuture, ExecutorPort, F0GovernanceContext, GovernedEffectConfig,
-    GovernedRuntimePortError, PreparedExecution, SafetyFuture, SafetyPort, SandboxAdmission,
-    SandboxAdmissionPort, SandboxAdmissionRequest,
+    GovernedRuntimePortError, PreparedExecution, SafetyEvaluation, SafetyFuture, SafetyInteraction,
+    SafetyPort, SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest,
 };
 pub use knowledge_connector::{
     KnowledgeAccessGrant, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,

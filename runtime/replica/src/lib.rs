@@ -66,10 +66,10 @@ pub use core_bridge::{
     PlannedMemoryWrite, PlannedSkillActivation, PreparedAgentCapabilities, PreparedExecution,
     PreparedKnowledgeCapability, PreparedKnowledgeRequest, PreparedModelRequest,
     RecordedMemoryDecision, RecordedMemoryErasure, RecordedMemoryRecall, RecoveredMemoryRepository,
-    RuntimeModelUncertainReason, SafetyFuture, SafetyPort, SandboxAdmission, SandboxAdmissionPort,
-    SandboxAdmissionRequest, ScheduleCancelReason, ScheduleDispatchDisposition,
-    ScheduleLifecycleContext, SkillActivationContext, SqliteGovernedEffectPort,
-    TerminalPublicationError, TerminalPublisher,
+    RuntimeModelUncertainReason, SafetyEvaluation, SafetyFuture, SafetyInteraction, SafetyPort,
+    SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, ScheduleCancelReason,
+    ScheduleDispatchDisposition, ScheduleLifecycleContext, SkillActivationContext,
+    SqliteGovernedEffectPort, TerminalPublicationError, TerminalPublisher,
 };
 pub use delegation_runtime::{
     plan_delegation_authorization, plan_delegation_child_cancellation, plan_delegation_child_start,

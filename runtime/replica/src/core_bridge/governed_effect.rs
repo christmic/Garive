@@ -16,13 +16,18 @@ use garive_tools::{
 };
 use serde_json::{json, Map, Value};
 
-use crate::SqliteLedger;
+use crate::{
+    plan_f0_safety_decision, plan_f0_sandbox_admission, F0EffectAdmissionContext,
+    F0SafetyDecisionContext, SafetyDisposition, SafetyRequestV1, SqliteLedger,
+};
 
 use super::encoding::digest;
 use super::execution::CommitCoordinator;
 use super::governed_effect_types::{
     receipt, AuthorityDecision, AuthorityPort, AuthorityRequest, ExecutorDispatch,
-    ExecutorDispatchError, ExecutorPort, GovernedEffectConfig, GovernedRuntimePortError,
+    ExecutorDispatchError, ExecutorPort, F0GovernanceContext, GovernedEffectConfig,
+    GovernedRuntimePortError, PreparedExecution, SafetyPort, SandboxAdmissionPort,
+    SandboxAdmissionRequest,
 };
 
 /// SQLite-backed C6 effect composer with frozen authority and executor ports.
@@ -31,6 +36,9 @@ pub struct SqliteGovernedEffectPort<'a> {
     authority: &'a mut dyn AuthorityPort,
     executor: &'a mut dyn ExecutorPort,
     config: GovernedEffectConfig,
+    f0_context: Option<F0GovernanceContext>,
+    safety: Option<&'a mut dyn SafetyPort>,
+    sandbox: Option<&'a mut dyn SandboxAdmissionPort>,
     next_ordinal: u64,
 }
 
@@ -66,6 +74,9 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             authority,
             executor,
             config,
+            f0_context: None,
+            safety: None,
+            sandbox: None,
             next_ordinal: 0,
         })
     }
@@ -96,8 +107,31 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             authority,
             executor,
             config,
+            f0_context: None,
+            safety: None,
+            sandbox: None,
             next_ordinal: 0,
         })
+    }
+
+    /// Attaches the mandatory F0 policy and Sandbox brokers for Prepared-v3.
+    pub fn with_f0_governance(
+        mut self,
+        safety: &'a mut dyn SafetyPort,
+        sandbox: &'a mut dyn SandboxAdmissionPort,
+        context: F0GovernanceContext,
+    ) -> Result<Self, GovernedRuntimePortError> {
+        if context.actor_authority_reference.is_empty()
+            || context.effective_policy_revision.is_empty()
+            || context.goal_reference.as_deref() == Some("")
+            || context.plan_reference.as_deref() == Some("")
+        {
+            return Err(GovernedRuntimePortError::InvalidBinding);
+        }
+        self.f0_context = Some(context);
+        self.safety = Some(safety);
+        self.sandbox = Some(sandbox);
+        Ok(self)
     }
 
     /// Returns the latest committed Session version owned by this port.
@@ -167,8 +201,10 @@ impl<'a> SqliteGovernedEffectPort<'a> {
     ) -> Result<CommittedGovernedResult, GovernedRuntimePortError> {
         ModelRequestId::try_from(source_model_request_id)
             .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        if prepared.contract_version() == 3 {
+            return self.invoke_f0(prepared).await;
+        }
         let invocation_id = self.allocate_tool_id()?;
-        let ledger_id = ledger_tool_id(&invocation_id)?;
         let prepared_fact = self.fact_for_tool(
             &invocation_id,
             "effect.prepared",
@@ -198,7 +234,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
         let action = reducer.apply_authorization(verdict);
         match action {
             GovernedAction::Dispatch(grant) => {
-                self.dispatch(invocation_id, ledger_id, prepared, reducer, grant)
+                self.dispatch(invocation_id, prepared, reducer, grant, None)
                     .await
             }
             GovernedAction::Observation(observation) => {
@@ -225,6 +261,164 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             }),
             GovernedAction::Authorize | GovernedAction::None => {
                 Err(GovernedRuntimePortError::InvalidBinding)
+            }
+        }
+    }
+
+    async fn invoke_f0(
+        &mut self,
+        prepared: &PreparedToolCall,
+    ) -> Result<CommittedGovernedResult, GovernedRuntimePortError> {
+        let invocation_id = self.allocate_tool_id()?;
+        let context = self
+            .f0_context
+            .clone()
+            .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+        let request = SafetyRequestV1::new(
+            self.child_id(&invocation_id, "safety-request"),
+            invocation_id.clone(),
+            prepared,
+            context.actor_authority_reference,
+            context.goal_reference,
+            context.plan_reference,
+            context.effective_policy_revision,
+        )
+        .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        let evaluation = self
+            .safety
+            .as_deref_mut()
+            .ok_or(GovernedRuntimePortError::InvalidBinding)?
+            .decide(&request)
+            .await?;
+        let decision_facts = plan_f0_safety_decision(
+            &F0SafetyDecisionContext {
+                turn_id: self.config.turn_id.clone(),
+                execution_id: self.config.execution_id.clone(),
+                recorded_at: self.config.recorded_at.clone(),
+            },
+            &request,
+            prepared,
+            &evaluation.decision,
+        )
+        .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+        self.commit(decision_facts)?;
+        let (mut reducer, _) = GovernedEffect::new(invocation_id.clone(), prepared.clone());
+        match evaluation.decision.disposition() {
+            SafetyDisposition::Deny => {
+                if evaluation.granted_requirements.is_some() || evaluation.interaction.is_some() {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                let action = reducer.apply_authorization(AuthorizationVerdict::Deny {
+                    code: "safety_denied".into(),
+                    details: None,
+                });
+                let denied = self.fact_for_tool(
+                    &invocation_id,
+                    "effect.denied",
+                    json!({"prepared_digest":prepared.input_digest(),"code":"safety_denied"}),
+                )?;
+                self.commit(vec![denied])?;
+                let GovernedAction::Observation(observation) = action else {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                };
+                self.commit_observation(&invocation_id, &observation)?;
+                Ok(CommittedGovernedResult {
+                    result: GovernedToolResult::Observation(ToolFeedback::Governed(observation)),
+                    through_position: self.current_position()?,
+                    suspension_binding: None,
+                })
+            }
+            SafetyDisposition::InteractionRequired => {
+                let interaction = evaluation
+                    .interaction
+                    .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+                if evaluation.granted_requirements.is_some() {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                let (verdict, fact) = self.authority_fact(
+                    &invocation_id,
+                    prepared,
+                    AuthorityDecision::InteractionRequired {
+                        kind: interaction.kind,
+                        prompt: interaction.prompt,
+                        response_schema: interaction.response_schema,
+                        expiry_code: interaction.expiry_code,
+                    },
+                )?;
+                let action = reducer.apply_authorization(verdict);
+                let position = self.commit(vec![fact])?;
+                let GovernedAction::Suspend(requirement) = action else {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                };
+                let binding =
+                    interaction_binding(&requirement, self.child_id(&invocation_id, "suspension"))?;
+                Ok(CommittedGovernedResult {
+                    result: GovernedToolResult::Suspend(requirement),
+                    through_position: position,
+                    suspension_binding: Some(binding),
+                })
+            }
+            SafetyDisposition::Allow => {
+                if evaluation.interaction.is_some() {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                let requirements = evaluation
+                    .granted_requirements
+                    .ok_or(GovernedRuntimePortError::InvalidBinding)?;
+                let grant = InvocationGrant::new(
+                    GrantId::new(self.child_id(&invocation_id, "grant"))
+                        .map_err(|_| GovernedRuntimePortError::InvalidBinding)?,
+                    invocation_id.clone(),
+                    prepared.input_digest(),
+                    prepared.tool_name(),
+                    prepared.tool_revision(),
+                    requirements,
+                    evaluation
+                        .decision
+                        .constraints_digest()
+                        .ok_or(GovernedRuntimePortError::InvalidBinding)?,
+                    evaluation.decision.policy_revision(),
+                )
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+                let admission = self
+                    .sandbox
+                    .as_deref_mut()
+                    .ok_or(GovernedRuntimePortError::InvalidBinding)?
+                    .admit(SandboxAdmissionRequest {
+                        safety_request: &request,
+                        decision: &evaluation.decision,
+                        grant: &grant,
+                    })?;
+                let planned = plan_f0_sandbox_admission(
+                    &F0EffectAdmissionContext {
+                        turn_id: self.config.turn_id.clone(),
+                        execution_id: self.config.execution_id.clone(),
+                        preflight_id: admission.preflight_id,
+                        effective_limits_digest: admission.effective_limits_digest,
+                        recorded_at: self.config.recorded_at.clone(),
+                    },
+                    &request,
+                    prepared,
+                    &grant,
+                    &evaluation.decision,
+                    &admission.binding,
+                    &admission.dispatch_attempt_id,
+                )
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
+                self.commit(planned.facts)?;
+                let action =
+                    reducer.apply_authorization(AuthorizationVerdict::Approve(grant.clone()));
+                if !matches!(action, GovernedAction::Dispatch(_)) {
+                    return Err(GovernedRuntimePortError::InvalidBinding);
+                }
+                self.dispatch(
+                    invocation_id,
+                    prepared,
+                    reducer,
+                    grant,
+                    Some(planned.execution),
+                )
+                .await
             }
         }
     }
@@ -339,12 +533,15 @@ impl<'a> SqliteGovernedEffectPort<'a> {
     async fn dispatch(
         &mut self,
         invocation_id: ToolInvocationId,
-        _ledger_id: LedgerToolId,
         prepared: &PreparedToolCall,
         mut reducer: GovernedEffect,
         grant: InvocationGrant,
+        admitted_execution: Option<PreparedExecution>,
     ) -> Result<CommittedGovernedResult, GovernedRuntimePortError> {
-        let execution = match self.executor.prepare(&invocation_id, prepared, &grant) {
+        let prepared_execution = admitted_execution
+            .map(Ok)
+            .unwrap_or_else(|| self.executor.prepare(&invocation_id, prepared, &grant));
+        let execution = match prepared_execution {
             Ok(value) => value,
             Err(requirement) => {
                 let failure = reducer.apply_execution(ExecutionFact::Unsupported {

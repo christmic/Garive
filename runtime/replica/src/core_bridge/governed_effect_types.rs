@@ -89,7 +89,29 @@ pub trait AuthorityPort: Send {
 
 /// Asynchronous F0 Safety policy result for one exact request.
 pub type SafetyFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<SafetyDecisionV1, GovernedRuntimePortError>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<SafetyEvaluation, GovernedRuntimePortError>> + Send + 'a>>;
+
+/// Optional typed interaction required by an F0 Safety decision.
+pub struct SafetyInteraction {
+    /// Existing governed interaction family.
+    pub kind: InteractionKind,
+    /// Redacted structured prompt.
+    pub prompt: Value,
+    /// Portable response schema.
+    pub response_schema: Value,
+    /// Stable expiry policy code.
+    pub expiry_code: String,
+}
+
+/// Complete Safety result; only Allow carries grant requirements.
+pub struct SafetyEvaluation {
+    /// Exact immutable decision.
+    pub decision: SafetyDecisionV1,
+    /// Equal-or-narrower C5 requirements for Allow only.
+    pub granted_requirements: Option<ExecutionRequirements>,
+    /// Typed suspension content for InteractionRequired only.
+    pub interaction: Option<SafetyInteraction>,
+}
 
 /// Runtime policy boundary that cannot allocate a C5 grant or select an executor.
 pub trait SafetyPort: Send {
