@@ -205,6 +205,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     assert!(first.contains("answer"));
     assert!(first.contains("production"));
     assert!(first.contains("runtime"));
+    assert!(first.as_bytes().contains(&b'\x07'));
     assert!(!first.contains("unavailable"));
 
     let sessions = SqliteLedger::open(&database)
@@ -316,6 +317,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
         "#
     };
     Command::new("expect")
+        .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", log)

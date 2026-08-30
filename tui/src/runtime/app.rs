@@ -153,6 +153,9 @@ async fn run_screen_reader(
     let mut last_overlay = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
     loop {
+        if std::mem::take(&mut state.bell_requested) {
+            write_linear_bell()?;
+        }
         emit_linear_changes(&state, &mut emitted, &mut last_status, &mut last_overlay)?;
         if state.model.quit_requested {
             break;
@@ -318,6 +321,14 @@ fn write_linear(value: &str) -> Result<(), TuiError> {
         .map_err(|_| TuiError::TerminalIo)
 }
 
+fn write_linear_bell() -> Result<(), TuiError> {
+    let mut stderr = io::stderr().lock();
+    stderr
+        .write_all(b"\x07")
+        .and_then(|_| stderr.flush())
+        .map_err(|_| TuiError::TerminalIo)
+}
+
 fn linear_safe(value: &str) -> String {
     value
         .chars()
@@ -375,6 +386,7 @@ pub(super) struct RuntimeState {
     pub(super) last_empty_ctrl_c: Option<Instant>,
     pub(super) retry_after_refresh: Option<String>,
     render_cache: view::RenderCache,
+    bell_requested: bool,
 }
 
 struct BackgroundFollow {
@@ -445,6 +457,7 @@ impl RuntimeState {
             last_empty_ctrl_c: None,
             retry_after_refresh: None,
             render_cache: view::RenderCache::default(),
+            bell_requested: false,
         }
     }
 
@@ -761,6 +774,13 @@ fn draw(
     terminal: &mut Terminal<CrosstermBackend<io::Stderr>>,
     state: &mut RuntimeState,
 ) -> Result<(), TuiError> {
+    if std::mem::take(&mut state.bell_requested) {
+        terminal
+            .backend_mut()
+            .write_all(b"\x07")
+            .and_then(|_| terminal.backend_mut().flush())
+            .map_err(|_| TuiError::TerminalIo)?;
+    }
     if std::mem::take(&mut state.force_redraw) {
         terminal.clear().map_err(|_| TuiError::TerminalIo)?;
     }
@@ -1222,6 +1242,7 @@ fn apply_background_event(event: HostEvent, state: &mut RuntimeState) {
         } else {
             "A background Session reached a terminal state.".into()
         });
+        state.bell_requested = state.preferences.bell;
     }
 }
 
