@@ -1,11 +1,9 @@
 use garive_host_client::{
     CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient, LiveOutputEvent,
-    SessionView, TurnCommandResponse, TurnTimelineItem,
+    TurnCommandResponse,
 };
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
-
-use crate::host::PAGE_LIMIT;
 
 #[path = "host_debug.rs"]
 mod host_debug;
@@ -25,13 +23,6 @@ pub(crate) enum ContinuationInput {
 }
 
 pub(crate) enum HostMessage {
-    SnapshotLoaded {
-        request_id: u64,
-        session_id: String,
-        view: SessionView,
-        items: Vec<TurnTimelineItem>,
-        follow_position: u64,
-    },
     SessionCreated {
         command_id: String,
         response: CreateSessionResponse,
@@ -68,47 +59,7 @@ pub(crate) enum HostMessage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HostOperation {
-    Snapshot { request_id: u64 },
     Mutation { command_id: String },
-}
-
-pub(crate) fn load_snapshot(
-    client: LiveHostClient,
-    request_id: u64,
-    session_id: String,
-    sender: mpsc::Sender<HostMessage>,
-) {
-    tokio::spawn(async move {
-        let result = async {
-            let view = client.get_session(&session_id).await?;
-            let mut after = 0;
-            let mut items = Vec::new();
-            let follow_position = loop {
-                let page = client.get_timeline(&session_id, after, PAGE_LIMIT).await?;
-                after = page.scanned_through_position;
-                items.extend(page.items);
-                if !page.has_more {
-                    break page.observed_max_position;
-                }
-            };
-            Ok::<_, garive_host_client::HostClientError>((view, items, follow_position))
-        }
-        .await;
-        let message = match result {
-            Ok((view, items, follow_position)) => HostMessage::SnapshotLoaded {
-                request_id,
-                session_id,
-                view,
-                items,
-                follow_position,
-            },
-            Err(error) => HostMessage::Failed {
-                operation: HostOperation::Snapshot { request_id },
-                error,
-            },
-        };
-        let _ = sender.send(message).await;
-    });
 }
 
 pub(crate) fn cancel_turn(

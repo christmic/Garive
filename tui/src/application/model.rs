@@ -6,7 +6,8 @@ use crate::input::{
 };
 
 use super::{
-    EffectContext, EffectTracker, InspectorState, LiveAnswerProjection, SessionPageOwner, TurnBlock,
+    EffectContext, EffectTracker, InspectorState, LiveAnswerProjection, SessionPageOwner,
+    SnapshotOwner, SnapshotRead, TurnBlock,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -198,6 +199,10 @@ pub(crate) struct AppModel {
     pub(crate) sessions_next_before: Option<String>,
     pub(crate) sessions_loading: bool,
     pub(crate) session_page_owner: Option<SessionPageOwner>,
+    pub(crate) snapshot_owner: Option<SnapshotOwner>,
+    pub(crate) snapshot_handoff: Option<SnapshotRead>,
+    pub(crate) snapshot_failure: Option<super::HostReadFailure>,
+    pub(crate) snapshot_completion_revision: u64,
     pub(crate) catalog_refresh_revision: u64,
     pub(crate) catalog_refresh_succeeded: bool,
     pub(crate) session_filter: String,

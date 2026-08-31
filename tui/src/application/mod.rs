@@ -20,7 +20,7 @@ pub(crate) use effect::{
 pub(crate) use effect::{
     AppEffectOutcome, EffectFailure, HostReadFailure, HostReadResponse, PendingMutationDraft,
     PendingMutationKind, PersistedPendingIdentity, PersistenceFailure, SessionPageOwner,
-    SessionPagePurpose, SessionPageRequest, SnapshotRead, SnapshotRequest,
+    SessionPagePurpose, SessionPageRequest, SnapshotOwner, SnapshotRead, SnapshotRequest,
 };
 pub(crate) use inspector::{
     InspectorActivation, InspectorEntry, InspectorState, InspectorTone, InspectorVariant,
