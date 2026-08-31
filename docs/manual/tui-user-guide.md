@@ -322,8 +322,13 @@ updates are waiting; monochrome mode uses a solid thumb so color is never the
 only cue. With mouse capture enabled, press or hold the left button and drag on
 the rail. Its first row jumps to the oldest loaded cell, its last row returns to
 latest-follow, and an intermediate row anchors the nearest loaded cell. The
-rail disappears when there is no overflow, the terminal is too small, an
-overlay owns input, or screen-reader mode is active. It never changes message
+same track also supports inspection without navigation: moving the pointer over
+a rail cell opens a compact `Cell N · You|Garive|Status` card immediately to
+its left with at most two sanitized excerpt lines. Moving off the exact track
+closes the card; hovering never scrolls, changes follow mode, selects content,
+or persists state. The rail and preview disappear when there is no overflow,
+the terminal is too small, an overlay owns input, terminal focus is lost, the
+window is resized, or screen-reader mode is active. They never change message
 wrapping. Keyboard-only users retain `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, and
 `PageUp`/`PageDown`.
 

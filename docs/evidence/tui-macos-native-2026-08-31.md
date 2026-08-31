@@ -520,7 +520,7 @@ successful/failing terminal handoff. The 44 library, 6 command, 51 view, 33
 snapshot/boundary, architecture, formatting, diff, and strict Clippy gates also
 pass.
 
-## Conversation position rail candidate
+## Conversation position rail and preview
 
 The source-backed contract is frozen by `cd17b5f4` and the componentized
 implementation is merged locally at `1b93b115`. `view/position_rail.rs` owns
@@ -545,6 +545,26 @@ mouse capture and alternate-screen restoration. A final repeated run exposed
 an `EAGAIN` race in the test-only nonblocking HTTP listener, not the product;
 accepted sockets now explicitly use blocking reads, and two consecutive
 focused PTY runs passed afterward.
+
+The hover-preview contract is frozen by `61e2dbef` from the pinned Grok
+timeline renderer and mouse-routing sources; implementation `16bee8a7` is
+merged locally on top of `5f76a8ca`. The existing `view/position_rail.rs`
+component now owns hover emphasis and the bounded two-line card as well as the
+shared render/hit metric. Its transient model contains only stable-cell index
+and screen row. Public role, ordinal, and sanitized excerpt are projected at
+render time; no opaque identity or hover state is persisted.
+
+On native macOS arm64, the final tree passes 47 library, 54 view, 35
+snapshot/boundary, and the focused reducer lifecycle test. The definitive
+19-case shipping-binary PTY suite passes serially with 0 failures or ignored
+cases in 147.45 seconds. The rail case observes `Cell 22 · Garive` without
+moving the `#40` viewport, moves off-track and proves the exact rail cell is
+repainted, then proves `#40 -> #1 -> #22 -> #40`, SGR mouse-mode restoration,
+and alternate-screen restoration. The run caught and closed two false redraw
+assumptions: hover must not request a hard terminal clear/cursor query, and an
+unchanged per-frame size report must not be treated as a resize. Architecture,
+strict all-target/all-feature Clippy, formatting, and diff checks pass after the
+final rebase.
 
 These reviewed semantic buffers and real ANSI PTY transcripts still do not
 satisfy physical Apple Terminal or iTerm2-class PNG admission. That gallery

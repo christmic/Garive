@@ -534,14 +534,24 @@ background component. Dark, light, monochrome, compact, first/last,
 intermediate, detached, newer-update, non-overflow, tiny, and modal cases are
 bound by unit, semantic-buffer, and snapshot tests.
 
+Revision `61e2dbef` freezes the source-backed hover contract and local merge
+`16bee8a7` implements it inside the same component. Pointer motion resolves the
+same stable-cell metric as press and drag, then renders a bounded public-role,
+ordinal, and sanitized-excerpt card without changing viewport or persistence
+state. Moving off-track clears it. Overlay ownership, actual resize, focus loss,
+Session/timeline replacement, and quit clear or suppress the transient model;
+an unchanged per-frame size report must preserve it until painting.
+
 On native macOS arm64, 47 library, 54 view, and 35 snapshot/boundary tests pass,
 as do architecture, strict all-target/all-feature Clippy, formatting, and diff
-checks. The complete 19-case shipping PTY suite passes in 146.47 seconds. Its
-position-rail case loads 40 public cells and drives the shipping binary through
-`#40 -> #1 -> #22 -> #40` using exact SGR press/drag coordinates, then proves
-mouse and alternate-screen restoration. The focused PTY passes again after
-rebasing onto the then-current mainline. This closes executable component and
-macOS PTY evidence, not the physical-window screenshot gate.
+checks. The current complete 19-case shipping PTY suite passes serially in
+147.45 seconds. Its position-rail case loads 40 public cells, first observes the
+non-mutating `Cell 22 · Garive` preview and off-track removal, then drives the
+shipping binary through `#40 -> #1 -> #22 -> #40` using exact SGR press/drag
+coordinates and proves mouse and alternate-screen restoration. The focused PTY,
+reducer lifecycle contract, and strict Clippy pass again after rebasing onto the
+then-current mainline. This closes executable component and macOS PTY evidence,
+not the physical-window screenshot gate.
 
 ## Completion rule
 

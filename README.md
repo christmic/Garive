@@ -24,6 +24,10 @@ only.
 - CLI, TUI and Web consume live H1; Tauri Desktop embeds R1; Android and iOS
   consume the shared live KMP H1 client. Android SDK 36 APK assembly and API 36
   Compose instrumentation are verified alongside KMP and Swift native gates.
+- The componentized TUI includes responsive dark/light/monochrome presentation,
+  a shared render/hit conversation-position rail with bounded hover previews,
+  typed keyboard discovery, terminal-safe external draft editing, and a linear
+  screen-reader mode. See the [TUI user guide](docs/manual/tui-user-guide.md).
 
 ## Repository map
 
