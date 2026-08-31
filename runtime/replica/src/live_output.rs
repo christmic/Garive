@@ -14,6 +14,9 @@ use uuid::Uuid;
 /// Exact protocol version emitted by the H4 live-output boundary.
 pub const LIVE_OUTPUT_API_VERSION: &str = "v1";
 
+const MAX_PREVIEW_TEXT_BYTES: usize = 1_024 * 1_024;
+const MAX_DELTA_TEXT_BYTES: usize = 32 * 1_024;
+
 /// Explicit in-memory publication bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LiveOutputLimits {
@@ -173,7 +176,9 @@ impl LiveOutputHub {
     pub fn new(limits: LiveOutputLimits) -> Result<Self, LiveOutputError> {
         if limits.max_active_executions == 0
             || limits.max_preview_bytes == 0
+            || limits.max_preview_bytes > MAX_PREVIEW_TEXT_BYTES
             || limits.max_event_bytes < 4
+            || limits.max_event_bytes > MAX_DELTA_TEXT_BYTES
             || limits.broadcast_capacity == 0
             || limits.max_subscribers_per_session == 0
         {

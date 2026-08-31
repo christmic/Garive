@@ -25,6 +25,24 @@ fn event(kind: AgentEventKind) -> AgentEvent {
 }
 
 #[test]
+fn limits_above_h4_wire_contract_are_rejected() {
+    assert!(matches!(
+        LiveOutputHub::new(LiveOutputLimits {
+            max_preview_bytes: 1_024 * 1_024 + 1,
+            ..limits()
+        }),
+        Err(garive_runtime::LiveOutputError::InvalidLimits)
+    ));
+    assert!(matches!(
+        LiveOutputHub::new(LiveOutputLimits {
+            max_event_bytes: 32 * 1_024 + 1,
+            ..limits()
+        }),
+        Err(garive_runtime::LiveOutputError::InvalidLimits)
+    ));
+}
+
+#[test]
 fn publishes_only_safe_public_progress_in_exact_order() {
     let hub = LiveOutputHub::new(limits()).unwrap();
     let mut subscriber = hub.subscribe("session-live").unwrap();

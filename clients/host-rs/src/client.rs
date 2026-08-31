@@ -24,6 +24,12 @@ const KNOWN_HOST_ERRORS: [&str; 8] = [
     "read_bound_exceeded",
 ];
 
+const LIVE_MAX_PREVIEW_TEXT_BYTES: usize = 1_024 * 1_024;
+const LIVE_MAX_DELTA_TEXT_BYTES: usize = 32 * 1_024;
+// JSON can escape one admitted UTF-8 byte as six ASCII bytes. The fixed
+// envelope allowance covers bounded identities, UUID, counters, and keys.
+const LIVE_MAX_ENCODED_EVENT_BYTES: usize = LIVE_MAX_PREVIEW_TEXT_BYTES * 6 + 2_048;
+
 /// Explicit loopback implementation of the A1 Host client boundary.
 #[derive(Clone)]
 pub struct LiveHostClient {
@@ -369,7 +375,7 @@ impl LiveHostClient {
         session_id: &str,
         sink: tokio::sync::mpsc::Sender<LiveOutputEvent>,
     ) -> Result<(), HostClientError> {
-        if session_id.is_empty() {
+        if !valid_live_identity(session_id) {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
         timeout(
@@ -419,7 +425,7 @@ impl LiveHostClient {
             let chunk =
                 chunk.map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
             pending.extend_from_slice(&chunk);
-            if pending.len() > self.limits.max_event_bytes.saturating_mul(2) {
+            if pending.len() > LIVE_MAX_ENCODED_EVENT_BYTES.saturating_mul(2) {
                 return Err(HostClientError::new(
                     HostClientErrorCode::EventLimitExceeded,
                 ));
@@ -432,7 +438,7 @@ impl LiveHostClient {
                     2
                 };
                 pending.drain(..separator);
-                let Some(data) = live_sse_data(&block, self.limits.max_event_bytes)? else {
+                let Some(data) = live_sse_data(&block, LIVE_MAX_ENCODED_EVENT_BYTES)? else {
                     continue;
                 };
                 count = count.saturating_add(1);
@@ -998,6 +1004,10 @@ fn decode_live_output(data: &[u8], session_id: &str) -> Result<LiveOutputEvent, 
             if wire.phase.is_none()
                 && wire.label_key.is_none()
                 && wire.reason.is_none()
+                && wire
+                    .text
+                    .as_ref()
+                    .is_some_and(|text| text.len() <= LIVE_MAX_PREVIEW_TEXT_BYTES)
                 && wire.through_sequence == Some(wire.sequence) =>
         {
             LiveOutputEventKind::Snapshot {
@@ -1006,8 +1016,9 @@ fn decode_live_output(data: &[u8], session_id: &str) -> Result<LiveOutputEvent, 
             }
         }
         "text_delta"
-            if wire.text.as_ref().is_some_and(|text| !text.is_empty())
-                && wire.phase.is_none()
+            if wire.text.as_ref().is_some_and(|text| {
+                !text.is_empty() && text.len() <= LIVE_MAX_DELTA_TEXT_BYTES
+            }) && wire.phase.is_none()
                 && wire.label_key.is_none()
                 && wire.through_sequence.is_none()
                 && wire.reason.is_none() =>
