@@ -32,7 +32,8 @@ not depend on the terminal default being light or dark.
 | `CenteredColumn` | caps readable main content at 114 cells without changing model state |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
 | `AnchoredMenu` | clears only its bounded area, attaches above its owner, preserves page context and owner cursor |
-| `PositionRail` | one-cell timeline track in existing padding; shared bounded thumb/pointer metrics; follow/detached variants |
+| `PositionRail` | one-cell timeline track in existing padding; shared bounded thumb/pointer/hover metrics; follow/detached variants |
+| `RailPreview` | transient two-line public-cell card anchored beside a hovered position; no layout mutation or opaque identity |
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
@@ -110,6 +111,15 @@ Mono uses distinct track/thumb glyphs and emphasis, never color alone. Thumb
 size is proportional to visible stable cells and is at least one row. The first
 and last positions are exact even when intermediate positions are approximate
 cell progress rather than fabricated full-transcript line metrics.
+
+With mouse capture active, pointer motion on the track may open a compact
+`RailPreview` immediately left of it. The card shows `Cell N · You|Garive|Status`
+and at most two sanitized, display-width-bounded excerpt lines. It uses normal
+popup surface and border tokens, is clamped wholly inside the conversation,
+never covers the track, and never reserves layout space. The hovered rail cell
+gains a shape or emphasis cue in monochrome as well as color themes. Moving off
+the exact rail, beginning a modal, focus loss, resize, or disabling mouse
+capture removes the card without animation.
 
 ## Layout and degradation
 

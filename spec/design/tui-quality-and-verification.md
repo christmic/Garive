@@ -38,7 +38,7 @@ Agent feature count. Evidence revisions and legal constraints are recorded in
 | Persistent convenience state | shell persistence separate from pager | core/app-server truth plus TUI state | bounded preferences/history/drafts/pending command |
 | Visual regression | snapshots and PTY harness | `insta` snapshots and frames | semantic buffer snapshots and PTY golden assertions |
 | Accessible fallback | minimal/fullscreen behavior | terminal capability-aware UI | monochrome, reduced motion, keyboard-only, screen-reader linear mode |
-| Long-conversation position | follow-aware scrollbar/timeline components | no dedicated rail transferred; see audit | shared cell-rail render/hit metric, theme snapshots, mouse PTY, no hidden-transcript layout |
+| Long-conversation position | follow-aware scrollbar/timeline components with bounded hover preview | no dedicated rail transferred; see audit | shared cell-rail render/hit/hover metric, bounded public preview, theme snapshots, mouse PTY, no hidden-transcript layout |
 
 Garive passes a row only when the required evidence is executable. Presence of
 a module, screenshot, fixture transport, or test-only fake does not pass it.
@@ -157,7 +157,9 @@ Each scenario launches `CARGO_BIN_EXE_garive-tui`, not a test-only entry point:
     semantic lines without cursor-addressing output.
 11. render an overflowing conversation rail in follow and detached states,
     press and drag its exact track through SGR mouse input, and prove oldest,
-    intermediate, and latest anchors without changing Markdown wrap width.
+    intermediate, and latest anchors without changing Markdown wrap width;
+    move over the middle track row first and prove its bounded public preview
+    without changing the current anchor, then move off-track and prove removal.
 
 Scenarios 1, 4, 9, and 10 run twice in the same verification job. Both runs
 must pass; a single selected success is not evidence.

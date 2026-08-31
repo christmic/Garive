@@ -496,6 +496,15 @@ cell. The rail uses existing right padding and therefore cannot change content
 wrapping. It is absent in tiny, non-overflow, modal-covered, and linear
 screen-reader presentation.
 
+`MouseEventKind::Moved` on the rail resolves through the same stable-cell
+mapping used by press and drag. It records only a transient cell index and
+renders a bounded public preview; it does not move the viewport. Movement off
+the track clears the preview, including movement into Composer, Session rail,
+or overlay padding. A left press on the preview is inert because the card is
+presentation, not a second target; press/drag remains owned only by the exact
+one-cell rail. Modal ownership, focus loss, resize, and terminal restore clear
+or suppress hover state before any background route can observe it.
+
 Reflow on resize preserves the top visible stable cell and its source-line
 offset where possible. Loading older pages preserves the current visible
 anchor. Render work is bounded to the visible window plus an overscan margin;

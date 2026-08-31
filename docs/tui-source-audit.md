@@ -251,6 +251,24 @@ padding, stays muted while following, becomes prominent while detached, and
 maps the first/last track row exactly to oldest/latest. It neither scans the
 complete rendered transcript nor changes Host pagination or viewport truth.
 
+Grok's newer per-turn navigator independently strengthens the pointer contract.
+`views/timeline.rs:1-191` computes one frame-owned rail used by painting and
+hit testing; `194-252` derives hover/active styling from that geometry; and
+`254-320` draws a bounded two-line floating preview beside the hovered tick.
+`app/mouse.rs:375-393,956-980` gives the rail precedence over background hits
+and clears ordinary transcript hover while the pointer owns it. Its `/jump`
+picker at `views/jump.rs:1-145` uses stable prompt identity, bounded ordinal and
+public preview rows, shared list geometry, and explicit dismiss semantics.
+
+Garive adopts the non-mutating hover-preview invariant, not Grok's per-Turn
+tick geometry or private entry types. Hovering the already admitted continuous
+position rail previews the exact public stable cell that a press would anchor.
+The preview is transient presentation only, contains a bounded public role,
+ordinal, and sanitized excerpt, and cannot change follow mode, selection,
+pagination, persistence, or Host truth. Leaving the rail clears it. A later
+searchable navigator requires a separately frozen public Turn projection; it
+must not parse or display opaque Turn IDs from `stable_key` strings.
+
 ## Codex findings
 
 ### Event and terminal ownership
