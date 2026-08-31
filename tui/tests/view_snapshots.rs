@@ -16,6 +16,7 @@ use application::{
 };
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect};
+use unicode_width::UnicodeWidthStr;
 
 #[test]
 fn responsive_product_frames_match_reviewed_snapshots() {
@@ -148,6 +149,58 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     insta::assert_snapshot!(
         "session_picker_scrolled_100x24",
         frame(&sessions, Theme::Mono, 100, 24)
+    );
+}
+
+#[test]
+fn responsive_column_boundaries_match_reviewed_snapshots() {
+    let model = product_model();
+    for width in [39, 40, 51, 52, 79, 80, 119, 120, 160] {
+        let rendered = frame(&model, Theme::Mono, width, 18);
+        assert_responsive_frame(&rendered, width, 18);
+        insta::assert_snapshot!(format!("responsive_boundary_{width}x18"), rendered);
+    }
+}
+
+fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
+    let lines = rendered.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), usize::from(height));
+    assert!(lines
+        .iter()
+        .all(|line| UnicodeWidthStr::width(*line) <= usize::from(width)));
+
+    for forbidden in ["Sessions", "session-alpha", "#42", "Position"] {
+        assert!(
+            !rendered.contains(forbidden),
+            "legacy rail detail {forbidden:?} leaked at {width} columns"
+        );
+    }
+    for required in [
+        "Session 1",
+        "Summarize the release plan.",
+        "Agent action · completed",
+        "cargo test passes.",
+        "Ask a follow-up…",
+    ] {
+        assert!(
+            rendered.contains(required),
+            "content {required:?} was clipped at {width} columns"
+        );
+    }
+
+    let composer = lines
+        .iter()
+        .find(|line| line.contains('╭'))
+        .expect("composer top border");
+    let content_width = if width >= 80 { width.min(96) } else { width };
+    let expected_x = width.saturating_sub(content_width) / 2;
+    assert_eq!(
+        composer.chars().take_while(|ch| *ch == ' ').count(),
+        usize::from(expected_x)
+    );
+    assert_eq!(
+        UnicodeWidthStr::width(*composer),
+        usize::from(expected_x + content_width)
     );
 }
 
