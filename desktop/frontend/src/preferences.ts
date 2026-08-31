@@ -3,14 +3,16 @@ export type DesktopDensity = "comfortable" | "compact";
 export type DesktopLocalePreference = "system" | "en" | "zh-Hans" | "en-XA";
 
 export interface DesktopPreferences {
-  readonly schema_version: 2;
+  readonly schema_version: 3;
   readonly theme: DesktopTheme;
   readonly density: DesktopDensity;
   readonly locale: DesktopLocalePreference;
+  readonly workspaceSplitPx: number;
 }
 
 export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
-  schema_version: 2, theme: "system", density: "comfortable", locale: "system",
+  schema_version: 3, theme: "system", density: "comfortable", locale: "system",
+  workspaceSplitPx: 352,
 };
 
 const STORAGE_KEY = "garive.desktop.preferences.v1";
@@ -26,13 +28,20 @@ export function readDesktopPreferences(
     const keys = Object.keys(value).sort().join(",");
     if (keys === "density,schema_version,theme" && value.schema_version === 1
         && matchesTheme(value.theme) && matchesDensity(value.density)) {
-      return { schema_version: 2, theme: value.theme, density: value.density, locale: "system" };
+      return { ...DEFAULT_DESKTOP_PREFERENCES, theme: value.theme, density: value.density };
     }
-    if (keys !== "density,locale,schema_version,theme" || value.schema_version !== 2
-        || !matchesTheme(value.theme) || !matchesDensity(value.density)
-        || !matchesLocale(value.locale)) return DEFAULT_DESKTOP_PREFERENCES;
-    return { schema_version: 2, theme: value.theme, density: value.density,
-      locale: value.locale };
+    if (keys === "density,locale,schema_version,theme" && value.schema_version === 2) {
+      if (!matchesTheme(value.theme) || !matchesDensity(value.density)
+          || !matchesLocale(value.locale)) return DEFAULT_DESKTOP_PREFERENCES;
+      return { ...DEFAULT_DESKTOP_PREFERENCES, theme: value.theme, density: value.density,
+        locale: value.locale };
+    }
+    if (keys !== "density,locale,schema_version,theme,workspaceSplitPx"
+        || value.schema_version !== 3 || !matchesTheme(value.theme)
+        || !matchesDensity(value.density) || !matchesLocale(value.locale)
+        || !isWorkspaceSplit(value.workspaceSplitPx)) return DEFAULT_DESKTOP_PREFERENCES;
+    return { schema_version: 3, theme: value.theme, density: value.density,
+      locale: value.locale, workspaceSplitPx: value.workspaceSplitPx };
   } catch { return DEFAULT_DESKTOP_PREFERENCES; }
 }
 
@@ -54,4 +63,13 @@ function matchesDensity(value: unknown): value is DesktopDensity {
 
 function matchesLocale(value: unknown): value is DesktopLocalePreference {
   return value === "system" || value === "en" || value === "zh-Hans" || value === "en-XA";
+}
+
+export function clampWorkspaceSplit(value: number): number {
+  return Math.min(520, Math.max(320, Math.round(value)));
+}
+
+function isWorkspaceSplit(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value)
+    && value === clampWorkspaceSplit(value);
 }

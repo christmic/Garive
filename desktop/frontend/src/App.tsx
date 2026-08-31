@@ -1,5 +1,5 @@
 import { Children, isValidElement, useCallback, useEffect, useMemo, useReducer, useRef, useState,
-  type ReactNode } from "react";
+  type CSSProperties, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
@@ -25,7 +25,7 @@ import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
 import {
-  readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
+  clampWorkspaceSplit, readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
@@ -560,6 +560,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     ? systemDark ? "dark" : "light" : preferences.theme;
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
     <div className={navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"}
+      style={{ "--conversation-split": `${preferences.workspaceSplitPx}px` } as CSSProperties}
       inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
       <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
@@ -664,7 +665,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               setPreferences={setPreferences} update={desktopUpdate} runUpdate={runUpdateAction}
               restartBlocked={state.phase === "submitting"} usage={visibleUsage} t={t} />}
       </main>
-      {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch} t={t} />}
+      {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch}
+        workspaceSplitPx={preferences.workspaceSplitPx} onWorkspaceSplitChange={(workspaceSplitPx) =>
+          setPreferences((current) => ({ ...current,
+            workspaceSplitPx: clampWorkspaceSplit(workspaceSplitPx) }))} t={t} />}
     </div>
     {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest} t={t}
       onCancel={() => { setPickerGrant(undefined);
@@ -941,10 +945,43 @@ export function TurnProgress({ activities, onOpen, t }: { activities: WorkState[
   </article>;
 }
 
-function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch; t: (key: MessageKey) => string }) {
+function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, t }: {
+  state: WorkState;
+  dispatch: WorkDispatch;
+  workspaceSplitPx: number;
+  onWorkspaceSplitChange: (value: number) => void;
+  t: (key: MessageKey) => string;
+}) {
   const mode = state.inspectorTab === "activity" ? "environment-panel" : "workspace-panel";
   const [workspaceTitle, setWorkspaceTitle] = useState<string>();
-  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}><header>{state.inspectorTab === "activity"
+  const resizeFromPointer = (clientX: number) => {
+    const shell = document.querySelector<HTMLElement>(".app-shell")?.getBoundingClientRect();
+    const sidebar = document.querySelector<HTMLElement>(".sidebar")?.getBoundingClientRect();
+    if (shell) onWorkspaceSplitChange(clientX - shell.left - (sidebar?.width ?? 0));
+  };
+  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}>
+    {mode === "workspace-panel" && <div className="workspace-resizer" role="separator"
+      aria-label={t("inspector.resizeWorkspace")} aria-orientation="vertical"
+      aria-valuemin={320} aria-valuemax={520} aria-valuenow={workspaceSplitPx} tabIndex={0}
+      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId);
+        resizeFromPointer(event.clientX); }}
+      onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId))
+        resizeFromPointer(event.clientX); }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        const move = (moveEvent: MouseEvent) => resizeFromPointer(moveEvent.clientX);
+        const stop = () => { window.removeEventListener("mousemove", move);
+          window.removeEventListener("mouseup", stop); };
+        window.addEventListener("mousemove", move); window.addEventListener("mouseup", stop);
+      }}
+      onDoubleClick={() => onWorkspaceSplitChange(352)}
+      onKeyDown={(event) => {
+        const next = event.key === "ArrowLeft" ? workspaceSplitPx - 16
+          : event.key === "ArrowRight" ? workspaceSplitPx + 16
+            : event.key === "Home" ? 320 : event.key === "End" ? 520 : undefined;
+        if (next !== undefined) { event.preventDefault(); onWorkspaceSplitChange(next); }
+      }} />}
+    <header>{state.inspectorTab === "activity"
     ? <strong className="environment-title">{t("inspector.environment")}</strong>
     : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button></div>}
     <button className="icon-button" type="button" aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
