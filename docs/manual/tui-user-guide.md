@@ -143,6 +143,7 @@ Garive does not invent or persist provider/model choices in the TUI.
 | `Ctrl+Z` / `Alt+Z` | Undo or portable redo. |
 | `Ctrl+U` / `Ctrl+K` | Kill the selection, or text to the logical line start/end, into a private one-entry buffer. |
 | `Ctrl+Y` | Yank the private killed text at the cursor or over the selection. |
+| `Ctrl+G` | Edit the current unfrozen draft in the configured external editor. |
 | `Alt+C` | Copy exactly the active composer selection through terminal OSC 52. |
 | `Ctrl+C` | Clear a selection, then a nonempty draft, then ask to quit on a second empty press. |
 
@@ -157,6 +158,17 @@ and is cleared before another Session's draft is loaded. At a logical line
 boundary, a kill may include the adjacent newline to join lines. `Alt+Z` is the
 portable redo binding because many terminals cannot distinguish
 `Ctrl+Shift+Z` from `Ctrl+Z`.
+
+External editing resolves `VISUAL` before `EDITOR`; set either variable to a
+command and optional quoted arguments, for example `VISUAL="code --wait"`.
+Garive does not invoke a shell and does not guess an editor when both variables
+are unset. While the child owns the terminal, the full-screen workspace is
+temporarily restored and a safe pause message is shown. Exit the editor to
+return. An exit status of zero replaces the draft as one undoable edit;
+non-zero exit, launch/read failure, invalid or oversized text, or a Session or
+draft change while the editor was open keeps the newer Garive draft. The
+private temporary Markdown file is removed after return. External editing is
+unavailable while the composer is frozen or another overlay owns input.
 
 Wrapped text deliberately has two kinds of line edge. `Home` and `End` follow
 the row visible on screen, while `Ctrl+A` and `Ctrl+E` follow explicit newline
@@ -280,6 +292,7 @@ condition is true.
 | `/copy last` | Request an OSC 52 copy of the last visible Agent completion. |
 | `/copy selection` | Request an OSC 52 copy of the active composer selection. |
 | `/copy session-id` | Request an OSC 52 copy of the selected Session ID. |
+| `/edit-prompt` | Edit the current unfrozen draft with `VISUAL` or `EDITOR`. |
 | `/help` | Open the keyboard guide. |
 | `/quit` | Open the quit confirmation. |
 
@@ -425,6 +438,11 @@ recovery guidance.
 **Mouse is unchanged after `/mouse`**: the command updates the preference for
 the next terminal session so the current terminal's capture lifecycle remains
 coherent.
+
+**`Set VISUAL or EDITOR before editing externally.`**: configure one editor
+command that waits until its document closes. GUI editors commonly need a
+wait option. Garive deliberately has no implicit `vi` fallback and never runs
+the value through a shell.
 
 ## Verification for maintainers
 

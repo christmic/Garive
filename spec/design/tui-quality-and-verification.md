@@ -509,6 +509,15 @@ deterministic child to prove stdin ownership, multiline edit, undo, failure
 preservation, complete raw/paste/focus/mouse/alternate/title restoration, and
 full redraw. ANSI transcripts do not satisfy the physical screenshot gate.
 
+The admitted local macOS candidate is implementation `bd837ada`, command
+exposure `770a3bc2`, integrated at `a587cda8`. It passes 44 library, 16 editor,
+6 command, 51 view, 33 snapshot/boundary, and all 18 shipping PTYs. The full
+package run passes its production Runtime/file-SQLite/PTTY case; architecture,
+strict all-target/all-feature Clippy, formatting, and diff gates also pass. The
+shipping child proves all three standard streams remain TTYs, success and undo,
+non-zero preservation, private-file cleanup, and complete terminal-mode/title/
+cursor-query reacquisition. Physical-window PNG admission remains separate.
+
 ## Completion rule
 
 The TUI is complete only when:

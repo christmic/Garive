@@ -481,3 +481,30 @@ in 41.65 seconds.
 
 As above, this is executable macOS PTY evidence rather than an admitted
 physical-window screenshot. The locked-login gallery gate remains open.
+
+## Safe external-draft candidate
+
+The external-editor implementation is `bd837ada`, the typed command exposure
+is `770a3bc2`, and the locally integrated candidate is `a587cda8`.
+`runtime/external_editor.rs` owns bounded editor resolution, private temporary
+file lifecycle, child execution, result validation, and freshness checks.
+`runtime/terminal_events.rs` owns one acknowledged pause/resume reader across
+both full-screen and linear presentation. This avoids relying on crossterm
+0.29's `EventStream` drop, whose worker is not joined, and clears ratatui's
+cursor query while the reader is still paused before input ownership resumes.
+
+On macOS arm64, the candidate passes 44 library, 16 editor, 6 command, 51 view,
+33 snapshot/boundary, and all 18 shipping-binary PTY tests. The complete
+`cargo test -p garive-tui` run also passes the production Runtime/file-SQLite/
+PTY case. Architecture, strict all-target/all-feature Clippy, formatting, and
+diff checks pass. The deterministic editor child proves stdin, stdout, and
+stderr are TTYs, writes a multiline result, permits one `Ctrl+Z` restoration,
+then exits 7 on a second invocation without changing the draft. The PTY also
+proves temporary-file removal and complete raw, bracketed-paste, focus, mouse,
+alternate-screen, title, and cursor-query restoration.
+
+The reviewed `100x24` Help snapshot retains every binding and all three safety
+notes after `Ctrl+G` is added by packing rows with actual Unicode display
+width. The wide palette snapshot exposes `/edit-prompt`. These semantic
+snapshots and ANSI PTY transcripts still do not satisfy physical Terminal or
+iTerm image admission; that gallery remains open behind the locked login UI.
