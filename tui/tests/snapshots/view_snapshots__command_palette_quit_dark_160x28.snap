@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&palette, Theme::Dark, 160, 28)"
 ---
-                                Session 1  ·  research-age                                                         Agent running
+                                Session 1  ·  Agent                                                                Agent running
 
                                   You      ╭ Command palette ───────────────────────────────────────────────────────╮
                                     Summa  │  Search  type to search                                                │

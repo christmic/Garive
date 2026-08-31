@@ -17,7 +17,7 @@ Session 1
  ● Waiting for durable command truth…
 
 theme=Dark width=100 border=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-  Session 1  ·  research-age
+  Session 1  ·  Agent
 
     ◆ Garive
       ## Release plan
@@ -45,7 +45,7 @@ Session 1
  ● Waiting for durable command truth…
 
 theme=Light width=100 border=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-  Session 1  ·  research-age
+  Session 1  ·  Agent
 
     ◆ Garive
       ## Release plan
@@ -73,7 +73,7 @@ Session 1
  ● Waiting for durable command truth…
 
 theme=Mono width=100 border=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
-  Session 1  ·  research-age
+  Session 1  ·  Agent
 
     ◆ Garive
       ## Release plan

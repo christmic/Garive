@@ -1,6 +1,6 @@
 use crate::application::{AppModel, Overlay};
 
-use super::{decision_sheet, presentation::HELP_NOTES, primitives::selection_window, short_id};
+use super::{agent_label, decision_sheet, presentation::HELP_NOTES, primitives::selection_window};
 use crate::input::help_hints;
 
 const LIST_CAPACITY: usize = 10;
@@ -66,7 +66,7 @@ fn session_picker(model: &AppModel) -> String {
                 model.session_selection,
                 format!(
                     "Session {ordinal}, {}, {}.",
-                    short_id(&session.definition_id),
+                    agent_label(),
                     session.latest_turn_state.as_deref().unwrap_or("new")
                 ),
             )

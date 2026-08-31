@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "inspector_frame(theme, 120)"
 ---
-Session 1  ·  research-age                                                Agent running ╭ Inspector · Activity ────────╮
+Session 1  ·  Agent                                                       Agent running ╭ Inspector · Activity ────────╮
                                                                                         │ › ✓ Agent action · completed │
   You                                                                                   │                              │
     Summarize the release plan.                                                         │                              │
