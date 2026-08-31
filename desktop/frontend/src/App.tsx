@@ -29,6 +29,7 @@ import {
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { shouldSubmitComposer } from "./composer";
+import { isNearConversationTail } from "./conversationTail";
 import { nextDesktopZoom } from "./zoom";
 import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
@@ -697,6 +698,39 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   approvalAction: React.RefObject<HTMLButtonElement | null>;
   t: (key: MessageKey) => string;
 }) {
+  const conversation = useRef<HTMLDivElement>(null);
+  const [followingTail, setFollowingTail] = useState(true);
+  const [newOutputBelow, setNewOutputBelow] = useState(false);
+  const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
+  const previousTailRevision = useRef(tailRevision);
+
+  useEffect(() => {
+    if (previousTailRevision.current === tailRevision) return;
+    previousTailRevision.current = tailRevision;
+    const element = conversation.current;
+    if (!element) return;
+    if (!followingTail) { setNewOutputBelow(true); return; }
+    requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+      setNewOutputBelow(false);
+    });
+  }, [followingTail, tailRevision]);
+
+  const readScrollPosition = () => {
+    const element = conversation.current;
+    if (!element) return;
+    const attached = isNearConversationTail(element);
+    setFollowingTail(attached);
+    if (attached) setNewOutputBelow(false);
+  };
+  const jumpToLatest = () => {
+    const element = conversation.current;
+    if (!element) return;
+    element.scrollTo?.({ top: element.scrollHeight, behavior: "smooth" });
+    element.scrollTop = element.scrollHeight;
+    setFollowingTail(true); setNewOutputBelow(false);
+  };
+
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={t("error.desktopUnavailable")} />;
   if (!state.capabilities?.configured) {
@@ -714,10 +748,16 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
-    <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
+    <div ref={conversation} onScroll={readScrollPosition}
+      className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
       {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} />
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
+    {!followingTail && <button className={newOutputBelow
+      ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
+      aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
+      onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
+        ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
       <Icon name={reconnecting ? "activity" : "warning"} /><span>{reconnecting ? t("connection.reconnecting")

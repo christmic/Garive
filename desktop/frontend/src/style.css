@@ -70,6 +70,10 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 
 .work-surface { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
 .conversation { min-height: 0; overflow: auto; scroll-behavior: smooth; }
+.conversation-tail-button { position: absolute; z-index: 4; right: 50%; bottom: 174px; display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-secondary); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: var(--shadow-raised); transform: translateX(50%); backdrop-filter: blur(12px); font-size: var(--text-xs); }
+.conversation-tail-button:hover { color: var(--text-primary); background: var(--surface-hover); }
+.conversation-tail-button svg { width: 13px; transform: rotate(90deg); }
+.conversation-tail-button.unread::before { width: 6px; height: 6px; border-radius: 50%; background: var(--action-primary); content: ""; }
 .empty-conversation { display: grid; place-items: center; padding: 40px 28px 210px; }
 .welcome { width: min(680px, 100%); text-align: center; }
 .hero-mark { width: 48px; height: 48px; margin: 0 auto 15px; border: 1px solid #cfd8f3; border-radius: 16px; background: linear-gradient(145deg, #f6f8ff, #e6ecfb); box-shadow: 0 6px 20px rgba(49,95,207,.1); }

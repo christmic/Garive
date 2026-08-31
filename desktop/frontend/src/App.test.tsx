@@ -176,6 +176,28 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(false);
   });
 
+  it("protects an older reading position and offers an explicit return to the tail", async () => {
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>(".suggestion-grid button")!);
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send work" }).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Send work" }));
+    await screen.findByText("Durable product answer");
+
+    const conversation = view.container.querySelector<HTMLElement>(".conversation")!;
+    Object.defineProperties(conversation, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, writable: true, value: 120 },
+    });
+    fireEvent.scroll(conversation);
+    const jump = await screen.findByRole("button", { name: "Jump to latest" });
+    expect(conversation.scrollTop).toBe(120);
+    fireEvent.click(jump);
+    expect(conversation.scrollTop).toBe(1_000);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull());
+  });
+
   it("renders progressive work from admitted Activity instead of invented stages", () => {
     const open = vi.fn();
     render(<TurnProgress t={createTranslator("en")} onOpen={open} activities={[{
