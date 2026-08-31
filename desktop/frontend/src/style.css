@@ -573,7 +573,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 
 /* Codex-fidelity shell. Keep Desktop and Web on this single shared layer. */
 .desktop-root { font-size: var(--text-md); }
-.app-shell { --sidebar-width: clamp(206px, 16.1vw, 240px); --conversation-split: clamp(350px, 27.5vw, 420px); position: relative; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); background: var(--surface-canvas); }
+.app-shell { --sidebar-width: clamp(206px, 16.1vw, 240px); --conversation-split: 352px; position: relative; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); background: var(--surface-canvas); }
 .app-shell:has(.environment-panel) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
 .app-shell:has(.workspace-panel) { grid-template-columns: var(--sidebar-width) var(--conversation-split) minmax(500px, 1fr); }
 .app-shell.navigation-collapsed { grid-template-columns: minmax(0, 1fr); }
@@ -620,8 +620,9 @@ kbd { font-size: var(--text-2xs); }
 .sidebar-footer { gap: 4px; }
 .runtime-state { min-height: 32px; }
 
-.main-surface { grid-template-rows: 42px minmax(0, 1fr); background: var(--surface-canvas); }
-.topbar { padding: 0 14px 0 20px; border-bottom-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-canvas) 91%, transparent); }
+.main-surface { grid-template-columns: minmax(0, 1fr); grid-template-rows: 42px minmax(0, 1fr); background: var(--surface-canvas); }
+.work-surface { min-width: 0; overflow: hidden; }
+.topbar { padding: 0 14px 0 10px; border-bottom-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-canvas) 91%, transparent); }
 .topbar-title { flex: 1; gap: 8px; min-width: 0; font-size: var(--text-sm); font-weight: 590; }
 .topbar-title > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-title .local-badge, .topbar-actions { flex: none; }
@@ -725,7 +726,10 @@ kbd { font-size: var(--text-2xs); }
 .environment-panel .activity-intro { padding: 2px 2px 10px; }
 .environment-panel .activity-intro h2 { font-size: var(--text-sm); }
 .environment-panel .activity-row { min-height: 44px; }
-.workspace-panel { min-width: 0; background: var(--surface-canvas); }
+.workspace-panel { position: relative; min-width: 0; background: var(--surface-canvas); }
+.workspace-resizer { position: absolute; z-index: 4; top: 42px; bottom: 0; left: -5px; width: 10px; cursor: col-resize; touch-action: none; }
+.workspace-resizer::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--border-subtle); transition: width var(--motion-fast), background var(--motion-fast); content: ""; }
+.workspace-resizer:hover::after, .workspace-resizer:focus-visible::after { width: 2px; background: var(--action-primary); }
 .workspace-panel header { background: var(--surface-sidebar); }
 .workspace-tabs { align-self: stretch; min-width: 0; }
 .workspace-tabs button { display: flex; align-items: center; gap: 7px; min-width: 148px; max-width: 260px; height: 100%; padding: 0 12px; border: 0; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--surface-canvas); color: var(--text-primary); background: var(--surface-canvas); font-size: var(--text-xs); }
@@ -744,14 +748,14 @@ kbd { font-size: var(--text-2xs); }
 .artifact-workbench-toolbar button { display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 7px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; font-size: var(--text-xs); }
 .artifact-workbench-toolbar button:hover:not(:disabled) { background: var(--surface-hover); }
 .artifact-workbench-toolbar button svg { width: 13px; }
-.artifact-preview-content { width: min(46rem, 100%); min-height: 330px; margin: 0 auto; padding: 28px 24px; font-size: var(--text-md); line-height: 1.7; }
+.artifact-preview-content { width: 100%; min-height: 330px; margin: 0; padding: 28px 24px; font-size: var(--text-md); line-height: 1.7; }
 .artifact-source { width: min(52rem, calc(100% - 48px)); min-height: 330px; max-height: none !important; margin: 24px auto !important; padding: 20px !important; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-subtle) !important; font: var(--text-xs)/1.65 var(--font-mono) !important; white-space: pre-wrap; }
 .artifact-preview-content > :first-child { margin-top: 0; }
 .artifact-preview-content h1 { margin: 0 0 24px; font-size: 25px; letter-spacing: -.025em; }
 .artifact-preview-content h2 { margin: 26px 0 10px; font-size: 17px; }
 .artifact-preview-content p, .artifact-preview-content ul { margin: 8px 0 16px; }
 .artifact-preview-content ul { padding-left: 21px; }
-.workspace-panel .artifact-preview > footer { width: min(46rem, calc(100% - 48px)); margin: 0 auto; }
+.workspace-panel .artifact-preview > footer { width: calc(100% - 48px); margin: 0 24px; }
 .activity-intro { padding-bottom: 15px; border-bottom: 0; }
 .activity-intro h2 { font-size: var(--text-lg); }
 .activity-intro p { margin-top: 5px; font-size: var(--text-xs); line-height: 1.5; }
@@ -797,6 +801,11 @@ kbd { font-size: var(--text-2xs); }
 .navigation-trigger, .navigation-backdrop { display: none; }
 .navigation-collapsed .sidebar-restore { display: grid; }
 
+@media (min-width: 1121px) {
+  .app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }
+  .app-shell:has(.workspace-panel) .composer-wrap { padding-inline: 10px; }
+}
+
 @media (max-width: 760px) {
   .new-work-surface .composer-wrap { top: 210px; }
   .new-work-surface .suggestion-grid { grid-template-columns: 1fr; margin-top: 148px; }
@@ -811,6 +820,7 @@ kbd { font-size: var(--text-2xs); }
   .app-shell:has(.workspace-panel) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
   .app-shell.navigation-collapsed:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }
   .workspace-panel { position: absolute; z-index: 8; top: 42px; right: 0; bottom: 0; width: min(680px, calc(100% - 72px)); box-shadow: var(--shadow-overlay); }
+  .workspace-resizer { display: none; }
   .app-shell:has(.environment-panel) .work-surface { margin-right: 0; }
 }
 

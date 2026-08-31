@@ -142,9 +142,17 @@ gradients are forbidden in the application shell.
 | readable turn measure | 40 rem max | unchanged |
 | composer | 40 rem plus 24 px overhang | 40 rem max |
 | Environment overlay | 280–320 px | full overlay below 720 px |
-| artifact/file workbench | 48–62% of remaining width | full surface below 980 px |
+| artifact/file workbench | 320–520 px conversation split, 352 px default | full overlay below 1120 px |
 
 Localization and 200% text zoom may grow rows and must never clip content.
+
+The file workbench divider is a native-feeling desktop affordance, not a fixed
+layout accident. Pointer drag and Left/Right/Home/End keys change the bounded
+conversation split, expose separator semantics and persist only the resulting
+non-sensitive appearance value; double-click restores 352px. Content and Composer are clipped to that split;
+neither may paint beneath the document. In the reference-sized split, Turn and
+Composer share a 10px pane inset; the rendered document aligns to the
+workbench's 24px content edge instead of recentering a second nested measure.
 
 ## Component grammar
 

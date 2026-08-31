@@ -229,6 +229,16 @@ describe("Desktop product experience", () => {
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
+    const separator = screen.getByRole("separator", { name: "Resize workbench" });
+    expect(separator.getAttribute("aria-valuenow")).toBe("352");
+    fireEvent.keyDown(separator, { key: "ArrowRight" });
+    expect(separator.getAttribute("aria-valuenow")).toBe("368");
+    expect(view.container.querySelector<HTMLElement>(".app-shell")?.style
+      .getPropertyValue("--conversation-split")).toBe("368px");
+    fireEvent.keyDown(separator, { key: "Home" });
+    expect(separator.getAttribute("aria-valuenow")).toBe("320");
+    fireEvent.doubleClick(separator);
+    expect(separator.getAttribute("aria-valuenow")).toBe("352");
     fireEvent.click(await screen.findByRole("button", { name: "View source" }));
     expect(screen.getByLabelText("Artifact source").textContent).toContain("Immutable source.");
     fireEvent.click(screen.getByRole("button", { name: "Rendered" }));

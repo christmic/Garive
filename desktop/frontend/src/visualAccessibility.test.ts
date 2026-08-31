@@ -35,10 +35,14 @@ describe("Desktop visual accessibility contract", () => {
       expect(TOKENS).toContain(token);
     }
     expect(CSS).toContain("--sidebar-width: clamp(206px, 16.1vw, 240px)");
-    expect(CSS).toContain("--conversation-split: clamp(350px, 27.5vw, 420px)");
+    expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
     expect(CSS).toContain("var(--conversation-split) minmax(500px, 1fr)");
-    expect(CSS).toContain("grid-template-rows: 42px minmax(0, 1fr)");
+    expect(CSS).toContain(".work-surface { min-width: 0; overflow: hidden; }");
+    expect(CSS).toContain(".workspace-resizer { position: absolute");
+    expect(CSS).toContain(".artifact-preview-content { width: 100%");
+    expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
+    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: 42px minmax(0, 1fr)");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".environment-panel { position: absolute");
     expect(CSS).toContain(".app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }");
