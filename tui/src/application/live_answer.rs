@@ -117,16 +117,19 @@ pub(crate) struct LiveMarkdownBuffer {
 
 impl LiveMarkdownBuffer {
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn stable_prefix(&self) -> &str {
         &self.stable_prefix
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn mutable_tail(&self) -> &str {
         &self.mutable_tail
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn as_text(&self) -> String {
         let mut text = String::with_capacity(self.stable_prefix.len() + self.mutable_tail.len());
         text.push_str(&self.stable_prefix);
