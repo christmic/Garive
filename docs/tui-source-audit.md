@@ -245,8 +245,9 @@ rendering behind the application state. Resize reflow and terminal history are
 separate modules rather than incidental widget behavior.
 
 Garive adopts typed terminal events, explicit ownership of stdin, redraw
-coalescing, and terminal restoration. External-editor and subprocess stdin
-handoff remain outside the first admitted contract.
+coalescing, and terminal restoration. Its admitted external-editor path now
+uses a Garive-owned acknowledged pause/resume reader around subprocess stdin
+handoff; it does not depend on dropping crossterm's unjoined event worker.
 
 ### Input model and slash discovery
 

@@ -508,3 +508,14 @@ notes after `Ctrl+G` is added by packing rows with actual Unicode display
 width. The wide palette snapshot exposes `/edit-prompt`. These semantic
 snapshots and ANSI PTY transcripts still do not satisfy physical Terminal or
 iTerm image admission; that gallery remains open behind the locked login UI.
+
+Revision `f62da6a1` closes the editor-ownership routing boundary. One exact
+`composer_is_frozen` projection now feeds the visual palette, linear palette,
+inline discovery, and activation reason; the central editor request repeats
+the same fail-closed check. `Ctrl+G` reaches that request only after Composer
+focus and freeze guards. The complete 18-case shipping PTY rerun passes in
+146.11 seconds; the editor case first moves focus to Conversation and proves
+`Ctrl+G` does not spawn the child, then returns to Composer and proves the full
+successful/failing terminal handoff. The 44 library, 6 command, 51 view, 33
+snapshot/boundary, architecture, formatting, diff, and strict Clippy gates also
+pass.
