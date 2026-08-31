@@ -290,11 +290,25 @@ fn activity_catalogue() -> InstalledActivityCatalogue {
 }
 
 fn installed() -> InstalledAgent {
+    installed_named(
+        "definition-main",
+        "revision-1",
+        "installed-main",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    )
+}
+
+fn installed_named(
+    definition_id: &str,
+    definition_revision: &str,
+    namespace: &str,
+    snapshot_digest: &str,
+) -> InstalledAgent {
     InstalledAgent {
-        definition_id: "definition-main".into(),
-        definition_revision: "revision-1".into(),
-        snapshot_digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
-        agent_instance_namespace: "installed-main".into(),
+        definition_id: definition_id.into(),
+        definition_revision: definition_revision.into(),
+        snapshot_digest: snapshot_digest.into(),
+        agent_instance_namespace: namespace.into(),
         public_capabilities: vec!["timeline".into(), "tools".into()],
         runtime_limits: EffectiveRuntimeLimits {
             max_iterations: 4,
@@ -304,6 +318,114 @@ fn installed() -> InstalledAgent {
         },
         public_activity_catalogue: None,
     }
+}
+
+#[test]
+fn host_catalogue_binds_each_session_and_dispatch_to_one_exact_agent() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("catalogue.sqlite3");
+    let dispatcher = Arc::new(VerifyingDispatcher {
+        database: database.clone(),
+        committed: Mutex::new(Vec::new()),
+    });
+    let alternate = installed_named(
+        "definition-alternate",
+        "revision-2",
+        "installed-alternate",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    );
+    let host = LiveHost::new_catalogue(
+        &database,
+        [installed(), alternate.clone()],
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+            activity: None,
+        },
+        Arc::new(FixedClock),
+        dispatcher.clone(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        host.list_agent_definitions()
+            .unwrap()
+            .definitions
+            .iter()
+            .map(|value| value.definition_id.as_str())
+            .collect::<Vec<_>>(),
+        ["definition-alternate", "definition-main"]
+    );
+    let main = host
+        .create_session("catalogue-main", "definition-main")
+        .unwrap();
+    let other = host
+        .create_session("catalogue-other", "definition-alternate")
+        .unwrap();
+    host.start_turn("catalogue-main-turn", &main.session_id, "main")
+        .unwrap();
+    host.start_turn("catalogue-other-turn", &other.session_id, "other")
+        .unwrap();
+    let dispatched = dispatcher.committed.lock().unwrap();
+    assert_eq!(dispatched[0].definition_id, "definition-main");
+    assert_eq!(dispatched[0].definition_revision, "revision-1");
+    assert_eq!(dispatched[1].definition_id, "definition-alternate");
+    assert_eq!(dispatched[1].definition_revision, "revision-2");
+    assert_eq!(dispatched[1].snapshot_digest, alternate.snapshot_digest);
+    drop(dispatched);
+
+    let restarted = LiveHost::new_catalogue(
+        &database,
+        [installed(), alternate],
+        host.limits(),
+        Arc::new(FixedClock),
+        dispatcher,
+    )
+    .unwrap();
+    assert_eq!(
+        restarted
+            .get_session(&other.session_id)
+            .unwrap()
+            .session
+            .definition_id,
+        "definition-alternate"
+    );
+    assert_eq!(
+        restarted.create_session("missing", "definition-missing"),
+        Err(LiveHostError::NotFound)
+    );
+}
+
+#[test]
+fn host_catalogue_rejects_empty_and_duplicate_definitions() {
+    let directory = tempfile::tempdir().unwrap();
+    let limits = LiveHostLimits {
+        max_command_bytes: 4_096,
+        event_batch_size: 64,
+        event_poll_interval_ms: 10,
+        activity: None,
+    };
+    let dispatcher = Arc::new(VerifyingDispatcher {
+        database: directory.path().join("unused.sqlite3"),
+        committed: Mutex::new(Vec::new()),
+    });
+    assert!(LiveHost::new_catalogue(
+        directory.path().join("empty.sqlite3"),
+        [],
+        limits,
+        Arc::new(FixedClock),
+        dispatcher.clone(),
+    )
+    .is_err());
+    assert!(LiveHost::new_catalogue(
+        directory.path().join("duplicate.sqlite3"),
+        [installed(), installed()],
+        limits,
+        Arc::new(FixedClock),
+        dispatcher,
+    )
+    .is_err());
 }
 
 fn fixture() -> Value {

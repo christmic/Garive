@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, error::Error, fmt, path::PathBuf, sync::Arc};
 
 use garive_ledger::{ExecutionId, SessionId, TurnId};
 use serde::{Deserialize, Serialize};
@@ -698,7 +698,7 @@ pub(crate) struct ErrorBody {
 
 pub(crate) struct LiveHostState {
     pub database_path: PathBuf,
-    pub installed: InstalledAgent,
+    pub installed: BTreeMap<String, InstalledAgent>,
     pub limits: LiveHostLimits,
     pub read_limits: HostReadLimits,
     pub clock: Arc<dyn HostClock>,

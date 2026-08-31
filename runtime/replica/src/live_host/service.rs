@@ -50,9 +50,9 @@ impl LiveHost {
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
     ) -> Result<Self, LiveHostError> {
-        Self::new_with_read_limits(
+        Self::new_catalogue_with_read_limits(
             database_path,
-            installed,
+            [installed],
             limits,
             HostReadLimits::PRODUCT_DEFAULT,
             clock,
@@ -71,7 +71,7 @@ impl LiveHost {
     ) -> Result<Self, LiveHostError> {
         Self::construct(
             database_path,
-            installed,
+            [installed],
             limits,
             HostReadLimits::PRODUCT_DEFAULT,
             clock,
@@ -84,6 +84,43 @@ impl LiveHost {
     pub fn new_with_read_limits(
         database_path: impl AsRef<Path>,
         installed: InstalledAgent,
+        limits: LiveHostLimits,
+        read_limits: HostReadLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+    ) -> Result<Self, LiveHostError> {
+        Self::new_catalogue_with_read_limits(
+            database_path,
+            [installed],
+            limits,
+            read_limits,
+            clock,
+            dispatcher,
+        )
+    }
+
+    /// Constructs a Host from a non-empty identity-unique Agent catalogue.
+    pub fn new_catalogue(
+        database_path: impl AsRef<Path>,
+        installed: impl IntoIterator<Item = InstalledAgent>,
+        limits: LiveHostLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+    ) -> Result<Self, LiveHostError> {
+        Self::new_catalogue_with_read_limits(
+            database_path,
+            installed,
+            limits,
+            HostReadLimits::PRODUCT_DEFAULT,
+            clock,
+            dispatcher,
+        )
+    }
+
+    /// Constructs a multi-Agent Host with explicit independent read bounds.
+    pub fn new_catalogue_with_read_limits(
+        database_path: impl AsRef<Path>,
+        installed: impl IntoIterator<Item = InstalledAgent>,
         limits: LiveHostLimits,
         read_limits: HostReadLimits,
         clock: Arc<dyn HostClock>,
@@ -102,22 +139,34 @@ impl LiveHost {
 
     fn construct(
         database_path: impl AsRef<Path>,
-        installed: InstalledAgent,
+        installed: impl IntoIterator<Item = InstalledAgent>,
         limits: LiveHostLimits,
         read_limits: HostReadLimits,
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
         live_output: Option<LiveOutputHub>,
     ) -> Result<Self, LiveHostError> {
-        validate_installed(&installed, limits)?;
         if !read_limits.valid() {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let mut catalogue = BTreeMap::new();
+        for installation in installed {
+            validate_installed(&installation, limits)?;
+            if catalogue
+                .insert(installation.definition_id.clone(), installation)
+                .is_some()
+            {
+                return Err(LiveHostError::InvalidRequest);
+            }
+        }
+        if catalogue.is_empty() || catalogue.len() > read_limits.max_definitions {
             return Err(LiveHostError::InvalidRequest);
         }
         SqliteLedger::open(database_path.as_ref()).map_err(map_sqlite)?;
         Ok(Self {
             state: Arc::new(LiveHostState {
                 database_path: database_path.as_ref().to_owned(),
-                installed,
+                installed: catalogue,
                 limits,
                 read_limits,
                 clock,
@@ -158,12 +207,17 @@ impl LiveHost {
     pub fn list_agent_definitions(&self) -> Result<AgentDefinitionPageV1, LiveHostError> {
         let page = AgentDefinitionPageV1 {
             api_version: "v1",
-            definitions: vec![AgentDefinitionSummaryV1 {
-                api_version: "v1",
-                definition_id: self.state.installed.definition_id.clone(),
-                definition_revision: self.state.installed.definition_revision.clone(),
-                capabilities: self.state.installed.public_capabilities.clone(),
-            }],
+            definitions: self
+                .state
+                .installed
+                .values()
+                .map(|installed| AgentDefinitionSummaryV1 {
+                    api_version: "v1",
+                    definition_id: installed.definition_id.clone(),
+                    definition_revision: installed.definition_revision.clone(),
+                    capabilities: installed.public_capabilities.clone(),
+                })
+                .collect(),
         };
         if page.definitions.len() > self.state.read_limits.max_definitions
             || serde_json::to_vec(&page)
@@ -190,11 +244,12 @@ impl LiveHost {
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
+        let installed = self.installed_for_facts(&facts)?;
         let view = read_model::project_session(
             &session_id,
             watermark.max_position,
             &facts,
-            &self.state.installed,
+            installed,
             self.state.read_limits,
         )?;
         if serde_json::to_vec(&view)
@@ -316,15 +371,16 @@ impl LiveHost {
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
+        let installed = self.installed_for_facts(&facts)?;
         read_model::project_session(
             &session_id,
             watermark.max_position,
             &facts,
-            &self.state.installed,
+            installed,
             self.state.read_limits,
         )?;
         let activities = match (
-            self.state.installed.public_activity_catalogue.as_ref(),
+            installed.public_activity_catalogue.as_ref(),
             self.state.limits.activity,
         ) {
             (Some(catalogue), Some(limits)) => {
@@ -361,12 +417,16 @@ impl LiveHost {
 
     /// Returns bounded installed-Agent discovery without granting new authority.
     pub fn agent_definitions(&self) -> Vec<AgentDefinitionSummary> {
-        vec![AgentDefinitionSummary {
-            api_version: "v1",
-            definition_id: self.state.installed.definition_id.clone(),
-            definition_revision: self.state.installed.definition_revision.clone(),
-            capabilities: Vec::new(),
-        }]
+        self.state
+            .installed
+            .values()
+            .map(|installed| AgentDefinitionSummary {
+                api_version: "v1",
+                definition_id: installed.definition_id.clone(),
+                definition_revision: installed.definition_revision.clone(),
+                capabilities: Vec::new(),
+            })
+            .collect()
     }
 
     /// Returns restart-safe Sessions ordered by open time and identity descending.
@@ -637,9 +697,10 @@ impl LiveHost {
         let facts = ledger
             .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
+        let installed = self.installed_for_facts(&facts)?;
         let mut items = project_timeline(&facts, self.state.limits.max_command_bytes)?;
         if let (Some(catalogue), Some(limits)) = (
-            self.state.installed.public_activity_catalogue.as_ref(),
+            installed.public_activity_catalogue.as_ref(),
             self.state.limits.activity,
         ) {
             let mut activities = project_activities(&facts, catalogue, limits)?.by_turn;
@@ -691,18 +752,16 @@ impl LiveHost {
         agent_definition_id: &str,
     ) -> Result<CreateSessionResponse, LiveHostError> {
         validate_key(idempotency_key)?;
-        if agent_definition_id != self.state.installed.definition_id {
-            return Err(LiveHostError::NotFound);
-        }
+        let installed = self
+            .state
+            .installed
+            .get(agent_definition_id)
+            .ok_or(LiveHostError::NotFound)?;
         let session_id = SessionId::try_from(
             format!(
                 "session-{}",
                 digest(
-                    format!(
-                        "{}:{idempotency_key}",
-                        self.state.installed.agent_instance_namespace
-                    )
-                    .as_bytes()
+                    format!("{}:{idempotency_key}", installed.agent_instance_namespace).as_bytes()
                 )
             )
             .as_str(),
@@ -715,8 +774,8 @@ impl LiveHost {
                     format!(
                         "{}:{}:{}",
                         session_id.as_str(),
-                        self.state.installed.definition_id,
-                        self.state.installed.definition_revision
+                        installed.definition_id,
+                        installed.definition_revision
                     )
                     .as_bytes()
                 )
@@ -726,9 +785,9 @@ impl LiveHost {
         .map_err(|_| LiveHostError::InvalidRequest)?;
         let payload = json!({
             "command_id": idempotency_key,
-            "definition_id": self.state.installed.definition_id,
-            "definition_revision": self.state.installed.definition_revision,
-            "snapshot_digest": self.state.installed.snapshot_digest,
+            "definition_id": installed.definition_id,
+            "definition_revision": installed.definition_revision,
+            "snapshot_digest": installed.snapshot_digest,
             "agent_instance_id": agent_instance_id.as_str(),
         });
         let recorded_at = self.recorded_at()?;
@@ -774,6 +833,7 @@ impl LiveHost {
         let session_id = identity::<SessionId>(session)?;
         let mut ledger = self.ledger()?;
         let binding = self.load_session(&ledger, &session_id)?;
+        let installed = self.installed(binding.definition_id.as_str())?;
         if let Some(response) = self.replay_start(
             &ledger,
             &session_id,
@@ -792,7 +852,7 @@ impl LiveHost {
                 definition_revision: binding.definition_revision.clone(),
                 snapshot_digest: binding.snapshot_digest.clone(),
                 trusted_input: trusted_input.to_owned(),
-                limits: self.state.installed.runtime_limits,
+                limits: installed.runtime_limits,
                 recorded_at: self.recorded_at()?,
             },
             binding.max_position,
@@ -853,6 +913,7 @@ impl LiveHost {
         let session_id = identity::<SessionId>(session)?;
         let mut ledger = self.ledger()?;
         let binding = self.load_session(&ledger, &session_id)?;
+        let installed = self.installed(binding.definition_id.as_str())?;
         let facts = ledger
             .read_facts(&session_id, 0, binding.max_position, None)
             .map_err(map_sqlite)?;
@@ -881,7 +942,7 @@ impl LiveHost {
                 definition_revision: binding.definition_revision.clone(),
                 snapshot_digest: binding.snapshot_digest.clone(),
                 trusted_input: trusted_input.to_owned(),
-                limits: self.state.installed.runtime_limits,
+                limits: installed.runtime_limits,
                 recorded_at: recorded_at.clone(),
             },
             binding.max_position,
@@ -1135,15 +1196,16 @@ impl LiveHost {
                 None,
             )
             .map_err(map_sqlite)?;
-        let activities = match (
-            self.state.installed.public_activity_catalogue.as_ref(),
-            self.state.limits.activity,
-        ) {
-            (Some(catalogue), Some(limits)) => {
+        let activities = match self.state.limits.activity {
+            Some(limits) => {
+                let installed = self.installed_for_facts(&facts)?;
+                let catalogue = installed
+                    .public_activity_catalogue
+                    .as_ref()
+                    .ok_or(LiveHostError::CorruptState)?;
                 Some(project_activities(&facts, catalogue, limits)?.events)
             }
-            (None, None) => None,
-            _ => return Err(LiveHostError::CorruptState),
+            None => None,
         };
         let mut events = Vec::new();
         for fact in facts.iter().filter(|fact| fact.position > after_position) {
@@ -1187,6 +1249,28 @@ impl LiveHost {
         chrono::DateTime::parse_from_rfc3339(&value)
             .map(|_| value)
             .map_err(|_| LiveHostError::InvalidRequest)
+    }
+
+    fn installed(&self, definition_id: &str) -> Result<&InstalledAgent, LiveHostError> {
+        self.state
+            .installed
+            .get(definition_id)
+            .ok_or(LiveHostError::CorruptState)
+    }
+
+    fn installed_for_facts(&self, facts: &[DurableFact]) -> Result<&InstalledAgent, LiveHostError> {
+        let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
+        if opened.position != 1 || opened.kind.as_str() != "session.opened" {
+            return Err(LiveHostError::CorruptState);
+        }
+        let binding: SessionOpened = decode_payload(opened)?;
+        let installed = self.installed(&binding.definition_id)?;
+        if binding.definition_revision != installed.definition_revision
+            || binding.snapshot_digest != installed.snapshot_digest
+        {
+            return Err(LiveHostError::CorruptState);
+        }
+        Ok(installed)
     }
 
     fn project_session(
@@ -1267,10 +1351,10 @@ impl LiveHost {
         }
         let payload: SessionOpened = serde_json::from_str(first.payload.as_json())
             .map_err(|_| LiveHostError::CorruptState)?;
+        let installed = self.installed(&payload.definition_id)?;
         if payload.command_id.is_empty()
-            || payload.definition_id != self.state.installed.definition_id
-            || payload.definition_revision != self.state.installed.definition_revision
-            || payload.snapshot_digest != self.state.installed.snapshot_digest
+            || payload.definition_revision != installed.definition_revision
+            || payload.snapshot_digest != installed.snapshot_digest
         {
             return Err(LiveHostError::CorruptState);
         }
@@ -1302,6 +1386,7 @@ impl LiveHost {
             reject_other_command(&facts, command_id)?;
             return Ok(None);
         };
+        let installed = self.installed_for_facts(&facts)?;
         if facts
             .get(index.saturating_sub(1))
             .is_some_and(|fact| fact.kind.as_str() == "workspace.context_selected")
@@ -1309,9 +1394,9 @@ impl LiveHost {
             return Err(LiveHostError::CommandConflict);
         }
         if started.kind != "start"
-            || started.definition_id != self.state.installed.definition_id
-            || started.definition_revision != self.state.installed.definition_revision
-            || started.snapshot_digest != self.state.installed.snapshot_digest
+            || started.definition_id != installed.definition_id
+            || started.definition_revision != installed.definition_revision
+            || started.snapshot_digest != installed.snapshot_digest
             || started.trusted_input_digest != digest(input.as_bytes())
         {
             return Err(LiveHostError::CommandConflict);
@@ -1331,6 +1416,7 @@ impl LiveHost {
             reject_other_command(facts, command_id)?;
             return Ok(None);
         };
+        let installed = self.installed_for_facts(facts)?;
         let context_index = index.checked_sub(1).ok_or(LiveHostError::CommandConflict)?;
         let context = facts
             .get(context_index)
@@ -1339,9 +1425,9 @@ impl LiveHost {
         let actual_context: serde_json::Value = decode_payload(context)?;
         if &actual_context != expected_context
             || started.kind != "start"
-            || started.definition_id != self.state.installed.definition_id
-            || started.definition_revision != self.state.installed.definition_revision
-            || started.snapshot_digest != self.state.installed.snapshot_digest
+            || started.definition_id != installed.definition_id
+            || started.definition_revision != installed.definition_revision
+            || started.snapshot_digest != installed.snapshot_digest
             || started.trusted_input_digest != digest(input.as_bytes())
         {
             return Err(LiveHostError::CommandConflict);
