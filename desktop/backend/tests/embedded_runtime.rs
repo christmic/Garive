@@ -1071,6 +1071,8 @@ async fn workspace_agent_patch_requires_durable_approval_then_acknowledges_recei
         .authorize_writes(&selected.workspace_id, &workspace_path, "main")
         .unwrap();
     let t1 = t1_host(directory.path());
+    let restart_t1 = t1.clone();
+    let restart_workspaces = workspaces.clone();
     let database = directory.path().join("workspace-patch.db");
     let mut config = desktop_host_config(
         &database,
@@ -1169,6 +1171,48 @@ async fn workspace_agent_patch_requires_durable_approval_then_acknowledges_recei
     for required in ["interaction.resolved", "effect.started", "effect.receipt"] {
         assert!(facts.iter().any(|fact| fact.kind.as_str() == required));
     }
+    drop(state);
+
+    let mut restart_config = desktop_host_config(
+        &database,
+        Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
+    );
+    restart_config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            builtin_desktop_workspace_agent_installation(
+                "definition-workspace",
+                "desktop-workspace",
+                &restart_t1.tool_capabilities().unwrap(),
+            )
+            .unwrap(),
+        ])
+        .unwrap(),
+    );
+    restart_config.t1_host_system_config = Some(restart_t1.clone());
+    restart_config.operations = Arc::new(Operations(AtomicU64::new(100)));
+    let restart_factory =
+        DesktopWorkspaceExecutionFactory::new(database, restart_workspaces, "main")
+            .unwrap()
+            .with_t1_host_system_config(restart_t1);
+    let restarted = DesktopState::default();
+    restarted
+        .install(DesktopHost::new_governed(restart_config, Arc::new(restart_factory)).unwrap())
+        .unwrap();
+    assert_eq!(
+        restarted.session_timeline(&session_id, 0, 8).unwrap().items[0].state,
+        "completed"
+    );
+    let second = restarted
+        .run_turn_in_session_isolated(
+            "definition-workspace".into(),
+            Some(session_id),
+            "read after restart".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.terminal, DesktopTerminal::Completed);
+    assert_eq!(second.text, "workspace read completed");
 }
 
 #[cfg(unix)]
