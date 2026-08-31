@@ -474,7 +474,14 @@ fn digest_pinned_image(value: &str) -> bool {
     let Some(hex) = digest.strip_prefix(IMAGE_DIGEST_PREFIX) else {
         return false;
     };
-    !name.is_empty() && hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+    !name.is_empty()
+        && !name
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte == 0)
+        && hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 #[cfg(test)]
@@ -512,6 +519,14 @@ mod tests {
             "docker.io/library/alpine:latest",
             temporary.path(),
             recovery,
+        )
+        .is_err());
+        assert!(PodmanProcessConfig::new(
+            "/opt/podman",
+            "unix:///private/tmp/podman.sock",
+            IMAGE.to_uppercase(),
+            temporary.path(),
+            temporary.path().join("recovery-uppercase"),
         )
         .is_err());
     }

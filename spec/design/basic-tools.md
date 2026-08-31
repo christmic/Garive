@@ -257,10 +257,31 @@ returns a trustworthy receipt plus:
 }
 ```
 
-`exit_kind = code | signal | timeout | cancelled`. A timeout/cancellation is a
-terminal result only when the executor proves the process tree terminated and
-the receipt binds that classification. Otherwise C5 returns uncertainty and
-operator reconciliation.
+`exit_kind = code | signal | timeout`; `signal` is emitted only when a backend
+has direct signal evidence. Cancellation is not an invented exit kind: after
+start it must terminate through the same backend proof path before a terminal
+classification can be admitted. Otherwise C5 returns uncertainty and operator
+reconciliation.
+
+The first production backend uses an explicitly constructed Podman boundary.
+Runtime supplies an absolute Podman executable, an explicit Unix socket URI, a
+lowercase digest-pinned image reference, canonical workspace/recovery roots
+and all limits. The backend never reads Podman defaults or process environment,
+never pulls an image, and launches the configured executable directly without
+a shell. Preflight proves the service and exact local image are available and
+rejects a working-directory symlink that resolves outside the workspace.
+
+Each dispatch owns a deterministic, content-free container name and ownership
+label derived from invocation plus dispatch attempt. The container has no
+network, a read-only root, all capabilities dropped, no-new-privileges, bounded
+PIDs/open files, bounded tmpfs and an exact read-only/read-write workspace
+mount. Explicit lane environment values cross through a mode-0600
+Runtime-private file; values never enter Podman CLI arguments or recovery
+metadata, and the file is fsynced then removed after create or during recovery.
+The container is retained stopped until Runtime durably commits and
+acknowledges its receipt. Timeout and startup recovery kill through Podman,
+require `Running=false` plus `Pid=0`, remove only a matching owned container,
+and finally prove the deterministic name is absent.
 
 After Runtime loss following `effect.started`, `NeverReplay` forbids command
 redispatch but does not permit a detached process to remain alive. Startup
