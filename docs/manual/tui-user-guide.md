@@ -139,7 +139,9 @@ Garive does not invent or persist provider/model choices in the TUI.
 | `Shift` plus a movement key | Extend the selection. |
 | `Backspace` / `Delete` | Delete the selection or one grapheme. |
 | `Alt+Backspace` / `Alt+Delete` | Delete one word. |
-| `Ctrl+Z` / `Ctrl+Y` | Undo or redo. |
+| `Ctrl+Z` / `Alt+Z` | Undo or portable redo. |
+| `Ctrl+U` / `Ctrl+K` | Kill the selection, or text to the logical line start/end, into a private one-entry buffer. |
+| `Ctrl+Y` | Yank the private killed text at the cursor or over the selection. |
 | `Alt+C` | Copy exactly the active composer selection through terminal OSC 52. |
 | `Ctrl+C` | Clear a selection, then a nonempty draft, then ask to quit on a second empty press. |
 
@@ -148,6 +150,12 @@ uses reverse video in monochrome. Selection follows complete displayed
 characters, so CJK, emoji families, and combining marks are never split. Left
 or Right without Shift collapses the selection to that edge without moving an
 extra character; word and line movements continue from their directional edge.
+Kill/yank is separate from OSC 52 and the system clipboard. It is never
+persisted or rendered, survives ordinary undo and same-Session draft changes,
+and is cleared before another Session's draft is loaded. At a logical line
+boundary, a kill may include the adjacent newline to join lines. `Alt+Z` is the
+portable redo binding because many terminals cannot distinguish
+`Ctrl+Shift+Z` from `Ctrl+Z`.
 
 Typing `/` at the first column of a focused, single-line composer opens a
 compact command menu above it. Continue typing to narrow by command prefix.

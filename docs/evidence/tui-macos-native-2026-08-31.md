@@ -434,3 +434,26 @@ reconnect/Turn churn report in
 gate is pinned to its exact pre-documentation revision `8b077f12`; this native
 suite rerun proves the later merged candidate remains green after concurrent
 Runtime, Desktop, and Mobile integration.
+
+## Private composer kill/yank candidate
+
+The source-audited kill/yank increment is frozen by `e0bac7c3` and implemented
+at `750c17f6`. `input/kill_buffer.rs` is a 99-line single-entry component;
+`input/editor.rs` remains 478 lines and `runtime/controller.rs` 434 lines, so
+the production-module architecture gate passes without a relaxed bound. The
+buffer is process-memory only, is independent of undo, and is cleared before a
+different Session draft is loaded.
+
+On macOS arm64, the isolated candidate target passes 37 library, 14 editor, 6
+command, 50 view, 32 snapshot/boundary, and all 16 shipping PTY tests, plus
+strict TUI all-target/all-feature Clippy, formatting, and diff checks. The new
+`100x24` monochrome PTY enters `alpha`, a real newline, and `beta`; it proves
+`Ctrl+U` kill, `Ctrl+Y` yank, `Ctrl+Z` undo, portable `Alt+Z` redo, clean exit,
+and alternate-screen restoration. The screen-reader PTY separately announces
+“Control U or Control K” and “Control Y” from the shared Help contract. The
+reviewed Help snapshot grows one row and retains all three safety notes without
+clipping.
+
+This automated PTY and semantic snapshot evidence does not replace physical
+Terminal/iTerm PNGs. That native gallery remains open while the macOS login UI
+is locked.

@@ -38,6 +38,9 @@ Useful launch options:
 ## Interaction
 
 - `Enter` sends; `Ctrl+J` inserts a newline.
+- `Ctrl+U`/`Ctrl+K` kill to a logical line edge and `Ctrl+Y` yanks from one
+  private in-memory entry; `Ctrl+Z`/`Alt+Z` undo/redo. Session changes clear
+  the private entry, and it never touches OSC 52 or persistence.
 - `Ctrl+N` creates a Session; entering the first prompt also creates one when a
   single Agent definition is installed.
 - `Ctrl+S`, `Ctrl+P`, and `Ctrl+R` open Sessions, commands, and prompt history.

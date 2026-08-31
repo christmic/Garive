@@ -420,6 +420,18 @@ Strict workspace all-target/all-feature Clippy passed before the final rebase;
 post-rebase TUI all-target/all-feature Clippy, formatting, and diff checks also
 passed.
 
+Revisions `e0bac7c3` and `750c17f6` add the source-audited private composer
+kill/yank component. The main editor remains 478 lines, the private component
+is 99 lines, and the controller is 434 lines; the unchanged 500-line
+architecture gate passes. Native macOS gates pass 37 library, 14 editor, 6
+command, 50 view, 32 snapshot/boundary, and 16 shipping-binary PTY tests. The
+new PTY inserts a real multiline draft, kills with `Ctrl+U`, yanks with
+`Ctrl+Y`, undoes with `Ctrl+Z`, redoes with `Alt+Z`, and proves terminal
+restoration. The reviewed Help snapshot retains every note after adding the
+new semantic keycap row; the screen-reader PTY announces the identical
+bindings. Strict TUI all-target/all-feature Clippy, formatting, and diff checks
+pass in an isolated target directory.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

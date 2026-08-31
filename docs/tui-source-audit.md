@@ -193,6 +193,25 @@ the existing bounded OSC 52 component. Codex's pinned event stream still drops
 mouse input and Pi still has no editor mouse handler, so neither is cited as a
 positive clipboard-selection implementation.
 
+Kill/yank is a separate three-source finding. Grok maps `Ctrl+U` and `Ctrl+K`
+to logical-line deletion in
+`crates/codegen/xai-ratatui-textarea/src/editor_keys.rs:127-139`, records only
+the removed plan text at `textarea.rs:537-539`, and makes `Ctrl+Y` replace an
+active selection at `textarea.rs:2453-2467`. Codex freezes the same default
+chords in `codex-rs/tui/src/keymap.rs:1186-1189`; its
+`bottom_pane/textarea.rs:1-11,577-590` explicitly owns a single-entry kill
+buffer independent of draft replacement. Pi independently declares
+`Ctrl+U`, `Ctrl+K`, `Ctrl+Y`, and multi-entry `Alt+Y` at
+`packages/tui/src/keybindings.ts:107-116`, then routes yank/yank-pop separately
+at `packages/tui/src/components/editor.ts:741-747`.
+
+Garive adopts only the common logical-line, selection-priority, private-buffer,
+and yank invariants. It authors a smaller single-entry component, keeps it
+independent of undo, maps portable redo to `Alt+Z`, and clears killed text
+before a different Session draft loads. It does not copy Grok/Codex editor
+models or Pi's multi-entry ring, and kill/yank never reads or writes a system
+clipboard.
+
 ## Codex findings
 
 ### Event and terminal ownership
