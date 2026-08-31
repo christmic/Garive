@@ -90,10 +90,12 @@ Fields forbidden by a kind are absent, not null:
 | `preview_unavailable` | none | preview cannot remain complete; discard local text |
 | `ended` | `reason` | publisher ended; wait for durable truth |
 
-A snapshot's envelope `sequence` is the next channel sequence, while
-`through_sequence` identifies the last source event represented by its text.
-The first event delivered to a new subscriber for an active execution is
-always `snapshot`, even when its text is empty.
+A snapshot's envelope `sequence` equals `through_sequence`, the latest source
+sequence represented by its text. The next broadcast event is exactly one
+greater. The first event delivered to a new subscriber for an available active
+execution is `snapshot`, even when its text is empty. An execution whose bound
+was exceeded instead starts that subscriber with `preview_unavailable` at the
+current sequence.
 
 ## Admission mapping
 
@@ -242,4 +244,4 @@ forces follow mode.
 
 - Owner: Runtime H4 and Client presentation
 - Last reviewed: 2026-08-31
-- Status: accepted; implementation pending
+- Status: accepted; Runtime hub implemented, production composition pending

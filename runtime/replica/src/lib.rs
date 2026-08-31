@@ -16,6 +16,7 @@ mod effect_batch_sqlite;
 mod goal_recovery;
 mod goal_runtime;
 mod live_host;
+mod live_output;
 mod local_composition;
 mod local_recovery;
 mod local_worker;
@@ -114,6 +115,10 @@ pub use live_host::{
     SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1,
     TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
     TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
+};
+pub use live_output::{
+    LiveOutputEndReason, LiveOutputError, LiveOutputEvent, LiveOutputEventKind, LiveOutputHub,
+    LiveOutputLimits, LiveOutputReceiveError, LiveOutputSink, LiveOutputSubscriber,
 };
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
