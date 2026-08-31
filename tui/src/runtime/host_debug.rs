@@ -5,16 +5,6 @@ use super::{HostMessage, HostOperation};
 impl fmt::Debug for HostMessage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Bootstrapped {
-                definitions,
-                sessions,
-                next_before,
-            } => formatter
-                .debug_struct("HostMessage::Bootstrapped")
-                .field("definition_count", &definitions.len())
-                .field("session_count", &sessions.len())
-                .field("has_next_page", &next_before.is_some())
-                .finish(),
             Self::SnapshotLoaded {
                 request_id,
                 items,
@@ -62,9 +52,6 @@ impl fmt::Debug for HostMessage {
             Self::Failed { operation, error } => {
                 let mut debug = formatter.debug_struct("HostMessage::Failed");
                 match operation {
-                    HostOperation::Bootstrap => {
-                        debug.field("operation", &"bootstrap");
-                    }
                     HostOperation::Snapshot { request_id } => {
                         debug
                             .field("operation", &"snapshot")

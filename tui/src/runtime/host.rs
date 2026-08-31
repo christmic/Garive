@@ -1,6 +1,6 @@
 use garive_host_client::{
-    AgentDefinitionSummary, CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient,
-    LiveOutputEvent, SessionSummary, SessionView, TurnCommandResponse, TurnTimelineItem,
+    CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient, LiveOutputEvent,
+    SessionView, TurnCommandResponse, TurnTimelineItem,
 };
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -25,11 +25,6 @@ pub(crate) enum ContinuationInput {
 }
 
 pub(crate) enum HostMessage {
-    Bootstrapped {
-        definitions: Vec<AgentDefinitionSummary>,
-        sessions: Vec<SessionSummary>,
-        next_before: Option<String>,
-    },
     SnapshotLoaded {
         request_id: u64,
         session_id: String,
@@ -73,32 +68,8 @@ pub(crate) enum HostMessage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HostOperation {
-    Bootstrap,
     Snapshot { request_id: u64 },
     Mutation { command_id: String },
-}
-
-pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage>) {
-    tokio::spawn(async move {
-        let result = async {
-            let definitions = client.list_agent_definitions().await?.definitions;
-            let page = client.list_sessions(PAGE_LIMIT, None).await?;
-            Ok::<_, garive_host_client::HostClientError>((definitions, page))
-        }
-        .await;
-        let message = match result {
-            Ok((definitions, page)) => HostMessage::Bootstrapped {
-                definitions,
-                sessions: page.sessions,
-                next_before: page.next_before,
-            },
-            Err(error) => HostMessage::Failed {
-                operation: HostOperation::Bootstrap,
-                error,
-            },
-        };
-        let _ = sender.send(message).await;
-    });
 }
 
 pub(crate) fn load_snapshot(

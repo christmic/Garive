@@ -1,37 +1,12 @@
 use super::{
-    AppAction, AppEffect, AppEffectOutcome, AppModel, BootState, ConnectionState, EffectKind,
-    ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind, SessionPageOwner,
-    SessionPagePurpose, SessionPageRequest,
+    bootstrap, AppAction, AppEffect, AppEffectOutcome, AppModel, BootState, ConnectionState,
+    EffectKind, ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind,
+    SessionPageOwner, SessionPagePurpose, SessionPageRequest,
 };
 
 pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> {
     match action {
-        AppAction::BootStarted => {
-            model.boot = BootState::Loading;
-            model.connection = ConnectionState::Connecting;
-            Vec::new()
-        }
-        AppAction::BootCompleted {
-            definition_count,
-            session_count,
-        } => {
-            model.definition_count = definition_count;
-            model.session_count = session_count;
-            model.boot = if definition_count == 0 {
-                BootState::NotConfigured
-            } else {
-                BootState::Ready
-            };
-            model.connection = ConnectionState::Online;
-            Vec::new()
-        }
-        AppAction::SessionCatalogReplaced {
-            sessions,
-            next_before,
-        } => {
-            replace_session_catalog(model, sessions, next_before);
-            Vec::new()
-        }
+        AppAction::BootStarted => bootstrap::begin(model),
         AppAction::LoadSessionPageRequested(request)
             if session_page_request_is_admitted(model, &request)
                 && model
@@ -221,6 +196,10 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 return Vec::new();
             };
             sync_in_flight_pending_projection(model);
+            if matches!(effect.kind, EffectKind::LoadDefinitions) {
+                bootstrap::finish_definitions(model, effect.context, result.outcome);
+                return Vec::new();
+            }
             if let EffectKind::LoadSessionPage { request } = &effect.kind {
                 return finish_session_page(model, effect.context, request.clone(), result.outcome);
             }
@@ -302,7 +281,8 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
 
 fn session_page_request_is_admitted(model: &AppModel, request: &SessionPageRequest) -> bool {
     match request.purpose {
-        SessionPagePurpose::Replace => request.cursor.is_none(),
+        SessionPagePurpose::Replace => false,
+        SessionPagePurpose::CatalogRefresh => request.cursor.is_none(),
         SessionPagePurpose::Append => {
             request.cursor.is_some() && request.cursor == model.sessions_next_before
         }
@@ -324,24 +304,49 @@ fn finish_session_page(
     }
     model.session_page_owner = None;
     model.sessions_loading = false;
-    match outcome {
+    let succeeded = match outcome {
         AppEffectOutcome::HostRead(Ok(HostReadResponse::SessionPage {
             request: response_request,
             sessions,
             next_before,
-        })) if response_request == request => match request.purpose {
-            SessionPagePurpose::Replace => replace_session_catalog(model, sessions, next_before),
-            SessionPagePurpose::Append => append_session_catalog(model, sessions, next_before),
-        },
+        })) if response_request == request => {
+            match request.purpose {
+                SessionPagePurpose::Replace | SessionPagePurpose::CatalogRefresh => {
+                    replace_session_catalog(model, sessions, next_before)
+                }
+                SessionPagePurpose::Append => append_session_catalog(model, sessions, next_before),
+            }
+            true
+        }
         AppEffectOutcome::HostRead(Err(failure)) => {
             model.notice = Some(format!(
                 "Session page unavailable: {}.",
                 failure.code.wire_name()
             ));
+            if request.purpose == SessionPagePurpose::Replace {
+                bootstrap::finish_sessions(model, Err(failure.code.wire_name()));
+            }
+            false
         }
         _ => {
             model.notice = Some("Ignored an invalid Session page response.".into());
+            if request.purpose == SessionPagePurpose::Replace {
+                bootstrap::finish_sessions(model, Err("internal_failure"));
+            }
+            false
         }
+    };
+    match request.purpose {
+        SessionPagePurpose::Replace => {
+            if succeeded {
+                bootstrap::finish_sessions(model, Ok(()));
+            }
+        }
+        SessionPagePurpose::CatalogRefresh => {
+            model.catalog_refresh_succeeded = succeeded;
+            model.catalog_refresh_revision = model.catalog_refresh_revision.saturating_add(1);
+        }
+        SessionPagePurpose::Append => {}
     }
     Vec::new()
 }

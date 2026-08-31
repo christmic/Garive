@@ -39,8 +39,8 @@ pub(crate) struct EffectContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SessionPagePurpose {
-    #[allow(dead_code)]
     Replace,
+    CatalogRefresh,
     Append,
 }
 
@@ -56,6 +56,7 @@ impl SessionPageRequest {
         hasher.update(b"garive-tui-session-page-v1\0");
         hasher.update(match self.purpose {
             SessionPagePurpose::Replace => b"replace".as_slice(),
+            SessionPagePurpose::CatalogRefresh => b"catalog-refresh".as_slice(),
             SessionPagePurpose::Append => b"append".as_slice(),
         });
         hasher.update(b"\0");

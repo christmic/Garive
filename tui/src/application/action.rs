@@ -1,5 +1,3 @@
-use garive_host_client::SessionSummary;
-
 use super::{
     AppEffectResult, FocusTarget, Overlay, PendingMutationDraft, SessionPageRequest, TerminalSize,
 };
@@ -7,14 +5,6 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AppAction {
     BootStarted,
-    BootCompleted {
-        definition_count: usize,
-        session_count: usize,
-    },
-    SessionCatalogReplaced {
-        sessions: Vec<SessionSummary>,
-        next_before: Option<String>,
-    },
     LoadSessionPageRequested(SessionPageRequest),
     HostUnavailable {
         safe_code: &'static str,

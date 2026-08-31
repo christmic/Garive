@@ -1,5 +1,7 @@
 use super::*;
-use garive_host_client::{HostActivity, LiveOutputEndReason, LiveOutputEventKind, SuspensionView};
+use garive_host_client::{
+    HostActivity, LiveOutputEndReason, LiveOutputEventKind, SessionSummary, SuspensionView,
+};
 
 const CANARY: &str = "host-message-private-content-canary";
 
@@ -80,24 +82,6 @@ fn host_message_debug_is_content_safe_for_every_variant() {
         }
     };
 
-    assert_safe(
-        HostMessage::Bootstrapped {
-            definitions: vec![AgentDefinitionSummary {
-                api_version: CANARY.into(),
-                definition_id: CANARY.into(),
-                definition_revision: CANARY.into(),
-                capabilities: vec![CANARY.into()],
-            }],
-            sessions: vec![session_summary()],
-            next_before: Some(CANARY.into()),
-        },
-        "Bootstrapped",
-        &[
-            "definition_count: 1",
-            "session_count: 1",
-            "has_next_page: true",
-        ],
-    );
     assert_safe(
         HostMessage::SnapshotLoaded {
             request_id: 47,
@@ -223,7 +207,6 @@ fn host_message_debug_is_content_safe_for_every_variant() {
     );
 
     for operation in [
-        HostOperation::Bootstrap,
         HostOperation::Snapshot { request_id: 54 },
         HostOperation::Mutation {
             command_id: CANARY.into(),

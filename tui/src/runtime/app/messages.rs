@@ -1,7 +1,7 @@
 use garive_host_client::HostClientErrorCode;
 
 use crate::{
-    application::{AppAction, ConnectionState, ExecutionState, Overlay},
+    application::{AppAction, BootPartState, ConnectionState, ExecutionState, Overlay},
     persistence::{DiagnosticEvent, PendingKind},
 };
 
@@ -22,37 +22,6 @@ use correlation::{
 
 pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
     match message {
-        HostMessage::Bootstrapped {
-            definitions,
-            sessions,
-            next_before,
-        } => {
-            state.model.definitions = definitions;
-            state.dispatch(AppAction::SessionCatalogReplaced {
-                sessions,
-                next_before,
-            });
-            state.dispatch(AppAction::BootCompleted {
-                definition_count: state.model.definitions.len(),
-                session_count: state.model.sessions.len(),
-            });
-            let selected = state
-                .config
-                .session
-                .clone()
-                .or_else(|| state.preferences.selected_session_id.clone())
-                .or_else(|| {
-                    state
-                        .model
-                        .sessions
-                        .first()
-                        .map(|item| item.session_id.clone())
-                });
-            if let Some(id) = selected {
-                state.load(id);
-            }
-            replay_queued_create(state);
-        }
         HostMessage::SnapshotLoaded {
             request_id,
             session_id,
@@ -110,7 +79,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.model.composer.clear();
                 state.model.prompt_history_browser.reset();
             }
-            host::bootstrap(state.client.clone(), state.sender.clone());
+            state.refresh_session_catalog();
         }
         HostMessage::TurnAccepted {
             command_id,
@@ -288,11 +257,10 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                     return;
                 }
             }
-            let refresh_failed = match &operation {
-                HostOperation::Bootstrap => true,
-                HostOperation::Snapshot { request_id } => *request_id == state.snapshot_request,
-                _ => false,
-            };
+            let refresh_failed = matches!(
+                &operation,
+                HostOperation::Snapshot { request_id } if *request_id == state.snapshot_request
+            );
             if refresh_failed && state.cancel_exact_retry_refresh() {
                 state.model.notice =
                     Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
@@ -302,12 +270,6 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 safe_code: code.wire_name(),
             });
             match operation {
-                HostOperation::Bootstrap => {
-                    state.dispatch(AppAction::HostUnavailable {
-                        safe_code: code.wire_name(),
-                    });
-                    state.model.execution = ExecutionState::Failed;
-                }
                 HostOperation::Snapshot { request_id } if request_id != state.snapshot_request => {}
                 HostOperation::Snapshot { .. }
                     if matches!(
@@ -366,7 +328,7 @@ fn refresh_after_unmatched_mutation(state: &mut RuntimeState) {
         state.load(session_id);
     } else {
         state.model.connection = ConnectionState::Connecting;
-        host::bootstrap(state.client.clone(), state.sender.clone());
+        state.refresh_session_catalog();
     }
 }
 
@@ -382,6 +344,36 @@ fn replay_queued_create(state: &mut RuntimeState) -> bool {
     };
     replay_pending(state, pending);
     true
+}
+
+pub(super) fn apply_boot_completion(state: &mut RuntimeState) {
+    if matches!(state.model.boot_sessions, BootPartState::Ready) {
+        let selected = state
+            .config
+            .session
+            .clone()
+            .or_else(|| state.preferences.selected_session_id.clone())
+            .or_else(|| {
+                state
+                    .model
+                    .sessions
+                    .first()
+                    .map(|item| item.session_id.clone())
+            });
+        if let Some(id) = selected {
+            state.load(id);
+        }
+    }
+    replay_queued_create(state);
+}
+
+pub(super) fn apply_catalog_refresh_completion(state: &mut RuntimeState) {
+    if state.model.catalog_refresh_succeeded {
+        replay_queued_create(state);
+    } else if state.cancel_exact_retry_refresh() {
+        state.model.notice =
+            Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
+    }
 }
 
 fn replay_queued_for_session(state: &mut RuntimeState, session_id: &str) -> bool {

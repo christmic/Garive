@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::{
-    controller::handle_terminal, external_editor, host, terminal_events::TerminalEventReader,
+    controller::handle_terminal, external_editor, terminal_events::TerminalEventReader,
     SystemTerminal, TerminalError, TerminalGuard, TerminalOptions,
 };
 
@@ -112,7 +112,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let (sender, mut receiver) = mpsc::channel(256);
     let (action_sender, mut action_receiver) = mpsc::channel(64);
     let mut state = RuntimeState::new(config, client, sender, action_sender, restored);
-    host::bootstrap(state.client.clone(), state.sender.clone());
+    state.dispatch(AppAction::BootStarted);
     let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
     let mut motion_tick = 0_u64;

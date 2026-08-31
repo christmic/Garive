@@ -269,7 +269,7 @@ pub(super) fn retry_pending(state: &mut RuntimeState) {
     if let Some(session_id) = pending.session_id {
         state.load(session_id);
     } else {
-        host::bootstrap(state.client.clone(), state.sender.clone());
+        state.refresh_session_catalog();
     }
 }
 

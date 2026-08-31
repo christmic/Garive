@@ -1,5 +1,6 @@
 mod action;
 mod action_overlay;
+mod bootstrap;
 mod effect;
 mod inspector;
 mod live_answer;
@@ -29,8 +30,8 @@ pub(crate) use live_answer::{
     LiveAnswerProjection,
 };
 pub(crate) use model::{
-    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState, FocusTarget,
-    Overlay, TerminalSize, TimelineItem, TimelineRole, TimelineTone,
+    AppModel, BootPartState, BootState, ConnectionState, ConversationLandmark, ExecutionState,
+    FocusTarget, Overlay, TerminalSize, TimelineItem, TimelineRole, TimelineTone,
 };
 pub(crate) use turn_block::{TurnBlock, TurnBlockKey};
 pub(crate) use update::reduce;

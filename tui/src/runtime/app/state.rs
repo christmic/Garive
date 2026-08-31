@@ -109,14 +109,15 @@ impl RuntimeState {
         action_sender: mpsc::Sender<AppAction>,
         restored: RestoredState,
     ) -> Self {
-        let mut model = AppModel::default();
-        reduce(&mut model, AppAction::BootStarted);
-        model.prompt_history = restored
-            .history
-            .into_iter()
-            .rev()
-            .map(|entry| entry.submitted_text)
-            .collect();
+        let mut model = AppModel {
+            prompt_history: restored
+                .history
+                .into_iter()
+                .rev()
+                .map(|entry| entry.submitted_text)
+                .collect(),
+            ..Default::default()
+        };
         if restored.history_error {
             model.notice = Some("Corrupt prompt history was quarantined.".into());
         }
@@ -225,6 +226,8 @@ impl RuntimeState {
     }
 
     pub(in crate::runtime) fn dispatch(&mut self, action: AppAction) {
+        let boot_revision = self.model.boot_completion_revision;
+        let catalog_revision = self.model.catalog_refresh_revision;
         let effects = reduce(&mut self.model, action);
         self.sync_pending_projection();
         for effect in effects {
@@ -305,6 +308,12 @@ impl RuntimeState {
             }
         }
         self.sync_pending_projection();
+        if self.model.boot_completion_revision != boot_revision {
+            super::messages::apply_boot_completion(self);
+        }
+        if self.model.catalog_refresh_revision != catalog_revision {
+            super::messages::apply_catalog_refresh_completion(self);
+        }
     }
 
     pub(in crate::runtime) fn load(&mut self, session_id: String) {
@@ -448,6 +457,13 @@ impl RuntimeState {
         self.dispatch(AppAction::LoadSessionPageRequested(SessionPageRequest {
             cursor: Some(before),
             purpose: SessionPagePurpose::Append,
+        }));
+    }
+
+    pub(in crate::runtime) fn refresh_session_catalog(&mut self) {
+        self.dispatch(AppAction::LoadSessionPageRequested(SessionPageRequest {
+            cursor: None,
+            purpose: SessionPagePurpose::CatalogRefresh,
         }));
     }
 }

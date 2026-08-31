@@ -5,7 +5,9 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
-use super::{EffectTracker, InspectorState, LiveAnswerProjection, SessionPageOwner, TurnBlock};
+use super::{
+    EffectContext, EffectTracker, InspectorState, LiveAnswerProjection, SessionPageOwner, TurnBlock,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -79,6 +81,15 @@ pub(crate) enum BootState {
     Ready,
     NotConfigured,
     Degraded,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) enum BootPartState {
+    #[default]
+    Idle,
+    Loading(EffectContext),
+    Ready,
+    Failed { safe_code: &'static str },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -167,6 +178,9 @@ impl Default for ViewportState {
 pub(crate) struct AppModel {
     pub(crate) effects: EffectTracker,
     pub(crate) boot: BootState,
+    pub(crate) boot_definitions: BootPartState,
+    pub(crate) boot_sessions: BootPartState,
+    pub(crate) boot_completion_revision: u64,
     pub(crate) focus: FocusTarget,
     pub(crate) prior_focus: FocusTarget,
     pub(crate) overlay: Option<Overlay>,
@@ -182,6 +196,8 @@ pub(crate) struct AppModel {
     pub(crate) sessions_next_before: Option<String>,
     pub(crate) sessions_loading: bool,
     pub(crate) session_page_owner: Option<SessionPageOwner>,
+    pub(crate) catalog_refresh_revision: u64,
+    pub(crate) catalog_refresh_succeeded: bool,
     pub(crate) session_filter: String,
     pub(crate) turn_filter: String,
     pub(crate) turn_selection: usize,
