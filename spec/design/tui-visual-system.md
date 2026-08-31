@@ -112,6 +112,14 @@ Bounded lists keep the selected item inside their visible window. The visual
 filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
+Modal geometry reserves the semantic header and composer/footer boundary on
+standard terminals. The reservation contracts responsively on short terminals
+so at least the selected row and its actions remain visible. A modal may clear
+only its rectangle plus a two-cell same-height horizontal halo; it must not
+erase rows above or below, splice the composer frame, or hide the command
+palette action row. The command palette uses compact vertical chrome and a
+fixed command column so all admitted rows fit at `160x28`; unavailable detail
+is one grapheme-safe display-width-truncated line.
 An anchored command menu is not a modal. It uses the overlay border and shared
 selection row, clears only its own rectangle, aligns its left edge with the
 composer, caps width at 76 cells, and grows upward by two border rows plus at

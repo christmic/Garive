@@ -271,6 +271,16 @@ an edit discards the browse state without changing any persisted history row.
 diagnostic files; mutations are then refused unless the user confirms that an
 unknown response cannot survive process exit.
 
+## Clipboard output
+
+Clipboard copy is a one-way terminal presentation effect, never local or Host
+state. The controller may pass the last visible completion, selected Session
+ID, or exact active composer selection to the single OSC 52 encoder. The
+encoder rejects values above 64 KiB, emits one bounded base64 sequence, and is
+disabled in screen-reader mode. The TUI never reads the system clipboard and
+never writes copied content to preferences, prompt history, pending recovery,
+diagnostics, or the Host.
+
 ## File durability and concurrency
 
 The default state root follows the platform user-state convention and is

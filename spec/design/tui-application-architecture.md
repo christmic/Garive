@@ -71,6 +71,8 @@ tui/src/
   persistence.rs         preference and pending-command ports/adapters
   runtime/
     mod.rs               event loop and task supervision
+    controller.rs        terminal event and key-owner orchestration
+    controller/overlay.rs modal key routing and filtered-list activation
     controller/mouse.rs  modal-safe pointer routing
     terminal.rs          idempotent terminal guard
     signals.rs           shutdown/resize signals
@@ -110,6 +112,14 @@ selection; `EditorState` resolves Unicode grapheme classes and newline ranges;
 `view/composer.rs` remains the only screen-cell hit-test authority. Runtime
 stores only transient click timing/count and cancels it on keyboard, paste,
 resize, focus loss, or a click outside the composer.
+
+Explicit selection copy keeps the same ownership split. `EditorState` exposes
+only the currently selected admitted text; the typed command context derives
+whether that value exists; the controller admits `Alt+C` or the catalog action;
+and `runtime/clipboard.rs` alone encodes the bounded OSC 52 write. The footer
+derives its selection-specific hint from model state. No view recomputes byte
+ranges, no pointer gesture writes the clipboard, and copy does not clear,
+persist, or submit the selection.
 
 The composer is similarly bounded. `EditorState` owns admitted text and
 grapheme-indexed editing state; the private `EditorLayout` in

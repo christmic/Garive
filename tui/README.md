@@ -44,7 +44,8 @@ Useful launch options:
 - `Esc` requests cancellation while a Turn runs; `Ctrl+Q` confirms exit.
 - `PageUp`/`PageDown` scroll; mouse capture is opt-in.
 - `/help` lists commands. `/retry` repeats the exact persisted command identity;
-  `/copy last` and `/copy session-id` use a bounded OSC 52 request.
+  `/copy last`, `/copy selection`, and `/copy session-id` use a bounded OSC 52
+  request. `Alt+C` is the direct explicit composer-selection gesture.
 
 The Host/SQLite ledger is the only durable conversation authority. Local files
 contain preferences, bounded drafts, prompt history, and exact pending-command

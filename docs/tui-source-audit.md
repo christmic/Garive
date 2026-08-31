@@ -183,6 +183,16 @@ invariants, but not Grok's clipboard writes, element-display behavior,
 Neovim-style interior cursor, or accelerated edge scrolling. Codex/Pi remain
 negative corroboration rather than inferred multi-click implementations.
 
+The clipboard divergence is directly source-bound rather than inferred:
+Grok's pinned `textarea.rs:1279-1281` writes the double-click selection through
+`set_clipboard_text`, and `textarea.rs:1307-1309` does the same after a
+triple-click line selection. Garive deliberately rejects that implicit side
+effect. Its multi-click path only changes editor selection; explicit `Alt+C` or
+the typed `/copy selection` palette action passes the exact admitted range to
+the existing bounded OSC 52 component. Codex's pinned event stream still drops
+mouse input and Pi still has no editor mouse handler, so neither is cited as a
+positive clipboard-selection implementation.
+
 ## Codex findings
 
 ### Event and terminal ownership

@@ -406,6 +406,20 @@ observes both styled runs, replaces the line with `Y`, and proves mouse-mode
 plus alternate-screen restoration. Strict workspace all-target/all-feature
 Clippy, formatting, and diff checks passed.
 
+Merge revisions `1ee5160c` and `d4bd68db` add explicit composer-selection copy
+and a responsive modal safe-area contract. `Alt+C` and `/copy selection` share
+the typed command context and the existing 64 KiB OSC 52 encoder; multi-click
+remains selection-only. The wide palette retains all 17 commands plus its
+action row in one-line rows, while standard modals preserve the composer frame
+and compact terminals keep the selected row visible. Reviewed light/dark/mono
+snapshots bind those boundaries. On native macOS arm64, 37 library, 12 editor,
+6 command, 50 view, 32 snapshot/boundary, and 15 shipping-binary PTY tests
+passed. The new PTY selects `beta`, sends `Alt+C`, observes only base64
+`YmV0YQ==`, rejects the full-draft payload, and proves terminal restoration.
+Strict workspace all-target/all-feature Clippy passed before the final rebase;
+post-rebase TUI all-target/all-feature Clippy, formatting, and diff checks also
+passed.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

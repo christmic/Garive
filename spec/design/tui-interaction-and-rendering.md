@@ -217,7 +217,7 @@ overlay and does not share this sequential browse cursor.
 | Undo/redo | bounded by operation count and total retained bytes; paste undoes atomically |
 | Home/End | visual line start/end; `Ctrl+Home/End` document start/end |
 | Up/Down | visual line movement; history only at document boundary with no selection |
-| Selection | Shift movement; copy only visible selected text on explicit gesture |
+| Selection | Shift movement; `Alt+C` or `/copy selection` copies only visible selected text |
 
 With an active selection, an unmodified Left or Right collapses to the start
 or end edge and stops without an extra grapheme move. Directional word,
@@ -244,6 +244,13 @@ including its trailing newline when present. The fourth begins a new cycle.
 Typing, paste, resize, focus loss, or any non-composer click cancels the cycle.
 Word/line selection reuses the normal semantic selection style and replacement
 path; it never copies implicitly or exposes hidden buffer content.
+`Alt+C` is the direct explicit copy gesture while a composer selection exists.
+It emits exactly that selected source range through the bounded clipboard
+component, retains the selection, and shows a safe notice. `/copy selection`
+is the equivalent command-palette action and is unavailable when no composer
+selection exists. Typing the command into the composer necessarily replaces
+the prior selection, so discovery for an existing selection is `Ctrl+P` or
+`Alt+C`, not implicit copy during typing or multi-click.
 
 The editor accepts newline, tab-as-spaces, and printable Unicode. C0/C1 control
 characters other than newline/tab are rejected. Bidi isolate characters may be
@@ -269,6 +276,7 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Enter` | composer | submit when valid; accept selected modal item otherwise |
 | `Ctrl+J` | composer | insert newline |
 | `Shift+Enter` | composer, when distinguishable | insert newline |
+| `Alt+C` | composer selection | copy exactly the selected composer text through bounded OSC 52 |
 | `Tab` / `Shift+Tab` | no suggestion or blocking overlay | move focus forward/backward |
 | `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
 | `Up` / `Down`, `PageUp` / `PageDown`, `Home` / `End` | focused conversation | scroll one cell, scroll one viewport, jump oldest, or follow latest |
@@ -325,7 +333,7 @@ sending the text to Host.
 | `/cancel` | none | request cancellation of selected running Turn |
 | `/theme` | `system`, `dark`, `light`, or `mono` | update local preference |
 | `/mouse` | `on` or `off` | change mouse capture safely |
-| `/copy` | `last` or `session-id` | copy visible completion or opaque ID |
+| `/copy` | `last`, `selection`, or `session-id` | copy visible completion, active composer selection, or opaque ID |
 | `/quit` | none | open quit confirmation |
 
 Command names are ASCII lowercase and exact. Arguments support quoted UTF-8

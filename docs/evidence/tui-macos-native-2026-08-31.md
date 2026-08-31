@@ -357,6 +357,27 @@ workspace all-target/all-feature Clippy passed with warnings denied; formatting
 and diff checks were clean. This is executable shipping-binary evidence, not a
 physical-window screenshot.
 
+Merge revisions `1ee5160c` and `d4bd68db` add explicit composer-selection copy
+and responsive modal visual boundaries. A native `100x24` monochrome Expect
+PTY types `alpha beta`, extends the selection over `beta` with real
+Shift+Left sequences, observes the selection-specific `Alt+C copy` footer,
+sends `Esc c`, and captures OSC 52 payload `YmV0YQ==`. The transcript asserts
+that the full-draft payload `YWxwaGEgYmV0YQ==` is absent, then proves
+alternate-screen restoration. The complete shipping-binary PTY suite passed
+15/15 in 41.74 seconds after rebasing onto `ad18b683`.
+
+The same candidate passed 37 library, 12 editor, 6 command, 50 view, and 32
+snapshot/boundary tests. Manually reviewed `160x28` palette and `100x24`
+Help, recovery, action, and Session-picker snapshots bind one-line unavailable
+detail, the complete 17-command catalog and action footer, horizontal modal
+separation, intact header/composer frames, and compact selection visibility.
+Strict workspace all-target/all-feature Clippy passed before rebase; the exact
+rebased TUI passed all-target/all-feature Clippy with warnings denied, format
+check, and diff check. A full workspace test run reached an unrelated
+creativity-baseline fixture and failed once with `generator_failure`; its exact
+test passed when rerun alone. This is executable buffer/PTY evidence, not a
+physical Terminal/iTerm2-class screenshot; that gallery remains open.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment

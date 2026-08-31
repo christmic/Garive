@@ -140,6 +140,7 @@ Garive does not invent or persist provider/model choices in the TUI.
 | `Backspace` / `Delete` | Delete the selection or one grapheme. |
 | `Alt+Backspace` / `Alt+Delete` | Delete one word. |
 | `Ctrl+Z` / `Ctrl+Y` | Undo or redo. |
+| `Alt+C` | Copy exactly the active composer selection through terminal OSC 52. |
 | `Ctrl+C` | Clear a selection, then a nonempty draft, then ask to quit on a second empty press. |
 
 Selected composer text is visibly highlighted in dark and light themes and
@@ -237,6 +238,11 @@ click selects the complete logical line, ready for replacement. The sequence
 must stay on one cell within 500 ms and resets after typing, paste, resize,
 focus loss, or a click outside the composer. Multi-click selection never copies
 text automatically.
+Use `Alt+C` to copy the active selection explicitly. The selection remains
+visible and ready for replacement after the request. The equivalent
+`/copy selection` action is available from `Ctrl+P` only while text is selected;
+typing that command into the composer would replace or clear the prior
+selection and therefore cannot act on it.
 
 ## Slash commands
 
@@ -256,6 +262,7 @@ condition is true.
 | `/theme system\|dark\|light\|mono` | Change the current theme. |
 | `/mouse on\|off` | Save mouse capture for the next terminal session. |
 | `/copy last` | Request an OSC 52 copy of the last visible Agent completion. |
+| `/copy selection` | Request an OSC 52 copy of the active composer selection. |
 | `/copy session-id` | Request an OSC 52 copy of the selected Session ID. |
 | `/help` | Open the keyboard guide. |
 | `/quit` | Open the quit confirmation. |
