@@ -82,7 +82,7 @@ tui/src/
   view/
     mod.rs               root layout
     command_suggestions.rs pure anchored-menu rendering and pointer geometry
-    conversation.rs      timeline and scroll model
+    conversation.rs      TurnBlock rendering and visual-cell scroll geometry
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
     linear.rs            screen-reader presentation components
@@ -111,14 +111,21 @@ search grammar, focus, accessibility, and backdrop contracts differ.
 
 Conversation navigation has an equally explicit projection boundary.
 `install_timeline` sorts the typed H2 `TurnTimelineItem` snapshot once and
-builds both rendered `TimelineItem` cells and a bounded
-`ConversationLandmark` list. A landmark contains only its one-based ordinal,
-public `started_position`, and sanitized public prompt preview. The navigator
-never reconstructs identity by parsing a rendered cell's opaque `stable_key`
-and never exposes a Turn ID. Activation resolves the User cell whose public
-position equals `started_position`; absence is a safe no-op with a local
-notice. Session or timeline replacement clears the landmark filter,
-selection, and overlay before installing the new projection.
+projects one keyed `TurnBlock` per Turn plus a bounded
+`ConversationLandmark` list. The block key is the exact internal
+`(session_id, turn_id)` identity; its children are one User request, an
+`ActivityStack`, an optional committed answer, and an optional terminal or
+suspension outcome. H1 activity replaces the matching activity child and H2
+snapshot install replaces the matching block children without deriving Turn
+ownership from adjacent rendered rows. `LiveAnswer` remains a separately keyed
+ephemeral child and only the matching durable answer replaces it.
+
+A landmark contains only its one-based ordinal, public `started_position`,
+and sanitized public prompt preview. The navigator never reconstructs
+identity by parsing rendered text or exposes a Turn ID. Activation resolves
+the block whose User child owns `started_position`; absence is a safe no-op
+with a local notice. Session or timeline replacement clears the landmark
+filter, selection, and overlay before installing the new projection.
 
 Composer multi-click also has separate owners. `input/mouse_gesture.rs`
 classifies same-cell clicks within 500 ms as place, word, or logical-line

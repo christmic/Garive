@@ -292,7 +292,7 @@ adds the exact 4096-byte Host bound, bounded argv, no implicit `vi`, no shell,
 content/Session freshness, one-edit undo, content-free diagnostics, and
 macOS-first PTY evidence.
 
-### Conversation position rail
+### Conversation position and navigation
 
 Grok Build's dedicated renderer documents a one-column scrollbar separated by
 one gap, hides it when content fits, dims it while following, brightens it when
@@ -305,13 +305,13 @@ one bounded visible range and exposes position only when rows are hidden in
 top/bottom “more” indicators from the same layout at
 `packages/tui/src/components/editor.ts:480-503,564-575`.
 
-Garive adopts the shared invariants, not either widget or glyph set. Its
-conversation component uses stable public timeline-cell indices rather than
-pretending to know a complete line height that it deliberately does not lay
-out. One rail metric owns render and pointer mapping, reuses the existing right
-padding, stays muted while following, becomes prominent while detached, and
-maps the first/last track row exactly to oldest/latest. It neither scans the
-complete rendered transcript nor changes Host pagination or viewport truth.
+Garive adopts the bounded-layout and stable-anchor invariants, not either
+widget or glyph set. The accepted conversation-first direction rejects a
+permanent position rail because it competes with the answer and makes internal
+cell order look like product truth. The conversation component instead owns
+visual-cell PageUp/PageDown, pointer-wheel geometry, detached unseen updates,
+End-to-follow, and stable reflow anchors without changing Markdown measure or
+Host pagination.
 
 Grok's newer per-turn navigator independently strengthens the pointer contract.
 `views/timeline.rs:1-191` computes one frame-owned rail used by painting and
@@ -322,14 +322,12 @@ and clears ordinary transcript hover while the pointer owns it. Its `/jump`
 picker at `views/jump.rs:1-145` uses stable prompt identity, bounded ordinal and
 public preview rows, shared list geometry, and explicit dismiss semantics.
 
-Garive adopts the non-mutating hover-preview invariant, not Grok's per-Turn
-tick geometry or private entry types. Hovering the already admitted continuous
-position rail previews the exact public stable cell that a press would anchor.
-The preview is transient presentation only, contains a bounded public role,
-ordinal, and sanitized excerpt, and cannot change follow mode, selection,
-pagination, persistence, or Host truth. Leaving the rail clears it. A later
-searchable navigator requires a separately frozen public Turn projection; it
-must not parse or display opaque Turn IDs from `stable_key` strings.
+Garive does not transfer the hover preview or per-Turn tick geometry. Direct
+position navigation belongs to the explicitly opened searchable Turn
+navigator. It uses a separately frozen public Turn projection and never parses
+or displays opaque Turn IDs from rendered stable keys. Historical Garive rail
+experiments are recorded as superseded evidence, not current product
+requirements.
 
 ### Searchable Turn navigation
 
