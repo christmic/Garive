@@ -589,8 +589,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         aria-hidden={(smallWindow && !navigationOpen) || navigationCollapsed} onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
         }}>
-        <div className="titlebar-drag" data-tauri-drag-region />
-        <div className="sidebar-window-row" data-tauri-drag-region>
+        <div className="sidebar-window-row" data-tauri-drag-region="deep">
           <button className="sidebar-collapse icon-button" type="button"
             aria-label={t("shell.collapseNavigation")} title={t("shell.collapseNavigation")}
             onClick={() => setNavigationCollapsed(true)}><Icon name="panel" /></button>
@@ -656,7 +655,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
       <main className="main-surface" inert={smallWindow && navigationOpen}
         aria-hidden={smallWindow && navigationOpen}>
-        <header className="topbar" data-tauri-drag-region>
+        <header className="topbar" data-tauri-drag-region="deep">
           <div className="topbar-title"><button className={navigationCollapsed
             ? "navigation-trigger sidebar-restore icon-button" : "navigation-trigger icon-button"} type="button"
             aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}

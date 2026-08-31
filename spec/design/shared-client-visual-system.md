@@ -142,7 +142,9 @@ shadows or rounded outer cards.
   output. Pane resizing is independent of browser zoom and persists only a
   bounded, non-sensitive width preference.
 - The whole 34 px title row participates in native window dragging except
-  admitted controls, tabs and the resizer. Double-click follows the platform
+  admitted controls, tabs and the resizer. Tauri 2.11 Desktop uses its deep
+  drag-region mode so non-interactive title descendants retain the native hit
+  target while buttons remain interactive. Double-click follows the platform
   titlebar convention rather than triggering a product action.
 - Native macOS traffic-light clearance is a platform adapter concern. Web uses
   the same React tree, geometry and semantics without reserving that inset.
