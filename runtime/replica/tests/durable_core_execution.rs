@@ -358,6 +358,7 @@ async fn run_live_memory_case(
             skill_activation: None,
             memory_retrieval: retrieval,
             knowledge_retrieval: None,
+            recovered_knowledge: None,
         },
         &mut context,
         transport,
@@ -1559,6 +1560,7 @@ fn skill_activation_commits_before_model_and_replays_exactly_after_restart() {
             skill_activation: Some(activation),
             memory_retrieval: Some(retrieval),
             knowledge_retrieval: Some(knowledge),
+            recovered_knowledge: None,
         },
         &mut context,
         &SkillCheckingModel {

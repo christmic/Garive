@@ -105,7 +105,7 @@ fn recover_local_dispatches_inner(
                     recorded_at,
                 )? {
                     PendingKnowledgeRecovery::CommittedUncertainty => continue,
-                    PendingKnowledgeRecovery::RedispatchCurrentExecution => {
+                    PendingKnowledgeRecovery::ResumeCurrentExecution => {
                         let execution_id = latest(&snapshot, "execution.started")?
                             .execution_id
                             .clone()
@@ -197,7 +197,7 @@ fn recover_local_dispatches_inner(
 
 enum PendingKnowledgeRecovery {
     None,
-    RedispatchCurrentExecution,
+    ResumeCurrentExecution,
     CommittedUncertainty,
 }
 
@@ -226,7 +226,7 @@ fn recover_pending_knowledge(
         return Err(LocalRecoveryError::CorruptRecoveryState);
     }
     let mut facts = Vec::new();
-    let mut redispatch = false;
+    let mut resume = false;
     for request_id in request_ids {
         let context = KnowledgeRecoveryContext {
             session_id: session_id.clone(),
@@ -242,8 +242,13 @@ fn recover_pending_knowledge(
                 plan_knowledge_recovery_uncertain(ledger, &context, recorded_at)
                     .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
             ),
-            KnowledgeRecoveryAction::RedispatchSameRequest { .. } => redispatch = true,
-            KnowledgeRecoveryAction::ReturnTerminal { .. } => {}
+            KnowledgeRecoveryAction::RedispatchSameRequest { .. } => resume = true,
+            KnowledgeRecoveryAction::ReturnTerminal {
+                completed: true, ..
+            } => resume = true,
+            KnowledgeRecoveryAction::ReturnTerminal {
+                completed: false, ..
+            } => {}
         }
     }
     if !facts.is_empty() {
@@ -252,8 +257,8 @@ fn recover_pending_knowledge(
             .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
         return Ok(PendingKnowledgeRecovery::CommittedUncertainty);
     }
-    Ok(if redispatch {
-        PendingKnowledgeRecovery::RedispatchCurrentExecution
+    Ok(if resume {
+        PendingKnowledgeRecovery::ResumeCurrentExecution
     } else {
         PendingKnowledgeRecovery::None
     })

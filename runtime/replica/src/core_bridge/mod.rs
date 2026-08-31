@@ -29,7 +29,7 @@ pub use execution::{
     execute_durable_agent_with_capabilities, execute_durable_agent_with_f0,
     execute_durable_agent_with_skill_activation, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,
-    F0ExecutionGovernance, PreparedAgentCapabilities,
+    F0ExecutionGovernance, PreparedAgentCapabilities, RecoveredKnowledgeContext,
 };
 pub use execution_types::{
     DurableExecutionConfig, DurableExecutionError, DurableExecutionResult,
@@ -43,6 +43,7 @@ pub use governed_effect_types::{
     SafetyEvaluation, SafetyFuture, SafetyInteraction, SafetyPort, SandboxAdmission,
     SandboxAdmissionPort, SandboxAdmissionRequest,
 };
+pub(crate) use knowledge_connector::knowledge_input;
 pub use knowledge_connector::{
     KnowledgeAccessGrant, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
     PreparedKnowledgeCapability,

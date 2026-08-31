@@ -31,6 +31,8 @@ pub enum KnowledgeRecoveryAction {
     RedispatchSameRequest {
         /// Canonical request digest that Host must rebind.
         request_digest: String,
+        /// Fixed request prefix required to reconstruct the exact request.
+        request_through_position: u64,
     },
     /// One attempt may have crossed the connector boundary.
     ClassifyUncertain {
@@ -45,6 +47,8 @@ pub enum KnowledgeRecoveryAction {
         request_digest: String,
         /// Exact durable position of the terminal fact.
         terminal_position: u64,
+        /// Fixed request prefix required to reconstruct the exact request.
+        request_through_position: u64,
         /// Whether the terminal is `knowledge.completed`.
         completed: bool,
     },
@@ -100,6 +104,11 @@ pub fn derive_knowledge_recovery(
         return Err(corrupt());
     }
     let request_digest = digest(requested_payload)?;
+    let request_through_position = requested_payload
+        .get("through_position")
+        .and_then(Value::as_u64)
+        .filter(|position| *position > 0)
+        .ok_or_else(corrupt)?;
     let mut attempts = BTreeSet::new();
     let mut last_attempt = None;
     let mut terminal = None;
@@ -132,6 +141,7 @@ pub fn derive_knowledge_recovery(
         Ok(KnowledgeRecoveryAction::ReturnTerminal {
             request_digest,
             terminal_position,
+            request_through_position,
             completed,
         })
     } else if let Some(dispatch_attempt_id) = last_attempt {
@@ -140,7 +150,10 @@ pub fn derive_knowledge_recovery(
             dispatch_attempt_id,
         })
     } else {
-        Ok(KnowledgeRecoveryAction::RedispatchSameRequest { request_digest })
+        Ok(KnowledgeRecoveryAction::RedispatchSameRequest {
+            request_digest,
+            request_through_position,
+        })
     }
 }
 
