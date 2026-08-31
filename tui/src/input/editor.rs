@@ -65,6 +65,52 @@ impl EditorState {
         self.preferred_display_column = None;
     }
 
+    pub(crate) fn select_word_at(&mut self, grapheme: usize) -> bool {
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        let Some(index) = hit_grapheme_index(grapheme, graphemes.len()) else {
+            self.place_cursor(grapheme, false);
+            return false;
+        };
+        let class = grapheme_class(graphemes[index]);
+        if class == GraphemeClass::Whitespace {
+            self.place_cursor(grapheme, false);
+            return false;
+        }
+        let mut start = index;
+        while start > 0 && grapheme_class(graphemes[start - 1]) == class {
+            start -= 1;
+        }
+        let mut end = index + 1;
+        while end < graphemes.len() && grapheme_class(graphemes[end]) == class {
+            end += 1;
+        }
+        self.selection_anchor = Some(start);
+        self.cursor_grapheme = end;
+        self.preferred_display_column = None;
+        true
+    }
+
+    pub(crate) fn select_logical_line_at(&mut self, grapheme: usize) -> bool {
+        let graphemes = self.text.graphemes(true).collect::<Vec<_>>();
+        if graphemes.is_empty() {
+            self.place_cursor(0, false);
+            return false;
+        }
+        let index = grapheme.min(graphemes.len().saturating_sub(1));
+        let start = graphemes[..index]
+            .iter()
+            .rposition(|value| *value == "\n")
+            .map_or(0, |newline| newline + 1);
+        let end = graphemes[index..]
+            .iter()
+            .position(|value| *value == "\n")
+            .map_or(graphemes.len(), |newline| index + newline + 1);
+        self.selection_anchor = Some(start);
+        self.cursor_grapheme = end;
+        self.preferred_display_column = None;
+        start != end
+    }
+
     pub(crate) fn visual_vertical_state(&self, direction: i8) -> (usize, Option<usize>) {
         (
             self.visual_directional_origin(direction),
@@ -387,6 +433,31 @@ fn grapheme_byte(text: &str, index: usize) -> usize {
     text.grapheme_indices(true)
         .nth(index)
         .map_or(text.len(), |(byte, _)| byte)
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum GraphemeClass {
+    Whitespace,
+    Word,
+    Punctuation,
+}
+
+fn grapheme_class(grapheme: &str) -> GraphemeClass {
+    if grapheme.chars().all(char::is_whitespace) {
+        GraphemeClass::Whitespace
+    } else if grapheme
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_alphanumeric() || character == '_')
+    {
+        GraphemeClass::Word
+    } else {
+        GraphemeClass::Punctuation
+    }
+}
+
+fn hit_grapheme_index(position: usize, len: usize) -> Option<usize> {
+    (len != 0).then(|| position.min(len - 1))
 }
 
 fn is_unsafe_control(character: char) -> bool {

@@ -24,14 +24,17 @@ use navigation::{
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
     match event {
         Event::Resize(width, height) => {
+            state.composer_clicks.reset();
             state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }))
         }
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
         Event::FocusLost => {
             state.composer_mouse_selecting = false;
+            state.composer_clicks.reset();
             state.dispatch(AppAction::TerminalFocusChanged(false));
         }
         Event::Paste(text) => {
+            state.composer_clicks.reset();
             let previous = state.model.composer.text().to_owned();
             if state.composer_is_frozen() {
                 state.explain_frozen_composer();
@@ -44,7 +47,10 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
             sync_command_suggestions(state, &previous);
         }
         Event::Mouse(event) => mouse::handle(event, state),
-        Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(key, state),
+        Event::Key(key) if key.kind != KeyEventKind::Release => {
+            state.composer_clicks.reset();
+            handle_key(key, state);
+        }
         _ => {}
     }
 }

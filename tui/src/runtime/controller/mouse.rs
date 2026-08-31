@@ -2,6 +2,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::{
     application::{AppAction, AppModel, FocusTarget, Overlay},
+    input::ComposerClick,
     view::{
         command_suggestion_hit_test, composer_hit_test, navigation_hit_test, overlay_contains,
         overlay_hit_test,
@@ -43,9 +44,16 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
             _ => {}
         }
     }
-    let Some(action) = route(&state.model, mouse) else {
+    let action = route(&state.model, mouse);
+    let Some(action) = action else {
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+            state.composer_clicks.reset();
+        }
         return;
     };
+    if !matches!(action, MouseAction::ComposerPlace(_)) {
+        state.composer_clicks.reset();
+    }
     match action {
         MouseAction::ConversationScroll { backwards: true } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
@@ -76,8 +84,20 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
         }
         MouseAction::ComposerPlace(grapheme) => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Composer));
-            state.model.composer.place_cursor(grapheme, false);
-            state.composer_mouse_selecting = true;
+            match state.composer_clicks.register(mouse.column, mouse.row) {
+                ComposerClick::Place => {
+                    state.model.composer.place_cursor(grapheme, false);
+                    state.composer_mouse_selecting = true;
+                }
+                ComposerClick::SelectWord => {
+                    state.model.composer.select_word_at(grapheme);
+                    state.composer_mouse_selecting = false;
+                }
+                ComposerClick::SelectLine => {
+                    state.model.composer.select_logical_line_at(grapheme);
+                    state.composer_mouse_selecting = false;
+                }
+            }
         }
     }
 }

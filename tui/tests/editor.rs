@@ -148,3 +148,21 @@ fn word_navigation_preserves_grapheme_boundaries() {
     editor.move_word_left(false);
     assert_eq!(editor.cursor_grapheme(), 7);
 }
+
+#[test]
+fn multi_click_selection_uses_unicode_word_classes_and_logical_lines() {
+    let mut editor = EditorState::default();
+    editor.replace("go_界!! now\nsecond line").unwrap();
+
+    assert!(editor.select_word_at(2));
+    assert_eq!(editor.selected_byte_range(), Some((0, 6)));
+    assert!(editor.select_word_at(4));
+    assert_eq!(editor.selected_byte_range(), Some((6, 8)));
+    assert!(!editor.select_word_at(6));
+    assert_eq!(editor.selected_byte_range(), None);
+
+    assert!(editor.select_logical_line_at(16));
+    assert_eq!(editor.selected_byte_range(), Some((13, 24)));
+    assert!(editor.select_logical_line_at(3));
+    assert_eq!(editor.selected_byte_range(), Some((0, 13)));
+}

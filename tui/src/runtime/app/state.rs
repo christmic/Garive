@@ -7,6 +7,7 @@ use crate::{
     application::{
         reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
     },
+    input::ComposerClickTracker,
     persistence::{now, PendingCommand, PendingKind, Preferences, PromptHistoryEntry, StateStore},
     view, LaunchConfig,
 };
@@ -40,6 +41,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) render_cache: view::RenderCache,
     pub(in crate::runtime) bell_requested: bool,
     pub(in crate::runtime) composer_mouse_selecting: bool,
+    pub(in crate::runtime) composer_clicks: ComposerClickTracker,
 }
 
 pub(super) struct BackgroundFollow {
@@ -112,6 +114,7 @@ impl RuntimeState {
             render_cache: view::RenderCache::default(),
             bell_requested: false,
             composer_mouse_selecting: false,
+            composer_clicks: ComposerClickTracker::default(),
         }
     }
 
