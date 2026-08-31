@@ -1,9 +1,14 @@
 use std::collections::BTreeSet;
 
-use garive_ledger::{ExecutionId, FactKind, SessionId, TurnId};
+use garive_ledger::{ExecutionId, FactDraft, FactKind, SessionId, TurnId};
 use serde_json::Value;
 
 use crate::{DurableExecutionError, RuntimeCommandError, SqliteLedger};
+
+use super::{
+    knowledge_lifecycle::plan_knowledge_failed_binding, KnowledgeFailurePhase,
+    KnowledgeFailureReason, KnowledgeLifecycleContext,
+};
 
 /// Exact durable scope used to reconstruct one Knowledge request lifecycle.
 pub struct KnowledgeRecoveryContext {
@@ -137,6 +142,32 @@ pub fn derive_knowledge_recovery(
     } else {
         Ok(KnowledgeRecoveryAction::RedispatchSameRequest { request_digest })
     }
+}
+
+/// Plans one durable uncertain terminal for a dispatch that lacked a terminal.
+pub fn plan_knowledge_recovery_uncertain(
+    ledger: &SqliteLedger,
+    context: &KnowledgeRecoveryContext,
+    recorded_at: &str,
+) -> Result<FactDraft, DurableExecutionError> {
+    let KnowledgeRecoveryAction::ClassifyUncertain { request_digest, .. } =
+        derive_knowledge_recovery(ledger, context)?
+    else {
+        return Err(invalid());
+    };
+    plan_knowledge_failed_binding(
+        &KnowledgeLifecycleContext {
+            turn_id: context.turn_id.clone(),
+            execution_id: context.execution_id.clone(),
+            recorded_at: recorded_at.to_owned(),
+        },
+        &context.request_id,
+        &request_digest,
+        KnowledgeFailurePhase::Dispatched,
+        KnowledgeFailureReason::Uncertain,
+        None,
+    )
+    .map_err(DurableExecutionError::Command)
 }
 
 fn validate_failure(payload: &Value, dispatched: bool) -> Result<(), DurableExecutionError> {

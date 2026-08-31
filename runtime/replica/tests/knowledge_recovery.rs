@@ -9,9 +9,9 @@ use garive_ledger::{
 };
 use garive_runtime::{
     derive_knowledge_recovery, plan_knowledge_completed, plan_knowledge_dispatched,
-    plan_knowledge_requested, plan_start_turn, EffectiveRuntimeLimits, KnowledgeLifecycleContext,
-    KnowledgeRecoveryAction, KnowledgeRecoveryContext, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand,
+    plan_knowledge_requested, plan_start_turn, recover_local_dispatches, EffectiveRuntimeLimits,
+    KnowledgeLifecycleContext, KnowledgeRecoveryAction, KnowledgeRecoveryContext, RuntimeCommandId,
+    SqliteLedger, StartTurnCommand,
 };
 use tempfile::tempdir;
 
@@ -111,6 +111,77 @@ fn sqlite_restart_distinguishes_requested_dispatched_and_terminal_positions() {
             completed: true,
         }
     );
+}
+
+#[test]
+fn local_restart_records_dispatched_uncertainty_before_abandonment() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("knowledge-local-recovery.sqlite3");
+    let session = SessionId::try_from("knowledge-local-session").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = plan_start_turn(
+        &StartTurnCommand {
+            command_id: RuntimeCommandId::new("knowledge-local-start").unwrap(),
+            session_id: session.clone(),
+            agent_instance_id: AgentInstanceId::try_from("agent").unwrap(),
+            definition_id: AgentDefinitionId::try_from("definition").unwrap(),
+            definition_revision: AgentDefinitionRevision::try_from("revision").unwrap(),
+            snapshot_digest: "a".repeat(64),
+            trusted_input: "hello".into(),
+            limits: EffectiveRuntimeLimits {
+                max_iterations: 1,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                deadline_budget_ms: None,
+            },
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        1,
+    )
+    .unwrap();
+    let execution = start.execution_id.clone().unwrap();
+    let turn = start.turn_id.clone();
+    ledger.commit(session.clone(), 1, start.facts).unwrap();
+    let lifecycle = KnowledgeLifecycleContext {
+        turn_id: turn.clone(),
+        execution_id: execution.clone(),
+        recorded_at: "2026-08-29T00:00:01Z".into(),
+    };
+    let prepared = plan_knowledge_requested(&lifecycle, &request()).unwrap();
+    ledger
+        .commit(session.clone(), 2, vec![prepared.fact.clone()])
+        .unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            3,
+            vec![plan_knowledge_dispatched(&lifecycle, &prepared, "attempt-local").unwrap()],
+        )
+        .unwrap();
+    drop(ledger);
+
+    let mut restarted = SqliteLedger::open(&path).unwrap();
+    let recovered = recover_local_dispatches(&mut restarted, 3, "2026-08-29T00:00:02Z").unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert_ne!(recovered[0].execution_id, execution);
+    let facts = restarted.load_turn(&turn).unwrap().facts;
+    let uncertain = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "knowledge.failed")
+        .unwrap();
+    let abandoned = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "execution.abandoned")
+        .unwrap();
+    assert!(uncertain < abandoned);
+    let payload: serde_json::Value =
+        serde_json::from_str(facts[uncertain].payload.as_json()).unwrap();
+    assert_eq!(payload["phase"], "dispatched");
+    assert_eq!(payload["reason"], "retrieval_uncertain");
+    assert_eq!(payload["ambiguous"], true);
 }
 
 fn request() -> KnowledgeRequest {

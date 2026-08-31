@@ -193,6 +193,24 @@ pub fn plan_knowledge_failed(
     reason: KnowledgeFailureReason,
     retry_after_ms: Option<u64>,
 ) -> Result<FactDraft, RuntimeCommandError> {
+    plan_knowledge_failed_binding(
+        context,
+        &prepared.request_id,
+        &prepared.request_digest,
+        phase,
+        reason,
+        retry_after_ms,
+    )
+}
+
+pub(super) fn plan_knowledge_failed_binding(
+    context: &KnowledgeLifecycleContext,
+    request_id: &str,
+    request_digest: &str,
+    phase: KnowledgeFailurePhase,
+    reason: KnowledgeFailureReason,
+    retry_after_ms: Option<u64>,
+) -> Result<FactDraft, RuntimeCommandError> {
     if retry_after_ms == Some(0)
         || (phase == KnowledgeFailurePhase::Dispatched)
             != (reason == KnowledgeFailureReason::Uncertain)
@@ -200,8 +218,8 @@ pub fn plan_knowledge_failed(
         return Err(RuntimeCommandError::InvalidCommand);
     }
     let mut payload = Map::from_iter([
-        ("request_id".into(), json!(prepared.request_id)),
-        ("request_digest".into(), json!(prepared.request_digest)),
+        ("request_id".into(), json!(request_id)),
+        ("request_digest".into(), json!(request_digest)),
         ("phase".into(), json!(phase_name(phase))),
         ("reason".into(), json!(reason_name(reason))),
         (
@@ -214,7 +232,7 @@ pub fn plan_knowledge_failed(
     }
     fact(
         context,
-        &prepared.request_id,
+        request_id,
         "knowledge.failed",
         Value::Object(payload),
         None,
