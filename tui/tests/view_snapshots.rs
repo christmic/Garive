@@ -44,6 +44,13 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "conversation_rail_mono_100x24",
         frame(&rail, Theme::Mono, 100, 24)
     );
+    let mut hovered_rail = rail;
+    hovered_rail.conversation_rail_hover =
+        Some(application::ConversationRailHover { index: 11, row: 11 });
+    insta::assert_snapshot!(
+        "conversation_rail_hover_dark_100x24",
+        frame(&hovered_rail, Theme::Dark, 100, 24)
+    );
     insta::assert_snapshot!(
         "motion_running_dark_100x24",
         motion_frame(&model, Theme::Dark, 4, 100, 24)

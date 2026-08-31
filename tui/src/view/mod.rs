@@ -116,6 +116,15 @@ pub(crate) fn conversation_rail_hit_test(model: &AppModel, column: u16, row: u16
     position_rail::target_at(model, conversation, column, row)
 }
 
+pub(crate) fn conversation_rail_hover_hit_test(
+    model: &AppModel,
+    column: u16,
+    row: u16,
+) -> Option<crate::application::ConversationRailHover> {
+    let index = conversation_rail_hit_test(model, column, row)?;
+    Some(crate::application::ConversationRailHover { index, row })
+}
+
 fn content_rows(model: &AppModel, area: Rect) -> std::rc::Rc<[Rect]> {
     let composer_height = if area.height < 12 {
         3

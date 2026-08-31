@@ -135,6 +135,7 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
             .position(|item| item.stable_key == key)
     });
     turns.sort_by_key(|turn| turn.started_position);
+    model.conversation_rail_hover = None;
     model.timeline.clear();
     model.suspension = None;
     model.selected_turn = None;

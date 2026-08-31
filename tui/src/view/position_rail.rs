@@ -1,8 +1,13 @@
-use ratatui::{buffer::Buffer, layout::Rect};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    text::{Line, Text},
+    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap},
+};
 
 use crate::{application::AppModel, Theme};
 
-use super::palette;
+use super::{palette, primitives::truncate_display, safe_text};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RailMetric {
@@ -35,9 +40,90 @@ pub(super) fn render(model: &AppModel, theme: Theme, conversation: Rect, buffer:
         let in_thumb = offset >= metric.thumb_start
             && offset < metric.thumb_start.saturating_add(metric.thumb_len);
         let cell = &mut buffer[(metric.area.x, metric.area.y + offset)];
-        cell.set_symbol(if in_thumb { thumb_glyph } else { track_glyph });
-        cell.set_style(if in_thumb { thumb } else { track });
+        let hovered = model
+            .conversation_rail_hover
+            .is_some_and(|hover| hover.row == metric.area.y + offset);
+        cell.set_symbol(if hovered {
+            if theme == Theme::Mono {
+                "▓"
+            } else {
+                "╋"
+            }
+        } else if in_thumb {
+            thumb_glyph
+        } else {
+            track_glyph
+        });
+        cell.set_style(if hovered {
+            colors.accent
+        } else if in_thumb {
+            thumb
+        } else {
+            track
+        });
     }
+    render_preview(model, theme, conversation, metric, buffer);
+}
+
+fn render_preview(
+    model: &AppModel,
+    theme: Theme,
+    conversation: Rect,
+    metric: RailMetric,
+    buffer: &mut Buffer,
+) {
+    let Some(hover) = model.conversation_rail_hover else {
+        return;
+    };
+    let Some(item) = model.timeline.get(hover.index) else {
+        return;
+    };
+    if hover.row < metric.area.y || hover.row >= metric.area.bottom() || conversation.width < 24 {
+        return;
+    }
+    let width = (conversation.width / 2)
+        .clamp(20, 36)
+        .min(conversation.width.saturating_sub(3));
+    let height = 4_u16.min(metric.area.height);
+    if width < 12 || height < 3 {
+        return;
+    }
+    let x = metric
+        .area
+        .x
+        .saturating_sub(width.saturating_add(1))
+        .max(conversation.x);
+    let max_y = metric.area.bottom().saturating_sub(height);
+    let y = hover
+        .row
+        .saturating_sub(height / 2)
+        .clamp(metric.area.y, max_y);
+    let area = Rect::new(x, y, width, height);
+    let colors = palette(theme);
+    let role = match item.role {
+        crate::application::TimelineRole::User => "You",
+        crate::application::TimelineRole::Agent => "Garive",
+        crate::application::TimelineRole::Status => "Status",
+    };
+    let title = format!(" Cell {} · {role} ", hover.index + 1);
+    let excerpt = safe_text(&item.text.replace(['\r', '\n'], " "));
+    let excerpt = truncate_display(&excerpt, usize::from(width.saturating_sub(4)) * 2);
+    Clear.render(area, buffer);
+    buffer.set_style(area, colors.header_background);
+    let block = Block::default()
+        .title(Line::styled(
+            title,
+            colors.title.patch(colors.header_background),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(colors.overlay_border.patch(colors.header_background))
+        .padding(Padding::horizontal(1));
+    Paragraph::new(Text::from(excerpt))
+        .block(block)
+        .style(colors.header_text)
+        .wrap(Wrap { trim: true })
+        .render(area, buffer);
 }
 
 pub(super) fn target_at(

@@ -5,7 +5,7 @@ use crate::{
     input::ComposerClick,
     view::{
         command_suggestion_hit_test, composer_hit_test, conversation_rail_hit_test,
-        navigation_hit_test, overlay_contains, overlay_hit_test,
+        conversation_rail_hover_hit_test, navigation_hit_test, overlay_contains, overlay_hit_test,
     },
 };
 
@@ -19,6 +19,7 @@ use super::{
 enum MouseAction {
     ConversationScroll { backwards: bool },
     ConversationJump(usize),
+    ConversationHover(Option<crate::application::ConversationRailHover>),
     SessionActivate(usize),
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
@@ -68,6 +69,11 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             state.model.jump_to_timeline_index(index);
         }
+        MouseAction::ConversationHover(hover) => {
+            if state.model.conversation_rail_hover != hover {
+                state.model.conversation_rail_hover = hover;
+            }
+        }
         MouseAction::SessionActivate(index) => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
             if let Some(session) = state.model.sessions.get(index) {
@@ -108,6 +114,11 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
 }
 
 fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
+    if matches!(mouse.kind, MouseEventKind::Moved) {
+        return Some(MouseAction::ConversationHover(
+            conversation_rail_hover_hit_test(model, mouse.column, mouse.row),
+        ));
+    }
     if model.overlay.is_some() {
         if !overlay_contains(model, mouse.column, mouse.row) {
             return None;
@@ -342,6 +353,16 @@ mod tests {
                 mouse(MouseEventKind::Down(MouseButton::Left), 98, 18)
             ),
             Some(MouseAction::ConversationJump(19))
+        );
+        assert_eq!(
+            route(&model, mouse(MouseEventKind::Moved, 98, 11)),
+            Some(MouseAction::ConversationHover(Some(
+                crate::application::ConversationRailHover { index: 11, row: 11 }
+            )))
+        );
+        assert_eq!(
+            route(&model, mouse(MouseEventKind::Moved, 97, 11)),
+            Some(MouseAction::ConversationHover(None))
         );
     }
 }

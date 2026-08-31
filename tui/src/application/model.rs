@@ -234,6 +234,12 @@ pub(crate) struct TimelineItem {
     pub(crate) text: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ConversationRailHover {
+    pub(crate) index: usize,
+    pub(crate) row: u16,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ViewportState {
     pub(crate) follow_latest: bool,
@@ -286,6 +292,7 @@ pub(crate) struct AppModel {
     pub(crate) selected_turn: Option<String>,
     pub(crate) observed_position: u64,
     pub(crate) viewport: ViewportState,
+    pub(crate) conversation_rail_hover: Option<ConversationRailHover>,
     pub(crate) session_viewports: BTreeMap<String, ViewportState>,
     pub(crate) viewport_order: VecDeque<String>,
     pub(crate) suspension: Option<SuspensionView>,
@@ -372,6 +379,7 @@ impl AppModel {
     }
 
     pub(crate) fn switch_viewport(&mut self, session_id: &str) {
+        self.conversation_rail_hover = None;
         if self.selected_session.as_deref() == Some(session_id) {
             return;
         }

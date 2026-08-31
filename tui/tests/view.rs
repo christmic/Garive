@@ -120,6 +120,14 @@ fn conversation_position_rail_shares_exact_geometry_and_modal_ownership() {
     assert_eq!(light[(98, 8)].fg, Color::Yellow);
     assert_ne!(dark[(98, 3)].fg, light[(98, 3)].fg);
 
+    model.conversation_rail_hover = Some(application::ConversationRailHover { index: 11, row: 11 });
+    let hovered = frame(&model, 100, 24);
+    assert!(hovered.contains("Cell 12 · Garive"));
+    assert!(hovered.contains("bounded answer 11"));
+    assert_eq!(hovered.lines().nth(11).unwrap().chars().nth(98), Some('▓'));
+    model.conversation_rail_hover = None;
+    assert!(!frame(&model, 100, 24).contains("Cell 12 · Garive"));
+
     model.overlay = Some(Overlay::Help);
     assert_eq!(view::conversation_rail_hit_test(&model, 98, 3), None);
 }

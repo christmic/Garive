@@ -802,19 +802,24 @@ fn conversation_position_rail_press_and_drag_share_the_shipping_geometry() {
             must_expect "\033\[6n" 60
             send "\033\[1;1R"
             must_expect {#40} 61
+            send "\033\[<35;99;12M"
+            must_expect {Cell 22} 62
+            after 100
+            send "\033\[<35;98;12M"
+            after 100
             send "\033\[<0;99;4M"
-            must_expect {#1} 62
+            must_expect {#1} 63
             send "\033\[<32;99;12M"
-            must_expect {#22} 63
+            must_expect {#22} 64
             send "\033\[<0;99;12m"
             send "\033\[<0;99;19M"
-            must_expect {#40} 64
+            must_expect {#40} 65
             send "\021"
-            must_expect "Garive?" 65
+            must_expect "Garive?" 66
             send "\r"
             expect {
                 eof { exit 0 }
-                timeout { exit 66 }
+                timeout { exit 67 }
             }
         "#])
         .status()
@@ -824,6 +829,7 @@ fn conversation_position_rail_press_and_drag_share_the_shipping_geometry() {
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
     assert!(text.contains('█'));
+    assert!(text.matches("\x1b[12;99H").count() >= 3);
     assert!(text.contains("\x1b[?1006h") && text.contains("\x1b[?1006l"));
     assert!(text.contains("\x1b[?1049h") && text.contains("\x1b[?1049l"));
 }
