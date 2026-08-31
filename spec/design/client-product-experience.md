@@ -135,6 +135,10 @@ geometry. Desktop additionally owns native-window composition:
   authority and stop remain attached to the bottom Composer;
 - Environment uses a compact overlay, while a committed file opens a real
   resizable, tabbed, independently scrolling split workbench;
+- a file workbench exposes one close action for the current layer: preview
+  close returns to Deliverables, and only the Deliverables layer exposes
+  inspector close; tab and toolbar chrome never duplicate identical close
+  actions;
 - no logo-led browser header, invented avatar, fake sharing action or decorative
   model selector may be added to imitate unavailable product authority.
 

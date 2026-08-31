@@ -300,6 +300,10 @@ describe("Desktop product experience", () => {
     expect(screen.getByLabelText("Artifact source").textContent).toContain("Immutable source.");
     fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
     expect(await screen.findByRole("heading", { name: "Verified memo" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Close Artifact preview" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close Artifact preview" }));
+    expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close inspector" })).toBeTruthy();
   });
 
   it("renders fenced output as a labeled copyable workbench block", async () => {

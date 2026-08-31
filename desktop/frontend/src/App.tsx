@@ -981,6 +981,7 @@ function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, 
 }) {
   const mode = state.inspectorTab === "activity" ? "environment-panel" : "workspace-panel";
   const [workspaceTitle, setWorkspaceTitle] = useState<string>();
+  const [previewCloseRequest, setPreviewCloseRequest] = useState(0);
   const resizeFromPointer = (clientX: number) => {
     const shell = document.querySelector<HTMLElement>(".app-shell")?.getBoundingClientRect();
     const sidebar = document.querySelector<HTMLElement>(".sidebar")?.getBoundingClientRect();
@@ -1011,14 +1012,19 @@ function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, 
     <header>{state.inspectorTab === "activity"
     ? <strong className="environment-title">{t("inspector.environment")}</strong>
     : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button></div>}
-    <button className="icon-button" type="button" aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
+    <button className="icon-button" type="button"
+      aria-label={t(mode === "workspace-panel" && workspaceTitle ? "artifact.closePreview" : "inspector.close")}
+      onClick={() => mode === "workspace-panel" && workspaceTitle
+        ? setPreviewCloseRequest((request) => request + 1)
+        : dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
-      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} onPreviewTitle={setWorkspaceTitle} /></div>}
+      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t}
+        previewCloseRequest={previewCloseRequest} onPreviewTitle={setWorkspaceTitle} /></div>}
   </aside>;
 }
 
-function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t: (key: MessageKey) => string;
-  onPreviewTitle: (title?: string) => void }) {
+function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: { state: WorkState; t: (key: MessageKey) => string;
+  previewCloseRequest: number; onPreviewTitle: (title?: string) => void }) {
   const previewFixture = visualTestMode === "artifact-preview";
   const [selected, setSelected] = useState<HostArtifact | undefined>(previewFixture
     ? visualArtifactPage.items[0] : undefined);
@@ -1034,6 +1040,11 @@ function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t:
   useEffect(() => {
     if (previewFixture && selected) onPreviewTitle(selected.display_name);
   }, [onPreviewTitle, previewFixture, selected]);
+  useEffect(() => {
+    if (previewCloseRequest === 0) return;
+    setSelected(undefined); setSourceMode(false); onPreviewTitle(undefined);
+    setPreview(undefined); setPreviewState("idle");
+  }, [onPreviewTitle, previewCloseRequest]);
   const openPreview = async (artifact: HostArtifact) => {
     setSelected(artifact); setSourceMode(false); onPreviewTitle(artifact.display_name); setPreview(undefined); setPreviewState("loading");
     try {
@@ -1090,8 +1101,7 @@ function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t:
         {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}
       </div>
     </article>; })}
-    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" />{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</button><button type="button" aria-label={t("artifact.closePreview")} title={t("artifact.closePreview")}
-      onClick={() => { setSelected(undefined); setSourceMode(false); onPreviewTitle(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></div></div>
+    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" />{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</button></div></div>
       {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />{t("artifact.verifying")}</div>
         : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
           : preview && (sourceMode ? <pre className="artifact-source" aria-label={t("artifact.sourceAria")}>{preview.content_utf8}</pre>

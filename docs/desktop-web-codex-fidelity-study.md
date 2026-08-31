@@ -226,6 +226,29 @@ may edit a persisted next-instruction draft; Return cannot submit it until the
 current Turn reaches an admitted terminal state. This is drafting, not an
 invented queue, and it does not mutate the active Runtime Turn.
 
+### K. Measured desktop geometry and file-workbench lifecycle
+
+The supplied screenshots and Garive fixtures were measured at the same
+1280 × 800 viewport. With Environment open, Garive's 546 px conversation axis
+starts at x=352 and its 224 px panel starts at x=1044; the reference starts at
+approximately x=352 and x=1045. In the file surface, Garive's divider starts at
+x=558 while the reference starts at approximately x=556. These measurements
+rule out a permanent left-shift of the ordinary thread: the apparent shift is
+the intended response to an open overlay or split workbench.
+
+A read-only audit of the installed Codex desktop bundle also confirms the
+underlying density model: a 4 px spacing unit, 30–36 px navigation rows, 36–46
+px toolbars, 150 ms basic transitions, a 40 rem content measure, `#181818` dark
+surface and low-contrast 5–12% borders. Garive's shared tokens already occupy
+that range, so the correction is structural rather than a decorative retheme.
+
+The remaining structural defect was two visually identical close actions in
+one file workbench. Garive now exposes one progressive action: while a file is
+open it closes the preview back to Deliverables; only at that parent layer does
+the same header position close the inspector. The secondary toolbar close was
+removed. This preserves both operations while making the current layer
+unambiguous.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
