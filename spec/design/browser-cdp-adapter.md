@@ -120,7 +120,11 @@ the committed final origin and rotates the opaque target revision. A
 cross-origin redirect returns a trustworthy failed receipt carrying
 `browser_origin_denied`; an allowed commit returns completed. Any CDP failure
 without trustworthy terminal evidence after dispatch is
-`native_action_uncertain`. Press-key freezes the snapshot's one focused private
+`native_action_uncertain`. Connection loss or timeout also permanently poisons
+the port and clears its private binding; pre-dispatch loss is
+`browser_attachment_lost`, while post-dispatch loss keeps the uncertain
+classification. No later operation may touch the dead connection. Press-key
+freezes the snapshot's one focused private
 backend node and refreshes the bounded AX tree before input; changed focus
 returns `native_focus_changed` without input. Scroll gets the current
 `Page.getLayoutMetrics` visual viewport and emits one `mouseWheel` event at its

@@ -562,6 +562,15 @@ receipt, Runtime observes current native state and may satisfy an exact declared
 postcondition only as reconciliation evidence; it never repeats the action
 automatically. Observation itself may retry under the same bounded scope.
 
+An adapter connection loss or operation timeout is a one-way attachment
+boundary. Before dispatch it returns `browser_attachment_lost`; after the
+native boundary it returns `native_action_uncertain`. Both cases poison the
+page port, clear its private snapshot binding and hide unresolved pending popup
+admissions. Every later observe, preflight, dispatch or popup decision on that
+port returns `browser_attachment_lost` without native access. Recovery creates
+a new port from a fresh explicitly supplied connection and re-admits the exact
+Runtime page identity; a dead port is never reconnected or revived in place.
+
 ## Stable failures
 
 `native_capability_unavailable`, `native_permission_required`,
