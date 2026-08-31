@@ -143,22 +143,22 @@ fn execute<const N: usize>(
     timeout: u64,
     environment: BTreeMap<String, String>,
 ) -> garive_runtime::ProcessExecutionResult {
-    backend
-        .execute(ProcessExecutionRequest {
-            invocation_id: invocation(identity),
-            dispatch_attempt_id: format!("attempt-{identity}"),
-            lane: "probe".into(),
-            executable: PathBuf::from(executable),
-            argv: argv.into_iter().map(str::to_owned).collect(),
-            working_directory: ".".into(),
-            workspace_mode,
-            environment,
-            max_output_bytes: output,
-            timeout_ms: timeout,
-            max_processes: 4,
-            max_open_files: 32,
-        })
-        .unwrap()
+    let request = ProcessExecutionRequest {
+        invocation_id: invocation(identity),
+        dispatch_attempt_id: format!("attempt-{identity}"),
+        lane: "probe".into(),
+        executable: PathBuf::from(executable),
+        argv: argv.into_iter().map(str::to_owned).collect(),
+        working_directory: ".".into(),
+        workspace_mode,
+        environment,
+        max_output_bytes: output,
+        timeout_ms: timeout,
+        max_processes: 4,
+        max_open_files: 32,
+    };
+    backend.preflight(&request).unwrap();
+    backend.execute(request).unwrap()
 }
 
 fn acknowledge(backend: &PodmanProcessBackend, identity: &str) {

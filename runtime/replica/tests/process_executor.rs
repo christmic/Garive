@@ -16,6 +16,7 @@ struct RecordingBackend {
     preflighted: Mutex<Vec<ProcessExecutionRequest>>,
     executed: Mutex<Vec<ProcessExecutionRequest>>,
     result: Mutex<Result<ProcessExecutionResult, ProcessBackendError>>,
+    acknowledged: Mutex<Vec<(String, String)>>,
     reconciled: Mutex<Vec<(String, String)>>,
 }
 
@@ -25,6 +26,7 @@ impl RecordingBackend {
             preflighted: Mutex::new(Vec::new()),
             executed: Mutex::new(Vec::new()),
             result: Mutex::new(result),
+            acknowledged: Mutex::new(Vec::new()),
             reconciled: Mutex::new(Vec::new()),
         }
     }
@@ -46,9 +48,13 @@ impl ProcessIsolationBackend for RecordingBackend {
 
     fn acknowledge_terminal(
         &self,
-        _invocation_id: &ToolInvocationId,
-        _dispatch_attempt_id: &str,
+        invocation_id: &ToolInvocationId,
+        dispatch_attempt_id: &str,
     ) -> Result<(), ProcessBackendError> {
+        self.acknowledged
+            .lock()
+            .unwrap()
+            .push((invocation_id.as_str().into(), dispatch_attempt_id.into()));
         Ok(())
     }
 
@@ -68,7 +74,7 @@ impl ProcessIsolationBackend for RecordingBackend {
 #[tokio::test]
 async fn process_resolves_exact_capability_and_returns_bound_receipt() {
     let backend = Arc::new(RecordingBackend::new(Ok(result(ProcessExit::Code(0)))));
-    let (fact, _) = dispatch(Arc::clone(&backend), "cargo", None).await.unwrap();
+    let (fact, mut executor) = dispatch(Arc::clone(&backend), "cargo", None).await.unwrap();
 
     let ExecutionFact::Completed {
         receipt: Some(receipt),
@@ -83,6 +89,10 @@ async fn process_resolves_exact_capability_and_returns_bound_receipt() {
     assert_eq!(content["exit_code"], 0);
     assert_eq!(content["stdout"], "stdout");
     assert!(!truncated);
+    executor
+        .acknowledge_receipt(&receipt.invocation_id, &receipt)
+        .unwrap();
+    assert_eq!(backend.acknowledged.lock().unwrap().len(), 1);
 
     let preflighted = backend.preflighted.lock().unwrap();
     assert_eq!(preflighted.len(), 1);

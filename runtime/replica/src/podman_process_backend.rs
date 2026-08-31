@@ -65,6 +65,42 @@ impl PodmanProcessBackend {
         }
     }
 
+    fn prove_available(&self) -> Result<(), String> {
+        let version = self
+            .cli()
+            .output(&[
+                "version".into(),
+                "--format".into(),
+                "{{.Server.Version}}".into(),
+            ])
+            .map_err(|()| "Podman service is unavailable")?;
+        if !version.status.success()
+            || version.truncated
+            || version.stdout.is_empty()
+            || !version.stderr.is_empty()
+        {
+            return Err("Podman service is unavailable".into());
+        }
+        let image = self
+            .cli()
+            .output(&["image".into(), "exists".into(), self.config.image.clone()])
+            .map_err(|()| "Podman image is unavailable")?;
+        if !image.status.success() {
+            return Err("Podman image is unavailable".into());
+        }
+        Ok(())
+    }
+
+    fn prove_working_directory(&self, value: &str) -> Result<(), String> {
+        container_working_directory(value)?;
+        let resolved = fs::canonicalize(self.config.workspace_root.join(value))
+            .map_err(|_| "process working directory is unavailable")?;
+        if !resolved.is_dir() || !resolved.starts_with(&self.config.workspace_root) {
+            return Err("process working directory escapes workspace".into());
+        }
+        Ok(())
+    }
+
     fn inspect(&self, name: &str) -> Result<ContainerState, ProcessBackendError> {
         self.prove_ownership(name)?;
         let output = self
@@ -150,7 +186,9 @@ impl PodmanProcessBackend {
 
 impl ProcessIsolationBackend for PodmanProcessBackend {
     fn preflight(&self, request: &ProcessExecutionRequest) -> Result<(), String> {
-        validate_request(request)
+        validate_request(request)?;
+        self.prove_working_directory(&request.working_directory)?;
+        self.prove_available()
     }
 
     fn execute(
@@ -240,6 +278,7 @@ fn validate_request(request: &ProcessExecutionRequest) -> Result<(), String> {
     if request.argv.is_empty()
         || request.argv.len() > 256
         || !request.executable.is_absolute()
+        || request.executable.to_str().is_none()
         || request.max_output_bytes == 0
         || request.max_output_bytes > 1_048_576
         || request.timeout_ms == 0
