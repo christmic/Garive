@@ -296,7 +296,12 @@ old invocation.
   directory, child/output/time bounds, cancellation and no-network posture;
 - fake-policy tests for exact decision binding, narrowing, interaction and
   conflicts;
-- fault injection at every durable position in the recovery table.
+- fault injection at every durable position in the recovery table;
+- an independent-process kill matrix for `effect.prepared.v3`,
+  `safety.decided`, `effect.authorized.v2`, `sandbox.bound` and
+  `sandbox.preflighted`: a fresh process must reopen only the durable Ledger,
+  resume the same invocation, append only the missing suffix and prove exactly
+  one `effect.started` without using writer-process memory.
 
 ## See also
 
