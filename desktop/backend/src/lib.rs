@@ -290,7 +290,7 @@ impl DesktopHost {
         let live_output = LiveOutputHub::new(LiveOutputLimits {
             max_active_executions: config.dispatch_capacity,
             max_preview_bytes: 1024 * 1024,
-            max_event_bytes: 64 * 1024,
+            max_event_bytes: 32 * 1024,
             broadcast_capacity: 128,
             max_subscribers_per_session: 8,
         })
