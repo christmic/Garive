@@ -15,7 +15,7 @@ use std::{
 
 use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport, CdpWaitUntil};
 use garive_runtime::{
-    BrowserPageId, BrowserSessionId, CdpBrowserSessionMode, CdpNativeAdapterPort,
+    BrowserPageId, BrowserSessionId, CdpBrowserSessionMode, CdpNativeAdapterPort, CdpPageBinding,
     NativeActionCommandV1, NativeActionId, NativeAdapterPort, NativeObservationBounds,
     NativeTarget,
 };
@@ -113,7 +113,8 @@ fn serve(stream: &mut TcpStream, address: SocketAddr, cross_origin: Option<Socke
         "/popup" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
-            "<!doctype html><title>Pending popup</title>".into(),
+            "<!doctype html><title>Pending popup</title><main aria-label=\"Popup ready\">Ready</main>"
+                .into(),
         ),
         "/same-frame" => (
             "200 OK",
@@ -186,7 +187,7 @@ fn endpoint(profile: &std::path::Path) -> String {
     }
 }
 
-fn target(page_id: &str) -> NativeTarget {
+fn browser_target(page_id: &str) -> NativeTarget {
     NativeTarget::Browser {
         session_id: BrowserSessionId::new("managed-chrome").expect("browser session"),
         page_id: BrowserPageId::new(page_id).expect("page"),
@@ -216,11 +217,12 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .navigate(&cdp_session_id, &page_server.seed_url(), CdpWaitUntil::Load)
         .await
         .expect("managed HTTP seed");
-    let target = target(&page_id);
+    let target = browser_target("runtime-page-main");
+    let page =
+        CdpPageBinding::new(target.clone(), page_id, cdp_session_id).expect("main page binding");
     let mut port = CdpNativeAdapterPort::new_with_mode(
-        target.clone(),
+        page,
         CdpBrowserSessionMode::Managed,
-        cdp_session_id,
         "revision-initial",
         "managed-runtime-port",
         64,
@@ -345,10 +347,35 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .await
         .expect("popup receipt");
     assert_eq!(popup_receipt.terminal_classification, "completed");
-    let pending_popup = port.take_pending_popup().expect("pending popup");
+    let pending_popup = port.oldest_pending_popup().expect("pending popup");
     assert_eq!(pending_popup.requested_origin, page_server.origin());
     assert!(pending_popup.user_gesture);
-    assert!(port.take_pending_popup().is_none());
+    let popup_target = browser_target("runtime-page-popup");
+    let popup_client = CdpClient::new(
+        CdpTransport::connect(&config)
+            .await
+            .expect("popup transport"),
+    );
+    let mut popup_port = port
+        .admit_pending_popup(
+            &pending_popup.admission_id,
+            popup_target.clone(),
+            "revision-popup-initial",
+            "managed-popup-port",
+            64,
+            popup_client,
+        )
+        .await
+        .expect("popup admission");
+    assert!(port.oldest_pending_popup().is_none());
+    let popup_observation = popup_port
+        .observe(&popup_target, None, bounds)
+        .await
+        .expect("admitted popup observation");
+    assert!(popup_observation
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Popup ready")));
     let after_popup = port
         .observe(&target, Some(&after.snapshot_id), bounds)
         .await
@@ -383,7 +410,7 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         denied_receipt.failure_code.as_deref(),
         Some("browser_origin_denied")
     );
-    assert!(port.take_pending_popup().is_none());
+    assert!(port.oldest_pending_popup().is_none());
     let after_denied = port
         .observe(&target, Some(&after_popup.snapshot_id), bounds)
         .await
