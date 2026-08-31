@@ -19,6 +19,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(narrow).toContain(".sidebar { display: none; }");
     expect(narrow).toContain(".main-surface, .topbar, .work-surface, .conversation, .composer-wrap, .composer, .timeline { min-width: 0; max-width: 100%; }");
     expect(narrow).toContain(".approval-actions { grid-column: 1 / -1;");
+    expect(CSS).toContain(".app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }");
+    expect(CSS).toContain(".app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: 72px minmax(0, 1fr); }");
   });
 
   it("keeps normal semantic text tokens at WCAG AA contrast in light and dark", () => {
@@ -40,13 +42,24 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("var(--conversation-split) minmax(500px, 1fr)");
     expect(CSS).toContain(".work-surface { min-width: 0; overflow: hidden; }");
     expect(CSS).toContain(".workspace-resizer { position: absolute");
-    expect(CSS).toContain(".artifact-preview-content { width: 100%");
+    expect(CSS).toContain(".artifact-preview-content { width: min(46rem, 100%)");
+    expect(CSS).toContain(".artifact-workbench-toolbar { display: flex;");
+    expect(CSS).toContain("min-height: 29px;");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
-    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: 42px minmax(0, 1fr)");
+    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: 34px minmax(0, 1fr)");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".environment-panel { position: absolute");
+    expect(CSS).toContain("@keyframes environment-enter");
+    expect(CSS).toContain("@keyframes workspace-content-enter");
     expect(CSS).toContain(".app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }");
-    expect(CSS).toContain("width: min(40rem, calc(100% - 48px))");
+    expect(CSS).toContain("width: min(39rem, calc(100% - 48px))");
+    expect(CSS).toContain(".settings-workbench { display: grid; grid-template-columns: 164px minmax(0, 1fr)");
+    expect(CSS).toContain(".settings-panel { min-width: 0; overflow: auto;");
+    expect(CSS).toContain(".settings-navigation { display: flex;");
+    expect(CSS).toContain(".welcome { width: min(39rem, 100%);");
+    expect(CSS).toContain(".new-work-surface .composer-wrap { top: clamp(210px, 27vh, 236px);");
+    expect(CSS).toContain("grid-template-columns: 78px minmax(0, 1fr) 16px");
+    expect(CSS).toContain(".new-work-surface .composer-wrap { top: 190px; }");
   });
 });
 

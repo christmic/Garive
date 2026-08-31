@@ -113,6 +113,12 @@ evidence. Observable product facts are recorded without that content:
    independent scrolling. It is not an expanded artifact card.
 6. Long-running immersion comes from continuous content, anchored turn actions,
    live composer status and adjacent outputs—not a large progress dashboard.
+7. Desktop chrome allocates information by permanence: the title bar carries
+   document identity and global actions, execution state stays attached to the
+   composer, and account/host identity sits at the rail footer.
+8. The macOS window reads as one workbench because native controls, rail,
+   title/tab chrome, overlay panels and the bottom composer share one compact
+   density. A browser header with a logo, status badge and avatar does not.
 
 ### E. 2026-09-01 workbench gap closure
 
@@ -122,18 +128,55 @@ than a general “more polished” direction:
 
 | Surface | Reference evidence | Rejected Garive baseline | Required shared behavior |
 |---|---|---|---|
+| window/file chrome | 34 px unified window/tab row, 30 px location row, first document heading at y≈69 | 42 px window row + 38 px location row + 28 px inset placed the first heading at y=108 | 34 px window row, 30 px location row, 4 px document inset and left-aligned 46 rem measure |
+| rail hierarchy | one selected task under compact global routes | Work and its current task selected together; Agents/Memory isolated beneath a generic Library label | one selected route, real global destinations together, durable tasks below |
 | narrow thread title | one line in the split pane | wrapped to three lines | preserve one-line orientation and elide before status/actions |
 | terminal actions | quiet glyphs at the content edge | wide `Export .md` and `Copy` labels | 30 px icon controls with persistent accessible names |
-| composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 40 rem measure, one-row start, 32 px actions and one truthful stop control |
+| composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 39 rem / 546 px measure at the 14 px root, one-row start, 32 px actions and one truthful stop control |
 | fenced output | bounded code card with a language header and copy action | undifferentiated bordered `pre` block | labeled code workbench, exact-source copy and persistent accessible feedback |
 | split workbench geometry | conversation, Composer and file divider share one bounded column; document starts 24 px after its edge | 352 px grid column whose child painted at 586 px, sending the 538 px Composer 210 px beneath the file surface; document added a second centered 40 px inset | explicit zero-min grid track, clipped conversation surface, 352 px default/320–520 px persisted separator and one 24 px document inset |
 | Environment | named floating surface | Activity/Artifacts tabs inside a small card | one Environment heading and a dismiss action; evidence rows only |
+| desktop identity | account identity anchored at the rail footer; no avatar in the title bar | duplicate Local/Working badge plus an inert G account button | truthful host identity in the rail footer; no fake account or duplicated execution state |
 | file chrome | selected file tab plus a second location/action row | generic Inspector tabs plus an expanded artifact card | one selected file tab, breadcrumb row, source/render action and independent scroll |
 | source inspection | available beside rendered document | no source presentation | reversible Rendered/Source switch over the same immutable preview bytes |
 
 Garive deliberately keeps verified revision evidence and the explicit close
 action. Those are Gate 2 additions: they do not add ordinary-screen noise and
 they preserve the Runtime truth boundary.
+
+### F. Desktop preferences audit
+
+The original Settings surface remained a generic scrolling web page after the
+Work shell had reached the reference geometry. At 1280×800 it exposed every
+appearance, language, usage, update, Runtime, Workspace and privacy card at
+once, repeated Capacity in the title bar and the page body, and forced users to
+scan unrelated backend detail to change one preference.
+
+The shared client now applies the desktop workbench grammar to preferences: a
+164px category rail and one independently scrolling detail surface on wide
+windows, horizontal category navigation below 760px, and direct routing from
+the Capacity trigger to its single truthful view. Settings/Command-comma opens
+General instead. This is a Garive consistency correction based on the observed
+Codex density and progressive-disclosure model; the supplied Codex screenshots
+do not show its Settings screen, so this section does not claim pixel evidence
+for an unseen reference surface.
+
+### G. New Work entry audit
+
+The original empty canvas still read as a generic AI landing page: a 38px
+heading occupied a 760px measure, three starter prompts spread into marketing
+cards across that width, the Composer used a different 546px axis, and an empty
+Environment button was visible before a Session existed. At 720px and 480px,
+an intermediate layout placed the Composer 20px over the first starter row;
+viewport-width checks alone did not catch that occlusion.
+
+New Work now uses one 39rem desktop work axis for heading, one-line guidance,
+Composer and three command-style starter rows. The heading is 28px, starters
+are 40px rows instead of cards, and Environment remains absent until durable
+work exists. Typing or choosing a starter immediately removes all starters and
+focuses the Composer. Measured at 1280×800, heading/Composer/starters share
+x=470 and width=546; at 720px and 480px the Composer and starters retain a
+12px vertical gap with zero document overflow.
 
 ## Gate 1 — Codex fidelity
 
@@ -142,7 +185,7 @@ This gate passes only when both Desktop and Web show:
 - neutral layered surfaces with no decorative gradient;
 - a 240–275 px comfortable rail, 30–36 px rows and quiet selected surfaces;
 - a 46 px title bar with one-line orientation and low-chrome actions;
-- a 40 rem default reading measure and clear user/agent turn rhythm;
+- a 39 rem reference reading measure and clear user/agent turn rhythm;
 - an elevated compact composer with a 14 px input and 36 px actions;
 - semantic navigation groups in sentence case;
 - Environment as a compact dismissible overlay and artifacts/files as a true
@@ -150,6 +193,12 @@ This gate passes only when both Desktop and Web show:
 - readable 12 px minimum metadata, except bounded 11 px timestamps;
 - light, dark, 720 px and 200% text-zoom evidence without horizontal overflow;
 - identical DOM, keyboard semantics and tokens for Desktop and Web.
+
+The desktop composition is also a Gate 1 requirement. The web client reuses
+the same rail, title/tab bar, workbench, overlays and composer geometry; only
+the native traffic-light safe zone and OS window behavior differ. Neither
+client may introduce a logo-led marketing header, a fake account control or a
+second execution status merely to fill chrome.
 
 The review asks “would this feel at home beside Codex?” Feature count is not a
 substitute for visual quality.

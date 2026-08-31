@@ -208,6 +208,24 @@ projection, executor-catalogue, or continuation mismatch fails closed; Runtime
 does not repair it by recomputing a digest or dynamically changing the Tool
 catalogue.
 
+A Host may install a non-empty `RuntimeAgentCatalogue`, but it contains exactly
+one installed revision for each Definition ID. Duplicate IDs, including two
+revisions of the same ID, are invalid. Discovery is ordered by Definition ID.
+`create_session` selects one exact catalogue entry and `session.opened` freezes
+its Definition ID, revision and snapshot digest. Every committed dispatch and
+startup-recovery dispatch carries those same durable coordinates to the Worker;
+the Worker never consults a mutable default Agent.
+
+The governed execution factory resolves the durable coordinates against the
+immutable catalogue before validating the exact Core Tool definitions. Unknown,
+removed or changed entries fail closed. Session and timeline projection resolve
+their own `session.opened` binding rather than a Host-wide Agent, while paging
+cursors bind the complete installed catalogue digest. Installing an additional
+Agent invalidates old cursors but does not migrate an existing Session. A model,
+governance or execution resource shared by multiple installed Agents remains an
+explicit Runtime composition choice and never follows merely from catalogue
+membership.
+
 ## Canonical digest
 
 `definition_digest` is lowercase SHA-256 over RFC 8785 canonical bytes of the

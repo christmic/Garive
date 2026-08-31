@@ -40,6 +40,7 @@ import {
 } from "./taskPresentation";
 
 type Screen = "work" | "search" | "agents" | "settings";
+type SettingsSection = "general" | "usage" | "workspace" | "runtime" | "updates" | "privacy";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
 interface SelectedContext {
   readonly grant: WorkspaceGrant;
@@ -113,6 +114,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const desktop = client === "desktop";
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
@@ -286,7 +288,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         });
         setCommandOpen(true);
       }
-      if (visualTestMode === "usage") setScreen("settings");
+      if (visualTestMode === "usage") { setSettingsSection("usage"); setScreen("settings"); }
       if (visualTestMode === "approval") dispatch({ type: "session_loaded", timeline: {
         api_version: "v1", session_id: "visual-session", scanned_through_position: 12,
         observed_max_position: 12, has_more: false, items: [{
@@ -353,7 +355,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       if (intent === "desktop.new-work") {
         beginNewWork();
       } else if (intent === "desktop.search") setScreen("search");
-      else if (intent === "desktop.settings") setScreen("settings");
+      else if (intent === "desktop.settings") { setSettingsSection("general"); setScreen("settings"); }
       else if (intent === "desktop.toggle-inspector") {
         dispatch({ type: "inspector_toggled" }); setScreen("work");
       } else if (intent === "desktop.zoom-in" || intent === "desktop.zoom-out"
@@ -380,7 +382,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       if (event.key.toLowerCase() === "n") {
         event.preventDefault(); beginNewWork();
       }
-      if (event.key === ",") { event.preventDefault(); setScreen("settings"); }
+      if (event.key === ",") { event.preventDefault(); setSettingsSection("general"); setScreen("settings"); }
       if (event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen(true); }
       if (event.key.toLowerCase() === "f") { event.preventDefault(); setScreen("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
@@ -590,17 +592,24 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
-          <NavItem icon="work" label={t("nav.work")} selected={screen === "work"} onClick={() => setScreen("work")} />
+          <NavItem icon="work" label={t("nav.work")}
+            selected={screen === "work" && state.messages.length === 0}
+            onClick={() => setScreen("work")} />
           <NavItem icon="search" label={t("nav.search")} selected={screen === "search"}
             disabled={!state.capabilities?.durable_navigation} hint={t("shell.searchHint")}
             onClick={() => setScreen("search")} />
+          <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"}
+            onClick={() => setScreen("agents")} />
+          <NavItem icon="memory" label={t("shell.memory")} disabled
+            hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </nav>
         <div className="sidebar-section">
           <div className="section-label"><span>{t("nav.recents")}</span>{taskSummary.attention > 0
             ? <span className="attention-count" aria-label={`${taskSummary.attention} ${t("tasks.attention")}`}>{taskSummary.attention}</span>
             : !state.capabilities?.durable_navigation && <span className="beta-tag">{t("shell.live")}</span>}</div>
           {orderedRecents.length > 0 ? orderedRecents.slice(0, 6).map((recent) => (
-            <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
+            <button className={screen === "work" && state.messages.length > 0
+              && recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
               <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentTitles[recent.session_id] || recentLabel(recent)}</span>
               <small><TaskStateDot task={recent} />{taskStateCopy(recent, t)}</small>
@@ -612,15 +621,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             </button>
           ) : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
         </div>
-        <div className="sidebar-section library">
-          <div className="section-label">{t("nav.library")}</div>
-          <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"} onClick={() => setScreen("agents")} />
-          <NavItem icon="memory" label={t("shell.memory")} disabled hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
-        </div>
         <div className="sidebar-footer">
-          <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"} onClick={() => setScreen("settings")} />
-          <div className={`runtime-state ${state.capabilities?.configured ? "online" : "offline"}`}>
-            <span className="status-dot" /><span>{state.capabilities?.configured ? t("shell.runtimeReady") : t("shell.setupRequired")}</span>
+          <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"}
+            onClick={() => { setSettingsSection("general"); setScreen("settings"); }} />
+          <div className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
+            role="status" aria-live="polite">
+            <span className="host-identity-icon" aria-hidden="true"><Icon name="desktop" /></span>
+            <span className="host-identity-copy"><strong>{t("shell.local")}</strong>
+              <small>{state.capabilities?.configured ? t("shell.runtimeReadyShort") : t("shell.setupRequired")}</small></span>
+            <span className="status-dot" aria-hidden="true" />
           </div>
         </div>
       </aside>
@@ -636,19 +645,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-controls="primary-navigation" onClick={() => navigationCollapsed
               ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
-            {screen === "work" && <span className={state.phase === "submitting" ? "local-badge working" : "local-badge"}>
-              <span />{t(state.phase === "submitting" ? "status.working" : "shell.local")}</span>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
-            {visibleUsage && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
-              onOpen={() => setScreen("settings")} />}
+            {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
+              onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
             <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}
               aria-label={t("command.open")}><Icon name="search" /><span>{t("command.open")}</span><kbd>⌘K</kbd></button>
-            {screen === "work" && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
+            {screen === "work" && state.messages.length > 0 && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
-            <button className="avatar" type="button" aria-label={t("shell.accountMenu")}>G</button>
           </div>
         </header>
 
@@ -663,7 +669,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} t={t} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} update={desktopUpdate} runUpdate={runUpdateAction}
-              restartBlocked={state.phase === "submitting"} usage={visibleUsage} t={t} />}
+              restartBlocked={state.phase === "submitting"} usage={visibleUsage}
+              section={settingsSection} onSectionChange={setSettingsSection} t={t} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch}
         workspaceSplitPx={preferences.workspaceSplitPx} onWorkspaceSplitChange={(workspaceSplitPx) =>
@@ -679,7 +686,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     {commandOpen && <CommandCenter recents={orderedRecents} titles={recentTitles}
       onClose={() => setCommandOpen(false)} onNewWork={() => { setCommandOpen(false); beginNewWork(); }}
       onSearch={() => { setCommandOpen(false); setScreen("search"); }}
-      onSettings={() => { setCommandOpen(false); setScreen("settings"); }}
+      onSettings={() => { setCommandOpen(false); setSettingsSection("general"); setScreen("settings"); }}
       onToggleInspector={() => { setCommandOpen(false); setScreen("work");
         dispatch({ type: "inspector_toggled" }); }}
       onOpen={(sessionId) => { setCommandOpen(false); void openRecent(sessionId); }} t={t} />}
@@ -772,7 +779,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div ref={conversation} onScroll={readScrollPosition}
       className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} />
+      {state.messages.length === 0 ? <Welcome draftActive={state.draft.trim().length > 0}
+        onSelect={startSuggestion} t={t} />
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
     {!followingTail && <button className={newOutputBelow
@@ -854,13 +862,14 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   </section>;
 }
 
-function Welcome({ onSelect, t }: { onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
+function Welcome({ draftActive, onSelect, t }: { draftActive: boolean;
+  onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
   const suggestions = [[t("work.suggestion.synthesize"), t("work.suggestion.synthesizeBody")],
     [t("work.suggestion.analyze"), t("work.suggestion.analyzeBody")],
     [t("work.suggestion.create"), t("work.suggestion.createBody")]] as const;
   return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
     <p className="welcome-copy">{t("work.welcome.description")}</p>
-    <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>
+    {!draftActive && <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>}
   </div>;
 }
 
@@ -1207,7 +1216,7 @@ function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettin
 function SetupRequired({ t }: { t: (key: MessageKey) => string }) { return <StatusCard icon="shield" title={t("shell.setupRequired")} body={t("setup.unavailable")} />; }
 function AgentsScreen({ definition, t }: { definition?: string; t: (key: MessageKey) => string }) { return <section className="content-page"><p className="eyebrow">{t("agents.eyebrow")}</p><h1>{t("agents.title")}</h1><p>{t("agents.description")}</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? t("agents.none")}</h2><p>{t(definition ? "agents.readyBody" : "agents.configureBody")}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{t(definition ? "common.ready" : "common.unavailable")}</span></div></section>; }
 function SettingsScreen({ capabilities, preferences, setPreferences, update, runUpdate,
-  restartBlocked, usage, t }: {
+  restartBlocked, usage, section, onSectionChange, t }: {
   capabilities?: WorkState["capabilities"];
   preferences: DesktopPreferences;
   setPreferences: React.Dispatch<React.SetStateAction<DesktopPreferences>>;
@@ -1215,6 +1224,8 @@ function SettingsScreen({ capabilities, preferences, setPreferences, update, run
   runUpdate: () => void;
   restartBlocked: boolean;
   usage?: UsageBudgetSnapshot;
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
   t: (key: MessageKey) => string;
 }) {
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecoveryStatus>();
@@ -1297,27 +1308,52 @@ function SettingsScreen({ capabilities, preferences, setPreferences, update, run
     ["settings.runtime.artifacts", capabilities?.artifacts],
   ];
   const recoveryReady = workspaceRecovery?.state === "ready";
-  return <section className="content-page settings-page"><p className="eyebrow">{t("settings.eyebrow")}</p><h1>{t("settings.title")}</h1>
-    {usage && <UsageBudgetCard value={usage} copy={{ title: t("usage.title"),
-      description: t("usage.description"), remaining: t("usage.remaining"),
-      reported: t("usage.reported"), estimated: t("usage.estimated"), reset: t("usage.reset"),
-      modelPosture: t("usage.modelPosture"), activeMayFinish: t("usage.activeMayFinish"),
-      activeMayStop: t("usage.activeMayStop") }} />}
-    <div className="settings-card"><h2>{t("settings.appearance.title")}</h2><p>{t("settings.appearance.description")}</p>
-      <div className="setting-row"><span>{t("settings.theme")}</span><ThemeOptions value={preferences.theme} onChange={(theme) => setPreferences((current) => ({ ...current, theme }))} t={t} /></div>
-      <div className="setting-row"><span>{t("settings.density")}</span><DensityOptions value={preferences.density} onChange={(density) => setPreferences((current) => ({ ...current, density }))} t={t} /></div>
+  const navigation: readonly (readonly [SettingsSection, string])[] = [
+    ["general", t("settings.general")],
+    ...(usage ? [["usage", t("usage.title")] as const] : []),
+    ...(capabilities?.workspaces ? [["workspace", t("settings.workspace.title")] as const] : []),
+    ["runtime", t("settings.runtime.title")], ["updates", t("settings.update.title")],
+    ["privacy", t("settings.privacy.title")],
+  ];
+  const activeSection = navigation.some(([candidate]) => candidate === section)
+    ? section : "general";
+  return <section className="content-page settings-page">
+    <header className="settings-heading"><p className="eyebrow">{t("settings.eyebrow")}</p>
+      <h1>{t("settings.title")}</h1></header>
+    <div className="settings-workbench">
+      <nav className="settings-navigation" aria-label={t("settings.sections")}>
+        {navigation.map(([value, label]) => <button type="button" key={value}
+          className={activeSection === value ? "selected" : ""}
+          aria-current={activeSection === value ? "page" : undefined}
+          onClick={() => onSectionChange(value)}>{label}</button>)}
+      </nav>
+      <div className="settings-panel" aria-live="polite">
+        {activeSection === "general" && <div className="settings-section-stack">
+          <div className="settings-card"><h2>{t("settings.appearance.title")}</h2><p>{t("settings.appearance.description")}</p>
+            <div className="setting-row"><span>{t("settings.theme")}</span><ThemeOptions value={preferences.theme} onChange={(theme) => setPreferences((current) => ({ ...current, theme }))} t={t} /></div>
+            <div className="setting-row"><span>{t("settings.density")}</span><DensityOptions value={preferences.density} onChange={(density) => setPreferences((current) => ({ ...current, density }))} t={t} /></div>
+          </div>
+          <div className="settings-card"><h2>{t("settings.language.title")}</h2><p>{t("settings.language.description")}</p>
+            <div className="setting-row"><span>{t("settings.language.label")}</span><LocaleOptions value={preferences.locale} onChange={(locale) => setPreferences((current) => ({ ...current, locale }))} t={t} /></div>
+          </div>
+        </div>}
+        {activeSection === "usage" && usage && <UsageBudgetCard value={usage} copy={{ title: t("usage.title"),
+          description: t("usage.description"), remaining: t("usage.remaining"),
+          reported: t("usage.reported"), estimated: t("usage.estimated"), reset: t("usage.reset"),
+          modelPosture: t("usage.modelPosture"), activeMayFinish: t("usage.activeMayFinish"),
+          activeMayStop: t("usage.activeMayStop") }} />}
+        {activeSection === "updates" && <UpdateSettings state={update} run={runUpdate}
+          restartBlocked={restartBlocked} t={t} />}
+        {activeSection === "runtime" && <div className="settings-card"><h2>{t("settings.runtime.title")}</h2><p>{t("settings.runtime.description")}</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{t(label)}</span><span className={available ? "state-chip ready" : "state-chip"}>{t(available ? "settings.runtime.available" : "settings.runtime.notInstalled")}</span></div>)}</div>}
+        {activeSection === "workspace" && capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>{t("settings.workspace.title")}</h2><p>{t("settings.workspace.description")}</p><div className="setting-row"><span>{t("settings.workspace.recovery")}</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} ${t("settings.workspace.restored")}` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} ${t("settings.workspace.needsAccess")}` : t("settings.workspace.indexUnavailable") : t("settings.workspace.checking")}</span></div>
+          {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `${t("settings.workspace.readOnly")} ${workspace.grant_revision}` : t("settings.workspace.expired")}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">{t("settings.workspace.active")}</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.opening")}</> : t("settings.workspace.restore")}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label={t("settings.workspace.removeAria")} disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.removing")}</> : t(confirmingRevocation === workspace.workspace_id ? "settings.workspace.confirmRemove" : "settings.workspace.remove")}</button></span></div>)}
+          {recoveryNotice && <div className="workspace-recovery-notice" role="status"><Icon name="shield" /><span>{t(recoveryNotice)}</span></div>}
+          {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{t(recoveryError)}</span></div>}
+        </div>}
+        {activeSection === "privacy" && <div className="settings-card"><h2>{t("settings.privacy.title")}</h2><p>{t("settings.privacy.description")}</p></div>}
+      </div>
     </div>
-    <div className="settings-card"><h2>{t("settings.language.title")}</h2><p>{t("settings.language.description")}</p>
-      <div className="setting-row"><span>{t("settings.language.label")}</span><LocaleOptions value={preferences.locale} onChange={(locale) => setPreferences((current) => ({ ...current, locale }))} t={t} /></div>
-    </div>
-    <UpdateSettings state={update} run={runUpdate} restartBlocked={restartBlocked} t={t} />
-    <div className="settings-card"><h2>{t("settings.runtime.title")}</h2><p>{t("settings.runtime.description")}</p>{rows.map(([label, available]) => <div className="setting-row" key={label}><span>{t(label)}</span><span className={available ? "state-chip ready" : "state-chip"}>{t(available ? "settings.runtime.available" : "settings.runtime.notInstalled")}</span></div>)}</div>
-    {capabilities?.workspaces && <div className="settings-card"><h2 ref={workspaceHeading} tabIndex={-1}>{t("settings.workspace.title")}</h2><p>{t("settings.workspace.description")}</p><div className="setting-row"><span>{t("settings.workspace.recovery")}</span><span className={recoveryReady ? "state-chip ready" : "state-chip attention"}>{workspaceRecovery ? recoveryReady ? `${workspaceRecovery.restored_count} ${t("settings.workspace.restored")}` : workspaceRecovery.state === "attention_required" ? `${workspaceRecovery.needs_reauthorization_count} ${t("settings.workspace.needsAccess")}` : t("settings.workspace.indexUnavailable") : t("settings.workspace.checking")}</span></div>
-      {authorizations.map((workspace) => <div className="workspace-auth-row" key={workspace.workspace_id}><span className="workspace-auth-icon"><Icon name="work" /></span><span><strong dir="auto">{workspace.display_name}</strong><small>{workspace.state === "active" ? `${t("settings.workspace.readOnly")} ${workspace.grant_revision}` : t("settings.workspace.expired")}</small></span><span className="workspace-auth-actions">{workspace.state === "active" ? <span className="state-chip ready">{t("settings.workspace.active")}</span> : <button className="secondary-button" type="button" disabled={restoring === workspace.workspace_id || Boolean(revoking)} onClick={() => void restoreAccess(workspace)}>{restoring === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.opening")}</> : t("settings.workspace.restore")}</button>}<button className={confirmingRevocation === workspace.workspace_id ? "danger-button confirming" : "danger-button"} type="button" aria-label={t("settings.workspace.removeAria")} disabled={Boolean(restoring) || Boolean(revoking)} onClick={() => void removeAccess(workspace)}>{revoking === workspace.workspace_id ? <><span className="spinner" />{t("settings.workspace.removing")}</> : t(confirmingRevocation === workspace.workspace_id ? "settings.workspace.confirmRemove" : "settings.workspace.remove")}</button></span></div>)}
-      {recoveryNotice && <div className="workspace-recovery-notice" role="status"><Icon name="shield" /><span>{t(recoveryNotice)}</span></div>}
-      {recoveryError && <div className="workspace-recovery-error" role="alert"><Icon name="warning" /><span>{t(recoveryError)}</span></div>}
-    </div>}
-    <div className="settings-card"><h2>{t("settings.privacy.title")}</h2><p>{t("settings.privacy.description")}</p></div></section>;
+  </section>;
 }
 
 function UpdateSettings({ state, run, restartBlocked, t }: {

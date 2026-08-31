@@ -15,6 +15,95 @@ use crate::{
     T1_WORKSPACE_EXECUTOR_ID,
 };
 
+/// Persistent machine-level T1 values awaiting one authorized Workspace binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct T1HostSystemConfig {
+    policy_revision: String,
+    executor_revision: String,
+    podman_executable: PathBuf,
+    podman_socket_uri: String,
+    process_image: String,
+    patch_recovery_root: PathBuf,
+    process_recovery_root: PathBuf,
+    control_timeout_ms: u64,
+    process_lanes: ProcessLaneRegistry,
+}
+
+impl T1HostSystemConfig {
+    /// Validates explicit machine resources without consulting environment or PATH.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        policy_revision: impl Into<String>,
+        executor_revision: impl Into<String>,
+        podman_executable: impl Into<PathBuf>,
+        podman_socket_uri: impl Into<String>,
+        process_image: impl Into<String>,
+        patch_recovery_root: impl Into<PathBuf>,
+        process_recovery_root: impl Into<PathBuf>,
+        control_timeout_ms: u64,
+        process_lanes: ProcessLaneRegistry,
+    ) -> Result<Self, String> {
+        let policy_revision = policy_revision.into();
+        let executor_revision = executor_revision.into();
+        let podman_executable = podman_executable.into();
+        let podman_socket_uri = podman_socket_uri.into();
+        let process_image = process_image.into();
+        let patch_recovery_root = canonical_private_directory(patch_recovery_root.into())?;
+        let process_recovery_root = canonical_private_directory(process_recovery_root.into())?;
+        if policy_revision.is_empty()
+            || executor_revision.is_empty()
+            || !podman_executable.is_absolute()
+            || !podman_socket_uri.starts_with("unix:///")
+            || podman_socket_uri.as_bytes().contains(&0)
+            || !digest_pinned_image(&process_image)
+            || control_timeout_ms == 0
+            || control_timeout_ms > 30_000
+        {
+            return Err("invalid T1 Host system configuration".into());
+        }
+        Ok(Self {
+            policy_revision,
+            executor_revision,
+            podman_executable,
+            podman_socket_uri,
+            process_image,
+            patch_recovery_root,
+            process_recovery_root,
+            control_timeout_ms,
+            process_lanes,
+        })
+    }
+
+    /// Binds one authorized Workspace capability to the persistent host values.
+    pub fn bind_workspace(
+        &self,
+        workspace_root: impl Into<PathBuf>,
+    ) -> Result<T1RuntimeSystemConfig, String> {
+        let workspace_root = canonical_directory(workspace_root.into())?;
+        let podman = PodmanProcessConfig::new(
+            self.podman_executable.clone(),
+            self.podman_socket_uri.clone(),
+            self.process_image.clone(),
+            workspace_root.clone(),
+            self.process_recovery_root.clone(),
+            self.control_timeout_ms,
+        )?;
+        T1RuntimeSystemConfig::new(
+            self.policy_revision.clone(),
+            self.executor_revision.clone(),
+            workspace_root,
+            self.patch_recovery_root.clone(),
+            self.process_lanes.clone(),
+            podman,
+        )
+    }
+
+    /// Returns exact configured Process lane identities for Agent resolution.
+    pub fn process_lane_names(&self) -> impl Iterator<Item = &str> {
+        self.process_lanes.lane_names()
+    }
+}
+
 /// Exact machine-level configuration for one built-in T1 executor set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct T1RuntimeSystemConfig {
@@ -152,4 +241,18 @@ fn canonical_private_directory(value: PathBuf) -> Result<PathBuf, String> {
         return Err("T1 recovery directory is not private".into());
     }
     Ok(canonical)
+}
+
+fn digest_pinned_image(value: &str) -> bool {
+    let Some((name, digest)) = value.rsplit_once("@sha256:") else {
+        return false;
+    };
+    !name.is_empty()
+        && !name
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte == 0)
+        && digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }

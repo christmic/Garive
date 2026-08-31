@@ -1,6 +1,9 @@
 //! Runtime installation of one resolved, immutable Agent snapshot.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use garive_config::EffectiveAgentSnapshot;
 use garive_core::AgentToolCapabilities;
@@ -19,6 +22,8 @@ pub enum RuntimeAgentInstallationError {
     CapabilityMismatch,
     /// A durable continuation does not reuse the exact snapshot binding.
     SnapshotMismatch,
+    /// No Agent or more than one installed revision for one Definition exists.
+    InvalidCatalogue,
 }
 
 /// One D0 snapshot plus the exact Runtime and Core projections derived from it.
@@ -29,10 +34,118 @@ pub struct RuntimeAgentInstallation {
     tools: AgentToolCapabilities,
 }
 
+/// Immutable Host catalogue containing one exact installed revision per Definition.
+#[derive(Clone, Debug)]
+pub struct RuntimeAgentCatalogue {
+    installations: BTreeMap<String, Arc<RuntimeAgentInstallation>>,
+}
+
+impl RuntimeAgentCatalogue {
+    /// Constructs a non-empty, identity-unique installation catalogue.
+    pub fn new(
+        installations: impl IntoIterator<Item = RuntimeAgentInstallation>,
+    ) -> Result<Self, RuntimeAgentInstallationError> {
+        let mut catalogue = BTreeMap::new();
+        for installation in installations {
+            let definition_id = installation.installed_agent().definition_id.clone();
+            if catalogue
+                .insert(definition_id, Arc::new(installation))
+                .is_some()
+            {
+                return Err(RuntimeAgentInstallationError::InvalidCatalogue);
+            }
+        }
+        if catalogue.is_empty() {
+            return Err(RuntimeAgentInstallationError::InvalidCatalogue);
+        }
+        Ok(Self {
+            installations: catalogue,
+        })
+    }
+
+    /// Returns one exact installed Definition revision by its stable identity.
+    pub fn get(&self, definition_id: &str) -> Option<&Arc<RuntimeAgentInstallation>> {
+        self.installations.get(definition_id)
+    }
+
+    /// Resolves and validates one complete durable Agent snapshot binding.
+    pub fn resolve(
+        &self,
+        definition_id: &str,
+        definition_revision: &str,
+        snapshot_digest: &str,
+    ) -> Result<&Arc<RuntimeAgentInstallation>, RuntimeAgentInstallationError> {
+        let installation = self
+            .get(definition_id)
+            .ok_or(RuntimeAgentInstallationError::SnapshotMismatch)?;
+        installation.validate_continuation(definition_revision, snapshot_digest)?;
+        Ok(installation)
+    }
+
+    /// Iterates installed Agents in stable Definition identity order.
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<RuntimeAgentInstallation>> {
+        self.installations.values()
+    }
+
+    /// Produces stable owned Host projections for Host construction.
+    pub fn clone_installed_agents(&self) -> Vec<InstalledAgent> {
+        self.iter()
+            .map(|installation| installation.clone_installed_agent())
+            .collect()
+    }
+
+    /// Returns the exact number of installed Definition identities.
+    pub fn len(&self) -> usize {
+        self.installations.len()
+    }
+
+    /// Reports whether this catalogue contains no installed Agent.
+    pub fn is_empty(&self) -> bool {
+        self.installations.is_empty()
+    }
+}
+
 /// Enforces one installed snapshot at the governed factory boundary.
 pub struct SnapshotBoundGovernedExecutionFactory {
     installation: Arc<RuntimeAgentInstallation>,
     inner: Arc<dyn LocalGovernedExecutionFactory>,
+}
+
+/// Selects and enforces an installed snapshot from durable Turn coordinates.
+pub struct CatalogueBoundGovernedExecutionFactory {
+    catalogue: Arc<RuntimeAgentCatalogue>,
+    inner: Arc<dyn LocalGovernedExecutionFactory>,
+}
+
+impl CatalogueBoundGovernedExecutionFactory {
+    /// Binds a governed factory to one immutable Host installation catalogue.
+    pub fn new(
+        catalogue: Arc<RuntimeAgentCatalogue>,
+        inner: Arc<dyn LocalGovernedExecutionFactory>,
+    ) -> Self {
+        Self { catalogue, inner }
+    }
+}
+
+impl LocalGovernedExecutionFactory for CatalogueBoundGovernedExecutionFactory {
+    fn create(
+        &self,
+        committed: &CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        let installation = self
+            .catalogue
+            .resolve(
+                &committed.definition_id,
+                &committed.definition_revision,
+                &committed.snapshot_digest,
+            )
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        let execution = self.inner.create(committed)?;
+        installation
+            .validate_tool_capabilities(&execution.capabilities)
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        Ok(execution)
+    }
 }
 
 impl SnapshotBoundGovernedExecutionFactory {
@@ -221,7 +334,74 @@ mod tests {
         }
     }
 
+    #[test]
+    fn catalogue_resolves_only_one_exact_snapshot_per_definition() {
+        let alpha = installation("alpha", "alpha.v1", "alpha-installation");
+        let alpha_revision = alpha.installed_agent().definition_revision.clone();
+        let alpha_digest = alpha.installed_agent().snapshot_digest.clone();
+        let catalogue = RuntimeAgentCatalogue::new([
+            alpha,
+            installation("beta", "beta.v1", "beta-installation"),
+        ])
+        .unwrap();
+
+        assert_eq!(catalogue.len(), 2);
+        assert_eq!(
+            catalogue
+                .iter()
+                .map(|value| value.installed_agent().definition_id.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "beta"]
+        );
+        assert!(catalogue
+            .resolve("alpha", &alpha_revision, &alpha_digest)
+            .is_ok());
+        for binding in [
+            ("missing", alpha_revision.as_str(), alpha_digest.as_str()),
+            ("alpha", "changed", alpha_digest.as_str()),
+            ("alpha", alpha_revision.as_str(), "0"),
+        ] {
+            assert_eq!(
+                catalogue.resolve(binding.0, binding.1, binding.2).err(),
+                Some(RuntimeAgentInstallationError::SnapshotMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn catalogue_rejects_empty_and_duplicate_definition_identities() {
+        assert_eq!(
+            RuntimeAgentCatalogue::new([]).err(),
+            Some(RuntimeAgentInstallationError::InvalidCatalogue)
+        );
+        assert_eq!(
+            RuntimeAgentCatalogue::new([
+                installation("agent", "agent.v1", "first"),
+                installation("agent", "agent.v2", "second"),
+            ])
+            .err(),
+            Some(RuntimeAgentInstallationError::InvalidCatalogue)
+        );
+    }
+
+    fn installation(
+        definition_id: &str,
+        revision: &str,
+        namespace: &str,
+    ) -> RuntimeAgentInstallation {
+        RuntimeAgentInstallation::new(
+            snapshot_named(definition_id, revision),
+            namespace,
+            vec!["workspaces".into()],
+        )
+        .unwrap()
+    }
+
     fn snapshot() -> EffectiveAgentSnapshot {
+        snapshot_named("agent", "agent.v1")
+    }
+
+    fn snapshot_named(definition_id: &str, revision: &str) -> EffectiveAgentSnapshot {
         let requirements =
             ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 4_096)
                 .unwrap();
@@ -243,8 +423,8 @@ mod tests {
         let capabilities = BTreeSet::from(["filesystem_read".to_owned()]);
         let limits = DefaultLimits::new(8, Some(16_384), Some(4_096), Some(30_000)).unwrap();
         let definition = AgentDefinition::new(
-            "agent",
-            "agent.v1",
+            definition_id,
+            revision,
             Vec::new(),
             Vec::new(),
             vec![CapabilityReference::new(

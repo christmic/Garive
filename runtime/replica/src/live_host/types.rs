@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, error::Error, fmt, path::PathBuf, sync::Arc};
 
 use garive_ledger::{ExecutionId, SessionId, TurnId};
 use serde::{Deserialize, Serialize};
@@ -294,6 +294,12 @@ pub struct CommittedTurn {
     pub turn_id: TurnId,
     /// Fresh disposable Execution identity.
     pub execution_id: ExecutionId,
+    /// Exact installed Agent Definition identity durably bound to the Session.
+    pub definition_id: String,
+    /// Exact installed Definition revision durably bound to this Turn.
+    pub definition_revision: String,
+    /// Exact Effective Agent Snapshot digest durably bound to this Turn.
+    pub snapshot_digest: String,
     /// Session version after the command transaction.
     pub session_version: u64,
     /// Last durable position committed by the command transaction.
@@ -692,7 +698,7 @@ pub(crate) struct ErrorBody {
 
 pub(crate) struct LiveHostState {
     pub database_path: PathBuf,
-    pub installed: InstalledAgent,
+    pub installed: BTreeMap<String, InstalledAgent>,
     pub limits: LiveHostLimits,
     pub read_limits: HostReadLimits,
     pub clock: Arc<dyn HostClock>,

@@ -452,6 +452,9 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
         turn_id: TurnId::try_from(turn.turn_id.as_str()).expect("turn identity"),
         execution_id: ExecutionId::try_from(turn.execution_id.as_str())
             .expect("execution identity"),
+        definition_id: "definition-main".into(),
+        definition_revision: "revision-1".into(),
+        snapshot_digest: "a".repeat(64),
         session_version: 2,
         committed_position: turn.committed_position,
     };
@@ -654,6 +657,9 @@ async fn shutdown_stops_admission_and_bounds_in_memory_drain() {
         session_id: SessionId::try_from("session").expect("session"),
         turn_id: TurnId::try_from("turn").expect("turn"),
         execution_id: ExecutionId::try_from("execution").expect("execution"),
+        definition_id: "definition-main".into(),
+        definition_revision: "revision-1".into(),
+        snapshot_digest: "a".repeat(64),
         session_version: 1,
         committed_position: 1,
     };

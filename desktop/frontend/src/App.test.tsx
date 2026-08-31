@@ -98,10 +98,24 @@ describe("Desktop product experience", () => {
   it("shows exact version and an honest unavailable update channel", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Updates" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Updates" }));
     expect(await screen.findByRole("heading", { name: "Updates" })).toBeTruthy();
     expect(await screen.findByText("0.1.0")).toBeTruthy();
     expect(screen.getByText("This build has no configured update channel.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+  });
+
+  it("keeps desktop identity in the rail and execution state out of window chrome", async () => {
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    const host = view.container.querySelector(".host-identity");
+    expect(host?.textContent).toContain("Local");
+    expect(host?.textContent).toContain("Runtime ready");
+    expect(host?.textContent).not.toContain("LocalLocal");
+    expect(view.container.querySelector(".topbar .local-badge")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Account and app menu" })).toBeNull();
   });
 
   it("opens one truthful usage view without changing durable task state", async () => {
@@ -114,7 +128,11 @@ describe("Desktop product experience", () => {
     expect(await screen.findByRole("heading", { name: "Usage & capacity" })).toBeTruthy();
     expect(screen.getByRole("progressbar", { name: "8% remaining" })).toBeTruthy();
     expect(screen.getByText("Current work may finish if included capacity reaches its limit.")).toBeTruthy();
-    expect(screen.getByText("Local Runtime")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Local Runtime" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Local Runtime" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Local Runtime" }));
+    expect(await screen.findByRole("heading", { name: "Local Runtime" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Usage & capacity" })).toBeNull();
   });
 
   it("submits on Enter but not Shift+Enter or an active IME composition", async () => {
@@ -179,6 +197,15 @@ describe("Desktop product experience", () => {
     expect(composer.getAttribute("aria-describedby")).toBe("composer-commit-note");
     expect(screen.getByRole("button", { name: "Add context" }).textContent).toBe("");
     expect(document.querySelector("#composer-commit-note")?.classList.contains("sr-only")).toBe(true);
+    expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
+    expect(view.container.querySelector(".nav-item.selected")?.textContent).toContain("Work");
+    expect(view.container.querySelector(".nav-stack")?.textContent).toContain("Agents");
+    expect(view.container.querySelector(".nav-stack")?.textContent).toContain("Memory");
+    expect(view.container.querySelector(".sidebar-section.library")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Toggle inspector" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Synthesize/ }));
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid")).toBeNull());
+    await waitFor(() => expect(composer).toBe(document.activeElement));
   });
 
   it("collapses and restores the native navigation without discarding work", async () => {
@@ -226,6 +253,8 @@ describe("Desktop product experience", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send work" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Open deliverables" }));
+    expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
+    expect(view.container.querySelector(".recent-item.selected")).not.toBeNull();
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -25,7 +27,7 @@ struct CursorDigest<'a> {
 
 pub(super) fn encode(
     session: &SessionSummaryV1,
-    installed: &InstalledAgent,
+    installed: &BTreeMap<String, InstalledAgent>,
     limits: HostReadLimits,
 ) -> Result<String, LiveHostError> {
     let binding = installation_digest(installed)?;
@@ -48,7 +50,7 @@ pub(super) fn encode(
 
 pub(super) fn decode(
     token: &str,
-    installed: &InstalledAgent,
+    installed: &BTreeMap<String, InstalledAgent>,
     limits: HostReadLimits,
 ) -> Result<(String, String), LiveHostError> {
     if token.is_empty() || token.len() > limits.max_cursor_bytes {
@@ -78,13 +80,20 @@ pub(super) fn decode(
     Ok((cursor.opened_at, cursor.session_id))
 }
 
-fn installation_digest(installed: &InstalledAgent) -> Result<String, LiveHostError> {
-    let bytes = serde_jcs::to_vec(&json!({
-        "definition_id": installed.definition_id,
-        "definition_revision": installed.definition_revision,
-        "snapshot_digest": installed.snapshot_digest,
-    }))
-    .map_err(|_| LiveHostError::CorruptState)?;
+fn installation_digest(
+    installed: &BTreeMap<String, InstalledAgent>,
+) -> Result<String, LiveHostError> {
+    let bindings = installed
+        .values()
+        .map(|value| {
+            json!({
+                "definition_id": value.definition_id,
+                "definition_revision": value.definition_revision,
+                "snapshot_digest": value.snapshot_digest,
+            })
+        })
+        .collect::<Vec<_>>();
+    let bytes = serde_jcs::to_vec(&bindings).map_err(|_| LiveHostError::CorruptState)?;
     Ok(hex_digest(&bytes))
 }
 

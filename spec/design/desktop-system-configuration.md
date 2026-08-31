@@ -9,9 +9,11 @@ selection into the frontend, Engine, protocol adapters or Provider profiles.
 ## Ownership
 
 The Tauri backend owns startup configuration. It receives an explicit OS app
-configuration directory from Tauri, reads one versioned Garive document from
-that directory and resolves one credential reference through an injected
-backend secret resolver. It then constructs the existing P2/R1 values and
+configuration directory from Tauri and reads backend-owned versioned Garive
+documents from that directory. `desktop-v1.json` owns Agent, model and Host
+configuration. `runtime-tools-v1.json` separately owns optional machine-level
+T1 executor resources. An injected backend secret resolver resolves opaque
+credential references. The backend then constructs immutable values and
 installs `DesktopHost` exactly once.
 
 The following remain forbidden outside the exact write-only setup/rotation
@@ -26,7 +28,7 @@ channel admitted by
 - vendor names in the stable document schema;
 - silent fallback to a different profile, endpoint, model or Agent definition.
 
-## Configuration document
+## Agent and Host document
 
 The only accepted file name is `desktop-v1.json` under the explicit app config
 directory. This C1 slice defines schema version 1; accepted A-DESKTOP-C2 adds a
@@ -66,10 +68,10 @@ profile identity to a constructor which consumes the explicit endpoint,
 credential, model and HTTP bounds. Unknown identities fail closed. Adding a
 profile does not revise this schema and does not grant hosted capabilities.
 
-V1 is model-only and admits exactly `ModelCapability::Text`. Tool, media,
-reasoning, Memory, Knowledge, Scheduler and delegation configuration require
-their own Runtime composition increments; their implementation presence does
-not advertise them to this model.
+The current built-in Desktop Agent admits text model capability plus its exact
+governed Workspace write capability. T1, media, reasoning, Memory, Knowledge,
+Scheduler and delegation require explicit Effective Snapshot entries and exact
+Runtime bindings; implementation presence never advertises a capability.
 
 Policy strings map exactly to the accepted Core enums. Output limit accepts
 `complete_partial`, `retry`, `suspend`, `stop` or `fail`; only `retry` requires
@@ -77,6 +79,45 @@ one non-zero `output_limit_max_retries`. Transport/unavailable accept
 `suspend`, `stop`, `fail` or `alternate_then_suspend`. Missing usage accepts
 `stop` or `estimate`; only `estimate` requires non-zero input and output token
 charges. Contradictory optional values fail closed.
+
+## Machine T1 document
+
+The optional `runtime-tools-v1.json` stores only persistent machine-level
+executor resources. It is bounded by the same 64 KiB limit and uses the same
+duplicate-member and unknown-field rejection rules.
+
+```text
+DesktopT1ConfigV1 {
+  schema_version = 1
+  policy_revision
+  executor_revision
+  patch_recovery
+  process_recovery
+  podman { executable, socket_uri, image, control_timeout_ms }
+  process_lanes[] {
+    name
+    executables[] { alias, path }
+    environment { key: { literal } | { credential_ref } }
+  }
+}
+```
+
+The Podman executable and lane executable paths are explicit absolute paths;
+there is no `PATH` or process-environment discovery. The image is pinned by an
+exact lowercase SHA-256 digest. Recovery names are single relative components
+created below the app configuration directory and must remain owned by the
+current user with no group/other permissions. Literal environment values are
+non-secret fixed configuration; every secret uses `credential_ref` and is
+resolved in the backend. Diagnostics expose environment keys but never values.
+
+The document deliberately contains no Workspace path. An opaque authorized
+Desktop Workspace capability supplies the canonical root for a Turn. Only then
+may the backend bind `T1HostSystemConfig` into `T1RuntimeSystemConfig` and build
+the five exact definitions, preparation port and executor router described by
+[`basic-tools.md`](basic-tools.md). Construction still does not enable T1: the
+definitions must exactly match the installed Effective Agent Snapshot before
+Core starts. Missing `runtime-tools-v1.json` means T1 is not configured;
+malformed or unsafe content fails closed without fallback.
 
 ## Secret boundary
 
@@ -123,6 +164,10 @@ cannot inspect a credential, credential reference, or persisted configuration.
 - missing file is distinct from malformed or missing-secret configuration;
 - injected resolver proves only `credential_ref` crosses the secret boundary;
 - diagnostics and serialized frontend values contain no fixture secret;
+- absent T1 configuration does not enable tools; a valid document builds
+  exactly five definitions only after explicit Workspace binding;
+- duplicate/unknown T1 members, traversal recovery names, mutable images,
+  broad recovery permissions and missing credential references fail closed;
 - profile registry rejects unknown identities and constructs both currently
   installed official profiles without changing the schema;
 - temporary SQLite plus loopback protocol server proves configured startup can
@@ -137,5 +182,5 @@ cannot inspect a credential, credential reference, or persisted configuration.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
+- Last reviewed: 2026-09-01
 - Status: accepted

@@ -88,9 +88,10 @@ Components do not test theme names or encode their own dark palette.
 
 ## Layout contract
 
-The wide desktop shell contains a 240–275 px rail and a fluid work canvas.
-Navigation rows are 30–36 px and the title bar is 46 px. The primary thread has
-a 40 rem readable measure. Environment and evidence summaries are compact
+The supplied reference shell contains a 206 px rail at 1280 px, expanding only
+to 240 px on wider windows, plus a fluid work canvas. Global navigation rows are
+24–30 px, durable task rows are 26–34 px, and the title bar is 34 px. The primary thread has
+a 39 rem readable measure. Environment and evidence summaries are compact
 dismissible overlays; opening an artifact, file, diff or terminal creates a
 separately scrollable tabbed workbench beside the thread. A generic fixed-width
 Inspector is not a canonical desktop layout.
@@ -101,6 +102,15 @@ surface with an explicit Back action; the rail becomes a navigation sheet.
 The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
+
+Window chrome follows permanence, not feature ownership. The top bar contains
+only the current document/task identity and admitted global actions. Live
+execution state appears once, attached to the composer/status rail. Durable
+task state remains in its rail row. Local host identity and readiness occupy a
+non-interactive rail-footer block unless a real account or host menu is
+available. Placeholder initials, logo buttons and inert account menus are
+forbidden. Web preserves this desktop composition without reserving the native
+traffic-light safe zone.
 
 When a file is open, the workbench has two quiet chrome rows: the first owns one
 selected file tab and the second owns bounded location plus file actions. It
@@ -114,7 +124,7 @@ is a 30 px icon control; their accessible name and tooltip retain the full verb.
 The terminal state remains text-visible and is not replaced by color or an icon.
 
 The resting composer begins with one text row and grows only with entered or
-restored content. Its 40 rem measure, 32 px actions and compact live-status rail
+restored content. Its 39 rem measure, 32 px actions and compact live-status rail
 form one surface. Running work replaces Send with exactly one circular Stop
 action; it never shows a second text Stop beside a busy Send control. The
 durability note remains programmatically associated with the field but does not
@@ -137,14 +147,27 @@ gradients are forbidden in the application shell.
 | Element | Comfortable target | Compact target |
 |---|---:|---:|
 | rail | 240–275 px | 72 px collapsed |
-| title bar | 46 px | 36 px |
-| navigation/task row | 30–36 px | 30–36 px |
-| readable turn measure | 40 rem max | unchanged |
-| composer | 40 rem plus 24 px overhang | 40 rem max |
+| title bar | 34 px reference shell | unchanged |
+| global navigation row | 24–30 px | unchanged |
+| durable task row | 26–34 px | unchanged |
+| readable turn measure | 39 rem / 546 px at the 14 px root | unchanged |
+| composer | 39 rem / 546 px at the 14 px root | pane width in split mode |
 | Environment overlay | 280–320 px | full overlay below 720 px |
 | artifact/file workbench | 320–520 px conversation split, 352 px default | full overlay below 1120 px |
 
 Localization and 200% text zoom may grow rows and must never clip content.
+
+The unified Desktop/Web window bar is 34px at the supplied 1280px reference
+size. The file tab shares that row, its location toolbar is 30px including its
+separator, and the first rendered heading begins after a 4px document inset.
+The document retains a left-aligned 46rem measure rather than recentring inside
+the pane. Opening Environment uses a bounded top-right fade/scale; file contents use a 4px lateral reveal after the
+grid track exists. Both animations are removed by reduced-motion preference.
+Only one rail destination is selected: Work on an empty canvas, otherwise the
+active durable task. A parent Work route and its child task never highlight
+together. New work, Work, Search, Agents and admitted Memory occupy one compact
+global navigation group; durable task groups follow. A generic “Library” group
+must not split those global routes or create empty visual hierarchy.
 
 The file workbench divider is a native-feeling desktop affordance, not a fixed
 layout accident. Pointer drag and Left/Right/Home/End keys change the bounded
@@ -153,6 +176,24 @@ non-sensitive appearance value; double-click restores 352px. Content and Compose
 neither may paint beneath the document. In the reference-sized split, Turn and
 Composer share a 10px pane inset; the rendered document aligns to the
 workbench's 24px content edge instead of recentering a second nested measure.
+
+Settings is a desktop preference workbench, not a scrolling dashboard. Wide
+windows use one 164px category rail and one independently scrolling detail
+surface; below 760px the category rail becomes a horizontal, keyboard-reachable
+strip. Only the selected category is mounted. Settings and Command-comma open
+General; a truthful Capacity trigger opens Usage directly and disappears while
+Settings is visible. Appearance and language may share General, while Usage,
+Workspace, Runtime, Updates and Privacy remain separate categories when their
+backing capability exists. Unavailable categories are absent rather than empty.
+
+New Work is a work entry, not a marketing landing page. Heading, guidance,
+Composer and starters share the 39rem work axis. The heading is 28px; guidance
+is one operational line; starters are at most three 40px command rows and never
+large cards. An Environment action is absent until a durable Turn exists.
+Typing or choosing a starter removes the entire starter list and returns focus
+to the Composer without moving it. At every window width the Composer and first
+starter row have at least 12px visual separation; no overlay may satisfy the
+viewport-width gate while occluding interactive content.
 
 ## Component grammar
 
