@@ -32,7 +32,7 @@ Command:
 cargo test -p garive-adapter-browser-cdp --test managed_chromium -- --ignored --nocapture
 ```
 
-Latest result: 1 passed, 0 failed, 0.81 seconds. The ordinary adapter suite also
+Latest result: 1 passed, 0 failed, 0.79 seconds. The ordinary adapter suite also
 passed 15 tests; strict all-target Clippy and Rustdoc passed.
 
 The Runtime-owned concrete-port gate independently launched a fresh managed
@@ -54,7 +54,9 @@ action set is empty. The same gate opens an explicitly allowed same-origin
 popup, proves that it remains pending rather than silently joining the admitted
 page set, denies and closes a cross-origin popup, restores the exact parent
 target after Chrome changes foreground focus, and then completes the remaining
-parent-page actions. It passed 1 test in 0.90 seconds;
+parent-page actions. After hardening the launch gate to wait for both complete
+`DevToolsActivePort` lines, it passed three consecutive runs in 1.35, 0.75 and
+0.68 seconds;
 strict Runtime test-target Clippy and warning-free Rustdoc also passed.
 
 ```sh
