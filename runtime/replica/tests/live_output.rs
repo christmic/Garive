@@ -115,6 +115,34 @@ fn reconnect_starts_with_complete_current_snapshot() {
 }
 
 #[test]
+fn reconnect_after_last_subscriber_drops_uses_generation_snapshot() {
+    let hub = LiveOutputHub::new(limits()).unwrap();
+    let subscriber = hub.subscribe("session-live").unwrap();
+    let mut sink = hub.event_sink();
+    sink.emit(event(AgentEventKind::ExecutionStarted)).unwrap();
+    drop(subscriber);
+
+    sink.emit(event(AgentEventKind::ModelStream(
+        ModelStreamEvent::TextDelta {
+            output_index: 0,
+            delta: "after disconnect".into(),
+        },
+    )))
+    .unwrap();
+
+    let mut reconnected = hub.subscribe("session-live").unwrap();
+    let snapshot = reconnected.try_recv().unwrap().unwrap();
+    assert_eq!(snapshot.sequence, 2);
+    assert!(matches!(
+        snapshot.kind,
+        LiveOutputEventKind::Snapshot {
+            ref text,
+            through_sequence: 2
+        } if text == "after disconnect"
+    ));
+}
+
+#[test]
 fn preview_overflow_clears_text_and_stays_visibly_unavailable() {
     let hub = LiveOutputHub::new(LiveOutputLimits {
         max_preview_bytes: 5,

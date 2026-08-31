@@ -151,6 +151,23 @@ struct Generation {
     phase: Option<&'static str>,
 }
 
+impl HubState {
+    fn remove_inactive_session_channel(&mut self, session_id: &str) {
+        let has_active_generation = self
+            .executions
+            .values()
+            .any(|generation| generation.session_id == session_id);
+        if !has_active_generation
+            && self
+                .sessions
+                .get(session_id)
+                .is_some_and(|channel| channel.subscribers == 0)
+        {
+            self.sessions.remove(session_id);
+        }
+    }
+}
+
 impl LiveOutputHub {
     /// Constructs an empty hub with explicit non-zero bounds.
     pub fn new(limits: LiveOutputLimits) -> Result<Self, LiveOutputError> {
@@ -239,6 +256,7 @@ impl LiveOutputHub {
         if let Some(channel) = state.sessions.get(session_id) {
             let _ = channel.sender.send(event);
         }
+        state.remove_inactive_session_channel(session_id);
         Ok(())
     }
 
@@ -264,14 +282,10 @@ impl LiveOutputHub {
                 Generation::new(session_id.clone(), turn_id.clone(), execution_id.clone()),
             );
         }
-        let channel = state.sessions.entry(session_id.clone()).or_insert_with(|| {
-            let (sender, _) = broadcast::channel(self.limits.broadcast_capacity);
-            SessionChannel {
-                sender,
-                subscribers: 0,
-            }
-        });
-        let sender = channel.sender.clone();
+        let sender = state
+            .sessions
+            .get(&session_id)
+            .map(|channel| channel.sender.clone());
         let generation = state
             .executions
             .get_mut(&execution_id)
@@ -280,8 +294,10 @@ impl LiveOutputHub {
             return Err(LiveOutputError::IdentityMismatch);
         }
         let published = generation.apply(action, self.limits);
-        for event in published {
-            let _ = sender.send(event);
+        if let Some(sender) = sender {
+            for event in published {
+                let _ = sender.send(event);
+            }
         }
         Ok(())
     }
@@ -464,8 +480,92 @@ impl Drop for LiveOutputSubscriber {
         let Ok(mut state) = hub.lock() else {
             return;
         };
-        if let Some(channel) = state.sessions.get_mut(&self.session_id) {
+        let remove_channel = if let Some(channel) = state.sessions.get_mut(&self.session_id) {
             channel.subscribers = channel.subscribers.saturating_sub(1);
+            channel.subscribers == 0
+        } else {
+            false
+        };
+        if remove_channel {
+            state.sessions.remove(&self.session_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use garive_core::{ExecutionId, SessionId, TurnId};
+
+    fn limits() -> LiveOutputLimits {
+        LiveOutputLimits {
+            max_active_executions: 2,
+            max_preview_bytes: 64,
+            max_event_bytes: 16,
+            broadcast_capacity: 4,
+            max_subscribers_per_session: 2,
+        }
+    }
+
+    fn started(session_id: &str, execution_id: &str) -> AgentEvent {
+        AgentEvent {
+            session_id: SessionId::try_from(session_id).unwrap(),
+            turn_id: TurnId::try_from("turn-live").unwrap(),
+            execution_id: ExecutionId::try_from(execution_id).unwrap(),
+            kind: AgentEventKind::ExecutionStarted,
+        }
+    }
+
+    #[test]
+    fn session_channels_exist_only_while_subscribed() {
+        let hub = LiveOutputHub::new(limits()).unwrap();
+        let mut sink = hub.event_sink();
+
+        sink.emit(started("session-unobserved", "execution-unobserved"))
+            .unwrap();
+        assert!(hub.inner.lock().unwrap().sessions.is_empty());
+
+        hub.end_execution(
+            "session-unobserved",
+            "turn-live",
+            "execution-unobserved",
+            LiveOutputEndReason::TerminalCommitted,
+        )
+        .unwrap();
+        assert!(hub.inner.lock().unwrap().sessions.is_empty());
+
+        let (sender, _) = broadcast::channel(limits().broadcast_capacity);
+        hub.inner.lock().unwrap().sessions.insert(
+            "session-ending".into(),
+            SessionChannel {
+                sender,
+                subscribers: 0,
+            },
+        );
+        sink.emit(started("session-ending", "execution-ending"))
+            .unwrap();
+        hub.end_execution(
+            "session-ending",
+            "turn-live",
+            "execution-ending",
+            LiveOutputEndReason::TerminalCommitted,
+        )
+        .unwrap();
+        assert!(hub.inner.lock().unwrap().sessions.is_empty());
+
+        let subscriber = hub.subscribe("session-observed").unwrap();
+        sink.emit(started("session-observed", "execution-observed"))
+            .unwrap();
+        hub.end_execution(
+            "session-observed",
+            "turn-live",
+            "execution-observed",
+            LiveOutputEndReason::TerminalCommitted,
+        )
+        .unwrap();
+        assert_eq!(hub.inner.lock().unwrap().sessions.len(), 1);
+
+        drop(subscriber);
+        assert!(hub.inner.lock().unwrap().sessions.is_empty());
     }
 }
