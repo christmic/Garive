@@ -11,10 +11,13 @@ mod input;
 mod view;
 
 use application::{
-    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState, Overlay,
-    TimelineItem, TimelineRole, TimelineTone,
+    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState,
+    LiveAnswerExpectation, LiveAnswerProjection, Overlay, TimelineItem, TimelineRole, TimelineTone,
 };
-use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
+use garive_host_client::{
+    AgentDefinitionSummary, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind,
+    SessionSummary, SuspensionView,
+};
 use ratatui::{buffer::Buffer, layout::Rect};
 use unicode_width::UnicodeWidthStr;
 
@@ -166,6 +169,22 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     insta::assert_snapshot!(
         "session_picker_scrolled_100x24",
         frame(&sessions, Theme::Mono, 100, 24)
+    );
+}
+
+#[test]
+fn live_answer_states_match_reviewed_theme_snapshots() {
+    insta::assert_snapshot!(
+        "live_answer_states_dark",
+        live_answer_states_preview(Theme::Dark)
+    );
+    insta::assert_snapshot!(
+        "live_answer_states_light",
+        live_answer_states_preview(Theme::Light)
+    );
+    insta::assert_snapshot!(
+        "live_answer_states_mono",
+        live_answer_states_preview(Theme::Mono)
     );
 }
 
@@ -505,6 +524,162 @@ fn markdown_runs(lines: Vec<ratatui::text::Line<'static>>) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join(" | ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn live_answer_states_preview(theme: Theme) -> String {
+    let mut streaming = LiveAnswerProjection::default();
+    streaming.apply(
+        live_event(
+            1,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "preparing".into(),
+                label_key: "agent.live.preparing".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    streaming.apply(
+        live_event(
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: "A **progressive** answer.".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    streaming.advance_frame(false);
+    let preparing = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+    streaming.apply(
+        live_event(
+            3,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "generating".into(),
+                label_key: "agent.live.generating".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    let animated = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+    let reduced = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        true,
+    ));
+
+    streaming.apply(
+        live_event(
+            4,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "finalizing".into(),
+                label_key: "agent.live.finalizing".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    let finalizing = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+    streaming.apply(
+        live_event(5, LiveOutputEventKind::PreviewUnavailable),
+        live_expectation(),
+    );
+    let unavailable = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+
+    let mut ended = LiveAnswerProjection::default();
+    ended.apply(
+        live_event(
+            1,
+            LiveOutputEventKind::Snapshot {
+                text: "Saved answer pending durable projection.".into(),
+                through_sequence: 1,
+            },
+        ),
+        live_expectation(),
+    );
+    ended.apply(
+        live_event(
+            2,
+            LiveOutputEventKind::Ended {
+                reason: LiveOutputEndReason::TerminalCommitted,
+            },
+        ),
+        live_expectation(),
+    );
+    let ended_preview = live_runs(view::live_answer_preview(
+        ended.current().unwrap(),
+        theme,
+        false,
+    ));
+    ended.durable_takeover("session-a", "turn-a", Some("execution-a"));
+
+    format!(
+        "-- preparing --\n{preparing}\n-- generating --\n{animated}\n-- reduced motion --\n{reduced}\n-- finalizing --\n{finalizing}\n-- unavailable --\n{unavailable}\n-- ended preview --\n{ended_preview}\n-- durable takeover --\nlive preview present: {}",
+        ended.current().is_some()
+    )
+}
+
+fn live_event(sequence: u64, kind: LiveOutputEventKind) -> LiveOutputEvent {
+    LiveOutputEvent {
+        api_version: "v1".into(),
+        session_id: "session-a".into(),
+        turn_id: "turn-a".into(),
+        execution_id: "execution-a".into(),
+        stream_id: "00000000-0000-4000-8000-000000000001".into(),
+        sequence,
+        kind,
+    }
+}
+
+fn live_expectation() -> LiveAnswerExpectation<'static> {
+    LiveAnswerExpectation {
+        selected_session: "session-a",
+        active_turn: Some("turn-a"),
+        active_execution: Some("execution-a"),
+        detached: false,
+    }
+}
+
+fn live_runs(lines: Vec<ratatui::text::Line<'static>>) -> String {
+    lines
+        .into_iter()
+        .map(|line| {
+            let style = line.style;
+            let spans = line
+                .spans
+                .into_iter()
+                .map(|span| {
+                    format!(
+                        "{:?} <fg={:?} bg={:?} +{:?} -{:?}>",
+                        span.content,
+                        span.style.fg,
+                        span.style.bg,
+                        span.style.add_modifier,
+                        span.style.sub_modifier
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            format!(
+                "line <fg={:?} bg={:?} +{:?} -{:?}> :: {spans}",
+                style.fg, style.bg, style.add_modifier, style.sub_modifier
+            )
         })
         .collect::<Vec<_>>()
         .join("\n")

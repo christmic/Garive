@@ -252,3 +252,19 @@ pub(crate) fn markdown_preview_at_width(
         width,
     )
 }
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn live_answer_preview(
+    answer: &crate::application::LiveAnswer,
+    theme: Theme,
+    reduced_motion: bool,
+) -> Vec<Line<'static>> {
+    live_answer::render(
+        answer,
+        theme,
+        80,
+        reduced_motion,
+        &mut conversation::live_cache::LiveRenderCache::default(),
+    )
+}

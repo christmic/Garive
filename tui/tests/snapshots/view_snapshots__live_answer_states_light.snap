@@ -1,0 +1,30 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "live_answer_states_preview(Theme::Light)"
+---
+-- preparing --
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Black) bg=None +BOLD -NONE> | " · Preparing context" <fg=Some(DarkGray) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "  " <fg=None bg=None +NONE -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE> | "▍" <fg=Some(Blue) bg=None +BOLD -NONE>
+line <fg=None bg=None +NONE -NONE> :: 
+-- generating --
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Black) bg=None +BOLD -NONE> | " · Generating response" <fg=Some(DarkGray) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "  " <fg=None bg=None +NONE -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE> | "▍" <fg=Some(Blue) bg=None +BOLD -NONE>
+line <fg=None bg=None +NONE -NONE> :: 
+-- reduced motion --
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Black) bg=None +BOLD -NONE> | " · Generating response" <fg=Some(DarkGray) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "  " <fg=None bg=None +NONE -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: 
+-- finalizing --
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Black) bg=None +BOLD -NONE> | " · Finalizing response" <fg=Some(DarkGray) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "  " <fg=None bg=None +NONE -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE> | "▍" <fg=Some(Blue) bg=None +BOLD -NONE>
+line <fg=None bg=None +NONE -NONE> :: 
+-- unavailable --
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Black) bg=None +BOLD -NONE> | " · Finalizing response" <fg=Some(DarkGray) bg=None +NONE -NONE>
+line <fg=Some(DarkGray) bg=None +NONE -NONE> :: "  Live feedback unavailable · waiting for saved result" <fg=None bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: 
+-- ended preview --
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Black) bg=None +BOLD -NONE> | " · Working" <fg=Some(DarkGray) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "  " <fg=None bg=None +NONE -NONE> | "Saved answer pending durable projection." <fg=Some(Black) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: 
+-- durable takeover --
+live preview present: false
