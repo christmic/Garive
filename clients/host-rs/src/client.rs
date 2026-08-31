@@ -2,14 +2,15 @@
 
 use futures::StreamExt;
 use reqwest::{redirect::Policy, StatusCode, Url};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::{timeout, Duration};
 
 use crate::{
     reduce_host_events, reducer::validate_activity, AgentDefinitionPage, ClientLimits,
-    CreateSessionResponse, HostClientError, HostClientErrorCode, HostEvent, HostView, SessionPage,
-    SessionSummary, SessionView, SuspensionView, TurnCommandResponse, TurnTimelinePage,
+    CreateSessionResponse, HostClientError, HostClientErrorCode, HostEvent, HostView,
+    LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, SessionPage, SessionSummary,
+    SessionView, SuspensionView, TurnCommandResponse, TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -360,6 +361,99 @@ impl LiveHostClient {
         )
         .await
         .map_err(|_| HostClientError::new(HostClientErrorCode::FollowDeadline))?
+    }
+
+    /// Follows strictly validated ephemeral H4 output into a bounded sink.
+    pub async fn follow_live_output(
+        &self,
+        session_id: &str,
+        sink: tokio::sync::mpsc::Sender<LiveOutputEvent>,
+    ) -> Result<(), HostClientError> {
+        if session_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        timeout(
+            Duration::from_millis(self.limits.follow_deadline_ms),
+            self.follow_live_output_inner(session_id, sink),
+        )
+        .await
+        .map_err(|_| HostClientError::new(HostClientErrorCode::FollowDeadline))?
+    }
+
+    async fn follow_live_output_inner(
+        &self,
+        session_id: &str,
+        sink: tokio::sync::mpsc::Sender<LiveOutputEvent>,
+    ) -> Result<(), HostClientError> {
+        let path = format!("v1/sessions/{}/live", encode_segment(session_id));
+        let response = self
+            .http
+            .get(self.join(&path)?)
+            .send()
+            .await
+            .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+        let status = response.status();
+        if status.is_redirection() {
+            return Err(HostClientError::new(HostClientErrorCode::TransportFailure));
+        }
+        if !status.is_success() {
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+            return Err(classify_host_error(status, &bytes));
+        }
+        if !response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/event-stream"))
+        {
+            return Err(HostClientError::new(HostClientErrorCode::TransportFailure));
+        }
+        let mut stream = response.bytes_stream();
+        let mut pending = Vec::new();
+        let mut count = 0usize;
+        let mut sequence = None;
+        while let Some(chunk) = stream.next().await {
+            let chunk =
+                chunk.map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+            pending.extend_from_slice(&chunk);
+            if pending.len() > self.limits.max_event_bytes.saturating_mul(2) {
+                return Err(HostClientError::new(
+                    HostClientErrorCode::EventLimitExceeded,
+                ));
+            }
+            while let Some(boundary) = find_sse_boundary(&pending) {
+                let block: Vec<u8> = pending.drain(..boundary).collect();
+                let separator = if pending.starts_with(b"\r\n\r\n") {
+                    4
+                } else {
+                    2
+                };
+                pending.drain(..separator);
+                let Some(data) = live_sse_data(&block, self.limits.max_event_bytes)? else {
+                    continue;
+                };
+                count = count.saturating_add(1);
+                if count > self.limits.max_events {
+                    return Err(HostClientError::new(
+                        HostClientErrorCode::EventLimitExceeded,
+                    ));
+                }
+                let event = decode_live_output(&data, session_id)?;
+                validate_live_sequence(&event, &mut sequence)?;
+                sink.try_send(event).map_err(|error| match error {
+                    tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                        HostClientError::new(HostClientErrorCode::EventLimitExceeded)
+                    }
+                    tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                        HostClientError::new(HostClientErrorCode::TransportFailure)
+                    }
+                })?;
+            }
+        }
+        Err(HostClientError::new(HostClientErrorCode::TransportFailure))
     }
 
     async fn follow_events_inner(
@@ -850,6 +944,215 @@ fn find_sse_boundary(bytes: &[u8]) -> Option<usize> {
         .windows(2)
         .position(|pair| pair == b"\n\n")
         .or_else(|| bytes.windows(4).position(|quad| quad == b"\r\n\r\n"))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LiveOutputWire {
+    api_version: String,
+    session_id: String,
+    turn_id: String,
+    execution_id: String,
+    stream_id: String,
+    sequence: u64,
+    kind: String,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    phase: Option<String>,
+    #[serde(default)]
+    label_key: Option<String>,
+    #[serde(default)]
+    through_sequence: Option<u64>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+struct LiveSequence {
+    stream_id: String,
+    sequence: u64,
+    ended: bool,
+}
+
+fn decode_live_output(data: &[u8], session_id: &str) -> Result<LiveOutputEvent, HostClientError> {
+    let value: Value = serde_json::from_slice(data)
+        .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))?;
+    for key in ["text", "phase", "label_key", "through_sequence", "reason"] {
+        if value.get(key).is_some_and(Value::is_null) {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
+        }
+    }
+    let wire: LiveOutputWire = serde_json::from_value(value)
+        .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))?;
+    if wire.api_version != "v1"
+        || wire.session_id != session_id
+        || !valid_live_identity(&wire.turn_id)
+        || !valid_live_identity(&wire.execution_id)
+        || !valid_stream_id(&wire.stream_id)
+        || wire.sequence == 0
+    {
+        return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
+    }
+    let kind = match wire.kind.as_str() {
+        "snapshot"
+            if wire.phase.is_none()
+                && wire.label_key.is_none()
+                && wire.reason.is_none()
+                && wire.through_sequence == Some(wire.sequence) =>
+        {
+            LiveOutputEventKind::Snapshot {
+                text: wire.text.ok_or_else(invalid_event)?,
+                through_sequence: wire.sequence,
+            }
+        }
+        "text_delta"
+            if wire.text.as_ref().is_some_and(|text| !text.is_empty())
+                && wire.phase.is_none()
+                && wire.label_key.is_none()
+                && wire.through_sequence.is_none()
+                && wire.reason.is_none() =>
+        {
+            LiveOutputEventKind::TextDelta {
+                text: wire.text.expect("guarded above"),
+            }
+        }
+        "phase_changed"
+            if wire.text.is_none()
+                && wire.through_sequence.is_none()
+                && wire.reason.is_none()
+                && valid_live_phase(wire.phase.as_deref(), wire.label_key.as_deref()) =>
+        {
+            LiveOutputEventKind::PhaseChanged {
+                phase: wire.phase.expect("guarded above"),
+                label_key: wire.label_key.expect("guarded above"),
+            }
+        }
+        "preview_unavailable"
+            if wire.text.is_none()
+                && wire.phase.is_none()
+                && wire.label_key.is_none()
+                && wire.through_sequence.is_none()
+                && wire.reason.is_none() =>
+        {
+            LiveOutputEventKind::PreviewUnavailable
+        }
+        "ended"
+            if wire.text.is_none()
+                && wire.phase.is_none()
+                && wire.label_key.is_none()
+                && wire.through_sequence.is_none() =>
+        {
+            LiveOutputEventKind::Ended {
+                reason: match wire.reason.as_deref() {
+                    Some("terminal_committed") => LiveOutputEndReason::TerminalCommitted,
+                    Some("suspended") => LiveOutputEndReason::Suspended,
+                    Some("stopped") => LiveOutputEndReason::Stopped,
+                    Some("failed") => LiveOutputEndReason::Failed,
+                    Some("publisher_closed") => LiveOutputEndReason::PublisherClosed,
+                    _ => return Err(invalid_event()),
+                },
+            }
+        }
+        _ => return Err(invalid_event()),
+    };
+    Ok(LiveOutputEvent {
+        api_version: wire.api_version,
+        session_id: wire.session_id,
+        turn_id: wire.turn_id,
+        execution_id: wire.execution_id,
+        stream_id: wire.stream_id,
+        sequence: wire.sequence,
+        kind,
+    })
+}
+
+fn validate_live_sequence(
+    event: &LiveOutputEvent,
+    state: &mut Option<LiveSequence>,
+) -> Result<(), HostClientError> {
+    let initial_snapshot = matches!(
+        event.kind,
+        LiveOutputEventKind::Snapshot { .. } | LiveOutputEventKind::PreviewUnavailable
+    );
+    match state {
+        None if initial_snapshot || event.sequence == 1 => {}
+        None => return Err(invalid_order()),
+        Some(previous) if previous.stream_id == event.stream_id => {
+            if previous.ended || event.sequence != previous.sequence.saturating_add(1) {
+                return Err(invalid_order());
+            }
+        }
+        Some(previous) if previous.ended && event.sequence == 1 => {}
+        Some(_) => return Err(invalid_order()),
+    }
+    *state = Some(LiveSequence {
+        stream_id: event.stream_id.clone(),
+        sequence: event.sequence,
+        ended: matches!(event.kind, LiveOutputEventKind::Ended { .. }),
+    });
+    Ok(())
+}
+
+fn valid_live_identity(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
+}
+
+fn valid_stream_id(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            14 => byte == b'4',
+            19 => matches!(byte, b'8' | b'9' | b'a' | b'b'),
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+        })
+}
+
+fn valid_live_phase(phase: Option<&str>, label_key: Option<&str>) -> bool {
+    matches!(
+        (phase, label_key),
+        (Some("preparing"), Some("agent.live.preparing"))
+            | (Some("generating"), Some("agent.live.generating"))
+            | (Some("finalizing"), Some("agent.live.finalizing"))
+    )
+}
+
+fn invalid_order() -> HostClientError {
+    HostClientError::new(HostClientErrorCode::EventOrderViolation)
+}
+
+fn live_sse_data(block: &[u8], max_bytes: usize) -> Result<Option<Vec<u8>>, HostClientError> {
+    let text = std::str::from_utf8(block).map_err(|_| invalid_event())?;
+    let mut event_name = None;
+    let mut data = String::new();
+    for line in text.lines() {
+        if line.starts_with(':') || line.is_empty() {
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("event: ") {
+            if event_name.replace(value).is_some() {
+                return Err(invalid_event());
+            }
+        } else if let Some(value) = line.strip_prefix("data: ") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(value);
+        } else {
+            return Err(invalid_event());
+        }
+    }
+    if data.is_empty() && event_name.is_none() {
+        return Ok(None);
+    }
+    if event_name != Some("live") || data.is_empty() {
+        return Err(invalid_event());
+    }
+    if data.len() > max_bytes {
+        return Err(HostClientError::new(
+            HostClientErrorCode::EventLimitExceeded,
+        ));
+    }
+    Ok(Some(data.into_bytes()))
 }
 
 fn sse_data(block: &[u8], max_bytes: usize) -> Result<Option<Vec<u8>>, HostClientError> {

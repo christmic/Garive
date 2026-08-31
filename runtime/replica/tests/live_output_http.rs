@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use futures::StreamExt;
 use garive_core::{AgentEvent, AgentEventKind, EventSink, ExecutionId, SessionId, TurnId};
+use garive_host_client::{ClientLimits, LiveHostClient, LiveOutputEventKind};
 use garive_llm::ModelStreamEvent;
 use garive_runtime::{
     CommittedTurn, EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost, LiveHostLimits,
@@ -128,6 +129,30 @@ async fn live_route_streams_real_ephemeral_events_without_sse_cursor() {
     assert!(received.contains(&turn.execution_id));
 
     drop(body);
+    let client = LiveHostClient::new(
+        format!("http://{address}/").as_str(),
+        ClientLimits {
+            max_command_bytes: 4_096,
+            max_event_bytes: 32_768,
+            max_events: 64,
+            follow_deadline_ms: 5_000,
+        },
+    )
+    .unwrap();
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(8);
+    let followed_session = session.session_id.clone();
+    let follow =
+        tokio::spawn(async move { client.follow_live_output(&followed_session, sender).await });
+    let snapshot = receiver.recv().await.unwrap();
+    assert!(matches!(
+        snapshot.kind,
+        LiveOutputEventKind::Snapshot {
+            ref text,
+            through_sequence: 2
+        } if text == "progressive"
+    ));
+    assert_eq!(snapshot.execution_id, turn.execution_id);
+    follow.abort();
     shutdown_tx.send(()).unwrap();
     task.await.unwrap().unwrap();
 }

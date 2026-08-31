@@ -39,6 +39,71 @@ pub struct HostEvent {
     pub activity: Option<HostActivity>,
 }
 
+/// One strictly validated ephemeral H4 event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LiveOutputEvent {
+    /// Exact H4 API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Owning Turn identity.
+    pub turn_id: String,
+    /// Owning Execution identity.
+    pub execution_id: String,
+    /// Ephemeral publisher generation UUID.
+    pub stream_id: String,
+    /// Monotonic sequence within this generation.
+    pub sequence: u64,
+    /// Closed public H4 payload.
+    pub kind: LiveOutputEventKind,
+}
+
+/// Closed public payload variants for progressive output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiveOutputEventKind {
+    /// Full in-memory preview at subscription time.
+    Snapshot {
+        /// Exact complete preview text.
+        text: String,
+        /// Latest sequence represented by the snapshot.
+        through_sequence: u64,
+    },
+    /// Ordered answer suffix.
+    TextDelta {
+        /// Exact non-empty UTF-8 suffix.
+        text: String,
+    },
+    /// Closed public work phase.
+    PhaseChanged {
+        /// Stable public phase code.
+        phase: String,
+        /// Matching stable localization key.
+        label_key: String,
+    },
+    /// Complete preview is unavailable and must be cleared.
+    PreviewUnavailable,
+    /// Ephemeral publisher ended without granting terminal authority.
+    Ended {
+        /// Safe end classification.
+        reason: LiveOutputEndReason,
+    },
+}
+
+/// Stable safe reason carried by an H4 end marker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LiveOutputEndReason {
+    /// A completed durable terminal was committed.
+    TerminalCommitted,
+    /// A durable suspension was committed.
+    Suspended,
+    /// A durable stop was committed.
+    Stopped,
+    /// A durable failure was committed.
+    Failed,
+    /// The publisher closed without claiming a durable terminal.
+    PublisherClosed,
+}
+
 /// One redacted committed Agent interaction or tool activity state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HostActivity {
