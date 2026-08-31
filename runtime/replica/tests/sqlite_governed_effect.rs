@@ -22,11 +22,11 @@ use garive_runtime::{
     F0RecoveryContentPort, F0RecoveryError, F0SafetyDecisionContext, GovernedEffectConfig,
     HostClock, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
     InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits, LocalF0Governance,
-    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError, ModelLifecycleContext,
-    PreparedExecution, RuntimeCommandError, RuntimeCommandId, SafetyDecisionV1, SafetyDisposition,
-    SafetyEvaluation, SafetyFuture, SafetyInteraction, SafetyPort, SandboxAdmission,
-    SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1, SqliteGovernedEffectPort,
-    SqliteLedger, TurnDispatchError, TurnDispatcher,
+    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalRecoveryError, LocalWorkerError,
+    ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
+    SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyInteraction,
+    SafetyPort, SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
+    SqliteGovernedEffectPort, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
@@ -191,7 +191,10 @@ impl SafetyPort for RecoverySafety {
     }
 }
 
-struct RecoveryFactory(Decision);
+struct RecoveryFactory {
+    decision: Decision,
+    mode: ExecutionMode,
+}
 impl LocalGovernedExecutionFactory for RecoveryFactory {
     fn create(
         &self,
@@ -201,16 +204,18 @@ impl LocalGovernedExecutionFactory for RecoveryFactory {
             capabilities: AgentToolCapabilities {
                 definitions: vec![v3_definition()],
             },
-            authority: Box::new(Authority { decision: self.0 }),
+            authority: Box::new(Authority {
+                decision: self.decision,
+            }),
             executor: Box::new(Executor {
-                mode: ExecutionMode::Success,
+                mode: self.mode,
                 prepares: 0,
                 dispatches: 0,
             }),
             f0: LocalF0Governance {
                 preparation: Box::new(RecoveryPreparation),
                 recovery_content: Box::new(NoReferencedContent),
-                safety: Box::new(RecoverySafety(self.0)),
+                safety: Box::new(RecoverySafety(self.decision)),
                 sandbox: Box::new(LocalSandbox("1")),
                 context: F0GovernanceContext {
                     actor_authority_reference: "actor".into(),
@@ -246,8 +251,10 @@ impl AuthorityPort for Authority {
     }
 }
 
+#[derive(Clone, Copy)]
 enum ExecutionMode {
     Success,
+    AcknowledgeFailure,
     InvalidReceipt,
     Unsupported,
 }
@@ -285,7 +292,9 @@ impl ExecutorPort for Executor {
                 .sha256()
                 .to_owned();
             let receipt_id = match self.mode {
-                ExecutionMode::Success | ExecutionMode::Unsupported => command.receipt_id,
+                ExecutionMode::Success
+                | ExecutionMode::AcknowledgeFailure
+                | ExecutionMode::Unsupported => command.receipt_id,
                 ExecutionMode::InvalidReceipt => "wrong-receipt",
             };
             Ok(ExecutionFact::Completed {
@@ -303,6 +312,18 @@ impl ExecutorPort for Executor {
                 truncated: false,
             })
         })
+    }
+
+    fn acknowledge_receipt(
+        &mut self,
+        _: &garive_tools::ToolInvocationId,
+        _: &EffectReceipt,
+    ) -> Result<(), garive_runtime::ExecutorDispatchError> {
+        if matches!(self.mode, ExecutionMode::AcknowledgeFailure) {
+            Err(garive_runtime::ExecutorDispatchError::ExecutorStateUnknown)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -508,6 +529,74 @@ fn sqlite_success_commits_every_effect_boundary_before_observation() {
             "agent.activity.completed",
         ]
     );
+}
+
+#[test]
+fn receipt_acknowledgement_failure_stops_after_the_durable_receipt() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("receipt-ack.sqlite3"));
+    let mut authority = Authority {
+        decision: Decision::Approve,
+    };
+    let mut executor = Executor {
+        mode: ExecutionMode::AcknowledgeFailure,
+        prepares: 0,
+        dispatches: 0,
+    };
+    let request_id = setup.request_id.clone();
+    let prepared = setup.prepared.clone();
+    let mut port = port(&mut setup, &mut authority, &mut executor);
+
+    assert!(block_on(port.invoke(&request_id, &prepared)).is_err());
+    drop(port);
+    assert_eq!((executor.prepares, executor.dispatches), (1, 1));
+    assert_tail(
+        &setup,
+        &[
+            "effect.prepared",
+            "effect.authorized",
+            "effect.started",
+            "effect.receipt",
+        ],
+    );
+    assert_eq!(
+        recover_local_dispatches_with_f0(
+            &mut setup.ledger,
+            3,
+            timestamp(),
+            &RecoveryFactory {
+                decision: Decision::Approve,
+                mode: ExecutionMode::AcknowledgeFailure,
+            },
+            1_024,
+        ),
+        Err(LocalRecoveryError::F0RecoveryFailed)
+    );
+    assert!(!setup
+        .ledger
+        .load_turn(&setup.turn)
+        .unwrap()
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "effect.completed"));
+    recover_local_dispatches_with_f0(
+        &mut setup.ledger,
+        3,
+        timestamp(),
+        &RecoveryFactory {
+            decision: Decision::Approve,
+            mode: ExecutionMode::Success,
+        },
+        1_024,
+    )
+    .unwrap();
+    assert!(setup
+        .ledger
+        .load_turn(&setup.turn)
+        .unwrap()
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "effect.completed"));
 }
 
 #[test]
@@ -877,7 +966,10 @@ fn local_startup_resumes_all_f0_cuts_then_restarts_with_consumed_iteration() {
             &mut setup.ledger,
             3,
             timestamp(),
-            &RecoveryFactory(Decision::Approve),
+            &RecoveryFactory {
+                decision: Decision::Approve,
+                mode: ExecutionMode::Success,
+            },
             1_024,
         )
         .unwrap();
@@ -927,7 +1019,10 @@ fn local_startup_commits_one_bound_interaction_without_replacement_dispatch() {
         &mut setup.ledger,
         3,
         timestamp(),
-        &RecoveryFactory(Decision::Interaction),
+        &RecoveryFactory {
+            decision: Decision::Interaction,
+            mode: ExecutionMode::Success,
+        },
         1_024,
     )
     .unwrap();

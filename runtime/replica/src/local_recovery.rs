@@ -4,7 +4,10 @@ use futures::executor::block_on;
 use garive_core::{AgentOutcome, ExecutionReport, SuspensionReason, UsageSummary};
 use garive_ledger::{DurableFact, TurnSnapshot};
 use garive_llm::TokenCount;
-use garive_tools::{GovernedToolResult, InteractionKind, SuspensionRequirement};
+use garive_tools::{
+    EffectReceipt, GovernedToolResult, GrantId, InteractionKind, ReceiptId, SuspensionRequirement,
+    TerminalClassification, ToolInvocationId,
+};
 use serde_json::Value;
 
 use crate::runtime_turn::recovered_completed_iterations;
@@ -125,6 +128,10 @@ fn recover_local_dispatches_inner(
                         break;
                     }
                     RuntimeRecoveryAction::RecoverReceiptTerminal => {
+                        let Some((factory, _)) = f0 else {
+                            return Err(LocalRecoveryError::F0GovernanceRequired);
+                        };
+                        acknowledge_recovered_receipt(&session_id, &turn_id, &snapshot, factory)?;
                         commit_action(ledger, &session_id, &snapshot, action, recorded_at)?;
                     }
                     RuntimeRecoveryAction::AwaitContinuation
@@ -153,6 +160,75 @@ fn recover_local_dispatches_inner(
         }
     }
     Ok(output)
+}
+
+fn acknowledge_recovered_receipt(
+    session_id: &garive_ledger::SessionId,
+    turn_id: &garive_ledger::TurnId,
+    snapshot: &TurnSnapshot,
+    factory: &dyn LocalGovernedExecutionFactory,
+) -> Result<(), LocalRecoveryError> {
+    let started = latest(snapshot, "execution.started")?;
+    let execution_id = started
+        .execution_id
+        .clone()
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let source = snapshot
+        .facts
+        .iter()
+        .rfind(|fact| {
+            fact.kind.as_str() == "effect.receipt"
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let invocation_id = source
+        .tool_invocation_id
+        .as_ref()
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let value = payload(source)?;
+    let evidence = value
+        .get("result_or_evidence")
+        .and_then(Value::as_object)
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let classification = match text(&value, "classification")? {
+        "completed" => TerminalClassification::Completed,
+        "failed" => TerminalClassification::Failed,
+        _ => return Err(LocalRecoveryError::CorruptRecoveryState),
+    };
+    let receipt = EffectReceipt {
+        receipt_id: ReceiptId::new(text(&value, "receipt_id")?)
+            .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
+        invocation_id: ToolInvocationId::new(invocation_id.as_str())
+            .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
+        prepared_digest: text(&value, "prepared_digest")?.into(),
+        grant_id: GrantId::new(text(&value, "grant_id")?)
+            .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
+        executor_id: text(&value, "executor_id")?.into(),
+        executor_revision: text(&value, "executor_revision")?.into(),
+        terminal_classification: classification,
+        result_digest: evidence
+            .get("digest")
+            .and_then(Value::as_str)
+            .ok_or(LocalRecoveryError::CorruptRecoveryState)?
+            .into(),
+    };
+    receipt
+        .validate()
+        .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
+    let committed = CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: turn_id.clone(),
+        execution_id,
+        session_version: snapshot.session_version,
+        committed_position: snapshot.through_position,
+    };
+    let mut governed = factory
+        .create(&committed)
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
+    governed
+        .executor
+        .acknowledge_receipt(&receipt.invocation_id, &receipt)
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)
 }
 
 #[allow(clippy::too_many_arguments)]
