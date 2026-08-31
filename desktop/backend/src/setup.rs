@@ -8,6 +8,7 @@ use std::{
 };
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use garive_core::AgentToolCapabilities;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -15,9 +16,11 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use crate::{
-    desktop_agent::builtin_desktop_agent_installation, DesktopSystemConfiguration,
-    ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE, DESKTOP_CREDENTIAL_SERVICE,
-    OPENAI_RESPONSES_PROFILE_ID,
+    desktop_agent::{
+        builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
+    },
+    DesktopSystemConfiguration, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
+    DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
 
 const CATALOGUE_REVISION: &str = "desktop-setup-catalogue-1";
@@ -424,6 +427,7 @@ pub struct DesktopSetupService<S> {
     clock: Arc<dyn SetupClock>,
     identities: Arc<dyn SetupIdentitySource>,
     faults: Arc<dyn SetupCommitFaults>,
+    t1_tool_capabilities: Option<AgentToolCapabilities>,
     plans: Mutex<PreparedPlans>,
     state: Mutex<DesktopSetupState>,
 }
@@ -459,9 +463,16 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             clock,
             identities,
             faults,
+            t1_tool_capabilities: None,
             plans: Mutex::new(PreparedPlans::default()),
             state: Mutex::new(DesktopSetupState::SetupRecovering),
         }
+    }
+
+    /// Installs the exact machine T1 capability snapshot included in new setup revisions.
+    pub fn with_t1_tool_capabilities(mut self, capabilities: AgentToolCapabilities) -> Self {
+        self.t1_tool_capabilities = Some(capabilities);
+        self
     }
 
     /// Returns only installed redacted profile metadata and input bounds.
@@ -584,7 +595,13 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             .unwrap_or(0)
             .checked_add(1)
             .ok_or(DesktopSetupError::PlanStale)?;
-        let configuration = configuration(&input, &setup_id, &credential_ref, revision)?;
+        let configuration = configuration(
+            &input,
+            &setup_id,
+            &credential_ref,
+            revision,
+            self.t1_tool_capabilities.as_ref(),
+        )?;
         let effective_configuration_digest = digest_value(&configuration)?;
         let expires_at_unix = now
             .checked_add(PLAN_LIFETIME_SECONDS)
@@ -1080,14 +1097,44 @@ fn configuration(
     setup_id: &str,
     credential_ref: &str,
     revision: u64,
+    t1_tool_capabilities: Option<&AgentToolCapabilities>,
 ) -> Result<Value, DesktopSetupError> {
     let namespace = format!("desktop-{setup_id}");
     let installation = builtin_desktop_agent_installation(&input.definition_id, &namespace)
         .map_err(|_| DesktopSetupError::InputInvalid)?;
-    let agent = installation.installed_agent();
-    Ok(
-        json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":agent.definition_id,"definition_revision":agent.definition_revision,"snapshot_digest":agent.snapshot_digest,"agent_instance_namespace":agent.agent_instance_namespace,"max_iterations":agent.runtime_limits.max_iterations,"max_input_tokens":agent.runtime_limits.max_input_tokens,"max_output_tokens":agent.runtime_limits.max_output_tokens,"deadline_budget_ms":agent.runtime_limits.deadline_budget_ms},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000}),
-    )
+    let agent = agent_document(installation.installed_agent());
+    let agent_fields = if let Some(capabilities) = t1_tool_capabilities {
+        let workspace_id = format!("{}.workspace", input.definition_id);
+        let workspace_namespace = format!("{namespace}-workspace");
+        let workspace = builtin_desktop_workspace_agent_installation(
+            &workspace_id,
+            &workspace_namespace,
+            capabilities,
+        )
+        .map_err(|_| DesktopSetupError::InputInvalid)?;
+        json!({
+            "default_agent_definition_id": input.definition_id,
+            "installed_agents": [agent, agent_document(workspace.installed_agent())]
+        })
+    } else {
+        json!({"installed_agent": agent})
+    };
+    let schema_version = if t1_tool_capabilities.is_some() { 3 } else { 2 };
+    let mut value = json!({"schema_version":schema_version,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000});
+    value
+        .as_object_mut()
+        .ok_or(DesktopSetupError::PersistenceFailed)?
+        .extend(
+            agent_fields
+                .as_object()
+                .ok_or(DesktopSetupError::PersistenceFailed)?
+                .clone(),
+        );
+    Ok(value)
+}
+
+fn agent_document(agent: &garive_runtime::InstalledAgent) -> Value {
+    json!({"definition_id":agent.definition_id,"definition_revision":agent.definition_revision,"snapshot_digest":agent.snapshot_digest,"agent_instance_namespace":agent.agent_instance_namespace,"max_iterations":agent.runtime_limits.max_iterations,"max_input_tokens":agent.runtime_limits.max_input_tokens,"max_output_tokens":agent.runtime_limits.max_output_tokens,"deadline_budget_ms":agent.runtime_limits.deadline_budget_ms})
 }
 
 fn atomic_write(path: PathBuf, temporary: PathBuf, bytes: &[u8]) -> Result<(), DesktopSetupError> {

@@ -3,12 +3,14 @@ use std::sync::{
     Arc, Mutex,
 };
 
+use garive_core::AgentToolCapabilities;
 use garive_desktop::{
     authorize_setup_window, DesktopSetupCancellation, DesktopSetupError, DesktopSetupInput,
     DesktopSetupService, DesktopSetupState, DesktopSystemConfiguration, NoSetupCommitFaults,
     SensitiveSetupCredential, SetupClock, SetupCommitFaults, SetupCommitStage,
     SetupCredentialStore, SetupIdentitySource, OPENAI_RESPONSES_PROFILE_ID,
 };
+use garive_tools::BuiltinT1Catalogue;
 use serde::Deserialize;
 
 #[derive(Clone, Default)]
@@ -185,6 +187,32 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
         DesktopSetupState::Configured {
             restart_required: true
         }
+    );
+}
+
+#[test]
+fn setup_with_exact_t1_snapshot_commits_two_agent_v3_configuration() {
+    let directory = tempfile::tempdir().unwrap();
+    let catalogue = BuiltinT1Catalogue::new("t1.policy.v1", ["rust"]).unwrap();
+    let service =
+        DesktopSetupService::new(directory.path().to_owned(), RecordingCredentials::default())
+            .with_t1_tool_capabilities(AgentToolCapabilities {
+                definitions: catalogue.definitions().to_vec(),
+            });
+    let plan = service.prepare(input("t1")).unwrap();
+    service
+        .commit(&plan.plan_digest, "private-api-key")
+        .unwrap();
+
+    let bytes = std::fs::read(directory.path().join("desktop-v1.json")).unwrap();
+    let config = DesktopSystemConfiguration::parse(&bytes, directory.path()).unwrap();
+    assert_eq!(config.schema_version(), 3);
+    assert_eq!(config.default_agent_definition_id(), "garive-work");
+    assert_eq!(config.installed_agent_count(), 2);
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["installed_agents"][1]["definition_id"],
+        "garive-work.workspace"
     );
 }
 
