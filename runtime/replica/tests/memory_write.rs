@@ -419,6 +419,35 @@ fn fact_backed_import_plans_user_supersession_from_fixed_repository_facts() {
         Some("record-z")
     );
     assert_eq!(projection.documents[1].content(), "new user value\n");
+    let context_repository = ledger
+        .read_memory_context_repository(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+            2,
+            8,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(context_repository.repository_revision, 2);
+    assert_eq!(
+        context_repository
+            .records
+            .iter()
+            .map(|record| (record.record_id(), record.content().inline_utf8().unwrap()))
+            .collect::<Vec<_>>(),
+        [("record", "user value\n"), ("record-z", "new user value\n")]
+    );
+    assert_eq!(
+        ledger.read_memory_context_repository(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+            1,
+            8,
+        ),
+        Err(MemoryRepositoryError::BoundExceeded)
+    );
     let replay = ledger
         .commit_memory_repository_import(
             &context,
@@ -755,6 +784,18 @@ fn classified_write_commits_source_and_projection_metadata_as_one_fact_batch() {
         projection.documents[0].authority(),
         MemoryAuthority::AgentLearned
     );
+    assert!(ledger
+        .read_memory_context_repository(
+            &grant,
+            "namespace",
+            MemoryDocumentLimits::new(4096, 2048, 128).unwrap(),
+            8,
+            8,
+        )
+        .unwrap()
+        .unwrap()
+        .records
+        .is_empty());
 
     let replay = plan_classified_memory_write(
         &context(3),

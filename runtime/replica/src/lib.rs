@@ -238,9 +238,9 @@ pub use scheduler_runtime::{
     ScheduleRuntimeState, ScheduleTickConfig, ScheduleTickOutcome,
 };
 pub use sqlite_ledger::{
-    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryRepositoryCommitError,
-    MemoryRepositoryImportCommitError, ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest,
-    SessionWatermark, SqliteLedger, SqliteLedgerError,
+    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryContextRepositorySnapshot,
+    MemoryRepositoryCommitError, MemoryRepositoryImportCommitError, ScheduleLease,
+    ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger, SqliteLedgerError,
 };
 pub use t1_dispatch::t1_dispatch_attempt_id;
 #[cfg(unix)]

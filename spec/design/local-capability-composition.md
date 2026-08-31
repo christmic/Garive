@@ -49,7 +49,7 @@ LocalCapabilitySystemConfig {
 LocalMemorySystemBinding {
   capability_name, exact_revision, descriptor_digest
   namespace_id, retriever_revision, source_policy_revision
-  max_results, max_total_bytes, max_repository_records
+  max_results, max_total_bytes, max_repository_records, max_repository_facts
 }
 
 LocalKnowledgeSystemBinding {
@@ -124,9 +124,10 @@ Preparation performs this exact sequence:
 7. Plan one `memory.retrieval_recorded` fact even when the authorized result is
    empty. Core sees content only after that exact fact commits.
 
-The Runtime record bound is applied before M0 result/byte bounds. Exceeding the
-repository scan bound fails closed rather than truncating an unverified source
-set. Normal M0 result truncation remains explicit in the committed fact.
+The Runtime record and source-fact bounds are applied before M0 result/byte
+bounds. Exceeding either repository scan bound fails closed rather than
+truncating an unverified source set. Normal M0 result truncation remains
+explicit in the committed fact.
 
 ## Production Knowledge preparation
 

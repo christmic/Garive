@@ -9,6 +9,7 @@ use rusqlite::{
 };
 
 mod lease;
+mod memory_context;
 mod memory_control;
 mod memory_control_integrity;
 mod memory_control_operations;
@@ -34,6 +35,15 @@ pub struct SessionWatermark {
     pub session_version: u64,
     /// Highest contiguous fact position in the Session.
     pub max_position: u64,
+}
+
+/// Exact user-declared records from one verified fact-backed Memory revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryContextRepositorySnapshot {
+    /// Canonical repository revision observed by the read transaction.
+    pub repository_revision: u64,
+    /// Active ordinary user declarations in lexical record order.
+    pub records: Vec<garive_memory::MemoryRecord>,
 }
 
 #[derive(Debug)]
@@ -289,6 +299,36 @@ impl SqliteLedger {
             }
             crate::MemoryRepositoryStatus::Corrupt => Err(crate::MemoryRepositoryError::Corrupt),
         }
+    }
+
+    /// Reads bounded user-declared Memory from one consistent repository snapshot.
+    pub fn read_memory_context_repository(
+        &self,
+        grant: &crate::MemoryControlGrant,
+        namespace_id: &str,
+        limits: garive_memory::MemoryDocumentLimits,
+        max_repository_records: usize,
+        max_repository_facts: usize,
+    ) -> Result<Option<MemoryContextRepositorySnapshot>, crate::MemoryRepositoryError> {
+        if max_repository_records == 0 || max_repository_facts == 0 {
+            return Err(crate::MemoryRepositoryError::BoundExceeded);
+        }
+        let transaction = self
+            .connection
+            .unchecked_transaction()
+            .map_err(|_| crate::MemoryRepositoryError::Unavailable)?;
+        let snapshot = memory_context::read(
+            &transaction,
+            grant,
+            namespace_id,
+            limits,
+            max_repository_records,
+            max_repository_facts,
+        )?;
+        transaction
+            .commit()
+            .map_err(|_| crate::MemoryRepositoryError::Unavailable)?;
+        Ok(snapshot)
     }
 
     pub(crate) fn commit_memory_export_journal(

@@ -245,6 +245,8 @@ pub enum MemoryRepositoryError {
     Stale,
     /// Namespace, scope, content, or action authority is absent.
     Unauthorized,
+    /// A configured repository scan bound was exceeded.
+    BoundExceeded,
 }
 
 impl MemoryRepositoryError {
@@ -255,6 +257,7 @@ impl MemoryRepositoryError {
             Self::Corrupt => "memory_repository_corrupt",
             Self::Stale => "memory_repository_stale",
             Self::Unauthorized => "memory_repository_unauthorized",
+            Self::BoundExceeded => "memory_repository_bound_exceeded",
         }
     }
 }
@@ -265,6 +268,7 @@ impl From<MemoryControlRuntimeError> for MemoryRepositoryError {
             MemoryControlRuntimeError::PersistenceFailed => Self::Unavailable,
             MemoryControlRuntimeError::StaleSnapshot => Self::Stale,
             MemoryControlRuntimeError::Unauthorized => Self::Unauthorized,
+            MemoryControlRuntimeError::BoundExceeded => Self::BoundExceeded,
             _ => Self::Corrupt,
         }
     }
