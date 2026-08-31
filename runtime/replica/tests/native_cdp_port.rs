@@ -369,7 +369,7 @@ async fn managed_popup_outside_allowed_origins_is_closed() {
 }
 
 #[tokio::test]
-async fn popup_cleanup_uncertainty_poison_the_parent_page_port() {
+async fn popup_cleanup_uncertainty_poisons_the_parent_page_port() {
     run_managed_popup_case(true, false, false).await;
 }
 
@@ -1361,7 +1361,7 @@ async fn external_history_change_makes_the_observed_snapshot_stale_before_input(
 }
 
 #[tokio::test]
-async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
+async fn dispatch_loss_is_uncertain_and_poisons_the_page_port() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let server = tokio::spawn(async move {
@@ -1429,7 +1429,43 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
     );
     assert_eq!(
         port.preflight_action(&command),
-        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+        Err(garive_runtime::NativeProtocolError::BrowserAttachmentLost)
+    );
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn observation_loss_poisons_the_page_port_before_a_snapshot_exists() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        let Message::Text(command) = socket.next().await.expect("observe").expect("frame") else {
+            panic!("text command required")
+        };
+        let command: Value = serde_json::from_slice(command.as_bytes()).expect("command json");
+        assert_eq!(command["method"], "Accessibility.enable");
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-loss", 64, client)
+        .expect("port");
+    let bounds = NativeObservationBounds {
+        max_nodes: 16,
+        max_text_bytes: 4_096,
+    };
+    assert_eq!(
+        port.observe(&target(), None, bounds).await,
+        Err(garive_runtime::NativeProtocolError::BrowserAttachmentLost)
+    );
+    assert_eq!(
+        port.observe(&target(), None, bounds).await,
+        Err(garive_runtime::NativeProtocolError::BrowserAttachmentLost)
     );
     server.await.expect("server");
 }
