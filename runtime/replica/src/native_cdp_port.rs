@@ -1,6 +1,6 @@
 //! Concrete Runtime-owned T2 port for one explicitly attached CDP page.
 
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, fmt, time::Duration};
 
 use garive_browser_cdp::{
     CdpAxProperty, CdpAxTree, CdpClient, CdpFrameTree, CdpHistoryEntry, CdpNavigationResult,
@@ -11,16 +11,17 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    map_cdp_ax_tree_with_frame_scope, BrowserPageId, CdpElementTarget, CdpFrameScope,
-    CdpObservationContext, CdpSnapshotBindingV1, NativeActionCommandV1, NativeActionFuture,
-    NativeActionReceiptV1, NativeAdapterBindingV1, NativeAdapterPort, NativeNodeRef,
-    NativeObservationBounds, NativeObservationFuture, NativeProtocolError, NativeSnapshotId,
-    NativeTarget,
+    map_cdp_ax_tree_with_frame_scope, CdpElementTarget, CdpFrameScope, CdpObservationContext,
+    CdpSnapshotBindingV1, NativeActionCommandV1, NativeActionFuture, NativeActionReceiptV1,
+    NativeAdapterBindingV1, NativeAdapterPort, NativeNodeRef, NativeObservationBounds,
+    NativeObservationFuture, NativeProtocolError, NativeSnapshotId, NativeTarget,
 };
 
 const ADAPTER_ID: &str = "garive.browser.cdp";
 const MAX_PENDING_POPUPS: usize = 32;
 const MAX_POPUPS_PER_ACTION: usize = 8;
+const POPUP_ADMISSION_ATTEMPTS: usize = 50;
+const POPUP_ADMISSION_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Explicit Browser session posture controlling target discovery boundaries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,32 +33,90 @@ pub enum CdpBrowserSessionMode {
 }
 
 /// One newly created page awaiting a separate Runtime admission decision.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct CdpPendingPopup {
-    /// Browser page identity for the new target.
-    pub page_id: BrowserPageId,
+    /// Runtime-owned opaque admission identity; never a CDP target identity.
+    pub admission_id: CdpPopupAdmissionId,
     /// Canonical requested origin proven at creation time.
     pub requested_origin: String,
     /// Whether Chromium attributed creation to a user gesture.
     pub user_gesture: bool,
+    popup: garive_browser_cdp::CdpPopup,
+}
+
+impl fmt::Debug for CdpPendingPopup {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CdpPendingPopup")
+            .field("admission_id", &self.admission_id)
+            .field("requested_origin", &self.requested_origin)
+            .field("user_gesture", &self.user_gesture)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Runtime-owned opaque identity for one pending popup admission decision.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CdpPopupAdmissionId(String);
+
+impl CdpPopupAdmissionId {
+    /// Returns the opaque identity without exposing protocol target identity.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Exact private protocol binding for one Runtime-owned Browser page identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpPageBinding {
+    target: NativeTarget,
+    cdp_target_id: String,
+    cdp_session_id: String,
+}
+
+impl CdpPageBinding {
+    /// Binds one opaque Runtime page to exact private CDP target/session identities.
+    pub fn new(
+        target: NativeTarget,
+        cdp_target_id: impl Into<String>,
+        cdp_session_id: impl Into<String>,
+    ) -> Result<Self, NativeProtocolError> {
+        let cdp_target_id = cdp_target_id.into();
+        let cdp_session_id = cdp_session_id.into();
+        if !matches!(target, NativeTarget::Browser { .. })
+            || !bounded_protocol_id(&cdp_target_id)
+            || !bounded_protocol_id(&cdp_session_id)
+        {
+            return Err(NativeProtocolError::InvalidBinding);
+        }
+        Ok(Self {
+            target,
+            cdp_target_id,
+            cdp_session_id,
+        })
+    }
 }
 
 /// Runtime composition for one exact Browser target and flat CDP session.
 pub struct CdpNativeAdapterPort {
     target: NativeTarget,
+    cdp_target_id: String,
     session_mode: CdpBrowserSessionMode,
     cdp_session_id: String,
     target_revision: String,
     snapshot_namespace: String,
     tree_depth: u32,
     next_snapshot_sequence: u64,
+    next_popup_sequence: u64,
     accessibility_enabled: bool,
     popup_tracking_enabled: bool,
+    usable: bool,
     pending_popups: VecDeque<CdpPendingPopup>,
     last_snapshot_id: Option<NativeSnapshotId>,
     last_bounds: Option<NativeObservationBounds>,
     last_history_entry: Option<CdpHistoryEntry>,
     last_frame_tree: Option<CdpFrameTree>,
+    admitted_top_level_origin: Option<String>,
     current_binding: Option<CdpSnapshotBindingV1>,
     client: CdpClient,
 }
@@ -65,17 +124,15 @@ pub struct CdpNativeAdapterPort {
 impl CdpNativeAdapterPort {
     /// Constructs one Attached-mode port without global target discovery.
     pub fn new(
-        target: NativeTarget,
-        cdp_session_id: impl Into<String>,
+        page: CdpPageBinding,
         target_revision: impl Into<String>,
         snapshot_namespace: impl Into<String>,
         tree_depth: u32,
         client: CdpClient,
     ) -> Result<Self, NativeProtocolError> {
         Self::new_with_mode(
-            target,
+            page,
             CdpBrowserSessionMode::Attached,
-            cdp_session_id,
             target_revision,
             snapshot_namespace,
             tree_depth,
@@ -85,56 +142,176 @@ impl CdpNativeAdapterPort {
 
     /// Constructs one port with an explicit managed/attached discovery boundary.
     pub fn new_with_mode(
-        target: NativeTarget,
+        page: CdpPageBinding,
         session_mode: CdpBrowserSessionMode,
-        cdp_session_id: impl Into<String>,
         target_revision: impl Into<String>,
         snapshot_namespace: impl Into<String>,
         tree_depth: u32,
         client: CdpClient,
     ) -> Result<Self, NativeProtocolError> {
-        let cdp_session_id = cdp_session_id.into();
         let target_revision = target_revision.into();
         let snapshot_namespace = snapshot_namespace.into();
-        if !matches!(target, NativeTarget::Browser { .. })
-            || cdp_session_id.is_empty()
-            || cdp_session_id.len() > 4_096
-            || !portable_token(&target_revision, 128)
-            || !portable_token(&snapshot_namespace, 48)
-            || !(1..=128).contains(&tree_depth)
-        {
-            return Err(NativeProtocolError::InvalidBinding);
-        }
+        validate_port_definition(
+            &page.target,
+            &target_revision,
+            &snapshot_namespace,
+            tree_depth,
+        )?;
         Ok(Self {
-            target,
+            target: page.target,
+            cdp_target_id: page.cdp_target_id,
             session_mode,
-            cdp_session_id,
+            cdp_session_id: page.cdp_session_id,
             target_revision,
             snapshot_namespace,
             tree_depth,
             next_snapshot_sequence: 1,
+            next_popup_sequence: 1,
             accessibility_enabled: false,
             popup_tracking_enabled: false,
+            usable: true,
             pending_popups: VecDeque::new(),
             last_snapshot_id: None,
             last_bounds: None,
             last_history_entry: None,
             last_frame_tree: None,
+            admitted_top_level_origin: None,
             current_binding: None,
             client,
         })
     }
 
-    /// Removes the oldest popup awaiting separate page admission.
-    pub fn take_pending_popup(&mut self) -> Option<CdpPendingPopup> {
-        self.pending_popups.pop_front()
+    /// Returns the oldest popup awaiting an explicit admit/reject decision.
+    pub fn oldest_pending_popup(&self) -> Option<CdpPendingPopup> {
+        self.pending_popups.front().cloned()
+    }
+
+    /// Explicitly rejects and closes one exact pending popup target.
+    pub async fn reject_pending_popup(
+        &mut self,
+        admission_id: &CdpPopupAdmissionId,
+    ) -> Result<(), NativeProtocolError> {
+        self.require_usable()?;
+        let index = self.pending_popup_index(admission_id)?;
+        self.close_pending_popup(index).await?;
+        Ok(())
+    }
+
+    /// Attaches and admits one pending popup as a distinct opaque Runtime page.
+    pub async fn admit_pending_popup(
+        &mut self,
+        admission_id: &CdpPopupAdmissionId,
+        target: NativeTarget,
+        target_revision: impl Into<String>,
+        snapshot_namespace: impl Into<String>,
+        tree_depth: u32,
+        mut client: CdpClient,
+    ) -> Result<Self, NativeProtocolError> {
+        self.require_usable()?;
+        let target_revision = target_revision.into();
+        let snapshot_namespace = snapshot_namespace.into();
+        validate_port_definition(&target, &target_revision, &snapshot_namespace, tree_depth)?;
+        let NativeTarget::Browser {
+            session_id: parent_session,
+            page_id: parent_page,
+        } = &self.target
+        else {
+            return Err(NativeProtocolError::TargetNotAdmitted);
+        };
+        let NativeTarget::Browser {
+            session_id: child_session,
+            page_id: child_page,
+        } = &target
+        else {
+            return Err(NativeProtocolError::InvalidBinding);
+        };
+        if child_session != parent_session || child_page == parent_page {
+            return Err(NativeProtocolError::InvalidBinding);
+        }
+        let index = self.pending_popup_index(admission_id)?;
+        let pending = self.pending_popups[index].clone();
+        let cdp_session_id = match client.attach_target(&pending.popup.target_id).await {
+            Ok(session_id) => session_id,
+            Err(error) => {
+                let failure = observation_error(error);
+                self.close_pending_popup(index).await?;
+                return Err(failure);
+            }
+        };
+        let admitted_origin = match popup_current_origin(&mut client, &cdp_session_id).await {
+            Ok(origin) => origin,
+            Err(error) => {
+                self.close_pending_popup(index).await?;
+                return Err(error);
+            }
+        };
+        if admitted_origin != pending.requested_origin {
+            self.close_pending_popup(index).await?;
+            return Err(NativeProtocolError::BrowserOriginDenied);
+        }
+        let removed = self
+            .pending_popups
+            .remove(index)
+            .ok_or(NativeProtocolError::ActionUncertain)?;
+        let page = CdpPageBinding::new(target, removed.popup.target_id, cdp_session_id)?;
+        let mut child = Self::new_with_mode(
+            page,
+            CdpBrowserSessionMode::Managed,
+            target_revision,
+            snapshot_namespace,
+            tree_depth,
+            client,
+        )?;
+        child.admitted_top_level_origin = Some(admitted_origin);
+        Ok(child)
+    }
+
+    fn pending_popup_index(
+        &self,
+        admission_id: &CdpPopupAdmissionId,
+    ) -> Result<usize, NativeProtocolError> {
+        self.pending_popups
+            .iter()
+            .position(|pending| &pending.admission_id == admission_id)
+            .ok_or(NativeProtocolError::TargetNotAdmitted)
+    }
+
+    fn require_usable(&self) -> Result<(), NativeProtocolError> {
+        if self.usable {
+            Ok(())
+        } else {
+            Err(NativeProtocolError::BrowserAttachmentLost)
+        }
+    }
+
+    async fn close_pending_popup(
+        &mut self,
+        index: usize,
+    ) -> Result<CdpPendingPopup, NativeProtocolError> {
+        let pending = self
+            .pending_popups
+            .remove(index)
+            .ok_or(NativeProtocolError::ActionUncertain)?;
+        self.close_popup_or_poison(&pending.popup).await?;
+        Ok(pending)
+    }
+
+    async fn close_popup_or_poison(
+        &mut self,
+        popup: &garive_browser_cdp::CdpPopup,
+    ) -> Result<(), NativeProtocolError> {
+        if self.client.close_popup(popup).await.is_err() {
+            self.usable = false;
+            return Err(NativeProtocolError::ActionUncertain);
+        }
+        Ok(())
     }
 
     fn page_target_id(&self) -> Result<&str, NativeProtocolError> {
-        let NativeTarget::Browser { page_id, .. } = &self.target else {
+        let NativeTarget::Browser { .. } = &self.target else {
             return Err(NativeProtocolError::TargetNotAdmitted);
         };
-        Ok(page_id.as_str())
+        Ok(&self.cdp_target_id)
     }
 
     async fn ensure_popup_tracking(&mut self) -> Result<(), NativeProtocolError> {
@@ -188,10 +365,7 @@ impl CdpNativeAdapterPort {
                     .is_some_and(|origin| allowed_origins.binary_search(origin).is_ok())
                 && self.pending_popups.len() < MAX_PENDING_POPUPS;
             if !admitted {
-                self.client
-                    .close_popup(&popup)
-                    .await
-                    .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                self.close_popup_or_poison(&popup).await?;
                 audit.failure_code = Some(
                     if index >= MAX_POPUPS_PER_ACTION
                         || self.pending_popups.len() >= MAX_PENDING_POPUPS
@@ -204,23 +378,33 @@ impl CdpNativeAdapterPort {
                 );
                 continue;
             }
-            let page_id = BrowserPageId::new(popup.target_id.clone())?;
             if self
                 .pending_popups
                 .iter()
-                .any(|pending| pending.page_id == page_id)
+                .any(|pending| pending.popup.target_id == popup.target_id)
             {
-                self.client
-                    .close_popup(&popup)
-                    .await
-                    .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                self.close_popup_or_poison(&popup).await?;
                 return Err(NativeProtocolError::ActionUncertain);
             }
-            audit.page_ids.push(page_id.as_str().to_owned());
+            let sequence = self.next_popup_sequence;
+            self.next_popup_sequence = self
+                .next_popup_sequence
+                .checked_add(1)
+                .ok_or(NativeProtocolError::ResultBoundExceeded)?;
+            let admission_id = CdpPopupAdmissionId(format!(
+                "popup-{}",
+                canonical_digest(&json!({
+                    "snapshot_namespace": self.snapshot_namespace,
+                    "sequence": sequence,
+                    "target_id": popup.target_id,
+                }))?
+            ));
+            audit.admission_ids.push(admission_id.as_str().to_owned());
             self.pending_popups.push_back(CdpPendingPopup {
-                page_id,
+                admission_id,
                 requested_origin: requested_origin.ok_or(NativeProtocolError::ReceiptInvalid)?,
                 user_gesture: popup.user_gesture,
+                popup,
             });
         }
         if audit.count > 0 {
@@ -635,6 +819,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
         bounds: NativeObservationBounds,
     ) -> NativeObservationFuture<'a> {
         Box::pin(async move {
+            self.require_usable()?;
             if target != &self.target {
                 return Err(NativeProtocolError::TargetNotAdmitted);
             }
@@ -675,6 +860,14 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
             self.classify_password_nodes(&mut tree).await?;
             let main_origin = canonical_http_origin(&history_entry.url)
                 .ok_or(NativeProtocolError::BrowserOriginDenied)?;
+            if self
+                .admitted_top_level_origin
+                .as_ref()
+                .is_some_and(|admitted| admitted != &main_origin)
+            {
+                self.current_binding = None;
+                return Err(NativeProtocolError::BrowserOriginDenied);
+            }
             let mut frame_scope = CdpFrameScope::same_origin(&frame_tree_before, &main_origin)?;
             for frame in frame_tree_before.frames.iter().skip(1) {
                 let owner = self
@@ -751,6 +944,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
             self.last_bounds = Some(bounds);
             self.last_history_entry = Some(history_entry);
             self.last_frame_tree = Some(frame_tree_after);
+            self.admitted_top_level_origin = Some(main_origin);
             self.current_binding = Some(mapped.binding);
             Ok(mapped.observation)
         })
@@ -760,6 +954,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
         &mut self,
         command: &NativeActionCommandV1,
     ) -> Result<NativeAdapterBindingV1, NativeProtocolError> {
+        self.require_usable()?;
         if command.prepared_input.get("destination_url").is_some() {
             let navigation = self.resolve_navigation(command)?;
             return self.navigation_binding_for(command, &navigation);
@@ -792,6 +987,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
         binding: &'a NativeAdapterBindingV1,
     ) -> NativeActionFuture<'a> {
         Box::pin(async move {
+            self.require_usable()?;
             if command.prepared_input.get("destination_url").is_some() {
                 let navigation = self.resolve_navigation(command)?;
                 if &self.navigation_binding_for(command, &navigation)? != binding {
@@ -840,6 +1036,11 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 } else {
                     "completed"
                 };
+                update_admitted_origin(
+                    &mut self.admitted_top_level_origin,
+                    terminal_classification,
+                    &final_origin,
+                );
                 let native_evidence_digest = canonical_digest(&json!({
                     "action_id": command.action_id.as_str(),
                     "preflight_evidence_digest": binding.preflight_evidence_digest,
@@ -849,7 +1050,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "history_entry_id": history_entry.id,
                     "frame_changed": frame_changed,
                     "popup_count": popup_audit.count,
-                    "pending_popup_page_ids": popup_audit.page_ids,
+                    "pending_popup_admission_ids": popup_audit.admission_ids,
                     "target_revision": self.target_revision,
                 }))
                 .map_err(|_| NativeProtocolError::ActionUncertain)?;
@@ -956,6 +1157,11 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 } else {
                     "failed"
                 };
+                update_admitted_origin(
+                    &mut self.admitted_top_level_origin,
+                    terminal_classification,
+                    &final_origin,
+                );
                 let native_evidence_digest = canonical_digest(&json!({
                     "action_id": command.action_id.as_str(),
                     "preflight_evidence_digest": binding.preflight_evidence_digest,
@@ -964,7 +1170,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "final_origin": final_origin,
                     "frame_changed": frame_changed,
                     "popup_count": popup_audit.count,
-                    "pending_popup_page_ids": popup_audit.page_ids,
+                    "pending_popup_admission_ids": popup_audit.admission_ids,
                     "terminal_classification": terminal_classification,
                     "failure_code": failure_code,
                     "target_revision": self.target_revision,
@@ -1038,6 +1244,11 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 let frame_changed = self.capture_resulting_frame_tree().await?;
                 let popup_audit = self.audit_popups(&allowed_origins).await?;
                 apply_popup_audit(&mut outcome, &popup_audit);
+                update_admitted_origin(
+                    &mut self.admitted_top_level_origin,
+                    outcome.terminal_classification,
+                    &outcome.final_origin,
+                );
                 let receipt_evidence_digest = canonical_digest(&json!({
                     "action_id": command.action_id.as_str(),
                     "preflight_evidence_digest": binding.preflight_evidence_digest,
@@ -1047,7 +1258,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "final_origin": outcome.final_origin,
                     "frame_changed": frame_changed,
                     "popup_count": popup_audit.count,
-                    "pending_popup_page_ids": popup_audit.page_ids,
+                    "pending_popup_admission_ids": popup_audit.admission_ids,
                     "target_revision": self.target_revision,
                 }))?;
                 return Ok(NativeActionReceiptV1 {
@@ -1157,6 +1368,11 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .audit_popups(&resolved.allowed_navigation_origins)
                 .await?;
             apply_popup_audit(&mut outcome, &popup_audit);
+            update_admitted_origin(
+                &mut self.admitted_top_level_origin,
+                outcome.terminal_classification,
+                &outcome.final_origin,
+            );
             let receipt_evidence_digest = canonical_digest(&json!({
                 "action_id": command.action_id.as_str(),
                 "preflight_evidence_digest": binding.preflight_evidence_digest,
@@ -1168,7 +1384,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 "final_origin": outcome.final_origin,
                 "frame_changed": frame_changed,
                 "popup_count": popup_audit.count,
-                "pending_popup_page_ids": popup_audit.page_ids,
+                "pending_popup_admission_ids": popup_audit.admission_ids,
                 "target_revision": self.target_revision,
             }))?;
             Ok(NativeActionReceiptV1 {
@@ -1210,7 +1426,7 @@ struct ActionNavigationOutcome {
 #[derive(Default)]
 struct CdpPopupAudit {
     count: u32,
-    page_ids: Vec<String>,
+    admission_ids: Vec<String>,
     failure_code: Option<String>,
 }
 
@@ -1218,6 +1434,18 @@ fn apply_popup_audit(outcome: &mut ActionNavigationOutcome, audit: &CdpPopupAudi
     if let Some(failure_code) = &audit.failure_code {
         outcome.terminal_classification = "failed";
         outcome.failure_code = Some(failure_code.clone());
+    }
+}
+
+fn update_admitted_origin(
+    current: &mut Option<String>,
+    terminal_classification: &str,
+    final_origin: &Option<String>,
+) {
+    if terminal_classification == "completed" {
+        if let Some(origin) = final_origin {
+            *current = Some(origin.clone());
+        }
     }
 }
 
@@ -1486,6 +1714,67 @@ fn portable_token(value: &str, max: usize) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn bounded_protocol_id(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 4_096
+}
+
+fn validate_port_definition(
+    target: &NativeTarget,
+    target_revision: &str,
+    snapshot_namespace: &str,
+    tree_depth: u32,
+) -> Result<(), NativeProtocolError> {
+    if !matches!(target, NativeTarget::Browser { .. })
+        || !portable_token(target_revision, 128)
+        || !portable_token(snapshot_namespace, 48)
+        || !(1..=128).contains(&tree_depth)
+    {
+        Err(NativeProtocolError::InvalidBinding)
+    } else {
+        Ok(())
+    }
+}
+
+async fn popup_current_origin(
+    client: &mut CdpClient,
+    cdp_session_id: &str,
+) -> Result<String, NativeProtocolError> {
+    let mut previous: Option<(i64, String, String)> = None;
+    for attempt in 0..POPUP_ADMISSION_ATTEMPTS {
+        let history = client
+            .current_history_entry_if_available(cdp_session_id)
+            .await
+            .map_err(observation_error)?;
+        let tree = client
+            .frame_tree(cdp_session_id)
+            .await
+            .map_err(observation_error)?;
+        let main = tree
+            .frames
+            .first()
+            .ok_or(NativeProtocolError::ReceiptInvalid)?;
+        if let Some(history) = history {
+            if history.url == main.url {
+                let origin = canonical_http_origin(&main.url)
+                    .ok_or(NativeProtocolError::BrowserOriginDenied)?;
+                let evidence = (history.id, history.url, main.loader_id.clone());
+                if previous.as_ref() == Some(&evidence) {
+                    return Ok(origin);
+                }
+                previous = Some(evidence);
+            } else {
+                previous = None;
+            }
+        } else {
+            previous = None;
+        }
+        if attempt + 1 < POPUP_ADMISSION_ATTEMPTS {
+            tokio::time::sleep(POPUP_ADMISSION_INTERVAL).await;
+        }
+    }
+    Err(NativeProtocolError::BrowserAttachmentLost)
 }
 
 fn observation_error(error: CdpTransportError) -> NativeProtocolError {

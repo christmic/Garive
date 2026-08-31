@@ -151,7 +151,10 @@ pub use native_cdp::{
     CdpElementTarget, CdpFrameScope, CdpObservationContext, CdpSnapshotBindingV1,
     MappedCdpObservation,
 };
-pub use native_cdp_port::{CdpBrowserSessionMode, CdpNativeAdapterPort, CdpPendingPopup};
+pub use native_cdp_port::{
+    CdpBrowserSessionMode, CdpNativeAdapterPort, CdpPageBinding, CdpPendingPopup,
+    CdpPopupAdmissionId,
+};
 pub use native_executor::{NativeCapabilityExecutor, T2_NATIVE_EXECUTOR_ID};
 pub use observability_runtime::{
     EnqueueDisposition, ObservabilityBuffer, ObservabilityLimits, ObservabilityRuntimeError,
