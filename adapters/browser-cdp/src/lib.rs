@@ -15,6 +15,7 @@ pub use wire::{parse_incoming, CdpCommand, CdpError, CdpIncoming, CdpProtocolErr
 /// Frozen adapter implementation revision.
 pub const CDP_ADAPTER_REVISION: &str = "garive.browser.cdp.v2";
 pub use client::{
-    CdpAxNode, CdpAxProperty, CdpAxTree, CdpBrowserVersion, CdpClient, CdpHistoryEntry,
-    CdpNavigationHistory, CdpNavigationResult, CdpPortableKey, CdpSelectOutcome, CdpWaitUntil,
+    CdpAxNode, CdpAxProperty, CdpAxTree, CdpBrowserVersion, CdpClient, CdpFrame, CdpFrameTree,
+    CdpHistoryEntry, CdpNavigationHistory, CdpNavigationResult, CdpPortableKey, CdpSelectOutcome,
+    CdpWaitUntil,
 };

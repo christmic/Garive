@@ -13,6 +13,9 @@ use crate::{CdpProtocolError, CdpTransport, CdpTransportError};
 const MAX_ACTION_TEXT_BYTES: usize = 32_768;
 const MAX_OPTION_SCALARS: usize = 4_096;
 const MAX_OPTION_UTF8_BYTES: usize = 16_384;
+const MAX_FRAME_COUNT: usize = 256;
+const MAX_FRAME_DEPTH: usize = 64;
+const MAX_FRAME_TEXT_BYTES: usize = 1_048_576;
 const MAX_SCROLL_DELTA: u64 = 100_000;
 const MAX_LAYOUT_EXTENT: f64 = 10_000_000.0;
 const SCROLL_SETTLE_ATTEMPTS: usize = 50;
@@ -202,6 +205,30 @@ pub struct CdpNavigationHistory {
     pub entries: Vec<CdpHistoryEntry>,
 }
 
+/// One exact browser frame identity and navigation instance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpFrame {
+    /// CDP frame identity.
+    pub id: String,
+    /// Exact parent frame identity; absent only for the main frame.
+    pub parent_id: Option<String>,
+    /// Loader identity binding the current frame navigation.
+    pub loader_id: String,
+    /// Browser-reported current frame URL.
+    pub url: String,
+    /// Browser security origin; opaque origins remain non-HTTP strings.
+    pub security_origin: String,
+}
+
+/// Bounded parent-before-child frame tree for one attached page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpFrameTree {
+    /// Exact root frame identity.
+    pub main_frame_id: String,
+    /// Parent-before-child frames with unique identities.
+    pub frames: Vec<CdpFrame>,
+}
+
 /// Sequential typed client over one exact managed-browser transport.
 pub struct CdpClient {
     transport: CdpTransport,
@@ -385,6 +412,19 @@ impl CdpClient {
             )
             .await?;
         parse_navigation_history(&result)
+    }
+
+    /// Returns one strictly bounded parent-before-child frame snapshot.
+    pub async fn frame_tree(
+        &mut self,
+        session_id: &str,
+    ) -> Result<CdpFrameTree, CdpTransportError> {
+        validate_id(session_id)?;
+        let result = self
+            .transport
+            .call("Page.getFrameTree", json!({}), Some(session_id.into()))
+            .await?;
+        parse_frame_tree(&result)
     }
 
     /// Moves to one exact history entry and proves it became current.
@@ -793,6 +833,75 @@ impl CdpClient {
             .await?;
         parse_tree(&result, max_nodes, max_text_bytes)
     }
+}
+
+fn parse_frame_tree(result: &Value) -> Result<CdpFrameTree, CdpTransportError> {
+    let root = result.get("frameTree").ok_or_else(protocol)?;
+    let mut pending = vec![(root, None::<String>, 0_usize)];
+    let mut frames = Vec::new();
+    let mut identities = BTreeSet::new();
+    let mut text_bytes = 0_usize;
+    while let Some((tree, expected_parent, depth)) = pending.pop() {
+        if depth > MAX_FRAME_DEPTH || frames.len() >= MAX_FRAME_COUNT {
+            return Err(protocol());
+        }
+        let tree = tree.as_object().ok_or_else(protocol)?;
+        let frame = tree
+            .get("frame")
+            .and_then(Value::as_object)
+            .ok_or_else(protocol)?;
+        let id = object_text(frame, "id", 4_096)?;
+        if !identities.insert(id.clone()) {
+            return Err(protocol());
+        }
+        let declared_parent = optional_object_text(frame, "parentId", 4_096)?;
+        if declared_parent != expected_parent {
+            return Err(protocol());
+        }
+        let loader_id = object_text(frame, "loaderId", 4_096)?;
+        let url = object_text(frame, "url", 32_768)?;
+        let security_origin = object_text(frame, "securityOrigin", 4_096)?;
+        text_bytes = text_bytes
+            .checked_add(id.len())
+            .and_then(|count| count.checked_add(loader_id.len()))
+            .and_then(|count| count.checked_add(url.len()))
+            .and_then(|count| count.checked_add(security_origin.len()))
+            .and_then(|count| count.checked_add(declared_parent.as_ref().map_or(0, String::len)))
+            .filter(|count| *count <= MAX_FRAME_TEXT_BYTES)
+            .ok_or_else(protocol)?;
+        frames.push(CdpFrame {
+            id: id.clone(),
+            parent_id: declared_parent,
+            loader_id,
+            url,
+            security_origin,
+        });
+        let children = tree
+            .get("childFrames")
+            .map(|value| value.as_array().ok_or_else(protocol))
+            .transpose()?
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if frames
+            .len()
+            .saturating_add(pending.len())
+            .saturating_add(children.len())
+            > MAX_FRAME_COUNT
+        {
+            return Err(protocol());
+        }
+        for child in children.iter().rev() {
+            pending.push((child, Some(id.clone()), depth + 1));
+        }
+    }
+    let main_frame_id = frames
+        .first()
+        .map(|frame| frame.id.clone())
+        .ok_or_else(protocol)?;
+    Ok(CdpFrameTree {
+        main_frame_id,
+        frames,
+    })
 }
 
 fn parse_tree(

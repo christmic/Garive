@@ -57,6 +57,18 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
         assert_eq!(tree["method"], "Accessibility.getFullAXTree");
         assert_eq!(tree["params"]["depth"], 64);
         assert_eq!(tree["params"]["frameId"], "frame-1");
+        let frames = reply(
+            &mut socket,
+            json!({"frameTree":{
+                "frame":{"id":"frame-1","loaderId":"loader-1","url":"https://example.test:443/current","securityOrigin":"https://example.test:443","mimeType":"text/html"},
+                "childFrames":[
+                    {"frame":{"id":"frame-2","parentId":"frame-1","loaderId":"loader-2","url":"https://example.test:443/child","securityOrigin":"https://example.test:443","mimeType":"text/html"}},
+                    {"frame":{"id":"frame-3","parentId":"frame-1","loaderId":"loader-3","url":"https://other.test:443/child","securityOrigin":"https://other.test:443","mimeType":"text/html"}}
+                ]
+            }}),
+        )
+        .await;
+        assert_eq!(frames["method"], "Page.getFrameTree");
         let history = reply(
             &mut socket,
             json!({"currentIndex":1,"entries":[
@@ -66,6 +78,15 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
         )
         .await;
         assert_eq!(history["method"], "Page.getNavigationHistory");
+        let malformed = reply(
+            &mut socket,
+            json!({"frameTree":{
+                "frame":{"id":"frame-1","loaderId":"loader-1","url":"about:blank","securityOrigin":"://"},
+                "childFrames":[{"frame":{"id":"frame-2","parentId":"wrong-parent","loaderId":"loader-2","url":"about:blank","securityOrigin":"://"}}]
+            }}),
+        )
+        .await;
+        assert_eq!(malformed["method"], "Page.getFrameTree");
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -86,12 +107,18 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
     assert_eq!(tree.nodes.len(), 2);
     assert_eq!(tree.nodes[1].role.as_deref(), Some("button"));
     assert_eq!(tree.nodes[1].backend_dom_node_id, Some(42));
+    let frames = client.frame_tree(&session).await.expect("frame tree");
+    assert_eq!(frames.main_frame_id, "frame-1");
+    assert_eq!(frames.frames.len(), 3);
+    assert_eq!(frames.frames[1].parent_id.as_deref(), Some("frame-1"));
+    assert_eq!(frames.frames[2].security_origin, "https://other.test:443");
     let history = client
         .current_history_entry(&session)
         .await
         .expect("history");
     assert_eq!(history.id, 2);
     assert_eq!(history.url, "https://example.test:443/current");
+    assert!(client.frame_tree(&session).await.is_err());
     server.await.expect("server");
 }
 

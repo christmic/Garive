@@ -188,6 +188,7 @@ fn admitted_method(method: &str) -> bool {
             | "Page.reload"
             | "Page.setLifecycleEventsEnabled"
             | "Page.getNavigationHistory"
+            | "Page.getFrameTree"
             | "Page.navigateToHistoryEntry"
             | "Page.getLayoutMetrics"
             | "Input.dispatchKeyEvent"
