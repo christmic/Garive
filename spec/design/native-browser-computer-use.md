@@ -372,22 +372,34 @@ target before any input.
 Native semantic projection is iterative and rejects cycles or duplicate AX
 objects. It enforces the caller's node and visible UTF-8 limits while reading,
 then emits a flat parent-before-child tree with one optional unique focus.
-Only the portable `press` and non-secure `set_value` capabilities are exposed;
-unknown native actions remain unavailable. Secure text values are never read,
-their value capability is withheld, and the result records native redaction.
+Portable `press`, non-secure `set_value`, and native `type_text` capabilities
+are exposed only when AX proves their exact semantic support. `type_text` is
+limited to non-secure `AXTextField` and `AXTextArea` nodes that are both
+settable and focused. Unknown native actions remain unavailable. Secure text
+values are never read, all text capabilities are withheld, and the result
+records native redaction.
 
 The native observation result retains a broker-private, positionally exact
 mapping from every snapshot node index to the AX object read for that node.
-Before `press` or `set_value`, native preflight rechecks permission, process and
-window identity, rebuilds the bounded semantic projection and requires exact
-snapshot equality, then requires CoreFoundation equality for the selected node.
+Before `press`, `set_value`, `type_text`, or `press_key`, native preflight
+rechecks permission, process and window identity, rebuilds the bounded semantic
+projection and requires exact snapshot equality, then requires CoreFoundation
+equality for the selected node. Keyboard input additionally requires the
+admitted application to remain frontmost, the exact retained window to equal
+the application's focused AX window, and one unique focused snapshot node.
+`type_text` requires that node to be the explicitly selected text node.
 An observation binding is atomically consumed immediately before native
-dispatch and can dispatch at most once. Permission loss, changed semantic
-state, replaced nodes and protected values fail before dispatch. After dispatch,
-the adapter obtains a new observation; loss of trustworthy post-dispatch
-evidence is uncertain and the consumed action is never repeated. `set_value`
-accepts at most 32,768 Unicode scalar values and 131,072 UTF-8 bytes at this
-native boundary, matching the stricter Runtime tool-schema character bound.
+dispatch and can dispatch at most once. Native keyboard events use a private
+CoreGraphics event source and `CGEventPostToPid` for the exact verified process;
+they are not posted to a global event tap and never use the clipboard. The
+closed portable key set is Enter, Tab, Escape, Backspace, Forward Delete,
+arrows, Home, End, Page Up, Page Down and Space. Permission loss, focus change,
+changed semantic state, replaced nodes and protected values fail before
+dispatch. After dispatch, the adapter obtains a new observation; loss of
+trustworthy post-dispatch evidence is uncertain and the consumed action is
+never repeated. `set_value` and `type_text` accept at most 32,768 Unicode scalar
+values and 131,072 UTF-8 bytes at this native boundary, matching the stricter
+Runtime tool-schema character bound.
 
 ### Computer Use tools
 
