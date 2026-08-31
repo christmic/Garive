@@ -127,6 +127,7 @@ pub struct LocalExecutionWorker {
 }
 
 /// Fixed durable input exposed to one Runtime capability-preparation factory.
+#[derive(Clone, Copy)]
 pub struct LocalCapabilityPreparationInput<'a> {
     /// Exact committed dispatch coordinates.
     pub committed: &'a CommittedTurn,
@@ -383,6 +384,8 @@ pub enum LocalWorkerError {
     MemoryRepositoryBoundExceeded,
     /// An authorized Memory query or retrieval could not be constructed.
     MemoryPreparationFailed,
+    /// An exact Knowledge source request could not be constructed.
+    KnowledgePreparationFailed,
     /// Durable Core execution did not reach a committed terminal.
     ExecutionFailed,
 }
@@ -400,6 +403,7 @@ impl LocalWorkerError {
             Self::MemoryRepositoryCorrupt => "memory_repository_corrupt",
             Self::MemoryRepositoryBoundExceeded => "memory_repository_bound_exceeded",
             Self::MemoryPreparationFailed => "memory_preparation_failed",
+            Self::KnowledgePreparationFailed => "knowledge_preparation_failed",
             Self::ExecutionFailed => "execution_failed",
         }
     }

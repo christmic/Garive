@@ -4,6 +4,10 @@ use std::sync::Arc;
 
 use garive_config::CapabilityKind;
 use garive_core::{AgentEntry, ResumeInput};
+use garive_knowledge::{
+    ContentBinding as KnowledgeContentBinding, FreshnessRequirement, KnowledgeQueryMode,
+    KnowledgeRequest, KnowledgeSourceDescriptor,
+};
 use garive_memory::{
     ContentBinding, MemoryDocumentLimits, MemoryPurpose, MemoryQuery, MemoryScope, MemoryScore,
 };
@@ -14,13 +18,17 @@ use crate::{
     authorize_memory_query, plan_memory_retrieval, LocalCapabilityPreparationFactory,
     LocalCapabilityPreparationInput, LocalWorkerError, MemoryAccessGrant, MemoryControlGrant,
     MemoryPrefix, MemoryRepositoryError, MemoryRetrievalContext, PreparedAgentCapabilities,
-    RuntimeAgentCatalogue, SqliteLedger,
+    PreparedKnowledgeCapability, RuntimeAgentCatalogue, SqliteLedger,
 };
 
 /// Portable M0 contract version supported by local production composition.
 pub const LOCAL_MEMORY_CONTRACT_VERSION: u64 = 1;
 /// First bounded product retrieval policy for explicit user declarations.
 pub const USER_DECLARED_PUSH_REVISION: &str = "user-declared-push-v1";
+/// Portable K0 contract version supported by local production composition.
+pub const LOCAL_KNOWLEDGE_CONTRACT_VERSION: u64 = 1;
+/// First automatic K0 request policy over trusted current input.
+pub const KEYWORD_CURRENT_INPUT_REVISION: &str = "keyword-current-input-v1";
 
 /// Explicit Runtime-owned binding for one snapshot-admitted Memory capability.
 #[derive(Clone)]
@@ -38,6 +46,58 @@ pub struct LocalMemorySystemBinding {
     max_total_bytes: u64,
     max_repository_records: usize,
     max_repository_facts: usize,
+}
+
+/// Explicit Runtime-owned binding for one snapshot-admitted Knowledge source.
+pub struct LocalKnowledgeSystemBinding {
+    capability_name: String,
+    exact_revision: String,
+    descriptor_digest: String,
+    source: KnowledgeSourceDescriptor,
+    request_policy_revision: String,
+    max_chunks: u32,
+    max_total_bytes: u64,
+    deadline_budget_ms: u64,
+    connector: Arc<dyn crate::KnowledgeConnector>,
+}
+
+impl LocalKnowledgeSystemBinding {
+    /// Constructs one exact source binding without ambient configuration.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        capability_name: impl Into<String>,
+        exact_revision: impl Into<String>,
+        descriptor_digest: impl Into<String>,
+        source: KnowledgeSourceDescriptor,
+        request_policy_revision: impl Into<String>,
+        max_chunks: u32,
+        max_total_bytes: u64,
+        deadline_budget_ms: u64,
+        connector: Arc<dyn crate::KnowledgeConnector>,
+    ) -> Result<Self, LocalWorkerError> {
+        let value = Self {
+            capability_name: capability_name.into(),
+            exact_revision: exact_revision.into(),
+            descriptor_digest: descriptor_digest.into(),
+            source,
+            request_policy_revision: request_policy_revision.into(),
+            max_chunks,
+            max_total_bytes,
+            deadline_budget_ms,
+            connector,
+        };
+        if !valid_text(&value.capability_name)
+            || !valid_text(&value.exact_revision)
+            || !valid_digest(&value.descriptor_digest)
+            || value.request_policy_revision != KEYWORD_CURRENT_INPUT_REVISION
+            || value.max_chunks == 0
+            || value.max_total_bytes == 0
+            || value.deadline_budget_ms == 0
+        {
+            return Err(LocalWorkerError::InvalidComposition);
+        }
+        Ok(value)
+    }
 }
 
 impl LocalMemorySystemBinding {
@@ -99,6 +159,7 @@ impl LocalMemorySystemBinding {
 pub struct CatalogueCapabilityPreparationFactory {
     catalogue: Arc<RuntimeAgentCatalogue>,
     memory: Option<LocalMemorySystemBinding>,
+    knowledge: Option<LocalKnowledgeSystemBinding>,
 }
 
 impl CatalogueCapabilityPreparationFactory {
@@ -107,7 +168,17 @@ impl CatalogueCapabilityPreparationFactory {
         catalogue: Arc<RuntimeAgentCatalogue>,
         memory: Option<LocalMemorySystemBinding>,
     ) -> Self {
-        Self { catalogue, memory }
+        Self {
+            catalogue,
+            memory,
+            knowledge: None,
+        }
+    }
+
+    /// Installs one explicit Knowledge source binding.
+    pub fn with_knowledge(mut self, knowledge: LocalKnowledgeSystemBinding) -> Self {
+        self.knowledge = Some(knowledge);
+        self
     }
 }
 
@@ -125,33 +196,130 @@ impl LocalCapabilityPreparationFactory for CatalogueCapabilityPreparationFactory
                 &input.committed.snapshot_digest,
             )
             .map_err(|_| LocalWorkerError::CapabilityBindingMismatch)?;
-        let descriptors: Vec<_> = installation
+        let memory_descriptors: Vec<_> = installation
             .snapshot()
             .capabilities()
             .descriptors
             .iter()
             .filter(|descriptor| descriptor.kind == CapabilityKind::Memory)
             .collect();
-        if descriptors.is_empty() {
-            return Ok(PreparedAgentCapabilities::default());
-        }
-        let descriptor = match descriptors.as_slice() {
-            [descriptor] => *descriptor,
+        let mut prepared = PreparedAgentCapabilities::default();
+        match memory_descriptors.as_slice() {
+            [] => {}
+            [descriptor] => {
+                let binding = self
+                    .memory
+                    .as_ref()
+                    .ok_or(LocalWorkerError::CapabilityBindingMissing)?;
+                verify_descriptor(
+                    descriptor,
+                    &binding.capability_name,
+                    &binding.exact_revision,
+                    LOCAL_MEMORY_CONTRACT_VERSION,
+                    &binding.descriptor_digest,
+                )?;
+                prepared = prepare_memory(ledger, input, binding)?;
+            }
             _ => return Err(LocalWorkerError::CapabilityBindingMismatch),
-        };
-        let binding = self
-            .memory
-            .as_ref()
-            .ok_or(LocalWorkerError::CapabilityBindingMissing)?;
-        if descriptor.name != binding.capability_name
-            || descriptor.exact_revision != binding.exact_revision
-            || descriptor.contract_version != LOCAL_MEMORY_CONTRACT_VERSION
-            || descriptor.descriptor_digest != binding.descriptor_digest
-        {
-            return Err(LocalWorkerError::CapabilityBindingMismatch);
         }
-        prepare_memory(ledger, input, binding)
+        let knowledge_descriptors: Vec<_> = installation
+            .snapshot()
+            .capabilities()
+            .descriptors
+            .iter()
+            .filter(|descriptor| descriptor.kind == CapabilityKind::Knowledge)
+            .collect();
+        match knowledge_descriptors.as_slice() {
+            [] => {}
+            [descriptor] => {
+                let binding = self
+                    .knowledge
+                    .as_ref()
+                    .ok_or(LocalWorkerError::CapabilityBindingMissing)?;
+                verify_descriptor(
+                    descriptor,
+                    &binding.capability_name,
+                    &binding.exact_revision,
+                    LOCAL_KNOWLEDGE_CONTRACT_VERSION,
+                    &binding.descriptor_digest,
+                )?;
+                prepared.knowledge_retrieval = Some(prepare_knowledge(input, binding)?);
+            }
+            _ => return Err(LocalWorkerError::CapabilityBindingMismatch),
+        }
+        Ok(prepared)
     }
+}
+
+fn verify_descriptor(
+    descriptor: &garive_config::CapabilityDescriptor,
+    name: &str,
+    revision: &str,
+    contract_version: u64,
+    digest: &str,
+) -> Result<(), LocalWorkerError> {
+    if descriptor.name == name
+        && descriptor.exact_revision == revision
+        && descriptor.contract_version == contract_version
+        && descriptor.descriptor_digest == digest
+    {
+        Ok(())
+    } else {
+        Err(LocalWorkerError::CapabilityBindingMismatch)
+    }
+}
+
+fn prepare_knowledge(
+    input: LocalCapabilityPreparationInput<'_>,
+    binding: &LocalKnowledgeSystemBinding,
+) -> Result<PreparedKnowledgeCapability, LocalWorkerError> {
+    let query = KnowledgeContentBinding::from_inline(entry_content(&input.request.entry));
+    let identity = knowledge_identity(input.committed, binding, query.digest())?;
+    let request = KnowledgeRequest::new(
+        format!("knowledge-request-{identity}"),
+        binding.source.source_id(),
+        binding.source.source_revision(),
+        KnowledgeQueryMode::Keyword,
+        query,
+        Vec::new(),
+        input.committed.committed_position,
+        binding.max_chunks,
+        binding.max_total_bytes,
+        binding.deadline_budget_ms,
+        FreshnessRequirement::CachedAllowed,
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let grant = crate::KnowledgeAccessGrant::new(
+        binding.source.source_id(),
+        binding.source.source_revision(),
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    PreparedKnowledgeCapability::new(
+        binding.source.clone(),
+        request,
+        grant,
+        format!("knowledge-dispatch-{identity}"),
+        binding.connector.clone(),
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)
+}
+
+fn knowledge_identity(
+    committed: &crate::CommittedTurn,
+    binding: &LocalKnowledgeSystemBinding,
+    query_digest: &str,
+) -> Result<String, LocalWorkerError> {
+    let bytes = serde_jcs::to_vec(&json!({
+        "contract": "garive.local-knowledge-preparation",
+        "version": 1,
+        "execution_id": committed.execution_id.as_str(),
+        "source_id": binding.source.source_id(),
+        "source_revision": binding.source.source_revision(),
+        "request_policy_revision": binding.request_policy_revision,
+        "query_digest": query_digest,
+    }))
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
 fn prepare_memory(

@@ -150,8 +150,9 @@ pub use local_composition::{
     ReconstructedLocalExecution,
 };
 pub use local_memory::{
-    CatalogueCapabilityPreparationFactory, LocalMemorySystemBinding, LOCAL_MEMORY_CONTRACT_VERSION,
-    USER_DECLARED_PUSH_REVISION,
+    CatalogueCapabilityPreparationFactory, LocalKnowledgeSystemBinding, LocalMemorySystemBinding,
+    KEYWORD_CURRENT_INPUT_REVISION, LOCAL_KNOWLEDGE_CONTRACT_VERSION,
+    LOCAL_MEMORY_CONTRACT_VERSION, USER_DECLARED_PUSH_REVISION,
 };
 pub use local_recovery::{
     recover_local_dispatches, recover_local_dispatches_with_f0, LocalRecoveryError,
