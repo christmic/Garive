@@ -160,6 +160,15 @@ review facts are continuous rows rather than a dashboard of cards. At narrow
 widths the fields become one column while every label and action remains text
 visible.
 
+The Workspace file picker is a compact desktop selector, not a branded hero
+modal. At the wide reference it is at most 620 px with a 48 px title row, 34 px
+location row, 40–42 px entries and a 54 px authority/action footer. The header
+contains only document identity and close. File/folder glyphs are quiet 24 px
+line icons without colored tiles; the Workspace path, 8-item selection bound
+and UTF-8 authority note remain text-visible. Selection and directory navigation
+use neutral hover surfaces. At 480 px the selector keeps a 12 px viewport inset
+and exact document width without becoming a separate mobile visual language.
+
 ### Fidelity geometry
 
 | Element | Comfortable target | Compact target |

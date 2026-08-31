@@ -97,16 +97,13 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm,
     <section ref={sheet} className="workspace-sheet" role="dialog" aria-modal="true"
       aria-labelledby="workspace-title">
       <header>
-        <div className="workspace-heading"><span><Icon name="work" /></span><div>
-          <p className="eyebrow">{t("workspace.eyebrow")}</p>
-          <h2 id="workspace-title">{t("workspace.choosePrefix")} <bdi>{grant.display_name}</bdi>{t("workspace.chooseSuffix")}</h2>
-        </div></div>
+        <h2 id="workspace-title">{t("workspace.choosePrefix")} <bdi>{grant.display_name}</bdi>{t("workspace.chooseSuffix")}</h2>
         <button className="icon-button" type="button" aria-label={t("workspace.close")}
           autoFocus onClick={onCancel}><Icon name="close" /></button>
       </header>
       <div className="workspace-path">
         <button type="button" disabled={levels.length < 2} onClick={back}
-          aria-label={t("workspace.back")}>‹</button>
+          aria-label={t("workspace.back")}><Icon name="chevron" /></button>
         <span title={current?.label}>{current?.label}</span>
         <small>{selected.size}/8 {t("workspace.selected")}</small>
       </div>

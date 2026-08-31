@@ -68,6 +68,10 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".approval-card { display: grid; grid-template-columns: 24px minmax(0,1fr);");
     expect(CSS).toContain("border-left-color: var(--state-attention)");
     expect(CSS).toContain(".approval-foot { display: flex; align-items: center; justify-content: space-between;");
+    expect(CSS).toContain(".workspace-sheet { display: grid; grid-template-rows: 48px 34px minmax(220px, 1fr) auto;");
+    expect(CSS).toContain("width: min(620px, 100%)");
+    expect(CSS).toContain(".workspace-entry { display: grid; grid-template-columns: minmax(0, 1fr) 34px;");
+    expect(CSS).toContain(".entry-icon { display: grid; place-items: center; width: 24px; height: 24px; color: var(--text-tertiary); background: transparent;");
   });
 });
 

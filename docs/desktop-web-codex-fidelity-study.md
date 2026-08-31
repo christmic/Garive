@@ -286,6 +286,26 @@ Decline action receives the explicit focus ring; the surrounding Composer uses
 a quiet neutral focus border. This is the Gate 2 authority advantage without
 adding ordinary-screen noise.
 
+### N. Workspace picker desktop-density audit
+
+The platform-only Workspace picker remained a 680 px hero modal with an 82 px
+header, blue marketing eyebrow, 37 px colored Workspace tile, 31 px colored
+file tiles, 51 px entries, 70 px footer, 20 px radius, inset highlight and an
+independent 100 px shadow. An 8 px full-window blur made the underlying work
+feel like another application rather than retained context.
+
+The picker is now a neutral 620 px desktop selector using the shared panel
+radius and overlay shadow. Its title/location/entry/footer rows are
+48/34/40–42/54 px; the header contains one title and close action, while file
+glyphs are quiet 24 px line icons without tiles. Directory enter/back, the
+0–8 count, UTF-8 authority copy and confirm actions remain continuously
+visible. A real interaction entered `Research notes`, returned to the root,
+selected `Launch brief.md`, updated the count to 1/8 and confirmed the exact
+context back into the Composer. At 720 px the sheet remains 620 px wide; at
+480 px it uses a 12 px inset and 456 px width. Both stable states have zero
+document overflow. This improves desktop density without weakening Workspace
+authority or pretending the Web client owns the native picker capability.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
