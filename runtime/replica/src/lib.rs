@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod agent_installation;
 #[cfg(unix)]
 mod builtin_patch_executor;
 #[cfg(unix)]
@@ -36,6 +37,12 @@ mod observability_runtime;
 mod plan_carry_forward;
 mod plan_recovery;
 mod plan_runtime;
+#[cfg(unix)]
+mod podman_process_artifact;
+#[cfg(unix)]
+mod podman_process_backend;
+#[cfg(unix)]
+mod podman_process_cli;
 mod process_capability;
 mod process_executor;
 mod runtime_turn;
@@ -45,6 +52,7 @@ mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
+pub use agent_installation::{RuntimeAgentInstallation, RuntimeAgentInstallationError};
 #[cfg(unix)]
 pub use builtin_patch_executor::{BuiltinPatchExecutor, T1_PATCH_EXECUTOR_ID};
 #[cfg(unix)]
@@ -183,6 +191,8 @@ pub use plan_runtime::{
     ActivePlanClaim, PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
     PlanRuntimeTransition, PlanStepExecutionStart, PlannedPlanCommand,
 };
+#[cfg(unix)]
+pub use podman_process_backend::{PodmanProcessBackend, PodmanProcessConfig};
 pub use process_capability::{ProcessExecutable, ProcessLane, ProcessLaneRegistry};
 pub use process_executor::{
     BuiltinProcessExecutor, ProcessBackendError, ProcessExecutionRequest, ProcessExecutionResult,

@@ -113,6 +113,20 @@ Completed-result actions sit at the assistant content edge. Their visual form
 is a 30 px icon control; their accessible name and tooltip retain the full verb.
 The terminal state remains text-visible and is not replaced by color or an icon.
 
+The resting composer begins with one text row and grows only with entered or
+restored content. Its 40 rem measure, 32 px actions and compact live-status rail
+form one surface. Running work replaces Send with exactly one circular Stop
+action; it never shows a second text Stop beside a busy Send control. The
+durability note remains programmatically associated with the field but does not
+consume the ordinary visual baseline.
+
+Fenced output is a workbench block, not an anonymous tinted rectangle. It owns
+one 32px header with the admitted language or “Plain text”, one accessible Copy
+action, and a separately scrollable source body. Copy uses the exact rendered
+code text and gives bounded success feedback. Completed-result controls remain
+quiet until the Turn is hovered or contains keyboard focus; terminal text stays
+available at rest.
+
 Neutral surface changes precede borders. A region may have one structural
 separator; rows inside it use spacing or hover surfaces unless a semantic
 boundary requires a rule. Navigation groups use sentence case. Decorative

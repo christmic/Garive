@@ -185,6 +185,29 @@ Runtime-owned port implementations. The snapshot is deeply immutable for one
 Turn. A registry/configuration change affects only a new Turn unless an
 explicit product migration creates a new Turn.
 
+## Runtime installation invariant
+
+Runtime installs the resolved snapshot as one immutable value before Host or
+Core execution objects are constructed. The Host `InstalledAgent` projection,
+effective limits, public activity catalogue, and the Core
+`AgentToolCapabilities` catalogue are all derived from that same value. Product
+composition must not accept a separately entered definition revision or
+snapshot digest, and an execution factory must not invent, remove, reorder, or
+revise Tool definitions after installation.
+
+Executor instances and provider clients are Runtime system resources. Runtime
+binds each installed Tool definition to a compatible executor using explicit
+host configuration, then proves the executor catalogue exactly matches the
+snapshot before Core starts. Executable paths, sockets, image digests,
+credentials, workspace roots, recovery roots, and control timeouts never enter
+the Agent Definition or effective snapshot.
+
+A continuation must validate its durable definition revision and snapshot
+digest against the installed value before reconstructing execution. Any
+projection, executor-catalogue, or continuation mismatch fails closed; Runtime
+does not repair it by recomputing a digest or dynamically changing the Tool
+catalogue.
+
 ## Canonical digest
 
 `definition_digest` is lowercase SHA-256 over RFC 8785 canonical bytes of the

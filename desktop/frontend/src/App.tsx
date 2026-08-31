@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Children, isValidElement, useCallback, useEffect, useMemo, useReducer, useRef, useState,
+  type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
@@ -312,12 +313,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       if (visualTestMode === "running") {
         dispatch({ type: "session_loaded", timeline: {
           api_version: "v1", session_id: "visual-running", scanned_through_position: 9,
-          observed_max_position: 9, has_more: false, items: [{ turn_id: "running-turn",
-            started_position: 3, latest_position: 9, state: "running",
+          observed_max_position: 9, has_more: false, items: [{ turn_id: "completed-turn",
+            started_position: 1, latest_position: 5, state: "completed",
+            user_text: "Audit the Runtime boundary before implementation",
+            completion_text: "## Runtime boundary\n\nThe client owns the work surface; the Runtime owns durable execution.\n\n```text\nSession → Turn → admitted Activity → committed result\n```\n\n### Verified constraints\n\n- Workspace authority is explicit.\n- Live output never replaces the committed result.\n- Recovery preserves the next safe action.",
+            content_truncated: false, activities: [] }, { turn_id: "running-turn",
+            started_position: 6, latest_position: 9, state: "running",
             user_text: "Compare the launch research and prepare a decision memo",
             content_truncated: false, activities: [{ api_version: "v1",
               activity_id: "read-research", kind: "tool", label_key: "agent.activity.read_file",
-              state: "completed", source_position: 6, terminal: true }, { api_version: "v1",
+              state: "completed", source_position: 7, terminal: true }, { api_version: "v1",
               activity_id: "draft-memo", kind: "tool", label_key: "agent.activity.write_file",
               state: "running", source_position: 9, terminal: false }] }],
         } });
@@ -701,6 +706,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const conversation = useRef<HTMLDivElement>(null);
   const [followingTail, setFollowingTail] = useState(true);
   const [newOutputBelow, setNewOutputBelow] = useState(false);
+  const pendingTailFrame = useRef<number | undefined>(undefined);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
 
@@ -710,16 +716,28 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     const element = conversation.current;
     if (!element) return;
     if (!followingTail) { setNewOutputBelow(true); return; }
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
+      pendingTailFrame.current = undefined;
       element.scrollTop = element.scrollHeight;
       setNewOutputBelow(false);
     });
+    pendingTailFrame.current = frame;
+    return () => {
+      if (pendingTailFrame.current === frame) {
+        cancelAnimationFrame(frame);
+        pendingTailFrame.current = undefined;
+      }
+    };
   }, [followingTail, tailRevision]);
 
   const readScrollPosition = () => {
     const element = conversation.current;
     if (!element) return;
     const attached = isNearConversationTail(element);
+    if (!attached && pendingTailFrame.current !== undefined) {
+      cancelAnimationFrame(pendingTailFrame.current);
+      pendingTailFrame.current = undefined;
+    }
     setFollowingTail(attached);
     if (attached) setNewOutputBelow(false);
   };
@@ -799,7 +817,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
               aria-label={t("context.remove")}><Icon name="close" /></button>
           </span>)}</div>}
-        <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+        <textarea ref={composer} rows={1} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+          aria-describedby="composer-commit-note"
           aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
           placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
@@ -808,23 +827,25 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             event.preventDefault(); void submit();
           } }} />
         <div className="composer-toolbar">
-          <div className="composer-tools"><button type="button"
+          <div className="composer-tools"><button className="composer-context-button" type="button"
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
+            aria-label={t(state.capabilities?.workspaces ? "work.composer.addContext" : "work.composer.noWorkspaces")}
             title={t(state.capabilities?.workspaces ? "work.composer.chooseFiles" : "work.composer.noWorkspaces")}
-            onClick={() => void openContext()}><Icon name="paperclip" /><span>{t("work.composer.addContext")}</span></button>
+            onClick={() => void openContext()}><Icon name="plus" /></button>
             {context?.grant.access === "enumerate" && <button type="button" disabled={state.phase === "submitting"}
               onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>{t("work.composer.allowOutputs")}</span></button>}
             <span className="access-pill"><Icon name="shield" />{needsInput ? t("work.composer.resume")
               : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
                 : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></div>
-          {state.phase === "submitting" && !reconnecting && <button className="secondary-button" type="button"
-            onClick={() => void cancelTurn()}>{t("work.composer.requestStop")}</button>}
-          <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
-            {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
-          </button>
+          {state.phase === "submitting" && !reconnecting
+            ? <button className="composer-stop-button" type="button" aria-label={t("work.composer.requestStop")}
+              title={t("work.composer.requestStop")} onClick={() => void cancelTurn()}><Icon name="stop" /></button>
+            : <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
+              {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
+            </button>}
         </div>
       </div>
-      <p className="composer-note">{t("work.composer.commitNote")}</p>
+      <p id="composer-commit-note" className="composer-note sr-only">{t("work.composer.commitNote")}</p>
     </div>
   </section>;
 }
@@ -857,15 +878,44 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
-      components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
+      components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
+        pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <div className="result-meta"><span className="result-terminal"><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} aria-label={t("timeline.export")} title={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button><button type="button" aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} title={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button>{state.artifacts.some((artifact) => artifact.turn_id === message.id) && <button type="button" aria-label={t("timeline.openArtifacts")} title={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button>}</div></div></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
-        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}>{state.livePreview.text}</Markdown></div>
+        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+          components={{ pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{state.livePreview.text}</Markdown></div>
         : <p><span className="live-pulse"><span /></span>{livePhaseCopy(state.livePreview.labelKey, t)}</p>}
     </article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
+}
+
+function MarkdownCodeBlock({ children, t }: { children?: ReactNode; t: (key: MessageKey) => string }) {
+  const [copied, setCopied] = useState(false);
+  const code = markdownNodeText(children).replace(/\n$/, "");
+  const child = Children.toArray(children).find((node) => isValidElement(node));
+  const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
+  const language = className?.match(/(?:^|\s)language-([^\s]+)/)?.[1] ?? t("timeline.plainText");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_500);
+    } catch { setCopied(false); }
+  };
+  return <div className="code-block" role="region" aria-label={t("timeline.codeBlock")}>
+    <header><span>{language}</span><button type="button" aria-label={t(copied
+      ? "timeline.codeCopied" : "timeline.copyCode")} title={t(copied
+        ? "timeline.codeCopied" : "timeline.copyCode")} onClick={() => void copy()}><Icon name={copied
+          ? "check" : "copy"} /></button></header><pre>{children}</pre></div>;
+}
+
+function markdownNodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(markdownNodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return markdownNodeText(node.props.children);
+  return "";
 }
 
 function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string): string {

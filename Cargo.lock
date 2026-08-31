@@ -1776,6 +1776,7 @@ dependencies = [
  "garive-adapter-anthropic-messages",
  "garive-adapter-browser-cdp",
  "garive-adapter-openai-responses",
+ "garive-config",
  "garive-core",
  "garive-goal",
  "garive-host-client",
