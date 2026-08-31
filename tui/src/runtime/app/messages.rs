@@ -11,7 +11,7 @@ use super::{
         controller::replay_pending,
         host::{self, HostMessage, HostOperation},
     },
-    projection::{apply_event, install_timeline},
+    projection::{apply_event, apply_live_output, install_timeline},
     RuntimeState,
 };
 
@@ -102,6 +102,11 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 follow_position,
                 state.sender.clone(),
             ));
+            state.live_follow = Some(host::follow_live(
+                state.client.clone(),
+                session_id.clone(),
+                state.sender.clone(),
+            ));
             replay_queued_for_session(state, &session_id);
         }
         HostMessage::SnapshotLoaded { .. } => {}
@@ -153,11 +158,58 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.model.composer.clear();
                 state.model.prompt_history_browser.reset();
             }
+            state.model.live_answer.clear_for_session_change();
             state.model.selected_turn = Some(response.turn_id);
+            state.model.active_execution_id = Some(response.execution_id);
             state.model.execution = ExecutionState::Following;
             state.load(session_id);
         }
         HostMessage::Event(event) => apply_event(event, state),
+        HostMessage::LiveOutput(event) => apply_live_output(event, state),
+        HostMessage::LiveFollowEnded { session_id, code }
+            if state.model.selected_session.as_deref() == Some(&session_id) =>
+        {
+            state.live_follow = None;
+            let detached = !state.model.viewport.follow_latest;
+            let effect = state.model.live_answer.preview_unavailable(detached);
+            if effect.unseen_increment {
+                state.model.viewport.newer_updates =
+                    state.model.viewport.newer_updates.saturating_add(1);
+            }
+            let fatal = matches!(
+                code,
+                HostClientErrorCode::InvalidConfiguration
+                    | HostClientErrorCode::InvalidCommand
+                    | HostClientErrorCode::InvalidEvent
+            );
+            if !fatal
+                && state.model.execution == ExecutionState::Following
+                && state.live_reconnect_attempt < 5
+            {
+                state.live_reconnect_attempt += 1;
+                state.live_reconnect = Some(host::schedule_live_reconnect(
+                    session_id,
+                    state.live_reconnect_attempt,
+                    state.sender.clone(),
+                ));
+            }
+        }
+        HostMessage::LiveFollowEnded { .. } => {}
+        HostMessage::LiveReconnectDue {
+            session_id,
+            attempt,
+        } if state.model.selected_session.as_deref() == Some(&session_id)
+            && state.live_reconnect_attempt == attempt
+            && state.model.execution == ExecutionState::Following =>
+        {
+            state.live_reconnect = None;
+            state.live_follow = Some(host::follow_live(
+                state.client.clone(),
+                session_id,
+                state.sender.clone(),
+            ));
+        }
+        HostMessage::LiveReconnectDue { .. } => {}
         HostMessage::FollowEnded { session_id, code }
             if state.model.selected_session.as_deref() == Some(&session_id) =>
         {

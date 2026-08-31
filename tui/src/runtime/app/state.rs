@@ -28,6 +28,9 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) follow: Option<JoinHandle<()>>,
     pub(in crate::runtime) reconnect: Option<JoinHandle<()>>,
     pub(in crate::runtime) reconnect_attempt: u32,
+    pub(in crate::runtime) live_follow: Option<JoinHandle<()>>,
+    pub(in crate::runtime) live_reconnect: Option<JoinHandle<()>>,
+    pub(in crate::runtime) live_reconnect_attempt: u32,
     pub(in crate::runtime) store: StateStore,
     pub(in crate::runtime) preferences: Preferences,
     persisted_preferences: Preferences,
@@ -104,6 +107,9 @@ impl RuntimeState {
             follow: None,
             reconnect: None,
             reconnect_attempt: 0,
+            live_follow: None,
+            live_reconnect: None,
+            live_reconnect_attempt: 0,
             store: restored.store,
             preferences: restored.preferences,
             persisted_preferences,
@@ -140,6 +146,17 @@ impl RuntimeState {
     pub(in crate::runtime) fn load(&mut self, session_id: String) {
         self.model.close_turn_navigator();
         let switching_session = self.model.selected_session.as_deref() != Some(&session_id);
+        if let Some(task) = self.live_follow.take() {
+            task.abort();
+        }
+        if let Some(task) = self.live_reconnect.take() {
+            task.abort();
+        }
+        self.live_reconnect_attempt = 0;
+        if switching_session {
+            self.model.live_answer.clear_for_session_change();
+            self.model.active_execution_id = None;
+        }
         if switching_session {
             if matches!(
                 self.model.execution,
@@ -242,6 +259,12 @@ impl RuntimeState {
             task.abort();
         }
         if let Some(task) = self.reconnect.take() {
+            task.abort();
+        }
+        if let Some(task) = self.live_follow.take() {
+            task.abort();
+        }
+        if let Some(task) = self.live_reconnect.take() {
             task.abort();
         }
         for background in self.background_follows.values_mut() {

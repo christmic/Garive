@@ -1,6 +1,6 @@
 use garive_host_client::{
     AgentDefinitionSummary, CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient,
-    SessionSummary, SessionView, TurnCommandResponse, TurnTimelineItem,
+    LiveOutputEvent, SessionSummary, SessionView, TurnCommandResponse, TurnTimelineItem,
 };
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -50,11 +50,20 @@ pub(crate) enum HostMessage {
         response: TurnCommandResponse,
     },
     Event(HostEvent),
+    LiveOutput(LiveOutputEvent),
     FollowEnded {
         session_id: String,
         code: HostClientErrorCode,
     },
+    LiveFollowEnded {
+        session_id: String,
+        code: HostClientErrorCode,
+    },
     ReconnectDue {
+        session_id: String,
+        attempt: u32,
+    },
+    LiveReconnectDue {
         session_id: String,
         attempt: u32,
     },
@@ -326,6 +335,34 @@ pub(crate) fn follow(
     })
 }
 
+pub(crate) fn follow_live(
+    client: LiveHostClient,
+    session_id: String,
+    sender: mpsc::Sender<HostMessage>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let (event_sender, mut events) = mpsc::channel(256);
+        let follow = tokio::spawn({
+            let client = client.clone();
+            let session_id = session_id.clone();
+            async move { client.follow_live_output(&session_id, event_sender).await }
+        });
+        while let Some(event) = events.recv().await {
+            if sender.send(HostMessage::LiveOutput(event)).await.is_err() {
+                follow.abort();
+                return;
+            }
+        }
+        let code = match follow.await {
+            Ok(Err(error)) => error.code,
+            Ok(Ok(())) | Err(_) => HostClientErrorCode::TransportFailure,
+        };
+        let _ = sender
+            .send(HostMessage::LiveFollowEnded { session_id, code })
+            .await;
+    })
+}
+
 pub(crate) fn schedule_reconnect(
     session_id: String,
     attempt: u32,
@@ -342,6 +379,29 @@ pub(crate) fn schedule_reconnect(
         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         let _ = sender
             .send(HostMessage::ReconnectDue {
+                session_id,
+                attempt,
+            })
+            .await;
+    })
+}
+
+pub(crate) fn schedule_live_reconnect(
+    session_id: String,
+    attempt: u32,
+    sender: mpsc::Sender<HostMessage>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let delay_ms = match attempt {
+            1 => 250,
+            2 => 500,
+            3 => 1_000,
+            4 => 2_000,
+            _ => 4_000,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        let _ = sender
+            .send(HostMessage::LiveReconnectDue {
                 session_id,
                 attempt,
             })

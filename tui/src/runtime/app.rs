@@ -44,6 +44,7 @@ const LIMITS: ClientLimits = ClientLimits {
     follow_deadline_ms: 120_000,
 };
 const MOTION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(160);
+const LIVE_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 
 /// Runs the resident full-screen terminal client until the user confirms exit.
 pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
@@ -117,6 +118,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let mut motion_clock = tokio::time::interval(MOTION_INTERVAL);
     motion_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     motion_clock.tick().await;
+    let mut live_frame_clock = tokio::time::interval(LIVE_FRAME_INTERVAL);
+    live_frame_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    live_frame_clock.tick().await;
     loop {
         if let Some(request) = state.external_editor_request.take() {
             match external_editor::prepare(request) {
@@ -176,6 +180,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             }
             _ = motion_clock.tick(), if view::status_motion_enabled(&state.model, state.config.reduced_motion) => {
                 motion_tick = motion_tick.wrapping_add(1);
+            }
+            _ = live_frame_clock.tick(), if state.model.live_frame_pending() => {
+                state.model.advance_live_frame();
             }
         }
     }

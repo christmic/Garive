@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
-use garive_host_client::{HostEvent, TurnTimelineItem};
+use garive_host_client::{HostEvent, LiveOutputEvent, TurnTimelineItem};
 
 use crate::application::{
-    AppModel, ConnectionState, ConversationLandmark, ExecutionState, Overlay, TimelineItem,
-    TimelineRole,
+    AppModel, ConnectionState, ConversationLandmark, ExecutionState, LiveAnswerExpectation,
+    Overlay, TimelineItem, TimelineRole,
 };
 use crate::view::presentation::activity_copy;
 
@@ -23,6 +23,9 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
     state.model.connection = ConnectionState::Online;
     if !event.turn_id.is_empty() {
         state.model.selected_turn = Some(event.turn_id.clone());
+    }
+    if event.event == "turn.started" && !event.execution_id.is_empty() {
+        state.model.active_execution_id = Some(event.execution_id.clone());
     }
     if let Some(activity) = event.activity {
         let (text, tone) = activity_copy(
@@ -54,8 +57,39 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         event.event.as_str(),
         "turn.started" | "turn.completed" | "turn.failed" | "turn.stopped" | "turn.suspended"
     ) {
+        if event.event != "turn.started" {
+            state.model.live_answer.durable_takeover(
+                &event.session_id,
+                &event.turn_id,
+                (!event.execution_id.is_empty()).then_some(event.execution_id.as_str()),
+            );
+            state.model.active_execution_id = None;
+        }
         let session = event.session_id;
         state.load(session);
+    }
+}
+
+pub(super) fn apply_live_output(event: LiveOutputEvent, state: &mut RuntimeState) {
+    let execution_id = event.execution_id.clone();
+    let expectation = LiveAnswerExpectation {
+        selected_session: state.model.selected_session.as_deref().unwrap_or_default(),
+        active_turn: state.model.selected_turn.as_deref(),
+        active_execution: state.model.active_execution_id.as_deref(),
+        detached: !state.model.viewport.follow_latest,
+    };
+    let effect = state.model.live_answer.apply(event, expectation);
+    if effect.accepted {
+        state.live_reconnect_attempt = 0;
+        if let Some(task) = state.live_reconnect.take() {
+            task.abort();
+        }
+        if state.model.active_execution_id.is_none() {
+            state.model.active_execution_id = Some(execution_id);
+        }
+    }
+    if effect.unseen_increment {
+        state.model.viewport.newer_updates = state.model.viewport.newer_updates.saturating_add(1);
     }
 }
 
@@ -191,6 +225,16 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
             model.suspension = turn.suspension;
             model.overlay = Some(Overlay::Suspension);
         }
+    }
+    if model.execution != ExecutionState::Following {
+        if let (Some(session_id), Some(turn_id)) =
+            (model.selected_session.clone(), model.selected_turn.clone())
+        {
+            model
+                .live_answer
+                .durable_takeover(&session_id, &turn_id, None);
+        }
+        model.active_execution_id = None;
     }
     if model.viewport.follow_latest {
         model.follow_latest();
