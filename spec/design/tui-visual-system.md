@@ -66,6 +66,11 @@ When mouse capture is enabled, composer pointer placement and drag selection
 must call the same component geometry. The border and padding are inert; CJK
 double-cell glyphs expose stable before/after insertion points, and selection
 remains the same semantic style used by keyboard selection.
+Private kill/yank state has no persistent badge, counter, or preview. The
+keyboard guide presents its supported chords through the same semantic keycap
+primitive as all other actions; only a safe transient notice may report a
+failed bounded yank. This avoids exposing killed draft content or inventing a
+second clipboard surface.
 All time-varying presentation lives in `view/motion.rs`. An active connection
 or execution may use its calm single-cell pulse; reduced motion uses the same
 text and semantic style with a stable glyph. Screens cannot invent local frame

@@ -65,6 +65,7 @@ tui/src/
   input/
     mod.rs               key/paste/mouse routing
     editor.rs            grapheme-aware multiline editor
+    kill_buffer.rs       single-entry private kill/yank text component
     history.rs           transient bounded prompt-history browser
     mouse_gesture.rs     deterministic composer multi-click classification
     commands.rs          parser, typed registry, and shared availability contract
@@ -120,6 +121,15 @@ and `runtime/clipboard.rs` alone encodes the bounded OSC 52 write. The footer
 derives its selection-specific hint from model state. No view recomputes byte
 ranges, no pointer gesture writes the clipboard, and copy does not clear,
 persist, or submit the selection.
+
+Kill/yank has an equally explicit private boundary. `input/kill_buffer.rs`
+owns one in-memory text value no larger than the composer's admitted byte
+bound. `EditorState` alone computes selection or logical-line ranges and
+performs the corresponding one-transaction edit; the controller only maps
+`Ctrl+U`, `Ctrl+K`, and `Ctrl+Y`. The buffer is independent of undo/redo and
+survives ordinary draft replacement, but runtime clears it before loading a
+different Session. It never enters `AppModel` serialization, preferences,
+prompt history, diagnostics, OSC 52, Host requests, or rendered view state.
 
 The composer is similarly bounded. `EditorState` owns admitted text and
 grapheme-indexed editing state; the private `EditorLayout` in

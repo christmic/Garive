@@ -281,6 +281,12 @@ disabled in screen-reader mode. The TUI never reads the system clipboard and
 never writes copied content to preferences, prompt history, pending recovery,
 diagnostics, or the Host.
 
+The composer kill buffer is a separate single-entry process-memory component,
+not a clipboard adapter. It is bounded by the composer input limit, never
+serialized or rendered, survives undo and same-Session draft replacement, and
+is cleared before a different Session draft is loaded. Process exit clears it
+by construction.
+
 ## File durability and concurrency
 
 The default state root follows the platform user-state convention and is

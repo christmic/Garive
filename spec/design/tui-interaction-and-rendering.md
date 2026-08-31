@@ -215,6 +215,7 @@ overlay and does not share this sequential browse cursor.
 | Backspace/Delete | remove one grapheme or selected range |
 | Word move/delete | Unicode word boundaries with punctuation-preserving behavior |
 | Undo/redo | bounded by operation count and total retained bytes; paste undoes atomically |
+| Kill/yank | single private in-memory span; logical-line or selected range; cleared on Session change |
 | Home/End | visual line start/end; `Ctrl+Home/End` document start/end |
 | Up/Down | visual line movement; history only at document boundary with no selection |
 | Selection | Shift movement; `Alt+C` or `/copy selection` copies only visible selected text |
@@ -277,6 +278,9 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Ctrl+J` | composer | insert newline |
 | `Shift+Enter` | composer, when distinguishable | insert newline |
 | `Alt+C` | composer selection | copy exactly the selected composer text through bounded OSC 52 |
+| `Ctrl+U` / `Ctrl+K` | composer | kill selection, or to logical line start/end, into the private one-entry buffer |
+| `Ctrl+Y` | composer | yank the private buffer, replacing a selection as one edit |
+| `Ctrl+Z` / `Alt+Z` | composer | undo / portable redo |
 | `Tab` / `Shift+Tab` | no suggestion or blocking overlay | move focus forward/backward |
 | `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
 | `Up` / `Down`, `PageUp` / `PageDown`, `Home` / `End` | focused conversation | scroll one cell, scroll one viewport, jump oldest, or follow latest |
@@ -298,6 +302,14 @@ frozen behind the pending command and cannot be edited into a different retry.
 The key router resolves overlay, editor, focused region, then global bindings
 in that order. A key is consumed by at most one owner. Footer hints reflect the
 current resolved bindings rather than a static list.
+Kill ranges deliberately use newline-delimited logical lines, independent of
+the composer's visual Home/End contract. At a logical line boundary, `Ctrl+K`
+may consume the following newline and `Ctrl+U` the preceding newline so lines
+can be joined. A nonempty selection has priority for either kill chord. A
+no-op kill preserves the prior private value; yank over a selection replaces
+it as one undoable edit. Kill/yank never reads or writes the system clipboard.
+`Alt+Z` is the portable redo chord because legacy xterm input cannot reliably
+distinguish `Ctrl+Shift+Z` from `Ctrl+Z`.
 Typing a printable character outside an overlay explicitly transfers focus to
 the composer before inserting it. Editing and deletion keys never mutate a
 draft while the Session rail or conversation owns focus.
