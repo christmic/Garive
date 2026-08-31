@@ -1,6 +1,8 @@
 mod app;
 mod clipboard;
 mod controller;
+#[allow(dead_code)]
+mod effects;
 mod external_editor;
 mod host;
 mod terminal;
