@@ -4,10 +4,11 @@ use crate::{
 };
 
 use super::{
-    presentation::{action_overlay_copy, suspension_copy, HELP_HINTS, HELP_NOTES},
+    presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
     primitives::selection_window,
     short_id, short_tail,
 };
+use crate::input::help_hints;
 
 const LIST_CAPACITY: usize = 10;
 
@@ -123,9 +124,7 @@ fn prompt_history(model: &AppModel) -> String {
 }
 
 fn help() -> String {
-    let actions = HELP_HINTS
-        .iter()
-        .map(|hint| format!("{}: {}.", hint.spoken_key, hint.action));
+    let actions = help_hints().map(|hint| format!("{}: {}.", hint.spoken_key, hint.action));
     std::iter::once("Keyboard guide.".to_owned())
         .chain(actions)
         .chain(HELP_NOTES.iter().map(|note| (*note).to_owned()))

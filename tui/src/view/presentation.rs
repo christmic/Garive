@@ -6,71 +6,11 @@ use crate::{
     input::describe_schema,
 };
 
-#[derive(Clone, Copy)]
-pub(crate) struct InteractionHint {
-    pub(crate) visual_key: &'static str,
-    pub(crate) spoken_key: &'static str,
-    pub(crate) action: &'static str,
-}
-
 pub(crate) struct ActionOverlayCopy {
     pub(crate) title: &'static str,
     pub(crate) body: String,
     pub(crate) hints: &'static [ActionOverlayBinding],
 }
-
-pub(crate) const HELP_HINTS: &[InteractionHint] = &[
-    InteractionHint {
-        visual_key: "Enter",
-        spoken_key: "Enter",
-        action: "send",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+J",
-        spoken_key: "Control J",
-        action: "new line",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+N",
-        spoken_key: "Control N",
-        action: "new Session",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+S",
-        spoken_key: "Control S",
-        action: "open Sessions",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+P",
-        spoken_key: "Control P",
-        action: "open commands",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+R",
-        spoken_key: "Control R",
-        action: "open prompt history",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+U/K",
-        spoken_key: "Control U or Control K",
-        action: "kill to line edge",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+Y",
-        spoken_key: "Control Y",
-        action: "yank killed text",
-    },
-    InteractionHint {
-        visual_key: "Esc",
-        spoken_key: "Escape",
-        action: "cancel the running Turn",
-    },
-    InteractionHint {
-        visual_key: "Ctrl+Q",
-        spoken_key: "Control Q",
-        action: "ask to quit",
-    },
-];
 
 pub(crate) const HELP_NOTES: &[&str] = &[
     "Durable truth comes from the local Garive Host.",

@@ -2,6 +2,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 #[path = "kill_buffer.rs"]
 mod kill_buffer;
+#[path = "logical_line.rs"]
+mod logical_line;
 
 use kill_buffer::KillBuffer;
 

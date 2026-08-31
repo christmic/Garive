@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::app::RuntimeState;
 use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, TerminalSize};
-use crate::input::{HistoryDraft, HistoryRecall};
+use crate::input::{resolve_shortcut, HistoryDraft, HistoryRecall, ShortcutIntent};
 
 mod actions;
 mod mouse;
@@ -61,90 +61,15 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
 }
 
 fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
-    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q') {
+    let shortcut = resolve_shortcut(key);
+    if shortcut == Some(ShortcutIntent::Quit) {
         state.dispatch(AppAction::QuitRequested);
         return;
     }
     if overlay::handle(key, state) {
         return;
     }
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
-        match key.code {
-            KeyCode::Char('c') => handle_ctrl_c(state),
-            KeyCode::Char('n') => {
-                create_session(state);
-            }
-            KeyCode::Char('s') => open_session_picker(state),
-            KeyCode::Char('p') => open_command_palette(state),
-            KeyCode::Char('r') => open_prompt_history(state),
-            KeyCode::Char('j') => {
-                if state.composer_is_frozen() {
-                    state.explain_frozen_composer();
-                } else {
-                    let _ = state.model.composer.insert("\n");
-                }
-            }
-            KeyCode::Char('l') if state.model.focus == FocusTarget::Conversation => {
-                state.force_redraw = true;
-            }
-            KeyCode::Home if state.model.focus == FocusTarget::Conversation => {
-                state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-                state.model.jump_to_oldest();
-            }
-            KeyCode::End if state.model.focus == FocusTarget::Conversation => {
-                state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-                state.model.follow_latest();
-            }
-            KeyCode::Home => state
-                .model
-                .composer
-                .move_document_start(key.modifiers.contains(KeyModifiers::SHIFT)),
-            KeyCode::End => state
-                .model
-                .composer
-                .move_document_end(key.modifiers.contains(KeyModifiers::SHIFT)),
-            KeyCode::Char('z') => {
-                if state.composer_is_frozen() {
-                    state.explain_frozen_composer();
-                } else {
-                    state.model.composer.undo();
-                }
-            }
-            KeyCode::Char('y') => {
-                if state.composer_is_frozen() {
-                    state.explain_frozen_composer();
-                } else {
-                    let _ = state.model.composer.yank();
-                }
-            }
-            KeyCode::Char('u') => {
-                if state.composer_is_frozen() {
-                    state.explain_frozen_composer();
-                } else {
-                    state.model.composer.kill_to_logical_line_start();
-                }
-            }
-            KeyCode::Char('k') => {
-                if state.composer_is_frozen() {
-                    state.explain_frozen_composer();
-                } else {
-                    state.model.composer.kill_to_logical_line_end();
-                }
-            }
-            _ => {}
-        }
-        return;
-    }
-    if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('c') {
-        copy_composer_selection(state, false);
-        return;
-    }
-    if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('z') {
-        if state.composer_is_frozen() {
-            state.explain_frozen_composer();
-        } else {
-            state.model.composer.redo();
-        }
+    if shortcut.is_some_and(|intent| handle_shortcut(intent, state)) {
         return;
     }
     if handle_command_suggestion_key(key, state) {
@@ -294,6 +219,87 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Enter => submit(state),
         _ => {}
     }
+}
+
+fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {
+    use ShortcutIntent::*;
+    match intent {
+        Quit => return false,
+        ClearOrCancel => handle_ctrl_c(state),
+        NewSession => {
+            create_session(state);
+        }
+        OpenSessions => open_session_picker(state),
+        OpenCommands => open_command_palette(state),
+        OpenHistory => open_prompt_history(state),
+        Redraw if state.model.focus == FocusTarget::Conversation => state.force_redraw = true,
+        DocumentStart if state.model.focus == FocusTarget::Conversation => {
+            state.model.jump_to_oldest();
+        }
+        DocumentEnd if state.model.focus == FocusTarget::Conversation => {
+            state.model.follow_latest();
+        }
+        intent if state.model.focus != FocusTarget::Composer && is_composer_shortcut(intent) => {
+            return true;
+        }
+        intent if state.composer_is_frozen() && is_composer_shortcut(intent) => {
+            state.explain_frozen_composer();
+        }
+        InsertNewline => {
+            let _ = state.model.composer.insert("\n");
+        }
+        DocumentStart => state.model.composer.move_document_start(false),
+        DocumentEnd => state.model.composer.move_document_end(false),
+        Undo => {
+            state.model.composer.undo();
+        }
+        Redo => {
+            state.model.composer.redo();
+        }
+        KillStart => {
+            state.model.composer.kill_to_logical_line_start();
+        }
+        KillEnd => {
+            state.model.composer.kill_to_logical_line_end();
+        }
+        Yank => {
+            let _ = state.model.composer.yank();
+        }
+        CopySelection => copy_composer_selection(state, false),
+        LogicalLineStart => state.model.composer.move_logical_line_start(false),
+        LogicalLineEnd => state.model.composer.move_logical_line_end(false),
+        GraphemeLeft => state.model.composer.move_left(false),
+        GraphemeRight => state.model.composer.move_right(false),
+        WordLeft => state.model.composer.move_word_left(false),
+        WordRight => state.model.composer.move_word_right(false),
+        DeleteBackward => {
+            state.model.composer.backspace();
+        }
+        DeleteForward => {
+            state.model.composer.delete();
+        }
+        DeleteWordBackward => {
+            state.model.composer.delete_word_left();
+        }
+        DeleteWordForward => {
+            state.model.composer.delete_word_right();
+        }
+        Redraw => {}
+    }
+    true
+}
+
+fn is_composer_shortcut(intent: ShortcutIntent) -> bool {
+    !matches!(
+        intent,
+        ShortcutIntent::Quit
+            | ShortcutIntent::ClearOrCancel
+            | ShortcutIntent::NewSession
+            | ShortcutIntent::OpenSessions
+            | ShortcutIntent::OpenCommands
+            | ShortcutIntent::OpenHistory
+            | ShortcutIntent::Redraw
+    )
 }
 
 fn browse_prompt_history(state: &mut RuntimeState, direction: i8) -> bool {

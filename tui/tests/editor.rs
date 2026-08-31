@@ -213,3 +213,22 @@ fn selection_kill_yank_and_session_privacy_boundary_are_exact() {
     assert!(!editor.yank().unwrap());
     assert_eq!(editor.text(), "alpha 界 beta");
 }
+
+#[test]
+fn logical_line_motion_is_distinct_from_document_and_grapheme_motion() {
+    let mut editor = EditorState::new(128);
+    editor.replace("zero\none 界 two\nthree").unwrap();
+    editor.place_cursor(10, false);
+
+    editor.move_logical_line_start(false);
+    assert_eq!(editor.cursor_grapheme(), 5);
+    editor.move_right(false);
+    editor.move_logical_line_end(false);
+    assert_eq!(editor.cursor_grapheme(), 14);
+
+    editor.move_left(true);
+    editor.move_left(true);
+    editor.move_logical_line_start(false);
+    assert_eq!(editor.cursor_grapheme(), 5);
+    assert!(!editor.has_selection());
+}

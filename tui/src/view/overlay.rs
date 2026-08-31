@@ -7,13 +7,13 @@ use ratatui::{
 
 use crate::{
     application::{ActionOverlayBinding, AppModel, Overlay},
-    input::COMMAND_PALETTE,
+    input::{help_hints, COMMAND_PALETTE},
     Theme,
 };
 
 use super::{
     palette,
-    presentation::{action_overlay_copy, suspension_copy, HELP_HINTS, HELP_NOTES},
+    presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
     primitives::{key_hints, truncate_display},
     safe_text,
     session::picker_line,
@@ -294,7 +294,8 @@ fn suspension_text(model: &AppModel, colors: Palette) -> Text<'static> {
 }
 
 fn help_text(colors: Palette) -> Text<'static> {
-    let mut lines = HELP_HINTS
+    let hints = help_hints().collect::<Vec<_>>();
+    let mut lines = hints
         .chunks(2)
         .map(|hints| {
             let hints = hints
