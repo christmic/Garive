@@ -48,8 +48,9 @@ accepted viewport scroll only after layout metrics proved real movement and the
 resulting scroll effect was observed. The same page embeds one same-origin and
 one cross-origin iframe. The gate observed the same-origin button, proved the
 cross-origin secret was absent, retained only a nameless `opaque_frame`, and
-proved a click preflight returns `browser_frame_opaque`. It passed 1 test in
-1.36 seconds;
+proved a click preflight returns `browser_frame_opaque`. A native password
+canary is absent from the observation, its public fields are redacted, and its
+action set is empty. It passed 1 test in 0.81 seconds;
 strict Runtime test-target Clippy and warning-free Rustdoc also passed.
 
 ```sh
@@ -69,6 +70,8 @@ exact back success, forward origin denial before dispatch, and reload waiting
 for a fresh load event before revision rotation. It also proves frame-tree
 double-read stale rejection, action pre/post frame revalidation, and revision
 rotation when a loader changes without a top-level history change.
+The password race gate additionally proves that a normal textbox changed to
+`input[type=password]` after observation fails sensitive before any input.
 
 The adapter revision is `garive.browser.cdp.v2`. Native select uses
 `DOM.resolveNode`, one fixed `Runtime.callFunctionOn` declaration with the option
@@ -79,7 +82,7 @@ into the receipt digest. Typed `DOM.getFrameOwner` binds child frame identities
 to their embedding backend nodes. Runtime reads AX subtrees only for same-origin
 frames with a fully admitted ancestor chain and collapses a cross-origin owner
 to one nameless, valueless and actionless opaque node. The ordinary adapter
-suite passes 14 tests and the focused Runtime mapping/port suites pass 17 tests
+suite passes 14 tests and the focused Runtime mapping/port suites pass 18 tests
 under strict Clippy.
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
@@ -91,6 +94,6 @@ binding cases pass in the Runtime unit gate. The real managed-Chrome concrete
 port gate now binds initial observation, governed navigation, native select,
 click, focused Enter activation, settled scroll, receipts and fresh
 observation/revision evidence, including same-origin/cross-origin iframe
-isolation. Real-browser history actions, popups, downloads, protected-field
-redaction in the real browser, attachment loss and durable Started/crash fault
-injection remain open. This is not a complete Browser Use claim.
+isolation and protected-field redaction. Real-browser history actions, popups,
+downloads, attachment loss and durable Started/crash fault injection remain
+open. This is not a complete Browser Use claim.

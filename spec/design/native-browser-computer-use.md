@@ -192,6 +192,17 @@ owner becomes exactly one `opaque_frame` with no name, value, actions or backend
 node identity; descendant semantics are never requested. Acting on that
 snapshot-local reference fails `browser_frame_opaque` before dispatch.
 
+Chromium AX does not reliably identify native password inputs: it may expose a
+password control as an ordinary `textbox` with a masked value and no protected
+property. For every actionable text node, the adapter therefore performs one
+fixed, depth-zero, non-piercing `DOM.describeNode` classification against the
+exact backend node and retains only whether the bounded attribute pairs prove a
+native `input[type=password]`. Runtime marks a proven password node redacted,
+publishes no text actions, and never exposes DOM attributes. Immediately before
+`type_text` or `clear`, it repeats that exact classification; a control changed
+to password invalidates the binding and fails `native_sensitive_action_required`
+before focus or input dispatch.
+
 ### Browser tools
 
 ```text
