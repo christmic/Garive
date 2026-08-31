@@ -252,8 +252,33 @@ forces follow mode.
 - macOS PTY evidence records first delta, at least two intermediate frames,
   final committed frame, and restored terminal state from the shipping binary.
 
+## Implementation evidence
+
+Runtime hub/publication, no-cursor Live Host SSE, strict Rust client reduction,
+and TUI presentation are implemented. The current executable evidence includes:
+
+- `runtime/replica/tests/live_output.rs`, `live_output_http.rs`, and
+  `local_worker.rs` for admission, redaction, bounds, lag, snapshots, terminal
+  end, and production worker publication;
+- `clients/host-rs/tests/live_output_client.rs` at `3240d960` for malformed envelopes,
+  identity and sequence validation, stream replacement, event/sink overflow,
+  and cancelled-follow transport release;
+- `tui/tests/live_answer_projection.rs` for frame reduction, stable Markdown,
+  unavailable state, terminal fences, and durable takeover;
+- `tui/tests/live_h4_recovery.rs` at `98e17709` and `a973274d` for real loopback
+  disconnect/reconnect, snapshot replacement, two live frames before
+  durability, and final SQLite convergence; and
+- `tui/tests/production_runtime.rs` at `7547d856` for the shipping TUI's
+  integrated live, suspension/continuation, cancellation, background Session,
+  and restart flow.
+
+H4 verification remains part of active A-TUI closeout. A detached viewport
+receiving live and durable updates still needs shipping PTY evidence, the
+screen-reader path still needs explicit no-per-delta and exactly-once durable
+answer evidence, and physical macOS terminal screenshots remain open.
+
 ## Meta
 
 - Owner: Runtime H4 and Client presentation
 - Last reviewed: 2026-08-31
-- Status: accepted; Runtime hub and worker publication implemented, Host/client composition pending
+- Status: accepted and implemented; product-level verification remains active
