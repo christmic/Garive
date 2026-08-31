@@ -58,7 +58,7 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         "turn.started" | "turn.completed" | "turn.failed" | "turn.stopped" | "turn.suspended"
     ) {
         if event.event != "turn.started" {
-            state.model.live_answer.durable_takeover(
+            state.model.live_answer.await_durable_snapshot(
                 &event.session_id,
                 &event.turn_id,
                 (!event.execution_id.is_empty()).then_some(event.execution_id.as_str()),

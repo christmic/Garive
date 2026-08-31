@@ -53,6 +53,7 @@ pub(crate) struct LiveAnswer {
     pub(crate) key: LiveAnswerKey,
     pub(crate) received_text: String,
     pub(crate) presented_text: String,
+    pub(crate) markdown: LiveMarkdownBuffer,
     pub(crate) phase: Option<LiveAnswerPhase>,
     pub(crate) last_sequence: u64,
     pub(crate) availability: LiveAnswerAvailability,
@@ -75,6 +76,7 @@ impl LiveAnswer {
             },
             received_text: String::new(),
             presented_text: String::new(),
+            markdown: LiveMarkdownBuffer::default(),
             phase: None,
             last_sequence: 0,
             availability: LiveAnswerAvailability::Available,
@@ -93,6 +95,64 @@ impl LiveAnswer {
         }
         self.unseen_notified = true;
         true
+    }
+
+    fn present(&mut self, text: String) {
+        self.markdown.update(&text);
+        self.presented_text = text;
+    }
+
+    fn clear_preview(&mut self) {
+        self.received_text.clear();
+        self.presented_text.clear();
+        self.markdown.clear();
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct LiveMarkdownBuffer {
+    stable_prefix: String,
+    mutable_tail: String,
+}
+
+impl LiveMarkdownBuffer {
+    #[cfg(test)]
+    pub(crate) fn stable_prefix(&self) -> &str {
+        &self.stable_prefix
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mutable_tail(&self) -> &str {
+        &self.mutable_tail
+    }
+
+    #[cfg(test)]
+    pub(crate) fn as_text(&self) -> String {
+        let mut text = String::with_capacity(self.stable_prefix.len() + self.mutable_tail.len());
+        text.push_str(&self.stable_prefix);
+        text.push_str(&self.mutable_tail);
+        text
+    }
+
+    fn update(&mut self, text: &str) {
+        if let Some(remainder) = text.strip_prefix(&self.stable_prefix) {
+            self.mutable_tail.clear();
+            self.mutable_tail.push_str(remainder);
+        } else {
+            self.stable_prefix.clear();
+            self.mutable_tail.clear();
+            self.mutable_tail.push_str(text);
+        }
+        let boundary = stable_markdown_boundary(&self.mutable_tail);
+        if boundary > 0 {
+            self.stable_prefix.push_str(&self.mutable_tail[..boundary]);
+            self.mutable_tail.drain(..boundary);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.stable_prefix.clear();
+        self.mutable_tail.clear();
     }
 }
 
@@ -189,7 +249,7 @@ impl LiveAnswerProjection {
                     || answer.presented_text != text
                     || answer.availability != LiveAnswerAvailability::Available;
                 answer.received_text = text.clone();
-                answer.presented_text = text;
+                answer.present(text);
                 answer.availability = LiveAnswerAvailability::Available;
                 effect.visual_changed = changed;
             }
@@ -210,12 +270,14 @@ impl LiveAnswerProjection {
                 let changed = answer.availability != LiveAnswerAvailability::Unavailable
                     || !answer.received_text.is_empty()
                     || !answer.presented_text.is_empty();
-                answer.received_text.clear();
-                answer.presented_text.clear();
+                answer.clear_preview();
                 answer.availability = LiveAnswerAvailability::Unavailable;
                 effect.visual_changed = changed;
             }
             LiveOutputEventKind::Ended { .. } => {
+                if answer.presented_text != answer.received_text {
+                    answer.present(answer.received_text.clone());
+                }
                 answer.ended = true;
                 effect.visual_changed = true;
             }
@@ -235,7 +297,7 @@ impl LiveAnswerProjection {
         {
             return LiveAnswerEffect::default();
         }
-        answer.presented_text.clone_from(&answer.received_text);
+        answer.present(answer.received_text.clone());
         LiveAnswerEffect {
             accepted: true,
             visual_changed: true,
@@ -257,8 +319,7 @@ impl LiveAnswerProjection {
         let changed = answer.availability != LiveAnswerAvailability::Unavailable
             || !answer.received_text.is_empty()
             || !answer.presented_text.is_empty();
-        answer.received_text.clear();
-        answer.presented_text.clear();
+        answer.clear_preview();
         answer.availability = LiveAnswerAvailability::Unavailable;
         LiveAnswerEffect {
             accepted: true,
@@ -290,11 +351,70 @@ impl LiveAnswerProjection {
         ));
     }
 
+    pub(crate) fn await_durable_snapshot(
+        &mut self,
+        session_id: &str,
+        turn_id: &str,
+        execution_id: Option<&str>,
+    ) {
+        if let Some(answer) = self.current.as_mut().filter(|answer| {
+            answer.key.session_id == session_id
+                && answer.key.turn_id == turn_id
+                && execution_id.is_none_or(|execution| answer.key.execution_id == execution)
+        }) {
+            if answer.presented_text != answer.received_text {
+                answer.present(answer.received_text.clone());
+            }
+            answer.ended = true;
+        }
+        self.durable_fence = Some((
+            session_id.to_owned(),
+            turn_id.to_owned(),
+            execution_id.map(str::to_owned),
+        ));
+    }
+
     pub(crate) fn clear_for_session_change(&mut self) {
         self.current = None;
         self.durable_fence = None;
         self.retired_stream = None;
     }
+}
+
+fn stable_markdown_boundary(source: &str) -> usize {
+    let mut fence = None;
+    let mut boundary = 0;
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        let content = line.trim_end_matches(['\r', '\n']);
+        if let Some((marker, width)) = markdown_fence(content) {
+            match fence {
+                Some((open_marker, open_width)) if marker == open_marker && width >= open_width => {
+                    fence = None;
+                }
+                None => fence = Some((marker, width)),
+                _ => {}
+            }
+        }
+        offset += line.len();
+        if fence.is_none() && content.trim().is_empty() {
+            boundary = offset;
+        }
+    }
+    boundary
+}
+
+fn markdown_fence(line: &str) -> Option<(u8, usize)> {
+    let content = line.trim_start_matches(' ');
+    if line.len().saturating_sub(content.len()) > 3 {
+        return None;
+    }
+    let marker = *content.as_bytes().first()?;
+    if !matches!(marker, b'`' | b'~') {
+        return None;
+    }
+    let width = content.bytes().take_while(|value| *value == marker).count();
+    (width >= 3).then_some((marker, width))
 }
 
 fn is_initial_event(event: &LiveOutputEvent) -> bool {

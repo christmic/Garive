@@ -166,6 +166,99 @@ fn ended_only_closes_caret_and_waits_for_durable_truth() {
 }
 
 #[test]
+fn terminal_fence_retains_ended_preview_until_durable_snapshot_takeover() {
+    let mut projection = LiveAnswerProjection::default();
+    projection.apply(
+        snapshot(STREAM_A, 1, "preview remains visible"),
+        expectation(false),
+    );
+    projection.apply(
+        event(
+            STREAM_A,
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: " through terminal".into(),
+            },
+        ),
+        expectation(false),
+    );
+
+    projection.await_durable_snapshot("session-a", "turn-a", Some("execution-a"));
+
+    let answer = projection
+        .current()
+        .expect("preview remains until H2 installs");
+    assert!(answer.ended && !answer.caret_visible());
+    assert_eq!(
+        answer.presented_text,
+        "preview remains visible through terminal"
+    );
+    let late = projection.apply(
+        event(
+            STREAM_A,
+            3,
+            LiveOutputEventKind::TextDelta {
+                text: " stale".into(),
+            },
+        ),
+        expectation(false),
+    );
+    assert!(!late.accepted);
+
+    projection.durable_takeover("session-a", "turn-a", Some("execution-a"));
+    assert!(projection.current().is_none());
+}
+
+#[test]
+fn presented_markdown_promotes_only_complete_blocks_into_stable_prefix() {
+    let mut projection = LiveAnswerProjection::default();
+    projection.apply(
+        snapshot(STREAM_A, 1, "First paragraph.\n\nSecond para"),
+        expectation(false),
+    );
+
+    let answer = projection.current().unwrap();
+    assert_eq!(answer.markdown.stable_prefix(), "First paragraph.\n\n");
+    assert_eq!(answer.markdown.mutable_tail(), "Second para");
+    assert_eq!(answer.markdown.as_text(), answer.presented_text);
+
+    projection.apply(
+        event(
+            STREAM_A,
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: "graph.\n\nThird".into(),
+            },
+        ),
+        expectation(false),
+    );
+    projection.advance_frame(false);
+    let answer = projection.current().unwrap();
+    assert_eq!(
+        answer.markdown.stable_prefix(),
+        "First paragraph.\n\nSecond paragraph.\n\n"
+    );
+    assert_eq!(answer.markdown.mutable_tail(), "Third");
+    assert_eq!(answer.markdown.as_text(), answer.presented_text);
+}
+
+#[test]
+fn incomplete_fenced_code_never_enters_stable_markdown_prefix() {
+    let mut projection = LiveAnswerProjection::default();
+    projection.apply(
+        snapshot(STREAM_A, 1, "Intro.\n\n```rust\nfn main() {\n\n    work();"),
+        expectation(false),
+    );
+
+    let answer = projection.current().unwrap();
+    assert_eq!(answer.markdown.stable_prefix(), "Intro.\n\n");
+    assert_eq!(
+        answer.markdown.mutable_tail(),
+        "```rust\nfn main() {\n\n    work();"
+    );
+}
+
+#[test]
 fn new_generation_replaces_once_and_retired_stream_cannot_return() {
     let mut projection = LiveAnswerProjection::default();
     projection.apply(snapshot(STREAM_A, 8, "old"), expectation(false));
