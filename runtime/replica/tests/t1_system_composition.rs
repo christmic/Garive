@@ -111,6 +111,7 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
     )
     .unwrap();
     assert_eq!(host.process_lane_names().collect::<Vec<_>>(), ["rust"]);
+    assert_eq!(host.tool_capabilities().unwrap().definitions.len(), 5);
     assert_eq!(
         host.bind_workspace(&workspace)
             .unwrap()

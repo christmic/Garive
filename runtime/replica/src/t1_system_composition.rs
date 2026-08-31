@@ -102,6 +102,16 @@ impl T1HostSystemConfig {
     pub fn process_lane_names(&self) -> impl Iterator<Item = &str> {
         self.process_lanes.lane_names()
     }
+
+    /// Resolves the exact snapshot Tool definitions without binding a Workspace.
+    pub fn tool_capabilities(&self) -> Result<AgentToolCapabilities, String> {
+        let catalogue =
+            BuiltinT1Catalogue::new(&self.policy_revision, self.process_lanes.lane_names())
+                .map_err(|_| "invalid T1 catalogue")?;
+        Ok(AgentToolCapabilities {
+            definitions: catalogue.definitions().to_vec(),
+        })
+    }
 }
 
 /// Exact machine-level configuration for one built-in T1 executor set.
