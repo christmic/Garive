@@ -10,16 +10,16 @@ use std::{
 };
 
 use garive_core::{AgentEvent, AgentToolCapabilities, ClockPort, EventSink, PortFailure};
-use garive_core::{AgentOutcome, ToolPreparationPort};
+use garive_core::{AgentOutcome, AgentTurnRequest, ToolPreparationPort};
 use garive_llm::{ModelCancellation, ModelPort};
 
 use crate::{
-    execute_durable_agent_with_f0, execute_durable_model_only, reconstruct_local_start,
-    AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance, F0GovernanceContext,
-    F0RecoveryContentPort, LiveOutputEndReason, LiveOutputHub, LiveOutputSink,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError, SafetyPort,
-    SandboxAdmissionPort, SqliteLedger, TerminalPublicationError, TerminalPublisher,
-    TurnDispatchError, TurnDispatcher,
+    execute_durable_agent_with_capabilities, execute_durable_model_only_with_capabilities,
+    reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
+    F0GovernanceContext, F0RecoveryContentPort, LiveOutputEndReason, LiveOutputHub, LiveOutputSink,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
+    PreparedAgentCapabilities, SafetyPort, SandboxAdmissionPort, SqliteLedger,
+    TerminalPublicationError, TerminalPublisher, TurnDispatchError, TurnDispatcher,
 };
 
 /// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
@@ -122,7 +122,28 @@ pub struct LocalExecutionWorker {
     policy: LocalExecutionPolicy,
     model: Arc<dyn ModelPort>,
     governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
+    capability_preparation: Option<Arc<dyn LocalCapabilityPreparationFactory>>,
     live_output: Option<LiveOutputHub>,
+}
+
+/// Fixed durable input exposed to one Runtime capability-preparation factory.
+pub struct LocalCapabilityPreparationInput<'a> {
+    /// Exact committed dispatch coordinates.
+    pub committed: &'a CommittedTurn,
+    /// Reconstructed Core request containing the trusted current input.
+    pub request: &'a AgentTurnRequest,
+    /// Canonical Runtime observation time for capability facts.
+    pub recorded_at: &'a str,
+}
+
+/// Prepares snapshot-admitted capability inputs without committing facts.
+pub trait LocalCapabilityPreparationFactory: Send + Sync {
+    /// Resolves exact Runtime bindings against one read-only durable prefix.
+    fn prepare(
+        &self,
+        ledger: &SqliteLedger,
+        input: LocalCapabilityPreparationInput<'_>,
+    ) -> Result<PreparedAgentCapabilities, LocalWorkerError>;
 }
 
 /// Frozen capabilities and governed ports created for one local Execution.
@@ -173,6 +194,7 @@ impl LocalExecutionWorker {
             policy,
             model,
             governed: None,
+            capability_preparation: None,
             live_output: None,
         })
     }
@@ -180,6 +202,15 @@ impl LocalExecutionWorker {
     /// Installs the explicit lossy H4 publication boundary.
     pub fn with_live_output(mut self, live_output: LiveOutputHub) -> Self {
         self.live_output = Some(live_output);
+        self
+    }
+
+    /// Installs exact Runtime preparation for snapshot-admitted capabilities.
+    pub fn with_capability_preparation(
+        mut self,
+        factory: Arc<dyn LocalCapabilityPreparationFactory>,
+    ) -> Self {
+        self.capability_preparation = Some(factory);
         self
     }
 
@@ -218,16 +249,28 @@ impl LocalExecutionWorker {
             None => WorkerEvents::Discard(DiscardEvents),
         };
         let mut publisher = DurableOnlyPublisher;
+        let prepared_capabilities = match &self.capability_preparation {
+            Some(factory) => factory.prepare(
+                &ledger,
+                LocalCapabilityPreparationInput {
+                    committed,
+                    request: &reconstructed.request,
+                    recorded_at: &attempt.recorded_at,
+                },
+            )?,
+            None => PreparedAgentCapabilities::default(),
+        };
         let execution = if let Some(factory) = &self.governed {
             let mut governed = factory.create(committed)?;
             if governed.capabilities.definitions.is_empty() {
                 return Err(LocalWorkerError::InvalidComposition);
             }
             let mut f0 = governed.f0;
-            execute_durable_agent_with_f0(
+            execute_durable_agent_with_capabilities(
                 &mut ledger,
                 &reconstructed.durable,
                 &reconstructed.request,
+                prepared_capabilities,
                 &governed.capabilities,
                 &mut reconstructed.context,
                 self.model.as_ref(),
@@ -246,10 +289,11 @@ impl LocalExecutionWorker {
             )
             .await
         } else {
-            execute_durable_model_only(
+            execute_durable_model_only_with_capabilities(
                 &mut ledger,
                 &reconstructed.durable,
                 &reconstructed.request,
+                prepared_capabilities,
                 &mut reconstructed.context,
                 self.model.as_ref(),
                 &mut events,
