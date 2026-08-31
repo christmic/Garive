@@ -103,6 +103,16 @@ impl T1HostSystemConfig {
         self.process_lanes.lane_names()
     }
 
+    /// Returns the exact Safety and access policy revision frozen by this Host.
+    pub fn policy_revision(&self) -> &str {
+        &self.policy_revision
+    }
+
+    /// Returns the exact executor revision frozen by this Host.
+    pub fn executor_revision(&self) -> &str {
+        &self.executor_revision
+    }
+
     /// Resolves the exact snapshot Tool definitions without binding a Workspace.
     pub fn tool_capabilities(&self) -> Result<AgentToolCapabilities, String> {
         let catalogue =

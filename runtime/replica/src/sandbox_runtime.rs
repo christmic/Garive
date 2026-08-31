@@ -93,11 +93,13 @@ impl SafetyRequestV1 {
         &self.effective_policy_revision
     }
 
-    pub(crate) fn tool_name(&self) -> &str {
+    /// Returns the exact provider-neutral Tool identity under evaluation.
+    pub fn tool_name(&self) -> &str {
         &self.tool_name
     }
 
-    pub(crate) fn tool_revision(&self) -> &str {
+    /// Returns the exact immutable Tool revision under evaluation.
+    pub fn tool_revision(&self) -> &str {
         &self.tool_revision
     }
 
