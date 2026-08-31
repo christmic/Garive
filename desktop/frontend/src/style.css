@@ -661,7 +661,7 @@ kbd { font-size: var(--text-2xs); }
 
 .timeline { width: min(39rem, calc(100% - 48px)); padding: 40px 0 174px; }
 .message { margin-bottom: 30px; }
-.user-message > div { max-width: 82%; padding: 10px 14px; border: 0; border-radius: 18px 18px 5px 18px; background: var(--surface-subtle); font-size: var(--text-md); line-height: 1.55; }
+.user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round; background: var(--surface-subtle); font-size: var(--text-md); line-height: 1.55; }
 .assistant-message { display: block; }
 .result-markdown { font-size: var(--text-md); line-height: 1.72; }
 .result-markdown h1 { font-size: 24px; }
