@@ -65,6 +65,21 @@ impl CdpTransport {
         self.events.pop_front()
     }
 
+    /// Removes one oldest queued event for an exact method/session without waiting.
+    pub fn take_event(&mut self, method: &str, session_id: Option<&str>) -> Option<Value> {
+        let index = self.events.iter().position(|event| {
+            matches!(event, CdpIncoming::Event {
+                method: queued,
+                session_id: queued_session,
+                ..
+            } if queued == method && queued_session.as_deref() == session_id)
+        })?;
+        let CdpIncoming::Event { params, .. } = self.events.remove(index)? else {
+            return None;
+        };
+        Some(params)
+    }
+
     /// Discards queued events for one exact method/session before a new operation begins.
     pub fn discard_events(&mut self, method: &str, session_id: Option<&str>) {
         self.events.retain(|event| {

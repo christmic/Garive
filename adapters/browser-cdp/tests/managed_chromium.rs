@@ -71,6 +71,10 @@ impl LocalPageServer {
     fn final_url(&self) -> String {
         format!("http://{}/form", self.address)
     }
+
+    fn popup_url(&self) -> String {
+        format!("http://{}/popup", self.address)
+    }
 }
 
 impl Drop for LocalPageServer {
@@ -97,7 +101,12 @@ fn serve(stream: &mut TcpStream, address: SocketAddr) {
         "/form" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
-            r#"<!doctype html><title>Garive native fixture</title><main><label>Account <input aria-label="Account name"></label><button onclick="this.setAttribute('aria-label','Submitted')">Submit form</button><div id="shadow"></div></main><script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<button>Shadow action</button>';</script>"#,
+            r#"<!doctype html><title>Garive native fixture</title><main><label>Account <input aria-label="Account name"></label><button onclick="this.setAttribute('aria-label','Submitted')">Submit form</button><button aria-label="Open popup" onclick="window.open('/popup','garive-child')">Open popup</button><div id="shadow"></div></main><script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<button>Shadow action</button>';</script>"#,
+        ),
+        "/popup" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            "<!doctype html><title>Popup fixture</title><main aria-label=\"Popup ready\"></main>",
         ),
         _ => ("204 No Content", String::new(), ""),
     };
@@ -196,6 +205,12 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .find(|node| node.name.as_deref() == Some("Account name"))
         .and_then(|node| node.backend_dom_node_id)
         .expect("account backend node");
+    let popup_button = tree
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Open popup"))
+        .and_then(|node| node.backend_dom_node_id)
+        .expect("popup backend node");
     client
         .click_backend_node(&session, submit)
         .await
@@ -233,4 +248,38 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Account name") && node.value_summary.is_none()));
+    client
+        .enable_managed_popup_tracking(&session)
+        .await
+        .expect("popup tracking");
+    client.begin_popup_action(&session).expect("popup action");
+    client
+        .click_backend_node(&session, popup_button)
+        .await
+        .expect("popup click");
+    client.frame_tree(&session).await.expect("popup event pump");
+    let popup = client
+        .take_popup(&session, &target)
+        .await
+        .expect("popup collection")
+        .expect("popup target");
+    assert_eq!(popup.opener_id, target);
+    assert_eq!(popup.requested_url, page_server.popup_url());
+    assert!(popup.user_gesture);
+    let popup_session = client
+        .attach_target(&popup.target_id)
+        .await
+        .expect("explicit popup admission");
+    client
+        .enable_accessibility(&popup_session)
+        .await
+        .expect("popup accessibility");
+    let popup_tree = client
+        .full_ax_tree(&popup_session, None, 64, 10_000, 1_048_576)
+        .await
+        .expect("popup AX tree");
+    assert!(popup_tree
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Popup ready")));
 }

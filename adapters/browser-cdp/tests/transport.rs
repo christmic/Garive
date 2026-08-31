@@ -65,10 +65,8 @@ async fn call_correlates_session_and_queues_bounded_events() {
         Ok(json!({"nodes":[]}))
     );
     assert_eq!(
-        transport
-            .wait_for_event("Page.loadEventFired", Some("target-1"))
-            .await,
-        Ok(json!({"timestamp":1}))
+        transport.take_event("Page.loadEventFired", Some("target-1")),
+        Some(json!({"timestamp":1}))
     );
     assert!(
         matches!(transport.pop_event(), Some(CdpIncoming::Event { method, .. }) if method == "Network.requestWillBeSent")

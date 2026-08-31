@@ -227,3 +227,96 @@ async fn history_move_and_reload_prove_the_exact_current_entry() {
     assert_eq!(reloaded.id, 1);
     server.await.expect("server");
 }
+
+#[tokio::test]
+async fn popup_tracking_uses_only_the_parent_session_and_exact_opener() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        let page = reply(&mut socket, json!({})).await;
+        assert_eq!(page["method"], "Page.enable");
+        assert_eq!(page["sessionId"], "parent-session");
+        let discover = reply(&mut socket, json!({})).await;
+        assert_eq!(discover["method"], "Target.setDiscoverTargets");
+        assert!(discover.get("sessionId").is_none());
+        assert_eq!(discover["params"]["discover"], true);
+        assert_eq!(
+            discover["params"]["filter"],
+            json!([
+                {"type":"page","exclude":false},
+                {"exclude":true}
+            ])
+        );
+        let Message::Text(command) = socket.next().await.expect("frame tree").expect("frame")
+        else {
+            panic!("text command required")
+        };
+        let command: Value = serde_json::from_slice(command.as_bytes()).expect("command json");
+        socket
+            .send(Message::Text(
+                json!({
+                    "method":"Page.windowOpen",
+                    "params":{"url":"https://popup.test:443/start","windowName":"child","windowFeatures":[],"userGesture":true},
+                    "sessionId":"parent-session"
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("window open");
+        socket
+            .send(Message::Text(
+                json!({
+                    "method":"Target.targetCreated",
+                    "params":{
+                        "targetInfo":{"targetId":"popup-target","type":"page","title":"","url":"","attached":false,"openerId":"parent-target"}
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("attached target");
+        socket
+            .send(Message::Text(
+                json!({
+                    "id":command["id"],
+                    "result":{"frameTree":{"frame":{"id":"frame-main","loaderId":"loader-main","url":"https://parent.test:443/page","securityOrigin":"https://parent.test:443","mimeType":"text/html"}}},
+                    "sessionId":"parent-session"
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("frame result");
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let mut client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    client
+        .enable_managed_popup_tracking("parent-session")
+        .await
+        .expect("popup tracking");
+    client
+        .begin_popup_action("parent-session")
+        .expect("popup action");
+    client
+        .frame_tree("parent-session")
+        .await
+        .expect("event pump");
+    let popup = client
+        .take_popup("parent-session", "parent-target")
+        .await
+        .expect("popup")
+        .expect("popup event");
+    assert_eq!(popup.target_id, "popup-target");
+    assert_eq!(popup.requested_url, "https://popup.test:443/start");
+    assert_eq!(popup.target_url, "");
+    assert!(popup.user_gesture);
+    server.await.expect("server");
+}

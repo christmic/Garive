@@ -229,6 +229,21 @@ pub struct CdpFrameTree {
     pub frames: Vec<CdpFrame>,
 }
 
+/// One bounded popup target proven to originate from the attached page.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CdpPopup {
+    /// New browser target identity.
+    pub target_id: String,
+    /// Exact opener page target identity.
+    pub opener_id: String,
+    /// URL declared by the originating `Page.windowOpen` event.
+    pub requested_url: String,
+    /// Initial URL reported by the new target.
+    pub target_url: String,
+    /// Whether Chromium attributed the open to a user gesture.
+    pub user_gesture: bool,
+}
+
 /// Sequential typed client over one exact managed-browser transport.
 pub struct CdpClient {
     transport: CdpTransport,
@@ -286,6 +301,120 @@ impl CdpClient {
         self.transport
             .call("Accessibility.enable", json!({}), Some(session_id.into()))
             .await?;
+        Ok(())
+    }
+
+    /// Arms popup discovery inside one dedicated managed-browser profile.
+    pub async fn enable_managed_popup_tracking(
+        &mut self,
+        session_id: &str,
+    ) -> Result<(), CdpTransportError> {
+        validate_id(session_id)?;
+        self.transport
+            .call("Page.enable", json!({}), Some(session_id.into()))
+            .await?;
+        self.transport
+            .call(
+                "Target.setDiscoverTargets",
+                json!({
+                    "discover":true,
+                    "filter":[
+                        {"type":"page","exclude":false},
+                        {"exclude":true}
+                    ]
+                }),
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Clears stale popup events immediately before one exact native action.
+    pub fn begin_popup_action(&mut self, session_id: &str) -> Result<(), CdpTransportError> {
+        validate_id(session_id)?;
+        self.transport
+            .discard_events("Page.windowOpen", Some(session_id));
+        self.transport.discard_events("Target.targetCreated", None);
+        Ok(())
+    }
+
+    /// Takes one page-scoped popup emitted during the preceding action, if present.
+    pub async fn take_popup(
+        &mut self,
+        session_id: &str,
+        opener_target_id: &str,
+    ) -> Result<Option<CdpPopup>, CdpTransportError> {
+        validate_id(session_id)?;
+        validate_id(opener_target_id)?;
+        let Some(intent) = self
+            .transport
+            .take_event("Page.windowOpen", Some(session_id))
+        else {
+            return Ok(None);
+        };
+        let requested_url = bounded_optional_event_text(&intent, "url", 16_384)?;
+        bounded_optional_event_text(&intent, "windowName", 4_096)?;
+        let features = intent
+            .get("windowFeatures")
+            .and_then(Value::as_array)
+            .ok_or_else(protocol)?;
+        if features.len() > 64
+            || features.iter().any(|feature| {
+                feature
+                    .as_str()
+                    .is_none_or(|value| value.is_empty() || value.len() > 512)
+            })
+        {
+            return Err(protocol());
+        }
+        let user_gesture = intent
+            .get("userGesture")
+            .and_then(Value::as_bool)
+            .ok_or_else(protocol)?;
+        let created = self
+            .transport
+            .wait_for_event_matching("Target.targetCreated", None, |params| {
+                params
+                    .pointer("/targetInfo/openerId")
+                    .and_then(Value::as_str)
+                    == Some(opener_target_id)
+            })
+            .await?;
+        let target = created
+            .get("targetInfo")
+            .and_then(Value::as_object)
+            .ok_or_else(protocol)?;
+        if target.get("type").and_then(Value::as_str) != Some("page") {
+            return Err(protocol());
+        }
+        let target_id = bounded_object_text(target, "targetId", 4_096)?;
+        let opener_id = bounded_object_text(target, "openerId", 4_096)?;
+        if opener_id != opener_target_id {
+            return Err(protocol());
+        }
+        Ok(Some(CdpPopup {
+            target_id,
+            opener_id,
+            requested_url,
+            target_url: bounded_optional_object_text(target, "url", 16_384)?,
+            user_gesture,
+        }))
+    }
+
+    /// Closes one unadmitted popup while its new target is still paused.
+    pub async fn close_popup(&mut self, popup: &CdpPopup) -> Result<(), CdpTransportError> {
+        validate_id(&popup.target_id)?;
+        let result = self
+            .transport
+            .call(
+                "Target.closeTarget",
+                json!({"targetId":popup.target_id}),
+                None,
+            )
+            .await?;
+        if result.get("success").and_then(Value::as_bool) != Some(true) {
+            return Err(protocol());
+        }
         Ok(())
     }
 
@@ -1095,6 +1224,38 @@ fn bounded_text(value: &Value, field: &str, max: usize) -> Result<String, CdpTra
         .as_object()
         .ok_or_else(protocol)
         .and_then(|object| object_text(object, field, max))
+}
+
+fn bounded_optional_event_text(
+    value: &Value,
+    field: &str,
+    max: usize,
+) -> Result<String, CdpTransportError> {
+    value
+        .as_object()
+        .ok_or_else(protocol)
+        .and_then(|object| bounded_optional_object_text(object, field, max))
+}
+
+fn bounded_object_text(
+    object: &Map<String, Value>,
+    field: &str,
+    max: usize,
+) -> Result<String, CdpTransportError> {
+    object_text(object, field, max)
+}
+
+fn bounded_optional_object_text(
+    object: &Map<String, Value>,
+    field: &str,
+    max: usize,
+) -> Result<String, CdpTransportError> {
+    object
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| value.len() <= max)
+        .map(str::to_owned)
+        .ok_or_else(protocol)
 }
 
 fn object_text(
