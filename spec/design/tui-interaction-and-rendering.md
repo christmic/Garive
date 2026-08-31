@@ -24,7 +24,7 @@ The TUI ships these first-class workflows:
 2. list, filter, create, select, and reopen durable Sessions;
 3. load older conversation timeline pages;
 4. compose and submit multiple Turns in one Session;
-5. observe running and typed activity state;
+5. observe real progressive Agent output and typed activity state;
 6. request cancellation and wait for durable truth;
 7. answer an admitted suspension using its public schema;
 8. recover from disconnect and exactly retry an unknown mutation;
@@ -39,46 +39,51 @@ remote authentication remain unavailable until their owning slices exist.
 ## Information architecture
 
 ```text
-+--------------------------------------------------------------------------+
-| Garive  <Agent>  <Session title/fallback>       online | running | 12:34 |
-+----------------------+---------------------------------------------------+
-| Sessions             | Conversation                                      |
-| > current            | User                                               |
-|   recent             |   Explain the recovery path.                      |
-|   older              |                                                   |
-|                      | Agent                                              |
-| [n] New  [/] Filter  |   The Runtime commits ...                         |
-|                      |                                                   |
-|                      | Activity: model request completed                  |
-+----------------------+---------------------------------------------------+
-| > multiline composer                                                     |
-|   draft text                                                              |
-+--------------------------------------------------------------------------+
-| Enter send  Ctrl+J newline  Esc cancel  Ctrl+P commands  ? help   42/4096 |
-+--------------------------------------------------------------------------+
+Session title · Agent                                            running
+
+You
+  Explain the recovery path.
+
+  3 actions · 8s
+  ◆ Garive
+    The Runtime commits ...▍
+
+┌ composer -----------------------------------------------------------┐
+│ > Ask a follow-up                                                    │
+└---------------------------------------------------------------------┘
+  Esc cancel
 ```
 
-The frame has five semantic regions: header, navigation, conversation,
-composer, and footer. At standard and wide widths the Session rail spans the
-full workspace height while conversation, composer, and footer share one main
-column. The main column is capped at 114 cells and centered inside excess wide
-space, so prose and the composer keep the same readable measure. Overlays are
-centered or full-frame views above those regions; they never replace
-application state.
+The frame has four semantic regions: a one-row `ContextLine`, the conversation
+transcript, the persistent `Composer`, and an optional one-row `HintLine`.
+The transcript is the primary plane. A permanent navigation rail, bordered
+toolbar, conversation frame, and second status bar are prohibited. Session
+navigation, commands, recovery, and decisions use bounded overlays. At wide
+sizes an explicitly opened `Inspector` may share the work surface without
+changing transcript truth or reading measure.
+
+The transcript composes `TurnBlock` values. A Turn owns one restrained User
+request, its `ActivityStack`, one `LiveAnswer` or committed `MarkdownAnswer`,
+and its terminal outcome. Durable, ephemeral, and local values remain separate
+presentation types; a renderer never infers one from another. User content has
+a role marker but no full-width card. Agent prose uses the terminal background.
+Only the Composer, modal boundaries, and an explicitly opened Inspector keep
+frames.
 
 ### Responsive modes
 
 | Width | Mode | Regions |
 |---|---|---|
-| `<20` | unsupported | safe message naming minimum `20x8`; no raw IDs or content echo |
-| `20..=59` | tiny | conversation, one-line header, composer, compact footer; navigation is an overlay |
-| `60..=99` | compact | conversation plus composer; header/status expanded; navigation overlay |
-| `100..=159` | standard | `24..32` column Session rail plus conversation |
-| `>=160` | wide | `28..36` column rail, readable conversation max width `110`, optional activity inspector |
+| `<40` | minimum | safe minimum-size view; no raw IDs or content echo; the draft remains in memory |
+| `40..=51` | linear | full-width transcript, collapsed activity summary, and at most one hint |
+| `52..=79` | compact | full-width transcript with compact metadata; all secondary surfaces are overlays |
+| `80..=119` | standard | centered bounded transcript; Session and Inspector surfaces are overlays |
+| `>=120` | wide | centered bounded transcript plus an optional explicit 32-column Inspector |
 
-Height below eight rows shows a safe minimum-size view. Height `8..=15` hides
-nonessential help/status rows before reducing composer or active prompt space.
-No layout calculation may underflow or panic for any `u16` terminal size.
+Height below eight rows shows a safe minimum-size view. Height pressure removes
+ambient context, secondary hints, and collapsed history before reducing the
+Composer below two content rows or hiding an active decision. No layout
+calculation may underflow or panic for any `u16` terminal size.
 
 The conversation text column has a maximum width. Extra wide space belongs to
 margins or the activity inspector, not longer prose lines.
@@ -86,12 +91,12 @@ margins or the activity inspector, not longer prose lines.
 ## Focus and overlay model
 
 ```text
-FocusTarget = Navigation | Conversation | Composer | Overlay
+FocusTarget = Conversation | Composer | Inspector | Overlay
 
 Overlay =
   CommandPalette
   | Help
-  | SessionPicker
+  | SessionSwitcher
   | PromptHistory
   | Suspension
   | UnknownCommand
@@ -112,15 +117,18 @@ real layout rows, and popup geometry reserves the wrapped body plus every
 action row.
 Mouse events obey the same ownership. Wheel and click events inside a
 selectable overlay move or activate only its rendered rows; events outside the
-popup are consumed without scrolling the conversation or activating the rail.
+popup are consumed without scrolling the conversation or activating content
+behind it.
 
-Focus is visible without relying on color. The focused composer uses a double
-border; navigation and conversation use an accent border plus a textual
-selection marker. A modal dims the workspace, preserves it as visible context,
-and gives its active row a background or terminal-native reverse style.
+Focus is visible without relying on color. The Composer retains one stable
+frame and uses its caret, border token, and text marker to expose focus without
+changing geometry. Inspector and overlay selections use a textual marker plus
+terminal-native reverse style in monochrome. A modal dims the workspace,
+preserves it as visible context, and gives its active row a background or
+terminal-native reverse style.
 Background Host events never steal focus. A newly committed suspension
-opens its prompt only when its Session is selected; otherwise the Session row
-shows an action-required badge and the terminal bell follows preference.
+opens its prompt only when its Session is selected; otherwise SessionSwitcher
+marks the Session as action-required and the terminal bell follows preference.
 
 ## Input normalization
 
@@ -141,8 +149,8 @@ returns normalize to line feeds. Invalid UTF-8 is rejected before it enters the
 model.
 
 If a terminal cannot distinguish `Shift+Enter`, `Ctrl+J` remains the portable
-newline binding. The help/footer show only bindings supported by the detected
-terminal capability set.
+newline binding. Help and `HintLine` show only bindings supported by the
+detected terminal capability set.
 
 ## Composer editor
 
@@ -183,7 +191,7 @@ The composer requests frame height from that visual result: content plus two
 border rows, clamped to `3..=7`. Terminals whose content area is below 12 rows
 hold the composer at three rows and scroll internally. Thus a long single-line
 draft expands like an explicit multiline draft when space exists, without
-stealing the compact footer or minimum conversation surface.
+stealing the highest-priority hint or minimum conversation surface.
 
 Up and Down consume those same visual rows, not logical newline ranges. The
 first vertical move records the cursor's terminal-cell column; subsequent
@@ -258,9 +266,11 @@ characters other than newline/tab are rejected. Bidi isolate characters may be
 retained in the request but render with a visible safety marker; bidi override
 characters are rejected because visual order could conceal command content.
 
-Empty or whitespace-only input cannot submit. The footer shows UTF-8 bytes
-used and the Host command-byte maximum. Crossing the bound leaves the draft
-editable, disables send, and names the excess byte count without truncating.
+Empty or whitespace-only input cannot submit. `HintLine` remains absent for an
+ordinary valid draft. Approaching the Host command-byte maximum adds one
+bounded warning; crossing it leaves the draft editable, disables send, and
+names the excess byte count without truncating. A permanent byte counter is
+not part of the default surface.
 
 Drafts are per Session. Switching Sessions swaps editor state without losing
 the bounded draft. On committed start, that Session's editor clears and its
@@ -287,15 +297,15 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Ctrl+H` / `Ctrl+D` | composer | delete one grapheme backward/forward |
 | `Ctrl+W` / `Alt+D` | composer | delete one Unicode word backward/forward |
 | `Tab` / `Shift+Tab` | no suggestion or blocking overlay | move focus forward/backward |
-| `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
+| `Up` / `Down`, `Home` / `End`, `Enter` | SessionSwitcher or Inspector | move the stable selection, jump to an edge, or activate the visible item |
 | `Up` / `Down`, `PageUp` / `PageDown`, `Home` / `End` | focused conversation | scroll one cell, scroll one viewport, jump oldest, or follow latest |
 | `Ctrl+P` | any ready view | open command palette |
 | `Ctrl+R` | composer | open prompt-history search |
 | `Ctrl+N` | ready | create Session using selected/default definition |
-| `Ctrl+S` | ready | open Session picker |
+| `Ctrl+S` | ready | open SessionSwitcher |
 | `Ctrl+L` | conversation | redraw current frame; does not erase durable history |
 | `Esc` | overlay | close/defer when allowed |
-| `Esc` | running selected Turn | request cancel after footer hint; no terminal claim |
+| `Esc` | running selected Turn | request cancel after `HintLine` cue; no terminal claim |
 | `Ctrl+C` | running selected Turn | request cancel |
 | `Ctrl+C` | idle with draft/selection | clear selection, then draft on next press |
 | `Ctrl+C` twice within 1500 ms | idle empty composer | open quit confirmation |
@@ -305,8 +315,9 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `?` | empty composer | open help |
 
 The key router resolves overlay, editor, focused region, then global bindings
-in that order. A key is consumed by at most one owner. Footer hints reflect the
-current resolved bindings rather than a static list.
+in that order. A key is consumed by at most one owner. `HintLine` exposes only
+the highest-priority currently resolved binding or recovery action and may be
+absent; it is never a permanent shortcut legend.
 Kill ranges deliberately use newline-delimited logical lines, independent of
 the composer's visual Home/End contract. At a logical line boundary, `Ctrl+K`
 may consume the following newline and `Ctrl+U` the preceding newline so lines
@@ -323,8 +334,8 @@ source for controller resolution plus visual and spoken Help; a chord present
 in only one of those surfaces fails its catalog test.
 Typing a printable character outside an overlay explicitly transfers focus to
 the composer before inserting it. Editing and deletion keys never mutate a
-draft while the Session rail or conversation owns focus.
-The Session rail derives painting, keyboard visibility, and mouse hit-testing
+draft while the conversation, Inspector, or overlay owns focus.
+SessionSwitcher derives painting, keyboard visibility, and mouse hit-testing
 from one visible-window calculation. A pointer event outside an actually
 rendered Session row cannot activate a hidden Session.
 Every selectable overlay derives rendering, highlight position, and activation
@@ -348,7 +359,7 @@ sending the text to Host.
 | Command | Arguments | Behavior |
 |---|---|---|
 | `/new` | optional definition ID from installed list | create and select a Session |
-| `/sessions` | optional filter text | open Session picker |
+| `/sessions` | optional filter text | open SessionSwitcher |
 | `/jump` | optional filter text | search loaded Turns and jump to a public start position |
 | `/help` | none | open contextual help |
 | `/status` | none | open safe connection/Session details |
@@ -413,12 +424,13 @@ resets history browsing, recomputes suggestions, and redraws without submitting.
 
 Session rows show a bounded display label derived from committed public text,
 latest Turn state, last activity time, and action-required marker. Until a
-public title contract exists, the rail uses the public Agent definition label
-plus a short opaque Session suffix; it does not fabricate a repeated title or
-expose prompt text. State always has a non-color glyph (`✓`, `●`, `!`, `×`,
-`■`, or `○`) and text. Full opaque IDs remain hidden until the details action.
+public title contract exists, SessionSwitcher uses the public Agent definition
+label and a neutral ordinal; it does not fabricate a repeated title, expose
+prompt text, or put an opaque Session suffix on the default surface. State
+always has a non-color glyph (`✓`, `●`, `!`, `×`, `■`, or `○`) and text.
+Full opaque IDs remain hidden until an explicit details or copy action.
 
-The picker supports case-folded substring filtering over public label and
+SessionSwitcher supports case-folded substring filtering over public label and
 opaque ID, keyboard/mouse selection, and incremental H2 page loading. Results
 remain in Host order. Filtering never changes durable order or execution
 priority. Rendering, selection movement, and `Enter` activation consume the
@@ -435,13 +447,21 @@ Sessions reconnect when selected.
 ## Conversation rendering
 
 ```text
-TimelineCell = User | Agent | Activity | Suspension | Terminal | Notice
+TurnBlock {
+  user,
+  activity_stack,
+  answer: LiveAnswer | MarkdownAnswer?,
+  terminal_outcome?
+}
 ```
 
-Each cell has a stable key `(session_id, turn_id?, durable_position?, kind)` so
-updates replace the intended cell without rebuilding unrelated history.
-Rendered cells are cached by key, width, theme, and content digest. The model
-retains bounded public values, never terminal escape bytes.
+Each Turn has a stable internal key `(session_id, turn_id)`. Its durable child
+values retain their public positions for ordering and replay but the ordinary
+transcript does not display positions or opaque IDs. Updates replace the
+intended Turn child without rebuilding unrelated history. Committed answers
+are cached by key, width, theme, and content digest. Ephemeral live answers use
+a separate bounded cache described below. The model retains bounded public
+values, never terminal escape bytes.
 
 ### Text and Markdown
 
@@ -482,29 +502,45 @@ Long unbroken graphemes clip safely. Wide and combining characters use the
 same display-width implementation as editor cursor placement. Tabs expand to
 four columns for display without changing copied text.
 
+### Progressive output
+
+`LiveAnswer` renders only H4 values admitted by
+[`host-live-output-v1.md`](host-live-output-v1.md). It is keyed by exact
+Session, Turn, Execution, generation, stream, and sequence identity and never
+enters the durable timeline or local persistence. It maintains received text,
+presented text, a monotonic stable Markdown block prefix, a mutable final
+block, safe phase, and preview availability.
+
+A snapshot atomically replaces the complete ephemeral projection. A contiguous
+text delta appends exactly once. Phase changes affect only safe status copy.
+Gap, overflow, malformed input, or disconnect clears any untrusted suffix and
+shows one quiet preview-unavailable state while durable execution continues.
+An H1 terminal event or terminal H2 snapshot atomically removes matching live
+state and installs the committed answer. Late or older-Execution live values
+are ignored and never move the durable cursor.
+
+The event loop requests a draw when received text advances and coalesces values
+that arrive before the next terminal frame. Presented text reaches received
+text within two available render frames; a burst catches up in one frame
+instead of preserving cosmetic per-character delay. The renderer does not
+invent characters or replay a completed answer. A subtle live caret is visible
+only for an active, available preview and is absent under reduced motion. The
+stable Markdown prefix is not reparsed for each delta; only the mutable final
+block may reflow until it becomes stable. Resize may reflow the entire preview.
+
 ### Scrolling
 
 The viewport anchors to the newest content while `follow_latest` is true.
 Manual upward scroll disables follow and shows `N newer updates`; new events do
 not jump the viewport. `End` or activating that badge returns to latest.
 
-When loaded timeline cells overflow the visible conversation, a componentized
-one-cell position rail uses stable cell indices to expose the current loaded
-range without laying out hidden Markdown. Its thumb and pointer mapping share
-one metric. A press or left-button drag on the first/last row jumps oldest or
-resumes latest-follow; an intermediate row anchors the nearest loaded stable
-cell. The rail uses existing right padding and therefore cannot change content
-wrapping. It is absent in tiny, non-overflow, modal-covered, and linear
-screen-reader presentation.
-
-`MouseEventKind::Moved` on the rail resolves through the same stable-cell
-mapping used by press and drag. It records only a transient cell index and
-renders a bounded public preview; it does not move the viewport. Movement off
-the track clears the preview, including movement into Composer, Session rail,
-or overlay padding. A left press on the preview is inert because the card is
-presentation, not a second target; press/drag remains owned only by the exact
-one-cell rail. Modal ownership, focus loss, resize, and terminal restore clear
-or suppress hover state before any background route can observe it.
+While detached, both durable events and visible live-frame advances increment
+the unseen update count without forcing follow mode. The current live answer
+may remain below the visible window; the application never scrolls to it until
+the user explicitly resumes latest-follow. Conversation navigation remains
+available through keyboard scrolling, TurnNavigator, and the optional
+Inspector. The default transcript has no permanent position rail or hover
+preview competing with prose.
 
 Reflow on resize preserves the top visible stable cell and its source-line
 offset where possible. Loading older pages preserves the current visible
@@ -542,19 +578,22 @@ the final Turn, and closes. `Escape` closes without changing the viewport.
 
 The overlay owns all keys while open. Mouse wheel changes selection and a left
 click activates only a row returned by the same rendered-window geometry;
-background conversation and rail routes cannot observe those events. Session
-selection, timeline replacement, terminal focus loss, and quit clear the
-overlay/filter/selection. Resize recomputes only the visible window and keeps
+background conversation and Inspector routes cannot observe those events.
+Session selection, timeline replacement, terminal focus loss, and quit clear
+the overlay/filter/selection. Resize recomputes only the visible window and keeps
 the same public position selected when it still matches. Linear screen-reader
 mode exposes the same filtered ordinal/preview rows and exact activation, with
 no cursor-addressed popup.
 
 ### Activity and suspension
 
-H3 public activities render semantic icon/text, status, Turn, and durable
-position. Unknown activity kinds use `Activity updated` and cannot mutate Turn
-state. Tool arguments, raw paths, hidden reasoning, provider values, and
-internal facts are absent.
+H3 public activities project into the owning Turn's `ActivityStack`. The active
+safe activity occupies one row. Completed siblings collapse into one summary
+such as `3 actions · 8s` and expand only through an explicit Inspector or
+transcript action. Unknown activity kinds use `Activity updated` and cannot
+mutate Turn state. Default activity copy omits durable positions. Tool
+arguments, raw paths, hidden reasoning, provider values, and internal facts are
+absent.
 
 An admitted H2 suspension overlay renders only the public title/message and
 response schema. String, boolean, enum, bounded number, and bounded object
@@ -568,6 +607,7 @@ JSON continuation variant and binds the displayed schema digest.
 |---|---|
 | submitting | `Committing turn…` |
 | following | `Agent running` |
+| live preview unavailable | `Live feedback unavailable` |
 | cancelling | `Cancellation requested…` |
 | disconnected | `Disconnected; Turn state unknown` |
 | reconnecting | `Reconnecting (2/5)…` |
@@ -599,18 +639,21 @@ theme overrides it.
 - Every status has icon/text in addition to color.
 - Focus and selection remain visible in monochrome; keycaps and selected rows
   use terminal-native reverse video rather than assuming a dark background.
-- Header connection and execution chips are separate semantic spans, not one
-  color-coded status sentence.
-- The footer is contextual: notices and cancellation outrank editing hints;
-  hints collapse by width and render keys separately from their descriptions.
-- Reduced motion disables spinners and transition frames. Active
-  connection/execution pulses are composed by the shared motion component;
-  `--reduced-motion` replaces them with stable semantic glyph/text, and idle or
-  linear screen-reader presentation schedules no motion ticks.
+- `ContextLine` leads with public Session identity and Agent label. Healthy
+  connection is omitted; exceptional connection and active execution use
+  separate semantic spans rather than one color-coded sentence.
+- `HintLine` is contextual: recovery and cancellation outrank editing hints;
+  it shows at most one action and renders its key separately from its verb.
+- Reduced motion disables the live caret, spinners, and transition frames but
+  never disables progressive received content. Active connection/execution
+  pulses are composed by the shared motion component; `--reduced-motion`
+  replaces them with stable semantic glyph/text, and idle or linear
+  screen-reader presentation schedules no decorative motion ticks.
 - Screen-reader mode prints semantic blocks once and converts overlays to
   numbered prompts. Those prompts use the same filtered result ordering,
   bounded selection-following window, and activation index as the visual
-  overlay.
+  overlay. It may announce one live phase change, but never announces each H4
+  text delta. The durable committed answer is emitted once after convergence.
 - Help describes alternatives when function keys, Shift+Enter, mouse, OSC 8,
   or color are unavailable.
 - Bidi controls, zero-width content, and terminal escapes cannot conceal
@@ -618,14 +661,15 @@ theme overrides it.
 
 ## Competitive quality gate
 
-Comparable quality means the supported Garive workflows meet these observable
-properties also present in the audited Codex/Grok Build implementations:
+Comparable quality means the supported Garive workflows meet the observable
+properties selected from the audited Codex, Claude Code, and Qoder CLI
+evidence while preserving Garive's Host truth model:
 
 | Dimension | Garive gate |
 |---|---|
 | Responsiveness | input and cancel remain serviceable during Host traffic; no network/file work in render |
 | Editing | multiline Unicode, paste, selection, undo/redo, prompt history, byte limit |
-| Navigation | durable Session picker, reopen, pagination, stable scroll/reflow, searchable public Turn jump |
+| Navigation | durable SessionSwitcher, reopen, pagination, stable scroll/reflow, searchable public Turn jump |
 | Recovery | reconnect, snapshot+follow, exact unknown-command retry, terminal restore |
 | Presentation | responsive layout, Markdown/code, overlays, themes, semantic status |
 | Accessibility | keyboard-only, monochrome, reduced motion, screen-reader linear mode |
@@ -646,13 +690,18 @@ client-side imitation.
   capability sets, lifecycle states, overlays, Markdown blocks, and hostile
   control strings;
 - scroll/reflow properties preserve stable anchors and bounded visible work;
+- live-output reducer tests cover snapshot replacement, exact delta append,
+  unavailable clearing, late-event rejection, H1/H2 terminal replacement,
+  reduced motion, and Unicode Markdown boundaries;
 - Turn-navigator tests cover seeded filtering, no match, exact public-position
   activation, Escape immutability, reload teardown, hostile text, and shared
   keyboard/mouse/linear result ordering;
-- screen-reader tests assert semantic line order and absence of animation,
-  cursor addressing, mouse, and alternate-screen control;
+- screen-reader tests assert semantic line order, no per-delta speech, one
+  durable final answer, and absence of animation, cursor addressing, mouse,
+  and alternate-screen control;
 - PTY tests cover typing, inline slash discovery/completion, paste, resize,
-  Session picker, help, cancellation, reconnect notice, and clean exit.
+  SessionSwitcher, help, cancellation, reconnect notice, detached scrolling,
+  at least two real H4 frames before durable replacement, and clean exit;
 - syntax presentation stress-renders 64 labeled blocks / 384 code lines at
   100 cells with debug p95 below 150 ms; the parser bundle remains lazy until a
   recognized labeled fence is rendered.
@@ -663,6 +712,7 @@ client-side imitation.
 - [`tui-application-architecture.md`](tui-application-architecture.md) — state/effect and terminal ownership.
 - [`host-read-model-v1.md`](host-read-model-v1.md) — Session/timeline/suspension public values.
 - [`host-agent-activity-v1.md`](host-agent-activity-v1.md) — redacted activity semantics.
+- [`host-live-output-v1.md`](host-live-output-v1.md) — ephemeral H4 identity, ordering, failure, and convergence.
 - [`../../docs/tui-source-audit.md`](../../docs/tui-source-audit.md) — audited source evidence.
 
 ## Meta
