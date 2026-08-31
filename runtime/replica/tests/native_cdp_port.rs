@@ -1,8 +1,9 @@
 use futures::{SinkExt, StreamExt};
 use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport};
 use garive_runtime::{
-    BrowserPageId, BrowserSessionId, CdpNativeAdapterPort, NativeActionCommandV1, NativeActionId,
-    NativeAdapterPort, NativeObservationBounds, NativeSnapshotId, NativeTarget,
+    BrowserPageId, BrowserSessionId, CdpBrowserSessionMode, CdpNativeAdapterPort,
+    NativeActionCommandV1, NativeActionId, NativeAdapterPort, NativeObservationBounds,
+    NativeSnapshotId, NativeTarget,
 };
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -16,12 +17,12 @@ async fn reply(
         panic!("text command required")
     };
     let command: Value = serde_json::from_slice(message.as_bytes()).expect("command json");
+    let mut response = json!({"id":command["id"],"result":result});
+    if let Some(session_id) = command.get("sessionId") {
+        response["sessionId"] = session_id.clone();
+    }
     socket
-        .send(Message::Text(
-            json!({"id":command["id"],"result":result,"sessionId":"cdp-session"})
-                .to_string()
-                .into(),
-        ))
+        .send(Message::Text(response.to_string().into()))
         .await
         .expect("response");
     command
@@ -90,6 +91,191 @@ async fn classify_password_input(
     .await;
     assert_eq!(command["method"], "DOM.describeNode");
     assert_eq!(command["params"]["backendNodeId"], backend_node_id);
+}
+
+async fn enable_managed_popups(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+) {
+    let page = reply(socket, json!({})).await;
+    assert_eq!(page["method"], "Page.enable");
+    assert_eq!(page["sessionId"], "cdp-session");
+    let discovery = reply(socket, json!({})).await;
+    assert_eq!(discovery["method"], "Target.setDiscoverTargets");
+    assert!(discovery.get("sessionId").is_none());
+}
+
+async fn resulting_frames_with_popup(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+) {
+    let Message::Text(command) = socket.next().await.expect("frame tree").expect("frame") else {
+        panic!("text command required")
+    };
+    let command: Value = serde_json::from_slice(command.as_bytes()).expect("command json");
+    assert_eq!(command["method"], "Page.getFrameTree");
+    socket
+        .send(Message::Text(
+            json!({
+                "method":"Page.windowOpen",
+                "params":{"url":"https://popup.test:443/start","windowName":"child","windowFeatures":[],"userGesture":true},
+                "sessionId":"cdp-session"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("window open");
+    socket
+        .send(Message::Text(
+            json!({
+                "method":"Target.targetCreated",
+                "params":{"targetInfo":{"targetId":"popup-page","type":"page","title":"","url":"","attached":false,"openerId":"page-1"}}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("target created");
+    socket
+        .send(Message::Text(
+            json!({
+                "id":command["id"],
+                "result":frame_tree("https://fixture.test:443", "loader-main"),
+                "sessionId":"cdp-session"
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("frame result");
+}
+
+async fn run_managed_popup_case(allow_popup: bool) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        enable_managed_popups(&mut socket).await;
+        assert_eq!(
+            reply(&mut socket, json!({})).await["method"],
+            "Accessibility.enable"
+        );
+        frames(&mut socket, "https://fixture.test:443").await;
+        let tree = reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"button","ignored":false,"role":{"value":"button"},"backendDOMNodeId":42,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        assert_eq!(tree["method"], "Accessibility.getFullAXTree");
+        assert_eq!(
+            reply(&mut socket, history(1, "https://fixture.test:443/form")).await["method"],
+            "Page.getNavigationHistory"
+        );
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            json!({"model":{"content":[0,0,20,0,20,20,0,20]}}),
+        )
+        .await;
+        for _ in 0..3 {
+            reply(&mut socket, json!({})).await;
+        }
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        resulting_frames_with_popup(&mut socket).await;
+        if !allow_popup {
+            let close = reply(&mut socket, json!({"success":true})).await;
+            assert_eq!(close["method"], "Target.closeTarget");
+            assert_eq!(close["params"]["targetId"], "popup-page");
+        }
+        let activate = reply(&mut socket, json!({})).await;
+        assert_eq!(activate["method"], "Target.activateTarget");
+        assert_eq!(activate["params"]["targetId"], "page-1");
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 32, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new_with_mode(
+        target(),
+        CdpBrowserSessionMode::Managed,
+        "cdp-session",
+        "revision-1",
+        "run-popup",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let button = observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "button")
+        .expect("button");
+    let allowed_origins = if allow_popup {
+        json!(["https://popup.test:443"])
+    } else {
+        json!([])
+    };
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-popup").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":button.node_ref.as_str(),
+            "allowed_navigation_origins":allowed_origins
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("receipt");
+    if allow_popup {
+        assert_eq!(receipt.terminal_classification, "completed");
+        let pending = port.take_pending_popup().expect("pending popup");
+        assert_eq!(pending.page_id.as_str(), "popup-page");
+        assert_eq!(pending.requested_origin, "https://popup.test:443");
+        assert!(pending.user_gesture);
+        assert!(port.take_pending_popup().is_none());
+    } else {
+        assert_eq!(receipt.terminal_classification, "failed");
+        assert_eq!(
+            receipt.failure_code.as_deref(),
+            Some("browser_origin_denied")
+        );
+        assert!(port.take_pending_popup().is_none());
+    }
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn managed_popup_is_pending_until_separate_page_admission() {
+    run_managed_popup_case(true).await;
+}
+
+#[tokio::test]
+async fn managed_popup_outside_allowed_origins_is_closed() {
+    run_managed_popup_case(false).await;
 }
 
 fn histories(current_index: usize) -> Value {
