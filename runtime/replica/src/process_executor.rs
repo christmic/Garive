@@ -31,6 +31,12 @@ pub enum ProcessWorkspaceMode {
 /// Exact bounded command delivered to a concrete isolation backend.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessExecutionRequest {
+    /// Stable Runtime invocation identity used for backend job ownership.
+    pub invocation_id: ToolInvocationId,
+    /// Exact dispatch attempt selected before Started.
+    pub dispatch_attempt_id: String,
+    /// Exact configured lane identity.
+    pub lane: String,
     /// Absolute executable capability resolved without PATH.
     pub executable: PathBuf,
     /// Exact non-empty argv vector, including the configured alias at index zero.
@@ -265,6 +271,9 @@ fn operation(
         .sandbox_requirements()
         .ok_or("missing process sandbox requirements")?;
     Ok(ProcessExecutionRequest {
+        invocation_id: invocation_id.clone(),
+        dispatch_attempt_id: dispatch_id(invocation_id),
+        lane: lane_name.into(),
         executable: executable.path().to_path_buf(),
         argv,
         working_directory: working_directory.into(),

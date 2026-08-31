@@ -79,6 +79,9 @@ async fn process_resolves_exact_capability_and_returns_bound_receipt() {
     let preflighted = backend.preflighted.lock().unwrap();
     assert_eq!(preflighted.len(), 1);
     let request = &preflighted[0];
+    assert_eq!(request.invocation_id.as_str(), "process-invocation");
+    assert!(request.dispatch_attempt_id.starts_with("process-dispatch-"));
+    assert_eq!(request.lane, "rust-toolchain");
     assert_eq!(
         request.executable,
         std::path::Path::new("/configured/cargo")
