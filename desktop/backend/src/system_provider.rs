@@ -108,7 +108,7 @@ impl DesktopProfileRegistry for BuiltinDesktopProfileRegistry {
             EndpointSelection::Explicit(value.to_owned())
         });
         let connection = ConnectionInput::new(endpoint, credential, Vec::new());
-        let capabilities = BTreeSet::from([ModelCapability::Text]);
+        let capabilities = BTreeSet::from([ModelCapability::Text, ModelCapability::Streaming]);
         let model: Arc<dyn ModelPort> = match config.profile_id {
             OPENAI_RESPONSES_PROFILE_ID => {
                 let deployment = ResponsesDeployment {
@@ -277,7 +277,7 @@ fn execution_policy(config: &DesktopSystemConfiguration) -> LocalExecutionPolicy
         model_target_id: config.execution.model_target_id.clone(),
         deployment_id: config.execution.deployment_id.clone(),
         recovery_policy_revision: config.execution.recovery_policy_revision.clone(),
-        required_capabilities: vec![ModelCapability::Text],
+        required_capabilities: vec![ModelCapability::Text, ModelCapability::Streaming],
         model_output: ModelOutputSettings {
             max_output_tokens: config.execution.max_output_tokens,
             text_mode: TextMode::Plain,

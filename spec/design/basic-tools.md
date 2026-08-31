@@ -189,40 +189,56 @@ resource limits. Runtime:
 
 1. verifies each current content digest;
 2. constructs every new bounded byte sequence without mutation;
-3. writes/fsyncs a workspace journal and same-directory temporary files;
+3. atomically publishes and fsyncs a bounded journal under a separate
+   Runtime-private recovery-directory capability, then writes/fsyncs
+   deterministic same-directory temporary files without replacing any
+   pre-existing entry;
 4. atomically replaces files in canonical order;
 5. fsyncs directories and commits a receipt containing before/new digests;
-6. removes the journal only after durable result publication posture exists.
+6. removes the journal only after `effect.receipt` is durable and the executor
+   confirms that the exact receipt result digest matches the journal-derived
+   result.
 
 Recovery uses the journal to finish or reconstruct; it never applies patch
 hunks again based only on missing result. Multi-file visibility is transaction-
 like only through the Runtime journal/recovery contract, not an OS-wide atomic
 rename claim.
 
+The recovery journal is not inside the Agent-visible Workspace authority.
+Every stored path, digest and temporary name is revalidated against the exact
+Prepared call before mutation. A malformed or changed journal, an unexpected
+temporary, or content outside the before/after digest pair becomes uncertain.
+At startup, a durable receipt is acknowledged through the same concrete
+executor before Runtime reconstructs a missing terminal fact.
+
 Result contains ordered `{path,before_digest,after_digest}` entries and one
 receipt digest. File content and absolute temporary locations are absent.
 
 ## `garive.process.run@1`
 
-Input requires `lane`, non-empty `argv`, `working_directory`, `max_output_bytes`
-and `timeout_ms`:
+Input requires `lane`, non-empty `argv`, `working_directory`, explicit
+`workspace_mode`, `max_output_bytes` and `timeout_ms`:
 
 ```json
 {
   "lane":"rust-toolchain",
   "argv":["cargo","test","-p","garive-tools"],
   "working_directory":".",
+  "workspace_mode":"write",
   "max_output_bytes":65536,
   "timeout_ms":30000
 }
 ```
 
 `working_directory = "."` is the explicit workspace root identity; other
-values satisfy normal path rules. `lane` uses the C5b process
-key grammar. The access set is `Process(lane, Exclusive)` plus
-`Filesystem(working_directory, Read)`. V1 declares no network access.
+values satisfy normal path rules. `workspace_mode = read | write` is mandatory;
+it becomes the exact Filesystem access mode and may not be widened by the
+executor. `lane` uses the C5b process key grammar. The access set is
+`Process(lane, Exclusive)` plus
+`Filesystem(working_directory, workspace_mode)`. V1 declares no network access.
 
-Requirements are `FilesystemRead + Process`; replay is `NeverReplay`. F0
+Requirements are `FilesystemRead + FilesystemWrite + Process`; the exact access
+mode still limits each call. Replay is `NeverReplay`. F0
 requires filesystem/symlink/process containment, structured arguments,
 environment allowlist and resource limits. Runtime resolves `lane` to an exact
 configured executable set. It does not search caller PATH, load shell startup

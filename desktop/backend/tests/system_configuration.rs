@@ -16,8 +16,8 @@ use garive_desktop::{
     MAX_DESKTOP_CONFIG_BYTES, OPENAI_RESPONSES_PROFILE_ID,
 };
 use garive_llm::{
-    InvokeOutcome, ModelCancellation, ModelFuture, ModelItem, ModelObserver, ModelPort,
-    ModelRequest, ModelStopReason, ModelUsage, TokenCount, UsageSource,
+    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
+    ModelPort, ModelRequest, ModelStopReason, ModelUsage, TokenCount, UsageSource,
 };
 use garive_provider_profile::SecretValue;
 use garive_runtime::{
@@ -178,6 +178,10 @@ impl ModelPort for CompletingModel {
     ) -> ModelFuture<'a> {
         Box::pin(async move {
             assert_eq!(request.target_id.as_str(), "desktop-target");
+            assert_eq!(
+                request.required_capabilities,
+                vec![ModelCapability::Text, ModelCapability::Streaming]
+            );
             Ok(InvokeOutcome::Completed {
                 items: vec![ModelItem::Text {
                     text: "configured durable answer".into(),
@@ -415,10 +419,13 @@ async fn configured_builtin_profile_completes_over_real_loopback_http() {
     assert_eq!(result.text, "hello back");
     let request = server.join();
     assert!(request.contains("authorization: Bearer fixture-secret-never-serialized\r\n"));
+    assert!(request.contains("accept: text/event-stream\r\n"));
+    assert!(request.contains("\"stream\":true"));
     assert!(!format!("{result:?}").contains("fixture-secret-never-serialized"));
 }
 
-const MODEL_RESPONSE: &str = r#"{"id":"resp_desktop","created_at":1787961600.0,"error":null,"incomplete_details":null,"instructions":null,"metadata":null,"model":"fixture-model","object":"response","output":[{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello back","annotations":[]}]}],"parallel_tool_calls":false,"temperature":null,"tool_choice":"auto","tools":[],"top_p":null,"status":"completed","usage":{"input_tokens":10,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens":2,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":12}}"#;
+const MODEL_RESPONSE: &str =
+    include_str!("../../../spec/fixtures/protocols/openai-responses/complete.sse");
 
 struct OneResponseServer {
     url: String,
@@ -436,7 +443,7 @@ impl OneResponseServer {
             let (mut stream, _) = listener.accept().expect("model accept");
             let request = read_request(&mut stream);
             let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 MODEL_RESPONSE.len(),
                 MODEL_RESPONSE
             );

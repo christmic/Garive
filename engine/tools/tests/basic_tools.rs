@@ -97,12 +97,13 @@ fn process_resolves_configured_lane_and_explicit_working_directory() {
         .prepare(&ToolIntent::new(
             "call",
             T1_PROCESS_RUN,
-            r#"{"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","max_output_bytes":4096,"timeout_ms":30000}"#,
+            r#"{"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","workspace_mode":"write","max_output_bytes":4096,"timeout_ms":30000}"#,
         ))
         .unwrap();
     let accesses = prepared.invocation_accesses().unwrap().values();
     assert_eq!(accesses.len(), 2);
     assert_eq!(accesses[0].namespace(), AccessNamespace::Filesystem);
+    assert_eq!(accesses[0].mode(), AccessMode::Write);
     assert_eq!(accesses[1].namespace(), AccessNamespace::Process);
     assert_eq!(accesses[1].mode(), AccessMode::Exclusive);
 
@@ -111,7 +112,7 @@ fn process_resolves_configured_lane_and_explicit_working_directory() {
             .prepare(&ToolIntent::new(
                 "call",
                 T1_PROCESS_RUN,
-                r#"{"lane":"unknown","argv":["cargo"],"working_directory":".","max_output_bytes":4096,"timeout_ms":30000}"#,
+                r#"{"lane":"unknown","argv":["cargo"],"working_directory":".","workspace_mode":"read","max_output_bytes":4096,"timeout_ms":30000}"#,
             ))
             .unwrap_err()
             .code(),

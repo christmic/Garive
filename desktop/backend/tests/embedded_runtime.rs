@@ -17,12 +17,12 @@ use garive_desktop::{
 use garive_ledger::SessionId;
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem,
-    ModelObserver, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage,
-    TextMode, TokenCount, UsageSource,
+    ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason,
+    ModelStreamEvent, ModelUsage, ObserverDecision, TextMode, TokenCount, UsageSource,
 };
 use garive_runtime::{
-    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, SqliteLedger,
+    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHostLimits, LiveOutputEventKind,
+    LocalExecutionAttempt, LocalExecutionPolicy, SqliteLedger,
 };
 use tempfile::tempdir;
 
@@ -62,11 +62,27 @@ impl ModelPort for CompletingModel {
     fn invoke<'a>(
         &'a self,
         request: &'a ModelRequest,
-        _: &'a mut dyn ModelObserver,
+        observer: &'a mut dyn ModelObserver,
         _: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         Box::pin(async move {
             assert_eq!(request.target_id.as_str(), "desktop-target");
+            assert_eq!(
+                observer.observe(&ModelStreamEvent::OutputItemStarted {
+                    output_index: 0,
+                    kind: ModelOutputKind::Text,
+                }),
+                ObserverDecision::Continue
+            );
+            for delta in ["desktop ", "durable answer"] {
+                assert_eq!(
+                    observer.observe(&ModelStreamEvent::TextDelta {
+                        output_index: 0,
+                        delta: delta.into(),
+                    }),
+                    ObserverDecision::Continue
+                );
+            }
             Ok(InvokeOutcome::Completed {
                 items: vec![ModelItem::Text {
                     text: "desktop durable answer".into(),
@@ -341,6 +357,42 @@ async fn product_commands_acknowledge_exact_commits_before_bounded_follow() {
             .expect("exact Turn replay"),
         started
     );
+}
+
+#[tokio::test]
+async fn embedded_desktop_publishes_real_model_deltas_before_durable_terminal() {
+    let directory = tempdir().expect("temp directory");
+    let host = desktop_host(
+        &directory.path().join("live-output.db"),
+        Arc::new(CompletingModel),
+    );
+    let created = host
+        .create_session_command("create-live", "definition-main")
+        .expect("create");
+    let mut subscriber = host
+        .subscribe_live_output(&created.session_id)
+        .expect("subscribe");
+    host.start_turn_command("turn-live", &created.session_id, "stream this")
+        .expect("start");
+    assert!(host.drive_pending().await.expect("drive"));
+    let mut text = String::new();
+    let mut ended = false;
+    for _ in 0..12 {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), subscriber.recv())
+            .await
+            .expect("live deadline")
+            .expect("live event");
+        match event.kind {
+            LiveOutputEventKind::TextDelta { text: delta } => text.push_str(&delta),
+            LiveOutputEventKind::Ended { .. } => {
+                ended = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(text, "desktop durable answer");
+    assert!(ended);
 }
 
 #[test]
@@ -731,4 +783,30 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
         .unwrap();
     assert_eq!(artifact.position, completed_position + 1);
     assert!(artifact.payload.as_json().contains("artifact-"));
+
+    let started = facts
+        .iter()
+        .find(|fact| fact.kind.as_str() == "effect.started")
+        .unwrap();
+    let invocation = started.tool_invocation_id.as_ref().unwrap();
+    let governed_chain = facts
+        .iter()
+        .filter(|fact| fact.tool_invocation_id.as_ref() == Some(invocation))
+        .map(|fact| fact.kind.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        governed_chain,
+        [
+            "effect.prepared",
+            "safety.decided",
+            "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
+            "effect.started",
+            "effect.receipt",
+            "effect.completed",
+            "artifact.committed",
+            "effect.observation",
+        ]
+    );
 }

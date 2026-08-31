@@ -32,10 +32,10 @@
     },
     {
       "tool_name": "garive.process.run",
-      "arguments": {"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","max_output_bytes":4096,"timeout_ms":30000},
-      "prepared_digest": "b56867de5950bacf8336df5091312b7633876459b3faf7f7d459557d771b49ef",
+      "arguments": {"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","workspace_mode":"write","max_output_bytes":4096,"timeout_ms":30000},
+      "prepared_digest": "f775835b9d598a57113a4cfab999ca36bb4fc168a979da0b3f79390ce68de68e",
       "accesses": [
-        {"namespace":"filesystem","resource_key":".","mode":"read"},
+        {"namespace":"filesystem","resource_key":".","mode":"write"},
         {"namespace":"process","resource_key":"rust-toolchain","mode":"exclusive"}
       ]
     }
@@ -61,7 +61,7 @@
     },
     {
       "tool_name": "garive.process.run",
-      "arguments": {"lane":"unknown","argv":["cargo"],"working_directory":".","max_output_bytes":1,"timeout_ms":1},
+      "arguments": {"lane":"unknown","argv":["cargo"],"working_directory":".","workspace_mode":"read","max_output_bytes":1,"timeout_ms":1},
       "error": "effect_access_invalid"
     },
     {

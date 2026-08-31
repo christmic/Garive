@@ -4,6 +4,10 @@
 #![deny(missing_docs)]
 
 #[cfg(unix)]
+mod builtin_patch_executor;
+#[cfg(unix)]
+mod builtin_patch_journal;
+#[cfg(unix)]
 mod builtin_workspace_executor;
 #[cfg(unix)]
 mod confined_read_executor;
@@ -32,6 +36,8 @@ mod observability_runtime;
 mod plan_carry_forward;
 mod plan_recovery;
 mod plan_runtime;
+mod process_capability;
+mod process_executor;
 mod runtime_turn;
 mod sandbox_facts;
 mod sandbox_recovery;
@@ -40,12 +46,14 @@ mod scheduler_runtime;
 mod sqlite_ledger;
 
 #[cfg(unix)]
+pub use builtin_patch_executor::{BuiltinPatchExecutor, T1_PATCH_EXECUTOR_ID};
+#[cfg(unix)]
 pub use builtin_workspace_executor::{BuiltinWorkspaceExecutor, T1_WORKSPACE_EXECUTOR_ID};
 #[cfg(unix)]
 pub use confined_read_executor::ConfinedFileReadExecutor;
 pub use core_bridge::{
     authorize_memory_query, authorize_memory_write, canonical_model_request_digest,
-    decode_committed_memory_recall, derive_knowledge_recovery, execute_durable_agent,
+    decode_committed_memory_recall, derive_knowledge_recovery,
     execute_durable_agent_with_capabilities, execute_durable_agent_with_f0,
     execute_durable_agent_with_skill_activation, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,
@@ -174,6 +182,11 @@ pub use plan_runtime::{
     commit_plan_command, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
     ActivePlanClaim, PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
     PlanRuntimeTransition, PlanStepExecutionStart, PlannedPlanCommand,
+};
+pub use process_capability::{ProcessExecutable, ProcessLane, ProcessLaneRegistry};
+pub use process_executor::{
+    BuiltinProcessExecutor, ProcessBackendError, ProcessExecutionRequest, ProcessExecutionResult,
+    ProcessExit, ProcessIsolationBackend, ProcessWorkspaceMode, T1_PROCESS_EXECUTOR_ID,
 };
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,

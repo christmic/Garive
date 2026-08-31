@@ -177,6 +177,30 @@ export class FetchHostClient {
       }
     } finally { await reader.cancel().catch(() => undefined); }
   }
+  public async *followLiveOutput(sessionId: string, signal?: AbortSignal): AsyncIterable<unknown> {
+    if (!sessionId) throw new HostClientError("invalid_command");
+    const response = await this.requestLiveStream(sessionId, signal);
+    const reader = response.body!.getReader(); const decoder = new TextDecoder("utf-8", { fatal: true });
+    let pending = ""; let count = 0;
+    try {
+      while (!signal?.aborted) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new HostClientError("transport_failure");
+        pending += decoder.decode(chunk.value, { stream: true });
+        let boundary: number;
+        while ((boundary = pending.indexOf("\n\n")) >= 0) {
+          const block = pending.slice(0, boundary).replaceAll("\r", ""); pending = pending.slice(boundary + 2);
+          const data = block.split("\n").filter((line) => line.startsWith("data: "))
+            .map((line) => line.slice(6)).join("\n");
+          if (!data) continue;
+          if (new TextEncoder().encode(data).length > this.limits.maxEventBytes || ++count > this.limits.maxEvents) {
+            throw new HostClientError("event_limit_exceeded");
+          }
+          try { yield JSON.parse(data) as unknown; } catch { throw new HostClientError("invalid_event"); }
+        }
+      }
+    } finally { await reader.cancel().catch(() => undefined); }
+  }
   public async followUntilTerminal(sessionId: string, afterPosition = 0): Promise<HostView> {
     if (!sessionId || !Number.isSafeInteger(afterPosition) || afterPosition < 0) throw new HostClientError("invalid_command");
     const controller = new AbortController();
@@ -257,6 +281,18 @@ export class FetchHostClient {
     if (response.redirected) throw new HostClientError("transport_failure");
     if (!response.ok) await throwHostFailure(response);
     if (!response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream") || !response.body) {
+      throw new HostClientError("transport_failure");
+    }
+    return response;
+  }
+  private async requestLiveStream(sessionId: string, signal?: AbortSignal): Promise<Response> {
+    let response: Response;
+    try { response = await this.fetcher(
+      `${this.baseUrl}/v1/sessions/${encodeURIComponent(sessionId)}/live`,
+      { method: "GET", redirect: "error", signal },
+    ); } catch { throw new HostClientError("transport_failure"); }
+    if (response.redirected || !response.ok ||
+        !response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream") || !response.body) {
       throw new HostClientError("transport_failure");
     }
     return response;

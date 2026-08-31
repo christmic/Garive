@@ -12,6 +12,20 @@ patterns below before adding a variant. A mode may change its work canvas; the
 application shell, task condition, authority, capacity and evidence patterns
 remain shared.
 
+## Two-gate quality model
+
+Shared UI changes pass two gates in order:
+
+1. **Codex fidelity:** reproduce the observed neutral hierarchy, typography,
+   navigation rhythm, reading measure, composer quality and progressive
+   disclosure recorded in `docs/desktop-web-codex-fidelity-study.md`.
+2. **Garive advantage:** expose durable attention, committed outcomes,
+   evidence, authority, recovery and honest capacity more clearly than the
+   reference without increasing ordinary-screen noise.
+
+Gate 2 cannot waive Gate 1. Functional additions do not excuse a visually
+unfinished shell.
+
 ## Principles
 
 1. Outcome before mechanism: lead with the user's deliverable and next action.
@@ -37,15 +51,15 @@ bounded media-query fallbacks.
 |---|---|---|
 | `--font-sans` | system UI stack | all product text |
 | `--font-mono` | system monospace stack | IDs, versions, code |
-| `--text-2xs` | 10 px | bounded metadata only |
-| `--text-xs` | 11 px | labels and timestamps |
-| `--text-sm` | 12 px | secondary copy |
+| `--text-2xs` | 11 px | bounded timestamps and counters only |
+| `--text-xs` | 12 px | labels and metadata |
+| `--text-sm` | 13 px | secondary copy and navigation |
 | `--text-md` | 14 px | body and controls |
 | `--text-lg` | 16 px | section title |
 | `--text-xl` | 22 px | page title |
 | `--text-display` | clamp(28 px, 3 vw, 38 px) | empty-state outcome |
 
-No shipping text is below 10 px. At 200% text zoom, content reflows and no
+No shipping text is below 11 px. At 200% text zoom, content reflows and no
 essential label is clipped or replaced by an icon.
 
 ### Space, shape, depth and motion
@@ -74,14 +88,38 @@ Components do not test theme names or encode their own dark palette.
 
 ## Layout contract
 
-The wide shell contains a 248 px rail, fluid work canvas and optional 390 px
-evidence inspector. At narrower widths the inspector becomes an overlay, then
-the rail becomes a navigation sheet. The primary canvas has a 760 px readable
-content measure but artifact desks may use the remaining width.
+The wide desktop shell contains a 240–275 px rail and a fluid work canvas.
+Navigation rows are 30–36 px and the title bar is 46 px. The primary thread has
+a 40 rem readable measure. Environment and evidence summaries are compact
+dismissible overlays; opening an artifact, file, diff or terminal creates a
+separately scrollable tabbed workbench beside the thread. A generic fixed-width
+Inspector is not a canonical desktop layout.
+
+At narrower widths the workbench overlays the thread, then becomes a full
+surface with an explicit Back action; the rail becomes a navigation sheet.
 
 The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
+
+Neutral surface changes precede borders. A region may have one structural
+separator; rows inside it use spacing or hover surfaces unless a semantic
+boundary requires a rule. Navigation groups use sentence case. Decorative
+gradients are forbidden in the application shell.
+
+### Fidelity geometry
+
+| Element | Comfortable target | Compact target |
+|---|---:|---:|
+| rail | 240–275 px | 72 px collapsed |
+| title bar | 46 px | 36 px |
+| navigation/task row | 30–36 px | 30–36 px |
+| readable turn measure | 40 rem max | unchanged |
+| composer | 40 rem plus 24 px overhang | 40 rem max |
+| Environment overlay | 280–320 px | full overlay below 720 px |
+| artifact/file workbench | 48–62% of remaining width | full surface below 980 px |
+
+Localization and 200% text zoom may grow rows and must never clip content.
 
 ## Component grammar
 
@@ -94,6 +132,8 @@ and capacity warnings never cover a blocking approval.
 | Notice | info, success, attention, error | states consequence and next action; alert only when interruption is required |
 | Modal | entering, active, exiting | traps focus, Escape closes when safe, returns focus to invoker |
 | Artifact card | preparing, ready, unverified, verified, unavailable | name/type/revision/verification visible; authority actions explicit |
+| Workspace tab | opening, active, background, changed, unavailable | stable title, close action, independent scroll and focus restoration |
+| Environment overlay | closed, open, attention, unavailable | compact summary only; never reserves an empty permanent column |
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
 
 ## Capacity view contract
@@ -157,6 +197,8 @@ an exact task price from prompt length, selected model, or prior averages.
 - Unit tests cover normal, critical, exhausted and absent capacity plus
   accessible meter text.
 - Visual evidence covers light/dark at 1440 px and a 720 px narrow window.
+- Review evidence records Gate 1 fidelity and Gate 2 advantage; “looks modern”
+  is not an acceptance result.
 - Keyboard-only, reduced-motion, increased-contrast and 200% text matrices stay
   usable. Web captures prove shared presentation only; native macOS integration
   retains its separate evidence matrix.

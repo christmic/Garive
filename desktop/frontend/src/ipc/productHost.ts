@@ -1,4 +1,6 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type { LiveOutputItem } from "../state/controller";
+import { decodeLiveOutput } from "../state/liveOutput";
 import {
   decodeHostDefinitionPage, decodeHostEvent, decodeHostSessionPage, decodeHostTimelinePage,
   type HostDefinitionPage, type HostEvent, type HostSessionPage, type HostTimelinePage, type Invoke,
@@ -47,6 +49,15 @@ export async function getProductEvents(
   if (!Array.isArray(raw.events) || scanned < afterPosition || observed < scanned) invalid();
   return { events: raw.events.map(decodeHostEvent), scanned_through_position: scanned,
     observed_max_position: observed };
+}
+
+export async function followProductLiveOutput(
+  sessionId: string, onOutput: (output: LiveOutputItem) => void, invoke: Invoke = tauriInvoke,
+): Promise<void> {
+  required(sessionId);
+  const channel = new Channel<unknown>();
+  channel.onmessage = (raw) => onOutput(decodeLiveOutput(raw, sessionId));
+  await invoke<void>("follow_live_output", { sessionId, onEvent: channel });
 }
 
 export async function createProductSession(

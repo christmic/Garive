@@ -111,6 +111,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const desktop = client === "desktop";
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
@@ -120,6 +121,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [preferences, setPreferences] = useState(readDesktopPreferences);
   const [systemDark, setSystemDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [smallWindow, setSmallWindow] = useState(() =>
+    window.matchMedia("(max-width: 480px)").matches);
   const locale = resolveDesktopLocale(preferences.locale);
   const t = useMemo(() => createTranslator(locale), [locale]);
   const taskSummary = useMemo(() => summarizeTasks(recents), [recents]);
@@ -142,6 +145,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
     const changed = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 480px)");
+    const changed = (event: MediaQueryListEvent) => {
+      setSmallWindow(event.matches);
+      if (!event.matches) setNavigationOpen(false);
+    };
     query.addEventListener("change", changed);
     return () => query.removeEventListener("change", changed);
   }, []);
@@ -234,7 +246,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
   const beginNewWork = useCallback(() => {
     dispatch({ type: "new_work" }); pendingDraft.current = ""; setQueuedSubmission(undefined);
-    setSelectedContext(undefined); setScreen("work");
+    setSelectedContext(undefined); setScreen("work"); setNavigationOpen(false);
     void ensureProductSession();
     requestAnimationFrame(() => composer.current?.focus());
   }, [ensureProductSession]);
@@ -295,6 +307,20 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         dispatch({ type: "artifacts_loaded", page: visualArtifactPage });
         dispatch({ type: "inspector_selected", tab: "artifacts" });
       }
+      if (visualTestMode === "running") {
+        dispatch({ type: "session_loaded", timeline: {
+          api_version: "v1", session_id: "visual-running", scanned_through_position: 9,
+          observed_max_position: 9, has_more: false, items: [{ turn_id: "running-turn",
+            started_position: 3, latest_position: 9, state: "running",
+            user_text: "Compare the launch research and prepare a decision memo",
+            content_truncated: false, activities: [{ api_version: "v1",
+              activity_id: "read-research", kind: "tool", label_key: "agent.activity.read_file",
+              state: "completed", source_position: 6, terminal: true }, { api_version: "v1",
+              activity_id: "draft-memo", kind: "tool", label_key: "agent.activity.write_file",
+              state: "running", source_position: 9, terminal: false }] }],
+        } });
+        dispatch({ type: "submission_started" });
+      }
       return;
     }
     if (!desktop) {
@@ -340,6 +366,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && navigationOpen) {
+        event.preventDefault(); setNavigationOpen(false); return;
+      }
       if (!event.metaKey) return;
       if (event.key.toLowerCase() === "n") {
         event.preventDefault(); beginNewWork();
@@ -353,7 +382,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [beginNewWork]);
+  }, [beginNewWork, navigationOpen]);
 
   const title = useMemo(() => {
     const first = state.messages.find((message) => message.role === "user")?.text;
@@ -525,9 +554,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
     <div className="app-shell" inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
-      <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
+      <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
+        aria-label={t("shell.primaryNavigation")} inert={smallWindow && !navigationOpen}
+        aria-hidden={smallWindow && !navigationOpen} onClickCapture={(event) => {
+          if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
+        }}>
         <div className="titlebar-drag" data-tauri-drag-region />
-        <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
@@ -566,11 +598,18 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           </div>
         </div>
       </aside>
+      {navigationOpen && <button className="navigation-backdrop" type="button"
+        aria-label={t("shell.closeNavigation")} onClick={() => setNavigationOpen(false)} />}
 
-      <main className="main-surface">
+      <main className="main-surface" inert={smallWindow && navigationOpen}
+        aria-hidden={smallWindow && navigationOpen}>
         <header className="topbar" data-tauri-drag-region>
-          <div className="topbar-title"><span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
-            {screen === "work" && <span className="local-badge"><span />{t("shell.local")}</span>}
+          <div className="topbar-title"><button className="navigation-trigger icon-button" type="button"
+            aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
+            aria-controls="primary-navigation" onClick={() => setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
+            <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+            {screen === "work" && <span className={state.phase === "submitting" ? "local-badge working" : "local-badge"}>
+              <span />{t(state.phase === "submitting" ? "status.working" : "shell.local")}</span>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
@@ -653,9 +692,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
-  return <section className="work-surface">
+  return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} t={t} />}
+      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} />
+        : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
@@ -667,6 +707,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
+        {state.phase === "submitting" && <TurnProgress activities={state.activities}
+          onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
           <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
             ? `${activityLabel(approvalEffect.label_key, t)} · ` : `${t("approval.operationPrefix")} `}<bdi>{approvalWorkspace?.display_name ?? t("approval.attachedWorkspace")}</bdi>?</strong>
@@ -730,13 +772,14 @@ function Welcome({ onSelect, t }: { onSelect: (text: string) => void; t: (key: M
   const suggestions = [[t("work.suggestion.synthesize"), t("work.suggestion.synthesizeBody")],
     [t("work.suggestion.analyze"), t("work.suggestion.analyzeBody")],
     [t("work.suggestion.create"), t("work.suggestion.createBody")]] as const;
-  return <div className="welcome"><span className="hero-mark"><Icon name="sparkle" /></span><p className="eyebrow">{t("work.welcome.eyebrow")}</p>
-    <h1>{t("work.welcome.title")}</h1><p className="welcome-copy">{t("work.welcome.description")}</p>
+  return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
+    <p className="welcome-copy">{t("work.welcome.description")}</p>
     <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>
   </div>;
 }
 
-function Timeline({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
+function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch;
+  t: (key: MessageKey) => string }) {
   const [copiedId, setCopiedId] = useState<string>();
   const copyResult = async (id: string, text: string) => {
     try {
@@ -752,23 +795,51 @@ function Timeline({ state, t }: { state: WorkState; t: (key: MessageKey) => stri
     : latest?.role === "assistant" ? `${t("timeline.turn")} ${terminalCopy(latest.terminal, t)}。` : "";
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
-    : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+    : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>{t("timeline.export")}</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}</button></div></div></div></article>)}
-    {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>{t("timeline.working")}</p><span className="working-line" /></div></article>}
+    {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
+      {state.livePreview.available && state.livePreview.text
+        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}>{state.livePreview.text}</Markdown></div>
+        : <p><span className="live-pulse"><span /></span>{livePhaseCopy(state.livePreview.labelKey, t)}</p>}
+    </article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
 }
 
+function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string): string {
+  const labels: Record<string, MessageKey> = { "agent.live.preparing": "timeline.livePreparing",
+    "agent.live.generating": "timeline.liveGenerating", "agent.live.finalizing": "timeline.liveFinalizing" };
+  return t(labels[key ?? ""] ?? "timeline.working");
+}
+
+export function TurnProgress({ activities, onOpen, t }: { activities: WorkState["activities"];
+  onOpen: () => void; t: (key: MessageKey) => string }) {
+  const recent = activities.slice(-3);
+  return <article className="turn-progress" aria-label={t("timeline.progressTitle")}>
+    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div>
+      <strong>{t("timeline.progressTitle")}</strong><p>{t("timeline.progressBody")}</p></div>
+      <button type="button" onClick={onOpen}>{t("timeline.openActivity")}<Icon name="chevron" /></button></div>
+    {recent.length > 0 && <div className="turn-progress-steps">{recent.map((activity) =>
+      <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
+        <span>{activity.terminal ? <Icon name="check" /> : <span className="spinner" />}</span>
+        <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
+      </div>)}</div>}
+  </article>;
+}
+
 function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch; t: (key: MessageKey) => string }) {
-  return <aside className="inspector" aria-label={t("inspector.aria")}><header><div className="inspector-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>{t("inspector.activity")}</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>{t("inspector.artifacts")}</button></div>
+  const mode = state.inspectorTab === "activity" ? "environment-panel" : "workspace-panel";
+  const [workspaceTitle, setWorkspaceTitle] = useState<string>();
+  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}><header><div className="inspector-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => { setWorkspaceTitle(undefined); dispatch({ type: "inspector_selected", tab: "activity" }); }}>{t("inspector.activity")}</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>{workspaceTitle ?? t("inspector.artifacts")}</button></div>
     <button className="icon-button" type="button" aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
-      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} /></div>}
+      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} onPreviewTitle={setWorkspaceTitle} /></div>}
   </aside>;
 }
 
-function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
+function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t: (key: MessageKey) => string;
+  onPreviewTitle: (title?: string) => void }) {
   const [selected, setSelected] = useState<HostArtifact>();
   const [preview, setPreview] = useState<ArtifactPreview>();
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
@@ -778,7 +849,7 @@ function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKe
     ArtifactExportReceipt>>>({});
   const results = state.messages.filter((message) => message.role === "assistant" && message.text);
   const openPreview = async (artifact: HostArtifact) => {
-    setSelected(artifact); setPreview(undefined); setPreviewState("loading");
+    setSelected(artifact); onPreviewTitle(artifact.display_name); setPreview(undefined); setPreviewState("loading");
     try {
       const content = visualTest ? visualArtifactPreview
         : await getArtifactPreview(state.sessionId ?? "", artifact);
@@ -834,10 +905,11 @@ function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKe
       </div>
     </article>; })}
     {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><header><div><span>{t("artifact.previewVerified")}</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label={t("artifact.closePreview")}
-      onClick={() => { setSelected(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
+      onClick={() => { setSelected(undefined); onPreviewTitle(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
       {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />{t("artifact.verifying")}</div>
         : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
-          : preview && <pre>{preview.content_utf8}</pre>}
+          : preview && <div className="artifact-preview-content"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+            components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{preview.content_utf8}</Markdown></div>}
       <footer><Icon name="shield" />{t("artifact.digestPrefix")} {selected.revision}</footer>
     </section>}
     {results.length > 0 && <div className="deliverable-section-label">{t("artifact.snapshots")}</div>}

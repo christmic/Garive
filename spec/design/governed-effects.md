@@ -190,7 +190,7 @@ Recovery is determined by replay class plus executor proof:
 |---|---|
 | before `Started` | Revalidate frozen grant; same-ID dispatch is permitted. |
 | `Started`, no receipt | `ReadOnly`/`Idempotent` may retry only when the executor proves the class; `ReceiptRecoverable` recovers its journal; otherwise suspend for operator reconciliation. |
-| receipt, no result fact | Reconstruct from receipt; never dispatch again. |
+| receipt, no result fact | Reconstruct the exact receipt, require the same concrete executor to acknowledge and release receipt-bound recovery state, then reconstruct the terminal; never dispatch again. |
 | terminal result fact | Return it idempotently. |
 
 The declaration on a Tool Definition is insufficient proof by itself.

@@ -104,6 +104,21 @@ describe("A1 fetch transport", () => {
     expect(calls[2]?.url).toContain("after_position=0");
   });
 
+  it("follows the bounded ephemeral live-output endpoint independently of durable events", async () => {
+    const output = { api_version: "v1", session_id: fixture.session_id, turn_id: "turn-live",
+      execution_id: "execution-live", stream_id: "stream-live", sequence: 1,
+      kind: "text_delta", text: "real delta" };
+    const client = new FetchHostClient("http://127.0.0.1:1234/", limits(), async () =>
+      sseResponse([output]));
+    const controller = new AbortController(); const observed: unknown[] = [];
+    try {
+      for await (const event of client.followLiveOutput(fixture.session_id, controller.signal)) {
+        observed.push(event); controller.abort();
+      }
+    } catch (error) { expect(error).toMatchObject({ code: "transport_failure" }); }
+    expect(observed).toEqual([output]);
+  });
+
   it("rejects non-loopback configuration and redacts host failures", async () => {
     expect(() => new FetchHostClient("https://example.com/", limits())).toThrowError(HostClientError);
     const client = new FetchHostClient("http://localhost:1234/", limits(), async () =>
@@ -155,7 +170,7 @@ function limits() {
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }
-function sseResponse(events: HostEvent[]): Response {
-  const body = events.map((event) => `id: ${event.position}\nevent: host\ndata: ${JSON.stringify(event)}\n\n`).join("");
+function sseResponse(events: readonly unknown[]): Response {
+  const body = events.map((event) => `event: host\ndata: ${JSON.stringify(event)}\n\n`).join("");
   return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
 }

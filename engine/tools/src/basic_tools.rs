@@ -122,6 +122,11 @@ fn one_file(
 }
 
 fn process_accesses(arguments: &Value) -> Result<InvocationAccessSet, PreparationError> {
+    let workspace_mode = match text(arguments, "workspace_mode")? {
+        "read" => AccessMode::Read,
+        "write" => AccessMode::Write,
+        _ => return Err(access_error()),
+    };
     InvocationAccessSet::new([
         ResourceAccess::new(
             AccessNamespace::Process,
@@ -131,7 +136,7 @@ fn process_accesses(arguments: &Value) -> Result<InvocationAccessSet, Preparatio
         ResourceAccess::new(
             AccessNamespace::Filesystem,
             text(arguments, "working_directory")?,
-            AccessMode::Read,
+            workspace_mode,
         )?,
     ])
 }
@@ -274,6 +279,7 @@ fn process_definition(
 ) -> Result<ToolDefinition, PreparationError> {
     let capabilities = [
         ExecutionCapability::FilesystemRead,
+        ExecutionCapability::FilesystemWrite,
         ExecutionCapability::Process,
     ];
     let requirements =
@@ -286,12 +292,15 @@ fn process_definition(
         T1_PROCESS_RUN,
         T1_TOOL_REVISION,
         "Run one configured executable lane without shell parsing.",
-        json!({"type":"object","properties":{"lane":{"type":"string","minLength":1,"maxLength":256},"argv":{"type":"array","minItems":1,"maxItems":MAX_PROCESS_ARGUMENTS,"items":{"type":"string","minLength":1,"maxLength":MAX_ARGUMENT_BYTES}},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"max_output_bytes":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_OUTPUT_BYTES},"timeout_ms":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_DURATION_MS}},"required":["lane","argv","working_directory","max_output_bytes","timeout_ms"],"additionalProperties":false}),
+        json!({"type":"object","properties":{"lane":{"type":"string","minLength":1,"maxLength":256},"argv":{"type":"array","minItems":1,"maxItems":MAX_PROCESS_ARGUMENTS,"items":{"type":"string","minLength":1,"maxLength":MAX_ARGUMENT_BYTES}},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"workspace_mode":{"type":"string","enum":["read","write"]},"max_output_bytes":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_OUTPUT_BYTES},"timeout_ms":{"type":"integer","minimum":1,"maximum":MAX_PROCESS_DURATION_MS}},"required":["lane","argv","working_directory","workspace_mode","max_output_bytes","timeout_ms"],"additionalProperties":false}),
         requirements.clone(),
         ReplayClass::NeverReplay,
         ToolAccessPolicyV1::new(
             policy_revision,
-            [AccessPolicyEntry::new(".", [AccessMode::Read])?],
+            [AccessPolicyEntry::new(
+                ".",
+                [AccessMode::Read, AccessMode::Write],
+            )?],
             process_entries,
             [],
             [],

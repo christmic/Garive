@@ -4,7 +4,7 @@ use std::{
 };
 
 use garive_core::{
-    execute_agent, execute_agent_with_preparation, execute_model_only, AgentEvent, AgentEventKind,
+    execute_agent_with_preparation, execute_model_only, AgentEvent, AgentEventKind,
     AgentExecutionPorts, AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort,
     ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef, PortFailure, Retention,
     ToolPreparationPort, Visibility,
@@ -248,42 +248,7 @@ fn finish_durable_execution(
     })
 }
 
-/// Runs the complete tool-capable Core loop with one coordinated durable writer.
-#[allow(clippy::too_many_arguments)]
-pub async fn execute_durable_agent(
-    ledger: &mut SqliteLedger,
-    config: &DurableExecutionConfig,
-    request: &AgentTurnRequest,
-    capabilities: &AgentToolCapabilities,
-    context: &mut dyn ContextPort,
-    model: &dyn ModelPort,
-    authority: &mut dyn AuthorityPort,
-    executor: &mut dyn ExecutorPort,
-    events: &mut dyn EventSink,
-    cancellation: &dyn ModelCancellation,
-    clock: &dyn ClockPort,
-    publisher: &mut dyn TerminalPublisher,
-) -> Result<DurableExecutionResult, DurableExecutionError> {
-    execute_durable_agent_inner(
-        ledger,
-        config,
-        request,
-        PreparedAgentCapabilities::default(),
-        capabilities,
-        context,
-        model,
-        authority,
-        executor,
-        None,
-        events,
-        cancellation,
-        clock,
-        publisher,
-    )
-    .await
-}
-
-/// Runs tool-capable Core after atomically committing one exact S0 activation.
+/// Runs F0-governed Core after atomically committing one exact S0 activation.
 #[allow(clippy::too_many_arguments)]
 pub async fn execute_durable_agent_with_skill_activation(
     ledger: &mut SqliteLedger,
@@ -295,6 +260,7 @@ pub async fn execute_durable_agent_with_skill_activation(
     model: &dyn ModelPort,
     authority: &mut dyn AuthorityPort,
     executor: &mut dyn ExecutorPort,
+    f0: F0ExecutionGovernance<'_>,
     events: &mut dyn EventSink,
     cancellation: &dyn ModelCancellation,
     clock: &dyn ClockPort,
@@ -314,7 +280,7 @@ pub async fn execute_durable_agent_with_skill_activation(
         model,
         authority,
         executor,
-        None,
+        f0,
         events,
         cancellation,
         clock,
@@ -334,7 +300,7 @@ async fn execute_durable_agent_inner(
     model: &dyn ModelPort,
     authority: &mut dyn AuthorityPort,
     executor: &mut dyn ExecutorPort,
-    f0: Option<F0ExecutionGovernance<'_>>,
+    f0: F0ExecutionGovernance<'_>,
     events: &mut dyn EventSink,
     cancellation: &dyn ModelCancellation,
     clock: &dyn ClockPort,
@@ -401,14 +367,9 @@ async fn execute_durable_agent_inner(
             },
         )
         .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
-        let (preparation, mut effects) = if let Some(f0) = f0 {
-            let effects = effects
-                .with_f0_governance(f0.safety, f0.sandbox, f0.context)
-                .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
-            (Some(f0.preparation), effects)
-        } else {
-            (None, effects)
-        };
+        let mut effects = effects
+            .with_f0_governance(f0.safety, f0.sandbox, f0.context)
+            .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
         let mut ports = AgentExecutionPorts {
             context,
             model: &durable_model,
@@ -416,18 +377,14 @@ async fn execute_durable_agent_inner(
             cancellation: &durable_cancellation,
             clock,
         };
-        if let Some(preparation) = preparation {
-            execute_agent_with_preparation(
-                &effective_request,
-                capabilities,
-                &mut ports,
-                preparation,
-                &mut effects,
-            )
-            .await
-        } else {
-            execute_agent(&effective_request, capabilities, &mut ports, &mut effects).await
-        }
+        execute_agent_with_preparation(
+            &effective_request,
+            capabilities,
+            &mut ports,
+            f0.preparation,
+            &mut effects,
+        )
+        .await
     };
     finish_durable_execution(coordinator, config, report, publisher)
 }
@@ -459,7 +416,7 @@ pub async fn execute_durable_agent_with_f0(
         model,
         authority,
         executor,
-        Some(f0),
+        f0,
         events,
         cancellation,
         clock,
@@ -468,7 +425,7 @@ pub async fn execute_durable_agent_with_f0(
     .await
 }
 
-/// Runs tool-capable Core after committing all supplied capability inputs in order.
+/// Runs F0-governed Core after committing all supplied capability inputs in order.
 #[allow(clippy::too_many_arguments)]
 pub async fn execute_durable_agent_with_capabilities(
     ledger: &mut SqliteLedger,
@@ -480,6 +437,7 @@ pub async fn execute_durable_agent_with_capabilities(
     model: &dyn ModelPort,
     authority: &mut dyn AuthorityPort,
     executor: &mut dyn ExecutorPort,
+    f0: F0ExecutionGovernance<'_>,
     events: &mut dyn EventSink,
     cancellation: &dyn ModelCancellation,
     clock: &dyn ClockPort,
@@ -495,7 +453,7 @@ pub async fn execute_durable_agent_with_capabilities(
         model,
         authority,
         executor,
-        None,
+        f0,
         events,
         cancellation,
         clock,

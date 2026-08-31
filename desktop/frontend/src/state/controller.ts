@@ -34,6 +34,18 @@ export interface ActivityItem {
   readonly state: string; readonly turnId?: string; readonly position: number;
   readonly terminal?: boolean; readonly safeCode?: string; readonly neutral: boolean;
 }
+export interface LivePreview {
+  readonly turnId: string; readonly executionId: string; readonly streamId: string;
+  readonly sequence: number; readonly text: string; readonly available: boolean;
+  readonly phase?: string; readonly labelKey?: string;
+}
+export interface LiveOutputItem {
+  readonly turnId: string; readonly executionId: string; readonly streamId: string;
+  readonly sequence: number; readonly kind: "snapshot" | "text_delta" | "phase_changed" |
+    "preview_unavailable" | "ended";
+  readonly text?: string; readonly throughSequence?: number; readonly phase?: string;
+  readonly labelKey?: string; readonly reason?: string;
+}
 export interface PendingCommand {
   readonly kind: "create_session" | "start_turn" | "cancel_turn" | "continue_turn";
   readonly commandId: string; readonly requestDigest: string; readonly generation: number;
@@ -60,6 +72,7 @@ export interface AppViewState {
   readonly timeline: readonly TimelineItem[]; readonly cursor: number;
   readonly drafts: readonly Draft[]; readonly execution: ExecutionState;
   readonly pending: readonly PendingCommand[]; readonly activities: readonly ActivityItem[];
+  readonly livePreview?: LivePreview;
   readonly outstanding: readonly AppEffect[]; readonly preferenceDirty: boolean; readonly notice?: AppError;
 }
 
@@ -85,6 +98,7 @@ export type AppEffectPayload =
   | { readonly type: "timeline_loaded"; readonly items: readonly TimelineItem[]; readonly cursor: number; readonly activities: readonly ActivityItem[] }
   | { readonly type: "host_event"; readonly event: string; readonly position: number; readonly turnId?: string;
       readonly text?: string; readonly activity?: Omit<ActivityItem, "neutral"> }
+  | { readonly type: "live_output"; readonly output: LiveOutputItem }
   | { readonly type: "event_stream_ended" }
   | { readonly type: "command_succeeded"; readonly sessionId: string; readonly turnId?: string; readonly committedPosition: number }
   | { readonly type: "failed"; readonly error: AppError };
@@ -98,7 +112,7 @@ export function initialAppViewState(
 ): AppViewState {
   return { configuration, shell: "booting", generation: 0, nextEffect: 1,
     definitions: [], sessions: [], timeline: [], cursor: 0, drafts: [], execution: "idle",
-    pending: [], activities: [], outstanding: [], preferenceDirty: false };
+    pending: [], activities: [], livePreview: undefined, outstanding: [], preferenceDirty: false };
 }
 
 export function reduceApp(
@@ -114,7 +128,7 @@ export function reduceApp(
     case "select_session": {
       if (!state.sessions.some((item) => item.sessionId === intent.sessionId)) return notice(state, "validation", "session_not_found");
       const base = { ...state, selectedSessionId: intent.sessionId, timelineSessionId: undefined,
-        timeline: [], cursor: 0, activities: [], execution: "idle" as const,
+        timeline: [], cursor: 0, activities: [], livePreview: undefined, execution: "idle" as const,
         generation: state.generation + 1,
         outstanding: state.outstanding.filter((effect) => mutation(effect.kind)) };
       return issueMany(base, [{ kind: "load_timeline", sessionId: intent.sessionId }, { kind: "save_preferences" }]);
@@ -215,7 +229,8 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
   if (!resultMatches(effect.kind, intent.result.type)) {
     return failedResult(state, effect, { kind: "protocol", code: "unexpected_effect_result" });
   }
-  let next = intent.result.type === "host_event" ? state : removeEffect(state, effect.effectId);
+  let next = intent.result.type === "host_event" || intent.result.type === "live_output"
+    ? state : removeEffect(state, effect.effectId);
   switch (intent.result.type) {
     case "preferences_loaded": return changed({ ...next, drafts: intent.result.drafts,
       selectedSessionId: intent.result.selectedSessionId ?? next.selectedSessionId,
@@ -241,6 +256,7 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
     }
     case "command_succeeded": return commandSucceeded(next, effect, intent.result);
     case "host_event": return hostEvent(next, effect, intent.result, limits);
+    case "live_output": return liveOutput(next, intent.result.output);
     case "event_stream_ended": return changed({ ...next, execution: "disconnected",
       notice: { kind: "transport", code: "stream_ended" } });
   }
@@ -262,6 +278,7 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
     ? [...state.timeline, { turnId: result.turnId, state: "running", latestPosition: result.committedPosition,
       userText: effect.text ?? "", contentTruncated: false, activities: [] }] : state.timeline;
   const base = { ...state, pending, drafts, timeline, cursor: result.committedPosition,
+    livePreview: undefined,
     execution: "following" as const, notice: undefined };
   const follow = [{ kind: "follow_events" as const, sessionId: result.sessionId,
     afterPosition: result.committedPosition }];
@@ -271,9 +288,11 @@ function commandSucceeded(state: AppViewState, effect: AppEffect, result: Extrac
 function hostEvent(state: AppViewState, effect: AppEffect, result: Extract<AppEffectPayload, { type: "host_event" }>, limits: ControllerLimits): Reduction {
   if (result.position <= state.cursor) return unchanged(state);
   let execution = state.execution; let outstanding = state.outstanding; let notice = state.notice;
-  if (result.event === "turn.suspended") execution = "suspended";
+  let livePreview = state.livePreview;
+  if (result.event === "turn.suspended") { execution = "suspended"; livePreview = undefined; }
   else if (["turn.completed", "turn.stopped", "turn.failed"].includes(result.event)) {
-    execution = "idle"; outstanding = outstanding.filter((item) => item.effectId !== effect.effectId);
+    execution = "idle"; livePreview = undefined;
+    outstanding = outstanding.filter((item) => item.effectId !== effect.effectId);
   }
   let activities = state.activities;
   if (result.activity) {
@@ -294,9 +313,33 @@ function hostEvent(state: AppViewState, effect: AppEffect, result: Extract<AppEf
       completionText: result.event === "turn.completed" ? result.text ?? "" : item.completionText,
       activities: turnActivities };
   });
-  const base = { ...state, timeline, cursor: result.position, execution, activities, outstanding, notice };
+  const base = { ...state, timeline, cursor: result.position, execution, activities,
+    livePreview, outstanding, notice };
   return result.event === "turn.suspended" && effect.sessionId
     ? issueMany(base, [{ kind: "load_timeline", sessionId: effect.sessionId }]) : changed(base);
+}
+
+function liveOutput(state: AppViewState, output: LiveOutputItem): Reduction {
+  if (!state.timeline.some((item) => item.turnId === output.turnId && item.state === "running")) {
+    return unchanged(state);
+  }
+  const current = state.livePreview;
+  if (current?.streamId === output.streamId && output.sequence <= current.sequence) return unchanged(state);
+  const fresh = !current || current.streamId !== output.streamId;
+  const gap = !fresh && output.sequence !== current.sequence + 1 && output.kind !== "snapshot";
+  let next: LivePreview = fresh ? { turnId: output.turnId, executionId: output.executionId,
+    streamId: output.streamId, sequence: output.sequence, text: "", available: true }
+    : { ...current, sequence: output.sequence };
+  if (gap || output.kind === "preview_unavailable") next = { ...next, text: "", available: false };
+  else if (output.kind === "snapshot") {
+    if (output.throughSequence !== output.sequence) return unchanged(state);
+    next = { ...next, text: output.text ?? "", available: true };
+  } else if (output.kind === "text_delta" && next.available) {
+    next = { ...next, text: next.text + (output.text ?? "") };
+  } else if (output.kind === "phase_changed") {
+    next = { ...next, phase: output.phase, labelKey: output.labelKey };
+  }
+  return changed({ ...state, livePreview: next });
 }
 
 function failedResult(state: AppViewState, effect: AppEffect, error: AppError): Reduction {
@@ -345,7 +388,7 @@ function resultMatches(kind: EffectKind, type: AppEffectPayload["type"]): boolea
   const expected: Readonly<Record<EffectKind, readonly AppEffectPayload["type"][]>> = {
     load_preferences: ["preferences_loaded"], save_preferences: ["preferences_saved"],
     load_definitions: ["definitions_loaded"], load_session_page: ["session_page_loaded"],
-    load_timeline: ["timeline_loaded"], follow_events: ["host_event", "event_stream_ended"],
+    load_timeline: ["timeline_loaded"], follow_events: ["host_event", "live_output", "event_stream_ended"],
     create_session: ["command_succeeded"], start_turn: ["command_succeeded"],
     cancel_turn: ["command_succeeded"], continue_turn: ["command_succeeded"],
   };

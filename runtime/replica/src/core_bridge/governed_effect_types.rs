@@ -202,6 +202,15 @@ pub trait ExecutorPort: Send {
 
     /// Crosses the external boundary only after Runtime committed Started.
     fn dispatch<'a>(&'a mut self, command: ExecutorDispatch<'a>) -> ExecutorFuture<'a>;
+
+    /// Releases executor recovery state after Runtime durably commits the receipt.
+    fn acknowledge_receipt(
+        &mut self,
+        _invocation_id: &ToolInvocationId,
+        _receipt: &EffectReceipt,
+    ) -> Result<(), ExecutorDispatchError> {
+        Ok(())
+    }
 }
 
 /// Sanitized failure of Runtime effect composition.
