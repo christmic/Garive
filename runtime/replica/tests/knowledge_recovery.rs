@@ -9,7 +9,8 @@ use garive_ledger::{
 };
 use garive_runtime::{
     derive_knowledge_recovery, plan_knowledge_completed, plan_knowledge_dispatched,
-    plan_knowledge_requested, plan_start_turn, recover_local_dispatches, EffectiveRuntimeLimits,
+    plan_knowledge_failed, plan_knowledge_requested, plan_start_turn, recover_local_dispatches,
+    EffectiveRuntimeLimits, KnowledgeFailurePhase, KnowledgeFailureReason,
     KnowledgeLifecycleContext, KnowledgeRecoveryAction, KnowledgeRecoveryContext, RuntimeCommandId,
     SqliteLedger, StartTurnCommand,
 };
@@ -182,6 +183,146 @@ fn local_restart_records_dispatched_uncertainty_before_abandonment() {
     assert_eq!(payload["phase"], "dispatched");
     assert_eq!(payload["reason"], "retrieval_uncertain");
     assert_eq!(payload["ambiguous"], true);
+}
+
+#[derive(Clone, Copy, Debug)]
+enum LocalCut {
+    Requested,
+    Completed,
+    Failed,
+}
+
+#[test]
+fn local_restart_preserves_requested_completed_and_failed_classification() {
+    for cut in [LocalCut::Requested, LocalCut::Completed, LocalCut::Failed] {
+        verify_local_cut(cut);
+    }
+}
+
+fn verify_local_cut(cut: LocalCut) {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("knowledge-local-cut.sqlite3");
+    let session = SessionId::try_from("knowledge-cut-session").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    ledger
+        .commit(session.clone(), 0, vec![open_session()])
+        .unwrap();
+    let start = plan_start_turn(
+        &StartTurnCommand {
+            command_id: RuntimeCommandId::new("knowledge-cut-start").unwrap(),
+            session_id: session.clone(),
+            agent_instance_id: AgentInstanceId::try_from("agent").unwrap(),
+            definition_id: AgentDefinitionId::try_from("definition").unwrap(),
+            definition_revision: AgentDefinitionRevision::try_from("revision").unwrap(),
+            snapshot_digest: "a".repeat(64),
+            trusted_input: "hello".into(),
+            limits: EffectiveRuntimeLimits {
+                max_iterations: 1,
+                max_input_tokens: None,
+                max_output_tokens: None,
+                deadline_budget_ms: None,
+            },
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        1,
+    )
+    .unwrap();
+    let execution = start.execution_id.clone().unwrap();
+    let turn = start.turn_id.clone();
+    ledger.commit(session.clone(), 1, start.facts).unwrap();
+    let lifecycle = KnowledgeLifecycleContext {
+        turn_id: turn.clone(),
+        execution_id: execution.clone(),
+        recorded_at: "2026-08-29T00:00:01Z".into(),
+    };
+    let request = request();
+    let prepared = plan_knowledge_requested(&lifecycle, &request).unwrap();
+    ledger
+        .commit(session.clone(), 2, vec![prepared.fact.clone()])
+        .unwrap();
+    match cut {
+        LocalCut::Requested => {}
+        LocalCut::Completed => {
+            ledger
+                .commit(
+                    session.clone(),
+                    3,
+                    vec![plan_knowledge_dispatched(&lifecycle, &prepared, "attempt-cut").unwrap()],
+                )
+                .unwrap();
+            let completed = plan_knowledge_completed(
+                &lifecycle,
+                &prepared,
+                &source(),
+                &request,
+                vec![evidence()],
+                true,
+            )
+            .unwrap();
+            ledger
+                .commit(session.clone(), 4, vec![completed.fact])
+                .unwrap();
+        }
+        LocalCut::Failed => {
+            let failed = plan_knowledge_failed(
+                &lifecycle,
+                &prepared,
+                KnowledgeFailurePhase::PreDispatch,
+                KnowledgeFailureReason::SourceDenied,
+                None,
+            )
+            .unwrap();
+            ledger.commit(session.clone(), 3, vec![failed]).unwrap();
+        }
+    }
+    drop(ledger);
+
+    let mut restarted = SqliteLedger::open(&path).unwrap();
+    let recovered = recover_local_dispatches(&mut restarted, 3, "2026-08-29T00:00:02Z")
+        .unwrap_or_else(|error| panic!("{cut:?} recovery failed: {error:?}"));
+    assert_eq!(recovered.len(), 1);
+    if matches!(cut, LocalCut::Requested) {
+        assert_eq!(recovered[0].execution_id, execution);
+    } else {
+        assert_ne!(recovered[0].execution_id, execution);
+    }
+    let facts = restarted.load_turn(&turn).unwrap().facts;
+    match cut {
+        LocalCut::Requested => {
+            assert!(!facts
+                .iter()
+                .any(|fact| fact.kind.as_str() == "knowledge.failed"));
+            assert!(!facts
+                .iter()
+                .any(|fact| fact.kind.as_str() == "execution.abandoned"));
+        }
+        LocalCut::Completed => {
+            let abandoned = facts
+                .iter()
+                .position(|fact| fact.kind.as_str() == "execution.abandoned")
+                .unwrap();
+            let terminal = facts
+                .iter()
+                .position(|fact| fact.kind.as_str() == "knowledge.completed")
+                .unwrap();
+            assert!(terminal < abandoned);
+            assert!(!facts
+                .iter()
+                .any(|fact| fact.kind.as_str() == "knowledge.failed"));
+        }
+        LocalCut::Failed => {
+            let abandoned = facts
+                .iter()
+                .position(|fact| fact.kind.as_str() == "execution.abandoned")
+                .unwrap();
+            let terminals = facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == "knowledge.failed")
+                .collect::<Vec<_>>();
+            assert_eq!(terminals.len(), 1);
+            assert!(terminals[0].position < facts[abandoned].position);
+        }
+    }
 }
 
 fn request() -> KnowledgeRequest {

@@ -97,14 +97,30 @@ fn recover_local_dispatches_inner(
                 let snapshot = ledger
                     .load_turn(&turn_id)
                     .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
-                if commit_dispatched_knowledge_uncertainty(
+                match recover_pending_knowledge(
                     ledger,
                     &session_id,
                     &turn_id,
                     &snapshot,
                     recorded_at,
                 )? {
-                    continue;
+                    PendingKnowledgeRecovery::CommittedUncertainty => continue,
+                    PendingKnowledgeRecovery::RedispatchCurrentExecution => {
+                        let execution_id = latest(&snapshot, "execution.started")?
+                            .execution_id
+                            .clone()
+                            .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+                        output.push(committed_turn(
+                            &snapshot,
+                            session_id.clone(),
+                            turn_id.clone(),
+                            execution_id,
+                            snapshot.session_version,
+                            snapshot.through_position,
+                        )?);
+                        break;
+                    }
+                    PendingKnowledgeRecovery::None => {}
                 }
                 let recovery = derive_runtime_recovery(&snapshot, max_recoveries)
                     .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
@@ -179,13 +195,19 @@ fn recover_local_dispatches_inner(
     Ok(output)
 }
 
-fn commit_dispatched_knowledge_uncertainty(
+enum PendingKnowledgeRecovery {
+    None,
+    RedispatchCurrentExecution,
+    CommittedUncertainty,
+}
+
+fn recover_pending_knowledge(
     ledger: &mut SqliteLedger,
     session_id: &garive_ledger::SessionId,
     turn_id: &garive_ledger::TurnId,
     snapshot: &TurnSnapshot,
     recorded_at: &str,
-) -> Result<bool, LocalRecoveryError> {
+) -> Result<PendingKnowledgeRecovery, LocalRecoveryError> {
     let execution_id = latest(snapshot, "execution.started")?
         .execution_id
         .clone()
@@ -204,6 +226,7 @@ fn commit_dispatched_knowledge_uncertainty(
         return Err(LocalRecoveryError::CorruptRecoveryState);
     }
     let mut facts = Vec::new();
+    let mut redispatch = false;
     for request_id in request_ids {
         let context = KnowledgeRecoveryContext {
             session_id: session_id.clone(),
@@ -219,17 +242,21 @@ fn commit_dispatched_knowledge_uncertainty(
                 plan_knowledge_recovery_uncertain(ledger, &context, recorded_at)
                     .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
             ),
-            KnowledgeRecoveryAction::RedispatchSameRequest { .. }
-            | KnowledgeRecoveryAction::ReturnTerminal { .. } => {}
+            KnowledgeRecoveryAction::RedispatchSameRequest { .. } => redispatch = true,
+            KnowledgeRecoveryAction::ReturnTerminal { .. } => {}
         }
     }
-    if facts.is_empty() {
-        return Ok(false);
+    if !facts.is_empty() {
+        ledger
+            .commit(session_id.clone(), snapshot.session_version, facts)
+            .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
+        return Ok(PendingKnowledgeRecovery::CommittedUncertainty);
     }
-    ledger
-        .commit(session_id.clone(), snapshot.session_version, facts)
-        .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
-    Ok(true)
+    Ok(if redispatch {
+        PendingKnowledgeRecovery::RedispatchCurrentExecution
+    } else {
+        PendingKnowledgeRecovery::None
+    })
 }
 
 fn reconcile_lost_process(
