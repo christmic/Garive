@@ -52,6 +52,17 @@ impl RuntimeState {
         }
     }
 
+    #[cfg(test)]
+    pub(in crate::runtime::app) fn add_background_follow_for_test(
+        &mut self,
+        session_id: String,
+        observed_position: u64,
+        owner: SubscriptionId,
+        task: JoinHandle<()>,
+    ) {
+        self.add_background_follow(session_id, observed_position, owner, task);
+    }
+
     pub(in crate::runtime::app) fn next_subscription_id(&mut self) -> SubscriptionId {
         self.subscription_sequence = self.subscription_sequence.saturating_add(1);
         SubscriptionId::new(self.subscription_sequence)
@@ -75,5 +86,19 @@ impl RuntimeState {
             .is_some_and(|owner| {
                 owner.follow.is_some() && owner.follow_owner == Some(subscription_id)
             })
+    }
+
+    #[cfg(test)]
+    pub(in crate::runtime::app) fn background_follow_order(&self) -> Vec<String> {
+        let mut follows = self
+            .background_follows
+            .iter()
+            .map(|(session_id, follow)| (follow.sequence, session_id.clone()))
+            .collect::<Vec<_>>();
+        follows.sort_by_key(|(sequence, _)| *sequence);
+        follows
+            .into_iter()
+            .map(|(_, session_id)| session_id)
+            .collect()
     }
 }
