@@ -10,15 +10,15 @@ use garive_core::{
 use garive_ledger::{CanonicalPayload, ExecutionId, SessionId, TurnId};
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
-    ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage, TextMode,
-    TokenCount, UsageSource,
+    ModelOutputKind, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason,
+    ModelStreamEvent, ModelUsage, ObserverDecision, TextMode, TokenCount, UsageSource,
 };
 use garive_runtime::{
     local_dispatch_queue, recover_local_dispatches, CommittedTurn, EffectiveRuntimeLimits,
-    HostClock, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution,
-    LocalGovernedExecutionFactory, LocalWorkerDisposition, LocalWorkerError, SqliteLedger,
-    TurnDispatcher,
+    HostClock, InstalledAgent, LiveHost, LiveHostLimits, LiveOutputEndReason, LiveOutputEventKind,
+    LiveOutputHub, LiveOutputLimits, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution, LocalGovernedExecutionFactory,
+    LocalWorkerDisposition, LocalWorkerError, SqliteLedger, TurnDispatcher,
 };
 use garive_runtime::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
@@ -48,12 +48,33 @@ impl ModelPort for CompletingModel {
     fn invoke<'a>(
         &'a self,
         request: &'a ModelRequest,
-        _: &'a mut dyn ModelObserver,
+        observer: &'a mut dyn ModelObserver,
         _: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         self.0.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
             assert_eq!(request.target_id.as_str(), "target-main");
+            assert_eq!(
+                observer.observe(&ModelStreamEvent::OutputItemStarted {
+                    output_index: 0,
+                    kind: ModelOutputKind::Text,
+                }),
+                ObserverDecision::Continue
+            );
+            assert_eq!(
+                observer.observe(&ModelStreamEvent::TextDelta {
+                    output_index: 0,
+                    delta: "durable ".into(),
+                }),
+                ObserverDecision::Continue
+            );
+            assert_eq!(
+                observer.observe(&ModelStreamEvent::TextDelta {
+                    output_index: 0,
+                    delta: "answer".into(),
+                }),
+                ObserverDecision::Continue
+            );
             Ok(InvokeOutcome::Completed {
                 items: vec![ModelItem::Text {
                     text: "durable answer".into(),
@@ -382,8 +403,21 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
         .start_turn("start-1", &session.session_id, "hello")
         .expect("turn start committed");
 
+    let live_output = LiveOutputHub::new(LiveOutputLimits {
+        max_active_executions: 1,
+        max_preview_bytes: 1_024,
+        max_event_bytes: 64,
+        broadcast_capacity: 16,
+        max_subscribers_per_session: 2,
+    })
+    .expect("live output");
+    let mut live = live_output
+        .subscribe(&session.session_id)
+        .expect("subscriber");
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
-    let worker = LocalExecutionWorker::new(&database, policy(), model.clone()).expect("worker");
+    let worker = LocalExecutionWorker::new(&database, policy(), model.clone())
+        .expect("worker")
+        .with_live_output(live_output);
     let disposition = queue
         .try_run_next(&worker, &attempt())
         .await
@@ -395,6 +429,24 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
     assert_eq!(terminal_positions.len(), 2);
     assert!(terminal_positions[0] > turn.committed_position);
     assert_eq!(model.0.load(Ordering::SeqCst), 1);
+    let mut live_events = Vec::new();
+    while let Some(event) = live.try_recv().expect("live receive") {
+        live_events.push(event);
+    }
+    assert!(live_events.iter().any(|event| matches!(
+        &event.kind,
+        LiveOutputEventKind::TextDelta { text } if text == "durable "
+    )));
+    assert!(live_events.iter().any(|event| matches!(
+        &event.kind,
+        LiveOutputEventKind::TextDelta { text } if text == "answer"
+    )));
+    assert!(matches!(
+        live_events.last().map(|event| &event.kind),
+        Some(LiveOutputEventKind::Ended {
+            reason: LiveOutputEndReason::TerminalCommitted
+        })
+    ));
     let duplicate = CommittedTurn {
         session_id: SessionId::try_from(session.session_id.as_str()).expect("session identity"),
         turn_id: TurnId::try_from(turn.turn_id.as_str()).expect("turn identity"),

@@ -9,16 +9,17 @@ use std::{
     },
 };
 
-use garive_core::ToolPreparationPort;
 use garive_core::{AgentEvent, AgentToolCapabilities, ClockPort, EventSink, PortFailure};
+use garive_core::{AgentOutcome, ToolPreparationPort};
 use garive_llm::{ModelCancellation, ModelPort};
 
 use crate::{
     execute_durable_agent, execute_durable_agent_with_f0, execute_durable_model_only,
     reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
-    F0GovernanceContext, F0RecoveryContentPort, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalReconstructionError, SafetyPort, SandboxAdmissionPort, SqliteLedger,
-    TerminalPublicationError, TerminalPublisher, TurnDispatchError, TurnDispatcher,
+    F0GovernanceContext, F0RecoveryContentPort, LiveOutputEndReason, LiveOutputHub, LiveOutputSink,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError, SafetyPort,
+    SandboxAdmissionPort, SqliteLedger, TerminalPublicationError, TerminalPublisher,
+    TurnDispatchError, TurnDispatcher,
 };
 
 /// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
@@ -121,6 +122,7 @@ pub struct LocalExecutionWorker {
     policy: LocalExecutionPolicy,
     model: Arc<dyn ModelPort>,
     governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
+    live_output: Option<LiveOutputHub>,
 }
 
 /// Frozen capabilities and governed ports created for one local Execution.
@@ -171,7 +173,14 @@ impl LocalExecutionWorker {
             policy,
             model,
             governed: None,
+            live_output: None,
         })
+    }
+
+    /// Installs the explicit lossy H4 publication boundary.
+    pub fn with_live_output(mut self, live_output: LiveOutputHub) -> Self {
+        self.live_output = Some(live_output);
+        self
     }
 
     /// Constructs a tool-capable worker with explicit governed port creation.
@@ -204,9 +213,12 @@ impl LocalExecutionWorker {
             };
         let cancellation = NeverCancelled;
         let clock = FixedClock(attempt.now_ms);
-        let mut events = DiscardEvents;
+        let mut events = match &self.live_output {
+            Some(hub) => WorkerEvents::Live(hub.event_sink()),
+            None => WorkerEvents::Discard(DiscardEvents),
+        };
         let mut publisher = DurableOnlyPublisher;
-        let result = if let Some(factory) = &self.governed {
+        let execution = if let Some(factory) = &self.governed {
             let mut governed = factory.create(committed)?;
             if governed.capabilities.definitions.is_empty() {
                 return Err(LocalWorkerError::InvalidComposition);
@@ -263,11 +275,36 @@ impl LocalExecutionWorker {
                 &mut publisher,
             )
             .await
-        }
-        .map_err(|_| LocalWorkerError::ExecutionFailed)?;
+        };
+        let result = match execution {
+            Ok(result) => result,
+            Err(_) => {
+                self.end_live(committed, LiveOutputEndReason::PublisherClosed);
+                return Err(LocalWorkerError::ExecutionFailed);
+            }
+        };
+        let live_end = match &result.report.outcome {
+            AgentOutcome::Completed { .. } => LiveOutputEndReason::TerminalCommitted,
+            AgentOutcome::Suspended { .. } => LiveOutputEndReason::Suspended,
+            AgentOutcome::Stopped { .. } => LiveOutputEndReason::Stopped,
+            AgentOutcome::Failed { .. } => LiveOutputEndReason::Failed,
+        };
+        self.end_live(committed, live_end);
         Ok(LocalWorkerDisposition::TerminalCommitted {
             positions: result.terminal_commit.positions,
         })
+    }
+
+    fn end_live(&self, committed: &CommittedTurn, reason: LiveOutputEndReason) {
+        let Some(hub) = &self.live_output else {
+            return;
+        };
+        let _ = hub.end_execution(
+            committed.session_id.as_str(),
+            committed.turn_id.as_str(),
+            committed.execution_id.as_str(),
+            reason,
+        );
     }
 }
 
@@ -344,6 +381,19 @@ struct DiscardEvents;
 impl EventSink for DiscardEvents {
     fn emit(&mut self, _: AgentEvent) -> Result<(), PortFailure> {
         Ok(())
+    }
+}
+
+enum WorkerEvents {
+    Live(LiveOutputSink),
+    Discard(DiscardEvents),
+}
+impl EventSink for WorkerEvents {
+    fn emit(&mut self, event: AgentEvent) -> Result<(), PortFailure> {
+        match self {
+            Self::Live(sink) => sink.emit(event),
+            Self::Discard(sink) => sink.emit(event),
+        }
     }
 }
 

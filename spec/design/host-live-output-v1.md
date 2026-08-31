@@ -244,4 +244,4 @@ forces follow mode.
 
 - Owner: Runtime H4 and Client presentation
 - Last reviewed: 2026-08-31
-- Status: accepted; Runtime hub implemented, production composition pending
+- Status: accepted; Runtime hub and worker publication implemented, Host/client composition pending

@@ -416,7 +416,9 @@ pub struct LiveOutputSink {
 
 impl EventSink for LiveOutputSink {
     fn emit(&mut self, event: AgentEvent) -> Result<(), PortFailure> {
-        self.hub.publish(event).map_err(|_| PortFailure::Event)
+        // H4 is deliberately lossy and must never fail durable execution.
+        let _ = self.hub.publish(event);
+        Ok(())
     }
 }
 
