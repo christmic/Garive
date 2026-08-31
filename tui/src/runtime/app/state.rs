@@ -9,6 +9,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use crate::{
     application::{
         reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
+        SessionPagePurpose, SessionPageRequest,
     },
     host::LiveHostReadPort,
     input::ComposerClickTracker,
@@ -231,7 +232,8 @@ impl RuntimeState {
                 crate::application::EffectTag::Exit => {
                     debug_assert!(self.model.quit_requested);
                 }
-                crate::application::EffectTag::LoadDefinitions => {
+                crate::application::EffectTag::LoadDefinitions
+                | crate::application::EffectTag::LoadSessionPage => {
                     self.host_effects.submit(effect);
                 }
                 crate::application::EffectTag::PersistPending => self.effects.submit(effect),
@@ -440,13 +442,12 @@ impl RuntimeState {
     }
 
     pub(in crate::runtime) fn load_more_sessions(&mut self) {
-        if self.model.sessions_loading {
-            return;
-        }
         let Some(before) = self.model.sessions_next_before.clone() else {
             return;
         };
-        self.model.sessions_loading = true;
-        host::load_session_page(self.client.clone(), before, self.sender.clone());
+        self.dispatch(AppAction::LoadSessionPageRequested(SessionPageRequest {
+            cursor: Some(before),
+            purpose: SessionPagePurpose::Append,
+        }));
     }
 }

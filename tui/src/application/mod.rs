@@ -12,11 +12,14 @@ pub(crate) use action_overlay::{ActionOverlayBinding, ActionOverlayIntent, Actio
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use effect::AppGeneration;
-pub(crate) use effect::{AppEffect, AppEffectResult, EffectKind, EffectTag, EffectTracker};
+pub(crate) use effect::{
+    AppEffect, AppEffectResult, EffectContext, EffectKind, EffectTag, EffectTracker,
+};
 #[allow(unused_imports)]
 pub(crate) use effect::{
     AppEffectOutcome, EffectFailure, HostReadFailure, HostReadResponse, PendingMutationDraft,
-    PendingMutationKind, PersistedPendingIdentity, PersistenceFailure,
+    PendingMutationKind, PersistedPendingIdentity, PersistenceFailure, SessionPageOwner,
+    SessionPagePurpose, SessionPageRequest,
 };
 pub(crate) use inspector::{
     InspectorActivation, InspectorEntry, InspectorState, InspectorTone, InspectorVariant,

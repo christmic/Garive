@@ -5,10 +5,10 @@ use garive_host_client::{
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
 
+use crate::host::PAGE_LIMIT;
+
 #[path = "host_debug.rs"]
 mod host_debug;
-
-pub(crate) const PAGE_LIMIT: usize = 100;
 
 pub(crate) struct ContinuationRequest {
     pub(crate) command_id: String,
@@ -27,10 +27,6 @@ pub(crate) enum ContinuationInput {
 pub(crate) enum HostMessage {
     Bootstrapped {
         definitions: Vec<AgentDefinitionSummary>,
-        sessions: Vec<SessionSummary>,
-        next_before: Option<String>,
-    },
-    SessionPageLoaded {
         sessions: Vec<SessionSummary>,
         next_before: Option<String>,
     },
@@ -79,7 +75,6 @@ pub(crate) enum HostMessage {
 pub(crate) enum HostOperation {
     Bootstrap,
     Snapshot { request_id: u64 },
-    SessionPage,
     Mutation { command_id: String },
 }
 
@@ -99,26 +94,6 @@ pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage
             },
             Err(error) => HostMessage::Failed {
                 operation: HostOperation::Bootstrap,
-                error,
-            },
-        };
-        let _ = sender.send(message).await;
-    });
-}
-
-pub(crate) fn load_session_page(
-    client: LiveHostClient,
-    before: String,
-    sender: mpsc::Sender<HostMessage>,
-) {
-    tokio::spawn(async move {
-        let message = match client.list_sessions(PAGE_LIMIT, Some(&before)).await {
-            Ok(page) => HostMessage::SessionPageLoaded {
-                sessions: page.sessions,
-                next_before: page.next_before,
-            },
-            Err(error) => HostMessage::Failed {
-                operation: HostOperation::SessionPage,
                 error,
             },
         };

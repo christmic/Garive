@@ -15,14 +15,6 @@ impl fmt::Debug for HostMessage {
                 .field("session_count", &sessions.len())
                 .field("has_next_page", &next_before.is_some())
                 .finish(),
-            Self::SessionPageLoaded {
-                sessions,
-                next_before,
-            } => formatter
-                .debug_struct("HostMessage::SessionPageLoaded")
-                .field("session_count", &sessions.len())
-                .field("has_next_page", &next_before.is_some())
-                .finish(),
             Self::SnapshotLoaded {
                 request_id,
                 items,
@@ -77,9 +69,6 @@ impl fmt::Debug for HostMessage {
                         debug
                             .field("operation", &"snapshot")
                             .field("request_id", request_id);
-                    }
-                    HostOperation::SessionPage => {
-                        debug.field("operation", &"session_page");
                     }
                     HostOperation::Mutation { .. } => {
                         debug.field("operation", &"mutation");

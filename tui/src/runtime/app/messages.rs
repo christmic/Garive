@@ -28,9 +28,10 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             next_before,
         } => {
             state.model.definitions = definitions;
-            state.model.sessions = sessions;
-            state.model.sessions_next_before = next_before;
-            state.model.sessions_loading = false;
+            state.dispatch(AppAction::SessionCatalogReplaced {
+                sessions,
+                next_before,
+            });
             state.dispatch(AppAction::BootCompleted {
                 definition_count: state.model.definitions.len(),
                 session_count: state.model.sessions.len(),
@@ -51,24 +52,6 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.load(id);
             }
             replay_queued_create(state);
-        }
-        HostMessage::SessionPageLoaded {
-            sessions,
-            next_before,
-        } => {
-            for session in sessions {
-                if !state
-                    .model
-                    .sessions
-                    .iter()
-                    .any(|existing| existing.session_id == session.session_id)
-                {
-                    state.model.sessions.push(session);
-                }
-            }
-            state.model.sessions_next_before = next_before;
-            state.model.sessions_loading = false;
-            state.model.session_count = state.model.sessions.len();
         }
         HostMessage::SnapshotLoaded {
             request_id,
@@ -326,11 +309,6 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                     state.model.execution = ExecutionState::Failed;
                 }
                 HostOperation::Snapshot { request_id } if request_id != state.snapshot_request => {}
-                HostOperation::SessionPage => {
-                    state.model.sessions_loading = false;
-                    state.model.notice =
-                        Some(format!("Session page unavailable: {}.", code.wire_name()));
-                }
                 HostOperation::Snapshot { .. }
                     if matches!(
                         code,

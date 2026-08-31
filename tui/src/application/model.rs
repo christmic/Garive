@@ -5,7 +5,7 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
-use super::{EffectTracker, InspectorState, LiveAnswerProjection, TurnBlock};
+use super::{EffectTracker, InspectorState, LiveAnswerProjection, SessionPageOwner, TurnBlock};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -181,6 +181,7 @@ pub(crate) struct AppModel {
     pub(crate) sessions: Vec<SessionSummary>,
     pub(crate) sessions_next_before: Option<String>,
     pub(crate) sessions_loading: bool,
+    pub(crate) session_page_owner: Option<SessionPageOwner>,
     pub(crate) session_filter: String,
     pub(crate) turn_filter: String,
     pub(crate) turn_selection: usize,

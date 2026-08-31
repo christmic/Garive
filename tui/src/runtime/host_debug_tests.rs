@@ -99,14 +99,6 @@ fn host_message_debug_is_content_safe_for_every_variant() {
         ],
     );
     assert_safe(
-        HostMessage::SessionPageLoaded {
-            sessions: vec![session_summary()],
-            next_before: Some(CANARY.into()),
-        },
-        "SessionPageLoaded",
-        &["session_count: 1", "has_next_page: true"],
-    );
-    assert_safe(
         HostMessage::SnapshotLoaded {
             request_id: 47,
             session_id: CANARY.into(),
@@ -233,7 +225,6 @@ fn host_message_debug_is_content_safe_for_every_variant() {
     for operation in [
         HostOperation::Bootstrap,
         HostOperation::Snapshot { request_id: 54 },
-        HostOperation::SessionPage,
         HostOperation::Mutation {
             command_id: CANARY.into(),
         },

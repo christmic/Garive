@@ -1,6 +1,7 @@
 use super::{
     AppAction, AppEffect, AppEffectOutcome, AppModel, BootState, ConnectionState, EffectKind,
-    ExecutionState, FocusTarget, Overlay, PendingMutationKind,
+    ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind, SessionPageOwner,
+    SessionPagePurpose, SessionPageRequest,
 };
 
 pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> {
@@ -24,6 +25,37 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             model.connection = ConnectionState::Online;
             Vec::new()
         }
+        AppAction::SessionCatalogReplaced {
+            sessions,
+            next_before,
+        } => {
+            replace_session_catalog(model, sessions, next_before);
+            Vec::new()
+        }
+        AppAction::LoadSessionPageRequested(request)
+            if session_page_request_is_admitted(model, &request)
+                && model
+                    .session_page_owner
+                    .as_ref()
+                    .is_none_or(|owner| owner.request != request) =>
+        {
+            let effect = model.effects.issue(
+                EffectKind::LoadSessionPage {
+                    request: request.clone(),
+                },
+                None,
+                Some(request.identity_digest()),
+            );
+            if let Some(effect) = &effect {
+                model.session_page_owner = Some(SessionPageOwner {
+                    context: effect.context.clone(),
+                    request,
+                });
+                model.sessions_loading = true;
+            }
+            effect.into_iter().collect()
+        }
+        AppAction::LoadSessionPageRequested(_) => Vec::new(),
         AppAction::HostUnavailable { safe_code } => {
             model.boot = BootState::Degraded;
             model.connection = ConnectionState::Unavailable { safe_code };
@@ -189,6 +221,9 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 return Vec::new();
             };
             sync_in_flight_pending_projection(model);
+            if let EffectKind::LoadSessionPage { request } = &effect.kind {
+                return finish_session_page(model, effect.context, request.clone(), result.outcome);
+            }
             match (effect.kind, result.outcome) {
                 (
                     EffectKind::PersistPending { draft },
@@ -263,6 +298,93 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             }
         }
     }
+}
+
+fn session_page_request_is_admitted(model: &AppModel, request: &SessionPageRequest) -> bool {
+    match request.purpose {
+        SessionPagePurpose::Replace => request.cursor.is_none(),
+        SessionPagePurpose::Append => {
+            request.cursor.is_some() && request.cursor == model.sessions_next_before
+        }
+    }
+}
+
+fn finish_session_page(
+    model: &mut AppModel,
+    context: super::EffectContext,
+    request: SessionPageRequest,
+    outcome: AppEffectOutcome,
+) -> Vec<AppEffect> {
+    let is_active = model
+        .session_page_owner
+        .as_ref()
+        .is_some_and(|owner| owner.context == context && owner.request == request);
+    if !is_active {
+        return Vec::new();
+    }
+    model.session_page_owner = None;
+    model.sessions_loading = false;
+    match outcome {
+        AppEffectOutcome::HostRead(Ok(HostReadResponse::SessionPage {
+            request: response_request,
+            sessions,
+            next_before,
+        })) if response_request == request => match request.purpose {
+            SessionPagePurpose::Replace => replace_session_catalog(model, sessions, next_before),
+            SessionPagePurpose::Append => append_session_catalog(model, sessions, next_before),
+        },
+        AppEffectOutcome::HostRead(Err(failure)) => {
+            model.notice = Some(format!(
+                "Session page unavailable: {}.",
+                failure.code.wire_name()
+            ));
+        }
+        _ => {
+            model.notice = Some("Ignored an invalid Session page response.".into());
+        }
+    }
+    Vec::new()
+}
+
+fn replace_session_catalog(
+    model: &mut AppModel,
+    sessions: Vec<garive_host_client::SessionSummary>,
+    next_before: Option<String>,
+) {
+    let mut unique = Vec::with_capacity(sessions.len());
+    for session in sessions {
+        if !unique
+            .iter()
+            .any(|existing: &garive_host_client::SessionSummary| {
+                existing.session_id == session.session_id
+            })
+        {
+            unique.push(session);
+        }
+    }
+    model.sessions = unique;
+    model.sessions_next_before = next_before;
+    model.sessions_loading = false;
+    model.session_page_owner = None;
+    model.session_count = model.sessions.len();
+}
+
+fn append_session_catalog(
+    model: &mut AppModel,
+    sessions: Vec<garive_host_client::SessionSummary>,
+    next_before: Option<String>,
+) {
+    for session in sessions {
+        if !model
+            .sessions
+            .iter()
+            .any(|existing| existing.session_id == session.session_id)
+        {
+            model.sessions.push(session);
+        }
+    }
+    model.sessions_next_before = next_before;
+    model.session_count = model.sessions.len();
 }
 
 fn issue_pending(

@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use garive_host_client::{AgentDefinitionSummary, HostClientErrorCode};
+use garive_host_client::{AgentDefinitionSummary, HostClientErrorCode, SessionSummary};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct EffectId(u64);
@@ -36,11 +37,59 @@ pub(crate) struct EffectContext {
     pub(crate) request_digest: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SessionPagePurpose {
+    #[allow(dead_code)]
+    Replace,
+    Append,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct SessionPageRequest {
+    pub(crate) cursor: Option<String>,
+    pub(crate) purpose: SessionPagePurpose,
+}
+
+impl SessionPageRequest {
+    pub(crate) fn identity_digest(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"garive-tui-session-page-v1\0");
+        hasher.update(match self.purpose {
+            SessionPagePurpose::Replace => b"replace".as_slice(),
+            SessionPagePurpose::Append => b"append".as_slice(),
+        });
+        hasher.update(b"\0");
+        if let Some(cursor) = &self.cursor {
+            hasher.update(cursor.as_bytes());
+        }
+        format!("{:x}", hasher.finalize())
+    }
+}
+
+impl std::fmt::Debug for SessionPageRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SessionPageRequest")
+            .field("purpose", &self.purpose)
+            .field("has_cursor", &self.cursor.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SessionPageOwner {
+    pub(crate) context: EffectContext,
+    pub(crate) request: SessionPageRequest,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EffectKind {
     Exit,
     #[allow(dead_code)]
     LoadDefinitions,
+    LoadSessionPage {
+        request: SessionPageRequest,
+    },
     #[allow(dead_code)]
     PersistPending {
         draft: PendingMutationDraft,
@@ -74,6 +123,7 @@ impl EffectKind {
         match self {
             Self::Exit => EffectTag::Exit,
             Self::LoadDefinitions => EffectTag::LoadDefinitions,
+            Self::LoadSessionPage { .. } => EffectTag::LoadSessionPage,
             Self::PersistPending { .. } => EffectTag::PersistPending,
             Self::StartTurn { .. } => EffectTag::StartTurn,
             Self::CreateSession { .. } => EffectTag::CreateSession,
@@ -134,6 +184,11 @@ pub(crate) struct PersistedPendingIdentity {
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) enum HostReadResponse {
     Definitions(Vec<AgentDefinitionSummary>),
+    SessionPage {
+        request: SessionPageRequest,
+        sessions: Vec<SessionSummary>,
+        next_before: Option<String>,
+    },
 }
 
 impl std::fmt::Debug for HostReadResponse {
@@ -142,6 +197,16 @@ impl std::fmt::Debug for HostReadResponse {
             Self::Definitions(definitions) => formatter
                 .debug_struct("Definitions")
                 .field("count", &definitions.len())
+                .finish(),
+            Self::SessionPage {
+                request,
+                sessions,
+                next_before,
+            } => formatter
+                .debug_struct("SessionPage")
+                .field("request", request)
+                .field("count", &sessions.len())
+                .field("has_next", &next_before.is_some())
                 .finish(),
         }
     }
@@ -156,6 +221,7 @@ pub(crate) struct HostReadFailure {
 pub(crate) enum EffectTag {
     Exit,
     LoadDefinitions,
+    LoadSessionPage,
     PersistPending,
     StartTurn,
     CreateSession,

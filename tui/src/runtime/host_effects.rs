@@ -40,6 +40,9 @@ async fn execute<H: HostReadPort>(effect: AppEffect, host: H) -> AppEffectResult
     let kind = effect.kind.tag();
     let outcome = match effect.kind {
         EffectKind::LoadDefinitions => AppEffectOutcome::HostRead(host.load_definitions().await),
+        EffectKind::LoadSessionPage { request } => {
+            AppEffectOutcome::HostRead(host.load_session_page(request).await)
+        }
         _ => AppEffectOutcome::Failed(EffectFailure::Internal),
     };
     AppEffectResult {
