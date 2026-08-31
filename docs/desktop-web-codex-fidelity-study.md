@@ -113,6 +113,12 @@ evidence. Observable product facts are recorded without that content:
    independent scrolling. It is not an expanded artifact card.
 6. Long-running immersion comes from continuous content, anchored turn actions,
    live composer status and adjacent outputs—not a large progress dashboard.
+7. Desktop chrome allocates information by permanence: the title bar carries
+   document identity and global actions, execution state stays attached to the
+   composer, and account/host identity sits at the rail footer.
+8. The macOS window reads as one workbench because native controls, rail,
+   title/tab chrome, overlay panels and the bottom composer share one compact
+   density. A browser header with a logo, status badge and avatar does not.
 
 ### E. 2026-09-01 workbench gap closure
 
@@ -130,6 +136,7 @@ than a general “more polished” direction:
 | fenced output | bounded code card with a language header and copy action | undifferentiated bordered `pre` block | labeled code workbench, exact-source copy and persistent accessible feedback |
 | split workbench geometry | conversation, Composer and file divider share one bounded column; document starts 24 px after its edge | 352 px grid column whose child painted at 586 px, sending the 538 px Composer 210 px beneath the file surface; document added a second centered 40 px inset | explicit zero-min grid track, clipped conversation surface, 352 px default/320–520 px persisted separator and one 24 px document inset |
 | Environment | named floating surface | Activity/Artifacts tabs inside a small card | one Environment heading and a dismiss action; evidence rows only |
+| desktop identity | account identity anchored at the rail footer; no avatar in the title bar | duplicate Local/Working badge plus an inert G account button | truthful host identity in the rail footer; no fake account or duplicated execution state |
 | file chrome | selected file tab plus a second location/action row | generic Inspector tabs plus an expanded artifact card | one selected file tab, breadcrumb row, source/render action and independent scroll |
 | source inspection | available beside rendered document | no source presentation | reversible Rendered/Source switch over the same immutable preview bytes |
 
@@ -152,6 +159,12 @@ This gate passes only when both Desktop and Web show:
 - readable 12 px minimum metadata, except bounded 11 px timestamps;
 - light, dark, 720 px and 200% text-zoom evidence without horizontal overflow;
 - identical DOM, keyboard semantics and tokens for Desktop and Web.
+
+The desktop composition is also a Gate 1 requirement. The web client reuses
+the same rail, title/tab bar, workbench, overlays and composer geometry; only
+the native traffic-light safe zone and OS window behavior differ. Neither
+client may introduce a logo-led marketing header, a fake account control or a
+second execution status merely to fill chrome.
 
 The review asks “would this feel at home beside Codex?” Feature count is not a
 substitute for visual quality.

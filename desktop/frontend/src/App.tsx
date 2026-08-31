@@ -621,8 +621,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         </div>
         <div className="sidebar-footer">
           <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"} onClick={() => setScreen("settings")} />
-          <div className={`runtime-state ${state.capabilities?.configured ? "online" : "offline"}`}>
-            <span className="status-dot" /><span>{state.capabilities?.configured ? t("shell.runtimeReady") : t("shell.setupRequired")}</span>
+          <div className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
+            role="status" aria-live="polite">
+            <span className="host-identity-icon" aria-hidden="true"><Icon name="desktop" /></span>
+            <span className="host-identity-copy"><strong>{t("shell.local")}</strong>
+              <small>{state.capabilities?.configured ? t("shell.runtimeReadyShort") : t("shell.setupRequired")}</small></span>
+            <span className="status-dot" aria-hidden="true" />
           </div>
         </div>
       </aside>
@@ -638,8 +642,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-controls="primary-navigation" onClick={() => navigationCollapsed
               ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
-            {screen === "work" && <span className={state.phase === "submitting" ? "local-badge working" : "local-badge"}>
-              <span />{t(state.phase === "submitting" ? "status.working" : "shell.local")}</span>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
@@ -650,7 +652,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             {screen === "work" && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
-            <button className="avatar" type="button" aria-label={t("shell.accountMenu")}>G</button>
           </div>
         </header>
 

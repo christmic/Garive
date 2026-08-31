@@ -104,6 +104,17 @@ describe("Desktop product experience", () => {
     expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
   });
 
+  it("keeps desktop identity in the rail and execution state out of window chrome", async () => {
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    const host = view.container.querySelector(".host-identity");
+    expect(host?.textContent).toContain("Local");
+    expect(host?.textContent).toContain("Runtime ready");
+    expect(host?.textContent).not.toContain("LocalLocal");
+    expect(view.container.querySelector(".topbar .local-badge")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Account and app menu" })).toBeNull();
+  });
+
   it("opens one truthful usage view without changing durable task state", async () => {
     render(<App usageBudget={{ source: "included_plan", state: "critical",
       scopeLabel: "Personal plan", periodLabel: "5-hour window", remainingPercent: 8,

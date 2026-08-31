@@ -103,6 +103,15 @@ The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
 
+Window chrome follows permanence, not feature ownership. The top bar contains
+only the current document/task identity and admitted global actions. Live
+execution state appears once, attached to the composer/status rail. Durable
+task state remains in its rail row. Local host identity and readiness occupy a
+non-interactive rail-footer block unless a real account or host menu is
+available. Placeholder initials, logo buttons and inert account menus are
+forbidden. Web preserves this desktop composition without reserving the native
+traffic-light safe zone.
+
 When a file is open, the workbench has two quiet chrome rows: the first owns one
 selected file tab and the second owns bounded location plus file actions. It
 must not retain an unrelated Activity tab. Rendered and Source views consume the

@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 
 export type IconName =
   | "activity" | "agent" | "archive" | "check" | "chevron" | "close"
-  | "command" | "copy" | "download" | "file" | "grid" | "memory" | "panel" | "paperclip"
+  | "command" | "copy" | "desktop" | "download" | "file" | "grid" | "memory" | "panel" | "paperclip"
   | "plus" | "search" | "send" | "settings" | "shield" | "sparkle"
   | "source" | "stop" | "warning" | "work";
 
@@ -15,6 +15,7 @@ const paths: Record<IconName, string> = {
   close: "M6 6l12 12M18 6 6 18",
   command: "M9 6v12M15 6v12M6 9h12M6 15h12",
   copy: "M8 8h11v11H8zM5 16V5h11",
+  desktop: "M4 5h16v12H4zM9 21h6M12 17v4",
   download: "M12 4v11m-4-4 4 4 4-4M5 20h14",
   file: "M6 3h8l4 4v14H6zM14 3v5h5",
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
