@@ -179,7 +179,7 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
     let bytes = std::fs::read(directory.path().join("desktop-v1.json")).unwrap();
     assert!(!String::from_utf8_lossy(&bytes).contains("private-api-key"));
     let config = DesktopSystemConfiguration::parse(&bytes, directory.path()).unwrap();
-    assert_eq!(config.schema_version(), 4);
+    assert_eq!(config.schema_version(), 5);
     assert_eq!(config.configuration_revision(), Some(1));
     assert_eq!(config.setup_id(), Some(plan.setup_id.as_str()));
     assert_eq!(
@@ -191,7 +191,7 @@ fn catalogue_plan_and_commit_are_redacted_and_restart_safe() {
 }
 
 #[test]
-fn setup_with_exact_t1_snapshot_commits_two_agent_v4_configuration() {
+fn setup_with_exact_t1_snapshot_commits_two_agent_v5_configuration() {
     let directory = tempfile::tempdir().unwrap();
     let catalogue = BuiltinT1Catalogue::new("t1.policy.v1", ["rust"]).unwrap();
     let service =
@@ -206,7 +206,7 @@ fn setup_with_exact_t1_snapshot_commits_two_agent_v4_configuration() {
 
     let bytes = std::fs::read(directory.path().join("desktop-v1.json")).unwrap();
     let config = DesktopSystemConfiguration::parse(&bytes, directory.path()).unwrap();
-    assert_eq!(config.schema_version(), 4);
+    assert_eq!(config.schema_version(), 5);
     assert_eq!(config.default_agent_definition_id(), "garive-work");
     assert_eq!(config.installed_agent_count(), 2);
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -537,7 +537,7 @@ fn legacy_v1_migrates_only_after_an_explicit_bound_commit() {
     service.commit(&plan.plan_digest, "new-secret").unwrap();
     let after = std::fs::read(directory.path().join("desktop-v1.json")).unwrap();
     let migrated = DesktopSystemConfiguration::parse(&after, directory.path()).unwrap();
-    assert_eq!(migrated.schema_version(), 4);
+    assert_eq!(migrated.schema_version(), 5);
     assert_eq!(migrated.configuration_revision(), Some(1));
 }
 
