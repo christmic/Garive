@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use garive_host_client::{
     CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient, LiveOutputEvent,
     TurnCommandResponse,
@@ -237,32 +239,15 @@ pub(crate) fn follow(
     sender: mpsc::Sender<HostMessage>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let (event_sender, mut events) = mpsc::channel(256);
-        let follow = tokio::spawn({
-            let client = client.clone();
-            let session_id = session_id.clone();
-            async move {
-                client
-                    .follow_events(&session_id, after_position, event_sender)
-                    .await
-            }
-        });
-        while let Some(event) = events.recv().await {
-            if sender
-                .send(HostMessage::Event {
-                    subscription_id,
-                    event,
-                })
-                .await
-                .is_err()
-            {
-                follow.abort();
-                return;
-            }
-        }
-        let code = match follow.await {
-            Ok(Err(error)) => error.code,
-            Ok(Ok(())) | Err(_) => HostClientErrorCode::TransportFailure,
+        let (event_sender, events) = mpsc::channel(256);
+        let follow = client.follow_events(&session_id, after_position, event_sender);
+        let Some(code) = relay_follow(events, follow, &sender, |event| HostMessage::Event {
+            subscription_id,
+            event,
+        })
+        .await
+        else {
+            return;
         };
         let _ = sender
             .send(HostMessage::FollowEnded {
@@ -281,28 +266,15 @@ pub(crate) fn follow_live(
     sender: mpsc::Sender<HostMessage>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let (event_sender, mut events) = mpsc::channel(256);
-        let follow = tokio::spawn({
-            let client = client.clone();
-            let session_id = session_id.clone();
-            async move { client.follow_live_output(&session_id, event_sender).await }
-        });
-        while let Some(event) = events.recv().await {
-            if sender
-                .send(HostMessage::LiveOutput {
-                    subscription_id,
-                    event,
-                })
-                .await
-                .is_err()
-            {
-                follow.abort();
-                return;
-            }
-        }
-        let code = match follow.await {
-            Ok(Err(error)) => error.code,
-            Ok(Ok(())) | Err(_) => HostClientErrorCode::TransportFailure,
+        let (event_sender, events) = mpsc::channel(256);
+        let follow = client.follow_live_output(&session_id, event_sender);
+        let Some(code) = relay_follow(events, follow, &sender, |event| HostMessage::LiveOutput {
+            subscription_id,
+            event,
+        })
+        .await
+        else {
+            return;
         };
         let _ = sender
             .send(HostMessage::LiveFollowEnded {
@@ -311,6 +283,41 @@ pub(crate) fn follow_live(
                 code,
             })
             .await;
+    })
+}
+
+async fn relay_follow<T, F, Wrap>(
+    mut events: mpsc::Receiver<T>,
+    follow: F,
+    sender: &mpsc::Sender<HostMessage>,
+    wrap: Wrap,
+) -> Option<HostClientErrorCode>
+where
+    F: Future<Output = Result<(), garive_host_client::HostClientError>>,
+    Wrap: Fn(T) -> HostMessage,
+{
+    tokio::pin!(follow);
+    let result = loop {
+        tokio::select! {
+            result = &mut follow => break result,
+            event = events.recv() => match event {
+                Some(event) => {
+                    if sender.send(wrap(event)).await.is_err() {
+                        return None;
+                    }
+                }
+                None => break follow.await,
+            },
+        }
+    };
+    while let Some(event) = events.recv().await {
+        if sender.send(wrap(event)).await.is_err() {
+            return None;
+        }
+    }
+    Some(match result {
+        Err(error) => error.code,
+        Ok(()) => HostClientErrorCode::TransportFailure,
     })
 }
 
@@ -364,6 +371,9 @@ pub(crate) fn schedule_live_reconnect(
     })
 }
 
+#[cfg(test)]
+#[path = "host_follow_tests.rs"]
+mod follow_tests;
 #[cfg(test)]
 #[path = "host_debug_tests.rs"]
 mod tests;

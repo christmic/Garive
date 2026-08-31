@@ -99,6 +99,81 @@ async fn durable_follow_rejects_old_same_session_messages() {
 }
 
 #[tokio::test]
+async fn background_replacement_rejects_old_same_session_messages() {
+    let mut state = RuntimeState::test_ephemeral(Vec::new());
+    state.model.selected_session = Some("session-a".into());
+    state.model.execution = ExecutionState::Following;
+    state.model.observed_position = 4;
+    let old = SubscriptionId::new(1);
+    let current = SubscriptionId::new(2);
+    state.follow = Some(pending_task());
+    state.follow_owner = Some(old);
+    state.load("session-b".into());
+    state.load("session-a".into());
+    state.follow = Some(pending_task());
+    state.follow_owner = Some(current);
+    state.load("session-b".into());
+    let background = state
+        .background_follows
+        .get_mut("session-a")
+        .expect("replacement follow is retained in the background");
+    background.attempt = 1;
+    background.reconnect = Some(pending_task());
+    background.reconnect_owner = Some(current);
+
+    handle_host(
+        HostMessage::Event {
+            subscription_id: old,
+            event: durable_event(5),
+        },
+        &mut state,
+    );
+    handle_host(
+        HostMessage::FollowEnded {
+            subscription_id: old,
+            session_id: "session-a".into(),
+            code: HostClientErrorCode::TransportFailure,
+        },
+        &mut state,
+    );
+    handle_host(
+        HostMessage::ReconnectDue {
+            subscription_id: old,
+            session_id: "session-a".into(),
+            attempt: 1,
+        },
+        &mut state,
+    );
+
+    let background = state
+        .background_follows
+        .get("session-a")
+        .expect("stale messages cannot remove the replacement");
+    assert_eq!(background.observed_position, 4);
+    assert_eq!(background.follow_owner, Some(current));
+    assert!(background.follow.is_some());
+    assert_eq!(background.reconnect_owner, Some(current));
+    assert!(background.reconnect.is_some());
+
+    handle_host(
+        HostMessage::Event {
+            subscription_id: current,
+            event: durable_event(5),
+        },
+        &mut state,
+    );
+    assert_eq!(
+        state
+            .background_follows
+            .get("session-a")
+            .expect("current event keeps the background owner")
+            .observed_position,
+        5
+    );
+    state.stop_tasks();
+}
+
+#[tokio::test]
 async fn live_follow_rejects_old_same_session_messages() {
     let mut state = RuntimeState::test_ephemeral(Vec::new());
     state.model.selected_session = Some("session-a".into());
