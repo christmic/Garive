@@ -273,6 +273,13 @@ impl ExecutionAuthoritySnapshot {
                         .attachments
                         .insert(attachment.workspace_id.clone(), attachment);
                 }
+                "workspace.detached" => {
+                    let workspace_id = value
+                        .get("workspace_id")
+                        .and_then(Value::as_str)
+                        .ok_or(LocalWorkerError::DurabilityUnavailable)?;
+                    output.attachments.remove(workspace_id);
+                }
                 "interaction.resolved" => {
                     let digest = value.get("prepared_digest").and_then(Value::as_str);
                     let response = value
