@@ -23,7 +23,7 @@ line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Rgb(232, 235, 242)) 
 line <fg=Some(Rgb(126, 134, 151)) bg=None +NONE -NONE> :: "  Live feedback unavailable · waiting for saved result" <fg=None bg=None +NONE -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- ended preview --
-line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Rgb(232, 235, 242)) bg=None +BOLD -NONE> | " · Working" <fg=Some(Rgb(126, 134, 151)) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "◆ Garive" <fg=Some(Rgb(232, 235, 242)) bg=None +BOLD -NONE> | " · Waiting for durable result" <fg=Some(Rgb(126, 134, 151)) bg=None +NONE -NONE>
 line <fg=None bg=None +NONE -NONE> :: "  " <fg=None bg=None +NONE -NONE> | "Saved answer pending durable projection." <fg=Some(Rgb(232, 235, 242)) bg=None +NONE -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- durable takeover --

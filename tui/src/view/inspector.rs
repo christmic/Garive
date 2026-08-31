@@ -88,15 +88,7 @@ pub(super) fn render(
             geometry.inner.width,
             1,
         );
-        let copy = selected_action(model).map_or_else(
-            || "↑↓ select · Esc close".into(),
-            |label| format!("↑↓ select · Enter {label} · Esc close"),
-        );
-        Line::styled(
-            truncate_display(&copy, usize::from(footer.width)),
-            colors.muted,
-        )
-        .render(footer, buffer);
+        Line::styled(footer_copy(model, footer.width), colors.muted).render(footer, buffer);
     }
 }
 
@@ -181,7 +173,7 @@ fn render_entry(
         ),
     ])
     .render(Rect::new(area.x, area.y, area.width, 1), buffer);
-    if area.height > 1 {
+    if area.height > 1 && !detail_repeats_label(&entry.label, &entry.detail) {
         Line::styled(
             format!(
                 "    {}",
@@ -194,6 +186,34 @@ fn render_entry(
         )
         .render(Rect::new(area.x, area.y + 1, area.width, 1), buffer);
     }
+}
+
+fn footer_copy(model: &AppModel, width: u16) -> String {
+    let close = "Esc close";
+    let action = selected_action(model).map(|label| format!("Enter {label} · {close}"));
+    let full = action.as_ref().map_or_else(
+        || format!("↑↓ select · {close}"),
+        |action| format!("↑↓ select · {action}"),
+    );
+    let width = usize::from(width);
+    if unicode_width::UnicodeWidthStr::width(full.as_str()) <= width {
+        full
+    } else if let Some(action) =
+        action.filter(|value| unicode_width::UnicodeWidthStr::width(value.as_str()) <= width)
+    {
+        action
+    } else {
+        truncate_display(close, width)
+    }
+}
+
+fn detail_repeats_label(label: &str, detail: &str) -> bool {
+    let detail = detail.trim();
+    !detail.is_empty()
+        && label
+            .trim()
+            .to_lowercase()
+            .ends_with(&format!("· {}", detail.to_lowercase()))
 }
 
 fn empty_copy(model: &AppModel) -> &'static str {
@@ -236,5 +256,30 @@ fn tone_style(tone: InspectorTone, colors: Palette) -> ratatui::style::Style {
         InspectorTone::Success => colors.success,
         InspectorTone::Warning => colors.warning,
         InspectorTone::Danger => colors.danger,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn narrow_footer_keeps_close_action_visible() {
+        let model = AppModel::default();
+        let copy = footer_copy(&model, 28);
+        assert!(copy.ends_with("Esc close"));
+        assert!(unicode_width::UnicodeWidthStr::width(copy.as_str()) <= 28);
+    }
+
+    #[test]
+    fn completed_detail_is_not_repeated_under_completed_label() {
+        assert!(detail_repeats_label(
+            "Agent action · completed",
+            "Completed"
+        ));
+        assert!(!detail_repeats_label(
+            "Running tests",
+            "cargo test --workspace"
+        ));
     }
 }

@@ -1,0 +1,43 @@
+---
+source: tui/tests/overlay_accessibility.rs
+expression: "surfaces.iter().map(|(name, model, _)|\nformat!(\"{name}\\n{}\",\nframe(model, Theme::Mono))).collect::<Vec<_>>().join(\"\\n\\n\")"
+---
+TURN NAVIGATOR
+  ╭ Jump to a Turn ──────────────────╮
+  │                                  │
+  │  Search  type to search          │
+  │  › 12  release checkpoint 11     │
+  │    ↑/↓ select   Home/End edge    │
+  │    Enter jump   Esc close        │
+  │                                  │
+  ╰──────────────────────────────────╯
+
+RECOVERY INSPECTOR
+  ╭ Inspector · Recovery ────────────╮
+  │   ! Another Session needs review │
+  │     Switch Sessions to review i… │
+  │ › ! Connection interrupted       │
+  │     Reload durable Session trut… │
+  │                                  │
+  │ Enter reconnect · Esc close      │
+  ╰──────────────────────────────────╯
+
+DECISION SHEET
+  ╭ Approval required ───────────────╮
+  │                                  │
+  │  !  Review the public request    │
+  │  › false                         │
+  │    Enter submit response         │
+  │    Ctrl+Q leave safely           │
+  │                                  │
+  ╰──────────────────────────────────╯
+
+UNKNOWN RECOVERY
+  ╭ Command result unknown ──────────╮
+  │                                  │
+  │  ×  Durable outcome is unknown;  │
+  │                                  │
+  │    Enter exact retry             │
+  │    A abandon local record        │
+  │                                  │
+  ╰──────────────────────────────────╯

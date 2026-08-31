@@ -20,7 +20,7 @@ use crate::{
 use super::super::{
     effects::EffectRunner,
     external_editor::EditorRequest,
-    host::{self, HostMessage},
+    host::{self, HostMessage, LiveSubscriptionId, SubscriptionId},
     host_effects::HostEffectRunner,
     TerminalReconfiguration,
 };
@@ -29,6 +29,7 @@ mod mutations;
 mod pending;
 mod retry;
 mod shutdown;
+mod subscriptions;
 #[cfg(test)]
 mod test_support;
 
@@ -44,10 +45,14 @@ pub(in crate::runtime) struct RuntimeState {
     host_effects: HostEffectRunner<LiveHostReadPort>,
     pub(in crate::runtime) model: AppModel,
     pub(in crate::runtime) follow: Option<JoinHandle<()>>,
+    pub(in crate::runtime) follow_owner: Option<SubscriptionId>,
     pub(in crate::runtime) reconnect: Option<JoinHandle<()>>,
+    pub(in crate::runtime) reconnect_owner: Option<SubscriptionId>,
     pub(in crate::runtime) reconnect_attempt: u32,
     pub(in crate::runtime) live_follow: Option<JoinHandle<()>>,
+    pub(in crate::runtime) live_follow_owner: Option<LiveSubscriptionId>,
     pub(in crate::runtime) live_reconnect: Option<JoinHandle<()>>,
+    pub(in crate::runtime) live_reconnect_owner: Option<LiveSubscriptionId>,
     pub(in crate::runtime) live_reconnect_attempt: u32,
     pub(in crate::runtime) store: StateStore,
     pub(in crate::runtime) preferences: Preferences,
@@ -61,6 +66,8 @@ pub(in crate::runtime) struct RuntimeState {
     graceful_quit_armed: bool,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
     follow_sequence: u64,
+    subscription_sequence: u64,
+    live_subscription_sequence: u64,
     pub(in crate::runtime) force_redraw: bool,
     pub(in crate::runtime) last_empty_ctrl_c: Option<Instant>,
     exact_retry_owner: Option<ExactRetryOwner>,
@@ -88,7 +95,9 @@ pub(super) struct BackgroundFollow {
     pub(super) attempt: u32,
     sequence: u64,
     pub(super) follow: Option<JoinHandle<()>>,
+    pub(super) follow_owner: Option<SubscriptionId>,
     pub(super) reconnect: Option<JoinHandle<()>>,
+    pub(super) reconnect_owner: Option<SubscriptionId>,
 }
 
 pub(super) struct RestoredState {
@@ -157,10 +166,14 @@ impl RuntimeState {
             host_effects,
             model,
             follow: None,
+            follow_owner: None,
             reconnect: None,
+            reconnect_owner: None,
             reconnect_attempt: 0,
             live_follow: None,
+            live_follow_owner: None,
             live_reconnect: None,
+            live_reconnect_owner: None,
             live_reconnect_attempt: 0,
             store: restored.store,
             preferences: restored.preferences,
@@ -174,6 +187,8 @@ impl RuntimeState {
             graceful_quit_armed: false,
             background_follows: BTreeMap::new(),
             follow_sequence: 0,
+            subscription_sequence: 0,
+            live_subscription_sequence: 0,
             force_redraw: false,
             last_empty_ctrl_c: None,
             exact_retry_owner: None,
@@ -325,9 +340,11 @@ impl RuntimeState {
         if let Some(task) = self.live_follow.take() {
             task.abort();
         }
+        self.live_follow_owner = None;
         if let Some(task) = self.live_reconnect.take() {
             task.abort();
         }
+        self.live_reconnect_owner = None;
         self.live_reconnect_attempt = 0;
         if switching_session {
             self.model.live_answer.clear_for_session_change();
@@ -341,17 +358,30 @@ impl RuntimeState {
                 if let (Some(previous), Some(task)) =
                     (self.model.selected_session.clone(), self.follow.take())
                 {
-                    self.add_background_follow(previous, self.model.observed_position, task);
+                    if let Some(owner) = self.follow_owner.take() {
+                        self.add_background_follow(
+                            previous,
+                            self.model.observed_position,
+                            owner,
+                            task,
+                        );
+                    } else {
+                        task.abort();
+                    }
                 }
             } else if let Some(task) = self.follow.take() {
                 task.abort();
+                self.follow_owner = None;
             }
         } else if let Some(task) = self.follow.take() {
             task.abort();
+            self.follow_owner = None;
         }
+        self.follow_owner = None;
         if let Some(task) = self.reconnect.take() {
             task.abort();
         }
+        self.reconnect_owner = None;
         self.reconnect_attempt = 0;
         if let Some(mut background) = self.background_follows.remove(&session_id) {
             if let Some(task) = background.follow.take() {
@@ -382,63 +412,23 @@ impl RuntimeState {
         }));
     }
 
-    fn add_background_follow(
-        &mut self,
-        session_id: String,
-        observed_position: u64,
-        task: JoinHandle<()>,
-    ) {
-        self.follow_sequence = self.follow_sequence.saturating_add(1);
-        if let Some(mut replaced) = self.background_follows.remove(&session_id) {
-            if let Some(previous) = replaced.follow.take() {
-                previous.abort();
-            }
-            if let Some(previous) = replaced.reconnect.take() {
-                previous.abort();
-            }
-        }
-        self.background_follows.insert(
-            session_id,
-            BackgroundFollow {
-                observed_position,
-                attempt: 0,
-                sequence: self.follow_sequence,
-                follow: Some(task),
-                reconnect: None,
-            },
-        );
-        if self.background_follows.len() > 4 {
-            let oldest = self
-                .background_follows
-                .iter()
-                .min_by_key(|(_, value)| value.sequence)
-                .map(|(key, _)| key.clone());
-            if let Some(oldest) = oldest {
-                if let Some(mut evicted) = self.background_follows.remove(&oldest) {
-                    if let Some(task) = evicted.follow.take() {
-                        task.abort();
-                    }
-                    if let Some(task) = evicted.reconnect.take() {
-                        task.abort();
-                    }
-                }
-            }
-        }
-    }
-
     pub(in crate::runtime) fn stop_tasks(&mut self) {
         if let Some(task) = self.follow.take() {
             task.abort();
         }
+        self.follow_owner = None;
         if let Some(task) = self.reconnect.take() {
             task.abort();
         }
+        self.reconnect_owner = None;
         if let Some(task) = self.live_follow.take() {
             task.abort();
         }
+        self.live_follow_owner = None;
         if let Some(task) = self.live_reconnect.take() {
             task.abort();
         }
+        self.live_reconnect_owner = None;
         for background in self.background_follows.values_mut() {
             if let Some(task) = background.follow.take() {
                 task.abort();

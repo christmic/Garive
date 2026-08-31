@@ -13,11 +13,11 @@ impl fmt::Debug for HostMessage {
                 .debug_struct("HostMessage::TurnAccepted")
                 .field("committed_position", &response.committed_position)
                 .finish(),
-            Self::Event(event) => formatter
+            Self::Event { event, .. } => formatter
                 .debug_struct("HostMessage::Event")
                 .field("position", &event.position)
                 .finish(),
-            Self::LiveOutput(event) => formatter
+            Self::LiveOutput { event, .. } => formatter
                 .debug_struct("HostMessage::LiveOutput")
                 .field("sequence", &event.sequence)
                 .field("kind", &live_output_kind_name(&event.kind))
