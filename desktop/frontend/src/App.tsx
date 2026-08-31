@@ -837,13 +837,15 @@ function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string):
 export function TurnProgress({ activities, onOpen, t }: { activities: WorkState["activities"];
   onOpen: () => void; t: (key: MessageKey) => string }) {
   const recent = activities.slice(-3);
+  const current = [...recent].reverse().find((activity) => !activity.terminal) ?? recent.at(-1);
   return <article className="turn-progress" aria-label={t("timeline.progressTitle")}>
-    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div>
-      <strong>{t("timeline.progressTitle")}</strong><p>{t("timeline.progressBody")}</p></div>
+    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div className="progress-summary">
+      <strong>{t("timeline.progressTitle")}</strong><p>{current
+        ? `${activityLabel(current.label_key, t)} · ${activityState(current.state, t)}`
+        : t("timeline.progressBody")}</p></div>
       <button type="button" onClick={onOpen}>{t("timeline.openActivity")}<Icon name="chevron" /></button></div>
-    {recent.length > 0 && <div className="turn-progress-steps">{recent.map((activity) =>
+    {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>
       <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
-        <span>{activity.terminal ? <Icon name="check" /> : <span className="spinner" />}</span>
         <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
       </div>)}</div>}
   </article>;

@@ -197,6 +197,10 @@ an exact task price from prompt length, selected model, or prior averages.
 - Unit tests cover normal, critical, exhausted and absent capacity plus
   accessible meter text.
 - Visual evidence covers light/dark at 1440 px and a 720 px narrow window.
+- Native macOS uses the real decorated window with an overlay/hidden titlebar,
+  traffic lights at `(16, 16)`, first-mouse acceptance, and a 58 px protected
+  leading zone before sidebar history controls. Web uses the same content and
+  interaction geometry without reserving that native chrome zone.
 - Review evidence records Gate 1 fidelity and Gate 2 advantage; “looks modern”
   is not an acceptance result.
 - Keyboard-only, reduced-motion, increased-contrast and 200% text matrices stay

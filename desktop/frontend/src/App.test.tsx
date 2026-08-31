@@ -166,6 +166,16 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".brand-mark, .hero-mark, .message-mark")).toBeNull();
   });
 
+  it("collapses and restores the native navigation without discarding work", async () => {
+    const view = render(<App />);
+    await screen.findByText("What should we accomplish?");
+    fireEvent.click(screen.getByRole("button", { name: "Hide navigation" }));
+    expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(true);
+    expect(view.container.querySelector("#primary-navigation")?.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(false);
+  });
+
   it("renders progressive work from admitted Activity instead of invented stages", () => {
     const open = vi.fn();
     render(<TurnProgress t={createTranslator("en")} onOpen={open} activities={[{
