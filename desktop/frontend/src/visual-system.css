@@ -36,6 +36,7 @@
 
   --surface-canvas: #ffffff;
   --surface-raised: #f7f7f7;
+  --surface-overlay: var(--surface-raised);
   --surface-composer: var(--surface-raised);
   --surface-sidebar: #f7f7f7;
   --surface-subtle: #f1f1f1;
@@ -85,11 +86,12 @@
   background: #181818;
   --surface-canvas: #181818;
   --surface-raised: #292929;
-  --surface-composer: rgba(255, 255, 255, .03);
-  --surface-sidebar: #211f20;
+  --surface-overlay: #2d2d2d;
+  --surface-composer: #2a2a2a;
+  --surface-sidebar: #2b2527;
   --surface-subtle: #242424;
   --surface-hover: #2c2a2b;
-  --surface-selected: #373435;
+  --surface-selected: #3c3638;
   --border-subtle: rgba(255, 255, 255, .08);
   --border-strong: rgba(255, 255, 255, .15);
   --text-primary: #dfdfdf;

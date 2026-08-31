@@ -500,6 +500,22 @@ that state from its real scroll position: more than 1 px from the top shows the
 pointer-transparent fade, returning to the top removes it. The same React/CSS
 state is used by Desktop and Web and adds no focusable or announced element.
 
+### IX. Supplied-reference effective surface audit
+
+Exact pixel extraction from both supplied 1280×802 references resolves the
+same blank sidebar region to `rgb(43,37,39)` (`#2b2527`) and the continuous
+canvas to `rgb(24,24,24)` (`#181818`). The selected sidebar row resolves to the
+stable `#3c3638` cluster. In the running reference, Composer interior is exactly
+`rgb(42,42,42)` (`#2a2a2a`) and Environment interior is exactly
+`rgb(45,45,45)` (`#2d2d2d`).
+
+Garive's former `#211f20` sidebar was materially too black and cold. More
+importantly, applying the installed bundle's 3% white Composer source layer
+directly over the canvas produced roughly `#1f1f1f`; that source alpha was not
+the final reference composite. The shared tokens now freeze the measured
+effective surfaces, while Environment/command use a dedicated neutral overlay
+token rather than inheriting the warm sidebar material.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
