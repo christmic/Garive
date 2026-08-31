@@ -302,7 +302,14 @@ fn item_line(
     let detail_width = width.saturating_sub(input_width + 4);
     Line::from(vec![
         Span::styled(if selected { "› " } else { "  " }, colors.selected),
-        Span::styled(format!("{:<input_width$}  ", item.input), colors.accent),
+        Span::styled(
+            format!("{:<input_width$}  ", item.input),
+            if selected {
+                colors.selected
+            } else {
+                colors.normal
+            },
+        ),
         Span::styled(
             truncate_display(&safe_text(&item.detail), detail_width),
             if item.unavailable_reason.is_some() {

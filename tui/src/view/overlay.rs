@@ -201,7 +201,11 @@ fn turn_navigator_text(
                     Span::styled(format!("{marker} "), colors.selected),
                     Span::styled(
                         format!("{:>ordinal_width$}  ", landmark.ordinal),
-                        colors.accent,
+                        if start + offset == model.turn_selection {
+                            colors.selected
+                        } else {
+                            colors.muted
+                        },
                     ),
                     Span::styled(
                         truncate_display(&safe_text(&landmark.prompt_preview), preview_width),
