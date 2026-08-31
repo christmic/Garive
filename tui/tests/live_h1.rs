@@ -81,6 +81,68 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
 }
 
 #[test]
+fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("mouse-reconfiguration.log");
+    let state = temporary.path().join("state");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", &state)
+        .args(["-c", r#"
+            set timeout 5
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            must_expect "\033\[6n" 10
+            send "\033\[1;1R"
+            must_expect "Garive" 11
+            send "/mouse on\r\r"
+            must_expect "\033\[?1000h" 12
+            must_expect "Mouse capture is enabled for this terminal session." 13
+            send "\033"
+            after 100
+            send "/mouse off\r\r"
+            must_expect "\033\[?1000l" 14
+            must_expect "Mouse capture is disabled for this terminal session." 15
+            send "\033"
+            after 100
+            send "/mouse auto\r\r"
+            must_expect "\033\[?1000h" 16
+            must_expect "Mouse capture is automatic and enabled for this full-screen session." 17
+            send "\033"
+            after 100
+            send "\021"
+            must_expect "Garive?" 18
+            send "\r"
+            expect {
+                eof { exit 0 }
+                timeout { exit 19 }
+            }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+
+    let text = fs::read_to_string(transcript).unwrap();
+    assert_eq!(text.matches("\x1b[?1049h").count(), 1);
+    assert_eq!(text.matches("\x1b[?1000h").count(), 2);
+    assert_eq!(text.matches("\x1b[?1000l").count(), 2);
+    let preferences = fs::read_to_string(state.join("preferences.v1.json")).unwrap();
+    assert!(preferences.contains(r#""mouse":"auto""#));
+}
+
+#[test]
 fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
     for _ in 0..2 {
         let (address, server) = empty_host();
@@ -704,6 +766,10 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" $GARIVE_TUI_READER_ARG}
             must_expect "Garive. Connecting" 20
             must_expect "Connection online" 22
+            send "/mouse on\r"
+            must_expect "Mouse capture stays disabled in accessible terminal mode." 23
+            send "\033"
+            after 100
             send "/not-a-command\r"
             must_expect "The slash command is invalid; nothing was sent." 24
             send "\033"

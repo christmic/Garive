@@ -43,13 +43,18 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     ),
     CommandSpec::new("/theme mono", "Use mono theme", CommandRequirement::Always),
     CommandSpec::new(
+        "/mouse auto",
+        "Use automatic mouse capture now",
+        CommandRequirement::Always,
+    ),
+    CommandSpec::new(
         "/mouse on",
-        "Enable mouse capture next launch",
+        "Enable mouse capture now",
         CommandRequirement::Always,
     ),
     CommandSpec::new(
         "/mouse off",
-        "Disable mouse capture next launch",
+        "Disable mouse capture now",
         CommandRequirement::Always,
     ),
     CommandSpec::new(
@@ -250,6 +255,7 @@ pub(crate) fn parse_command(text: &str) -> CommandParse {
             _ => return CommandParse::Invalid,
         },
         ("/mouse", [value]) => match value.as_str() {
+            "auto" => Command::Mouse(MouseMode::Auto),
             "on" => Command::Mouse(MouseMode::On),
             "off" => Command::Mouse(MouseMode::Off),
             _ => return CommandParse::Invalid,

@@ -19,6 +19,7 @@ use super::super::{
     effects::EffectRunner,
     external_editor::EditorRequest,
     host::{self, HostMessage},
+    TerminalReconfiguration,
 };
 
 mod mutations;
@@ -62,6 +63,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) composer_mouse_selecting: bool,
     pub(in crate::runtime) composer_clicks: ComposerClickTracker,
     pub(in crate::runtime) external_editor_request: Option<EditorRequest>,
+    terminal_reconfiguration: Option<TerminalReconfiguration>,
 }
 
 pub(super) struct BackgroundFollow {
@@ -160,7 +162,41 @@ impl RuntimeState {
             composer_mouse_selecting: false,
             composer_clicks: ComposerClickTracker::default(),
             external_editor_request: None,
+            terminal_reconfiguration: None,
         }
+    }
+
+    pub(in crate::runtime) fn set_mouse_mode(&mut self, mode: crate::MouseMode) {
+        self.config.mouse = mode;
+        let enabled = crate::args::mouse_capture_enabled(mode, self.config.screen_reader, true);
+        if !self.config.screen_reader {
+            self.terminal_reconfiguration = Some(TerminalReconfiguration::MouseCapture { enabled });
+        }
+        self.model.notice = Some(
+            match (self.config.screen_reader, mode, enabled) {
+                (true, _, _) => "Mouse capture stays disabled in accessible terminal mode.",
+                (false, crate::MouseMode::Auto, true) => {
+                    "Mouse capture is automatic and enabled for this full-screen session."
+                }
+                (false, crate::MouseMode::Auto, false) => {
+                    "Mouse capture is automatic and disabled for this terminal session."
+                }
+                (false, crate::MouseMode::On, _) => {
+                    "Mouse capture is enabled for this terminal session."
+                }
+                (false, crate::MouseMode::Off, _) => {
+                    "Mouse capture is disabled for this terminal session."
+                }
+            }
+            .into(),
+        );
+        self.model.overlay = Some(Overlay::ErrorDetails);
+    }
+
+    pub(in crate::runtime) fn take_terminal_reconfiguration(
+        &mut self,
+    ) -> Option<TerminalReconfiguration> {
+        self.terminal_reconfiguration.take()
     }
 
     pub(in crate::runtime) fn command_id(&mut self, _operation: &str) -> String {

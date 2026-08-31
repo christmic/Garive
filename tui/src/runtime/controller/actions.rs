@@ -182,12 +182,7 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
         }
         Command::Cancel => cancel(state),
         Command::Theme(theme) => state.config.theme = theme,
-        Command::Mouse(mouse) => {
-            state.config.mouse = mouse;
-            state.model.notice =
-                Some("Mouse preference updated for the next terminal session.".into());
-            state.model.overlay = Some(Overlay::ErrorDetails);
-        }
+        Command::Mouse(mouse) => state.set_mouse_mode(mouse),
         Command::Retry => retry_pending(state),
         Command::CopyLast => {
             let value = state

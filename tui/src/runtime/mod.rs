@@ -9,4 +9,6 @@ mod terminal;
 mod terminal_events;
 
 pub use app::run;
-pub(crate) use terminal::{SystemTerminal, TerminalError, TerminalGuard, TerminalOptions};
+pub(crate) use terminal::{
+    SystemTerminal, TerminalError, TerminalGuard, TerminalOptions, TerminalReconfiguration,
+};

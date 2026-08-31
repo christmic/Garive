@@ -88,6 +88,7 @@ fn every_catalog_entry_is_parseable_and_parser_variants_are_discoverable() {
         "/theme dark",
         "/theme light",
         "/theme mono",
+        "/mouse auto",
         "/mouse on",
         "/mouse off",
     ] {

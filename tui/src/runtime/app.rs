@@ -164,6 +164,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                 }
             }
         }
+        if let Some(request) = state.take_terminal_reconfiguration() {
+            guard.reconfigure(request).map_err(map_terminal_error)?;
+        }
         guard
             .set_title(&view::terminal_title(&state.model))
             .map_err(map_terminal_error)?;
