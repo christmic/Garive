@@ -26,12 +26,14 @@ use super::{
 
 mod messages;
 mod projection;
+mod scheduling;
 mod screen_reader;
 mod state;
 
 use messages::handle_host;
 #[cfg(test)]
 use projection::install_timeline;
+use scheduling::{FairScheduler, ResizeCoalescer, Scheduled, ShutdownSignal};
 use state::RestoredState;
 pub(super) use state::RuntimeState;
 #[cfg(test)]
@@ -122,6 +124,8 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let mut live_frame_clock = tokio::time::interval(LIVE_FRAME_INTERVAL);
     live_frame_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     live_frame_clock.tick().await;
+    let mut scheduler = FairScheduler::default();
+    let mut resize = ResizeCoalescer::default();
     loop {
         state.advance_graceful_quit();
         if let Some(request) = state.external_editor_request.take() {
@@ -170,34 +174,57 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         guard
             .set_title(&view::terminal_title(&state.model))
             .map_err(map_terminal_error)?;
-        draw(&mut terminal, &mut state, motion_tick)?;
+        if !resize.is_pending() {
+            draw(&mut terminal, &mut state, motion_tick)?;
+        }
         if state.model.quit_requested {
             break;
         }
-        tokio::select! {
-            biased;
-            signal = shutdown.recv() => {
+        let scheduled = scheduling::select_next(
+            &mut scheduler,
+            shutdown.recv(),
+            events.recv(),
+            action_receiver.recv(),
+            motion_clock.tick(),
+            live_frame_clock.tick(),
+            receiver.recv(),
+            resize.wait(),
+            view::status_motion_enabled(&state.model, state.config.reduced_motion),
+            state.model.live_frame_pending(),
+            resize.is_pending(),
+        )
+        .await;
+        match scheduled {
+            Scheduled::Shutdown(signal) => {
                 interrupted = Some(signal);
                 break;
             }
-            event = events.recv() => match event {
+            Scheduled::Terminal(event) => match event {
+                Some(Ok(crossterm::event::Event::Resize(width, height))) => {
+                    resize.push(width, height, tokio::time::Instant::now());
+                }
                 Some(Ok(event)) => handle_terminal(event, &mut state),
                 Some(Err(_)) | None => return Err(TuiError::TerminalIo),
             },
-            action = action_receiver.recv() => match action {
+            Scheduled::Action(action) => match action {
                 Some(action) => state.dispatch(action),
                 None => break,
             },
-            _ = motion_clock.tick(), if view::status_motion_enabled(&state.model, state.config.reduced_motion) => {
+            Scheduled::Motion => {
                 motion_tick = motion_tick.wrapping_add(1);
             }
-            _ = live_frame_clock.tick(), if state.model.live_frame_pending() => {
+            Scheduled::LiveFrame => {
                 state.model.advance_live_frame();
             }
-            message = receiver.recv() => match message {
+            Scheduled::Host(message) => match message {
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
+            Scheduled::ResizeDeadline => {
+                if let Some(event) = resize.take() {
+                    handle_terminal(event, &mut state);
+                }
+            }
         }
     }
     state.stop_tasks();
@@ -255,50 +282,6 @@ async fn terminal_setup_failure(
     }
 }
 
-#[cfg(unix)]
-pub(super) struct ShutdownSignal {
-    interrupt: tokio::signal::unix::Signal,
-    terminate: tokio::signal::unix::Signal,
-}
-
-#[cfg(unix)]
-impl ShutdownSignal {
-    fn new() -> Result<Self, TuiError> {
-        use tokio::signal::unix::{signal, SignalKind};
-
-        Ok(Self {
-            interrupt: signal(SignalKind::interrupt()).map_err(|_| TuiError::TerminalIo)?,
-            terminate: signal(SignalKind::terminate()).map_err(|_| TuiError::TerminalIo)?,
-        })
-    }
-
-    async fn recv(&mut self) -> i32 {
-        tokio::select! {
-            _ = self.interrupt.recv() => 2,
-            _ = self.terminate.recv() => 15,
-        }
-    }
-}
-
-#[cfg(windows)]
-pub(super) struct ShutdownSignal {
-    interrupt: tokio::signal::windows::CtrlC,
-}
-
-#[cfg(windows)]
-impl ShutdownSignal {
-    fn new() -> Result<Self, TuiError> {
-        Ok(Self {
-            interrupt: tokio::signal::windows::ctrl_c().map_err(|_| TuiError::TerminalIo)?,
-        })
-    }
-
-    async fn recv(&mut self) -> i32 {
-        let _ = self.interrupt.recv().await;
-        2
-    }
-}
-
 fn draw(
     terminal: &mut Terminal<CrosstermBackend<io::Stderr>>,
     state: &mut RuntimeState,
@@ -317,13 +300,13 @@ fn draw(
     terminal
         .draw(|frame| {
             let area = frame.area();
-            reduce(
-                &mut state.model,
-                AppAction::TerminalResized(TerminalSize {
-                    width: area.width,
-                    height: area.height,
-                }),
-            );
+            let size = TerminalSize {
+                width: area.width,
+                height: area.height,
+            };
+            if state.model.terminal_size != size {
+                reduce(&mut state.model, AppAction::TerminalResized(size));
+            }
             let cursor = if state.config.reduced_motion {
                 view::render_cached(
                     &state.model,
