@@ -20,6 +20,10 @@ implementations rather than product screenshots or remembered behavior.
 This note is evidence, not a Garive contract. Normative decisions belong in
 the focused TUI Specs linked below.
 
+The 2026-08-31 redesign decision is recorded in
+[`tui-product-redesign.md`](tui-product-redesign.md). It replaces the rejected
+visual direction without rewriting the historical audit below.
+
 ## Source manifest
 
 | Source | Revision | Status | License/use |
@@ -31,11 +35,69 @@ the focused TUI Specs linked below.
 | Claude Code | Official repository Git `681a8be245e7759a405e276b16ae69ea6b75076f`, tag `v2.1.228`; installed binary `2.1.231` | Official repository does not contain the shipping TUI implementation | Product and public-interface evidence only |
 | Claude Code unpacked study | Git `3da94d5e5f2b99c9d82b0d8f09448b04775cd41f`, package claim `2.1.88` | Third-party extraction; README declares 108 missing modules and non-commercial restrictions | Corroboration only; no code or distinctive text may be copied |
 | Microsoft Win32 security/file APIs | Microsoft Learn pages retrieved 2026-08-30 | Official platform contract | Primary evidence for the Windows persistence boundary |
+| Qoder CLI | npm `@qoder-ai/qodercli@1.1.38`; SHA-1 `02f7cedc54ae8b5b3f04d3f3ef41ba978f276c66`; registry SHA-512 recorded by npm | Official 2026-08-31 package; 32,279,292-byte bundled `qodercli.js`, not reviewable project source | Package/interface and official-product evidence only |
 
 The two Apache repositories may inform implementation structure, but Garive
 still authors its own types and code against its Host contract. The unpacked
 Claude material cannot establish absence, completeness, or a transferable
 implementation.
+
+## 2026-08-31 streaming addendum
+
+### Garive production gap
+
+At Garive `d7e8761095a84037530725021ba64d3d7aa6d963`, the provider-neutral
+`ModelStreamEvent` contract includes ordered text, refusal, reasoning, tool
+argument, item-completion, and usage events in
+`engine/llm/src/stream.rs:31-79`. Core forwards every validated model event as
+`AgentEventKind::ModelStream` in
+`engine/core/src/model_only_support.rs:296-310`.
+
+The production local composition does not publish those events.
+`runtime/replica/src/local_worker.rs:207` installs `DiscardEvents`, whose
+`EventSink` implementation at lines 343-348 accepts and drops every event.
+`runtime/replica/src/live_host/http.rs:226-290` follows only durable SQLite
+pages, and `tui/src/runtime/app/projection.rs:11-60` reduces only those committed
+Host events. This proves the missing progressive output is an end-to-end
+publication gap, not a view animation defect.
+
+### Codex primary baseline
+
+The pinned official Codex tree remains
+`16fbfe557446a1af94da81e1144029ccc1311ad0`. Its app-server maps normalized
+assistant deltas to `item/agentMessage/delta`; the TUI routes them through
+`chatwidget/protocol.rs:76-78` into `on_agent_message_delta`.
+
+`streaming/controller.rs:1-40,127-160` owns an append-only source, a committed
+stable region, a mutable tail, resize re-rendering, and table holdback.
+`chatwidget/streaming.rs:141-148` makes the completed item authoritative so a
+saturated transport cannot truncate final transcript content. Lines 375-415
+pace stable-line commits and switch to bounded catch-up when the queue lags.
+Garive adopts the ownership and convergence invariants, not Codex styling,
+protocol names, or line-at-a-time animation.
+
+### Claude Code corroboration
+
+The third-party extracted study remains pinned at
+`3da94d5e5f2b99c9d82b0d8f09448b04775cd41f` and cannot establish official
+implementation completeness. Its current `screens/REPL.tsx:1426-1477`
+corroborates direct per-delta state with Ink's approximately 16 ms render
+throttle, stable newline-only presentation, reduced-motion suppression, and
+an atomic switch from streaming preview to completed messages. Its
+`components/Markdown.tsx:177-230` independently uses a monotonic stable prefix
+and reparses only the mutable final block. These are corroborating interaction
+patterns only; no code or distinctive copy is transferred.
+
+### Qoder CLI evidence boundary
+
+The official npm package `1.1.38` contains a 32 MB, 659-line bundled executable
+rather than a reviewable repository tree. The package proves the shipping CLI,
+its Node 20 boundary, built-in tools, MCP surface, checkpoint/resume claim, and
+interactive/non-interactive modes. Official Qoder documentation separately
+describes slash completion, `/resume`, `/review`, `/tasks`, background tasks,
+and task-event monitoring. Garive may use those product ideas only after mapping
+them to its own Host authority; the bundle does not justify source-level claims
+about Qoder rendering or event ordering.
 
 ## Garive audit-start baseline
 

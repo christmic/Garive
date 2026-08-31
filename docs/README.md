@@ -15,6 +15,8 @@ are not archived merely because implementation has not started.
   Android.
 - [`manual/tui-user-guide.md`](manual/tui-user-guide.md): complete operator and
   end-user guide for the resident terminal client.
+- [`tui-product-redesign.md`](tui-product-redesign.md): accepted conversation-first
+  TUI direction and truthful progressive-output ownership.
 - [`architecture/README.md`](architecture/README.md): current architecture
   index and document status.
 - [`architecture/system.md`](architecture/system.md): product boundaries and
