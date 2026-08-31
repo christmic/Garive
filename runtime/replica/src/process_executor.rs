@@ -9,11 +9,10 @@ use garive_tools::{
     TerminalClassification, ToolIntent, ToolInvocationId, T1_PROCESS_RUN,
 };
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 use crate::{
-    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, ExecutorRecoveryRequest,
-    PreparedExecution, ProcessLaneRegistry,
+    t1_dispatch_attempt_id, ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort,
+    ExecutorRecoveryRequest, PreparedExecution, ProcessLaneRegistry,
 };
 
 /// Stable executor identity used by matching F0 sandbox bindings.
@@ -165,7 +164,7 @@ impl ExecutorPort for BuiltinProcessExecutor {
         Ok(PreparedExecution {
             executor_id: T1_PROCESS_EXECUTOR_ID.into(),
             executor_revision: self.revision.clone(),
-            dispatch_attempt_id: dispatch_id(invocation_id),
+            dispatch_attempt_id: dispatch_id(invocation_id)?,
         })
     }
 
@@ -178,7 +177,7 @@ impl ExecutorPort for BuiltinProcessExecutor {
             command.grant,
         );
         let backend = Arc::clone(&self.backend);
-        let expected_dispatch = dispatch_id(command.invocation_id);
+        let expected_dispatch = dispatch_id(command.invocation_id).unwrap_or_default();
         Box::pin(async move {
             if command.execution.executor_id != T1_PROCESS_EXECUTOR_ID
                 || command.execution.executor_revision != self.revision
@@ -208,7 +207,7 @@ impl ExecutorPort for BuiltinProcessExecutor {
     ) -> Result<(), ExecutorDispatchError> {
         if request.executor_id != T1_PROCESS_EXECUTOR_ID
             || request.executor_revision != self.revision
-            || request.dispatch_attempt_id != dispatch_id(request.invocation_id)
+            || request.dispatch_attempt_id != dispatch_id(request.invocation_id).unwrap_or_default()
             || request.prepared_digest.is_empty()
         {
             return Err(ExecutorDispatchError::ReceiptInvalid);
@@ -230,7 +229,10 @@ impl ExecutorPort for BuiltinProcessExecutor {
             return Err(ExecutorDispatchError::ReceiptInvalid);
         }
         self.backend
-            .acknowledge_terminal(invocation_id, &dispatch_id(invocation_id))
+            .acknowledge_terminal(
+                invocation_id,
+                &dispatch_id(invocation_id).map_err(|_| ExecutorDispatchError::ReceiptInvalid)?,
+            )
             .map_err(|_| ExecutorDispatchError::ExecutorStateUnknown)
     }
 }
@@ -295,7 +297,7 @@ fn operation(
         .ok_or("missing process sandbox requirements")?;
     Ok(ProcessExecutionRequest {
         invocation_id: invocation_id.clone(),
-        dispatch_attempt_id: dispatch_id(invocation_id),
+        dispatch_attempt_id: dispatch_id(invocation_id)?,
         lane: lane_name.into(),
         executable: executable.path().to_path_buf(),
         argv,
@@ -454,7 +456,7 @@ fn number(arguments: &Value, name: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("invalid process {name}"))
 }
 
-fn dispatch_id(invocation: &ToolInvocationId) -> String {
-    let digest = format!("{:x}", Sha256::digest(invocation.as_str().as_bytes()));
-    format!("process-dispatch-{}", &digest[..24])
+fn dispatch_id(invocation: &ToolInvocationId) -> Result<String, String> {
+    t1_dispatch_attempt_id(T1_PROCESS_EXECUTOR_ID, invocation)
+        .ok_or_else(|| "invalid T1 executor identity".to_owned())
 }

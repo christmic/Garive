@@ -17,7 +17,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, PreparedExecution,
+    t1_dispatch_attempt_id, ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort,
+    PreparedExecution,
 };
 
 /// Stable executor identity used by matching F0 sandbox bindings.
@@ -69,10 +70,8 @@ impl ExecutorPort for BuiltinWorkspaceExecutor {
         Ok(PreparedExecution {
             executor_id: T1_WORKSPACE_EXECUTOR_ID.into(),
             executor_revision: self.revision.clone(),
-            dispatch_attempt_id: format!(
-                "dispatch-{:x}",
-                Sha256::digest(invocation_id.as_str().as_bytes())
-            ),
+            dispatch_attempt_id: t1_dispatch_attempt_id(T1_WORKSPACE_EXECUTOR_ID, invocation_id)
+                .ok_or_else(|| "invalid T1 executor identity".to_owned())?,
         })
     }
 
@@ -84,10 +83,9 @@ impl ExecutorPort for BuiltinWorkspaceExecutor {
             command.grant,
         );
         let root = dup(&self.root);
-        let expected_attempt = format!(
-            "dispatch-{:x}",
-            Sha256::digest(command.invocation_id.as_str().as_bytes())
-        );
+        let expected_attempt =
+            t1_dispatch_attempt_id(T1_WORKSPACE_EXECUTOR_ID, command.invocation_id)
+                .unwrap_or_default();
         Box::pin(async move {
             if command.execution.executor_id != T1_WORKSPACE_EXECUTOR_ID
                 || command.execution.executor_revision != self.revision
