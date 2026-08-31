@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 garive-core = { path = "../../engine/core" }
+garive-config = { path = "../../engine/config" }
 garive-goal = { path = "../../engine/goal" }
 garive-knowledge = { path = "../../engine/knowledge" }
 garive-ledger = { path = "../../engine/ledger" }

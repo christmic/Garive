@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod agent_installation;
 #[cfg(unix)]
 mod builtin_patch_executor;
 #[cfg(unix)]
@@ -51,6 +52,7 @@ mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
+pub use agent_installation::{RuntimeAgentInstallation, RuntimeAgentInstallationError};
 #[cfg(unix)]
 pub use builtin_patch_executor::{BuiltinPatchExecutor, T1_PATCH_EXECUTOR_ID};
 #[cfg(unix)]
