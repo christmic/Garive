@@ -35,6 +35,7 @@ non-interchangeable identities.
 | 3 | PL1 | [`plan-lifecycle.md`](plan-lifecycle.md) | G1/D0/C5/L0 | shared DAG/revision fixture; claim/replan/recovery tests |
 | 4 | T1 | [`basic-tools.md`](basic-tools.md) | F0/C4/C5b | catalogue fixtures and real confined executor tests |
 | 5 | T2 | [`native-browser-computer-use.md`](native-browser-computer-use.md) | F0/C5/T1 | browser contract suite and native packaged-adapter tests |
+| 5a | T2 Attached | [`browser-attached-adapter.md`](browser-attached-adapter.md) | T2 | Native Messaging protocol, extension and explicit-tab grant tests |
 | 6 | F1 | Runtime composition and client projection amendment | F0/G1/PL1/T1/T2/H2/H3 | real local end-to-end and restart flow |
 
 The referenced slice Specs must be accepted before their behavior is claimed.
