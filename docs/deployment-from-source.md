@@ -112,6 +112,12 @@ opaque reference. Do not edit the JSON by hand or store a credential in it.
 Re-running `configure` performs a bounded replacement and requires a Host
 restart.
 
+New installations write schema v4. Its non-secret `memory` member freezes the
+local namespace, User-scope owner, retrieval policy revisions and all scan,
+document and result bounds. Memory content remains in the fact-backed SQLite
+repository, never in this JSON. Older schema v1–v3 files retain legacy Agent
+meaning and do not acquire Memory until an explicit `configure` replacement.
+
 The endpoint must be `http` or `https`, include a host, and contain no user
 information or fragment. Use `http` only for a trusted loopback gateway. Model
 target, model, deployment, and definition identities are non-empty explicit

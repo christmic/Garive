@@ -12,12 +12,11 @@ installation, Memory storage, Knowledge connectors or local crash recovery.
 
 ## Why
 
-M0 and K0 already define portable values, durable facts and Core capability
-inputs, but the production `LocalExecutionWorker` currently invokes Core with
-an empty `PreparedAgentCapabilities`. Unit tests that call the lower-level
-capability entry point directly do not make Memory or Knowledge available to a
-shipping Agent. Product composition must close that gap without allowing Core,
-the model or Desktop presentation to discover stores, sources or credentials.
+M0 and K0 define portable values, durable facts and Core capability inputs.
+Production composition must connect those values without allowing Core, the
+model or Desktop presentation to discover stores, sources or credentials.
+`LocalExecutionWorker` therefore accepts only a constructed preparation
+factory and otherwise supplies no capabilities.
 
 ## Ownership
 
@@ -63,6 +62,15 @@ LocalKnowledgeSystemBinding {
 All text and bounds are explicit constructor inputs. The bindings contain no
 process-environment lookup, implicit file search, mutable `latest` reference,
 provider-specific model value or client-supplied authority.
+
+Desktop schema v4 persists the non-secret local Memory namespace, user scope,
+retriever/source policy revisions and every document, repository, result and
+byte bound. Built-in Desktop Agent v2 snapshots declare the exact v1 Memory
+descriptor. V1–v3 documents reconstruct legacy Agent v1 snapshots without
+Memory; startup never silently upgrades their executable meaning. Knowledge
+remains available at the Runtime composition boundary but requires a later
+explicit Desktop source/connector document before a built-in Agent may declare
+it.
 
 For each capability:
 
@@ -214,6 +222,13 @@ endpoint, credential, provider body or raw SQLite error.
   environment discovery;
 - formatting, strict Clippy, tests, warning-denied Rustdoc and applicable
   cross-language conformance pass.
+
+Current product evidence covers D0 missing/mismatch rejection, authorized
+empty Memory, real cross-Session user Memory reaching C2, the complete local
+Knowledge lifecycle, Memory crash-cut abandonment/restart, Desktop schema-v4
+restart reconstruction and commit-before-model ordering. Recovery of every K0
+cut and Desktop Knowledge source persistence remain acceptance gaps rather than
+being inferred from lower-level tests.
 
 ## See also
 

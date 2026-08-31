@@ -33,8 +33,8 @@ channel admitted by
 The only accepted file name is `desktop-v1.json` under the explicit app config
 directory. Schema v1 is the legacy single-Agent document and v2 adds the
 monotonic setup revision. Schema v3 replaces the singular field with
-`default_agent_definition_id` plus `installed_agents[]`. UTF-8 bytes are
-bounded to 64 KiB.
+`default_agent_definition_id` plus `installed_agents[]`. Schema v4 requires an
+explicit non-secret local Memory binding. UTF-8 bytes are bounded to 64 KiB.
 Unknown fields, duplicate JSON members, unsupported versions, absolute database
 paths, parent traversal and empty required strings fail before a Host or HTTP
 client exists.
@@ -72,17 +72,37 @@ before Host creation. V1/v2 singular fields and v3 catalogue fields may never
 coexist. A Workspace Agent revision additionally requires the same explicit
 machine T1 snapshot used during setup; absence or mismatch fails closed.
 
+V4 retains the v3 catalogue and adds:
+
+```text
+memory {
+  namespace_id, scope_owner_id
+  retriever_revision, source_policy_revision
+  max_results, max_total_bytes
+  max_repository_records, max_repository_facts
+  max_document_bytes, max_content_bytes, max_id_bytes
+}
+```
+
+Every value is persisted and validated before Runtime construction. The
+backend combines it with the immutable built-in descriptor identity to create
+one `LocalMemorySystemBinding`; it grants only the configured User scope and
+ordinary namespace retrieval. The JSON carries no Memory content. Schema v4
+is required for Desktop Agent v2; v1–v3 reconstruct legacy Agent v1 without
+Memory and may not contain the v4 member.
+
 `profile_id` is an opaque registry identity. The document does not enumerate
 vendors or protocol dialects. A backend registry maps an exact installed
 profile identity to a constructor which consumes the explicit endpoint,
 credential, model and HTTP bounds. Unknown identities fail closed. Adding a
 profile does not revise this schema and does not grant hosted capabilities.
 
-The general built-in Desktop Agent admits text model capability plus its exact
-governed Workspace write capability. The Workspace Agent separately admits
-that Tool plus the exact five-tool T1 catalogue. Media, reasoning, Memory, Knowledge,
-Scheduler and delegation require explicit Effective Snapshot entries and exact
-Runtime bindings; implementation presence never advertises a capability.
+The general built-in Desktop Agent v2 admits text model capability, its exact
+governed Workspace write capability and the exact local Memory descriptor. The
+Workspace Agent v2 admits Memory plus that Tool and the exact five-tool T1
+catalogue. Media, reasoning, Knowledge, Scheduler and delegation still require
+explicit Effective Snapshot entries and exact Runtime bindings; implementation
+presence never advertises a capability.
 
 Policy strings map exactly to the accepted Core enums. Output limit accepts
 `complete_partial`, `retry`, `suspend`, `stop` or `fail`; only `retry` requires
@@ -182,7 +202,8 @@ cannot inspect a credential, credential reference, or persisted configuration.
 - profile registry rejects unknown identities and constructs both currently
   installed official profiles without changing the schema;
 - temporary SQLite plus loopback protocol server proves configured startup can
-  complete one durable Desktop Turn;
+  complete one durable Desktop Turn and commit Memory retrieval before model
+  dispatch;
 - source scan proves no environment lookup and no configuration read IPC; the
   only mutation exception is the exact accepted A-DESKTOP-C2 command set.
 
