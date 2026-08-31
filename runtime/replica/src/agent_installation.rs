@@ -87,6 +87,13 @@ impl RuntimeAgentCatalogue {
         self.installations.values()
     }
 
+    /// Produces stable owned Host projections for Host construction.
+    pub fn clone_installed_agents(&self) -> Vec<InstalledAgent> {
+        self.iter()
+            .map(|installation| installation.clone_installed_agent())
+            .collect()
+    }
+
     /// Returns the exact number of installed Definition identities.
     pub fn len(&self) -> usize {
         self.installations.len()

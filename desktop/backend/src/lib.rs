@@ -7,11 +7,11 @@ use std::{path::PathBuf, sync::Arc};
 
 use garive_llm::ModelPort;
 use garive_runtime::{
-    local_dispatch_queue, HostClock, HostContinuationInput, HostEventPage,
-    HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits, LiveOutputHub,
-    LiveOutputLimits, LiveOutputSubscriber, LocalDispatchQueue, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory,
-    RuntimeAgentInstallation, SnapshotBoundGovernedExecutionFactory,
+    local_dispatch_queue, CatalogueBoundGovernedExecutionFactory, HostClock, HostContinuationInput,
+    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
+    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalDispatchQueue,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LocalGovernedExecutionFactory, RuntimeAgentCatalogue,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -133,7 +133,9 @@ pub struct DesktopHostConfig {
     /// Durable Garive SQLite path selected by the backend configuration layer.
     pub database_path: PathBuf,
     /// Resolved immutable Agent snapshot and all derived Runtime projections.
-    pub agent_installation: Arc<RuntimeAgentInstallation>,
+    pub agent_catalogue: Arc<RuntimeAgentCatalogue>,
+    /// Definition identity selected by isolated convenience Turns.
+    pub default_agent_definition_id: String,
     /// Bounded Host command and projection policy.
     pub host_limits: LiveHostLimits,
     /// Bounded local Agent execution policy.
@@ -257,23 +259,25 @@ impl DesktopHost {
         config: DesktopHostConfig,
         governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
     ) -> Result<Self, DesktopHostError> {
-        if config.database_path.as_os_str().is_empty() || config.dispatch_capacity == 0 {
-            return Err(DesktopHostError::InvalidConfiguration);
-        }
-        if governed.is_none()
-            && !config
-                .agent_installation
-                .tool_capabilities()
-                .definitions
-                .is_empty()
+        if config.database_path.as_os_str().is_empty()
+            || config.dispatch_capacity == 0
+            || config.default_agent_definition_id.is_empty()
+            || config
+                .agent_catalogue
+                .get(&config.default_agent_definition_id)
+                .is_none()
         {
             return Err(DesktopHostError::InvalidConfiguration);
         }
-        let definition_id = config
-            .agent_installation
-            .installed_agent()
-            .definition_id
-            .clone();
+        if governed.is_none()
+            && config
+                .agent_catalogue
+                .iter()
+                .any(|installation| !installation.tool_capabilities().definitions.is_empty())
+        {
+            return Err(DesktopHostError::InvalidConfiguration);
+        }
+        let definition_id = config.default_agent_definition_id;
         let (dispatcher, queue) = local_dispatch_queue(config.dispatch_capacity)
             .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let live_output = LiveOutputHub::new(LiveOutputLimits {
@@ -284,9 +288,9 @@ impl DesktopHost {
             max_subscribers_per_session: 8,
         })
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-        let host = LiveHost::new_with_live_output(
+        let host = LiveHost::new_catalogue_with_live_output(
             &config.database_path,
-            config.agent_installation.clone_installed_agent(),
+            config.agent_catalogue.clone_installed_agents(),
             config.host_limits,
             config.host_clock,
             dispatcher,
@@ -298,8 +302,8 @@ impl DesktopHost {
                 &config.database_path,
                 config.execution_policy,
                 config.model,
-                Arc::new(SnapshotBoundGovernedExecutionFactory::new(
-                    config.agent_installation,
+                Arc::new(CatalogueBoundGovernedExecutionFactory::new(
+                    config.agent_catalogue,
                     factory,
                 )),
             ),

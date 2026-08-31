@@ -17,7 +17,8 @@ use garive_provider_openai::build_profile as build_openai_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
     ActivityProjectionLimits, HostClock, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, RuntimeAgentInstallation, RuntimeHttpLimits, RuntimeModelHttpTransport,
+    LocalExecutionPolicy, RuntimeAgentCatalogue, RuntimeAgentInstallation, RuntimeHttpLimits,
+    RuntimeModelHttpTransport,
 };
 use uuid::Uuid;
 
@@ -211,10 +212,15 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
         )?;
         let lease_duration_ms = config.execution_lease_duration_ms;
         let agent_installation = agent_installation(&config)?;
+        let default_agent_definition_id =
+            agent_installation.installed_agent().definition_id.clone();
+        let agent_catalogue = RuntimeAgentCatalogue::new([agent_installation])
+            .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
-            agent_installation: Arc::new(agent_installation),
+            agent_catalogue: Arc::new(agent_catalogue),
+            default_agent_definition_id,
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,

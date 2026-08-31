@@ -80,6 +80,26 @@ impl LiveHost {
         )
     }
 
+    /// Constructs a multi-Agent Host with one explicitly shared H4 output hub.
+    pub fn new_catalogue_with_live_output(
+        database_path: impl AsRef<Path>,
+        installed: impl IntoIterator<Item = InstalledAgent>,
+        limits: LiveHostLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+        live_output: LiveOutputHub,
+    ) -> Result<Self, LiveHostError> {
+        Self::construct(
+            database_path,
+            installed,
+            limits,
+            HostReadLimits::PRODUCT_DEFAULT,
+            clock,
+            dispatcher,
+            Some(live_output),
+        )
+    }
+
     /// Constructs a Host with explicit independent H2 projection bounds.
     pub fn new_with_read_limits(
         database_path: impl AsRef<Path>,

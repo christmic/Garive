@@ -23,7 +23,7 @@ use garive_llm::{
 use garive_runtime::{
     CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    SqliteLedger,
+    RuntimeAgentCatalogue, SqliteLedger,
 };
 use tempfile::tempdir;
 
@@ -214,9 +214,15 @@ fn desktop_host_with_ordinal(
 fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHostConfig {
     DesktopHostConfig {
         database_path: database.to_owned(),
-        agent_installation: Arc::new(
-            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+        agent_catalogue: Arc::new(
+            RuntimeAgentCatalogue::new([builtin_desktop_agent_installation(
+                "definition-main",
+                "desktop-main",
+            )
+            .unwrap()])
+            .unwrap(),
         ),
+        default_agent_definition_id: "definition-main".into(),
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
@@ -275,6 +281,40 @@ async fn installed_snapshot_rejects_a_different_executor_catalogue() {
             .unwrap_err(),
         garive_desktop::DesktopHostError::ExecutionFailure
     );
+}
+
+#[tokio::test]
+async fn desktop_routes_each_session_through_its_exact_installed_agent() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("catalogue.db");
+    let mut config = desktop_host_config(&database, Arc::new(CompletingModel));
+    config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            builtin_desktop_agent_installation("definition-work", "desktop-work").unwrap(),
+        ])
+        .unwrap(),
+    );
+    let factory =
+        DesktopWorkspaceExecutionFactory::new(database, DesktopWorkspaceService::default(), "main")
+            .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(factory)).unwrap();
+    let state = DesktopState::default();
+    state.install(host).unwrap();
+
+    assert_eq!(state.definitions().unwrap().definitions.len(), 2);
+    let result = state
+        .run_turn_isolated("definition-work".into(), "workspace agent".into())
+        .await
+        .unwrap();
+    let session = state
+        .sessions(10, None)
+        .unwrap()
+        .sessions
+        .into_iter()
+        .find(|value| value.session_id == result.session_id)
+        .unwrap();
+    assert_eq!(session.definition_id, "definition-work");
 }
 
 #[tokio::test]
