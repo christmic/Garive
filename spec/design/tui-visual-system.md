@@ -107,6 +107,22 @@ invent local frame sequences or schedule their own redraw loops.
 | Command suggestions | prefix/selected/disabled/dismissed; composer-anchored, nonmodal, at most five rows |
 | `DecisionSheet` | suspension/confirmation; safe consequence; primary and escape actions; no implicit acceptance |
 
+The master `5d1babef` component checkpoint is bound to executable visual,
+linear, and pointer evidence. CommandPalette owns its `160x28` and `40x8`
+window/overflow geometry (`db5b2de6`); TurnNavigator, Inspector, DecisionSheet,
+and Recovery keep one selected row plus safe actions at `40x8` (`d7af6a4f`);
+public Session/Agent labels replace opaque identifiers (`60021509`); and
+connection hint, title, Inspector, and linear text share one truthful recovery
+state (`65e1d8d4`). Accent is reserved for the active selection in dark, light,
+and mono (`c843bae5`). The executable contracts are
+[`view.rs`](../../tui/tests/view.rs),
+[`view_snapshots.rs`](../../tui/tests/view_snapshots.rs),
+[`overlay_accessibility.rs`](../../tui/tests/overlay_accessibility.rs),
+[`identity_labels.rs`](../../tui/tests/identity_labels.rs),
+[`connection_truth.rs`](../../tui/tests/connection_truth.rs), and
+[`accent_hierarchy.rs`](../../tui/tests/accent_hierarchy.rs). They prove cells,
+styles, ordering, and hit geometry, not physical-terminal rasterization.
+
 Session and activity state glyphs are closed semantic vocabulary: `✓`
 completed, `●` running, `!` action required, `×` failed, `■` stopped, and `○`
 unknown/new. Unknown public codes use neutral wording and never borrow success.
@@ -305,5 +321,5 @@ or PTY evidence.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-31
+- Last reviewed: 2026-09-01
 - Status: accepted

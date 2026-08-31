@@ -2,7 +2,7 @@
 
 > This Spec defines the resident Garive terminal application's ownership,
 > state model, event/effect pipeline, terminal lifecycle, and module boundaries.
-> It is the implementation contract for replacing the one-shot TUI binary.
+> It is the implementation and conformance contract for the resident TUI.
 
 ## Audience
 
@@ -11,11 +11,10 @@ Runtime-backed end-to-end harness.
 
 ## Why
 
-The current binary performs one blocking create/start/follow sequence and
-prints lines. It cannot remain responsive while Host work runs, reopen a
-Session, preserve an exact retry, render overlays, or restore the terminal
-after every exit path. A mature TUI needs one testable application model whose
-I/O boundaries remain explicit.
+The shipping binary is now a resident application rather than the historical
+blocking create/start/follow client. This contract keeps its application model,
+I/O boundaries, terminal restoration, and asynchronous ownership reviewable as
+the remaining physical-platform evidence is collected.
 
 ## Ownership
 
@@ -32,6 +31,21 @@ TerminalRuntime ----> AppEvent ----> AppModel::reduce
                                            |
                                       EffectResult
 ```
+
+At master `5d1babef`, the side-effectful application path is no longer a
+scaffold. Typed `AppAction`/`AppEffect` correlation owns bootstrap reads,
+Session pages, exact snapshots, and create/start/cancel/continue mutations;
+`PersistencePort` seals pending mutations before their Host effect is issued.
+The runtime owns supervision, terminal scheduling, and H1/H4 subscription
+cancellation, but cannot accept a stale generation, Session, cursor, or request
+digest on the model's behalf. Executable ownership is pinned by
+[`application_reducer.rs`](../../tui/tests/application_reducer.rs),
+[`effect_runner.rs`](../../tui/tests/effect_runner.rs),
+[`host_effect_runner.rs`](../../tui/tests/host_effect_runner.rs), and
+[`architecture.rs`](../../tui/tests/architecture.rs), across commits
+`1b6a4046`, `face1b02`, `b852a4d5`, `1619eeb4`, `cdc8a2f7`, `36f34f05`,
+`83d2a341`, `b6eb2541`, and `2e533c44`. This evidence does not claim that
+pure, synchronous editor operations are asynchronous effects.
 
 | Layer | Owns | Forbids |
 |---|---|---|
@@ -486,5 +500,5 @@ bounded; no second terminal reader may exist while the child owns stdin.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-09-01
 - Status: accepted
