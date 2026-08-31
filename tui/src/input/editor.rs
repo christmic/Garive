@@ -333,17 +333,38 @@ impl EditorState {
     }
 
     pub(crate) fn replace(&mut self, value: &str) -> Result<(), EditError> {
-        if value.len() > self.max_bytes || value.chars().any(is_unsafe_control) {
-            return Err(EditError::TooLarge {
-                excess_bytes: value.len().saturating_sub(self.max_bytes),
-            });
-        }
+        self.validate_replacement(value)?;
         self.text = value.into();
         self.cursor_grapheme = self.text.graphemes(true).count();
         self.selection_anchor = None;
         self.preferred_display_column = None;
         self.undo.clear();
         self.redo.clear();
+        Ok(())
+    }
+
+    pub(crate) fn replace_undoable(&mut self, value: &str) -> Result<(), EditError> {
+        self.validate_replacement(value)?;
+        if self.text == value {
+            return Ok(());
+        }
+        self.checkpoint();
+        self.text = value.into();
+        self.cursor_grapheme = self.text.graphemes(true).count();
+        self.selection_anchor = None;
+        self.preferred_display_column = None;
+        Ok(())
+    }
+
+    fn validate_replacement(&self, value: &str) -> Result<(), EditError> {
+        if value.len() > self.max_bytes {
+            return Err(EditError::TooLarge {
+                excess_bytes: value.len().saturating_sub(self.max_bytes),
+            });
+        }
+        if value.chars().any(is_unsafe_control) {
+            return Err(EditError::UnsafeControl);
+        }
         Ok(())
     }
 
@@ -473,7 +494,6 @@ fn grapheme_class(grapheme: &str) -> GraphemeClass {
 fn hit_grapheme_index(position: usize, len: usize) -> Option<usize> {
     (len != 0).then(|| position.min(len - 1))
 }
-
 fn is_unsafe_control(character: char) -> bool {
     (character.is_control() && character != '\n' && character != '\t')
         || matches!(character, '\u{202a}'..='\u{202e}')

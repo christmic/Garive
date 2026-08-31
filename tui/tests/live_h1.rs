@@ -676,6 +676,96 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
 }
 
 #[test]
+fn external_editor_owns_the_tty_applies_once_and_preserves_failures() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("external-editor.log");
+    let editor = temporary.path().join("editor.sh");
+    let mode = temporary.path().join("editor-mode");
+    let marker = temporary.path().join("editor-path");
+    fs::write(
+        &editor,
+        r#"#!/bin/sh
+printf '%s' "$1" > "$GARIVE_EDITOR_MARKER"
+if [ ! -e "$GARIVE_EDITOR_MODE" ]; then
+    : > "$GARIVE_EDITOR_MODE"
+    if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then printf 'EDITOR_TTY=yes\n'; fi
+    printf 'edited\nline\n' > "$1"
+    exit 0
+fi
+printf 'EDITOR_FAILURE\n'
+exit 7
+"#,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&editor).unwrap().permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&editor, permissions).unwrap();
+
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("VISUAL", &editor)
+        .env("GARIVE_EDITOR_MODE", &mode)
+        .env("GARIVE_EDITOR_MARKER", &marker)
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 8
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
+            must_expect "\033\[6n" 40
+            send "\033\[1;1R"
+            must_expect "Garive" 41
+            send "seed"
+            after 100
+            send "\007"
+            must_expect "Garive paused." 42
+            must_expect "EDITOR_TTY=yes" 43
+            must_expect "\033\[6n" 44
+            send "\033\[1;1R"
+            must_expect "edited" 45
+            must_expect "line" 46
+            send "\032"
+            must_expect "seed" 47
+            after 100
+            send "\007"
+            must_expect "Garive paused." 48
+            must_expect "EDITOR_FAILURE" 49
+            must_expect "\033\[6n" 50
+            send "\033\[1;1R"
+            must_expect "seed" 51
+            must_expect "exited" 52
+            must_expect "unsuccessfully" 53
+            send "\021"
+            must_expect "Garive?" 54
+            send "\r"
+            expect {
+                eof { exit 0 }
+                timeout { exit 55 }
+            }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("EDITOR_TTY=yes"));
+    assert!(text.contains("\x1b[?1000l") && text.contains("\x1b[?1000h"));
+    assert!(text.contains("\x1b[?1049l") && text.contains("\x1b[?1049h"));
+    let editor_path = fs::read_to_string(marker).unwrap();
+    assert!(!std::path::Path::new(&editor_path).exists());
+}
+
+#[test]
 fn termination_signal_restores_the_shipping_terminal() {
     for _ in 0..2 {
         let (address, server) = empty_host();

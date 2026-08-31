@@ -4,6 +4,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     application::{ActionOverlayBinding, AppModel, Overlay},
@@ -98,7 +99,7 @@ fn overlay_spec(
         },
         Overlay::Help => OverlaySpec {
             title: " Keyboard guide ".into(),
-            content: help_text(colors),
+            content: help_text(colors, content_width),
         },
         Overlay::SessionPicker => OverlaySpec {
             title: " Switch session ".into(),
@@ -293,17 +294,32 @@ fn suspension_text(model: &AppModel, colors: Palette) -> Text<'static> {
     Text::from(lines)
 }
 
-fn help_text(colors: Palette) -> Text<'static> {
-    let hints = help_hints().collect::<Vec<_>>();
-    let mut lines = hints
-        .chunks(2)
-        .map(|hints| {
-            let hints = hints
+fn help_text(colors: Palette, content_width: u16) -> Text<'static> {
+    let mut rows = Vec::<Vec<(&str, &str)>>::new();
+    for hint in help_hints() {
+        let item = (hint.visual_key, hint.action);
+        let fits = rows.last().is_some_and(|row| {
+            let used = 1 + row
                 .iter()
-                .map(|hint| (hint.visual_key, hint.action))
-                .collect::<Vec<_>>();
-            key_hints(&hints, colors)
-        })
+                .enumerate()
+                .map(|(index, (key, action))| {
+                    usize::from(index != 0) * 2 + key.width() + action.width() + 2
+                })
+                .sum::<usize>();
+            used + usize::from(!row.is_empty()) * 2 + item.0.width() + item.1.width() + 2
+                <= usize::from(content_width)
+        });
+        if fits {
+            rows.last_mut()
+                .expect("a fitting help row exists")
+                .push(item);
+        } else {
+            rows.push(vec![item]);
+        }
+    }
+    let mut lines = rows
+        .iter()
+        .map(|row| key_hints(row, colors))
         .collect::<Vec<_>>();
     lines.push(Line::default());
     lines.extend(
