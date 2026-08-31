@@ -154,8 +154,8 @@ impl RuntimeState {
 
     pub(in crate::runtime) fn dispatch(&mut self, action: AppAction) {
         for effect in reduce(&mut self.model, action) {
-            match effect.kind {
-                EffectKind::Exit => debug_assert!(self.model.quit_requested),
+            if matches!(effect.kind, EffectKind::Exit) {
+                debug_assert!(self.model.quit_requested);
             }
         }
     }

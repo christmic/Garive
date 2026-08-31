@@ -10,9 +10,11 @@ mod input;
 
 use application::{
     reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
-    BootState, ConnectionState, ConversationLandmark, EffectFailure, FocusTarget, InspectorVariant,
-    Overlay, TerminalSize, TimelineItem, TimelineRole,
+    BootState, ConnectionState, ConversationLandmark, EffectFailure, EffectKind, EffectTracker,
+    FocusTarget, InspectorVariant, Overlay, PendingMutationDraft, PendingMutationKind,
+    PersistedPendingIdentity, TerminalSize, TimelineItem, TimelineRole,
 };
+use serde_json::json;
 
 #[test]
 fn boot_transitions_are_explicit_and_complete() {
@@ -130,7 +132,7 @@ fn effects_have_monotonic_identity_and_exact_result_correlation() {
         &mut model,
         AppAction::EffectFinished(AppEffectResult {
             context: second.context.clone(),
-            kind: second.kind,
+            kind: second.kind.tag(),
             outcome: AppEffectOutcome::Failed(EffectFailure::Internal),
         }),
     );
@@ -140,10 +142,46 @@ fn effects_have_monotonic_identity_and_exact_result_correlation() {
         .contains_key(&second.context.effect_id));
 }
 
+#[test]
+fn pending_mutation_contract_redacts_payload_and_correlates_sealed_identity() {
+    let draft = PendingMutationDraft {
+        command_id: "command-a".into(),
+        kind: PendingMutationKind::StartTurn,
+        session_id: Some("session-a".into()),
+        turn_id: None,
+        suspension_id: None,
+        expected_session_version: Some(4),
+        requested_through_position: None,
+        request_payload: json!({"text": "private prompt"}),
+        created_at: "2026-09-01T00:00:00Z".into(),
+    };
+    let debug = format!("{draft:?}");
+    assert!(!debug.contains("private prompt"));
+    assert!(!debug.contains("request_payload"));
+
+    let mut tracker = EffectTracker::default();
+    let effect = tracker
+        .issue(
+            EffectKind::PersistPending { draft },
+            Some("session-a".into()),
+            None,
+        )
+        .unwrap();
+    let result = AppEffectResult {
+        context: effect.context.clone(),
+        kind: effect.kind.tag(),
+        outcome: AppEffectOutcome::PendingPersisted(Ok(PersistedPendingIdentity {
+            command_id: "command-a".into(),
+            request_digest: "a".repeat(64),
+        })),
+    };
+    assert!(tracker.finish(&result));
+}
+
 fn completed(effect: &AppEffect) -> AppEffectResult {
     AppEffectResult {
         context: effect.context.clone(),
-        kind: effect.kind,
+        kind: effect.kind.tag(),
         outcome: AppEffectOutcome::Completed,
     }
 }

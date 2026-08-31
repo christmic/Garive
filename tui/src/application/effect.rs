@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use serde_json::Value;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct EffectId(u64);
 
@@ -33,12 +35,78 @@ pub(crate) struct EffectContext {
     pub(crate) request_digest: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum EffectKind {
     Exit,
+    #[allow(dead_code)]
+    PersistPending {
+        draft: PendingMutationDraft,
+    },
+}
+
+impl EffectKind {
+    pub(crate) fn tag(&self) -> EffectTag {
+        match self {
+            Self::Exit => EffectTag::Exit,
+            Self::PersistPending { .. } => EffectTag::PersistPending,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub(crate) enum PendingMutationKind {
+    CreateSession,
+    StartTurn,
+    CancelTurn,
+    ContinueTurn,
+}
+
+#[derive(Clone, PartialEq)]
+pub(crate) struct PendingMutationDraft {
+    pub(crate) command_id: String,
+    pub(crate) kind: PendingMutationKind,
+    pub(crate) session_id: Option<String>,
+    pub(crate) turn_id: Option<String>,
+    pub(crate) suspension_id: Option<String>,
+    pub(crate) expected_session_version: Option<u64>,
+    pub(crate) requested_through_position: Option<u64>,
+    pub(crate) request_payload: Value,
+    pub(crate) created_at: String,
+}
+
+impl std::fmt::Debug for PendingMutationDraft {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingMutationDraft")
+            .field("command_id", &self.command_id)
+            .field("kind", &self.kind)
+            .field("session_id", &self.session_id)
+            .field("turn_id", &self.turn_id)
+            .field("suspension_id", &self.suspension_id)
+            .field("expected_session_version", &self.expected_session_version)
+            .field(
+                "requested_through_position",
+                &self.requested_through_position,
+            )
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PersistedPendingIdentity {
+    pub(crate) command_id: String,
+    pub(crate) request_digest: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EffectTag {
+    Exit,
+    PersistPending,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AppEffect {
     pub(crate) context: EffectContext,
     pub(crate) kind: EffectKind,
@@ -52,15 +120,25 @@ pub(crate) enum EffectFailure {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(dead_code)]
+pub(crate) enum PersistenceFailure {
+    Unavailable,
+    UnsafePermissions,
+    InvalidData,
+    Conflict,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
 pub(crate) enum AppEffectOutcome {
     Completed,
     Failed(EffectFailure),
+    PendingPersisted(Result<PersistedPendingIdentity, PersistenceFailure>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AppEffectResult {
     pub(crate) context: EffectContext,
-    pub(crate) kind: EffectKind,
+    pub(crate) kind: EffectTag,
     pub(crate) outcome: AppEffectOutcome,
 }
 
@@ -97,7 +175,7 @@ impl EffectTracker {
         let Some(effect) = self.pending.get(&result.context.effect_id) else {
             return false;
         };
-        if effect.context != result.context || effect.kind != result.kind {
+        if effect.context != result.context || effect.kind.tag() != result.kind {
             return false;
         }
         self.pending.remove(&result.context.effect_id);
