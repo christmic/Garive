@@ -5,6 +5,9 @@ use garive_host_client::{
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
 
+#[path = "host_debug.rs"]
+mod host_debug;
+
 pub(crate) const PAGE_LIMIT: usize = 100;
 
 pub(crate) struct ContinuationRequest {
@@ -21,7 +24,6 @@ pub(crate) enum ContinuationInput {
     Json(Value),
 }
 
-#[derive(Debug)]
 pub(crate) enum HostMessage {
     Bootstrapped {
         definitions: Vec<AgentDefinitionSummary>,
@@ -408,3 +410,7 @@ pub(crate) fn schedule_live_reconnect(
             .await;
     })
 }
+
+#[cfg(test)]
+#[path = "host_debug_tests.rs"]
+mod tests;
