@@ -71,6 +71,11 @@ keyboard guide presents its supported chords through the same semantic keycap
 primitive as all other actions; only a safe transient notice may report a
 failed bounded yank. This avoids exposing killed draft content or inventing a
 second clipboard surface.
+The keyboard guide groups compatible aliases into compact semantic rows, but
+the displayed and screen-reader labels must come from the typed key catalog
+that the controller resolves. Compact grouping may omit secondary aliases only
+when the complete set remains in the manual; it may not rename an action or
+show an unbound chord.
 All time-varying presentation lives in `view/motion.rs`. An active connection
 or execution may use its calm single-cell pulse; reduced motion uses the same
 text and semantic style with a stable glyph. Screens cannot invent local frame

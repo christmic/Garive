@@ -66,6 +66,8 @@ tui/src/
     mod.rs               key/paste/mouse routing
     editor.rs            grapheme-aware multiline editor
     kill_buffer.rs       single-entry private kill/yank text component
+    keymap.rs            typed default chord, intent, and help-label catalog
+    logical_line.rs      newline-delimited cursor targets
     history.rs           transient bounded prompt-history browser
     mouse_gesture.rs     deterministic composer multi-click classification
     commands.rs          parser, typed registry, and shared availability contract
@@ -130,6 +132,14 @@ performs the corresponding one-transaction edit; the controller only maps
 survives ordinary draft replacement, but runtime clears it before loading a
 different Session. It never enters `AppModel` serialization, preferences,
 prompt history, diagnostics, OSC 52, Host requests, or rendered view state.
+
+Keyboard defaults have one typed source. `input/keymap.rs` maps an exact
+terminal chord to a semantic intent and owns its visual/spoken help labels.
+The controller resolves intent and applies current focus, overlay, execution,
+and frozen-composer policy; visual Help and linear Help consume the catalog's
+presentation rows. Neither view may restate chords, and the catalog may not
+mutate model state. `input/logical_line.rs` owns newline-delimited Ctrl+A/E
+targets separately from the component-owned visual Home/End geometry.
 
 The composer is similarly bounded. `EditorState` owns admitted text and
 grapheme-indexed editing state; the private `EditorLayout` in

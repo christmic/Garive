@@ -281,6 +281,11 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Ctrl+U` / `Ctrl+K` | composer | kill selection, or to logical line start/end, into the private one-entry buffer |
 | `Ctrl+Y` | composer | yank the private buffer, replacing a selection as one edit |
 | `Ctrl+Z` / `Alt+Z` | composer | undo / portable redo |
+| `Ctrl+A` / `Ctrl+E` | composer | move to newline-delimited logical line start/end |
+| `Ctrl+B` / `Ctrl+F` | composer | move one grapheme left/right |
+| `Alt+B` / `Alt+F` | composer | move one Unicode word left/right |
+| `Ctrl+H` / `Ctrl+D` | composer | delete one grapheme backward/forward |
+| `Ctrl+W` / `Alt+D` | composer | delete one Unicode word backward/forward |
 | `Tab` / `Shift+Tab` | no suggestion or blocking overlay | move focus forward/backward |
 | `Up` / `Down`, `Home` / `End`, `Enter` | focused Session rail | move the stable rail selection, jump to an edge, or open the visibly selected Session |
 | `Up` / `Down`, `PageUp` / `PageDown`, `Home` / `End` | focused conversation | scroll one cell, scroll one viewport, jump oldest, or follow latest |
@@ -310,6 +315,12 @@ no-op kill preserves the prior private value; yank over a selection replaces
 it as one undoable edit. Kill/yank never reads or writes the system clipboard.
 `Alt+Z` is the portable redo chord because legacy xterm input cannot reliably
 distinguish `Ctrl+Shift+Z` from `Ctrl+Z`.
+Ctrl+A/E are intentionally logical-line operations, matching their terminal
+editing meaning and the Ctrl+U/K kill boundaries. Home/End remain Garive's
+visual-row operations, so a user can choose between source-line and painted-row
+navigation without hidden mode state. The typed key catalog is the single
+source for controller resolution plus visual and spoken Help; a chord present
+in only one of those surfaces fails its catalog test.
 Typing a printable character outside an overlay explicitly transfers focus to
 the composer before inserting it. Editing and deletion keys never mutate a
 draft while the Session rail or conversation owns focus.
