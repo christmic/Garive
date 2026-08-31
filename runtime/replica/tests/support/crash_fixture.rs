@@ -5,17 +5,27 @@ use garive_ledger::{
     FactDraft, FactId, FactKind, ModelRequestId, SessionId, ToolInvocationId, TurnId,
 };
 use garive_runtime::{
-    plan_cancel_turn, plan_continue_turn, plan_schedule_claimed, plan_schedule_created,
-    plan_start_turn, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
-    ContinuationInput, ContinueTurnCommand, EffectiveRuntimeLimits, ExecutionLeaseRequest,
-    InteractionContinuation, InteractionExpiry, InteractionInputRepresentation, RuntimeCommandId,
-    ScheduleLeaseRequest, ScheduleLifecycleContext, SqliteLedger, StartTurnCommand,
+    plan_cancel_turn, plan_continue_turn, plan_f0_safety_decision, plan_f0_sandbox_admission,
+    plan_schedule_claimed, plan_schedule_created, plan_start_turn, reconstruct_suspended_turn,
+    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand,
+    EffectiveRuntimeLimits, ExecutionLeaseRequest, F0EffectAdmissionContext,
+    F0SafetyDecisionContext, InteractionContinuation, InteractionExpiry,
+    InteractionInputRepresentation, RuntimeCommandId, SafetyDecisionV1, SafetyDisposition,
+    SafetyRequestV1, SandboxBindingV1, ScheduleLeaseRequest, ScheduleLifecycleContext,
+    SqliteLedger, StartTurnCommand,
 };
 use garive_scheduler::{
     next_occurrence, MisfirePolicy, ScheduleDecision, ScheduleIntent, ScheduleSubject,
     ScheduleTiming,
 };
+use garive_tools::{
+    AccessMode, AccessNamespace, AccessPolicyEntry, ExecutionCapability, ExecutionRequirements,
+    GrantId, InvocationAccessSet, InvocationGrant, PreparationError, ReplayClass, ResourceAccess,
+    SandboxControl, SandboxRequirementsV1, ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog,
+    ToolDefinition, ToolIntent,
+};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 mod delegation_fixture_support;
 
@@ -65,6 +75,10 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
         })
         .unwrap();
     if checkpoint == "after_start" {
+        return;
+    }
+    if checkpoint.starts_with("f0_") {
+        run_f0(&mut ledger, &session, checkpoint, &turn, &execution);
         return;
     }
     if checkpoint == "iteration_started" {
@@ -250,6 +264,169 @@ fn run(database: &Path, repo: &Path, checkpoint: &str) {
             .commit(session, version, vec![execution_terminal, turn_terminal])
             .unwrap();
     }
+}
+
+fn run_f0(
+    ledger: &mut SqliteLedger,
+    session: &SessionId,
+    checkpoint: &str,
+    turn: &TurnId,
+    execution: &ExecutionId,
+) {
+    let prepared = f0_catalog()
+        .prepare_v3(
+            &ToolIntent::new("call", "read_file", r#"{"path":"a"}"#),
+            &FixtureResolver,
+        )
+        .unwrap();
+    let invocation = garive_tools::ToolInvocationId::new("f0-recovery").unwrap();
+    let request = SafetyRequestV1::new(
+        f0_child_id(&invocation, "safety-request"),
+        invocation.clone(),
+        &prepared,
+        "actor",
+        None,
+        None,
+        "policy-1",
+    )
+    .unwrap();
+    let decision = SafetyDecisionV1::new(
+        "safety-decision",
+        SafetyDisposition::Allow,
+        invocation.clone(),
+        prepared.input_digest(),
+        Some("a".repeat(64)),
+        "policy-1",
+        None,
+    )
+    .unwrap();
+    let grant = InvocationGrant::new(
+        GrantId::new(f0_child_id(&invocation, "grant")).unwrap(),
+        invocation,
+        prepared.input_digest(),
+        prepared.tool_name(),
+        prepared.tool_revision(),
+        prepared.requirements().clone(),
+        "a".repeat(64),
+        "policy-1",
+    )
+    .unwrap();
+    let mut facts = plan_f0_safety_decision(
+        &F0SafetyDecisionContext {
+            turn_id: turn.clone(),
+            execution_id: execution.clone(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        &request,
+        &prepared,
+        &decision,
+    )
+    .unwrap();
+    facts.extend(
+        plan_f0_sandbox_admission(
+            &F0EffectAdmissionContext {
+                turn_id: turn.clone(),
+                execution_id: execution.clone(),
+                preflight_id: "preflight".into(),
+                effective_limits_digest: "e".repeat(64),
+                recorded_at: "2026-08-29T00:00:00Z".into(),
+            },
+            &request,
+            &prepared,
+            &grant,
+            &decision,
+            &SandboxBindingV1::new(
+                "binding",
+                "workspace",
+                "local.read",
+                "1",
+                "policy-1",
+                f0_access_policy(),
+                f0_sandbox_requirements(),
+            )
+            .unwrap(),
+            "dispatch-1",
+        )
+        .unwrap()
+        .facts,
+    );
+    let count = match checkpoint {
+        "f0_prepared" => 1,
+        "f0_safety_decided" => 2,
+        "f0_authorized" => 3,
+        "f0_sandbox_bound" => 4,
+        "f0_preflighted" => 5,
+        _ => panic!("unknown F0 checkpoint: {checkpoint}"),
+    };
+    ledger
+        .commit(session.clone(), 2, facts[..count].to_vec())
+        .unwrap();
+}
+
+fn f0_child_id(invocation: &garive_tools::ToolInvocationId, kind: &str) -> String {
+    format!(
+        "{kind}-{:x}",
+        Sha256::digest(format!("{}:{kind}", invocation.as_str()).as_bytes())
+    )
+}
+
+struct FixtureResolver;
+
+impl ToolAccessResolver for FixtureResolver {
+    fn revision(&self) -> &str {
+        "resolver-1"
+    }
+
+    fn resolve(&self, arguments: &Value) -> Result<InvocationAccessSet, PreparationError> {
+        InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            arguments["path"].as_str().unwrap(),
+            AccessMode::Read,
+        )?])
+    }
+}
+
+fn f0_catalog() -> ToolCatalog {
+    ToolCatalog::new([ToolDefinition::new_v3(
+        "read_file",
+        "1",
+        "Read one file.",
+        json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 1_024).unwrap(),
+        ReplayClass::ReadOnly,
+        f0_access_policy(),
+        "resolver-1",
+        f0_sandbox_requirements(),
+    )
+    .unwrap()])
+    .unwrap()
+}
+
+fn f0_access_policy() -> ToolAccessPolicyV1 {
+    ToolAccessPolicyV1::new(
+        "access-1",
+        [AccessPolicyEntry::new("a", [AccessMode::Read]).unwrap()],
+        [],
+        [],
+        [],
+        1,
+        1_024,
+    )
+    .unwrap()
+}
+
+fn f0_sandbox_requirements() -> SandboxRequirementsV1 {
+    SandboxRequirementsV1::new(
+        [ExecutionCapability::FilesystemRead],
+        [
+            SandboxControl::FilesystemScope,
+            SandboxControl::SymlinkContainment,
+            SandboxControl::ResourceLimits,
+        ],
+        None,
+        8,
+    )
+    .unwrap()
 }
 
 fn run_scheduler(database: &Path, checkpoint: &str) {

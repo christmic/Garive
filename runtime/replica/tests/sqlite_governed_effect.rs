@@ -1,5 +1,7 @@
 use std::{
+    io::{BufRead, BufReader},
     path::PathBuf,
+    process::{Command, Stdio},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -1073,6 +1075,87 @@ fn local_startup_resumes_all_f0_cuts_then_restarts_with_consumed_iteration() {
             replacement.execution_id.as_ref(),
             Some(&dispatches[0].execution_id)
         );
+    }
+}
+
+#[test]
+fn fresh_process_resumes_every_killed_f0_boundary_from_ledger_only() {
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (checkpoint, expected) in [
+        ("f0_prepared", EffectRecoveryPosition::F0SafetyPending),
+        ("f0_safety_decided", EffectRecoveryPosition::F0Decision),
+        ("f0_authorized", EffectRecoveryPosition::F0Authorized),
+        ("f0_sandbox_bound", EffectRecoveryPosition::F0SandboxBound),
+        ("f0_preflighted", EffectRecoveryPosition::F0Preflighted),
+    ] {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join(format!("{checkpoint}.sqlite3"));
+        let mut child = Command::new(env!("CARGO_BIN_EXE_garive-runtime-crash-fixture"))
+            .args([
+                database.to_str().unwrap(),
+                repository.to_str().unwrap(),
+                checkpoint,
+            ])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut ready = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready.trim(), "READY", "{checkpoint}");
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success(), "{checkpoint}");
+
+        let mut ledger = SqliteLedger::open(&database).unwrap();
+        let turn_id: String = ledger
+            .connection_for_test()
+            .query_row(
+                "SELECT turn_id FROM ledger_facts WHERE kind='turn.started'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let before = ledger
+            .load_turn(&TurnId::try_from(turn_id.as_str()).unwrap())
+            .unwrap();
+        assert_eq!(
+            derive_runtime_recovery(&before, 3).unwrap().effect,
+            expected
+        );
+        let dispatches = recover_local_dispatches_with_f0(
+            &mut ledger,
+            3,
+            timestamp(),
+            &RecoveryFactory {
+                decision: Decision::Approve,
+                mode: ExecutionMode::Success,
+            },
+            1_024,
+        )
+        .unwrap();
+        assert_eq!(dispatches.len(), 1, "{checkpoint}");
+        let recovered = ledger
+            .load_turn(&before.facts[0].turn_id.clone().unwrap())
+            .unwrap();
+        for kind in [
+            "effect.prepared",
+            "safety.decided",
+            "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
+            "effect.started",
+        ] {
+            assert_eq!(
+                recovered
+                    .facts
+                    .iter()
+                    .filter(|fact| fact.kind.as_str() == kind)
+                    .count(),
+                1,
+                "{checkpoint}:{kind}"
+            );
+        }
     }
 }
 
