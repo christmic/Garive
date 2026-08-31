@@ -256,6 +256,10 @@ fields. Defaults are `system`, OS reduced-motion when discoverable otherwise
 false, mouse `auto`, expanded rail, closed inspector, bell true, and draft
 persistence true.
 
+`activity_inspector` is Inspector's only persisted value and means open or
+closed. Its Activity/Recovery/Details variant, selected entry identity, scroll
+window, and focus are transient application state and never enter this file.
+
 Limits are 32 drafts, 64 KiB total draft UTF-8, and the Host command byte bound
 per draft. Least-recently-updated idle drafts evict first. A draft bound failure
 keeps the in-memory draft and surfaces that crash recovery is unavailable; it

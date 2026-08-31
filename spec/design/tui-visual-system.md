@@ -108,6 +108,14 @@ Session and activity state glyphs are closed semantic vocabulary: `✓`
 completed, `●` running, `!` action required, `×` failed, `■` stopped, and `○`
 unknown/new. Unknown public codes use neutral wording and never borrow success.
 
+An explicitly opened Inspector is exactly 32 cells wide at `>=120`, including
+its single border. It never expands the transcript beyond its 96-cell maximum.
+At `40..=119` the same Activity, Recovery, or Details projection is a bounded
+top-level overlay; below 40 its open state is retained behind the safe minimum
+view. The variant title, stable selected marker, empty state, entry labels, and
+safe details remain visible without color. Fullscreen, pointer, and linear
+screen-reader variants share one ordered entry projection and activation.
+
 `ContextLine` is exactly one unbordered row. Public Session identity leads,
 followed by the Agent label. Healthy connection is absent; reconnecting,
 disconnected, and unavailable states appear only while exceptional. Active

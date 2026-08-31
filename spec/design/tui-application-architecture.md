@@ -83,6 +83,7 @@ tui/src/
     mod.rs               root layout
     command_suggestions.rs pure anchored-menu rendering and pointer geometry
     conversation.rs      TurnBlock rendering and visual-cell scroll geometry
+    inspector.rs         shared Inspector rendering and pointer geometry
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
     linear.rs            screen-reader presentation components
@@ -119,6 +120,14 @@ suspension outcome. H1 activity replaces the matching activity child and H2
 snapshot install replaces the matching block children without deriving Turn
 ownership from adjacent rendered rows. `LiveAnswer` remains a separately keyed
 ephemeral child and only the matching durable answer replaces it.
+
+Inspector has one pure application projection. `InspectorVariant`,
+`InspectorState`, `InspectorEntry`, and typed activation derive only from the
+validated application model; views cannot rediscover recovery policy or Turn
+ownership from strings. The model persists only whether Inspector is open.
+Current variant and selected entry key are transient. Wide column, narrow
+overlay, pointer, and linear screen-reader paths consume the same entry order
+and activation value.
 
 A landmark contains only its one-based ordinal, public `started_position`,
 and sanitized public prompt preview. The navigator never reconstructs

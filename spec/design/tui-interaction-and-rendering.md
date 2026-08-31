@@ -98,6 +98,7 @@ Overlay =
   | Help
   | SessionSwitcher
   | PromptHistory
+  | Inspector
   | Suspension
   | UnknownCommand
   | ErrorDetails
@@ -361,8 +362,9 @@ sending the text to Host.
 | `/new` | optional definition ID from installed list | create and select a Session |
 | `/sessions` | optional filter text | open SessionSwitcher |
 | `/jump` | optional filter text | search loaded Turns and jump to a public start position |
+| `/inspect` | optional `activity`, `recovery`, `details`, or `close` | open, switch, or close Inspector |
 | `/help` | none | open contextual help |
-| `/status` | none | open safe connection/Session details |
+| `/status` | none | open Inspector's safe Details projection |
 | `/retry` | none | replay exact pending mutation when available |
 | `/reconnect` | none | start explicit reconnect from saved cursor |
 | `/cancel` | none | request cancellation of selected running Turn |
@@ -382,6 +384,29 @@ availability requirements. Visual rendering, screen-reader output, and Enter
 activation derive the same safe unavailable reason from the current model;
 they cannot maintain separate predicates. Disabled commands remain
 discoverable with that reason.
+
+`/inspect` without an argument chooses Recovery when an actionable or degraded
+safe recovery entry exists, otherwise Activity when public activity exists,
+otherwise Details. Only the open/closed bit is persisted. Variant, selection,
+and visible window are transient; selection is retained by stable internal
+entry identity across resize. At `>=120` cells an open Inspector is a bordered
+32-column region, including its border, beside a transcript whose measure is
+at most 96 cells. At `40..=119` it is the top-level bounded overlay. Below 40
+cells it remains open in model state but the minimum-size view takes priority.
+
+Activity contains only H3 public labels and states. Recovery contains only
+typed connection, pending-command, suspension, and execution consequences.
+Details contains safe product labels, connection/execution wording, loaded
+Turn count, and follow state. No variant renders opaque IDs, durable positions,
+paths, tool arguments, provider payloads, hidden reasoning, or local filenames.
+Activity activation navigates to the owning loaded Turn. Recovery activation
+may open an already-admitted recovery or suspension action; Details activation
+is inert. Keyboard, pointer, fullscreen, and screen-reader presentations
+consume the same ordered `InspectorEntry` projection, visible window, and
+typed activation. `Tab`/`Shift+Tab` retain their global focus-cycle meaning;
+arrows and `Home`/`End` move selection, `Enter` activates, and `Esc` closes and
+restores prior page focus. Variants change only through typed `/inspect`
+commands.
 
 When a focused, single-line composer draft begins literally with `/`, is at
 most 128 bytes, and is an exact case-folded prefix of a catalog input, a

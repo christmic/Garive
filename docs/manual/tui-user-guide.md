@@ -284,6 +284,7 @@ condition is true.
 | `/new ["definition-id"]` | Create a Session with the selected definition. |
 | `/sessions [filter]` | Open and optionally filter the Session picker. |
 | `/status` | Show safe connection details. |
+| `/inspect [activity|recovery|details|close]` | Open, switch, or close the activity and recovery Inspector. |
 | `/retry` | Refresh Host truth and replay the exact persisted command identity. |
 | `/reconnect` | Reload the selected Session and resume its event stream. |
 | `/cancel` | Request cancellation of the active Turn. |
