@@ -59,6 +59,8 @@
   --shadow-raised: 0 8px 26px rgba(0, 0, 0, .08), 0 1px 3px rgba(0, 0, 0, .08);
   --shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04), 0 2px 8px rgba(0, 0, 0, .04), 0 4px 80px 8px rgba(0, 0, 0, .024);
   --shadow-overlay: 0 22px 70px rgba(0, 0, 0, .2), 0 3px 14px rgba(0, 0, 0, .1);
+  --scrollbar-thumb: transparent;
+  --scrollbar-thumb-hover: var(--border-strong);
 
   /* Compatibility aliases while legacy surfaces migrate to semantic names. */
   --paper: var(--surface-canvas);

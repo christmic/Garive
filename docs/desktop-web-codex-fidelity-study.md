@@ -452,6 +452,21 @@ the newly aligned file. Assistant Markdown now shares the resource-backed
 16.25 px fenced-block rhythm. User work prompts keep the separately observed
 14 px message scale and 70%/22 px bubble geometry.
 
+### V. Installed Codex scroll-surface audit
+
+The earlier Garive build exposed a persistent, thick black WebView rail at the
+conversation edge. Neither supplied Codex reference shows that rail. The
+installed bundle defines normal scrollbar sliders from the 8% border token,
+uses the 16% strong border for hover/active state, and includes a hover-only
+utility whose track and thumb are transparent at rest. Its terminal fixes the
+interaction lane at 10 px, while compact tables opt into a thin scrollbar.
+
+Garive applies that source-backed behavior to conversation, file, settings,
+Environment, command, setup and navigation scroll owners. Each uses a 10 px
+transparent lane and a thumb with 3 px transparent borders, yielding a 4 px
+visible rounded slider only on hover or focus-within. Existing stable-gutter
+layouts keep their geometry without reintroducing an opaque track.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

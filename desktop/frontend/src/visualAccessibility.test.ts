@@ -45,6 +45,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
     expect(TOKENS).toContain("--surface-composer: rgba(255, 255, 255, .03)");
+    expect(TOKENS).toContain("--scrollbar-thumb-hover: var(--border-strong)");
     expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
     expect(CSS).toContain("--sidebar-width: clamp(206px, 16.1vw, 240px)");
     expect(CSS).toContain("--conversation-split: 352px");
@@ -101,6 +102,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("background: var(--surface-composer)");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
+    expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");
+    expect(CSS).toContain("::-webkit-scrollbar-thumb");
+    expect(CSS).toContain("background: var(--scrollbar-thumb-hover)");
   });
 });
 
