@@ -487,6 +487,15 @@ The viewport anchors to the newest content while `follow_latest` is true.
 Manual upward scroll disables follow and shows `N newer updates`; new events do
 not jump the viewport. `End` or activating that badge returns to latest.
 
+When loaded timeline cells overflow the visible conversation, a componentized
+one-cell position rail uses stable cell indices to expose the current loaded
+range without laying out hidden Markdown. Its thumb and pointer mapping share
+one metric. A press or left-button drag on the first/last row jumps oldest or
+resumes latest-follow; an intermediate row anchors the nearest loaded stable
+cell. The rail uses existing right padding and therefore cannot change content
+wrapping. It is absent in tiny, non-overflow, modal-covered, and linear
+screen-reader presentation.
+
 Reflow on resize preserves the top visible stable cell and its source-line
 offset where possible. Loading older pages preserves the current visible
 anchor. Render work is bounded to the visible window plus an overscan margin;

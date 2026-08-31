@@ -32,6 +32,7 @@ not depend on the terminal default being light or dark.
 | `CenteredColumn` | caps readable main content at 114 cells without changing model state |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
 | `AnchoredMenu` | clears only its bounded area, attaches above its owner, preserves page context and owner cursor |
+| `PositionRail` | one-cell timeline track in existing padding; shared bounded thumb/pointer metrics; follow/detached variants |
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
@@ -99,6 +100,17 @@ Session and activity state glyphs are closed semantic vocabulary: `✓`
 completed, `●` running, `!` action required, `×` failed, `■` stopped, and `○`
 unknown/new. Unknown public codes use neutral wording and never borrow success.
 
+The conversation `PositionRail` appears only when admitted timeline cells
+extend beyond the visible cell window, the conversation is at least 20 cells
+wide and four rows high, and no linear presentation is active. It occupies one
+cell of the conversation's existing right padding, so appearing or disappearing
+never rewraps Markdown. The track is muted; its thumb is muted while following,
+accented while manually detached, and warning-styled when newer updates exist.
+Mono uses distinct track/thumb glyphs and emphasis, never color alone. Thumb
+size is proportional to visible stable cells and is at least one row. The first
+and last positions are exact even when intermediate positions are approximate
+cell progress rather than fabricated full-transcript line metrics.
+
 ## Layout and degradation
 
 At 100 cells and above, the Session rail spans the workspace and the main
@@ -122,6 +134,11 @@ Bounded lists keep the selected item inside their visible window. The visual
 filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
+Pressing or dragging the conversation rail maps through the same metric used to
+paint it. The first track row jumps to the oldest loaded cell; the last resumes
+latest-follow; intermediate rows select the nearest stable loaded cell and
+focus Conversation. The rail is inert behind a modal and outside its one-cell
+track. Keyboard `Home`, `End`, arrows, and pages remain equivalent paths.
 Modal geometry reserves the semantic header and composer/footer boundary on
 standard terminals. The reservation contracts responsively on short terminals
 so at least the selected row and its actions remain visible. A modal may clear

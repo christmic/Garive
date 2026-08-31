@@ -230,6 +230,27 @@ adds the exact 4096-byte Host bound, bounded argv, no implicit `vi`, no shell,
 content/Session freshness, one-edit undo, content-free diagnostics, and
 macOS-first PTY evidence.
 
+### Conversation position rail
+
+Grok Build's dedicated renderer documents a one-column scrollbar separated by
+one gap, hides it when content fits, dims it while following, brightens it when
+detached, and derives pointer offsets from the same metrics in
+`xai-grok-pager-render/src/render/scrollbar.rs:1-32,64-128,145-230,255-320`.
+Its timeline state separately models one stable entry per Turn for jump UIs in
+`xai-grok-pager/src/scrollback/state/timeline.rs:1+`. Pi independently computes
+one bounded visible range and exposes position only when rows are hidden in
+`packages/tui/src/components/select-list.ts:85-110`; its editor uses explicit
+top/bottom “more” indicators from the same layout at
+`packages/tui/src/components/editor.ts:480-503,564-575`.
+
+Garive adopts the shared invariants, not either widget or glyph set. Its
+conversation component uses stable public timeline-cell indices rather than
+pretending to know a complete line height that it deliberately does not lay
+out. One rail metric owns render and pointer mapping, reuses the existing right
+padding, stays muted while following, becomes prominent while detached, and
+maps the first/last track row exactly to oldest/latest. It neither scans the
+complete rendered transcript nor changes Host pagination or viewport truth.
+
 ## Codex findings
 
 ### Event and terminal ownership
