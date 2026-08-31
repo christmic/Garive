@@ -3,7 +3,8 @@
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt};
 
 use garive_runtime::{
-    PodmanProcessConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry, T1RuntimeSystemConfig,
+    PodmanProcessConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry, T1HostSystemConfig,
+    T1RuntimeSystemConfig,
 };
 use garive_tools::{ToolIntent, T1_READ_TEXT};
 use tempfile::tempdir;
@@ -84,6 +85,52 @@ fn mismatched_workspace_and_non_private_recovery_fail_before_executor_creation()
         &patch_recovery,
         lanes(),
         podman(&workspace, &process_recovery),
+    )
+    .is_err());
+}
+
+#[test]
+fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
+    let directory = tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    let patch_recovery = directory.path().join("patch-recovery");
+    let process_recovery = directory.path().join("process-recovery");
+    private_directory(&workspace, 0o755);
+    private_directory(&patch_recovery, 0o700);
+    private_directory(&process_recovery, 0o700);
+    let host = T1HostSystemConfig::new(
+        "policy.v1",
+        "executor.v1",
+        "/opt/garive/bin/podman",
+        "unix:///var/run/garive-podman.sock",
+        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+        &patch_recovery,
+        &process_recovery,
+        5_000,
+        lanes(),
+    )
+    .unwrap();
+    assert_eq!(host.process_lane_names().collect::<Vec<_>>(), ["rust"]);
+    assert_eq!(
+        host.bind_workspace(&workspace)
+            .unwrap()
+            .build()
+            .unwrap()
+            .capabilities()
+            .definitions
+            .len(),
+        5
+    );
+    assert!(T1HostSystemConfig::new(
+        "policy.v1",
+        "executor.v1",
+        "/opt/garive/bin/podman",
+        "unix:///var/run/garive-podman.sock",
+        "localhost/garive-runner:latest",
+        &patch_recovery,
+        &process_recovery,
+        5_000,
+        lanes(),
     )
     .is_err());
 }

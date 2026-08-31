@@ -240,4 +240,4 @@ pub use sqlite_ledger::{
     SessionWatermark, SqliteLedger, SqliteLedgerError,
 };
 #[cfg(unix)]
-pub use t1_system_composition::{T1RuntimeExecution, T1RuntimeSystemConfig};
+pub use t1_system_composition::{T1HostSystemConfig, T1RuntimeExecution, T1RuntimeSystemConfig};
