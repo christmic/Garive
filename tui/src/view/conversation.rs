@@ -17,8 +17,10 @@ use super::{
     empty_detail, empty_title, markdown::render_markdown, palette, safe_text, MotionFrame,
 };
 
+mod block;
 pub(super) mod live_cache;
 mod scroll;
+use block::*;
 pub(crate) use scroll::{reflow_visual_anchor, scroll_by_visual_cells};
 
 pub(super) fn render_conversation(
@@ -37,11 +39,11 @@ pub(super) fn render_conversation(
             .alignment(ratatui::layout::Alignment::Center)
             .render(Rect::new(area.x, area.y, area.width, 1), buffer);
     }
-    let window = (!model.timeline.is_empty() || model.live_answer.current().is_some())
+    let window = (!model.turn_blocks.is_empty() || model.live_answer.current().is_some())
         .then(|| conversation_window(model, theme, motion, inner.width, inner.height, cache));
     let mut lines = Vec::new();
     let mut scroll = 0;
-    if model.timeline.is_empty() && model.live_answer.current().is_none() {
+    if model.turn_blocks.is_empty() && model.live_answer.current().is_none() {
         lines.push(Line::default());
         lines.push(Line::styled(empty_title(model.boot), colors.empty_title));
         lines.push(Line::styled(empty_detail(model.boot), colors.muted));
@@ -110,166 +112,66 @@ fn conversation_window(
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
         }
-        let mut end = model.timeline.len();
-        while end > 0 {
-            let start = cell_start(&model.timeline, end);
-            let mut cell = render_cell(&model.timeline[start..end], width, theme, cache);
-            append_turn_gap(
+        let mut cursor = last_cell(model);
+        while let Some(current) = cursor {
+            let mut cell = render_block_cell(model, current, width, theme, cache);
+            append_block_gap(
                 &mut cell,
-                model.timeline[end - 1].role,
-                model.timeline.get(end).map(|item| item.role),
-                end == model.timeline.len() && model.live_answer.current().is_some(),
+                model,
+                current,
+                model.live_answer.current().is_some(),
             );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
-            laid_out += end - start;
+            laid_out += 1;
             if measured_height >= target_height {
                 break;
             }
-            end = start;
+            cursor = previous_cell(model, current);
         }
     } else {
-        let requested = model
-            .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| {
-                model
-                    .timeline
-                    .iter()
-                    .position(|item| item.stable_key == key)
-            })
-            .unwrap_or(0);
-        let start = containing_cell_start(&model.timeline, requested);
-        let first_end = cell_end(&model.timeline, start);
-        let first_height = rendered_cell_height(model, start, first_end, width, theme, cache);
+        let start = anchor_cell(model).or_else(|| first_cell(model));
+        let first_height = start
+            .map(|cursor| rendered_cell_height(model, cursor, width, theme, cache))
+            .unwrap_or(1);
         let source_line = model
             .viewport
             .source_line
             .min(first_height.saturating_sub(1));
-        let mut index = start;
-        while index < model.timeline.len() {
-            let end = cell_end(&model.timeline, index);
-            let mut cell = render_cell(&model.timeline[index..end], width, theme, cache);
-            append_turn_gap(
+        let mut cursor = start;
+        while let Some(current) = cursor {
+            let mut cell = render_block_cell(model, current, width, theme, cache);
+            append_block_gap(
                 &mut cell,
-                model.timeline[end - 1].role,
-                model.timeline.get(end).map(|item| item.role),
-                end == model.timeline.len() && model.live_answer.current().is_some(),
+                model,
+                current,
+                model.live_answer.current().is_some(),
             );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_back(cell);
-            laid_out += end - index;
+            laid_out += 1;
             if measured_height >= target_height.saturating_add(source_line) {
                 break;
             }
-            index = end;
+            cursor = next_cell(model, current);
         }
     }
     let lines = cells.into_iter().flatten().collect::<Vec<_>>();
     let scroll = if model.viewport.follow_latest {
         wrapped_height(&lines, width).saturating_sub(usize::from(height))
     } else {
-        let requested = model
-            .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| {
-                model
-                    .timeline
-                    .iter()
-                    .position(|item| item.stable_key == key)
-            })
-            .unwrap_or(0);
-        let start = containing_cell_start(&model.timeline, requested);
-        let end = cell_end(&model.timeline, start);
-        model
-            .viewport
-            .source_line
-            .min(rendered_cell_height(model, start, end, width, theme, cache).saturating_sub(1))
+        model.viewport.source_line.min(
+            anchor_cell(model)
+                .or_else(|| first_cell(model))
+                .map(|cursor| rendered_cell_height(model, cursor, width, theme, cache))
+                .unwrap_or(1)
+                .saturating_sub(1),
+        )
     };
     ConversationWindow {
         lines,
         scroll,
         laid_out,
-    }
-}
-
-fn containing_cell_start(items: &[crate::application::TimelineItem], index: usize) -> usize {
-    if items[index].role != TimelineRole::Status {
-        return index;
-    }
-    let mut start = index;
-    while start > 0 && items[start - 1].role == TimelineRole::Status {
-        start -= 1;
-    }
-    start
-}
-
-fn rendered_cell_height(
-    model: &AppModel,
-    start: usize,
-    end: usize,
-    width: u16,
-    theme: Theme,
-    cache: &mut RenderCache,
-) -> usize {
-    let mut cell = render_cell(&model.timeline[start..end], width, theme, cache);
-    append_turn_gap(
-        &mut cell,
-        model.timeline[end - 1].role,
-        model.timeline.get(end).map(|item| item.role),
-        end == model.timeline.len() && model.live_answer.current().is_some(),
-    );
-    wrapped_height(&cell, width).max(1)
-}
-
-fn cell_start(items: &[crate::application::TimelineItem], end: usize) -> usize {
-    if items[end - 1].role != TimelineRole::Status {
-        return end - 1;
-    }
-    let mut start = end - 1;
-    while start > 0 && items[start - 1].role == TimelineRole::Status {
-        start -= 1;
-    }
-    start
-}
-
-fn cell_end(items: &[crate::application::TimelineItem], start: usize) -> usize {
-    if items[start].role != TimelineRole::Status {
-        return start + 1;
-    }
-    let mut end = start + 1;
-    while end < items.len() && items[end].role == TimelineRole::Status {
-        end += 1;
-    }
-    end
-}
-
-fn render_cell(
-    items: &[crate::application::TimelineItem],
-    width: u16,
-    theme: Theme,
-    cache: &mut RenderCache,
-) -> Vec<Line<'static>> {
-    if items[0].role == TimelineRole::Status {
-        super::activity_stack::render(items, theme, width)
-    } else {
-        cache.render(&items[0], width, theme)
-    }
-}
-
-fn append_turn_gap(
-    cell: &mut Vec<Line<'static>>,
-    role: TimelineRole,
-    next: Option<TimelineRole>,
-    live_answer_follows: bool,
-) {
-    let ends_turn = role == TimelineRole::Agent
-        || next == Some(TimelineRole::User)
-        || (next.is_none() && !live_answer_follows);
-    if ends_turn {
-        cell.push(Line::default());
     }
 }
 
@@ -440,7 +342,7 @@ mod tests {
     fn latest_window_layout_is_independent_of_history_length() {
         let mut model = AppModel::default();
         for position in 1..=10_000 {
-            model.timeline.push(TimelineItem {
+            model.push_test_timeline_item(TimelineItem {
                 stable_key: format!("item-{position}"),
                 position,
                 role: TimelineRole::Agent,

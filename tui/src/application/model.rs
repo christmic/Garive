@@ -5,7 +5,7 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
-use super::LiveAnswerProjection;
+use super::{LiveAnswerProjection, TurnBlock};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -301,7 +301,7 @@ pub(crate) struct AppModel {
     pub(crate) viewport_order: VecDeque<String>,
     pub(crate) suspension: Option<SuspensionView>,
     pub(crate) notice: Option<String>,
-    pub(crate) timeline: Vec<TimelineItem>,
+    pub(crate) turn_blocks: Vec<TurnBlock>,
     pub(crate) conversation_landmarks: Vec<ConversationLandmark>,
     pub(crate) live_answer: LiveAnswerProjection,
     pub(crate) execution: ExecutionState,
@@ -309,6 +309,16 @@ pub(crate) struct AppModel {
 }
 
 impl AppModel {
+    pub(crate) fn durable_children(&self) -> impl Iterator<Item = &TimelineItem> {
+        self.turn_blocks.iter().flat_map(TurnBlock::children)
+    }
+
+    pub(crate) fn durable_child(&self, stable_key: &str) -> Option<&TimelineItem> {
+        self.turn_blocks
+            .iter()
+            .find_map(|block| block.child(stable_key))
+    }
+
     pub(crate) fn matching_sessions(&self) -> impl Iterator<Item = &SessionSummary> {
         let filter = self.session_filter.to_lowercase();
         self.sessions.iter().filter(move |session| {
@@ -387,9 +397,9 @@ impl AppModel {
             has_pending_command: self.has_pending_command,
             has_running_turn: self.execution == ExecutionState::Following,
             has_visible_completion: self
-                .timeline
+                .turn_blocks
                 .iter()
-                .any(|item| item.role == TimelineRole::Agent),
+                .any(|block| block.committed_answer.is_some()),
             has_selected_session: self.selected_session.is_some(),
             has_navigable_turns: self.conversation_landmarks.len() >= 2,
             has_composer_selection: self.composer.has_selection(),
@@ -443,20 +453,20 @@ impl AppModel {
     }
 
     pub(crate) fn jump_to_oldest(&mut self) {
-        let Some(first) = self.timeline.first() else {
+        let Some(first) = self.turn_blocks.first() else {
             return;
         };
         self.viewport.follow_latest = false;
-        self.viewport.anchor_key = Some(first.stable_key.clone());
+        self.viewport.anchor_key = Some(first.user.stable_key.clone());
         self.viewport.source_line = 0;
         self.viewport.newer_updates = 0;
     }
 
     pub(crate) fn jump_to_turn_position(&mut self, position: u64) -> bool {
-        let Some(index) = self
-            .timeline
+        let Some(block) = self
+            .turn_blocks
             .iter()
-            .position(|item| item.position == position && item.role == TimelineRole::User)
+            .find(|block| block.user.position == position)
         else {
             return false;
         };
@@ -468,7 +478,7 @@ impl AppModel {
             self.follow_latest();
         } else {
             self.viewport.follow_latest = false;
-            self.viewport.anchor_key = Some(self.timeline[index].stable_key.clone());
+            self.viewport.anchor_key = Some(block.user.stable_key.clone());
             self.viewport.source_line = 0;
             self.viewport.newer_updates = 0;
         }

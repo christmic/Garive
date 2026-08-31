@@ -228,10 +228,9 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
         Command::CopyLast => {
             let value = state
                 .model
-                .timeline
-                .iter()
-                .rev()
-                .find(|item| item.role == crate::application::TimelineRole::Agent)
+                .durable_children()
+                .filter(|item| item.role == crate::application::TimelineRole::Agent)
+                .last()
                 .map(|item| item.text.clone());
             copy_value(value, state, true);
         }

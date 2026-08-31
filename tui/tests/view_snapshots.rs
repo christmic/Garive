@@ -282,7 +282,7 @@ fn product_model() -> AppModel {
         "Agent action · completed",
     );
     activity.tone = TimelineTone::Success;
-    model.timeline = vec![
+    for item in [
         item("user", 2, TimelineRole::User, "Summarize the release plan."),
         activity,
         item(
@@ -291,14 +291,17 @@ fn product_model() -> AppModel {
             TimelineRole::Agent,
             "## Release plan\n\n- Verify the Runtime\n- Ship with **evidence**\n\n`cargo test` passes.",
         ),
-    ];
+    ] {
+        model.push_test_timeline_item(item);
+    }
     model.composer.replace("Ask a follow-up…").unwrap();
     model
 }
 
 fn activity_stack_model() -> AppModel {
     let mut model = product_model();
-    model.timeline = vec![
+    model.turn_blocks.clear();
+    for item in [
         item(
             "user",
             2,
@@ -308,7 +311,9 @@ fn activity_stack_model() -> AppModel {
         activity("read", 3, TimelineTone::Success, "Read project rules"),
         activity("tests", 4, TimelineTone::Success, "Checked focused tests"),
         activity("run", 5, TimelineTone::Active, "Running strict validation"),
-    ];
+    ] {
+        model.push_test_timeline_item(item);
+    }
     model
 }
 

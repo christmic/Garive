@@ -104,13 +104,7 @@ pub(super) fn open_turn_navigator(state: &mut RuntimeState, filter: Option<Strin
             .viewport
             .anchor_key
             .as_deref()
-            .and_then(|key| {
-                state
-                    .model
-                    .timeline
-                    .iter()
-                    .find(|item| item.stable_key == key)
-            })
+            .and_then(|key| state.model.durable_child(key))
             .map(|item| item.position)
             .unwrap_or(0);
         matches

@@ -133,9 +133,10 @@ fn turn_navigation_uses_public_positions_and_escape_or_focus_loss_is_non_mutatin
         overlay: Some(Overlay::TurnNavigator),
         turn_filter: "beta".into(),
         conversation_landmarks: vec![landmark(1, 10, "alpha"), landmark(2, 20, "beta")],
-        timeline: vec![cell("alpha", 10), cell("beta", 20)],
         ..Default::default()
     };
+    model.push_test_timeline_item(cell("alpha", 10));
+    model.push_test_timeline_item(cell("beta", 20));
     model.viewport.follow_latest = false;
     model.viewport.anchor_key = Some("alpha".into());
     let original = model.viewport.clone();

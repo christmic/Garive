@@ -1,10 +1,13 @@
-use std::io::{self, Write};
+use std::{
+    collections::BTreeMap,
+    io::{self, Write},
+};
 
 use garive_host_client::LiveHostClient;
 use tokio::sync::mpsc;
 
 use crate::{
-    application::{ConnectionState, ExecutionState, TimelineRole},
+    application::{AppModel, ConnectionState, ExecutionState, TimelineRole},
     persistence::DiagnosticEvent,
     LaunchConfig, TuiError,
 };
@@ -41,7 +44,7 @@ pub(super) async fn run(
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
-    let mut emitted = 0;
+    let mut emitted = BTreeMap::new();
     let mut last_status = String::new();
     let mut last_overlay = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
@@ -120,7 +123,7 @@ pub(super) async fn run(
 
 fn emit_linear_changes(
     state: &RuntimeState,
-    emitted: &mut usize,
+    emitted: &mut BTreeMap<String, String>,
     last_status: &mut String,
     last_overlay: &mut String,
 ) -> Result<(), TuiError> {
@@ -133,15 +136,16 @@ fn emit_linear_changes(
         write_linear(&status)?;
         *last_status = status;
     }
-    for item in state.model.timeline.iter().skip(*emitted) {
-        let role = match item.role {
-            TimelineRole::User => "You",
-            TimelineRole::Agent => "Garive",
-            TimelineRole::Status => "Activity",
-        };
-        write_linear(&format!("{role}: {}", crate::view::linear_safe(&item.text)))?;
+    let rows = linear_conversation_rows(&state.model);
+    let present = rows.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>();
+    for (key, line) in rows {
+        if emitted.get(&key) == Some(&line) {
+            continue;
+        }
+        write_linear(&line)?;
+        emitted.insert(key, line);
     }
-    *emitted = state.model.timeline.len();
+    emitted.retain(|key, _| present.contains(key));
     let overlay = crate::view::linear_overlay(&state.model);
     if *last_overlay != overlay {
         if !overlay.is_empty() {
@@ -150,6 +154,23 @@ fn emit_linear_changes(
         *last_overlay = overlay;
     }
     Ok(())
+}
+
+fn linear_conversation_rows(model: &AppModel) -> Vec<(String, String)> {
+    model
+        .durable_children()
+        .map(|item| {
+            let role = match item.role {
+                TimelineRole::User => "You",
+                TimelineRole::Agent => "Garive",
+                TimelineRole::Status => "Activity",
+            };
+            (
+                item.stable_key.clone(),
+                format!("{role}: {}", crate::view::linear_safe(&item.text)),
+            )
+        })
+        .collect()
 }
 
 fn write_linear(value: &str) -> Result<(), TuiError> {
@@ -183,5 +204,48 @@ fn linear_execution(value: ExecutionState) -> &'static str {
         ExecutionState::Following => "running",
         ExecutionState::Suspended => "action required",
         ExecutionState::Failed => "failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::{TimelineItem, TimelineRole, TimelineTone, TurnBlock, TurnBlockKey};
+
+    fn item(key: &str, role: TimelineRole, text: &str) -> TimelineItem {
+        TimelineItem {
+            stable_key: key.into(),
+            position: 1,
+            role,
+            tone: TimelineTone::Neutral,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn linear_rows_follow_turn_block_semantic_child_order() {
+        let model = AppModel {
+            turn_blocks: vec![TurnBlock {
+                key: TurnBlockKey {
+                    session_id: "session".into(),
+                    turn_id: "turn".into(),
+                },
+                user: item("user", TimelineRole::User, "question"),
+                activities: vec![item("activity", TimelineRole::Status, "working")],
+                committed_answer: Some(item("answer", TimelineRole::Agent, "done")),
+                outcome: Some(item("outcome", TimelineRole::Status, "stopped")),
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            linear_conversation_rows(&model),
+            vec![
+                ("user".into(), "You: question".into()),
+                ("activity".into(), "Activity: working".into()),
+                ("answer".into(), "Garive: done".into()),
+                ("outcome".into(), "Activity: stopped".into()),
+            ]
+        );
     }
 }

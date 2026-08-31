@@ -22,7 +22,7 @@ fn representative_render_and_editor_latency_stay_interactive() {
         ..Default::default()
     };
     for position in 1..=10_000 {
-        model.timeline.push(TimelineItem {
+        model.push_test_timeline_item(TimelineItem {
             stable_key: format!("item-{position}"),
             position,
             role: if position % 3 == 0 {

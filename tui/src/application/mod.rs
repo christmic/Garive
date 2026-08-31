@@ -2,6 +2,7 @@ mod action;
 mod effect;
 mod live_answer;
 mod model;
+mod turn_block;
 mod update;
 
 pub(crate) use action::AppAction;
@@ -15,4 +16,5 @@ pub(crate) use model::{
     ConnectionState, ConversationLandmark, ExecutionState, FocusTarget, Overlay, TerminalSize,
     TimelineItem, TimelineRole, TimelineTone,
 };
+pub(crate) use turn_block::{TurnBlock, TurnBlockKey};
 pub(crate) use update::reduce;

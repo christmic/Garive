@@ -53,7 +53,7 @@ fn standard_frame_has_conversation_context_and_safe_text() {
         selected_session: Some("session-1234567890".into()),
         ..Default::default()
     };
-    model.timeline.push(TimelineItem {
+    model.push_test_timeline_item(TimelineItem {
         stable_key: "answer".into(),
         position: 7,
         role: TimelineRole::Agent,
@@ -409,7 +409,7 @@ fn command_palette_shares_safe_unavailable_reasons_with_activation_context() {
     assert!(unavailable.contains("no completion is visible"));
     assert!(view::linear_overlay(&model).contains("Unavailable: no completion is visible"));
 
-    model.timeline.push(TimelineItem {
+    model.push_test_timeline_item(TimelineItem {
         stable_key: "completion".into(),
         position: 1,
         role: TimelineRole::Agent,
@@ -453,7 +453,7 @@ fn agent_markdown_is_structured_and_terminal_safe() {
         boot: BootState::Ready,
         ..Default::default()
     };
-    model.timeline.push(TimelineItem {
+    model.push_test_timeline_item(TimelineItem {
         stable_key: "markdown".into(),
         position: 1,
         role: TimelineRole::Agent,

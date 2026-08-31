@@ -325,7 +325,7 @@ mod tests {
             ..Default::default()
         };
         for position in 0..20 {
-            model.timeline.push(TimelineItem {
+            model.push_test_timeline_item(TimelineItem {
                 stable_key: format!("cell-{position}"),
                 position: position + 1,
                 role: TimelineRole::Agent,
