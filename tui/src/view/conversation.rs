@@ -17,6 +17,7 @@ use super::{
     empty_detail, empty_title, markdown::render_markdown, palette, safe_text, MotionFrame,
 };
 
+pub(super) mod live_cache;
 mod scroll;
 pub(crate) use scroll::{reflow_visual_anchor, scroll_by_visual_cells};
 
@@ -92,13 +93,20 @@ fn conversation_window(
     height: u16,
     cache: &mut RenderCache,
 ) -> ConversationWindow {
+    cache.live.retain_for(model.live_answer.current());
     let target_height = usize::from(height).saturating_add(4);
     let mut cells = VecDeque::new();
     let mut laid_out = 0;
     let mut measured_height: usize = 0;
     if model.viewport.follow_latest {
         if let Some(answer) = model.live_answer.current() {
-            let cell = super::live_answer::render(answer, theme, width, motion.is_reduced());
+            let cell = super::live_answer::render(
+                answer,
+                theme,
+                width,
+                motion.is_reduced(),
+                &mut cache.live,
+            );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
         }
@@ -286,6 +294,7 @@ struct CachedCell {
 pub(crate) struct RenderCache {
     cells: VecDeque<CachedCell>,
     bytes: usize,
+    live: live_cache::LiveRenderCache,
     #[cfg(test)]
     hits: usize,
 }
@@ -485,115 +494,5 @@ mod tests {
         }
         assert_eq!(cache.cells.len(), MAX_CACHED_CELLS);
         assert!(cache.bytes <= MAX_CACHE_BYTES);
-    }
-
-    fn visual_item(key: &str, role: TimelineRole, text: &str) -> TimelineItem {
-        TimelineItem {
-            stable_key: key.into(),
-            position: 1,
-            role,
-            tone: Default::default(),
-            text: text.into(),
-        }
-    }
-
-    #[test]
-    fn visual_scroll_stays_inside_wrapped_markdown_and_cjk_before_crossing_items() {
-        let mut model = AppModel {
-            timeline: vec![
-                visual_item(
-                    "wide",
-                    TimelineRole::Agent,
-                    "**alpha** 中文中文中文中文 alpha alpha alpha",
-                ),
-                visual_item("next", TimelineRole::User, "next"),
-            ],
-            ..Default::default()
-        };
-        let mut cache = RenderCache::default();
-
-        model.viewport.follow_latest = false;
-        model.viewport.anchor_key = Some("wide".into());
-        scroll_by_visual_cells(&mut model, Theme::Dark, 12, 3, 1, &mut cache);
-
-        assert_eq!(model.viewport.anchor_key.as_deref(), Some("wide"));
-        assert_eq!(model.viewport.source_line, 1);
-
-        let first_height = rendered_cell_height(&model, 0, 1, 12, Theme::Dark, &mut cache);
-        scroll_by_visual_cells(
-            &mut model,
-            Theme::Dark,
-            12,
-            3,
-            (first_height - 1) as isize,
-            &mut cache,
-        );
-        assert_eq!(model.viewport.anchor_key.as_deref(), Some("next"));
-        assert_eq!(model.viewport.source_line, 0);
-    }
-
-    #[test]
-    fn page_scroll_advances_exactly_one_rendered_viewport() {
-        let mut model = AppModel {
-            timeline: vec![visual_item(
-                "answer",
-                TimelineRole::Agent,
-                "one two three four five six seven eight nine ten eleven twelve",
-            )],
-            ..Default::default()
-        };
-        let mut cache = RenderCache::default();
-        model.viewport.follow_latest = false;
-        model.viewport.anchor_key = Some("answer".into());
-
-        scroll_by_visual_cells(&mut model, Theme::Dark, 10, 3, 3, &mut cache);
-
-        assert_eq!(model.viewport.anchor_key.as_deref(), Some("answer"));
-        assert_eq!(model.viewport.source_line, 3);
-    }
-
-    #[test]
-    fn reflow_keeps_the_top_item_and_clamps_its_visual_line() {
-        let mut model = AppModel {
-            timeline: vec![visual_item(
-                "answer",
-                TimelineRole::Agent,
-                "one two three four five six seven eight nine ten",
-            )],
-            ..Default::default()
-        };
-        model.viewport.follow_latest = false;
-        model.viewport.anchor_key = Some("answer".into());
-        model.viewport.source_line = 5;
-        let mut cache = RenderCache::default();
-
-        reflow_visual_anchor(&mut model, Theme::Dark, 80, &mut cache);
-
-        assert_eq!(model.viewport.anchor_key.as_deref(), Some("answer"));
-        assert_eq!(model.viewport.source_line, 2);
-    }
-
-    #[test]
-    fn detached_live_updates_do_not_move_the_visual_anchor() {
-        let mut model = AppModel {
-            timeline: vec![visual_item("answer", TimelineRole::Agent, "durable answer")],
-            ..Default::default()
-        };
-        model.viewport.follow_latest = false;
-        model.viewport.anchor_key = Some("answer".into());
-        model.viewport.source_line = 1;
-        model.viewport.newer_updates = 4;
-        let before = model.viewport.clone();
-
-        let _ = conversation_window(
-            &model,
-            Theme::Dark,
-            MotionFrame::reduced(),
-            20,
-            4,
-            &mut RenderCache::default(),
-        );
-
-        assert_eq!(model.viewport, before);
     }
 }

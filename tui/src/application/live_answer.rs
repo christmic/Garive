@@ -58,7 +58,6 @@ pub(crate) struct LiveAnswer {
     pub(crate) last_sequence: u64,
     pub(crate) availability: LiveAnswerAvailability,
     pub(crate) ended: bool,
-    unseen_notified: bool,
 }
 
 impl LiveAnswer {
@@ -81,20 +80,11 @@ impl LiveAnswer {
             last_sequence: 0,
             availability: LiveAnswerAvailability::Available,
             ended: false,
-            unseen_notified: false,
         }
     }
 
-    fn mark_unseen(&mut self, detached: bool) -> bool {
-        if !detached {
-            self.unseen_notified = false;
-            return false;
-        }
-        if self.unseen_notified {
-            return false;
-        }
-        self.unseen_notified = true;
-        true
+    const fn unseen(detached: bool) -> bool {
+        detached
     }
 
     fn present(&mut self, text: String) {
@@ -116,14 +106,10 @@ pub(crate) struct LiveMarkdownBuffer {
 }
 
 impl LiveMarkdownBuffer {
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn stable_prefix(&self) -> &str {
         &self.stable_prefix
     }
 
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn mutable_tail(&self) -> &str {
         &self.mutable_tail
     }
@@ -286,7 +272,7 @@ impl LiveAnswerProjection {
             }
         }
         if effect.visual_changed {
-            effect.unseen_increment = answer.mark_unseen(expectation.detached);
+            effect.unseen_increment = LiveAnswer::unseen(expectation.detached);
         }
         effect
     }
@@ -305,15 +291,11 @@ impl LiveAnswerProjection {
             accepted: true,
             visual_changed: true,
             frame_requested: false,
-            unseen_increment: answer.mark_unseen(detached),
+            unseen_increment: LiveAnswer::unseen(detached),
         }
     }
 
-    pub(crate) fn mark_seen(&mut self) {
-        if let Some(answer) = self.current.as_mut() {
-            answer.unseen_notified = false;
-        }
-    }
+    pub(crate) fn mark_seen(&mut self) {}
 
     pub(crate) fn preview_unavailable(&mut self, detached: bool) -> LiveAnswerEffect {
         let Some(answer) = self.current.as_mut() else {
@@ -328,7 +310,7 @@ impl LiveAnswerProjection {
             accepted: true,
             visual_changed: changed,
             frame_requested: false,
-            unseen_increment: changed && answer.mark_unseen(detached),
+            unseen_increment: changed && LiveAnswer::unseen(detached),
         }
     }
 

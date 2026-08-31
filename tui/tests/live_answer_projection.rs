@@ -314,7 +314,7 @@ fn durable_takeover_removes_preview_and_fences_late_generation() {
 }
 
 #[test]
-fn detached_view_increments_unseen_once_until_marked_seen() {
+fn detached_view_counts_each_presented_frame_and_semantic_change() {
     let mut projection = LiveAnswerProjection::default();
     let first = projection.apply(snapshot(STREAM_A, 1, "one"), expectation(true));
     assert!(first.unseen_increment);
@@ -329,9 +329,7 @@ fn detached_view_increments_unseen_once_until_marked_seen() {
         ),
         expectation(true),
     );
-    assert!(!projection.advance_frame(true).unseen_increment);
-
-    projection.mark_seen();
+    assert!(projection.advance_frame(true).unseen_increment);
     projection.apply(
         event(
             STREAM_A,
@@ -343,4 +341,23 @@ fn detached_view_increments_unseen_once_until_marked_seen() {
         expectation(true),
     );
     assert!(projection.advance_frame(true).unseen_increment);
+
+    let phase = projection.apply(
+        event(
+            STREAM_A,
+            4,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "finalizing".into(),
+                label_key: "agent.live.finalizing".into(),
+            },
+        ),
+        expectation(true),
+    );
+    assert!(phase.unseen_increment);
+
+    let unavailable = projection.apply(
+        event(STREAM_A, 5, LiveOutputEventKind::PreviewUnavailable),
+        expectation(true),
+    );
+    assert!(unavailable.unseen_increment);
 }

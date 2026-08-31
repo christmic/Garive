@@ -5,13 +5,14 @@ use crate::{
     Theme,
 };
 
-use super::{markdown::render_markdown, palette};
+use super::{conversation::live_cache::LiveRenderCache, palette};
 
 pub(super) fn render(
     answer: &LiveAnswer,
     theme: Theme,
     width: u16,
     reduced_motion: bool,
+    cache: &mut LiveRenderCache,
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
     let mut lines = vec![Line::from(vec![
@@ -27,15 +28,7 @@ pub(super) fn render(
             if answer.presented_text.is_empty() {
                 lines.push(Line::styled("  ", colors.normal));
             } else {
-                lines.extend(render_markdown(
-                    &answer.presented_text,
-                    "  ",
-                    colors.normal,
-                    colors.agent,
-                    colors.muted,
-                    super::markdown_syntax::SyntaxPalette::from_palette(colors),
-                    width,
-                ));
+                lines.extend(cache.render_markdown(answer, theme, width));
             }
             if answer.caret_visible() && !reduced_motion {
                 if let Some(line) = lines.last_mut() {
