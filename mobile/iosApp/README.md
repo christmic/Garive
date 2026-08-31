@@ -34,7 +34,8 @@ iosApp/
 
 ## Build
 
-Build the shared framework, contract tests, then the unsigned device app gate:
+Build the shared framework and contract tests, then exercise both simulator and
+unsigned device configurations:
 
 ```text
 cd ../shared
@@ -48,7 +49,13 @@ xcodebuild test -project GariveIOS.xcodeproj -scheme GariveIOS \
   CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO \
   -only-testing:GariveIOSUITests
 xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
+  -configuration Debug -sdk iphonesimulator ARCHS=arm64 \
+  CODE_SIGNING_ALLOWED=NO clean build
+xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
   -configuration Debug -sdk iphoneos ARCHS=arm64 \
+  CODE_SIGNING_ALLOWED=NO clean build
+xcodebuild -project GariveIOS.xcodeproj -target GariveIOS \
+  -configuration Release -sdk iphoneos ARCHS=arm64 \
   CODE_SIGNING_ALLOWED=NO clean build
 ```
 
@@ -78,8 +85,9 @@ Swift contract tests also require pairing links to pass the same shared remote
 HTTPS-origin validator before any service suggestion is presented.
 
 The Xcode target produces `Garive.app`, registers expiring `garive://pair`
-handoffs, and links the static XCFramework. Distribution still requires the
-operator's Apple team, signing, and physical-device verification.
+handoffs, links the static XCFramework, and compiles the no-alpha Garive app
+icon into the asset catalogue. Distribution still requires the operator's
+Apple team, signing, and physical-device verification.
 
 ## Private wake hints
 
