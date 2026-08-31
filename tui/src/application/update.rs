@@ -122,6 +122,48 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             effect.into_iter().collect()
         }
         AppAction::CreateSessionRequested(_) => Vec::new(),
+        AppAction::CancelTurnRequested(draft)
+            if draft.kind == PendingMutationKind::CancelTurn
+                && draft.session_id.as_deref() == model.selected_session.as_deref()
+                && draft.turn_id.as_deref() == model.selected_turn.as_deref()
+                && draft.suspension_id.is_none()
+                && draft.expected_session_version.is_none()
+                && draft
+                    .requested_through_position
+                    .is_some_and(|value| value > 0)
+                && matches!(model.execution, ExecutionState::Following)
+                && !has_pending_for_session(model, draft.session_id.as_deref())
+                && !model.composer_is_frozen =>
+        {
+            issue_pending(model, draft, None)
+        }
+        AppAction::CancelTurnRequested(_) => Vec::new(),
+        AppAction::ContinueTurnRequested {
+            draft,
+            schema_digest,
+        } if draft.kind == PendingMutationKind::ContinueTurn
+            && continuation_matches(model, &draft, &schema_digest)
+            && draft.request_payload.get("input_json").is_some()
+            && matches!(model.execution, ExecutionState::Suspended)
+            && !has_pending_for_session(model, draft.session_id.as_deref())
+            && !model.composer_is_frozen =>
+        {
+            let session_id = draft.session_id.clone();
+            let effect = model.effects.issue(
+                EffectKind::PersistContinuation {
+                    draft,
+                    schema_digest,
+                },
+                session_id,
+                None,
+            );
+            if effect.is_some() {
+                model.has_pending_command = true;
+                model.composer_is_frozen = true;
+            }
+            effect.into_iter().collect()
+        }
+        AppAction::ContinueTurnRequested { .. } => Vec::new(),
         AppAction::StartTurnRequested(draft)
             if draft.kind == PendingMutationKind::StartTurn
                 && draft.session_id.is_some()
@@ -182,7 +224,47 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                         kind: EffectKind::CreateSession { draft, identity },
                     }]
                 }
+                (
+                    EffectKind::PersistPending { draft },
+                    AppEffectOutcome::PendingPersisted(Ok(identity)),
+                ) if draft.command_id == identity.command_id
+                    && draft.kind == PendingMutationKind::CancelTurn =>
+                {
+                    let mut context = effect.context;
+                    context.request_digest = Some(identity.request_digest.clone());
+                    vec![AppEffect {
+                        context,
+                        kind: EffectKind::CancelTurn { draft, identity },
+                    }]
+                }
+                (
+                    EffectKind::PersistContinuation {
+                        draft,
+                        schema_digest,
+                    },
+                    AppEffectOutcome::PendingPersisted(Ok(identity)),
+                ) if draft.command_id == identity.command_id => {
+                    let host_allowed = continuation_matches(model, &draft, &schema_digest);
+                    let mut context = effect.context;
+                    context.request_digest = Some(identity.request_digest.clone());
+                    vec![AppEffect {
+                        context,
+                        kind: EffectKind::ContinueTurn {
+                            draft,
+                            identity,
+                            schema_digest,
+                            host_allowed,
+                        },
+                    }]
+                }
                 (EffectKind::PersistPending { .. }, _) => {
+                    model.has_pending_command = false;
+                    model.composer_is_frozen = false;
+                    model.notice = Some("The pending command could not be saved.".into());
+                    model.overlay = Some(Overlay::ErrorDetails);
+                    Vec::new()
+                }
+                (EffectKind::PersistContinuation { .. }, _) => {
                     model.has_pending_command = false;
                     model.composer_is_frozen = false;
                     model.notice = Some("The pending command could not be saved.".into());
@@ -193,4 +275,48 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             }
         }
     }
+}
+
+fn issue_pending(
+    model: &mut AppModel,
+    draft: super::PendingMutationDraft,
+    request_digest: Option<String>,
+) -> Vec<AppEffect> {
+    let session_id = draft.session_id.clone();
+    let effect = model.effects.issue(
+        EffectKind::PersistPending { draft },
+        session_id,
+        request_digest,
+    );
+    if effect.is_some() {
+        model.has_pending_command = true;
+        model.composer_is_frozen = true;
+    }
+    effect.into_iter().collect()
+}
+
+fn continuation_matches(
+    model: &AppModel,
+    draft: &super::PendingMutationDraft,
+    digest: &str,
+) -> bool {
+    let Some(suspension) = model.suspension.as_ref() else {
+        return false;
+    };
+    draft.session_id.as_deref() == model.selected_session.as_deref()
+        && draft.turn_id.as_deref() == model.selected_turn.as_deref()
+        && draft.suspension_id.as_deref() == Some(suspension.suspension_id.as_str())
+        && draft.expected_session_version == Some(suspension.session_version)
+        && suspension.response_schema_digest.as_deref() == Some(digest)
+        && draft.requested_through_position.is_none()
+}
+
+fn has_pending_for_session(model: &AppModel, session_id: Option<&str>) -> bool {
+    model.effects.pending.values().any(|effect| {
+        effect.context.session_id.as_deref() == session_id
+            && matches!(
+                effect.kind,
+                EffectKind::PersistPending { .. } | EffectKind::PersistContinuation { .. }
+            )
+    })
 }

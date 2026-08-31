@@ -19,6 +19,11 @@ pub(crate) enum AppAction {
     QuitConfirmed,
     CreateSessionRequested(PendingMutationDraft),
     StartTurnRequested(PendingMutationDraft),
+    CancelTurnRequested(PendingMutationDraft),
+    ContinueTurnRequested {
+        draft: PendingMutationDraft,
+        schema_digest: String,
+    },
     #[allow(dead_code)]
     EffectFinished(AppEffectResult),
 }

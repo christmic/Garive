@@ -48,6 +48,12 @@ async fn execute<P: PersistencePort>(effect: AppEffect, persistence: P) -> AppEf
         }
         EffectKind::StartTurn { .. } => AppEffectOutcome::Failed(EffectFailure::Internal),
         EffectKind::CreateSession { .. } => AppEffectOutcome::Failed(EffectFailure::Internal),
+        EffectKind::CancelTurn { .. } | EffectKind::ContinueTurn { .. } => {
+            AppEffectOutcome::Failed(EffectFailure::Internal)
+        }
+        EffectKind::PersistContinuation { draft, .. } => {
+            AppEffectOutcome::PendingPersisted(persistence.persist_pending(draft).await)
+        }
     };
     AppEffectResult {
         context: effect.context,

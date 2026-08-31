@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::{
     application::{AppAction, ExecutionState, Overlay},
@@ -6,7 +6,7 @@ use crate::{
         parse_command, parse_schema_input, response_schema_control, Command, CommandParse,
         InspectorCommand, SchemaControl,
     },
-    persistence::{now, DiagnosticEvent, PendingCommand, PendingKind},
+    persistence::{DiagnosticEvent, PendingCommand, PendingKind},
 };
 
 use super::{
@@ -115,7 +115,8 @@ pub(super) fn submit_suspension_response(state: &mut RuntimeState) {
     let schema_digest = suspension
         .response_schema_digest
         .as_deref()
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .to_owned();
     if response.identity.session_id != *session
         || response.identity.turn_id != *turn
         || response.identity.suspension_id != suspension.suspension_id
@@ -148,30 +149,14 @@ pub(super) fn submit_suspension_response(state: &mut RuntimeState) {
         suspension.session_version,
     );
     let id = state.command_id("continue");
-    if !admit(
-        state,
-        id.clone(),
-        PendingKind::ContinueTurn,
-        Some(session.clone()),
-        Some(turn.clone()),
-        Some(suspension_id.clone()),
-        Some(version),
-        None,
-        json!({"input_json": input_json}),
-    ) {
-        return;
-    }
-    host::continue_turn(
-        state.client.clone(),
-        host::ContinuationRequest {
-            command_id: id,
-            session_id: session,
-            turn_id: turn,
-            suspension_id,
-            expected_session_version: version,
-            input: host::ContinuationInput::Json(input_json),
-        },
-        state.sender.clone(),
+    state.request_continue_turn(
+        id,
+        session,
+        turn,
+        suspension_id,
+        version,
+        schema_digest,
+        input_json,
     );
 }
 
@@ -253,55 +238,8 @@ pub(super) fn cancel(state: &mut RuntimeState) {
     ) {
         let id = state.command_id("cancel");
         let position = state.model.observed_position.max(1);
-        if !admit(
-            state,
-            id.clone(),
-            PendingKind::CancelTurn,
-            Some(session.clone()),
-            Some(turn.clone()),
-            None,
-            None,
-            Some(position),
-            json!({"session_id": session, "requested_through_position": position}),
-        ) {
-            return;
-        }
-        host::cancel_turn(
-            state.client.clone(),
-            id,
-            session,
-            turn,
-            position,
-            state.sender.clone(),
-        );
+        state.request_cancel_turn(id, session, turn, position);
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn admit(
-    state: &mut RuntimeState,
-    command_id: String,
-    kind: PendingKind,
-    session_id: Option<String>,
-    turn_id: Option<String>,
-    suspension_id: Option<String>,
-    expected_session_version: Option<u64>,
-    requested_through_position: Option<u64>,
-    request_payload: Value,
-) -> bool {
-    state.admit_pending(PendingCommand {
-        schema_version: 1,
-        command_id,
-        kind,
-        session_id,
-        turn_id,
-        suspension_id,
-        expected_session_version,
-        requested_through_position,
-        request_payload,
-        request_digest: String::new(),
-        created_at: now(),
-    })
 }
 
 pub(super) fn retry_pending(state: &mut RuntimeState) {

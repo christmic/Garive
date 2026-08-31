@@ -202,6 +202,7 @@ pub(super) fn activate_intent(
         ActionOverlayIntent::Close => {
             if overlay == Overlay::EphemeralConfirmation {
                 state.deferred_ephemeral = None;
+                state.deferred_continuation_schema_digest = None;
             }
             state.dispatch(AppAction::OverlayClosed);
         }
@@ -209,6 +210,7 @@ pub(super) fn activate_intent(
         ActionOverlayIntent::AcceptEphemeral => {
             state.ephemeral_confirmed = true;
             state.model.overlay = None;
+            let deferred_schema_digest = state.deferred_continuation_schema_digest.take();
             if let Some(pending) = state.deferred_ephemeral.take() {
                 if pending.kind == crate::persistence::PendingKind::StartTurn {
                     let text = pending
@@ -228,6 +230,46 @@ pub(super) fn activate_intent(
                         .unwrap_or_default()
                         .to_owned();
                     state.request_create_session(pending.command_id, definition_id);
+                } else if pending.kind == crate::persistence::PendingKind::CancelTurn {
+                    if let (Some(session_id), Some(turn_id), Some(position)) = (
+                        pending.session_id,
+                        pending.turn_id,
+                        pending.requested_through_position,
+                    ) {
+                        state.request_cancel_turn(
+                            pending.command_id,
+                            session_id,
+                            turn_id,
+                            position,
+                        );
+                    }
+                } else if pending.kind == crate::persistence::PendingKind::ContinueTurn {
+                    let input_json = pending.request_payload.get("input_json").cloned();
+                    if let (
+                        Some(session_id),
+                        Some(turn_id),
+                        Some(suspension_id),
+                        Some(version),
+                        Some(schema_digest),
+                        Some(input_json),
+                    ) = (
+                        pending.session_id,
+                        pending.turn_id,
+                        pending.suspension_id,
+                        pending.expected_session_version,
+                        deferred_schema_digest,
+                        input_json,
+                    ) {
+                        state.request_continue_turn(
+                            pending.command_id,
+                            session_id,
+                            turn_id,
+                            suspension_id,
+                            version,
+                            schema_digest,
+                            input_json,
+                        );
+                    }
                 } else if state.admit_pending(pending.clone()) {
                     super::replay_pending(state, pending);
                 }

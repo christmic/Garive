@@ -50,6 +50,20 @@ pub(crate) enum EffectKind {
         draft: PendingMutationDraft,
         identity: PersistedPendingIdentity,
     },
+    CancelTurn {
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
+    },
+    ContinueTurn {
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
+        schema_digest: String,
+        host_allowed: bool,
+    },
+    PersistContinuation {
+        draft: PendingMutationDraft,
+        schema_digest: String,
+    },
 }
 
 impl EffectKind {
@@ -59,6 +73,9 @@ impl EffectKind {
             Self::PersistPending { .. } => EffectTag::PersistPending,
             Self::StartTurn { .. } => EffectTag::StartTurn,
             Self::CreateSession { .. } => EffectTag::CreateSession,
+            Self::CancelTurn { .. } => EffectTag::CancelTurn,
+            Self::ContinueTurn { .. } => EffectTag::ContinueTurn,
+            Self::PersistContinuation { .. } => EffectTag::PersistContinuation,
         }
     }
 }
@@ -67,9 +84,9 @@ impl EffectKind {
 #[allow(dead_code)]
 pub(crate) enum PendingMutationKind {
     CreateSession,
-    StartTurn,
     CancelTurn,
     ContinueTurn,
+    StartTurn,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -116,6 +133,9 @@ pub(crate) enum EffectTag {
     PersistPending,
     StartTurn,
     CreateSession,
+    CancelTurn,
+    ContinueTurn,
+    PersistContinuation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

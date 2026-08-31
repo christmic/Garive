@@ -21,6 +21,7 @@ use super::super::{
     host::{self, HostMessage},
 };
 
+mod mutations;
 mod pending;
 
 pub(super) use pending::pending_freezes_composer;
@@ -44,6 +45,7 @@ pub(in crate::runtime) struct RuntimeState {
     pending_recovery: BTreeSet<String>,
     pub(in crate::runtime) ephemeral_confirmed: bool,
     pub(in crate::runtime) deferred_ephemeral: Option<PendingCommand>,
+    pub(in crate::runtime) deferred_continuation_schema_digest: Option<String>,
     pub(in crate::runtime) queued_prompt: Option<String>,
     pub(in crate::runtime) snapshot_request: u64,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
@@ -140,6 +142,7 @@ impl RuntimeState {
             pending_recovery,
             ephemeral_confirmed: false,
             deferred_ephemeral: None,
+            deferred_continuation_schema_digest: None,
             queued_prompt: None,
             snapshot_request: 0,
             background_follows: BTreeMap::new(),
@@ -197,6 +200,40 @@ impl RuntimeState {
                         );
                     }
                 }
+                crate::application::EffectTag::CancelTurn => {
+                    let EffectKind::CancelTurn { draft, identity } = effect.kind else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some((command_id, session_id, turn_id, position)) =
+                        self.activate_persisted_cancel(draft, identity)
+                    {
+                        host::cancel_turn(
+                            self.client.clone(),
+                            command_id,
+                            session_id,
+                            turn_id,
+                            position,
+                            self.sender.clone(),
+                        );
+                    }
+                }
+                crate::application::EffectTag::ContinueTurn => {
+                    let EffectKind::ContinueTurn {
+                        draft,
+                        identity,
+                        host_allowed,
+                        ..
+                    } = effect.kind
+                    else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some(request) =
+                        self.activate_persisted_continue(draft, identity, host_allowed)
+                    {
+                        host::continue_turn(self.client.clone(), request, self.sender.clone());
+                    }
+                }
+                crate::application::EffectTag::PersistContinuation => self.effects.submit(effect),
             }
         }
     }

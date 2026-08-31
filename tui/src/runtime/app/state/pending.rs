@@ -11,6 +11,49 @@ use super::RuntimeState;
 use crate::runtime::app::state_error_name;
 
 impl RuntimeState {
+    pub(in crate::runtime::app::state) fn activate_persisted_mutation(
+        &mut self,
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
+    ) -> Option<PendingCommand> {
+        let kind = match draft.kind {
+            PendingMutationKind::CancelTurn => PendingKind::CancelTurn,
+            PendingMutationKind::ContinueTurn => PendingKind::ContinueTurn,
+            _ => return None,
+        };
+        let pending = PendingCommand {
+            schema_version: 1,
+            command_id: draft.command_id,
+            kind,
+            session_id: draft.session_id,
+            turn_id: draft.turn_id,
+            suspension_id: draft.suspension_id,
+            expected_session_version: draft.expected_session_version,
+            requested_through_position: draft.requested_through_position,
+            request_payload: draft.request_payload,
+            request_digest: identity.request_digest,
+            created_at: draft.created_at,
+        };
+        if pending.command_id != identity.command_id || pending.validate().is_err() {
+            self.model.has_pending_command = false;
+            self.model.composer_is_frozen = false;
+            self.local_state_failure("invalid_persisted_mutation");
+            return None;
+        }
+        self.pending.push(pending.clone());
+        self.sync_pending_projection();
+        #[cfg(feature = "test-hooks")]
+        self.crash_if(crate::args::TestCrashHook::PendingPersisted);
+        Some(pending)
+    }
+
+    pub(in crate::runtime::app::state) fn mark_pending_unknown(&mut self, command_id: &str) {
+        self.pending_recovery.insert(command_id.into());
+        self.sync_pending_projection();
+        self.model.notice = Some("The command context changed before it could be sent.".into());
+        self.model.overlay = Some(Overlay::UnknownCommand);
+    }
+
     pub(in crate::runtime) fn request_create_session(
         &mut self,
         command_id: String,

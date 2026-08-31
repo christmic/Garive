@@ -14,6 +14,7 @@ use application::{
     FocusTarget, InspectorVariant, Overlay, PendingMutationDraft, PendingMutationKind,
     PersistedPendingIdentity, PersistenceFailure, TerminalSize, TimelineItem, TimelineRole,
 };
+use garive_host_client::SuspensionView;
 use serde_json::json;
 
 #[test]
@@ -306,6 +307,125 @@ fn create_session_persistence_failure_recovers_without_host_effect() {
     assert_eq!(model.overlay, Some(Overlay::ErrorDetails));
 }
 
+#[test]
+fn cancel_requires_exact_following_context_and_persistence() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        selected_turn: Some("turn-a".into()),
+        execution: application::ExecutionState::Following,
+        ..Default::default()
+    };
+    let draft = cancel_draft();
+    let mut foreign = draft.clone();
+    foreign.session_id = Some("session-b".into());
+    assert!(reduce(&mut model, AppAction::CancelTurnRequested(foreign)).is_empty());
+    let mut malformed = draft.clone();
+    malformed.requested_through_position = Some(0);
+    assert!(reduce(&mut model, AppAction::CancelTurnRequested(malformed)).is_empty());
+
+    let persist = reduce(&mut model, AppAction::CancelTurnRequested(draft.clone())).remove(0);
+    assert_eq!(model.execution, application::ExecutionState::Following);
+    let duplicate = reduce(&mut model, AppAction::CancelTurnRequested(draft.clone()));
+    assert!(duplicate.is_empty());
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(persisted(&persist, &draft.command_id)),
+    );
+    assert!(matches!(
+        follow_up.as_slice(),
+        [AppEffect {
+            kind: EffectKind::CancelTurn { .. },
+            ..
+        }]
+    ));
+    assert_eq!(model.execution, application::ExecutionState::Following);
+}
+
+#[test]
+fn continue_blocks_stale_decision_and_persistence_failure() {
+    let mut model = suspended_model();
+    let draft = continue_draft();
+    let mut foreign = draft.clone();
+    foreign.session_id = Some("session-b".into());
+    assert!(reduce(
+        &mut model,
+        AppAction::ContinueTurnRequested {
+            draft: foreign,
+            schema_digest: "schema-a".into(),
+        },
+    )
+    .is_empty());
+
+    let persist = reduce(
+        &mut model,
+        AppAction::ContinueTurnRequested {
+            draft: draft.clone(),
+            schema_digest: "schema-a".into(),
+        },
+    )
+    .remove(0);
+    model.suspension.as_mut().unwrap().response_schema_digest = Some("schema-b".into());
+    let stale = reduce(
+        &mut model,
+        AppAction::EffectFinished(persisted(&persist, &draft.command_id)),
+    );
+    assert!(matches!(
+        stale.as_slice(),
+        [AppEffect {
+            kind: EffectKind::ContinueTurn {
+                host_allowed: false,
+                ..
+            },
+            ..
+        }]
+    ));
+
+    let mut model = suspended_model();
+    let exact = reduce(
+        &mut model,
+        AppAction::ContinueTurnRequested {
+            draft: draft.clone(),
+            schema_digest: "schema-a".into(),
+        },
+    )
+    .remove(0);
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(persisted(&exact, &draft.command_id)),
+    );
+    assert!(matches!(
+        follow_up.as_slice(),
+        [AppEffect {
+            kind: EffectKind::ContinueTurn {
+                host_allowed: true,
+                ..
+            },
+            ..
+        }]
+    ));
+
+    let mut model = suspended_model();
+    let persist = reduce(
+        &mut model,
+        AppAction::ContinueTurnRequested {
+            draft,
+            schema_digest: "schema-a".into(),
+        },
+    )
+    .remove(0);
+    assert!(reduce(
+        &mut model,
+        AppAction::EffectFinished(AppEffectResult {
+            context: persist.context,
+            kind: persist.kind.tag(),
+            outcome: AppEffectOutcome::PendingPersisted(Err(PersistenceFailure::Unavailable)),
+        }),
+    )
+    .is_empty());
+    assert_eq!(model.overlay, Some(Overlay::ErrorDetails));
+    assert!(!model.composer_is_frozen);
+}
+
 fn create_session_draft() -> PendingMutationDraft {
     PendingMutationDraft {
         command_id: "command-create".into(),
@@ -317,6 +437,53 @@ fn create_session_draft() -> PendingMutationDraft {
         requested_through_position: None,
         request_payload: json!({"agent_definition_id": "definition-main"}),
         created_at: "2026-09-01T00:00:00Z".into(),
+    }
+}
+
+fn cancel_draft() -> PendingMutationDraft {
+    PendingMutationDraft {
+        command_id: "command-cancel".into(),
+        kind: PendingMutationKind::CancelTurn,
+        session_id: Some("session-a".into()),
+        turn_id: Some("turn-a".into()),
+        suspension_id: None,
+        expected_session_version: None,
+        requested_through_position: Some(7),
+        request_payload: json!({"session_id": "session-a", "requested_through_position": 7}),
+        created_at: "2026-09-01T00:00:00Z".into(),
+    }
+}
+
+fn continue_draft() -> PendingMutationDraft {
+    PendingMutationDraft {
+        command_id: "command-continue".into(),
+        kind: PendingMutationKind::ContinueTurn,
+        session_id: Some("session-a".into()),
+        turn_id: Some("turn-a".into()),
+        suspension_id: Some("suspension-a".into()),
+        expected_session_version: Some(4),
+        requested_through_position: None,
+        request_payload: json!({"input_json": true}),
+        created_at: "2026-09-01T00:00:00Z".into(),
+    }
+}
+
+fn suspended_model() -> AppModel {
+    AppModel {
+        selected_session: Some("session-a".into()),
+        selected_turn: Some("turn-a".into()),
+        execution: application::ExecutionState::Suspended,
+        suspension: Some(SuspensionView {
+            suspension_id: "suspension-a".into(),
+            session_version: 4,
+            kind: "approval_required".into(),
+            prompt_schema: "prompt".into(),
+            prompt_json: "{}".into(),
+            prompt_digest: "prompt-digest".into(),
+            response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+            response_schema_digest: Some("schema-a".into()),
+        }),
+        ..Default::default()
     }
 }
 
