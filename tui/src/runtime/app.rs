@@ -175,28 +175,29 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             break;
         }
         tokio::select! {
+            biased;
+            signal = shutdown.recv() => {
+                interrupted = Some(signal);
+                break;
+            }
             event = events.recv() => match event {
                 Some(Ok(event)) => handle_terminal(event, &mut state),
                 Some(Err(_)) | None => return Err(TuiError::TerminalIo),
-            },
-            message = receiver.recv() => match message {
-                Some(message) => handle_host(message, &mut state),
-                None => break,
             },
             action = action_receiver.recv() => match action {
                 Some(action) => state.dispatch(action),
                 None => break,
             },
-            signal = shutdown.recv() => {
-                interrupted = Some(signal);
-                break;
-            }
             _ = motion_clock.tick(), if view::status_motion_enabled(&state.model, state.config.reduced_motion) => {
                 motion_tick = motion_tick.wrapping_add(1);
             }
             _ = live_frame_clock.tick(), if state.model.live_frame_pending() => {
                 state.model.advance_live_frame();
             }
+            message = receiver.recv() => match message {
+                Some(message) => handle_host(message, &mut state),
+                None => break,
+            },
         }
     }
     state.stop_tasks();

@@ -50,6 +50,56 @@ fn session_pagination_uses_one_typed_runtime_boundary_in_all_terminal_modes() {
     assert!(!screen_reader.contains("LoadSessionPageRequested"));
 }
 
+#[test]
+fn terminal_modes_prioritize_local_control_and_clocks_over_host_traffic() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let full_screen =
+        fs::read_to_string(root.join("src/runtime/app.rs")).expect("runtime is readable");
+    let screen_reader = fs::read_to_string(root.join("src/runtime/app/screen_reader.rs"))
+        .expect("screen-reader runtime is readable");
+
+    assert_priority_contract(
+        runtime_select(&full_screen),
+        &["shutdown.recv()", "events.recv()", "action_receiver.recv()"],
+        &["motion_clock.tick()", "live_frame_clock.tick()"],
+    );
+    assert_priority_contract(
+        runtime_select(&screen_reader),
+        &["shutdown.recv()", "events.recv()", "action_receiver.recv()"],
+        &[],
+    );
+}
+
+fn runtime_select(source: &str) -> &str {
+    let after_quit = source
+        .split_once("if state.model.quit_requested")
+        .expect("runtime loop checks quit before waiting")
+        .1;
+    after_quit
+        .split_once("tokio::select! {")
+        .expect("runtime loop has a select")
+        .1
+        .split_once("state.stop_tasks();")
+        .expect("runtime select is bounded")
+        .0
+}
+
+fn assert_priority_contract(runtime_select: &str, local: &[&str], clocks: &[&str]) {
+    assert!(runtime_select.contains("biased;"));
+    let host = runtime_select
+        .find("message = receiver.recv()")
+        .expect("Host receiver remains in the runtime select");
+    for branch in local.iter().chain(clocks) {
+        let position = runtime_select
+            .find(branch)
+            .unwrap_or_else(|| panic!("missing priority branch {branch}"));
+        assert!(
+            position < host,
+            "{branch} must remain ahead of Host traffic"
+        );
+    }
+}
+
 fn collect_rust_files(directory: &Path, output: &mut Vec<std::path::PathBuf>) {
     for entry in fs::read_dir(directory).expect("source directory is readable") {
         let path = entry.expect("source entry is readable").path();
