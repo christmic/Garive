@@ -243,6 +243,16 @@ a pending identity or redirects its result into the new selection.
 - Approval/external-input suspension renders the H2 public prompt and a
   schema-appropriate value action; continue binds the exact suspension identity,
   Session version, response-schema digest, and H1 continuation variant.
+- The Composer-bound approval rail presents operation, Workspace, exact scope,
+  duration, overwrite behavior and changed-request consequence before its
+  Decline/Approve-once actions. It uses a neutral surface with one attention
+  edge, never a full warning fill, and reflows its explanation/actions rather
+  than clipping facts at narrow widths.
+- The Desktop Workspace picker keeps the authorized root, current opaque
+  directory level, 8-item selection bound and UTF-8 transfer notice visible in
+  one compact selector. Enter/back, pagination, checkbox selection, Escape,
+  outside cancel and focus containment retain their existing authority
+  semantics; decoration never creates a second branded onboarding surface.
   Other suspension kinds render status only unless their own public authority
   contract is accepted.
 - Failed/stopped states show stable localized copy and a copyable error code.

@@ -103,6 +103,15 @@ The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
 
+A blocking approval is a compact permission rail attached to the Composer, not
+a saturated warning card or a second dialog. It uses a neutral raised surface,
+one 2 px attention edge and a 24 px authority glyph. Exact scope, duration and
+overwrite behavior precede the consequence copy and one-shot actions. At the
+39 rem measure those facts remain on one line and the rail stays under 100 px;
+at narrow widths consequence and actions stack without horizontal overflow.
+The first safe action receives focus, but the Composer must not add a second
+action-colored focus ring around that focused button.
+
 Window chrome follows permanence, not feature ownership. The top bar contains
 only the current document/task identity and admitted global actions. Live
 execution state appears once, attached to the composer/status rail. Durable
@@ -150,6 +159,15 @@ system. Connect, Review and Restart are one compact progressive sequence;
 review facts are continuous rows rather than a dashboard of cards. At narrow
 widths the fields become one column while every label and action remains text
 visible.
+
+The Workspace file picker is a compact desktop selector, not a branded hero
+modal. At the wide reference it is at most 620 px with a 48 px title row, 34 px
+location row, 40–42 px entries and a 54 px authority/action footer. The header
+contains only document identity and close. File/folder glyphs are quiet 24 px
+line icons without colored tiles; the Workspace path, 8-item selection bound
+and UTF-8 authority note remain text-visible. Selection and directory navigation
+use neutral hover surfaces. At 480 px the selector keeps a 12 px viewport inset
+and exact document width without becoming a separate mobile visual language.
 
 ### Fidelity geometry
 

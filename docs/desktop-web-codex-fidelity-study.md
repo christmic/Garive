@@ -267,6 +267,45 @@ Connect, Review and Restart states were rendered and inspected; 720 px and
 column. This is a consistency correction based on the observed desktop grammar,
 not a claim that the supplied screenshots showed Codex onboarding.
 
+### M. Approval-at-the-action-boundary audit
+
+The approval fixture exposed a high-value Garive surface that still used the
+old dashboard language. A full amber card occupied 136 px inside the Composer;
+its three authority facts competed with two inline actions, and autofocus drew
+both a button ring and a second blue ring around the entire Composer. The
+permission boundary was truthful but visually louder and harder to scan than
+the task it protected.
+
+The approval is now a two-column permission rail with a 24 px authority glyph,
+neutral raised surface, one 2 px attention edge and a full-width fact region.
+Scope, duration and overwrite behavior stay on one line at the 39 rem measure;
+consequence copy precedes Decline and Approve once. Its 720 px fixture is 96 px
+high instead of 136 px. At 480 px the consequence/actions stack to 159 px,
+retain exact text and keep document width equal to the viewport. Only the safe
+Decline action receives the explicit focus ring; the surrounding Composer uses
+a quiet neutral focus border. This is the Gate 2 authority advantage without
+adding ordinary-screen noise.
+
+### N. Workspace picker desktop-density audit
+
+The platform-only Workspace picker remained a 680 px hero modal with an 82 px
+header, blue marketing eyebrow, 37 px colored Workspace tile, 31 px colored
+file tiles, 51 px entries, 70 px footer, 20 px radius, inset highlight and an
+independent 100 px shadow. An 8 px full-window blur made the underlying work
+feel like another application rather than retained context.
+
+The picker is now a neutral 620 px desktop selector using the shared panel
+radius and overlay shadow. Its title/location/entry/footer rows are
+48/34/40–42/54 px; the header contains one title and close action, while file
+glyphs are quiet 24 px line icons without tiles. Directory enter/back, the
+0–8 count, UTF-8 authority copy and confirm actions remain continuously
+visible. A real interaction entered `Research notes`, returned to the root,
+selected `Launch brief.md`, updated the count to 1/8 and confirmed the exact
+context back into the Composer. At 720 px the sheet remains 620 px wide; at
+480 px it uses a 12 px inset and 456 px width. Both stable states have zero
+document overflow. This improves desktop density without weakening Workspace
+authority or pretending the Web client owns the native picker capability.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -821,10 +821,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             ? `${activityLabel(approvalEffect.label_key, t)} · ` : `${t("approval.operationPrefix")} `}<bdi>{approvalWorkspace?.display_name ?? t("approval.attachedWorkspace")}</bdi>?</strong>
             <div className="approval-facts"><span><b>{t("approval.scope")}</b>{t(approvalWorkspace?.access === "read_write" ? "approval.createOne" : "approval.exactOperation")}</span>
               <span><b>{t("approval.duration")}</b>{t("approval.durationValue")}</span><span><b>{t("approval.overwrite")}</b>{t("approval.overwriteValue")}</span></div>
-            <p>{t("approval.changed")}</p></div>
-          <div className="approval-actions"><button ref={approvalAction} type="button" autoFocus disabled={state.phase === "submitting"}
-            onClick={() => void resolveApproval(false)}>{t("approval.decline")}</button><button className="primary" type="button"
-              disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>{t("approval.approveOnce")}</button></div>
+            <div className="approval-foot"><p>{t("approval.changed")}</p><div className="approval-actions"><button ref={approvalAction} type="button" autoFocus disabled={state.phase === "submitting"}
+              onClick={() => void resolveApproval(false)}>{t("approval.decline")}</button><button className="primary" type="button"
+                disabled={state.phase === "submitting"} onClick={() => void resolveApproval(true)}>{t("approval.approveOnce")}</button></div></div></div>
         </div>}
         {state.workspaces.length > 0 && <div className="attached-workspaces"
           aria-label={t("context.attached")}>

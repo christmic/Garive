@@ -18,7 +18,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(narrow).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(narrow).toContain(".sidebar { display: none; }");
     expect(narrow).toContain(".main-surface, .topbar, .work-surface, .conversation, .composer-wrap, .composer, .timeline { min-width: 0; max-width: 100%; }");
-    expect(narrow).toContain(".approval-actions { grid-column: 1 / -1;");
+    expect(narrow).toContain(".approval-foot { flex-direction: column; align-items: stretch; }");
+    expect(narrow).toContain(".approval-actions { align-self: flex-end; }");
     expect(CSS).toContain(".app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }");
     expect(CSS).toContain(".app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: 72px minmax(0, 1fr); }");
   });
@@ -64,6 +65,13 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".setup-card { position: relative; width: min(39rem, 100%); margin: 0 auto;");
     expect(CSS).toContain(".setup-card::before { display: none; }");
     expect(CSS).toContain(".setup-grid { display: grid; grid-template-columns: 1fr 1fr;");
+    expect(CSS).toContain(".approval-card { display: grid; grid-template-columns: 24px minmax(0,1fr);");
+    expect(CSS).toContain("border-left-color: var(--state-attention)");
+    expect(CSS).toContain(".approval-foot { display: flex; align-items: center; justify-content: space-between;");
+    expect(CSS).toContain(".workspace-sheet { display: grid; grid-template-rows: 48px 34px minmax(220px, 1fr) auto;");
+    expect(CSS).toContain("width: min(620px, 100%)");
+    expect(CSS).toContain(".workspace-entry { display: grid; grid-template-columns: minmax(0, 1fr) 34px;");
+    expect(CSS).toContain(".entry-icon { display: grid; place-items: center; width: 24px; height: 24px; color: var(--text-tertiary); background: transparent;");
   });
 });
 
