@@ -641,6 +641,8 @@ kbd { font-size: var(--text-2xs); }
 .icon-button { width: 34px; height: 34px; border-radius: var(--radius-control); }
 .sidebar-product-row .sidebar-search { width: 24px; height: 24px; }
 .icon-button:hover, .icon-button.active { background: var(--surface-hover); }
+.topbar-actions .icon-button[aria-expanded="true"] { color: var(--text-primary); background: transparent; }
+.topbar-actions .icon-button[aria-expanded="true"]:hover { background: var(--surface-hover); }
 
 .empty-conversation { place-items: start center; padding: clamp(112px, 17vh, 150px) 24px 180px; }
 .welcome { width: min(39rem, 100%); text-align: left; }

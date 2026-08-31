@@ -663,8 +663,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <div className="topbar-actions">
             {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
               onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
-            {screen === "work" && state.messages.length > 0 && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
+            {screen === "work" && state.messages.length > 0 && <button className="icon-button"
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
+              aria-expanded={state.inspectorOpen} aria-controls="work-inspector"
+              onPointerUp={(event) => event.currentTarget.blur()}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
           </div>
         </header>
@@ -987,7 +989,7 @@ function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, 
     const sidebar = document.querySelector<HTMLElement>(".sidebar")?.getBoundingClientRect();
     if (shell) onWorkspaceSplitChange(clientX - shell.left - (sidebar?.width ?? 0));
   };
-  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}>
+  return <aside id="work-inspector" className={`inspector ${mode}`} aria-label={t("inspector.aria")}>
     {mode === "workspace-panel" && <div className="workspace-resizer" role="separator"
       aria-label={t("inspector.resizeWorkspace")} aria-orientation="vertical"
       aria-valuemin={320} aria-valuemax={520} aria-valuenow={workspaceSplitPx} tabIndex={0}

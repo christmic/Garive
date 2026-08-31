@@ -187,6 +187,9 @@ Localization and 200% text zoom may grow rows and must never clip content.
 The unified Desktop/Web window bar is 34px at the supplied 1280px reference
 size. The file tab shares that row, its location toolbar is 30px including its
 separator, and the first rendered heading begins after a 4px document inset.
+Disclosure buttons in the window bar use `aria-expanded` and `aria-controls`;
+the visible panel is the opened-state feedback, so the button does not retain a
+selected fill or pointer focus ring. Keyboard focus remains explicitly visible.
 The document retains a left-aligned 46rem measure rather than recentring inside
 the pane. Opening Environment uses a bounded top-right fade/scale; file contents use a 4px lateral reveal after the
 grid track exists. Both animations are removed by reduced-motion preference.

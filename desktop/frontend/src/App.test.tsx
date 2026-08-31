@@ -285,6 +285,14 @@ describe("Desktop product experience", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send work" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Open deliverables" }));
+    const inspectorToggle = screen.getByRole("button", { name: "Toggle inspector" });
+    expect(inspectorToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(inspectorToggle.getAttribute("aria-controls")).toBe("work-inspector");
+    expect(inspectorToggle.classList.contains("active")).toBe(false);
+    expect(view.container.querySelector("#work-inspector")).not.toBeNull();
+    inspectorToggle.focus();
+    fireEvent.pointerUp(inspectorToggle);
+    expect(inspectorToggle).not.toBe(document.activeElement);
     expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
     expect(view.container.querySelector(".recent-item.selected")).not.toBeNull();
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();

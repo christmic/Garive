@@ -343,6 +343,22 @@ fact. With Environment open at the reference viewport, the rail remains x=353,
 544 px wide and free of internal overflow. At 720 and 480 px the Composer is
 546 and 432 px wide respectively, with zero rail or document overflow.
 
+### Q. Quiet titlebar disclosure audit
+
+Opening Environment previously left a prominent blue focus outline around the
+titlebar toggle in pointer-driven screenshots and also applied a persistent
+selected background. The panel itself already communicates the open state, so
+the duplicate emphasis made one utility action compete with document identity.
+
+The toggle now exposes the real `aria-expanded` and `aria-controls` relationship
+without an `active` class. Pointer release removes incidental button focus; once
+the pointer leaves, the open toggle has a fully transparent background while
+Environment remains visible. Keyboard focus still renders the shared 2 px
+focus-visible outline. At 720 and 480 px the 224 px panel remains present with
+the same expanded semantics and zero document overflow. This follows the
+reference titlebar's quiet utility-action hierarchy without hiding state from
+assistive technology.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
