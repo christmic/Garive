@@ -245,7 +245,7 @@ mod tests {
     use crossterm::event::KeyModifiers;
 
     use super::*;
-    use crate::application::{TerminalSize, TimelineItem, TimelineRole};
+    use crate::application::{ConversationLandmark, TerminalSize, TimelineItem, TimelineRole};
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
@@ -295,6 +295,42 @@ mod tests {
             ),
             Some(MouseAction::OverlayActivate(11))
         );
+    }
+
+    #[test]
+    fn turn_navigator_mouse_uses_its_filtered_visible_window() {
+        let model = AppModel {
+            overlay: Some(Overlay::TurnNavigator),
+            terminal_size: TerminalSize {
+                width: 100,
+                height: 24,
+            },
+            turn_selection: 19,
+            conversation_landmarks: (0..20)
+                .map(|index| ConversationLandmark {
+                    ordinal: index + 1,
+                    started_position: index as u64 + 1,
+                    prompt_preview: format!("prompt {index:02}"),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        assert_eq!(
+            route(&model, mouse(MouseEventKind::ScrollUp, 50, 10)),
+            Some(MouseAction::OverlayMove { backwards: true })
+        );
+        assert!((0..24).any(|row| (0..100).any(|column| {
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+            ) == Some(MouseAction::OverlayActivate(19))
+        })));
+        assert!(!(0..24).any(|row| (0..100).any(|column| {
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+            ) == Some(MouseAction::OverlayActivate(0))
+        })));
     }
 
     #[test]

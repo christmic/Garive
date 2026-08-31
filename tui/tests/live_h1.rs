@@ -835,6 +835,66 @@ fn conversation_position_rail_press_and_drag_share_the_shipping_geometry() {
 }
 
 #[test]
+fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry() {
+    let (address, stop, server) = timeline_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("turn-navigator.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 8
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
+            log_user 0
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session session-rail --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
+            must_expect "\033\[6n" 70
+            send "\033\[1;1R"
+            must_expect {#40} 71
+            send "/jump \r"
+            must_expect "Jump to a Turn" 72
+            send "\033\[H"
+            send "\033"
+            must_expect {#40} 73
+            send "/jump question 11\r"
+            must_expect "Search  question 11" 74
+            must_expect "12  question 11" 75
+            send "\r"
+            must_expect {#23} 76
+            send "/jump \r"
+            must_expect "Jump to a Turn" 77
+            send "\033\[<0;50;6M"
+            must_expect {#21} 78
+            send "\021"
+            must_expect "Garive?" 79
+            send "\r"
+            expect {
+                eof { exit 0 }
+                timeout { exit 80 }
+            }
+        "#])
+        .status()
+        .unwrap();
+    stop.store(true, Ordering::Relaxed);
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("Search  question 11"));
+    assert!(!text.contains("turn-11"), "opaque Turn ID stayed hidden");
+    assert!(text.contains("\x1b[?1006h") && text.contains("\x1b[?1006l"));
+    assert!(text.contains("\x1b[?1049h") && text.contains("\x1b[?1049l"));
+}
+
+#[test]
 fn termination_signal_restores_the_shipping_terminal() {
     for _ in 0..2 {
         let (address, server) = empty_host();

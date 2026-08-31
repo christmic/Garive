@@ -10,7 +10,9 @@ mod input;
 #[path = "../src/view/mod.rs"]
 mod view;
 
-use application::{AppModel, BootState, FocusTarget, Overlay, TimelineItem, TimelineRole};
+use application::{
+    AppModel, BootState, ConversationLandmark, FocusTarget, Overlay, TimelineItem, TimelineRole,
+};
 use garive_host_client::{SessionSummary, SuspensionView};
 use ratatui::{
     buffer::Buffer,
@@ -296,6 +298,38 @@ fn searchable_overlays_show_only_matching_rows() {
     let history = frame(&model, 100, 24);
     assert!(history.contains("deploy release"));
     assert!(!history.contains("write tests"));
+}
+
+#[test]
+fn turn_navigator_is_bounded_filtered_safe_and_matches_linear_presentation() {
+    let model = AppModel {
+        overlay: Some(Overlay::TurnNavigator),
+        turn_filter: "beta".into(),
+        conversation_landmarks: vec![
+            ConversationLandmark {
+                ordinal: 1,
+                started_position: 10,
+                prompt_preview: "alpha hidden".into(),
+            },
+            ConversationLandmark {
+                ordinal: 2,
+                started_position: 20,
+                prompt_preview: "beta \u{1b}[31m safe".into(),
+            },
+        ],
+        ..Default::default()
+    };
+    let visual = frame(&model, 100, 24);
+    assert!(visual.contains("Jump to a Turn"));
+    assert!(visual.contains("Search  beta"));
+    assert!(visual.contains("2  beta �[31m safe"));
+    assert!(!visual.contains("alpha hidden"));
+    assert!(!visual.contains("started_position"));
+    assert!(!visual.contains('\u{1b}'));
+
+    let linear = view::linear_overlay(&model);
+    assert!(linear.contains("Turn 2. beta �[31m safe"));
+    assert!(!linear.contains("alpha hidden"));
 }
 
 #[test]

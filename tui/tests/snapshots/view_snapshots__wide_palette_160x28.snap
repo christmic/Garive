@@ -1,6 +1,5 @@
 ---
 source: tui/tests/view_snapshots.rs
-assertion_line: 92
 expression: "frame(&wide, Theme::Light, 160, 28)"
 ---
   GARIVE  research-age  /  Session session-alph                                                                                           ● online  ·  running
@@ -9,9 +8,10 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                  │         │  Search  type to search                                                │
  ▌ research-age · 123456         │         │  › /new              Create session                                    │
    ✓ completed  ·  3 turns       │         │    /sessions         Switch session                                    │
-                                 │         │    /status           Connection details                                │
-   research-age · 987654         │         │    /edit-prompt      Edit draft externally                             │
-   ● running  ·  1 turn          │         │    /retry            unavailable · no pending command                  │
+                                 │         │    /jump             unavailable · fewer than two Turns are loaded     │
+   research-age · 987654         │         │    /status           Connection details                                │
+   ● running  ·  1 turn          │         │    /edit-prompt      Edit draft externally                             │
+                                 │         │    /retry            unavailable · no pending command                  │
                                  │         │    /reconnect        Resume event stream                               │
                                  │         │    /cancel           Cancel running turn                               │
                                  │         │    /theme system     Follow terminal theme                             │
@@ -22,7 +22,6 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                  │         │    /mouse off        Disable mouse capture next launch                 │
                                  │         │    /copy last        Copy last completion                              │
                                  │         │    /copy selection   unavailable · no composer text is selected        │
-                                 │         │    /copy session-id  Copy Session ID                                   │
                                  │         │    ↑/↓ select   Enter run   Esc close                                  │
                                  │         │                                                                        │
                                  │         ╰────────────────────────────────────────────────────────────────────────╯

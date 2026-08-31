@@ -186,7 +186,7 @@ fn turn_navigator_text(
                         colors.accent,
                     ),
                     Span::styled(
-                        truncate_display(&landmark.prompt_preview, preview_width),
+                        truncate_display(&safe_text(&landmark.prompt_preview), preview_width),
                         colors.normal,
                     ),
                 ])
@@ -195,16 +195,24 @@ fn turn_navigator_text(
     if rows.len() == 1 {
         rows.push(Line::styled("  No matching Turns", colors.muted));
     }
-    rows.push(Line::default());
-    rows.push(key_hints(
-        &[
-            ("↑/↓", "select"),
-            ("Home/End", "edge"),
-            ("Enter", "jump"),
-            ("Esc", "close"),
-        ],
-        colors,
-    ));
+    if content_width < 50 {
+        rows.push(key_hints(
+            &[("↑/↓", "select"), ("Home/End", "edge")],
+            colors,
+        ));
+        rows.push(key_hints(&[("Enter", "jump"), ("Esc", "close")], colors));
+    } else {
+        rows.push(Line::default());
+        rows.push(key_hints(
+            &[
+                ("↑/↓", "select"),
+                ("Home/End", "edge"),
+                ("Enter", "jump"),
+                ("Esc", "close"),
+            ],
+            colors,
+        ));
+    }
     Text::from(rows)
 }
 

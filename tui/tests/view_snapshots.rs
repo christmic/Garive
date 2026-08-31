@@ -11,8 +11,8 @@ mod input;
 mod view;
 
 use application::{
-    AppModel, BootState, ConnectionState, ExecutionState, Overlay, TimelineItem, TimelineRole,
-    TimelineTone,
+    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState, Overlay,
+    TimelineItem, TimelineRole, TimelineTone,
 };
 use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect};
@@ -114,6 +114,24 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let mut help = product_model();
     help.overlay = Some(Overlay::Help);
     insta::assert_snapshot!("help_100x24", frame(&help, Theme::Dark, 100, 24));
+
+    let turns = turn_navigator_model();
+    insta::assert_snapshot!(
+        "turn_navigator_dark_100x24",
+        frame(&turns, Theme::Dark, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "turn_navigator_light_100x24",
+        frame(&turns, Theme::Light, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "turn_navigator_mono_100x24",
+        frame(&turns, Theme::Mono, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "turn_navigator_compact_mono_40x12",
+        frame(&turns, Theme::Mono, 40, 12)
+    );
 
     let mut recovery = product_model();
     recovery.overlay = Some(Overlay::UnknownCommand);
@@ -263,6 +281,25 @@ fn position_rail_model() -> AppModel {
     model.viewport.follow_latest = false;
     model.viewport.anchor_key = Some("rail-6".into());
     model.viewport.newer_updates = 3;
+    model
+}
+
+fn turn_navigator_model() -> AppModel {
+    let mut model = product_model();
+    model.overlay = Some(Overlay::TurnNavigator);
+    model.turn_filter = "release".into();
+    model.turn_selection = 2;
+    model.conversation_landmarks = (0..12)
+        .map(|index| ConversationLandmark {
+            ordinal: index + 1,
+            started_position: index as u64 * 3 + 1,
+            prompt_preview: if index == 5 {
+                "release 界面 keeps a display-width bounded preview across terminals".into()
+            } else {
+                format!("release checkpoint {index:02} with verified evidence")
+            },
+        })
+        .collect();
     model
 }
 
