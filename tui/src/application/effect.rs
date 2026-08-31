@@ -210,4 +210,21 @@ impl EffectTracker {
         }
         self.pending.remove(&result.context.effect_id)
     }
+
+    pub(crate) fn has_pending_mutation(&self) -> bool {
+        self.pending.values().any(is_pending_mutation)
+    }
+
+    pub(crate) fn has_pending_mutation_for_context(&self, session_id: Option<&str>) -> bool {
+        self.pending.values().any(|effect| {
+            is_pending_mutation(effect) && effect.context.session_id.as_deref() == session_id
+        })
+    }
+}
+
+fn is_pending_mutation(effect: &AppEffect) -> bool {
+    matches!(
+        effect.kind,
+        EffectKind::PersistPending { .. } | EffectKind::PersistContinuation { .. }
+    )
 }

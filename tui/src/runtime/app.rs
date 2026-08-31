@@ -8,15 +8,15 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use serde_json::json;
 use tokio::sync::mpsc;
 
-#[cfg(test)]
-use crate::{
-    application::AppModel,
-    persistence::{PendingCommand, PendingKind},
-};
 use crate::{
     application::{reduce, AppAction, TerminalSize},
     persistence::{DiagnosticEvent, StateError, StateStore},
     view, LaunchConfig, TuiError,
+};
+#[cfg(test)]
+use crate::{
+    application::{AppModel, EffectKind, EffectTracker, PendingMutationDraft, PendingMutationKind},
+    persistence::{PendingCommand, PendingKind},
 };
 
 use super::{
@@ -32,10 +32,10 @@ mod state;
 use messages::handle_host;
 #[cfg(test)]
 use projection::install_timeline;
-#[cfg(test)]
-use state::pending_freezes_composer;
 use state::RestoredState;
 pub(super) use state::RuntimeState;
+#[cfg(test)]
+use state::{pending_command_projection, pending_freezes_composer};
 
 const LIMITS: ClientLimits = ClientLimits {
     max_command_bytes: 4_096,
@@ -443,6 +443,35 @@ mod tests {
         }];
         assert!(pending_freezes_composer(&pending, Some("session-a")));
         assert!(!pending_freezes_composer(&pending, Some("session-b")));
+        let mut effects = EffectTracker::default();
+        effects
+            .issue(
+                EffectKind::PersistPending {
+                    draft: PendingMutationDraft {
+                        command_id: "command-b".into(),
+                        kind: PendingMutationKind::StartTurn,
+                        session_id: Some("session-b".into()),
+                        turn_id: None,
+                        suspension_id: None,
+                        expected_session_version: None,
+                        requested_through_position: None,
+                        request_payload: json!({"text":"private-b"}),
+                        created_at: "2026-08-30T00:00:01Z".into(),
+                    },
+                },
+                Some("session-b".into()),
+                None,
+            )
+            .expect("in-flight persistence");
+
+        assert_eq!(
+            pending_command_projection(&pending, &effects, Some("session-b")),
+            (true, true)
+        );
+        assert_eq!(
+            pending_command_projection(&pending, &effects, Some("session-c")),
+            (true, false)
+        );
     }
 
     fn turn(id: &str, position: u64) -> TurnTimelineItem {

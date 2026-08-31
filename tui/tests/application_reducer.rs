@@ -257,6 +257,80 @@ fn start_turn_persistence_failure_unfreezes_without_host_effect() {
 }
 
 #[test]
+fn completing_session_a_does_not_unfreeze_session_b_persistence() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        ..Default::default()
+    };
+    let draft_a = start_turn_draft_for("command-a", "session-a");
+    let persist_a = reduce(&mut model, AppAction::StartTurnRequested(draft_a.clone())).remove(0);
+
+    model.selected_session = Some("session-b".into());
+    model.composer_is_frozen = false;
+    let draft_b = start_turn_draft_for("command-b", "session-b");
+    let persist_b = reduce(&mut model, AppAction::StartTurnRequested(draft_b.clone())).remove(0);
+
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(persisted(&persist_a, &draft_a.command_id)),
+    );
+    assert!(matches!(
+        follow_up.as_slice(),
+        [AppEffect {
+            kind: EffectKind::StartTurn { .. },
+            ..
+        }]
+    ));
+    assert!(model
+        .effects
+        .pending
+        .contains_key(&persist_b.context.effect_id));
+    assert!(model.has_pending_command);
+    assert!(model.composer_is_frozen);
+
+    let duplicate_b = start_turn_draft_for("command-b-duplicate", "session-b");
+    assert!(reduce(&mut model, AppAction::StartTurnRequested(duplicate_b)).is_empty());
+}
+
+#[test]
+fn failing_one_persistence_keeps_another_context_pending() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        ..Default::default()
+    };
+    let persist_a = reduce(
+        &mut model,
+        AppAction::StartTurnRequested(start_turn_draft_for("command-a", "session-a")),
+    )
+    .remove(0);
+
+    model.selected_session = Some("session-b".into());
+    model.composer_is_frozen = false;
+    let persist_b = reduce(
+        &mut model,
+        AppAction::StartTurnRequested(start_turn_draft_for("command-b", "session-b")),
+    )
+    .remove(0);
+
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(AppEffectResult {
+            context: persist_a.context,
+            kind: persist_a.kind.tag(),
+            outcome: AppEffectOutcome::PendingPersisted(Err(PersistenceFailure::Unavailable)),
+        }),
+    );
+    assert!(follow_up.is_empty());
+    assert!(model
+        .effects
+        .pending
+        .contains_key(&persist_b.context.effect_id));
+    assert!(model.has_pending_command);
+    assert!(model.composer_is_frozen);
+    assert_eq!(model.overlay, Some(Overlay::ErrorDetails));
+}
+
+#[test]
 fn create_session_rejects_malformed_and_waits_for_exact_persistence() {
     let mut model = AppModel::default();
     let mut malformed = create_session_draft();
@@ -516,10 +590,14 @@ fn malformed_start_turn_never_reaches_persistence() {
 }
 
 fn start_turn_draft() -> PendingMutationDraft {
+    start_turn_draft_for("command-start", "session-a")
+}
+
+fn start_turn_draft_for(command_id: &str, session_id: &str) -> PendingMutationDraft {
     PendingMutationDraft {
-        command_id: "command-start".into(),
+        command_id: command_id.into(),
         kind: PendingMutationKind::StartTurn,
-        session_id: Some("session-a".into()),
+        session_id: Some(session_id.into()),
         turn_id: None,
         suspension_id: None,
         expected_session_version: None,

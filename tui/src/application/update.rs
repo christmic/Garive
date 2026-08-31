@@ -100,11 +100,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                     .get("agent_definition_id")
                     .and_then(serde_json::Value::as_str)
                     .is_some_and(|definition| !definition.is_empty())
-                && !model
-                    .effects
-                    .pending
-                    .values()
-                    .any(|effect| effect.context.session_id.is_none()) =>
+                && !model.effects.has_pending_mutation_for_context(None) =>
         {
             let effect = model.effects.issue(
                 EffectKind::PersistPending {
@@ -114,10 +110,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 None,
             );
             if effect.is_some() {
-                model.has_pending_command = true;
-                if model.selected_session.is_none() {
-                    model.composer_is_frozen = true;
-                }
+                sync_in_flight_pending_projection(model);
             }
             effect.into_iter().collect()
         }
@@ -158,8 +151,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 None,
             );
             if effect.is_some() {
-                model.has_pending_command = true;
-                model.composer_is_frozen = true;
+                sync_in_flight_pending_projection(model);
             }
             effect.into_iter().collect()
         }
@@ -187,8 +179,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 None,
             );
             if effect.is_some() {
-                model.has_pending_command = true;
-                model.composer_is_frozen = true;
+                sync_in_flight_pending_projection(model);
             }
             effect.into_iter().collect()
         }
@@ -197,6 +188,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             let Some(effect) = model.effects.take_finished(&result) else {
                 return Vec::new();
             };
+            sync_in_flight_pending_projection(model);
             match (effect.kind, result.outcome) {
                 (
                     EffectKind::PersistPending { draft },
@@ -258,15 +250,11 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                     }]
                 }
                 (EffectKind::PersistPending { .. }, _) => {
-                    model.has_pending_command = false;
-                    model.composer_is_frozen = false;
                     model.notice = Some("The pending command could not be saved.".into());
                     model.overlay = Some(Overlay::ErrorDetails);
                     Vec::new()
                 }
                 (EffectKind::PersistContinuation { .. }, _) => {
-                    model.has_pending_command = false;
-                    model.composer_is_frozen = false;
                     model.notice = Some("The pending command could not be saved.".into());
                     model.overlay = Some(Overlay::ErrorDetails);
                     Vec::new()
@@ -289,8 +277,7 @@ fn issue_pending(
         request_digest,
     );
     if effect.is_some() {
-        model.has_pending_command = true;
-        model.composer_is_frozen = true;
+        sync_in_flight_pending_projection(model);
     }
     effect.into_iter().collect()
 }
@@ -312,11 +299,12 @@ fn continuation_matches(
 }
 
 fn has_pending_for_session(model: &AppModel, session_id: Option<&str>) -> bool {
-    model.effects.pending.values().any(|effect| {
-        effect.context.session_id.as_deref() == session_id
-            && matches!(
-                effect.kind,
-                EffectKind::PersistPending { .. } | EffectKind::PersistContinuation { .. }
-            )
-    })
+    model.effects.has_pending_mutation_for_context(session_id)
+}
+
+fn sync_in_flight_pending_projection(model: &mut AppModel) {
+    model.has_pending_command = model.effects.has_pending_mutation();
+    model.composer_is_frozen = model
+        .effects
+        .has_pending_mutation_for_context(model.selected_session.as_deref());
 }

@@ -35,8 +35,6 @@ impl RuntimeState {
             created_at: draft.created_at,
         };
         if pending.command_id != identity.command_id || pending.validate().is_err() {
-            self.model.has_pending_command = false;
-            self.model.composer_is_frozen = false;
             self.local_state_failure("invalid_persisted_mutation");
             return None;
         }
@@ -129,8 +127,6 @@ impl RuntimeState {
             created_at: draft.created_at,
         };
         if pending.command_id != identity.command_id || pending.validate().is_err() {
-            self.model.has_pending_command = false;
-            self.model.composer_is_frozen = false;
             self.local_state_failure("invalid_persisted_create");
             return None;
         }
@@ -204,8 +200,6 @@ impl RuntimeState {
             created_at: draft.created_at,
         };
         if pending.command_id != identity.command_id || pending.validate().is_err() {
-            self.model.has_pending_command = false;
-            self.model.composer_is_frozen = false;
             self.local_state_failure("invalid_persisted_start");
             return None;
         }
@@ -281,7 +275,12 @@ impl RuntimeState {
     }
 
     pub(super) fn sync_pending_projection(&mut self) {
-        self.model.has_pending_command = !self.pending.is_empty();
+        let (has_pending_command, composer_is_frozen) = pending_command_projection(
+            &self.pending,
+            &self.model.effects,
+            self.model.selected_session.as_deref(),
+        );
+        self.model.has_pending_command = has_pending_command;
         let selected = self.model.selected_session.as_deref();
         self.model.pending_recovery.current_session = self.pending.iter().any(|pending| {
             self.pending_recovery.contains(&pending.command_id)
@@ -291,8 +290,7 @@ impl RuntimeState {
             self.pending_recovery.contains(&pending.command_id)
                 && pending.session_id.as_deref() != selected
         });
-        self.model.composer_is_frozen =
-            pending_freezes_composer(&self.pending, self.model.selected_session.as_deref());
+        self.model.composer_is_frozen = composer_is_frozen;
     }
 
     pub(in crate::runtime) fn composer_is_frozen(&self) -> bool {
@@ -452,4 +450,16 @@ pub(in crate::runtime::app) fn pending_freezes_composer(
         pending.session_id.as_deref() == selected
             || (selected.is_none() && pending.kind == PendingKind::CreateSession)
     })
+}
+
+pub(in crate::runtime::app) fn pending_command_projection(
+    pending: &[PendingCommand],
+    effects: &crate::application::EffectTracker,
+    selected: Option<&str>,
+) -> (bool, bool) {
+    (
+        !pending.is_empty() || effects.has_pending_mutation(),
+        pending_freezes_composer(pending, selected)
+            || effects.has_pending_mutation_for_context(selected),
+    )
 }

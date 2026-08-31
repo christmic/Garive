@@ -24,6 +24,8 @@ use super::super::{
 mod mutations;
 mod pending;
 
+#[cfg(test)]
+pub(super) use pending::pending_command_projection;
 pub(super) use pending::pending_freezes_composer;
 
 pub(in crate::runtime) struct RuntimeState {
@@ -163,7 +165,9 @@ impl RuntimeState {
     }
 
     pub(in crate::runtime) fn dispatch(&mut self, action: AppAction) {
-        for effect in reduce(&mut self.model, action) {
+        let effects = reduce(&mut self.model, action);
+        self.sync_pending_projection();
+        for effect in effects {
             match effect.kind.tag() {
                 crate::application::EffectTag::Exit => {
                     debug_assert!(self.model.quit_requested);
@@ -236,6 +240,7 @@ impl RuntimeState {
                 crate::application::EffectTag::PersistContinuation => self.effects.submit(effect),
             }
         }
+        self.sync_pending_projection();
     }
 
     pub(in crate::runtime) fn load(&mut self, session_id: String) {
