@@ -17,9 +17,11 @@ use std::{future::Future, pin::Pin};
 use application::{
     reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
     EffectFailure, EffectKind, EffectTracker, HostReadFailure, HostReadResponse,
-    SessionPagePurpose, SessionPageRequest, SnapshotRequest,
+    SessionPagePurpose, SessionPageRequest, SnapshotRead, SnapshotRequest,
 };
-use garive_host_client::{AgentDefinitionSummary, HostClientErrorCode, SessionSummary};
+use garive_host_client::{
+    AgentDefinitionSummary, HostClientErrorCode, SessionSummary, SessionView,
+};
 use host::{HostReadFuture, HostReadPort};
 use host_effects::HostEffectRunner;
 use tokio::sync::mpsc;
@@ -42,6 +44,7 @@ impl HostReadPort for FakeHostReadPort {
                 Mode::Success => Ok(HostReadResponse::Definitions(vec![definition()])),
                 Mode::Failure => Err(HostReadFailure {
                     code: HostClientErrorCode::TransportFailure,
+                    host_rejected: false,
                 }),
                 Mode::Panic => panic!("injected Host read panic"),
             }
@@ -59,6 +62,7 @@ impl HostReadPort for FakeHostReadPort {
                 }),
                 Mode::Failure => Err(HostReadFailure {
                     code: HostClientErrorCode::TransportFailure,
+                    host_rejected: false,
                 }),
                 Mode::Panic => panic!("injected Host page panic"),
             }
@@ -69,11 +73,19 @@ impl HostReadPort for FakeHostReadPort {
         let mode = self.0;
         Box::pin(async move {
             match mode {
-                Mode::Success => Err(HostReadFailure {
-                    code: HostClientErrorCode::InvalidEvent,
-                }),
+                Mode::Success => Ok(HostReadResponse::Snapshot(Box::new(SnapshotRead {
+                    view: SessionView {
+                        api_version: "v1".into(),
+                        session: session(&request.session_id),
+                        observed_max_position: 7,
+                    },
+                    request,
+                    items: Vec::new(),
+                    follow_position: 7,
+                }))),
                 Mode::Failure => Err(HostReadFailure {
                     code: HostClientErrorCode::TransportFailure,
+                    host_rejected: false,
                 }),
                 Mode::Panic => panic!("injected Host snapshot panic: {request:?}"),
             }
@@ -95,15 +107,31 @@ async fn snapshot_runner_preserves_exact_redacted_request_and_failure_identity()
             Some("snapshot-request-digest".into()),
         )
         .expect("snapshot effect identity");
-    let failure = execute(effect, Mode::Success).await;
+    let success = execute(effect, Mode::Success).await;
     assert!(matches!(
-        failure.outcome,
+        success.outcome,
+        AppEffectOutcome::HostRead(Ok(HostReadResponse::Snapshot(ref snapshot)))
+            if snapshot.follow_position == 7
+    ));
+    let debug = format!("{success:?}");
+    assert!(!debug.contains("private-snapshot-session"));
+
+    let failure_effect = EffectTracker::default()
+        .issue(
+            EffectKind::LoadSnapshot {
+                request: request.clone(),
+            },
+            Some(request.session_id.clone()),
+            Some("snapshot-request-digest".into()),
+        )
+        .expect("snapshot effect identity");
+    assert!(matches!(
+        execute(failure_effect, Mode::Failure).await.outcome,
         AppEffectOutcome::HostRead(Err(HostReadFailure {
-            code: HostClientErrorCode::InvalidEvent
+            code: HostClientErrorCode::TransportFailure,
+            host_rejected: false,
         }))
     ));
-    let debug = format!("{failure:?}");
-    assert!(!debug.contains("private-snapshot-session"));
 
     let panic_effect = EffectTracker::default()
         .issue(
@@ -136,7 +164,8 @@ async fn one_shot_read_reports_redacted_success_failure_and_panic() {
     assert!(matches!(
         run(Mode::Failure).await.outcome,
         AppEffectOutcome::HostRead(Err(HostReadFailure {
-            code: HostClientErrorCode::TransportFailure
+            code: HostClientErrorCode::TransportFailure,
+            host_rejected: false,
         }))
     ));
     assert_eq!(
@@ -198,7 +227,8 @@ async fn session_page_runner_reports_redacted_success_failure_and_panic() {
     assert!(matches!(
         execute_page(request.clone(), Mode::Failure).await.outcome,
         AppEffectOutcome::HostRead(Err(HostReadFailure {
-            code: HostClientErrorCode::TransportFailure
+            code: HostClientErrorCode::TransportFailure,
+            host_rejected: false,
         }))
     ));
     assert_eq!(
@@ -334,6 +364,106 @@ fn page_failure_and_panic_only_release_the_active_owner() {
         model.notice.as_deref(),
         Some("Ignored an invalid Session page response.")
     );
+}
+
+#[test]
+fn snapshot_owner_requires_exact_session_generation_digest_and_applies_once() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        ..Default::default()
+    };
+    let stale = request_snapshot(&mut model, "session-a");
+    let active = request_snapshot(&mut model, "session-a");
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(snapshot_success(&stale, "session-a", 11)),
+    );
+    assert!(model.snapshot_handoff.is_none());
+
+    for mutate in ["generation", "digest", "session"] {
+        let mut result = snapshot_success(&active, "session-a", 12);
+        match mutate {
+            "generation" => {
+                result.context.issued_generation =
+                    AppGeneration(result.context.issued_generation.0 + 1)
+            }
+            "digest" => result.context.request_digest = Some("foreign-digest".into()),
+            "session" => result.context.session_id = Some("session-b".into()),
+            _ => unreachable!(),
+        }
+        reduce(&mut model, AppAction::EffectFinished(result));
+        assert!(model.snapshot_handoff.is_none());
+        assert!(model.snapshot_owner.is_some());
+    }
+
+    let success = snapshot_success(&active, "session-a", 12);
+    reduce(&mut model, AppAction::EffectFinished(success.clone()));
+    assert_eq!(model.snapshot_completion_revision, 1);
+    assert_eq!(model.snapshot_handoff.as_ref().unwrap().follow_position, 12);
+    reduce(&mut model, AppAction::EffectFinished(success));
+    assert_eq!(model.snapshot_completion_revision, 1);
+
+    let foreign = reduce(
+        &mut model,
+        AppAction::LoadSnapshotRequested(SnapshotRequest {
+            session_id: "session-b".into(),
+        }),
+    );
+    assert!(foreign.is_empty());
+
+    let selection_bound = request_snapshot(&mut model, "session-a");
+    model.selected_session = Some("session-b".into());
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(snapshot_success(&selection_bound, "session-a", 13)),
+    );
+    assert_eq!(model.snapshot_completion_revision, 1);
+    assert_eq!(model.snapshot_handoff.as_ref().unwrap().follow_position, 12);
+    assert!(model.snapshot_owner.is_some());
+}
+
+#[test]
+fn snapshot_failure_releases_only_exact_owner_and_preserves_error_classification() {
+    for (code, rejected, expected_connection, failed) in [
+        (
+            HostClientErrorCode::InvalidEvent,
+            false,
+            application::ConnectionState::Unavailable {
+                safe_code: "invalid_event",
+            },
+            true,
+        ),
+        (
+            HostClientErrorCode::HostFailure,
+            true,
+            application::ConnectionState::Online,
+            false,
+        ),
+        (
+            HostClientErrorCode::TransportFailure,
+            false,
+            application::ConnectionState::Disconnected { attempt: 0 },
+            false,
+        ),
+    ] {
+        let mut model = AppModel {
+            selected_session: Some("session-a".into()),
+            ..Default::default()
+        };
+        let effect = request_snapshot(&mut model, "session-a");
+        reduce(
+            &mut model,
+            AppAction::EffectFinished(snapshot_failure(&effect, code, rejected)),
+        );
+        assert!(model.snapshot_owner.is_none());
+        assert_eq!(model.connection, expected_connection);
+        assert_eq!(
+            model.execution == application::ExecutionState::Failed,
+            failed
+        );
+        assert_eq!(model.boot == application::BootState::Degraded, failed);
+        assert_eq!(model.snapshot_failure.unwrap().host_rejected, rejected);
+    }
 }
 
 #[test]
@@ -502,6 +632,54 @@ fn page_request(purpose: SessionPagePurpose, cursor: Option<&str>) -> SessionPag
     }
 }
 
+fn request_snapshot(model: &mut AppModel, session_id: &str) -> AppEffect {
+    reduce(
+        model,
+        AppAction::LoadSnapshotRequested(SnapshotRequest {
+            session_id: session_id.into(),
+        }),
+    )
+    .pop()
+    .expect("snapshot effect")
+}
+
+fn snapshot_success(effect: &AppEffect, session_id: &str, position: u64) -> AppEffectResult {
+    let EffectKind::LoadSnapshot { request } = &effect.kind else {
+        panic!("snapshot effect")
+    };
+    AppEffectResult {
+        context: effect.context.clone(),
+        kind: effect.kind.tag(),
+        outcome: AppEffectOutcome::HostRead(Ok(HostReadResponse::Snapshot(Box::new(
+            SnapshotRead {
+                request: request.clone(),
+                view: SessionView {
+                    api_version: "v1".into(),
+                    session: session(session_id),
+                    observed_max_position: position,
+                },
+                items: Vec::new(),
+                follow_position: position,
+            },
+        )))),
+    }
+}
+
+fn snapshot_failure(
+    effect: &AppEffect,
+    code: HostClientErrorCode,
+    host_rejected: bool,
+) -> AppEffectResult {
+    AppEffectResult {
+        context: effect.context.clone(),
+        kind: effect.kind.tag(),
+        outcome: AppEffectOutcome::HostRead(Err(HostReadFailure {
+            code,
+            host_rejected,
+        })),
+    }
+}
+
 fn page_success(
     effect: &AppEffect,
     sessions: Vec<SessionSummary>,
@@ -530,6 +708,7 @@ fn page_failure(effect: &AppEffect, panic: bool) -> AppEffectResult {
         } else {
             AppEffectOutcome::HostRead(Err(HostReadFailure {
                 code: HostClientErrorCode::TransportFailure,
+                host_rejected: false,
             }))
         },
     }
@@ -546,6 +725,7 @@ fn boot_definitions(effect: &AppEffect, success: bool, panic: bool) -> AppEffect
         } else {
             AppEffectOutcome::HostRead(Err(HostReadFailure {
                 code: HostClientErrorCode::TransportFailure,
+                host_rejected: false,
             }))
         },
     }

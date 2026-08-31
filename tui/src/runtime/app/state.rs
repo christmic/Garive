@@ -9,7 +9,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use crate::{
     application::{
         reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
-        SessionPagePurpose, SessionPageRequest,
+        SessionPagePurpose, SessionPageRequest, SnapshotRequest,
     },
     host::LiveHostReadPort,
     input::ComposerClickTracker,
@@ -59,7 +59,6 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) deferred_continuation_schema_digest: Option<String>,
     pub(in crate::runtime) queued_prompt: Option<String>,
     graceful_quit_armed: bool,
-    pub(in crate::runtime) snapshot_request: u64,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
     follow_sequence: u64,
     pub(in crate::runtime) force_redraw: bool,
@@ -173,7 +172,6 @@ impl RuntimeState {
             deferred_continuation_schema_digest: None,
             queued_prompt: None,
             graceful_quit_armed: false,
-            snapshot_request: 0,
             background_follows: BTreeMap::new(),
             follow_sequence: 0,
             force_redraw: false,
@@ -228,6 +226,7 @@ impl RuntimeState {
     pub(in crate::runtime) fn dispatch(&mut self, action: AppAction) {
         let boot_revision = self.model.boot_completion_revision;
         let catalog_revision = self.model.catalog_refresh_revision;
+        let snapshot_revision = self.model.snapshot_completion_revision;
         let effects = reduce(&mut self.model, action);
         self.sync_pending_projection();
         for effect in effects {
@@ -315,6 +314,9 @@ impl RuntimeState {
         if self.model.catalog_refresh_revision != catalog_revision {
             super::messages::apply_catalog_refresh_completion(self);
         }
+        if self.model.snapshot_completion_revision != snapshot_revision {
+            super::messages::apply_snapshot_completion(self);
+        }
     }
 
     pub(in crate::runtime) fn load(&mut self, session_id: String) {
@@ -375,13 +377,9 @@ impl RuntimeState {
         let _ = self.model.composer.replace(&draft);
         self.model.prompt_history_browser.reset();
         self.model.connection = ConnectionState::Connecting;
-        self.snapshot_request = self.snapshot_request.saturating_add(1);
-        host::load_snapshot(
-            self.client.clone(),
-            self.snapshot_request,
+        self.dispatch(AppAction::LoadSnapshotRequested(SnapshotRequest {
             session_id,
-            self.sender.clone(),
-        );
+        }));
     }
 
     fn add_background_follow(

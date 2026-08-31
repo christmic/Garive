@@ -1,14 +1,13 @@
 use super::{
-    AppEffectResult, FocusTarget, Overlay, PendingMutationDraft, SessionPageRequest, TerminalSize,
+    AppEffectResult, FocusTarget, Overlay, PendingMutationDraft, SessionPageRequest,
+    SnapshotRequest, TerminalSize,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AppAction {
     BootStarted,
     LoadSessionPageRequested(SessionPageRequest),
-    HostUnavailable {
-        safe_code: &'static str,
-    },
+    LoadSnapshotRequested(SnapshotRequest),
     TerminalResized(TerminalSize),
     TerminalFocusChanged(bool),
     FocusChanged(FocusTarget),

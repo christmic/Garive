@@ -1,7 +1,7 @@
 use super::{
-    bootstrap, AppAction, AppEffect, AppEffectOutcome, AppModel, BootState, ConnectionState,
-    EffectKind, ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind,
-    SessionPageOwner, SessionPagePurpose, SessionPageRequest,
+    bootstrap, snapshot, AppAction, AppEffect, AppEffectOutcome, AppModel, EffectKind,
+    ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind, SessionPageOwner,
+    SessionPagePurpose, SessionPageRequest, SnapshotOwner,
 };
 
 pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> {
@@ -31,11 +31,25 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             effect.into_iter().collect()
         }
         AppAction::LoadSessionPageRequested(_) => Vec::new(),
-        AppAction::HostUnavailable { safe_code } => {
-            model.boot = BootState::Degraded;
-            model.connection = ConnectionState::Unavailable { safe_code };
-            Vec::new()
+        AppAction::LoadSnapshotRequested(request)
+            if model.selected_session.as_deref() == Some(request.session_id.as_str()) =>
+        {
+            let effect = model.effects.issue(
+                EffectKind::LoadSnapshot {
+                    request: request.clone(),
+                },
+                Some(request.session_id.clone()),
+                Some(request.identity_digest()),
+            );
+            if let Some(effect) = &effect {
+                model.snapshot_owner = Some(SnapshotOwner {
+                    context: effect.context.clone(),
+                    request,
+                });
+            }
+            effect.into_iter().collect()
         }
+        AppAction::LoadSnapshotRequested(_) => Vec::new(),
         AppAction::TerminalResized(size) => {
             model.terminal_size = size;
             model.reconcile_inspector_surface();
@@ -202,6 +216,9 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             }
             if let EffectKind::LoadSessionPage { request } = &effect.kind {
                 return finish_session_page(model, effect.context, request.clone(), result.outcome);
+            }
+            if let EffectKind::LoadSnapshot { request } = &effect.kind {
+                return snapshot::finish(model, effect.context, request.clone(), result.outcome);
             }
             match (effect.kind, result.outcome) {
                 (

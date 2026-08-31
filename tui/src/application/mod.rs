@@ -5,6 +5,7 @@ mod effect;
 mod inspector;
 mod live_answer;
 mod model;
+mod snapshot;
 mod turn_block;
 mod update;
 
@@ -20,7 +21,7 @@ pub(crate) use effect::{
 pub(crate) use effect::{
     AppEffectOutcome, EffectFailure, HostReadFailure, HostReadResponse, PendingMutationDraft,
     PendingMutationKind, PersistedPendingIdentity, PersistenceFailure, SessionPageOwner,
-    SessionPagePurpose, SessionPageRequest, SnapshotRead, SnapshotRequest,
+    SessionPagePurpose, SessionPageRequest, SnapshotOwner, SnapshotRead, SnapshotRequest,
 };
 pub(crate) use inspector::{
     InspectorActivation, InspectorEntry, InspectorState, InspectorTone, InspectorVariant,

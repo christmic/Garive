@@ -212,6 +212,36 @@ fn frozen_composer_theme_and_width_matrix_matches_reviewed_snapshot() {
 }
 
 #[test]
+fn unicode_filtered_lists_compact_geometry_matches_reviewed_snapshot() {
+    let mut history = product_model();
+    history.overlay = Some(Overlay::PromptHistory);
+    history.prompt_history = vec![
+        "first".into(),
+        format!("{} CJK提示 e\u{301}", "👨‍👩‍👧‍👦界".repeat(20)),
+        "third".into(),
+    ];
+    history.history_selection = 1;
+
+    let mut sessions = product_model();
+    sessions.overlay = Some(Overlay::SessionPicker);
+    sessions.sessions = vec![
+        session("session-0", "running", 1),
+        session("session-1", "running", 1),
+    ];
+    sessions.sessions[1].definition_id = "会话🦀".repeat(20);
+    sessions.session_selection = 1;
+
+    insta::assert_snapshot!(
+        "unicode_filtered_lists_compact_40x8",
+        format!(
+            "PROMPT HISTORY\n{}\n\nSESSION PICKER\n{}",
+            frame(&history, Theme::Mono, 40, 8),
+            frame(&sessions, Theme::Mono, 40, 8)
+        )
+    );
+}
+
+#[test]
 fn live_answer_states_match_reviewed_theme_snapshots() {
     insta::assert_snapshot!(
         "live_answer_states_dark",

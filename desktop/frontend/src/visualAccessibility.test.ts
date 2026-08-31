@@ -37,6 +37,10 @@ describe("Desktop visual accessibility contract", () => {
       "--surface-canvas: #171717", "--surface-sidebar: #211f20"]) {
       expect(TOKENS).toContain(token);
     }
+    expect(TOKENS).toContain("--document-font-size: 13px");
+    expect(TOKENS).toContain("--document-leading: 1.625");
+    expect(TOKENS).toContain("--height-window-bar: 34px");
+    expect(TOKENS).toContain("--height-file-toolbar: 30px");
     expect(TOKENS).toContain("--radius-composer: 20px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
@@ -48,10 +52,15 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".work-surface { min-width: 0; overflow: hidden; }");
     expect(CSS).toContain(".workspace-resizer { position: absolute");
     expect(CSS).toContain(".artifact-preview-content { width: min(46rem, 100%)");
+    expect(CSS).toContain("font-size: calc(var(--document-font-size) * 1.5)");
+    expect(CSS).toContain("font-size: calc(var(--document-font-size) * 1.25)");
+    expect(CSS).toContain(".artifact-preview-content blockquote");
+    expect(CSS).toContain(".artifact-preview-content pre { max-height: none;");
+    expect(CSS).toContain(".artifact-preview-content .document-code-block");
     expect(CSS).toContain(".artifact-workbench-toolbar { display: flex;");
-    expect(CSS).toContain("min-height: 29px;");
+    expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
-    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: 34px minmax(0, 1fr)");
+    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".environment-panel { position: absolute");
     expect(CSS).toContain("@keyframes environment-enter");

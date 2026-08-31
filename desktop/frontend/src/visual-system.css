@@ -13,6 +13,9 @@
   --text-lg: 16px;
   --text-xl: 22px;
   --text-display: clamp(28px, 3vw, 38px);
+  --document-font-size: 13px;
+  --document-leading: 1.625;
+  --document-space: calc(var(--document-font-size) / 4);
 
   --space-1: 4px;
   --space-2: 8px;
@@ -25,6 +28,8 @@
   --radius-panel: 14px;
   --radius-composer: 20px;
   --radius-pill: 999px;
+  --height-window-bar: 34px;
+  --height-file-toolbar: 30px;
   --motion-fast: 120ms;
   --motion-base: 180ms;
   --ease-enter: cubic-bezier(.2, .8, .2, 1);

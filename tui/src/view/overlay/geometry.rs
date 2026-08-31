@@ -13,6 +13,8 @@ use super::super::{
     primitives::{centered_popup, selection_window},
 };
 
+use super::filtered_list::FilteredListGeometry;
+
 pub(super) struct OverlayGeometry {
     pub(super) popup: Rect,
     pub(super) inner: Rect,
@@ -39,7 +41,11 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
         .padding(overlay_padding(overlay))
         .inner(popup);
     let window = list_count_and_selection(model, overlay).map(|(count, selected)| {
-        selection_window(count, selected, usize::from(inner.height.saturating_sub(3)))
+        if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
+            FilteredListGeometry::resolve(inner, count, selected).window
+        } else {
+            selection_window(count, selected, usize::from(inner.height.saturating_sub(3)))
+        }
     });
     OverlayGeometry {
         popup,
@@ -49,7 +55,10 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
 }
 
 fn modal_area(model: &AppModel, overlay: Overlay, area: Rect) -> Rect {
-    if decision_sheet::project(model, overlay).is_some() && area.height < 12 {
+    if area.height < 12
+        && (decision_sheet::project(model, overlay).is_some()
+            || matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory))
+    {
         return area;
     }
     let transcript = FrameLayout::resolve(model, area).transcript;
@@ -141,6 +150,14 @@ pub(in crate::view) fn selection_at(
     let geometry = overlay_geometry(model, overlay, area);
     if overlay == Overlay::Inspector {
         return super::super::inspector::selection_at(model, geometry.popup, column, row);
+    }
+    if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
+        let (count, selected) = list_count_and_selection(model, overlay)?;
+        return FilteredListGeometry::resolve(geometry.inner, count, selected).selection_at(
+            geometry.inner,
+            column,
+            row,
+        );
     }
     let (start, end) = geometry.window?;
     let first_row = geometry.inner.y.saturating_add(1);

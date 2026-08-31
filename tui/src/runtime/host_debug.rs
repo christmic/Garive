@@ -5,17 +5,6 @@ use super::{HostMessage, HostOperation};
 impl fmt::Debug for HostMessage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SnapshotLoaded {
-                request_id,
-                items,
-                follow_position,
-                ..
-            } => formatter
-                .debug_struct("HostMessage::SnapshotLoaded")
-                .field("request_id", request_id)
-                .field("item_count", &items.len())
-                .field("follow_position", follow_position)
-                .finish(),
             Self::SessionCreated { response, .. } => formatter
                 .debug_struct("HostMessage::SessionCreated")
                 .field("committed_position", &response.committed_position)
@@ -51,16 +40,8 @@ impl fmt::Debug for HostMessage {
                 .finish(),
             Self::Failed { operation, error } => {
                 let mut debug = formatter.debug_struct("HostMessage::Failed");
-                match operation {
-                    HostOperation::Snapshot { request_id } => {
-                        debug
-                            .field("operation", &"snapshot")
-                            .field("request_id", request_id);
-                    }
-                    HostOperation::Mutation { .. } => {
-                        debug.field("operation", &"mutation");
-                    }
-                }
+                let HostOperation::Mutation { .. } = operation;
+                debug.field("operation", &"mutation");
                 debug.field("code", &error.code.wire_name()).finish()
             }
         }

@@ -58,6 +58,9 @@ bounded media-query fallbacks.
 | `--text-lg` | 16 px | section title |
 | `--text-xl` | 22 px | page title |
 | `--text-display` | clamp(28 px, 3 vw, 38 px) | empty-state outcome |
+| `--document-font-size` | 13 px | desktop file/artifact body |
+| `--document-leading` | 1.625 | desktop file/artifact reading rhythm |
+| `--document-space` | body size ÷ 4 | Markdown vertical rhythm |
 
 No shipping text is below 11 px. At 200% text zoom, content reflows and no
 essential label is clipped or replaced by an icon.
@@ -67,9 +70,10 @@ essential label is clipped or replaced by an icon.
 | Family | Tokens |
 |---|---|
 | space | `--space-1` 4, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
-| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 16, `--radius-composer` 18, `--radius-pill` 999 px |
+| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 20/25, `--radius-pill` 999 px |
 | depth | `--shadow-raised`, `--shadow-overlay`; no other shadow families |
 | motion | `--motion-fast` 120 ms, `--motion-base` 180 ms, standard enter/exit easing |
+| desktop chrome | `--height-window-bar` 34, `--height-file-toolbar` 30 px |
 
 Desktop controls are at least 32 px high; primary actions and touch-capable
 surfaces provide 44×44 px targets. Reduced-motion makes nonessential animation
@@ -98,6 +102,68 @@ Inspector is not a canonical desktop layout.
 
 At narrower widths the workbench overlays the thread, then becomes a full
 surface with an explicit Back action; the rail becomes a navigation sheet.
+
+## Desktop composition contract
+
+Desktop is not a browser page placed inside a window. It is one continuous
+workbench made from four persistent spatial layers:
+
+1. **Native frame layer.** The operating-system window owns traffic lights,
+   resizing, full screen, system menus, focus and drag regions. Garive content
+   begins in the titlebar and reserves the macOS control safe zone; it never
+   paints a second branded header beneath native chrome.
+2. **Navigation layer.** The rail is the quietest persistent material and owns
+   global destinations, durable tasks and host identity. It uses a distinct
+   neutral surface, compact rows and one selected fill. Logos, hero branding,
+   large avatars and duplicate connection badges are not part of this layer.
+3. **Work layer.** Conversation and Composer form one bounded work column on a
+   continuous canvas. Assistant output is document content, not a card stack.
+   Environment may float above this layer; it does not permanently shrink an
+   idle canvas.
+4. **Output layer.** Files, diffs, terminals and governed artifacts open as a
+   resizable sibling pane with their own tab, location/action toolbar and
+   independent scroll. This layer may replace the work layer at narrow widths,
+   but it never becomes a generic Inspector card.
+
+The four layers share one 4 px spacing basis, one neutral ramp, one 34 px
+window rhythm and structural 1 px separators. Depth is used only for surfaces
+that actually float: Composer, Environment, menus and modal selectors. Docked
+rails, title rows and file panes use surface contrast and separators, not
+shadows or rounded outer cards.
+
+### Desktop material and window behavior
+
+- The canvas is opaque and stable while content scrolls. The title row may use
+  a restrained translucent mix only when its text contrast remains unchanged;
+  reduced-transparency resolves it to the opaque canvas token.
+- The sidebar remains visually behind the canvas in light and dark themes. A
+  selected row changes surface, never text size, layout or accent saturation.
+- Window resize preserves the active task, draft, scroll owner and selected
+  output. Pane resizing is independent of browser zoom and persists only a
+  bounded, non-sensitive width preference.
+- The whole 34 px title row participates in native window dragging except
+  admitted controls, tabs and the resizer. Double-click follows the platform
+  titlebar convention rather than triggering a product action.
+- Native macOS traffic-light clearance is a platform adapter concern. Web uses
+  the same React tree, geometry and semantics without reserving that inset.
+- System focus, increased contrast, reduced motion and reduced transparency are
+  first-class desktop states, not optional themes.
+
+### File-document typography
+
+Rendered Markdown inside the output layer uses the installed Codex desktop
+density as the Gate 1 baseline: 13 px body, 1.625 leading and a 3.25 px rhythm.
+Heading scales are 1.5×, 1.25× and 1.125× for h1–h3. The first heading begins
+4 px below the 30 px file toolbar and 24 px from the pane edge. Lists, quotes,
+tables and code align to the same reading edge; they do not introduce a nested
+card measure.
+
+Code in a rendered file remains part of the document canvas. Its language sits
+at the upper trailing edge, exact-source Copy appears on hover or keyboard
+focus, and the source itself scrolls horizontally when required. Conversation
+code remains a bounded code workbench because it has a different ownership
+boundary. Inline code uses the document monospace step and a subtle neutral
+surface. These two code treatments must not be conflated.
 
 The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
