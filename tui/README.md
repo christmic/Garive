@@ -52,7 +52,9 @@ Useful launch options:
   single Agent definition is installed.
 - `Ctrl+S`, `Ctrl+P`, and `Ctrl+R` open Sessions, commands, and prompt history.
 - `Esc` requests cancellation while a Turn runs; `Ctrl+Q` confirms exit.
-- `PageUp`/`PageDown` scroll; mouse capture is opt-in.
+- `PageUp`/`PageDown` scroll. Overflowing conversations expose a one-cell
+  position rail in existing right padding; with opt-in mouse capture, press or
+  drag its exact track to jump by stable loaded cell without changing wrapping.
 - `/help` lists commands. `/retry` repeats the exact persisted command identity;
   `/copy last`, `/copy selection`, and `/copy session-id` use a bounded OSC 52
   request. `Alt+C` is the direct explicit composer-selection gesture.

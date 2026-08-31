@@ -315,6 +315,18 @@ The conversation follows latest by default. Scrolling upward establishes a
 stable anchor. New cells increment the newer-update indicator instead of
 moving the viewport. Jumping to the end resumes latest-follow behavior.
 
+When the loaded conversation is longer than the visible window, a one-cell
+position rail appears in the existing right padding. Its thumb is muted while
+following latest, accented while detached, and warning-colored when newer
+updates are waiting; monochrome mode uses a solid thumb so color is never the
+only cue. With mouse capture enabled, press or hold the left button and drag on
+the rail. Its first row jumps to the oldest loaded cell, its last row returns to
+latest-follow, and an intermediate row anchors the nearest loaded cell. The
+rail disappears when there is no overflow, the terminal is too small, an
+overlay owns input, or screen-reader mode is active. It never changes message
+wrapping. Keyboard-only users retain `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, and
+`PageUp`/`PageDown`.
+
 ## Cancellation and suspension
 
 `Esc` or `/cancel` sends a durable cancellation request for the active Turn.

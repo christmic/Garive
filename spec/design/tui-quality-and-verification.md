@@ -522,6 +522,25 @@ shipping child proves all three standard streams remain TTYs, success and undo,
 non-zero preservation, private-file cleanup, and complete terminal-mode/title/
 cursor-query reacquisition. Physical-window PNG admission remains separate.
 
+## Conversation-position evidence
+
+Revision `cd17b5f4` freezes the stable-cell rail contract and local merge
+`1b93b115` implements it as a separate `view/position_rail.rs` component.
+Render and SGR pointer input consume one bounded metric; overlays suppress both,
+the rail reuses right padding, and drag outside the track cannot activate a
+background component. Dark, light, monochrome, compact, first/last,
+intermediate, detached, newer-update, non-overflow, tiny, and modal cases are
+bound by unit, semantic-buffer, and snapshot tests.
+
+On native macOS arm64, 47 library, 54 view, and 35 snapshot/boundary tests pass,
+as do architecture, strict all-target/all-feature Clippy, formatting, and diff
+checks. The complete 19-case shipping PTY suite passes in 146.47 seconds. Its
+position-rail case loads 40 public cells and drives the shipping binary through
+`#40 -> #1 -> #22 -> #40` using exact SGR press/drag coordinates, then proves
+mouse and alternate-screen restoration. The focused PTY passes again after
+rebasing onto the then-current mainline. This closes executable component and
+macOS PTY evidence, not the physical-window screenshot gate.
+
 ## Completion rule
 
 The TUI is complete only when:

@@ -519,3 +519,33 @@ focus and freeze guards. The complete 18-case shipping PTY rerun passes in
 successful/failing terminal handoff. The 44 library, 6 command, 51 view, 33
 snapshot/boundary, architecture, formatting, diff, and strict Clippy gates also
 pass.
+
+## Conversation position rail candidate
+
+The source-backed contract is frozen by `cd17b5f4` and the componentized
+implementation is merged locally at `1b93b115`. `view/position_rail.rs` owns
+the bounded stable-cell metric, theme/monochrome glyphs, painting, and pointer
+mapping. The conversation renderer and mouse controller consume that same
+geometry; modal presentation suppresses both, and drag outside the one-cell
+track cannot fall through to Composer or Session activation.
+
+On native macOS arm64, the containing implementation passes 47 library, 54
+view, and 35 snapshot/boundary tests. The reviewed `100x24` dark, light, and
+monochrome snapshots show the track in existing right padding without message
+reflow; compact snapshots bind the same rule. Architecture, strict TUI
+all-target/all-feature Clippy, formatting, and diff checks pass after rebasing
+onto the then-current `master`.
+
+The complete 19-case shipping-binary PTY suite passed with 0 failures or
+ignored cases in 146.47 seconds before that unrelated rebase. The new macOS
+Expect case then passed on the merged tree: it loads 40 public timeline cells,
+observes `#40`, presses the first track row to reach `#1`, drags to the middle
+to reach `#22`, and presses the last row to return to `#40`. It also proves SGR
+mouse capture and alternate-screen restoration. A final repeated run exposed
+an `EAGAIN` race in the test-only nonblocking HTTP listener, not the product;
+accepted sockets now explicitly use blocking reads, and two consecutive
+focused PTY runs passed afterward.
+
+These reviewed semantic buffers and real ANSI PTY transcripts still do not
+satisfy physical Apple Terminal or iTerm2-class PNG admission. That gallery
+remains open while the macOS login UI is locked.
