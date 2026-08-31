@@ -29,7 +29,9 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
     case "write_pending_command": storedPending = args.value; return undefined;
     case "write_client_preferences": return undefined;
     case "get_agent_definitions": return { api_version: "v1", definitions: [{ api_version: "v1",
-      definition_id: "definition-main", definition_revision: "revision-1", capabilities: [] }] };
+      definition_id: "definition-main", definition_revision: "revision-1",
+      capabilities: ["local-text"] }, { api_version: "v1", definition_id: "definition-workspace",
+      definition_revision: "revision-2", capabilities: ["read-file", "write-file"] }] };
     case "get_product_sessions": return { api_version: "v1", sessions: [] };
     case "create_product_session": return { session_id: "session-1", agent_instance_id: "agent-1",
       committed_position: 1 };
@@ -126,6 +128,22 @@ describe("Desktop product experience", () => {
     expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();
     expect(view.container.querySelector(".search-toolbar")).not.toBeNull();
     expect(view.container.querySelector(".search-result-heading")?.textContent).toContain("Recents");
+  });
+
+  it("projects the real installed Agent catalogue into a progressive desktop workbench", async () => {
+    const view = render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Agents" }));
+    expect(await screen.findByRole("heading", { name: "Your Agents" })).toBeTruthy();
+    expect(await screen.findByRole("navigation", { name: "Installed Agents" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "definition-main" })).toBeTruthy();
+    expect(screen.getByText("revision-1")).toBeTruthy();
+    expect(screen.getByLabelText("Default for new work")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /definition-workspace/ }));
+    expect(screen.getByRole("heading", { name: "definition-workspace" })).toBeTruthy();
+    expect(screen.getByText("revision-2")).toBeTruthy();
+    fireEvent.click(screen.getByText("Capabilities"));
+    expect(screen.getByText("write-file")).toBeTruthy();
+    expect(view.container.querySelectorAll(".agent-card")).toHaveLength(0);
   });
 
   it("opens one truthful usage view without changing durable task state", async () => {

@@ -195,6 +195,21 @@ At 1280, 820, 720 and 480px it retains zero document overflow; state copy
 remains visible until the narrowest layout, where the task rail and row dot
 still preserve condition without crowding the work title.
 
+### I. Installed Agents workbench audit
+
+The prior Agents destination exposed one static capability ID inside a large
+generic card and ignored the durable multi-Agent catalogue already projected by
+the product controller. It could neither distinguish the default Agent nor
+show immutable revision, exact capabilities or actual Session usage.
+
+Agents now consumes only the Host-reported definition and Session projections.
+At 1280px it uses a continuous 224px catalogue/detail split rather than a
+stretched dashboard card; at 720px and 480px the catalogue becomes a horizontal
+strip above an independently scrolling detail surface. Exact revision and
+default status stay visible, capabilities remain behind one disclosure, and no
+persona name or expertise claim is inferred. All three measured widths retain
+zero document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
