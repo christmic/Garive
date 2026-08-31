@@ -645,6 +645,108 @@ async fn restart_after_knowledge_completed_reuses_evidence_without_connector_dis
     assert_eq!(connector.0.load(Ordering::SeqCst), 0);
 }
 
+#[tokio::test]
+async fn restart_after_knowledge_requested_redispatches_the_exact_request_once() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("knowledge-requested-restart.db");
+    let installation = installation(false, true);
+    let installed = installation.clone_installed_agent();
+    let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
+    let connector = Arc::new(KnowledgeConnectorStub(AtomicUsize::new(0)));
+    let factory = Arc::new(
+        CatalogueCapabilityPreparationFactory::new(catalogue, None)
+            .with_knowledge(knowledge_binding(connector.clone())),
+    );
+    let (discard_dispatcher, discard_queue) = local_dispatch_queue(1).unwrap();
+    drop(discard_queue);
+    let host = LiveHost::new(
+        &database,
+        installed.clone(),
+        host_limits(),
+        Arc::new(Clock),
+        discard_dispatcher,
+    )
+    .unwrap();
+    let session = host.create_session("create", "agent").unwrap();
+    let turn = host
+        .start_turn("start", &session.session_id, "lookup")
+        .unwrap();
+    let session_id = garive_ledger::SessionId::try_from(session.session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let old = CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: garive_ledger::TurnId::try_from(turn.turn_id.as_str()).unwrap(),
+        execution_id: garive_ledger::ExecutionId::try_from(turn.execution_id.as_str()).unwrap(),
+        definition_id: installed.definition_id.clone(),
+        definition_revision: installed.definition_revision.clone(),
+        snapshot_digest: installed.snapshot_digest.clone(),
+        session_version: ledger.session_version(&session_id).unwrap().unwrap(),
+        committed_position: turn.committed_position,
+    };
+    let query = KnowledgeContent::from_inline("lookup");
+    let identity = knowledge_test_identity(&old, query.digest());
+    let request = KnowledgeRequest::new(
+        format!("knowledge-request-{identity}"),
+        "docs",
+        "docs.v1",
+        KnowledgeQueryMode::Keyword,
+        query,
+        vec![],
+        old.committed_position,
+        4,
+        4_096,
+        1_000,
+        FreshnessRequirement::CachedAllowed,
+    )
+    .unwrap();
+    let requested = plan_knowledge_requested(
+        &KnowledgeLifecycleContext {
+            turn_id: old.turn_id.clone(),
+            execution_id: old.execution_id.clone(),
+            recorded_at: "2026-09-01T00:00:01Z".into(),
+        },
+        &request,
+    )
+    .unwrap();
+    ledger
+        .commit(session_id, old.session_version, vec![requested.fact])
+        .unwrap();
+    drop(ledger);
+
+    let mut restarted = SqliteLedger::open(&database).unwrap();
+    let recovered = recover_local_dispatches(&mut restarted, 3, "2026-09-01T00:00:02Z").unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].execution_id, old.execution_id);
+    drop(restarted);
+
+    let worker = LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
+        .unwrap()
+        .with_capability_preparation(factory);
+    assert!(matches!(
+        worker.execute(&recovered[0], &attempt()).await,
+        Ok(LocalWorkerDisposition::TerminalCommitted { .. })
+    ));
+    assert_eq!(connector.0.load(Ordering::SeqCst), 1);
+    let facts = SqliteLedger::open(&database)
+        .unwrap()
+        .load_turn(&old.turn_id)
+        .unwrap()
+        .facts;
+    for kind in [
+        "knowledge.requested",
+        "knowledge.dispatched",
+        "knowledge.completed",
+    ] {
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == kind)
+                .count(),
+            1
+        );
+    }
+}
+
 fn knowledge_test_identity(committed: &CommittedTurn, query_digest: &str) -> String {
     let bytes = serde_jcs::to_vec(&serde_json::json!({
         "contract": "garive.local-knowledge-preparation",
