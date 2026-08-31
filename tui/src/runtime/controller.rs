@@ -13,7 +13,7 @@ mod mouse;
 mod navigation;
 
 pub(super) use actions::replay_pending;
-use actions::{cancel, create_session, retry_pending, submit};
+use actions::{cancel, copy_composer_selection, create_session, retry_pending, submit};
 use navigation::{
     activate_navigation_selection, conversation_page_cells, cycle_focus, cycle_session_selection,
     is_safe_query_character, matching_commands, matching_history, matching_sessions,
@@ -216,6 +216,10 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
             }
             _ => {}
         }
+        return;
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('c') {
+        copy_composer_selection(state, false);
         return;
     }
     if handle_command_suggestion_key(key, state) {

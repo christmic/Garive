@@ -47,6 +47,11 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
         CommandRequirement::VisibleCompletion,
     ),
     CommandSpec::new(
+        "/copy selection",
+        "Copy composer selection",
+        CommandRequirement::ComposerSelection,
+    ),
+    CommandSpec::new(
         "/copy session-id",
         "Copy Session ID",
         CommandRequirement::SelectedSession,
@@ -62,6 +67,7 @@ pub(crate) struct CommandContext {
     pub(crate) has_running_turn: bool,
     pub(crate) has_visible_completion: bool,
     pub(crate) has_selected_session: bool,
+    pub(crate) has_composer_selection: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -113,6 +119,9 @@ impl CommandSpec {
             CommandRequirement::SelectedSession if !context.has_selected_session => {
                 Some("no Session is selected")
             }
+            CommandRequirement::ComposerSelection if !context.has_composer_selection => {
+                Some("no composer text is selected")
+            }
             _ => None,
         }
     }
@@ -126,6 +135,7 @@ enum CommandRequirement {
     RunningTurn,
     VisibleCompletion,
     SelectedSession,
+    ComposerSelection,
 }
 
 pub(crate) fn command_matches(name: &str, help: &str, filter: &str) -> bool {
@@ -147,6 +157,7 @@ pub(crate) enum Command {
     Theme(Theme),
     Mouse(MouseMode),
     CopyLast,
+    CopySelection,
     CopySessionId,
     Quit,
 }
@@ -199,6 +210,7 @@ pub(crate) fn parse_command(text: &str) -> CommandParse {
             _ => return CommandParse::Invalid,
         },
         ("/copy", [value]) if value == "last" => Command::CopyLast,
+        ("/copy", [value]) if value == "selection" => Command::CopySelection,
         ("/copy", [value]) if value == "session-id" => Command::CopySessionId,
         ("/quit", []) => Command::Quit,
         _ => return CommandParse::Invalid,

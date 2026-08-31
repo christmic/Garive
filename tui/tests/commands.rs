@@ -89,6 +89,7 @@ fn palette_requirements_explain_every_contextual_command() {
         ("/retry", "no pending command"),
         ("/cancel", "no Turn is running"),
         ("/copy last", "no completion is visible"),
+        ("/copy selection", "no composer text is selected"),
         ("/copy session-id", "no Session is selected"),
     ];
     for (input, expected) in cases {
@@ -105,6 +106,7 @@ fn palette_requirements_explain_every_contextual_command() {
         has_running_turn: true,
         has_visible_completion: true,
         has_selected_session: true,
+        has_composer_selection: true,
     };
     assert!(COMMAND_PALETTE
         .iter()

@@ -351,6 +351,11 @@ impl EditorState {
         self.has_selection().then(|| self.selection_bytes())
     }
 
+    pub(crate) fn selected_text(&self) -> Option<&str> {
+        self.selected_byte_range()
+            .map(|(start, end)| &self.text[start..end])
+    }
+
     pub(crate) fn clear_selection(&mut self) {
         self.selection_anchor = None;
     }

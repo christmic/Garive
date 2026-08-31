@@ -209,6 +209,7 @@ fn composer_selection_is_visible_by_grapheme_without_color() {
     assert!(buffer[(selected.0 + 2, selected.1)]
         .modifier
         .contains(Modifier::REVERSED));
+    assert!(frame(&model, 100, 24).contains("Alt+C copy"));
 }
 
 #[test]

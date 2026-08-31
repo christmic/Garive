@@ -20,6 +20,15 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
             Span::styled(" ● ", colors.notice),
             Span::styled(notice, colors.normal),
         ])
+    } else if model.composer.has_selection() {
+        if area.width < 60 {
+            key_hints(&[("Alt+C", "copy")], colors)
+        } else {
+            key_hints(
+                &[("Alt+C", "copy"), ("type", "replace"), ("←/→", "collapse")],
+                colors,
+            )
+        }
     } else if model.command_suggestions_active() {
         if area.width < 60 {
             key_hints(&[("Tab", "complete"), ("Esc", "close")], colors)

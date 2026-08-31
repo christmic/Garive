@@ -99,8 +99,8 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 expect "Garive"
                 send "\020"
                 expect "/help"
-                send "\033\[<0;21;16M"
-                expect "Keyboard guide"
+                send "\033\[<0;21;7M"
+                expect "Status details"
                 send "\033"
                 send "\021"
                 send "\r"
@@ -112,7 +112,7 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
         assert!(status.success());
         let text = fs::read_to_string(transcript).unwrap();
         assert!(text.contains("\x1b[?1000h"), "mouse capture entered");
-        assert!(text.contains("Keyboard") && text.contains("guide"));
+        assert!(text.contains("Host: online") && text.contains("Cursor: 0"));
         assert!(text.contains("\x1b[?1000l"), "mouse capture restored");
     }
 }
@@ -234,6 +234,45 @@ fn shift_selection_is_visible_in_a_real_mono_pty() {
     let text = fs::read_to_string(transcript).unwrap();
     assert!(text.contains("\x1b[7m界"));
     assert!(text.contains("X界"));
+    assert!(text.contains("\x1b[?1049l"));
+}
+
+#[test]
+fn alt_c_copies_only_the_composer_selection_in_a_real_pty() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("composer-selection-copy.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 5
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "Garive"
+            send "alpha beta"
+            after 100
+            send "\033\[1;2D\033\[1;2D\033\[1;2D\033\[1;2D"
+            expect "Alt+C"
+            send "\033c"
+            expect -exact "\033\]52;c;YmV0YQ==\007"
+            send "\021"
+            expect "Garive?"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("\x1b]52;c;YmV0YQ==\x07"));
+    assert!(!text.contains("YWxwaGEgYmV0YQ=="));
     assert!(text.contains("\x1b[?1049l"));
 }
 

@@ -365,6 +365,7 @@ impl AppModel {
                 .iter()
                 .any(|item| item.role == TimelineRole::Agent),
             has_selected_session: self.selected_session.is_some(),
+            has_composer_selection: self.composer.has_selection(),
         }
     }
 

@@ -231,16 +231,24 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
                 .rev()
                 .find(|item| item.role == crate::application::TimelineRole::Agent)
                 .map(|item| item.text.clone());
-            copy_value(value, state);
+            copy_value(value, state, true);
+        }
+        Command::CopySelection => {
+            copy_composer_selection(state, true);
         }
         Command::CopySessionId => {
-            copy_value(state.model.selected_session.clone(), state);
+            copy_value(state.model.selected_session.clone(), state, true);
         }
         Command::Quit => state.dispatch(AppAction::QuitRequested),
     }
 }
 
-fn copy_value(value: Option<String>, state: &mut RuntimeState) {
+pub(super) fn copy_composer_selection(state: &mut RuntimeState, show_details: bool) {
+    let value = state.model.composer.selected_text().map(str::to_owned);
+    copy_value(value, state, show_details);
+}
+
+fn copy_value(value: Option<String>, state: &mut RuntimeState, show_details: bool) {
     let notice = if state.config.screen_reader {
         "Clipboard requests are disabled in screen-reader mode."
     } else if let Some(value) = value {
@@ -253,7 +261,9 @@ fn copy_value(value: Option<String>, state: &mut RuntimeState) {
         "There is no visible value to copy."
     };
     state.model.notice = Some(notice.into());
-    state.model.overlay = Some(Overlay::ErrorDetails);
+    if show_details {
+        state.model.overlay = Some(Overlay::ErrorDetails);
+    }
 }
 
 pub(super) fn cancel(state: &mut RuntimeState) {
