@@ -52,6 +52,7 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         } else {
             state.model.timeline.push(item);
         }
+        note_detached_durable_update(&mut state.model);
     }
     if matches!(
         event.event.as_str(),
@@ -67,6 +68,12 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         }
         let session = event.session_id;
         state.load(session);
+    }
+}
+
+fn note_detached_durable_update(model: &mut AppModel) {
+    if !model.viewport.follow_latest {
+        model.viewport.newer_updates = model.viewport.newer_updates.saturating_add(1);
     }
 }
 
@@ -281,4 +288,22 @@ fn public_prompt_preview(value: &str) -> String {
         preview.push(character);
     }
     preview
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_detached_durable_activity_update_is_counted() {
+        let mut model = AppModel::default();
+        model.viewport.follow_latest = false;
+        note_detached_durable_update(&mut model);
+        note_detached_durable_update(&mut model);
+        assert_eq!(model.viewport.newer_updates, 2);
+
+        model.follow_latest();
+        note_detached_durable_update(&mut model);
+        assert_eq!(model.viewport.newer_updates, 0);
+    }
 }
