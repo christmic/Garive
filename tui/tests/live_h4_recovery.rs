@@ -101,6 +101,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     let recovered_log = temporary.path().join("recovered.log");
     let final_log = temporary.path().join("final.log");
     let stage_one = temporary.path().join("stage-one");
+    let stage_precommit = temporary.path().join("stage-precommit");
     let stage_two = temporary.path().join("stage-two");
     let stage_three = temporary.path().join("stage-three");
     let stage_four = temporary.path().join("stage-four");
@@ -113,6 +114,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
             recovered_log.clone(),
             final_log.clone(),
             stage_one.clone(),
+            stage_precommit.clone(),
             stage_two.clone(),
             stage_three.clone(),
             stage_four.clone(),
@@ -122,11 +124,31 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     });
 
     wait_for(&stage_one).await;
+    assert!(
+        host.get_timeline(&session.session_id, 0, 1).unwrap().items[0]
+            .completion_text
+            .is_none()
+    );
+    sink.emit(core_event(
+        &committed,
+        AgentEventKind::ModelStream(ModelStreamEvent::TextDelta {
+            output_index: 0,
+            delta: " second-live-frame".into(),
+        }),
+    ))
+    .unwrap();
+    wait_for(&stage_precommit).await;
+    assert!(
+        host.get_timeline(&session.session_id, 0, 1).unwrap().items[0]
+            .completion_text
+            .is_none()
+    );
     proxy_control.send_replace(true);
     wait_for(&stage_two).await;
     let unavailable = fs::read_to_string(&clear_log).unwrap();
     assert!(unavailable.contains("Live feedback unavailable"));
     assert!(!unavailable.contains("before-disconnect"));
+    assert!(!unavailable.contains("second-live-frame"));
 
     sink.emit(core_event(
         &committed,
@@ -140,6 +162,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     wait_for(&stage_three).await;
     let recovered = fs::read_to_string(&recovered_log).unwrap();
     assert_eq!(recovered.matches("before-disconnect").count(), 1);
+    assert_eq!(recovered.matches("second-live-frame").count(), 1);
     assert_eq!(recovered.matches("after-reconnect").count(), 1);
 
     commit_terminal(&database, &committed);
@@ -155,7 +178,9 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     let final_screen = fs::read_to_string(&final_log).unwrap();
     assert!(final_screen.contains("durable-authoritative-answer"));
     assert!(!final_screen.contains("Live feedback unavailable"));
-    assert!(!final_screen.contains("before-disconnect after-reconnect"));
+    assert!(!final_screen.contains("before-disconnect"));
+    assert!(!final_screen.contains("second-live-frame"));
+    assert!(!final_screen.contains("after-reconnect"));
     assert!(!final_screen.contains('▍'));
     let all = fs::read_to_string(log).unwrap();
     assert!(all.contains("\x1b[?1049h") && all.contains("\x1b[?1049l"));
@@ -214,7 +239,7 @@ async fn wait_for(path: &Path) {
     .unwrap_or_else(|_| panic!("timed out waiting for {}", path.display()));
 }
 
-fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 9]) -> bool {
+fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10]) -> bool {
     Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
@@ -225,10 +250,11 @@ fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 9]) -> bool 
         .env("GARIVE_RECOVERED_LOG", &paths[2])
         .env("GARIVE_FINAL_LOG", &paths[3])
         .env("GARIVE_STAGE_ONE", &paths[4])
-        .env("GARIVE_STAGE_TWO", &paths[5])
-        .env("GARIVE_STAGE_THREE", &paths[6])
-        .env("GARIVE_STAGE_FOUR", &paths[7])
-        .env("GARIVE_TUI_STATE", &paths[8])
+        .env("GARIVE_STAGE_PRECOMMIT", &paths[5])
+        .env("GARIVE_STAGE_TWO", &paths[6])
+        .env("GARIVE_STAGE_THREE", &paths[7])
+        .env("GARIVE_STAGE_FOUR", &paths[8])
+        .env("GARIVE_TUI_STATE", &paths[9])
         .args(["-c", EXPECT_SCRIPT])
         .status()
         .unwrap()
@@ -254,6 +280,8 @@ const EXPECT_SCRIPT: &str = r#"
     send "\033\[1;1R"
     must "before-disconnect" 21
     mark $env(GARIVE_STAGE_ONE)
+    must "second-live-frame" 23
+    mark $env(GARIVE_STAGE_PRECOMMIT)
     must "Live feedback unavailable" 31
     log_file
     log_file -a -noappend $env(GARIVE_CLEAR_LOG)
@@ -265,14 +293,15 @@ const EXPECT_SCRIPT: &str = r#"
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_TWO)
-    must "before-disconnect after-reconnect" 41
+    must "before-disconnect second-live-frame after-reconnect" 41
     log_file
     log_file -a -noappend $env(GARIVE_RECOVERED_LOG)
     send "\014"
     must "\033\[6n" 43
     send "\033\[1;1R"
     must "before-disconnect" 45
-    must "after-reconnect" 47
+    must "second-live-frame" 47
+    must "after-reconnect" 49
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_THREE)
