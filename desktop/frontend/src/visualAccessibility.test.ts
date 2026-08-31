@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const CSS = readFileSync(fileURLToPath(new URL("./style.css", import.meta.url)), "utf8");
+const TOKENS = readFileSync(fileURLToPath(new URL("./visual-system.css", import.meta.url)), "utf8");
 
 describe("Desktop visual accessibility contract", () => {
   it("retains explicit focus, motion, transparency, contrast and forced-color modes", () => {
@@ -21,10 +22,21 @@ describe("Desktop visual accessibility contract", () => {
   });
 
   it("keeps normal semantic text tokens at WCAG AA contrast in light and dark", () => {
-    expect(contrast("686760", "fbfaf6")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("74736d", "fbfaf6")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("a09f99", "1d1e1c")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("92938d", "1d1e1c")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("5f5f5f", "ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("707070", "ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("b4b4b4", "212121")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("a0a0a0", "212121")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("freezes the shared Codex-fidelity scale and wide shell geometry", () => {
+    for (const token of ["--text-2xs: 11px", "--text-xs: 12px", "--text-sm: 13px",
+      "--surface-canvas: #ffffff", "--surface-sidebar: #f7f7f7",
+      "--surface-canvas: #212121", "--surface-sidebar: #181818"]) {
+      expect(TOKENS).toContain(token);
+    }
+    expect(CSS).toContain("grid-template-columns: 252px minmax(0, 1fr)");
+    expect(CSS).toContain("grid-template-columns: 252px minmax(460px, 1fr) 360px");
+    expect(CSS).toContain("grid-template-rows: 56px minmax(0, 1fr)");
   });
 });
 
