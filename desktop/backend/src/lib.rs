@@ -18,6 +18,7 @@ use tokio::sync::Mutex;
 
 mod artifact_export;
 mod desktop_agent;
+mod desktop_knowledge;
 mod desktop_menu;
 mod product_store;
 mod setup;
