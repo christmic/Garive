@@ -139,7 +139,6 @@ export function SetupFlow({
     {error && <p role="alert">{ERROR_KEYS[error] ? t(ERROR_KEYS[error]) : t("setup.unavailable")}</p>}</main>;
 
   return <main className="setup-shell"><section className="setup-card" aria-labelledby="setup-title">
-    <p className="eyebrow">{t("setup.eyebrow")}</p>
     <h1 id="setup-title">{t(`setup.title.${stage}`)}</h1>
     <p className="setup-lede">{t("setup.lede")}</p>
     {reconfigure && <p className="setup-warning" role="note">{t("setup.reconfigure")}</p>}

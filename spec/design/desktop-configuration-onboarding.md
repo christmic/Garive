@@ -181,6 +181,15 @@ Runtime remains immutable until process exit.
 ## Frontend interaction
 
 - First run shows one setup route, not raw JSON.
+- Setup remains a native-feeling route inside the standard rail/title shell: a
+  neutral continuous canvas on the shared 39 rem work axis, with no logo,
+  marketing eyebrow, ambient gradient or floating hero card.
+- Connect, Review and Restart share one compact progress rail. Fields use the
+  standard 36 px desktop control density, review values become continuous
+  fact rows, and the action area uses the same neutral primary/secondary
+  hierarchy as the rest of the client.
+- At 720 px and below fields reflow to one column; at 480 px the navigation
+  sheet and setup route retain zero document overflow and no clipped labels.
 - Profile and model are explicit selections/text under catalogue limits;
   optional endpoint override is hidden behind an advanced disclosure.
 - Credential input uses a native secure field, is never copied into preference

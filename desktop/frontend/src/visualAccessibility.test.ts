@@ -60,6 +60,10 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: clamp(210px, 27vh, 236px);");
     expect(CSS).toContain("grid-template-columns: 78px minmax(0, 1fr) 16px");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: 190px; }");
+    expect(CSS).toContain(".setup-shell { position: relative; min-height: 100%; overflow: auto; padding: 46px 24px 64px; background: var(--surface-canvas);");
+    expect(CSS).toContain(".setup-card { position: relative; width: min(39rem, 100%); margin: 0 auto;");
+    expect(CSS).toContain(".setup-card::before { display: none; }");
+    expect(CSS).toContain(".setup-grid { display: grid; grid-template-columns: 1fr 1fr;");
   });
 });
 
