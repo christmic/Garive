@@ -186,6 +186,15 @@ Settings is visible. Appearance and language may share General, while Usage,
 Workspace, Runtime, Updates and Privacy remain separate categories when their
 backing capability exists. Unavailable categories are absent rather than empty.
 
+New Work is a work entry, not a marketing landing page. Heading, guidance,
+Composer and starters share the 39rem work axis. The heading is 28px; guidance
+is one operational line; starters are at most three 40px command rows and never
+large cards. An Environment action is absent until a durable Turn exists.
+Typing or choosing a starter removes the entire starter list and returns focus
+to the Composer without moving it. At every window width the Composer and first
+starter row have at least 12px visual separation; no overlay may satisfy the
+viewport-width gate while occluding interactive content.
+
 ## Component grammar
 
 | Component | Required states | Invariants |

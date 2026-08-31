@@ -202,6 +202,10 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".nav-stack")?.textContent).toContain("Agents");
     expect(view.container.querySelector(".nav-stack")?.textContent).toContain("Memory");
     expect(view.container.querySelector(".sidebar-section.library")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Toggle inspector" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Synthesize/ }));
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid")).toBeNull());
+    await waitFor(() => expect(composer).toBe(document.activeElement));
   });
 
   it("collapses and restores the native navigation without discarding work", async () => {

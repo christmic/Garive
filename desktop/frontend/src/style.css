@@ -638,17 +638,20 @@ kbd { font-size: var(--text-2xs); }
 .sidebar-product-row .sidebar-search { width: 24px; height: 24px; }
 .icon-button:hover, .icon-button.active { background: var(--surface-hover); }
 
-.empty-conversation { place-items: start center; padding: clamp(112px, 17vh, 160px) 24px 220px; }
-.welcome { width: min(760px, 100%); text-align: left; }
+.empty-conversation { place-items: start center; padding: clamp(112px, 17vh, 150px) 24px 180px; }
+.welcome { width: min(39rem, 100%); text-align: left; }
 .welcome h1, .content-page h1, .center-state h1 { font-size: var(--text-display); font-weight: 560; }
-.welcome-copy { max-width: 560px; margin: 7px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
-.new-work-surface .composer-wrap { top: clamp(218px, 32vh, 292px); bottom: auto; padding: 0 24px; background: none; }
-.new-work-surface .suggestion-grid { margin-top: clamp(150px, 21vh, 192px); }
-.suggestion-grid { gap: 8px; }
-.suggestion-grid button { min-height: 58px; padding: 10px 12px; border-color: transparent; border-radius: var(--radius-control); background: transparent; }
+.new-work-surface .welcome h1 { font-size: 28px; }
+.welcome-copy { max-width: 39rem; margin: 6px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
+.new-work-surface .composer-wrap { top: clamp(210px, 27vh, 236px); bottom: auto; padding: 0 24px; background: none; }
+.new-work-surface .suggestion-grid { margin-top: 108px; }
+.suggestion-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.suggestion-grid button { position: relative; display: grid; grid-template-columns: 78px minmax(0, 1fr) 16px; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px; border-color: transparent; border-radius: var(--radius-control); background: transparent; text-align: left; }
+.suggestion-grid button + button { border-top: 1px solid var(--border-subtle); border-radius: 0; }
 .suggestion-grid button:hover { border-color: transparent; background: var(--surface-hover); box-shadow: none; transform: none; }
 .suggestion-grid button > span { color: var(--text-secondary); font-size: var(--text-2xs); letter-spacing: 0; text-transform: none; }
-.suggestion-grid p { margin-top: 2px; font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggestion-grid p { min-width: 0; margin: 0; overflow: hidden; font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-grid svg { position: static; justify-self: end; width: 13px; }
 
 .timeline { width: min(39rem, calc(100% - 48px)); padding: 40px 0 174px; }
 .message { margin-bottom: 30px; }
@@ -854,8 +857,8 @@ kbd { font-size: var(--text-2xs); }
 }
 
 @media (max-width: 760px) {
-  .new-work-surface .composer-wrap { top: 210px; }
-  .new-work-surface .suggestion-grid { grid-template-columns: 1fr; margin-top: 148px; }
+  .new-work-surface .composer-wrap { top: 190px; }
+  .new-work-surface .suggestion-grid { margin-top: 120px; }
   .empty-conversation { padding-top: 92px; }
 }
 

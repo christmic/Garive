@@ -652,7 +652,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
             <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}
               aria-label={t("command.open")}><Icon name="search" /><span>{t("command.open")}</span><kbd>⌘K</kbd></button>
-            {screen === "work" && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
+            {screen === "work" && state.messages.length > 0 && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
           </div>
@@ -779,7 +779,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div ref={conversation} onScroll={readScrollPosition}
       className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} />
+      {state.messages.length === 0 ? <Welcome draftActive={state.draft.trim().length > 0}
+        onSelect={startSuggestion} t={t} />
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
     {!followingTail && <button className={newOutputBelow
@@ -861,13 +862,14 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   </section>;
 }
 
-function Welcome({ onSelect, t }: { onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
+function Welcome({ draftActive, onSelect, t }: { draftActive: boolean;
+  onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
   const suggestions = [[t("work.suggestion.synthesize"), t("work.suggestion.synthesizeBody")],
     [t("work.suggestion.analyze"), t("work.suggestion.analyzeBody")],
     [t("work.suggestion.create"), t("work.suggestion.createBody")]] as const;
   return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
     <p className="welcome-copy">{t("work.welcome.description")}</p>
-    <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>
+    {!draftActive && <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>}
   </div>;
 }
 

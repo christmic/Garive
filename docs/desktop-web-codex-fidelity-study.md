@@ -161,6 +161,23 @@ Codex density and progressive-disclosure model; the supplied Codex screenshots
 do not show its Settings screen, so this section does not claim pixel evidence
 for an unseen reference surface.
 
+### G. New Work entry audit
+
+The original empty canvas still read as a generic AI landing page: a 38px
+heading occupied a 760px measure, three starter prompts spread into marketing
+cards across that width, the Composer used a different 546px axis, and an empty
+Environment button was visible before a Session existed. At 720px and 480px,
+an intermediate layout placed the Composer 20px over the first starter row;
+viewport-width checks alone did not catch that occlusion.
+
+New Work now uses one 39rem desktop work axis for heading, one-line guidance,
+Composer and three command-style starter rows. The heading is 28px, starters
+are 40px rows instead of cards, and Environment remains absent until durable
+work exists. Typing or choosing a starter immediately removes all starters and
+focuses the Composer. Measured at 1280×800, heading/Composer/starters share
+x=470 and width=546; at 720px and 480px the Composer and starters retain a
+12px vertical gap with zero document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
