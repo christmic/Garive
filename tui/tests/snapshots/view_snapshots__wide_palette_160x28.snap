@@ -10,8 +10,9 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
  ▌ research-age · 123456         │         │  › /new              Create session                                    │
    ✓ completed  ·  3 turns       │         │    /sessions         Switch session                                    │
                                  │         │    /status           Connection details                                │
-   research-age · 987654         │         │    /retry            unavailable · no pending command                  │
-   ● running  ·  1 turn          │         │    /reconnect        Resume event stream                               │
+   research-age · 987654         │         │    /edit-prompt      Edit draft externally                             │
+   ● running  ·  1 turn          │         │    /retry            unavailable · no pending command                  │
+                                 │         │    /reconnect        Resume event stream                               │
                                  │         │    /cancel           Cancel running turn                               │
                                  │         │    /theme system     Follow terminal theme                             │
                                  │         │    /theme dark       Use dark theme                                    │
@@ -22,7 +23,6 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                  │         │    /copy last        Copy last completion                              │
                                  │         │    /copy selection   unavailable · no composer text is selected        │
                                  │         │    /copy session-id  Copy Session ID                                   │
-                                 │         │    /help             Keyboard guide                                    │
                                  │         │    ↑/↓ select   Enter run   Esc close                                  │
                                  │         │                                                                        │
                                  │         ╰────────────────────────────────────────────────────────────────────────╯

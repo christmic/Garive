@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{
-    super::{clipboard, host},
+    super::{clipboard, external_editor, host},
     RuntimeState,
 };
 
@@ -209,6 +209,7 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
             ));
             state.model.overlay = Some(Overlay::ErrorDetails);
         }
+        Command::EditPrompt => external_editor::request(state),
         Command::Reconnect => {
             if let Some(session) = state.model.selected_session.clone() {
                 state.load(session);

@@ -5,6 +5,11 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     CommandSpec::with_args("/sessions", "Switch session", CommandRequirement::Always),
     CommandSpec::new("/status", "Connection details", CommandRequirement::Always),
     CommandSpec::new(
+        "/edit-prompt",
+        "Edit draft externally",
+        CommandRequirement::Always,
+    ),
+    CommandSpec::new(
         "/retry",
         "Retry unknown command",
         CommandRequirement::PendingCommand,
@@ -151,6 +156,7 @@ pub(crate) enum Command {
     Sessions { filter: Option<String> },
     Help,
     Status,
+    EditPrompt,
     Retry,
     Reconnect,
     Cancel,
@@ -194,6 +200,7 @@ pub(crate) fn parse_command(text: &str) -> CommandParse {
         },
         ("/help", []) => Command::Help,
         ("/status", []) => Command::Status,
+        ("/edit-prompt", []) => Command::EditPrompt,
         ("/retry", []) => Command::Retry,
         ("/reconnect", []) => Command::Reconnect,
         ("/cancel", []) => Command::Cancel,
