@@ -8,15 +8,16 @@ use std::{path::PathBuf, sync::Arc};
 use garive_llm::ModelPort;
 use garive_runtime::{
     local_dispatch_queue, HostClock, HostContinuationInput, HostEventPage,
-    HostWorkspaceContextEntry, InstalledAgent, LiveHost, LiveHostEvent, LiveHostLimits,
-    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalDispatchQueue,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
-    LocalGovernedExecutionFactory,
+    HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits, LiveOutputHub,
+    LiveOutputLimits, LiveOutputSubscriber, LocalDispatchQueue, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory,
+    RuntimeAgentInstallation, SnapshotBoundGovernedExecutionFactory,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
 
 mod artifact_export;
+mod desktop_agent;
 mod desktop_menu;
 mod product_store;
 mod setup;
@@ -30,6 +31,9 @@ mod workspace_execution;
 pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
     DesktopArtifactExportTarget, DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE,
+};
+pub use desktop_agent::{
+    builtin_desktop_agent_installation, DesktopAgentCompositionError, DESKTOP_AGENT_REVISION,
 };
 pub use desktop_menu::{
     build_desktop_menu, build_desktop_menu_for_locale, DesktopMenuIntent, DesktopMenuLocale,
@@ -124,8 +128,8 @@ pub trait DesktopOperations: Send + Sync {
 pub struct DesktopHostConfig {
     /// Durable Garive SQLite path selected by the backend configuration layer.
     pub database_path: PathBuf,
-    /// Installed immutable Agent definition.
-    pub installed_agent: InstalledAgent,
+    /// Resolved immutable Agent snapshot and all derived Runtime projections.
+    pub agent_installation: Arc<RuntimeAgentInstallation>,
     /// Bounded Host command and projection policy.
     pub host_limits: LiveHostLimits,
     /// Bounded local Agent execution policy.
@@ -252,7 +256,20 @@ impl DesktopHost {
         if config.database_path.as_os_str().is_empty() || config.dispatch_capacity == 0 {
             return Err(DesktopHostError::InvalidConfiguration);
         }
-        let definition_id = config.installed_agent.definition_id.clone();
+        if governed.is_none()
+            && !config
+                .agent_installation
+                .tool_capabilities()
+                .definitions
+                .is_empty()
+        {
+            return Err(DesktopHostError::InvalidConfiguration);
+        }
+        let definition_id = config
+            .agent_installation
+            .installed_agent()
+            .definition_id
+            .clone();
         let (dispatcher, queue) = local_dispatch_queue(config.dispatch_capacity)
             .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let live_output = LiveOutputHub::new(LiveOutputLimits {
@@ -265,7 +282,7 @@ impl DesktopHost {
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let host = LiveHost::new_with_live_output(
             &config.database_path,
-            config.installed_agent,
+            config.agent_installation.clone_installed_agent(),
             config.host_limits,
             config.host_clock,
             dispatcher,
@@ -277,7 +294,10 @@ impl DesktopHost {
                 &config.database_path,
                 config.execution_policy,
                 config.model,
-                factory,
+                Arc::new(SnapshotBoundGovernedExecutionFactory::new(
+                    config.agent_installation,
+                    factory,
+                )),
             ),
             None => LocalExecutionWorker::new(
                 &config.database_path,

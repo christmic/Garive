@@ -14,6 +14,7 @@ tauri-build = { version = "2.6.3", features = [] }
 base64.workspace = true
 chrono.workspace = true
 garive-core = { path = "../../engine/core" }
+garive-config = { path = "../../engine/config" }
 garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }

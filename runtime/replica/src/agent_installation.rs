@@ -1,12 +1,13 @@
 //! Runtime installation of one resolved, immutable Agent snapshot.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use garive_config::EffectiveAgentSnapshot;
 use garive_core::AgentToolCapabilities;
 
 use crate::{
-    EffectiveRuntimeLimits, InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
+    CommittedTurn, EffectiveRuntimeLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
 };
 
 /// Stable failure while projecting a resolved D0 snapshot into Runtime.
@@ -26,6 +27,38 @@ pub struct RuntimeAgentInstallation {
     snapshot: EffectiveAgentSnapshot,
     installed: InstalledAgent,
     tools: AgentToolCapabilities,
+}
+
+/// Enforces one installed snapshot at the governed factory boundary.
+pub struct SnapshotBoundGovernedExecutionFactory {
+    installation: Arc<RuntimeAgentInstallation>,
+    inner: Arc<dyn LocalGovernedExecutionFactory>,
+}
+
+impl SnapshotBoundGovernedExecutionFactory {
+    /// Binds an executor factory to the exact installed Agent snapshot.
+    pub fn new(
+        installation: Arc<RuntimeAgentInstallation>,
+        inner: Arc<dyn LocalGovernedExecutionFactory>,
+    ) -> Self {
+        Self {
+            installation,
+            inner,
+        }
+    }
+}
+
+impl LocalGovernedExecutionFactory for SnapshotBoundGovernedExecutionFactory {
+    fn create(
+        &self,
+        committed: &CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        let execution = self.inner.create(committed)?;
+        self.installation
+            .validate_tool_capabilities(&execution.capabilities)
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        Ok(execution)
+    }
 }
 
 impl RuntimeAgentInstallation {

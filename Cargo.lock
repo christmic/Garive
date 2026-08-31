@@ -1567,6 +1567,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
+ "garive-config",
  "garive-core",
  "garive-ledger",
  "garive-llm",

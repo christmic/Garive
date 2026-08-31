@@ -15,8 +15,9 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use crate::{
-    DesktopSystemConfiguration, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
-    DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
+    desktop_agent::builtin_desktop_agent_installation, DesktopSystemConfiguration,
+    ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE, DESKTOP_CREDENTIAL_SERVICE,
+    OPENAI_RESPONSES_PROFILE_ID,
 };
 
 const CATALOGUE_REVISION: &str = "desktop-setup-catalogue-1";
@@ -583,7 +584,7 @@ impl<S: SetupCredentialStore> DesktopSetupService<S> {
             .unwrap_or(0)
             .checked_add(1)
             .ok_or(DesktopSetupError::PlanStale)?;
-        let configuration = configuration(&input, &setup_id, &credential_ref, revision);
+        let configuration = configuration(&input, &setup_id, &credential_ref, revision)?;
         let effective_configuration_digest = digest_value(&configuration)?;
         let expires_at_unix = now
             .checked_add(PLAN_LIFETIME_SECONDS)
@@ -1079,12 +1080,14 @@ fn configuration(
     setup_id: &str,
     credential_ref: &str,
     revision: u64,
-) -> Value {
-    let snapshot_digest = format!(
-        "{:x}",
-        Sha256::digest(format!("garive-desktop-agent-v1\n{}", input.definition_id).as_bytes())
-    );
-    json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":input.definition_id,"definition_revision":"revision-1","snapshot_digest":snapshot_digest,"agent_instance_namespace":format!("desktop-{setup_id}"),"max_iterations":12,"max_input_tokens":131072,"max_output_tokens":8192,"deadline_budget_ms":600000},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000})
+) -> Result<Value, DesktopSetupError> {
+    let namespace = format!("desktop-{setup_id}");
+    let installation = builtin_desktop_agent_installation(&input.definition_id, &namespace)
+        .map_err(|_| DesktopSetupError::InputInvalid)?;
+    let agent = installation.installed_agent();
+    Ok(
+        json!({"schema_version":2,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","installed_agent":{"definition_id":agent.definition_id,"definition_revision":agent.definition_revision,"snapshot_digest":agent.snapshot_digest,"agent_instance_namespace":agent.agent_instance_namespace,"max_iterations":agent.runtime_limits.max_iterations,"max_input_tokens":agent.runtime_limits.max_input_tokens,"max_output_tokens":agent.runtime_limits.max_output_tokens,"deadline_budget_ms":agent.runtime_limits.deadline_budget_ms},"host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000}),
+    )
 }
 
 fn atomic_write(path: PathBuf, temporary: PathBuf, bytes: &[u8]) -> Result<(), DesktopSetupError> {

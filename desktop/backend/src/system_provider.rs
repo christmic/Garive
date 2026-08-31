@@ -16,13 +16,13 @@ use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, Respon
 use garive_provider_openai::build_profile as build_openai_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
-    ActivityProjectionLimits, EffectiveRuntimeLimits, HostClock, InstalledActivityCatalogue,
-    InstalledActivityDescriptor, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, RuntimeHttpLimits, RuntimeModelHttpTransport,
+    ActivityProjectionLimits, HostClock, LiveHostLimits, LocalExecutionAttempt,
+    LocalExecutionPolicy, RuntimeAgentInstallation, RuntimeHttpLimits, RuntimeModelHttpTransport,
 };
 use uuid::Uuid;
 
 use crate::{
+    desktop_agent::builtin_desktop_agent_installation,
     system_configuration::{
         MissingUsageDocument, OutputLimitDocument, TerminalActionDocument, MAX_DESKTOP_CONFIG_BYTES,
     },
@@ -210,11 +210,11 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             credential,
         )?;
         let lease_duration_ms = config.execution_lease_duration_ms;
-        let installed_agent = installed_agent(&config);
+        let agent_installation = agent_installation(&config)?;
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
-            installed_agent,
+            agent_installation: Arc::new(agent_installation),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
@@ -239,37 +239,26 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
     }
 }
 
-fn installed_agent(config: &DesktopSystemConfiguration) -> InstalledAgent {
-    InstalledAgent {
-        definition_id: config.installed_agent.definition_id.clone(),
-        definition_revision: config.installed_agent.definition_revision.clone(),
-        snapshot_digest: config.installed_agent.snapshot_digest.clone(),
-        agent_instance_namespace: config.installed_agent.agent_instance_namespace.clone(),
-        public_capabilities: Vec::new(),
-        runtime_limits: EffectiveRuntimeLimits {
-            max_iterations: config.installed_agent.max_iterations,
-            max_input_tokens: config.installed_agent.max_input_tokens,
-            max_output_tokens: config.installed_agent.max_output_tokens,
-            deadline_budget_ms: config.installed_agent.deadline_budget_ms,
-        },
-        public_activity_catalogue: config
-            .installed_agent
-            .public_activity_catalogue
-            .as_ref()
-            .map(|catalogue| InstalledActivityCatalogue {
-                schema_version: catalogue.schema_version,
-                catalogue_revision: catalogue.catalogue_revision.clone(),
-                descriptors: catalogue
-                    .descriptors
-                    .iter()
-                    .map(|item| InstalledActivityDescriptor {
-                        tool_name: item.tool_name.clone(),
-                        tool_revision: item.tool_revision.clone(),
-                        label_key: item.label_key.clone(),
-                    })
-                    .collect(),
-            }),
+fn agent_installation(
+    config: &DesktopSystemConfiguration,
+) -> Result<RuntimeAgentInstallation, DesktopConfigurationError> {
+    let installation = builtin_desktop_agent_installation(
+        &config.installed_agent.definition_id,
+        &config.installed_agent.agent_instance_namespace,
+    )
+    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+    let installed = installation.installed_agent();
+    if installed.definition_revision != config.installed_agent.definition_revision
+        || installed.snapshot_digest != config.installed_agent.snapshot_digest
+        || installed.runtime_limits.max_iterations != config.installed_agent.max_iterations
+        || installed.runtime_limits.max_input_tokens != config.installed_agent.max_input_tokens
+        || installed.runtime_limits.max_output_tokens != config.installed_agent.max_output_tokens
+        || installed.runtime_limits.deadline_budget_ms != config.installed_agent.deadline_budget_ms
+        || config.installed_agent.public_activity_catalogue.is_some()
+    {
+        return Err(DesktopConfigurationError::ConstructionFailure);
     }
+    Ok(installation)
 }
 
 fn execution_policy(config: &DesktopSystemConfiguration) -> LocalExecutionPolicy {
