@@ -1,3 +1,4 @@
+use crate::application::ActionOverlayIntent;
 use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, Padding},
@@ -26,7 +27,7 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     let desired_width = desired_width(overlay);
     let popup_width = desired_width.min(area.width.saturating_sub(4));
     let desired_height = desired_height(model, overlay, popup_width);
-    let modal_area = modal_area(model, area);
+    let modal_area = modal_area(model, overlay, area);
     let popup = centered_popup(
         modal_area,
         popup_width,
@@ -55,7 +56,10 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     }
 }
 
-fn modal_area(model: &AppModel, area: Rect) -> Rect {
+fn modal_area(model: &AppModel, overlay: Overlay, area: Rect) -> Rect {
+    if decision_sheet::project(model, overlay).is_some() && area.height < 12 {
+        return area;
+    }
     let transcript = FrameLayout::resolve(model, area).transcript;
     if transcript.height >= 8 {
         transcript
@@ -203,6 +207,63 @@ pub(in crate::view) fn contains(
     overlay_geometry(model, overlay, area)
         .popup
         .contains((column, row).into())
+}
+
+pub(in crate::view) fn decision_action_at(
+    model: &AppModel,
+    overlay: Overlay,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<ActionOverlayIntent> {
+    let geometry = overlay_geometry(model, overlay, area);
+    let actions = decision_sheet::project(model, overlay)?.actions;
+    let groups = decision_sheet::action_groups(&actions, geometry.inner.width);
+    let first_row = geometry
+        .inner
+        .bottom()
+        .saturating_sub(u16::try_from(groups.len()).ok()?);
+    let group = groups.get(usize::from(row.checked_sub(first_row)?))?;
+    let mut x = geometry.inner.x.saturating_add(1);
+    for (index, action) in group.iter().enumerate() {
+        x = x.saturating_add(u16::from(index != 0) * 2);
+        let width = u16::try_from(action.visual_key.width() + action.action.width() + 3).ok()?;
+        if column >= x && column < x.saturating_add(width) {
+            return Some(action.intent);
+        }
+        x = x.saturating_add(width);
+    }
+    None
+}
+
+pub(in crate::view) fn decision_choice_at(
+    model: &AppModel,
+    overlay: Overlay,
+    area: Rect,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    let geometry = overlay_geometry(model, overlay, area);
+    if column < geometry.inner.x || column >= geometry.inner.right() {
+        return None;
+    }
+    let spec = decision_sheet::project(model, overlay)?;
+    let super::super::decision_sheet::DecisionResponseSpec::Choices {
+        choices, selected, ..
+    } = spec.response?
+    else {
+        return None;
+    };
+    let full_rows = 1 + spec.body.len() + choices.len() + 3 + 1;
+    if full_rows > usize::from(geometry.inner.height) {
+        return (row == geometry.inner.y.saturating_add(1)).then_some(selected);
+    }
+    let first = geometry
+        .inner
+        .y
+        .saturating_add(1 + u16::try_from(spec.body.len()).ok()?);
+    (row >= first && row < first.saturating_add(u16::try_from(choices.len()).ok()?))
+        .then(|| usize::from(row - first))
 }
 
 fn list_count_and_selection(model: &AppModel, overlay: Overlay) -> Option<(usize, usize)> {

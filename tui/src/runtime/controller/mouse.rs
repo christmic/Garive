@@ -1,11 +1,12 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::{
-    application::{AppAction, AppModel, FocusTarget, Overlay},
+    application::{ActionOverlayIntent, AppAction, AppModel, FocusTarget, Overlay},
     input::ComposerClick,
     view::{
-        command_suggestion_hit_test, composer_hit_test, inspector_contains, inspector_hit_test,
-        overlay_contains, overlay_hit_test,
+        command_suggestion_hit_test, composer_hit_test, decision_action_hit_test,
+        decision_choice_hit_test, inspector_contains, inspector_hit_test, overlay_contains,
+        overlay_hit_test,
     },
 };
 
@@ -20,6 +21,8 @@ enum MouseAction {
     ConversationScroll { backwards: bool },
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
+    DecisionAction(ActionOverlayIntent),
+    DecisionChoice(usize),
     InspectorMove { backwards: bool },
     InspectorActivate(usize),
     Consume,
@@ -67,6 +70,16 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
         }
         MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
         MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),
+        MouseAction::DecisionAction(intent) => {
+            if let Some(overlay) = state.model.overlay {
+                super::overlay::activate_intent(intent, overlay, state);
+            }
+        }
+        MouseAction::DecisionChoice(index) => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response.choice_selection = index;
+            }
+        }
         MouseAction::InspectorMove { backwards } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Inspector));
             super::inspector::move_selection(state, backwards);
@@ -118,7 +131,16 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
             MouseEventKind::ScrollUp => Some(MouseAction::OverlayMove { backwards: true }),
             MouseEventKind::ScrollDown => Some(MouseAction::OverlayMove { backwards: false }),
             MouseEventKind::Down(MouseButton::Left) => {
-                overlay_hit_test(model, mouse.column, mouse.row).map(MouseAction::OverlayActivate)
+                decision_action_hit_test(model, mouse.column, mouse.row)
+                    .map(MouseAction::DecisionAction)
+                    .or_else(|| {
+                        decision_choice_hit_test(model, mouse.column, mouse.row)
+                            .map(MouseAction::DecisionChoice)
+                    })
+                    .or_else(|| {
+                        overlay_hit_test(model, mouse.column, mouse.row)
+                            .map(MouseAction::OverlayActivate)
+                    })
             }
             _ => None,
         };
@@ -198,6 +220,7 @@ fn move_overlay_selection(state: &mut RuntimeState, backwards: bool) {
                 moved_selection(state.model.turn_selection, count, backwards);
         }
         Overlay::Inspector => super::inspector::move_selection(state, backwards),
+        Overlay::Suspension => super::overlay::move_suspension_choice(state, backwards),
         _ => {}
     }
 }
@@ -239,6 +262,7 @@ fn activate_overlay_selection(state: &mut RuntimeState, index: usize) {
 #[cfg(test)]
 mod tests {
     use crossterm::event::KeyModifiers;
+    use garive_host_client::SuspensionView;
 
     use super::*;
     use crate::application::{ConversationLandmark, TerminalSize, TimelineItem, TimelineRole};
@@ -267,6 +291,51 @@ mod tests {
             route(&model, mouse(MouseEventKind::Down(MouseButton::Left), 5, 5)),
             None
         );
+    }
+
+    #[test]
+    fn decision_sheet_mouse_routes_only_visible_choice_and_action_rows() {
+        let mut model = AppModel {
+            overlay: Some(Overlay::Suspension),
+            terminal_size: TerminalSize {
+                width: 40,
+                height: 8,
+            },
+            selected_session: Some("session".into()),
+            selected_turn: Some("turn".into()),
+            suspension: Some(SuspensionView {
+                suspension_id: "s".into(),
+                session_version: 1,
+                kind: "approval_required".into(),
+                prompt_schema: "garive.public-suspension-prompt.v1".into(),
+                prompt_json: "{}".into(),
+                prompt_digest: "0".repeat(64),
+                response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+                response_schema_digest: Some("1".repeat(64)),
+            }),
+            ..Default::default()
+        };
+        model.reconcile_suspension_response();
+        model.suspension_response.as_mut().unwrap().choice_selection = 1;
+        let mut routes = Vec::new();
+        for row in 0..8 {
+            for column in 0..40 {
+                if let Some(action) = route(
+                    &model,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+                ) {
+                    routes.push(action);
+                }
+            }
+        }
+        assert!(routes.contains(&MouseAction::DecisionChoice(1)));
+        assert!(routes.contains(&MouseAction::DecisionAction(
+            ActionOverlayIntent::SubmitSuspension
+        )));
+        assert!(routes.contains(&MouseAction::DecisionAction(
+            ActionOverlayIntent::LeaveSafely
+        )));
+        assert!(!routes.contains(&MouseAction::ComposerPlace(0)));
     }
 
     #[test]

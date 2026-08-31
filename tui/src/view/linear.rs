@@ -155,7 +155,9 @@ fn linear_decision_sheet(model: &AppModel, overlay: Overlay) -> String {
     let response = spec
         .response
         .map_or_else(String::new, |response| match response {
-            decision_sheet::DecisionResponseSpec::Editor { guidance, draft } => {
+            decision_sheet::DecisionResponseSpec::Editor {
+                guidance, draft, ..
+            } => {
                 let value = if draft.is_empty() { "empty" } else { "entered" };
                 format!(" Response ({value}): {guidance}")
             }

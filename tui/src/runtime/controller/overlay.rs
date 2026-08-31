@@ -26,37 +26,7 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
         })
         .map(|binding| binding.intent)
     {
-        match intent {
-            ActionOverlayIntent::Close => {
-                if overlay == Overlay::EphemeralConfirmation {
-                    state.deferred_ephemeral = None;
-                }
-                state.dispatch(AppAction::OverlayClosed);
-            }
-            ActionOverlayIntent::ConfirmQuit => state.dispatch(AppAction::QuitConfirmed),
-            ActionOverlayIntent::AcceptEphemeral => {
-                state.ephemeral_confirmed = true;
-                state.model.overlay = None;
-                if let Some(pending) = state.deferred_ephemeral.take() {
-                    if state.admit_pending(pending.clone()) {
-                        super::replay_pending(state, pending);
-                    }
-                }
-            }
-            ActionOverlayIntent::ExactRetry => retry_pending(state),
-            ActionOverlayIntent::OpenAbandonConfirmation => {
-                state.model.overlay = Some(Overlay::AbandonConfirmation)
-            }
-            ActionOverlayIntent::ConfirmAbandon => state.abandon_pending(),
-            ActionOverlayIntent::ReturnToUnknown => {
-                state.model.overlay = Some(Overlay::UnknownCommand)
-            }
-            ActionOverlayIntent::SubmitSuspension => submit_suspension_response(state),
-            ActionOverlayIntent::LeaveSafely => {
-                state.model.return_overlay = Some(Overlay::Suspension);
-                state.model.overlay = Some(Overlay::QuitConfirmation);
-            }
-        }
+        activate_intent(intent, overlay, state);
         return true;
     }
     match key.code {
@@ -223,6 +193,42 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
     true
 }
 
+pub(super) fn activate_intent(
+    intent: ActionOverlayIntent,
+    overlay: Overlay,
+    state: &mut RuntimeState,
+) {
+    match intent {
+        ActionOverlayIntent::Close => {
+            if overlay == Overlay::EphemeralConfirmation {
+                state.deferred_ephemeral = None;
+            }
+            state.dispatch(AppAction::OverlayClosed);
+        }
+        ActionOverlayIntent::ConfirmQuit => state.dispatch(AppAction::QuitConfirmed),
+        ActionOverlayIntent::AcceptEphemeral => {
+            state.ephemeral_confirmed = true;
+            state.model.overlay = None;
+            if let Some(pending) = state.deferred_ephemeral.take() {
+                if state.admit_pending(pending.clone()) {
+                    super::replay_pending(state, pending);
+                }
+            }
+        }
+        ActionOverlayIntent::ExactRetry => retry_pending(state),
+        ActionOverlayIntent::OpenAbandonConfirmation => {
+            state.model.overlay = Some(Overlay::AbandonConfirmation)
+        }
+        ActionOverlayIntent::ConfirmAbandon => state.abandon_pending(),
+        ActionOverlayIntent::ReturnToUnknown => state.model.overlay = Some(Overlay::UnknownCommand),
+        ActionOverlayIntent::SubmitSuspension => submit_suspension_response(state),
+        ActionOverlayIntent::LeaveSafely => {
+            state.model.return_overlay = Some(Overlay::Suspension);
+            state.model.overlay = Some(Overlay::QuitConfirmation);
+        }
+    }
+}
+
 fn suspension_uses_editor(state: &RuntimeState) -> bool {
     state
         .model
@@ -233,7 +239,7 @@ fn suspension_uses_editor(state: &RuntimeState) -> bool {
         == Some(SchemaControl::Editor)
 }
 
-fn move_suspension_choice(state: &mut RuntimeState, backwards: bool) {
+pub(super) fn move_suspension_choice(state: &mut RuntimeState, backwards: bool) {
     let count = state
         .model
         .suspension

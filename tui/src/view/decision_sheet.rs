@@ -17,6 +17,7 @@ pub(crate) enum DecisionResponseSpec {
     Editor {
         guidance: &'static str,
         draft: String,
+        cursor: usize,
     },
     Choices {
         guidance: &'static str,
@@ -52,6 +53,35 @@ pub(crate) fn project(model: &AppModel, overlay: Overlay) -> Option<DecisionShee
     })
 }
 
+pub(crate) fn action_groups(
+    actions: &[ActionOverlayBinding],
+    width: u16,
+) -> Vec<Vec<ActionOverlayBinding>> {
+    let mut groups = Vec::<Vec<ActionOverlayBinding>>::new();
+    for action in actions {
+        let item_width = action.visual_key.len() + action.action.len() + 3;
+        let used = groups.last().map_or(0, |group| {
+            group
+                .iter()
+                .map(|item| item.visual_key.len() + item.action.len() + 3)
+                .sum::<usize>()
+                + group.len().saturating_sub(1) * 2
+        });
+        if groups.is_empty()
+            || groups.last().is_some_and(|group| {
+                !group.is_empty() && used + 2 + item_width > usize::from(width)
+            })
+        {
+            groups.push(Vec::new());
+        }
+        groups
+            .last_mut()
+            .expect("action group exists")
+            .push(*action);
+    }
+    groups
+}
+
 fn suspension(model: &AppModel) -> DecisionSheetSpec {
     let copy = suspension_copy(model.suspension.as_ref());
     let mut body = vec![copy.context.into()];
@@ -82,6 +112,10 @@ fn suspension(model: &AppModel) -> DecisionSheetSpec {
                             .as_ref()
                             .map(|state| state.editor.text().to_owned())
                             .unwrap_or_default(),
+                        cursor: model
+                            .suspension_response
+                            .as_ref()
+                            .map_or(0, |state| state.editor.cursor_grapheme()),
                     },
                     SchemaControl::Choices(choices) => DecisionResponseSpec::Choices {
                         guidance: copy.guidance,

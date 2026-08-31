@@ -204,6 +204,32 @@ pub(crate) fn overlay_hit_test(model: &AppModel, column: u16, row: u16) -> Optio
     )
 }
 
+pub(crate) fn decision_action_hit_test(
+    model: &AppModel,
+    column: u16,
+    row: u16,
+) -> Option<crate::application::ActionOverlayIntent> {
+    let overlay = model.overlay?;
+    overlay::geometry::decision_action_at(
+        model,
+        overlay,
+        Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
+        column,
+        row,
+    )
+}
+
+pub(crate) fn decision_choice_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
+    let overlay = model.overlay?;
+    overlay::geometry::decision_choice_at(
+        model,
+        overlay,
+        Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
+        column,
+        row,
+    )
+}
+
 pub(crate) fn overlay_contains(model: &AppModel, column: u16, row: u16) -> bool {
     let Some(overlay) = model.overlay else {
         return false;

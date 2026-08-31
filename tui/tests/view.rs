@@ -270,6 +270,40 @@ fn boolean_suspension_projects_one_shared_keyboard_and_screen_reader_choice() {
     assert!(visual.contains("› false"));
     assert!(visual.contains("Enter submit response"));
     assert!(linear.contains("Selected: false"));
+    let short = frame(&model, 40, 8);
+    assert!(short.contains("› false"));
+    assert!(short.contains("Enter submit response"));
+}
+
+#[test]
+fn scalar_suspension_caret_tracks_the_independent_editor_cursor() {
+    let mut model = AppModel {
+        selected_session: Some("session".into()),
+        selected_turn: Some("turn".into()),
+        overlay: Some(Overlay::Suspension),
+        suspension: Some(SuspensionView {
+            suspension_id: "s".into(),
+            session_version: 2,
+            kind: "external_input_required".into(),
+            prompt_schema: "garive.public-suspension-prompt.v1".into(),
+            prompt_json: r#"{"schema_version":1,"title_key":"title","message_text":"Name?","action_label_key":"send"}"#.into(),
+            prompt_digest: "0".repeat(64),
+            response_schema_json: Some(r#"{"type":"string","maxLength":20}"#.into()),
+            response_schema_digest: Some("1".repeat(64)),
+        }),
+        ..Default::default()
+    };
+    model.reconcile_suspension_response();
+    let editor = &mut model.suspension_response.as_mut().unwrap().editor;
+    editor.insert("abcd").unwrap();
+    editor.place_cursor(2, false);
+    assert!(frame(&model, 52, 12).contains("ab▏cd"));
+    let editor = &mut model.suspension_response.as_mut().unwrap().editor;
+    editor.replace(&"界".repeat(30)).unwrap();
+    editor.place_cursor(15, false);
+    let narrow = frame(&model, 40, 12);
+    assert!(narrow.contains("▏"));
+    assert!(narrow.matches('界').count() >= 4);
 }
 
 #[test]
