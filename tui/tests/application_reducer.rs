@@ -255,6 +255,23 @@ fn start_turn_persistence_failure_unfreezes_without_host_effect() {
     assert!(!model.has_pending_command);
 }
 
+#[test]
+fn malformed_start_turn_never_reaches_persistence() {
+    let mut model = AppModel::default();
+    let mut missing_session = start_turn_draft();
+    missing_session.session_id = None;
+    assert!(reduce(&mut model, AppAction::StartTurnRequested(missing_session)).is_empty());
+
+    model.selected_session = Some("session-a".into());
+    for payload in [json!({}), json!({"text": 3}), json!({"text": "  "})] {
+        let mut malformed = start_turn_draft();
+        malformed.request_payload = payload;
+        assert!(reduce(&mut model, AppAction::StartTurnRequested(malformed)).is_empty());
+    }
+    assert!(!model.composer_is_frozen);
+    assert!(!model.has_pending_command);
+}
+
 fn start_turn_draft() -> PendingMutationDraft {
     PendingMutationDraft {
         command_id: "command-start".into(),

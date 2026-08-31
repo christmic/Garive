@@ -94,7 +94,13 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         AppAction::QuitConfirmed => Vec::new(),
         AppAction::StartTurnRequested(draft)
             if draft.kind == PendingMutationKind::StartTurn
+                && draft.session_id.is_some()
                 && draft.session_id.as_deref() == model.selected_session.as_deref()
+                && draft
+                    .request_payload
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|text| !text.trim().is_empty())
                 && matches!(
                     model.execution,
                     ExecutionState::Idle | ExecutionState::Failed
