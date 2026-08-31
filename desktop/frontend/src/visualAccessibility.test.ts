@@ -24,21 +24,24 @@ describe("Desktop visual accessibility contract", () => {
   it("keeps normal semantic text tokens at WCAG AA contrast in light and dark", () => {
     expect(contrast("5f5f5f", "ffffff")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("707070", "ffffff")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("b4b4b4", "212121")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("a0a0a0", "212121")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("b9b5b6", "171717")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("aaa6a7", "171717")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("freezes the shared Codex-fidelity scale and wide shell geometry", () => {
     for (const token of ["--text-2xs: 11px", "--text-xs: 12px", "--text-sm: 13px",
       "--surface-canvas: #ffffff", "--surface-sidebar: #f7f7f7",
-      "--surface-canvas: #212121", "--surface-sidebar: #181818"]) {
+      "--surface-canvas: #171717", "--surface-sidebar: #211f20"]) {
       expect(TOKENS).toContain(token);
     }
-    expect(CSS).toContain("grid-template-columns: clamp(240px, 19vw, 275px) minmax(0, 1fr)");
+    expect(CSS).toContain("--sidebar-width: clamp(206px, 16.1vw, 240px)");
+    expect(CSS).toContain("--conversation-split: clamp(350px, 27.5vw, 420px)");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
-    expect(CSS).toContain("minmax(390px, .82fr) minmax(500px, 1.18fr)");
-    expect(CSS).toContain("grid-template-rows: 46px minmax(0, 1fr)");
+    expect(CSS).toContain("var(--conversation-split) minmax(500px, 1fr)");
+    expect(CSS).toContain("grid-template-rows: 42px minmax(0, 1fr)");
+    expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".environment-panel { position: absolute");
+    expect(CSS).toContain(".app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }");
     expect(CSS).toContain("width: min(40rem, calc(100% - 48px))");
   });
 });

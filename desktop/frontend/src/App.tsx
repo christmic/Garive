@@ -112,6 +112,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
@@ -552,14 +553,32 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const effectiveTheme = preferences.theme === "system"
     ? systemDark ? "dark" : "light" : preferences.theme;
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
-    <div className="app-shell" inert={Boolean(pickerGrant) || commandOpen}
+    <div className={navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"}
+      inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
       <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
-        aria-label={t("shell.primaryNavigation")} inert={smallWindow && !navigationOpen}
-        aria-hidden={smallWindow && !navigationOpen} onClickCapture={(event) => {
+        aria-label={t("shell.primaryNavigation")}
+        inert={(smallWindow && !navigationOpen) || navigationCollapsed}
+        aria-hidden={(smallWindow && !navigationOpen) || navigationCollapsed} onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
         }}>
         <div className="titlebar-drag" data-tauri-drag-region />
+        <div className="sidebar-window-row" data-tauri-drag-region>
+          <button className="sidebar-collapse icon-button" type="button"
+            aria-label={t("shell.collapseNavigation")} title={t("shell.collapseNavigation")}
+            onClick={() => setNavigationCollapsed(true)}><Icon name="panel" /></button>
+          <button className="history-button history-back" type="button" disabled
+            aria-label={t("shell.historyBack")}><Icon name="chevron" /></button>
+          <button className="history-button" type="button" disabled
+            aria-label={t("shell.historyForward")}><Icon name="chevron" /></button>
+        </div>
+        <div className="sidebar-product-row">
+          <button className="product-switcher" type="button" aria-label={t("shell.productMenu")}
+            disabled><span>Garive</span><Icon name="chevron" /></button>
+          <button className="sidebar-search icon-button" type="button" aria-label={t("nav.search")}
+            disabled={!state.capabilities?.durable_navigation}
+            onClick={() => setScreen("search")}><Icon name="search" /></button>
+        </div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
@@ -604,9 +623,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       <main className="main-surface" inert={smallWindow && navigationOpen}
         aria-hidden={smallWindow && navigationOpen}>
         <header className="topbar" data-tauri-drag-region>
-          <div className="topbar-title"><button className="navigation-trigger icon-button" type="button"
+          <div className="topbar-title"><button className={navigationCollapsed
+            ? "navigation-trigger sidebar-restore icon-button" : "navigation-trigger icon-button"} type="button"
             aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
-            aria-controls="primary-navigation" onClick={() => setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
+            aria-controls="primary-navigation" onClick={() => navigationCollapsed
+              ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {screen === "work" && <span className={state.phase === "submitting" ? "local-badge working" : "local-badge"}>
               <span />{t(state.phase === "submitting" ? "status.working" : "shell.local")}</span>}

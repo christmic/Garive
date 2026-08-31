@@ -73,18 +73,18 @@
 
 .theme-dark {
   color: #ececec;
-  background: #212121;
-  --surface-canvas: #212121;
-  --surface-raised: #2f2f2f;
-  --surface-sidebar: #181818;
-  --surface-subtle: #292929;
-  --surface-hover: #303030;
-  --surface-selected: #353535;
+  background: #171717;
+  --surface-canvas: #171717;
+  --surface-raised: #292929;
+  --surface-sidebar: #211f20;
+  --surface-subtle: #242424;
+  --surface-hover: #2c2a2b;
+  --surface-selected: #373435;
   --border-subtle: rgba(255, 255, 255, .08);
   --border-strong: rgba(255, 255, 255, .15);
-  --text-primary: #ececec;
-  --text-secondary: #b4b4b4;
-  --text-tertiary: #a0a0a0;
+  --text-primary: #f0eeee;
+  --text-secondary: #b9b5b6;
+  --text-tertiary: #aaa6a7;
   --action-primary: #7aa2f7;
   --action-primary-hover: #96b5fa;
   --state-info: #7aa2f7;
