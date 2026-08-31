@@ -380,24 +380,41 @@ fn decision_sheet_spec(
                     ]),
                     _ => Line::styled(value, colors.normal),
                 },
-                decision_sheet::DecisionRow::Editor { value, empty } => Line::styled(
-                    value,
-                    if empty {
+                decision_sheet::DecisionRow::Editor {
+                    before,
+                    after,
+                    empty,
+                } => {
+                    let content = if empty {
                         colors.placeholder
                     } else {
                         colors.normal
-                    },
-                ),
+                    };
+                    Line::from(vec![
+                        Span::styled(before, content),
+                        Span::styled("▏", colors.accent),
+                        Span::styled(after, content),
+                    ])
+                }
                 decision_sheet::DecisionRow::Choice {
                     value, selected, ..
-                } => Line::styled(
-                    format!("{} {value}", if selected { "›" } else { " " }),
+                } => {
+                    let mut content = format!("{} {value}", if selected { "›" } else { " " });
                     if selected {
-                        colors.selected
-                    } else {
-                        colors.normal
-                    },
-                ),
+                        content.extend(std::iter::repeat_n(
+                            ' ',
+                            usize::from(content_width).saturating_sub(content.width()),
+                        ));
+                    }
+                    Line::styled(
+                        content,
+                        if selected {
+                            colors.selection_row
+                        } else {
+                            colors.normal
+                        },
+                    )
+                }
                 decision_sheet::DecisionRow::Blank => Line::default(),
                 decision_sheet::DecisionRow::Label(value) => Line::styled(value, colors.title),
                 decision_sheet::DecisionRow::Guidance(value) => Line::styled(value, colors.normal),

@@ -45,7 +45,8 @@ pub(crate) enum DecisionRow {
         tone: Option<DecisionSheetTone>,
     },
     Editor {
-        value: String,
+        before: String,
+        after: String,
         empty: bool,
     },
     Choice {
@@ -82,8 +83,11 @@ pub(crate) fn layout(spec: &DecisionSheetSpec, width: u16, height: usize) -> Dec
                 draft,
                 cursor,
             } => {
+                let (before, after) =
+                    editor_view(draft, *cursor, usize::from(width.saturating_sub(2)));
                 primary = Some(DecisionRow::Editor {
-                    value: editor_view(draft, *cursor, usize::from(width.saturating_sub(2))),
+                    before,
+                    after,
                     empty: draft.is_empty(),
                 });
                 ("Response", *guidance)
@@ -211,7 +215,7 @@ fn truncate_display(value: &str, width: usize) -> String {
         .collect()
 }
 
-fn editor_view(draft: &str, cursor: usize, width: usize) -> String {
+fn editor_view(draft: &str, cursor: usize, width: usize) -> (String, String) {
     let graphemes = draft.graphemes(true).collect::<Vec<_>>();
     let cursor = cursor.min(graphemes.len());
     let budget = width.saturating_sub(1);
@@ -243,10 +247,9 @@ fn editor_view(draft: &str, cursor: usize, width: usize) -> String {
         start -= 1;
         used += candidate;
     }
-    format!(
-        "› {}▏{}",
-        graphemes[start..cursor].concat(),
-        graphemes[cursor..end].concat()
+    (
+        format!("› {}", graphemes[start..cursor].concat()),
+        graphemes[cursor..end].concat(),
     )
 }
 

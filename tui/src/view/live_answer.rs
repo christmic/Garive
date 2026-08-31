@@ -17,7 +17,7 @@ pub(super) fn render(
     let colors = palette(theme);
     let mut lines = vec![Line::from(vec![
         Span::styled("◆ Garive", colors.agent),
-        Span::styled(phase_copy(answer.phase), colors.muted),
+        Span::styled(phase_copy(answer), colors.muted),
     ])];
     match answer.availability {
         LiveAnswerAvailability::Unavailable => lines.push(Line::styled(
@@ -41,8 +41,11 @@ pub(super) fn render(
     lines
 }
 
-fn phase_copy(phase: Option<LiveAnswerPhase>) -> &'static str {
-    match phase {
+fn phase_copy(answer: &LiveAnswer) -> &'static str {
+    if answer.ended {
+        return " · Waiting for durable result";
+    }
+    match answer.phase {
         Some(LiveAnswerPhase::Preparing) => " · Preparing context",
         Some(LiveAnswerPhase::Generating) => " · Generating response",
         Some(LiveAnswerPhase::Finalizing) => " · Finalizing response",
