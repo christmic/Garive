@@ -9,7 +9,7 @@ use crate::{
 use super::{
     accept_command_suggestion,
     navigation::{select_command, select_history, select_landmark, select_session},
-    RuntimeState,
+    scroll_conversation, RuntimeState,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,11 +53,11 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
     match action {
         MouseAction::ConversationScroll { backwards: true } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_conversation_up(3);
+            scroll_conversation(state, -3);
         }
         MouseAction::ConversationScroll { backwards: false } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_conversation_down(3);
+            scroll_conversation(state, 3);
         }
         MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
         MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),

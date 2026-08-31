@@ -365,7 +365,7 @@ mod tests {
     fn snapshot_refresh_preserves_manual_anchor_and_counts_new_cells() {
         let mut model = AppModel::default();
         install_timeline(&mut model, vec![turn("one", 1), turn("two", 4)]);
-        model.scroll_conversation_up(1);
+        model.jump_to_oldest();
         let anchor = model.viewport.anchor_key.clone();
 
         install_timeline(

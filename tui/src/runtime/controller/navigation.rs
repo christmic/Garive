@@ -23,10 +23,6 @@ fn next_focus(_width: u16, current: FocusTarget, backwards: bool) -> FocusTarget
     }
 }
 
-pub(super) fn conversation_page_cells(state: &RuntimeState) -> usize {
-    usize::from(state.model.terminal_size.height.saturating_sub(8) / 3).max(1)
-}
-
 pub(super) fn is_safe_query_character(character: char) -> bool {
     !character.is_control()
         && !matches!(

@@ -426,41 +426,6 @@ impl AppModel {
         self.viewport_order.push_back(session_id);
     }
 
-    pub(crate) fn scroll_conversation_up(&mut self, cells: usize) {
-        if self.timeline.is_empty() || cells == 0 {
-            return;
-        }
-        let current = self
-            .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| self.timeline.iter().position(|item| item.stable_key == key))
-            .unwrap_or(self.timeline.len() - 1);
-        let target = current.saturating_sub(cells);
-        self.viewport.follow_latest = false;
-        self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
-        self.viewport.source_line = 0;
-    }
-
-    pub(crate) fn scroll_conversation_down(&mut self, cells: usize) {
-        if self.timeline.is_empty() || cells == 0 {
-            return;
-        }
-        let current = self
-            .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| self.timeline.iter().position(|item| item.stable_key == key))
-            .unwrap_or(self.timeline.len() - 1);
-        let target = current.saturating_add(cells);
-        if target >= self.timeline.len() - 1 {
-            self.follow_latest();
-        } else {
-            self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
-            self.viewport.source_line = 0;
-        }
-    }
-
     pub(crate) fn follow_latest(&mut self) {
         self.viewport = ViewportState::default();
         self.live_answer.mark_seen();

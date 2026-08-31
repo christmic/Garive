@@ -12,16 +12,18 @@ mod overlay;
 
 pub(super) use actions::replay_pending;
 use actions::{cancel, copy_composer_selection, create_session, submit};
-use navigation::{
-    conversation_page_cells, cycle_focus, open_command_palette, open_prompt_history,
-    open_session_picker,
-};
+use navigation::{cycle_focus, open_command_palette, open_prompt_history, open_session_picker};
 
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
     match event {
         Event::Resize(width, height) => {
             state.composer_clicks.reset();
-            state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }))
+            state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }));
+            crate::view::reflow_conversation(
+                &mut state.model,
+                state.config.theme,
+                &mut state.render_cache,
+            );
         }
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
         Event::FocusLost => {
@@ -83,14 +85,16 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     }
     if state.model.focus == FocusTarget::Conversation {
         match key.code {
-            KeyCode::Up => state.model.scroll_conversation_up(1),
-            KeyCode::Down => state.model.scroll_conversation_down(1),
-            KeyCode::PageUp => state
-                .model
-                .scroll_conversation_up(conversation_page_cells(state)),
-            KeyCode::PageDown => state
-                .model
-                .scroll_conversation_down(conversation_page_cells(state)),
+            KeyCode::Up => scroll_conversation(state, -1),
+            KeyCode::Down => scroll_conversation(state, 1),
+            KeyCode::PageUp => {
+                let page = crate::view::conversation_page_cells(&state.model) as isize;
+                scroll_conversation(state, -page);
+            }
+            KeyCode::PageDown => {
+                let page = crate::view::conversation_page_cells(&state.model) as isize;
+                scroll_conversation(state, page);
+            }
             KeyCode::Home => state.model.jump_to_oldest(),
             KeyCode::End => state.model.follow_latest(),
             _ => {}
@@ -203,6 +207,15 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Enter => submit(state),
         _ => {}
     }
+}
+
+pub(super) fn scroll_conversation(state: &mut RuntimeState, cells: isize) {
+    crate::view::scroll_conversation(
+        &mut state.model,
+        state.config.theme,
+        &mut state.render_cache,
+        cells,
+    );
 }
 
 fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {

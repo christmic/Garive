@@ -26,28 +26,12 @@ pub(super) fn render_conversation(
     cache: &mut RenderCache,
 ) {
     let colors = palette(theme);
-    let mut inner = Rect::new(
-        area.x.saturating_add(2),
-        area.y.saturating_add(1),
-        area.width.saturating_sub(4),
-        area.height.saturating_sub(1),
-    );
-    let context = if model.viewport.newer_updates > 0 {
-        Some(format!(
-            "↓ {} newer updates · End to follow",
-            model.viewport.newer_updates
-        ))
-    } else if !model.viewport.follow_latest {
-        Some("↑ Browsing history · End to follow".into())
-    } else {
-        None
-    };
+    let context = context_copy(model);
+    let inner = viewport_rect(model, area);
     if let Some(context) = context {
         Line::styled(context, colors.muted)
             .alignment(ratatui::layout::Alignment::Center)
             .render(Rect::new(area.x, area.y, area.width, 1), buffer);
-        inner.y = inner.y.saturating_add(1);
-        inner.height = inner.height.saturating_sub(1);
     }
     let window = (!model.timeline.is_empty() || model.live_answer.current().is_some())
         .then(|| conversation_window(model, theme, motion, inner.width, inner.height, cache));
@@ -65,6 +49,29 @@ pub(super) fn render_conversation(
         .wrap(Wrap { trim: false })
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .render(inner, buffer);
+}
+
+fn context_copy(model: &AppModel) -> Option<String> {
+    if model.viewport.newer_updates > 0 {
+        Some(format!(
+            "↓ {} newer updates · End to follow",
+            model.viewport.newer_updates
+        ))
+    } else if !model.viewport.follow_latest {
+        Some("↑ Browsing history · End to follow".into())
+    } else {
+        None
+    }
+}
+
+pub(crate) fn viewport_rect(model: &AppModel, area: Rect) -> Rect {
+    let context_height = u16::from(context_copy(model).is_some());
+    Rect::new(
+        area.x.saturating_add(2),
+        area.y.saturating_add(1).saturating_add(context_height),
+        area.width.saturating_sub(4),
+        area.height.saturating_sub(1).saturating_sub(context_height),
+    )
 }
 
 struct ConversationWindow {
@@ -111,7 +118,7 @@ fn conversation_window(
             end = start;
         }
     } else {
-        let start = model
+        let requested = model
             .viewport
             .anchor_key
             .as_deref()
@@ -122,6 +129,13 @@ fn conversation_window(
                     .position(|item| item.stable_key == key)
             })
             .unwrap_or(0);
+        let start = containing_cell_start(&model.timeline, requested);
+        let first_end = cell_end(&model.timeline, start);
+        let first_height = rendered_cell_height(model, start, first_end, width, theme, cache);
+        let source_line = model
+            .viewport
+            .source_line
+            .min(first_height.saturating_sub(1));
         let mut index = start;
         while index < model.timeline.len() {
             let end = cell_end(&model.timeline, index);
@@ -135,7 +149,7 @@ fn conversation_window(
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_back(cell);
             laid_out += end - index;
-            if measured_height >= target_height.saturating_add(model.viewport.source_line) {
+            if measured_height >= target_height.saturating_add(source_line) {
                 break;
             }
             index = end;
@@ -145,13 +159,220 @@ fn conversation_window(
     let scroll = if model.viewport.follow_latest {
         wrapped_height(&lines, width).saturating_sub(usize::from(height))
     } else {
-        model.viewport.source_line
+        let requested = model
+            .viewport
+            .anchor_key
+            .as_deref()
+            .and_then(|key| {
+                model
+                    .timeline
+                    .iter()
+                    .position(|item| item.stable_key == key)
+            })
+            .unwrap_or(0);
+        let start = containing_cell_start(&model.timeline, requested);
+        let end = cell_end(&model.timeline, start);
+        model
+            .viewport
+            .source_line
+            .min(rendered_cell_height(model, start, end, width, theme, cache).saturating_sub(1))
     };
     ConversationWindow {
         lines,
         scroll,
         laid_out,
     }
+}
+
+pub(crate) fn scroll_by_visual_cells(
+    model: &mut AppModel,
+    theme: Theme,
+    width: u16,
+    viewport_height: u16,
+    delta: isize,
+    cache: &mut RenderCache,
+) {
+    if model.timeline.is_empty() || delta == 0 {
+        return;
+    }
+    let (start, source_line) = current_visual_anchor(model, theme, width, viewport_height, cache);
+    let (start, source_line, ran_past_end) = if delta.is_negative() {
+        move_anchor_up(
+            model,
+            theme,
+            width,
+            start,
+            source_line,
+            delta.unsigned_abs(),
+            cache,
+        )
+    } else {
+        move_anchor_down(
+            model,
+            theme,
+            width,
+            start,
+            source_line,
+            delta.unsigned_abs(),
+            cache,
+        )
+    };
+    if ran_past_end {
+        model.follow_latest();
+        return;
+    }
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some(model.timeline[start].stable_key.clone());
+    model.viewport.source_line = source_line;
+}
+
+pub(crate) fn reflow_visual_anchor(
+    model: &mut AppModel,
+    theme: Theme,
+    width: u16,
+    cache: &mut RenderCache,
+) {
+    if model.viewport.follow_latest || model.timeline.is_empty() {
+        return;
+    }
+    let requested = model
+        .viewport
+        .anchor_key
+        .as_deref()
+        .and_then(|key| {
+            model
+                .timeline
+                .iter()
+                .position(|item| item.stable_key == key)
+        })
+        .unwrap_or(0);
+    let start = containing_cell_start(&model.timeline, requested);
+    let end = cell_end(&model.timeline, start);
+    let height = rendered_cell_height(model, start, end, width, theme, cache);
+    model.viewport.anchor_key = Some(model.timeline[start].stable_key.clone());
+    model.viewport.source_line = model.viewport.source_line.min(height.saturating_sub(1));
+}
+
+fn current_visual_anchor(
+    model: &AppModel,
+    theme: Theme,
+    width: u16,
+    viewport_height: u16,
+    cache: &mut RenderCache,
+) -> (usize, usize) {
+    if !model.viewport.follow_latest {
+        let requested = model
+            .viewport
+            .anchor_key
+            .as_deref()
+            .and_then(|key| {
+                model
+                    .timeline
+                    .iter()
+                    .position(|item| item.stable_key == key)
+            })
+            .unwrap_or(0);
+        let start = containing_cell_start(&model.timeline, requested);
+        let end = cell_end(&model.timeline, start);
+        let height = rendered_cell_height(model, start, end, width, theme, cache);
+        return (
+            start,
+            model.viewport.source_line.min(height.saturating_sub(1)),
+        );
+    }
+
+    let mut end = model.timeline.len();
+    let mut measured = 0usize;
+    let target = usize::from(viewport_height.max(1));
+    loop {
+        let start = cell_start(&model.timeline, end);
+        let height = rendered_cell_height(model, start, end, width, theme, cache);
+        if measured.saturating_add(height) >= target || start == 0 {
+            let visible_from_cell = target.saturating_sub(measured).min(height);
+            return (start, height.saturating_sub(visible_from_cell));
+        }
+        measured = measured.saturating_add(height);
+        end = start;
+    }
+}
+
+fn move_anchor_up(
+    model: &AppModel,
+    theme: Theme,
+    width: u16,
+    mut start: usize,
+    mut source_line: usize,
+    mut cells: usize,
+    cache: &mut RenderCache,
+) -> (usize, usize, bool) {
+    while cells > source_line {
+        cells -= source_line;
+        if start == 0 {
+            return (0, 0, false);
+        }
+        let end = start;
+        start = cell_start(&model.timeline, end);
+        let height = rendered_cell_height(model, start, end, width, theme, cache);
+        source_line = height;
+    }
+    (start, source_line - cells, false)
+}
+
+fn move_anchor_down(
+    model: &AppModel,
+    theme: Theme,
+    width: u16,
+    mut start: usize,
+    mut source_line: usize,
+    mut cells: usize,
+    cache: &mut RenderCache,
+) -> (usize, usize, bool) {
+    loop {
+        let end = cell_end(&model.timeline, start);
+        let height = rendered_cell_height(model, start, end, width, theme, cache);
+        let remaining_in_cell = height.saturating_sub(source_line.saturating_add(1));
+        if cells <= remaining_in_cell {
+            return (start, source_line + cells, false);
+        }
+        cells -= remaining_in_cell.saturating_add(1);
+        if end == model.timeline.len() {
+            return (start, height.saturating_sub(1), true);
+        }
+        start = end;
+        source_line = 0;
+        if cells == 0 {
+            return (start, 0, false);
+        }
+    }
+}
+
+fn containing_cell_start(items: &[crate::application::TimelineItem], index: usize) -> usize {
+    if items[index].role != TimelineRole::Status {
+        return index;
+    }
+    let mut start = index;
+    while start > 0 && items[start - 1].role == TimelineRole::Status {
+        start -= 1;
+    }
+    start
+}
+
+fn rendered_cell_height(
+    model: &AppModel,
+    start: usize,
+    end: usize,
+    width: u16,
+    theme: Theme,
+    cache: &mut RenderCache,
+) -> usize {
+    let mut cell = render_cell(&model.timeline[start..end], width, theme, cache);
+    append_turn_gap(
+        &mut cell,
+        model.timeline[end - 1].role,
+        model.timeline.get(end).map(|item| item.role),
+        end == model.timeline.len() && model.live_answer.current().is_some(),
+    );
+    wrapped_height(&cell, width).max(1)
 }
 
 fn cell_start(items: &[crate::application::TimelineItem], end: usize) -> usize {
@@ -423,5 +644,115 @@ mod tests {
         }
         assert_eq!(cache.cells.len(), MAX_CACHED_CELLS);
         assert!(cache.bytes <= MAX_CACHE_BYTES);
+    }
+
+    fn visual_item(key: &str, role: TimelineRole, text: &str) -> TimelineItem {
+        TimelineItem {
+            stable_key: key.into(),
+            position: 1,
+            role,
+            tone: Default::default(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn visual_scroll_stays_inside_wrapped_markdown_and_cjk_before_crossing_items() {
+        let mut model = AppModel {
+            timeline: vec![
+                visual_item(
+                    "wide",
+                    TimelineRole::Agent,
+                    "**alpha** 中文中文中文中文 alpha alpha alpha",
+                ),
+                visual_item("next", TimelineRole::User, "next"),
+            ],
+            ..Default::default()
+        };
+        let mut cache = RenderCache::default();
+
+        model.viewport.follow_latest = false;
+        model.viewport.anchor_key = Some("wide".into());
+        scroll_by_visual_cells(&mut model, Theme::Dark, 12, 3, 1, &mut cache);
+
+        assert_eq!(model.viewport.anchor_key.as_deref(), Some("wide"));
+        assert_eq!(model.viewport.source_line, 1);
+
+        let first_height = rendered_cell_height(&model, 0, 1, 12, Theme::Dark, &mut cache);
+        scroll_by_visual_cells(
+            &mut model,
+            Theme::Dark,
+            12,
+            3,
+            (first_height - 1) as isize,
+            &mut cache,
+        );
+        assert_eq!(model.viewport.anchor_key.as_deref(), Some("next"));
+        assert_eq!(model.viewport.source_line, 0);
+    }
+
+    #[test]
+    fn page_scroll_advances_exactly_one_rendered_viewport() {
+        let mut model = AppModel {
+            timeline: vec![visual_item(
+                "answer",
+                TimelineRole::Agent,
+                "one two three four five six seven eight nine ten eleven twelve",
+            )],
+            ..Default::default()
+        };
+        let mut cache = RenderCache::default();
+        model.viewport.follow_latest = false;
+        model.viewport.anchor_key = Some("answer".into());
+
+        scroll_by_visual_cells(&mut model, Theme::Dark, 10, 3, 3, &mut cache);
+
+        assert_eq!(model.viewport.anchor_key.as_deref(), Some("answer"));
+        assert_eq!(model.viewport.source_line, 3);
+    }
+
+    #[test]
+    fn reflow_keeps_the_top_item_and_clamps_its_visual_line() {
+        let mut model = AppModel {
+            timeline: vec![visual_item(
+                "answer",
+                TimelineRole::Agent,
+                "one two three four five six seven eight nine ten",
+            )],
+            ..Default::default()
+        };
+        model.viewport.follow_latest = false;
+        model.viewport.anchor_key = Some("answer".into());
+        model.viewport.source_line = 5;
+        let mut cache = RenderCache::default();
+
+        reflow_visual_anchor(&mut model, Theme::Dark, 80, &mut cache);
+
+        assert_eq!(model.viewport.anchor_key.as_deref(), Some("answer"));
+        assert_eq!(model.viewport.source_line, 2);
+    }
+
+    #[test]
+    fn detached_live_updates_do_not_move_the_visual_anchor() {
+        let mut model = AppModel {
+            timeline: vec![visual_item("answer", TimelineRole::Agent, "durable answer")],
+            ..Default::default()
+        };
+        model.viewport.follow_latest = false;
+        model.viewport.anchor_key = Some("answer".into());
+        model.viewport.source_line = 1;
+        model.viewport.newer_updates = 4;
+        let before = model.viewport.clone();
+
+        let _ = conversation_window(
+            &model,
+            Theme::Dark,
+            MotionFrame::reduced(),
+            20,
+            4,
+            &mut RenderCache::default(),
+        );
+
+        assert_eq!(model.viewport, before);
     }
 }

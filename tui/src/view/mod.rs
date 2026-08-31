@@ -130,6 +130,42 @@ pub(crate) fn composer_line_edge_target(model: &AppModel, direction: i8) -> usiz
     )
 }
 
+pub(crate) fn conversation_page_cells(model: &AppModel) -> usize {
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    usize::from(
+        conversation::viewport_rect(model, frame.transcript)
+            .height
+            .max(1),
+    )
+}
+
+pub(crate) fn scroll_conversation(
+    model: &mut AppModel,
+    theme: Theme,
+    cache: &mut RenderCache,
+    cells: isize,
+) {
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    let viewport = conversation::viewport_rect(model, frame.transcript);
+    conversation::scroll_by_visual_cells(
+        model,
+        theme,
+        viewport.width,
+        viewport.height,
+        cells,
+        cache,
+    );
+}
+
+pub(crate) fn reflow_conversation(model: &mut AppModel, theme: Theme, cache: &mut RenderCache) {
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    let viewport = conversation::viewport_rect(model, frame.transcript);
+    conversation::reflow_visual_anchor(model, theme, viewport.width, cache);
+}
+
 pub(crate) fn overlay_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
     let overlay = model.overlay?;
     overlay::geometry::selection_at(
