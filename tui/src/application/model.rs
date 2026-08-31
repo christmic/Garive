@@ -5,7 +5,7 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
-use super::{LiveAnswerProjection, TurnBlock};
+use super::{InspectorState, LiveAnswerProjection, TurnBlock};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -290,6 +290,7 @@ pub(crate) struct AppModel {
     pub(crate) command_suggestion_selection: usize,
     pub(crate) command_suggestion_dismissed: Option<String>,
     pub(crate) has_pending_command: bool,
+    pub(crate) pending_recovery_required: bool,
     pub(crate) composer_is_frozen: bool,
     pub(crate) session_selection: usize,
     pub(crate) selected_session: Option<String>,
@@ -304,6 +305,7 @@ pub(crate) struct AppModel {
     pub(crate) turn_blocks: Vec<TurnBlock>,
     pub(crate) conversation_landmarks: Vec<ConversationLandmark>,
     pub(crate) live_answer: LiveAnswerProjection,
+    pub(crate) inspector: InspectorState,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,
 }

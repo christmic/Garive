@@ -7,7 +7,8 @@ pub use args::{MouseMode, Theme};
 mod commands;
 
 use commands::{
-    command_matches, parse_command, Command, CommandContext, CommandParse, COMMAND_PALETTE,
+    command_matches, parse_command, Command, CommandContext, CommandParse, InspectorCommand,
+    COMMAND_PALETTE,
 };
 
 #[test]
@@ -30,6 +31,14 @@ fn non_commands_remain_host_text_and_known_commands_are_exact() {
             filter: Some("release blocker".into())
         })
     );
+    assert_eq!(
+        parse_command("/inspect recovery"),
+        CommandParse::Valid(Command::Inspect(Some(InspectorCommand::Recovery)))
+    );
+    assert_eq!(
+        parse_command("/inspect"),
+        CommandParse::Valid(Command::Inspect(None))
+    );
 }
 
 #[test]
@@ -43,6 +52,8 @@ fn malformed_or_ambiguous_commands_never_fall_through_to_host() {
         "/new \"unterminated",
         "/new \"bad\\n\"",
         "/help\nsecond line",
+        "/inspect unknown",
+        "/inspect close extra",
     ] {
         assert_eq!(parse_command(value), CommandParse::Invalid, "{value}");
     }

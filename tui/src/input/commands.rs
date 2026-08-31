@@ -8,6 +8,7 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
         "Jump to a Turn",
         CommandRequirement::NavigableTurns,
     ),
+    CommandSpec::with_args("/inspect", "Open Inspector", CommandRequirement::Always),
     CommandSpec::new("/status", "Connection details", CommandRequirement::Always),
     CommandSpec::new(
         "/edit-prompt",
@@ -170,6 +171,7 @@ pub(crate) enum Command {
     New { definition: Option<String> },
     Sessions { filter: Option<String> },
     Jump { filter: Option<String> },
+    Inspect(Option<InspectorCommand>),
     Help,
     Status,
     EditPrompt,
@@ -182,6 +184,14 @@ pub(crate) enum Command {
     CopySelection,
     CopySessionId,
     Quit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum InspectorCommand {
+    Activity,
+    Recovery,
+    Details,
+    Close,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -218,6 +228,14 @@ pub(crate) fn parse_command(text: &str) -> CommandParse {
         ("/jump", values) => Command::Jump {
             filter: Some(values.join(" ")),
         },
+        ("/inspect", []) => Command::Inspect(None),
+        ("/inspect", [value]) => Command::Inspect(Some(match value.as_str() {
+            "activity" => InspectorCommand::Activity,
+            "recovery" => InspectorCommand::Recovery,
+            "details" => InspectorCommand::Details,
+            "close" => InspectorCommand::Close,
+            _ => return CommandParse::Invalid,
+        })),
         ("/help", []) => Command::Help,
         ("/status", []) => Command::Status,
         ("/edit-prompt", []) => Command::EditPrompt,

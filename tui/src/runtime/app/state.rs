@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Instant,
+};
 
 use garive_host_client::{HostClientErrorCode, LiveHostClient};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -35,6 +38,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) preferences: Preferences,
     persisted_preferences: Preferences,
     pub(in crate::runtime) pending: Vec<PendingCommand>,
+    pending_recovery: BTreeSet<String>,
     pub(in crate::runtime) ephemeral_confirmed: bool,
     pub(in crate::runtime) queued_prompt: Option<String>,
     pub(in crate::runtime) editing_suspension: Option<String>,
@@ -86,7 +90,12 @@ impl RuntimeState {
         if restored.history_error {
             model.notice = Some("Corrupt prompt history was quarantined.".into());
         }
-        if !restored.pending.is_empty() {
+        let pending_recovery = restored
+            .pending
+            .iter()
+            .map(|pending| pending.command_id.clone())
+            .collect::<BTreeSet<_>>();
+        if !pending_recovery.is_empty() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             model.overlay = Some(Overlay::UnknownCommand);
         } else if restored.pending_quarantined != 0 {
@@ -96,6 +105,7 @@ impl RuntimeState {
             ));
         }
         model.has_pending_command = !restored.pending.is_empty();
+        model.pending_recovery_required = !pending_recovery.is_empty();
         model.composer_is_frozen =
             pending_freezes_composer(&restored.pending, model.selected_session.as_deref());
         let persisted_preferences = restored.preferences.clone();
@@ -114,6 +124,7 @@ impl RuntimeState {
             preferences: restored.preferences,
             persisted_preferences,
             pending: restored.pending,
+            pending_recovery,
             ephemeral_confirmed: false,
             queued_prompt: None,
             editing_suspension: None,
@@ -346,6 +357,7 @@ impl RuntimeState {
 
     fn sync_pending_projection(&mut self) {
         self.model.has_pending_command = !self.pending.is_empty();
+        self.model.pending_recovery_required = !self.pending_recovery.is_empty();
         self.model.composer_is_frozen =
             pending_freezes_composer(&self.pending, self.model.selected_session.as_deref());
     }
@@ -380,6 +392,7 @@ impl RuntimeState {
             self.local_state_failure("pending_abandon_failed");
             return;
         }
+        self.pending_recovery.remove(&command_id);
         self.pending.remove(index);
         self.sync_pending_projection();
         self.model.overlay = None;
@@ -407,6 +420,7 @@ impl RuntimeState {
             self.local_state_failure("pending_remove_failed");
             return;
         }
+        self.pending_recovery.remove(command_id);
         #[cfg(feature = "test-hooks")]
         self.crash_if(crate::args::TestCrashHook::PendingRemoved);
         if !self.config.no_prompt_history
@@ -466,10 +480,13 @@ impl RuntimeState {
         ) {
             if let Some(index) = pending_index {
                 let pending = self.pending.remove(index);
+                self.pending_recovery.remove(command_id);
                 let _ = self.store.remove_pending(pending.session_id.as_deref());
             }
             self.sync_pending_projection();
         } else if pending_index.is_some() {
+            self.pending_recovery.insert(command_id.into());
+            self.sync_pending_projection();
             self.model.notice =
                 Some("The command outcome is unknown. Review /status or use exact /retry.".into());
             self.model.overlay = Some(Overlay::UnknownCommand);

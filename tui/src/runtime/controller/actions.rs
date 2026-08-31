@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
 use crate::{
-    application::{AppAction, ExecutionState, Overlay},
-    input::{parse_command, parse_schema_input, Command, CommandParse},
+    application::{AppAction, ExecutionState, InspectorVariant, Overlay},
+    input::{parse_command, parse_schema_input, Command, CommandParse, InspectorCommand},
     persistence::{now, DiagnosticEvent, PendingCommand, PendingKind},
 };
 
@@ -197,19 +197,9 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
             state.model.overlay = Some(Overlay::SessionPicker);
         }
         Command::Jump { filter } => super::navigation::open_turn_navigator(state, filter),
+        Command::Inspect(command) => set_inspector(command, state),
         Command::Help => state.model.overlay = Some(Overlay::Help),
-        Command::Status => {
-            state.model.notice = Some(format!(
-                "Host: {}\nSession: {}\nCursor: {}",
-                match state.model.connection {
-                    crate::application::ConnectionState::Online => "online",
-                    _ => "not online",
-                },
-                state.model.selected_session.as_deref().unwrap_or("none"),
-                state.model.observed_position
-            ));
-            state.model.overlay = Some(Overlay::ErrorDetails);
-        }
+        Command::Status => set_inspector(Some(InspectorCommand::Details), state),
         Command::EditPrompt => external_editor::request(state),
         Command::Reconnect => {
             if let Some(session) = state.model.selected_session.clone() {
@@ -242,6 +232,23 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
         }
         Command::Quit => state.dispatch(AppAction::QuitRequested),
     }
+}
+
+fn set_inspector(command: Option<InspectorCommand>, state: &mut RuntimeState) {
+    if command == Some(InspectorCommand::Close) {
+        state.model.inspector.open = false;
+        state.model.inspector.selected_key = None;
+        return;
+    }
+    let variant = match command {
+        Some(InspectorCommand::Activity) => InspectorVariant::Activity,
+        Some(InspectorCommand::Recovery) => InspectorVariant::Recovery,
+        Some(InspectorCommand::Details) => InspectorVariant::Details,
+        Some(InspectorCommand::Close) => return,
+        None => state.model.default_inspector_variant(),
+    };
+    state.model.inspector.open = true;
+    state.model.select_inspector_variant(variant);
 }
 
 pub(super) fn copy_composer_selection(state: &mut RuntimeState, show_details: bool) {
