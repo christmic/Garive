@@ -35,6 +35,15 @@ describe("Desktop work state", () => {
     expect(state.error).toBe("not_configured");
   });
 
+  it("retains a next-instruction draft while the current turn is submitting", () => {
+    let state = reduceWork(initialWorkState, { type: "capabilities_loaded", capabilities });
+    state = reduceWork(state, { type: "draft_changed", value: "Current outcome" });
+    state = reduceWork(state, { type: "submission_started" });
+    state = reduceWork(state, { type: "draft_changed", value: "Follow up after completion" });
+    expect(state.draft).toBe("Follow up after completion");
+    expect(canSubmit(state)).toBe(false);
+  });
+
   it("restores a conversation only from a durable timeline", () => {
     const state = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
       api_version: "v1", session_id: "session-old", scanned_through_position: 7,

@@ -655,14 +655,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
             aria-controls="primary-navigation" onClick={() => navigationCollapsed
               ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
-            <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+            <span className="topbar-context-icon" aria-hidden="true"><Icon name={screen === "work" ? "folder"
+              : screen === "agents" ? "agent" : screen === "settings" ? "settings" : "search"} /></span>
+            <span className="topbar-title-copy">{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
             {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
               onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
-            <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}
-              aria-label={t("command.open")}><Icon name="search" /><span>{t("command.open")}</span><kbd>⌘K</kbd></button>
             {screen === "work" && state.messages.length > 0 && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
@@ -845,12 +845,13 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
               aria-label={t("context.remove")}><Icon name="close" /></button>
           </span>)}</div>}
-        <textarea ref={composer} rows={1} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+        <textarea ref={composer} rows={1} value={state.draft} disabled={blockedSuspension}
           aria-describedby="composer-commit-note"
-          aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
-          placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
+          aria-label={t(state.phase === "submitting" ? "work.composer.draftNext" : needsInput ? "work.composer.continue" : "work.composer.describe")}
+          placeholder={t(blockedSuspension ? "work.composer.governed" : state.phase === "submitting"
+            ? "work.composer.draftNextPlaceholder" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
-          onKeyDown={(event) => { if (shouldSubmitComposer({ key: event.key,
+          onKeyDown={(event) => { if (state.phase !== "submitting" && shouldSubmitComposer({ key: event.key,
             shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing })) {
             event.preventDefault(); void submit();
           } }} />
@@ -962,7 +963,8 @@ export function TurnProgress({ activities, onOpen, t }: { activities: WorkState[
       <strong>{t("timeline.progressTitle")}</strong><p>{current
         ? `${activityLabel(current.label_key, t)} · ${activityState(current.state, t)}`
         : t("timeline.progressBody")}</p></div>
-      <button type="button" onClick={onOpen}>{t("timeline.openActivity")}<Icon name="chevron" /></button></div>
+      <button type="button" onClick={onOpen} aria-label={t("timeline.openActivity")}
+        title={t("timeline.openActivity")}><Icon name="activity" /></button></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>
       <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
         <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>

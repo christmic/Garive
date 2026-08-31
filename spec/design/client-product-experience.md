@@ -112,13 +112,35 @@ never imports a feature or concrete IPC/HTTP adapter.
 | Conversation | Primary center column | Primary full-width destination |
 | Activity | Optional right inspector | Drill-in sheet/destination |
 | Composer | Sticky bottom of conversation | Safe-area-aware sticky bottom |
-| System state | Compact top status and inline notices | Compact top status and inline notices |
+| System state | Composer-bound execution state and inline notices | Composer-bound execution state and inline notices |
 
 The conversation column is content-first and has a readable maximum width.
 Internal IDs appear only in a copyable details view. Endpoint, credential,
 model deployment, and database fields never appear in the normal conversation
 surface. A developer Web composition may show its explicit Host URL in a
 separate connection screen.
+
+### Desktop composition contract
+
+Desktop and Web share the work DOM, tokens, keyboard model and responsive
+geometry. Desktop additionally owns native-window composition:
+
+- the primary title row is 34 points high and preserves the macOS traffic-light
+  safe zone in expanded, collapsed and narrow navigation states;
+- drag regions never cover an interactive control, and the restore/navigation
+  action remains reachable without colliding with native window controls;
+- the row presents one quiet route/task glyph and one-line document identity;
+  global search stays in Command-K and the rail instead of a permanent capsule;
+- execution state never duplicates into the title row: admitted Activity,
+  authority and stop remain attached to the bottom Composer;
+- Environment uses a compact overlay, while a committed file opens a real
+  resizable, tabbed, independently scrolling split workbench;
+- no logo-led browser header, invented avatar, fake sharing action or decorative
+  model selector may be added to imitate unavailable product authority.
+
+The Web shell uses the same hierarchy without the traffic-light inset or native
+drag behavior. Responsive reflow must not create a second Web-specific visual
+language.
 
 ### Task control and command center
 
@@ -203,6 +225,10 @@ a pending identity or redirects its result into the new selection.
 - Empty/whitespace-only input and input over the Host byte bound are disabled
   with an accessible explanation.
 - User input appears after durable start acknowledgement, not optimistic click.
+- While a Turn is following, the textarea remains editable as the selected
+  Session's next-instruction draft. It cannot submit until the Turn is terminal,
+  is never presented as queued work, and must survive the same preference and
+  restart boundary as an idle draft.
 - Following begins at the command's committed position. Reopening loads H2
   timeline then follows H1 from its watermark.
 - Disconnect preserves durable content and cursor, shows a non-terminal banner,

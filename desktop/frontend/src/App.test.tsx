@@ -191,7 +191,7 @@ describe("Desktop product experience", () => {
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(dialog.isConnected).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Quick switcher" }));
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(await screen.findByRole("dialog", { name: "Garive command center" })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Garive command center" })).toBeNull();
