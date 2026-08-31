@@ -946,6 +946,50 @@ kbd { font-size: var(--text-2xs); }
 .theme-dark .artifact-card, .theme-dark .deliverable-card, .theme-dark .artifact-preview { background: var(--surface-raised); }
 .theme-dark .workspace-panel, .theme-dark .workspace-panel .artifact-preview { background: var(--surface-canvas); }
 .theme-dark .host-identity-icon { background: var(--surface-subtle); }
+
+/* Codex-style overlay rails: scroll ownership remains available without a
+   permanent WebView stripe competing with the document edge. */
+:where(.conversation, .inspector-body, .command-scroll, .search-page, .content-page,
+  .workspace-list, .setup-flow, .setup-shell, .settings-panel, .agent-detail,
+  .agents-navigation, .settings-navigation, .artifact-preview-content pre) {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  transition: scrollbar-color var(--motion-base) ease;
+}
+
+:where(.conversation, .inspector-body, .command-scroll, .search-page, .content-page,
+  .workspace-list, .setup-flow, .setup-shell, .settings-panel, .agent-detail,
+  .agents-navigation, .settings-navigation, .artifact-preview-content pre):where(:hover, :focus-within) {
+  scrollbar-color: var(--scrollbar-thumb-hover) transparent;
+}
+
+:where(.conversation, .inspector-body, .command-scroll, .search-page, .content-page,
+  .workspace-list, .setup-flow, .setup-shell, .settings-panel, .agent-detail,
+  .agents-navigation, .settings-navigation, .artifact-preview-content pre)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(.conversation, .inspector-body, .command-scroll, .search-page, .content-page,
+  .workspace-list, .setup-flow, .setup-shell, .settings-panel, .agent-detail,
+  .agents-navigation, .settings-navigation, .artifact-preview-content pre)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(.conversation, .inspector-body, .command-scroll, .search-page, .content-page,
+  .workspace-list, .setup-flow, .setup-shell, .settings-panel, .agent-detail,
+  .agents-navigation, .settings-navigation, .artifact-preview-content pre)::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+:where(.conversation, .inspector-body, .command-scroll, .search-page, .content-page,
+  .workspace-list, .setup-flow, .setup-shell, .settings-panel, .agent-detail,
+  .agents-navigation, .settings-navigation, .artifact-preview-content pre):where(:hover, :focus-within)::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
 .sidebar-restore { display: grid; }
 .navigation-trigger, .navigation-backdrop { display: none; }
 .navigation-collapsed .sidebar-restore { display: grid; }

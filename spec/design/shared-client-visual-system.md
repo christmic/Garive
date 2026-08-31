@@ -149,6 +149,18 @@ shadows or rounded outer cards.
 - System focus, increased contrast, reduced motion and reduced transparency are
   first-class desktop states, not optional themes.
 
+### Scroll surfaces
+
+- Every independent scroll owner uses one overlay grammar across Desktop and
+  Web: the track and thumb are transparent at rest, then the thumb appears on
+  pointer hover or keyboard focus within that owner.
+- The interaction lane is 10 px. A 3 px transparent thumb border leaves a quiet
+  4 px rounded visible thumb using the strong border token; the track never
+  becomes an opaque rail.
+- Layouts that require a stable gutter may retain it, but the reserved space
+  must use the surrounding surface. Keyboard scrolling, focus order and scroll
+  semantics never depend on the visual thumb being present.
+
 ### File-document typography
 
 Rendered Markdown in the conversation and output layers uses the installed
