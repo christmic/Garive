@@ -16,14 +16,13 @@ adapter/browser revision in evidence and fails closed when a required command
 is unavailable. It never treats the online tip-of-tree document as a mutable
 runtime dependency.
 
-V1 admits only `Browser.getVersion`, managed blank-page `Target.createTarget`,
-flat `Target.attachToTarget`, `Accessibility.enable|disable|getFullAXTree`,
-bounded Page navigation/history/layout metrics, `DOM.focus|scrollIntoViewIfNeeded|getBoxModel`,
-and bounded `Input.dispatchKeyEvent|dispatchMouseEvent|insertText`. The adapter
-freezes the experimental `Input.insertText` shape reviewed against the official
-tip-of-tree protocol; absence is a closed protocol failure. Every semantic
-element operation needs a constrained typed builder; v1 does not expose `Runtime.evaluate`,
-`Runtime.callFunctionOn`, arbitrary scripts or unknown CDP methods.
+V3 admits only the exact typed Browser/Target/Accessibility/Page/DOM/Input
+methods used by this contract. It includes Managed `Browser.setDownloadBehavior`
+with the single closed `deny` shape, bounded target discovery/attachment,
+frame-owner resolution and one fixed `Runtime.callFunctionOn` declaration for
+native select. The adapter freezes experimental shapes reviewed against the
+official tip-of-tree protocol; absence is a closed protocol failure. It does
+not expose `Runtime.evaluate`, arbitrary scripts or unknown CDP methods.
 
 ## Construction and scope
 
@@ -53,7 +52,17 @@ then waits for the exact `domContentEventFired`, `loadEventFired`, or main-frame
 `lifecycleEvent{name=networkIdle}` requested by T2. It separately consumes the
 same main frame's `frameNavigated` event and returns the committed final URL for
 Runtime redirect-origin revalidation. The early `Page.navigate` response alone
-is never treated as completion.
+is never treated as page completion. Its explicit `isDownload=true` result,
+with either no error or Chrome's exact paired `net::ERR_ABORTED`, is instead a
+typed terminal download outcome and skips page-load event waits. Any other
+paired error remains a protocol failure.
+
+Before the first Managed observation, Runtime calls the typed browser-level
+download policy operation with `behavior=deny`, no path and no events. Attached
+ports never call that browser-global command. A download navigation becomes a
+trustworthy unsupported receipt only when the unchanged current history entry
+proves that no page navigation committed; absent or changed evidence is
+uncertain.
 
 Engine and Runtime share one parsed canonical HTTP(S) origin function. It
 requires an explicit valid port, rejects URL user information, normalizes host
@@ -131,8 +140,8 @@ dispatch; a missing adjacent entry is a trustworthy unsupported result. Reload
 discards stale queued load events and waits for a fresh load event. All three
 history mutations cross the boundary once, prove the resulting current entry,
 and rotate the revision. A later observe, explicitly chained from the prior
-snapshot, creates the next observation. Select stays unsupported until its
-semantic binding lands.
+snapshot, creates the next observation. Native select is bound through one
+fixed function declaration and a structured option argument.
 
 ## Acceptance
 

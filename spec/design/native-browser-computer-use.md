@@ -195,6 +195,23 @@ only with their revalidated committed origin. Post-attach mismatch closes the
 exact pending target and rejects admission. Cleanup uncertainty poisons the
 parent port rather than guessing whether the popup remains live.
 
+### Download boundary
+
+T2 v1 does not grant file downloads. Before a Managed page becomes observable,
+Runtime must configure the owned browser context with native download behavior
+`deny`; it supplies neither a download path nor download bytes. An Attached
+session may not change a personal browser's global download policy and cannot
+claim this Managed guarantee until its verified attachment boundary supplies
+an equivalent per-grant policy.
+
+CDP `Page.navigate` reporting `isDownload=true` is a terminal protocol outcome,
+not a page-load transition. The adapter must not wait for load or frame-navigate
+events that the download does not produce. Runtime returns a trustworthy
+`native_action_unsupported` failure only after proving the current top-level
+history entry is identical to its pre-dispatch entry. Missing or changed
+history evidence is `native_action_uncertain`. A download outcome never updates
+the admitted page origin and never produces a resulting snapshot.
+
 Popup creation may change the browser foreground target. After auditing all
 attributable pages, Runtime restores the exact admitted parent target before a
 later action can use its snapshot. Attached sessions neither perform this
