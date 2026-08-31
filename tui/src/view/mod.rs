@@ -209,9 +209,6 @@ pub(super) fn safe_text(value: &str) -> String {
 fn short_id(value: &str) -> &str {
     value.get(..12).unwrap_or(value)
 }
-fn short_tail(value: &str) -> &str {
-    value.get(value.len().saturating_sub(6)..).unwrap_or(value)
-}
 fn empty_title(value: BootState) -> &'static str {
     match value {
         BootState::Cold | BootState::Loading => "  Connecting to your durable workspace…",
