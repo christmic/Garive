@@ -29,7 +29,8 @@ use uuid::Uuid;
 
 use crate::{workspace::WorkspaceWriteRoot, DesktopWorkspaceService};
 
-const WRITE_TOOL_REVISION: &str = "desktop.workspace.write-file.v1";
+/// Exact immutable revision installed in the Desktop Agent snapshot.
+pub const DESKTOP_WRITE_TOOL_REVISION: &str = "desktop.workspace.write-file.v1";
 const MAX_ARTIFACT_NAME_BYTES: usize = 128;
 const MAX_ARTIFACT_BYTES: usize = 256 * 1_024;
 
@@ -70,13 +71,9 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
             .read_facts(&committed.session_id, 0, committed.committed_position, None)
             .map_err(|_| LocalWorkerError::DurabilityUnavailable)?;
         let snapshot = ExecutionAuthoritySnapshot::from_facts(&facts)?;
-        let access_policy = write_access_policy(&snapshot)?;
+        let access_policy = write_access_policy()?;
         let sandbox_requirements = write_sandbox_requirements()?;
-        let definition = write_definition(
-            &snapshot,
-            access_policy.clone(),
-            sandbox_requirements.clone(),
-        )?;
+        let definition = desktop_workspace_tool_definition()?;
         let tool_revision = definition.revision().to_owned();
         let preparation = WorkspacePreparation(
             ToolCatalog::new([definition.clone()])
@@ -577,41 +574,16 @@ fn arguments(value: &str) -> Result<WriteArguments, String> {
     Ok(arguments)
 }
 
-fn write_definition(
-    snapshot: &ExecutionAuthoritySnapshot,
-    access_policy: ToolAccessPolicyV1,
-    sandbox_requirements: SandboxRequirementsV1,
-) -> Result<ToolDefinition, LocalWorkerError> {
-    let writable = snapshot
-        .attachments
-        .values()
-        .filter(|attachment| attachment.access == "read_write")
-        .collect::<Vec<_>>();
-    let workspace_ids = writable
-        .iter()
-        .map(|attachment| Value::String(attachment.workspace_id.clone()))
-        .collect::<Vec<_>>();
-    let workspace_schema = if workspace_ids.is_empty() {
-        json!({"type":"string","minLength":1,"maxLength":64})
-    } else {
-        json!({"type":"string","enum":workspace_ids})
-    };
-    let revision_digest = hex_digest(
-        writable
-            .iter()
-            .map(|attachment| format!("{}:{}", attachment.workspace_id, attachment.grant_revision))
-            .collect::<Vec<_>>()
-            .join("|")
-            .as_bytes(),
-    );
+/// Constructs the exact Tool definition admitted by the Desktop Agent snapshot.
+pub fn desktop_workspace_tool_definition() -> Result<ToolDefinition, LocalWorkerError> {
     ToolDefinition::new_v3(
         "write_file",
-        format!("{WRITE_TOOL_REVISION}.{}", &revision_digest[..16]),
+        DESKTOP_WRITE_TOOL_REVISION,
         "Create one new approved artifact at the root of an attached writable Workspace.",
         json!({
             "type":"object",
             "properties":{
-                "workspace_id":workspace_schema,
+                "workspace_id":{"type":"string","minLength":1,"maxLength":64},
                 "artifact_name":{"type":"string","minLength":1,"maxLength":MAX_ARTIFACT_NAME_BYTES},
                 "content_utf8":{"type":"string","maxLength":MAX_ARTIFACT_BYTES}
             },
@@ -621,26 +593,18 @@ fn write_definition(
         ExecutionRequirements::new([ExecutionCapability::FilesystemWrite], 5_000, 4_096)
             .map_err(|_| LocalWorkerError::InvalidComposition)?,
         ReplayClass::NeverReplay,
-        access_policy,
+        write_access_policy()?,
         "desktop.workspace.write-access.v1",
-        sandbox_requirements,
+        write_sandbox_requirements()?,
     )
     .map_err(|_| LocalWorkerError::InvalidComposition)
 }
 
-fn write_access_policy(
-    snapshot: &ExecutionAuthoritySnapshot,
-) -> Result<ToolAccessPolicyV1, LocalWorkerError> {
-    let roots = snapshot
-        .attachments
-        .values()
-        .filter(|attachment| attachment.access == "read_write")
-        .map(|attachment| AccessPolicyEntry::new(&attachment.workspace_id, [AccessMode::Write]))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| LocalWorkerError::InvalidComposition)?;
+fn write_access_policy() -> Result<ToolAccessPolicyV1, LocalWorkerError> {
     ToolAccessPolicyV1::new(
         "desktop.workspace.write-policy.v1",
-        roots,
+        [AccessPolicyEntry::new(".", [AccessMode::Write])
+            .map_err(|_| LocalWorkerError::InvalidComposition)?],
         [],
         [],
         [],
