@@ -29,7 +29,8 @@ use crate::{
         builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
         desktop_agent_installation_for_revision, desktop_workspace_agent_installation_for_revision,
         DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION, LEGACY_DESKTOP_AGENT_REVISION,
-        LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
+        LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION, MEMORY_DESKTOP_AGENT_REVISION,
+        MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION,
     },
     system_configuration::{
         MissingUsageDocument, OutputLimitDocument, TerminalActionDocument, MAX_DESKTOP_CONFIG_BYTES,
@@ -268,16 +269,23 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
                 .map_err(|_| DesktopConfigurationError::ConstructionFailure)
             })
             .transpose()?;
+        let knowledge = config
+            .knowledge
+            .as_ref()
+            .map(crate::desktop_knowledge::build_binding)
+            .transpose()?;
+        let mut capability_preparation =
+            CatalogueCapabilityPreparationFactory::new(agent_catalogue.clone(), memory);
+        if let Some(knowledge) = knowledge {
+            capability_preparation = capability_preparation.with_knowledge(knowledge);
+        }
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
             agent_catalogue: agent_catalogue.clone(),
             default_agent_definition_id,
             t1_host_system_config: self.t1_host_system_config.clone(),
-            capability_preparation: Some(Arc::new(CatalogueCapabilityPreparationFactory::new(
-                agent_catalogue,
-                memory,
-            ))),
+            capability_preparation: Some(Arc::new(capability_preparation)),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
@@ -329,6 +337,14 @@ fn agent_installations(
                 LEGACY_DESKTOP_AGENT_REVISION,
                 &document.agent_instance_namespace,
                 false,
+                false,
+            ),
+            MEMORY_DESKTOP_AGENT_REVISION => desktop_agent_installation_for_revision(
+                &document.definition_id,
+                MEMORY_DESKTOP_AGENT_REVISION,
+                &document.agent_instance_namespace,
+                true,
+                false,
             ),
             LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION => {
                 let capabilities = t1_host_system_config
@@ -340,6 +356,21 @@ fn agent_installations(
                     LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
                     &document.agent_instance_namespace,
                     &capabilities,
+                    false,
+                    false,
+                )
+            }
+            MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION => {
+                let capabilities = t1_host_system_config
+                    .ok_or(DesktopConfigurationError::ConstructionFailure)?
+                    .tool_capabilities()
+                    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+                desktop_workspace_agent_installation_for_revision(
+                    &document.definition_id,
+                    MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION,
+                    &document.agent_instance_namespace,
+                    &capabilities,
+                    true,
                     false,
                 )
             }

@@ -53,7 +53,8 @@ pub use knowledge_lifecycle::{
     KnowledgeLifecycleContext, PlannedKnowledgeCompletion, PreparedKnowledgeRequest,
 };
 pub use knowledge_recovery::{
-    derive_knowledge_recovery, KnowledgeRecoveryAction, KnowledgeRecoveryContext,
+    derive_knowledge_recovery, plan_knowledge_recovery_uncertain, KnowledgeRecoveryAction,
+    KnowledgeRecoveryContext,
 };
 pub use memory_authority::{authorize_memory_query, authorize_memory_write, MemoryAccessGrant};
 pub use memory_control_import::{plan_memory_repository_import, PlannedMemoryRepositoryImport};

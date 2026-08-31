@@ -65,6 +65,7 @@ pub struct DesktopSystemConfiguration {
     pub(crate) host: HostDocument,
     pub(crate) execution: ExecutionDocument,
     pub(crate) memory: Option<MemoryDocument>,
+    pub(crate) knowledge: Option<KnowledgeDocument>,
     pub(crate) http: HttpDocument,
     pub(crate) dispatch_capacity: usize,
     pub(crate) execution_lease_duration_ms: u64,
@@ -108,15 +109,18 @@ impl DesktopSystemConfiguration {
             raw.default_agent_definition_id.is_some(),
             raw.installed_agents.is_some(),
             raw.memory.is_some(),
+            raw.knowledge.is_some(),
         ) {
-            (1, None, None, true, false, false, false) => {}
-            (2, Some(revision), Some(setup_id), true, false, false, false)
+            (1, None, None, true, false, false, false, false) => {}
+            (2, Some(revision), Some(setup_id), true, false, false, false, false)
                 if revision > 0 && !setup_id.is_empty() => {}
-            (3, Some(revision), Some(setup_id), false, true, true, false)
+            (3, Some(revision), Some(setup_id), false, true, true, false, false)
                 if revision > 0 && !setup_id.is_empty() => {}
-            (4, Some(revision), Some(setup_id), false, true, true, true)
+            (4, Some(revision), Some(setup_id), false, true, true, true, false)
                 if revision > 0 && !setup_id.is_empty() => {}
-            (1..=4, _, _, _, _, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
+            (5, Some(revision), Some(setup_id), false, true, true, true, true)
+                if revision > 0 && !setup_id.is_empty() => {}
+            (1..=5, _, _, _, _, _, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
             _ => return Err(DesktopConfigurationError::UnsupportedVersion),
         }
         let database_file = Path::new(&raw.database_file);
@@ -155,6 +159,7 @@ impl DesktopSystemConfiguration {
             host: raw.host,
             execution: raw.execution,
             memory: raw.memory,
+            knowledge: raw.knowledge,
             http: raw.http,
             dispatch_capacity: raw.dispatch_capacity,
             execution_lease_duration_ms: raw.execution_lease_duration_ms,
@@ -220,6 +225,8 @@ struct RawDocument {
     execution: ExecutionDocument,
     #[serde(default)]
     memory: Option<MemoryDocument>,
+    #[serde(default)]
+    knowledge: Option<KnowledgeDocument>,
     http: HttpDocument,
     dispatch_capacity: usize,
     execution_lease_duration_ms: u64,
@@ -316,6 +323,22 @@ pub(crate) struct MemoryDocument {
     pub(crate) max_id_bytes: usize,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct KnowledgeDocument {
+    pub(crate) connector_id: String,
+    pub(crate) source_id: String,
+    pub(crate) source_revision: String,
+    pub(crate) source_snapshot_digest: String,
+    pub(crate) request_policy_revision: String,
+    pub(crate) max_chunks: u32,
+    pub(crate) max_total_bytes: u64,
+    pub(crate) deadline_budget_ms: u64,
+    pub(crate) max_documents: usize,
+    pub(crate) max_document_bytes: usize,
+    pub(crate) max_total_document_bytes: usize,
+}
+
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OutputLimitDocument {
@@ -398,6 +421,23 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
                 || memory.max_content_bytes == 0
                 || memory.max_id_bytes == 0
         })
+        || raw.knowledge.as_ref().is_some_and(|knowledge| {
+            [
+                knowledge.connector_id.as_str(),
+                knowledge.source_id.as_str(),
+                knowledge.source_revision.as_str(),
+                knowledge.request_policy_revision.as_str(),
+            ]
+            .iter()
+            .any(|value| value.is_empty() || value.len() > 256 || value.trim() != *value)
+                || !valid_digest(&knowledge.source_snapshot_digest)
+                || knowledge.max_chunks == 0
+                || knowledge.max_total_bytes == 0
+                || knowledge.deadline_budget_ms == 0
+                || knowledge.max_documents == 0
+                || knowledge.max_document_bytes == 0
+                || knowledge.max_total_document_bytes == 0
+        })
     {
         return Err(DesktopConfigurationError::InvalidValue);
     }
@@ -417,6 +457,13 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
         validate_agent(agent, raw.host.activity)?;
     }
     Ok(())
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn agent_documents(

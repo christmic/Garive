@@ -489,6 +489,19 @@ async fn committed_setup_constructs_runtime_after_explicit_restart() {
         .commit(&plan.plan_digest, "restart-secret")
         .expect("committed setup");
     assert_eq!(receipt.configuration_revision, 1);
+    let stored: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(directory.path().join("desktop-v1.json")).expect("stored config"),
+    )
+    .expect("stored JSON");
+    assert_eq!(stored["schema_version"], 5);
+    assert_eq!(
+        stored["knowledge"]["connector_id"],
+        "desktop.static-system-guide.v1"
+    );
+    assert_eq!(
+        stored["installed_agents"][0]["definition_revision"],
+        "desktop.agent.v3"
+    );
 
     let restarted = governed_state(&directory.path().join("garive-desktop.db"));
     let provider = FileDesktopConfigurationProvider::new(
@@ -512,11 +525,26 @@ async fn committed_setup_constructs_runtime_after_explicit_restart() {
         .iter()
         .position(|fact| fact.kind.as_str() == "memory.retrieval_recorded")
         .unwrap();
+    let knowledge_requested = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "knowledge.requested")
+        .unwrap();
+    let knowledge_dispatched = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "knowledge.dispatched")
+        .unwrap();
+    let knowledge_completed = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "knowledge.completed")
+        .unwrap();
     let model = facts
         .iter()
         .position(|fact| fact.kind.as_str() == "model.started")
         .unwrap();
     assert!(memory < model);
+    assert!(knowledge_requested < knowledge_dispatched);
+    assert!(knowledge_dispatched < knowledge_completed);
+    assert!(knowledge_completed < model);
 }
 
 #[test]

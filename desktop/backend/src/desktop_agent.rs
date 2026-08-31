@@ -17,9 +17,11 @@ use garive_tools::{
 use crate::workspace_execution::desktop_workspace_tool_definition;
 
 /// Exact revision of the built-in Desktop Agent definition.
-pub const DESKTOP_AGENT_REVISION: &str = "desktop.agent.v2";
+pub const DESKTOP_AGENT_REVISION: &str = "desktop.agent.v3";
 /// Exact revision of the built-in T1 Workspace Agent definition.
-pub const DESKTOP_WORKSPACE_AGENT_REVISION: &str = "desktop.workspace-agent.v2";
+pub const DESKTOP_WORKSPACE_AGENT_REVISION: &str = "desktop.workspace-agent.v3";
+pub(crate) const MEMORY_DESKTOP_AGENT_REVISION: &str = "desktop.agent.v2";
+pub(crate) const MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION: &str = "desktop.workspace-agent.v2";
 pub(crate) const LEGACY_DESKTOP_AGENT_REVISION: &str = "desktop.agent.v1";
 pub(crate) const LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION: &str = "desktop.workspace-agent.v1";
 /// Stable local Memory capability installed by Desktop Agent v2.
@@ -29,6 +31,13 @@ pub const DESKTOP_MEMORY_CAPABILITY_REVISION: &str = "memory.local.v1";
 /// Digest of the v1 Desktop local Memory descriptor meaning.
 pub const DESKTOP_MEMORY_DESCRIPTOR_DIGEST: &str =
     "d8fb67fd95277dc8268778a19b13c0dbf8c8cfde7686b2853245c4ca75f4b02e";
+/// Stable static Knowledge capability installed by Desktop Agent v3.
+pub const DESKTOP_KNOWLEDGE_CAPABILITY_NAME: &str = "knowledge.static";
+/// Exact static Knowledge descriptor revision installed by Desktop Agent v3.
+pub const DESKTOP_KNOWLEDGE_CAPABILITY_REVISION: &str = "knowledge.static.v1";
+/// Digest of the v1 Desktop static Knowledge descriptor meaning.
+pub const DESKTOP_KNOWLEDGE_DESCRIPTOR_DIGEST: &str =
+    "c70e7bfbd86f858665c271f6fc8ae32bc47cba03b2deee1d11150cb969a7c8ff";
 const GOVERNANCE_ID: &str = "desktop.governance";
 const GOVERNANCE_REVISION: &str = "desktop.governance.v1";
 const WORKSPACE_GOVERNANCE_ID: &str = "desktop.workspace-governance";
@@ -50,6 +59,7 @@ pub fn builtin_desktop_agent_installation(
         DESKTOP_AGENT_REVISION,
         instance_namespace,
         true,
+        true,
     )
 }
 
@@ -58,6 +68,7 @@ pub(crate) fn desktop_agent_installation_for_revision(
     definition_revision: &str,
     instance_namespace: &str,
     memory: bool,
+    knowledge: bool,
 ) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
     let tool = desktop_workspace_tool_definition().map_err(|_| DesktopAgentCompositionError)?;
     resolve_desktop_installation(
@@ -69,6 +80,7 @@ pub(crate) fn desktop_agent_installation_for_revision(
         GOVERNANCE_REVISION,
         BTreeSet::from(["filesystem_write".to_owned()]),
         memory,
+        knowledge,
     )
 }
 
@@ -84,6 +96,7 @@ pub fn builtin_desktop_workspace_agent_installation(
         instance_namespace,
         t1,
         true,
+        true,
     )
 }
 
@@ -93,6 +106,7 @@ pub(crate) fn desktop_workspace_agent_installation_for_revision(
     instance_namespace: &str,
     t1: &AgentToolCapabilities,
     memory: bool,
+    knowledge: bool,
 ) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
     let expected = BTreeSet::from([
         T1_APPLY_PATCH,
@@ -131,6 +145,7 @@ pub(crate) fn desktop_workspace_agent_installation_for_revision(
             "process".to_owned(),
         ]),
         memory,
+        knowledge,
     )
 }
 
@@ -144,6 +159,7 @@ fn resolve_desktop_installation(
     governance_revision: &str,
     requirement_capabilities: BTreeSet<String>,
     memory: bool,
+    knowledge: bool,
 ) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
     let interaction_modes = BTreeSet::from([InteractionMode::Approval]);
     let limits = DefaultLimits::new(12, Some(131_072), Some(8_192), Some(600_000))
@@ -154,6 +170,13 @@ fn resolve_desktop_installation(
         exact_revision: DESKTOP_MEMORY_CAPABILITY_REVISION.into(),
         contract_version: garive_runtime::LOCAL_MEMORY_CONTRACT_VERSION,
         descriptor_digest: DESKTOP_MEMORY_DESCRIPTOR_DIGEST.into(),
+    };
+    let knowledge_descriptor = CapabilityDescriptor {
+        kind: CapabilityKind::Knowledge,
+        name: DESKTOP_KNOWLEDGE_CAPABILITY_NAME.into(),
+        exact_revision: DESKTOP_KNOWLEDGE_CAPABILITY_REVISION.into(),
+        contract_version: garive_runtime::LOCAL_KNOWLEDGE_CONTRACT_VERSION,
+        descriptor_digest: DESKTOP_KNOWLEDGE_DESCRIPTOR_DIGEST.into(),
     };
     let mut capabilities = tools
         .iter()
@@ -169,6 +192,18 @@ fn resolve_desktop_installation(
                 DESKTOP_MEMORY_CAPABILITY_NAME,
                 DESKTOP_MEMORY_CAPABILITY_REVISION,
                 garive_runtime::LOCAL_MEMORY_CONTRACT_VERSION,
+                true,
+            )
+            .map_err(|_| DesktopAgentCompositionError)?,
+        );
+    }
+    if knowledge {
+        capabilities.push(
+            CapabilityReference::new(
+                CapabilityKind::Knowledge,
+                DESKTOP_KNOWLEDGE_CAPABILITY_NAME,
+                DESKTOP_KNOWLEDGE_CAPABILITY_REVISION,
+                garive_runtime::LOCAL_KNOWLEDGE_CONTRACT_VERSION,
                 true,
             )
             .map_err(|_| DesktopAgentCompositionError)?,
@@ -199,7 +234,11 @@ fn resolve_desktop_installation(
             instructions: Vec::new(),
             model_roles: Vec::new(),
             tools,
-            capability_descriptors: memory.then_some(memory_descriptor).into_iter().collect(),
+            capability_descriptors: memory
+                .then_some(memory_descriptor)
+                .into_iter()
+                .chain(knowledge.then_some(knowledge_descriptor))
+                .collect(),
             governance_policies: vec![GovernancePolicyCandidate {
                 policy_id: governance_id.into(),
                 exact_revision: governance_revision.into(),
@@ -243,10 +282,18 @@ mod tests {
             right.snapshot().snapshot_digest()
         );
         assert_eq!(left.tool_capabilities().definitions.len(), 1);
-        assert_eq!(left.snapshot().capabilities().descriptors.len(), 1);
+        assert_eq!(left.snapshot().capabilities().descriptors.len(), 2);
         assert_eq!(
-            left.snapshot().capabilities().descriptors[0].name,
-            DESKTOP_MEMORY_CAPABILITY_NAME
+            left.snapshot()
+                .capabilities()
+                .descriptors
+                .iter()
+                .map(|descriptor| descriptor.name.as_str())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                DESKTOP_KNOWLEDGE_CAPABILITY_NAME,
+                DESKTOP_MEMORY_CAPABILITY_NAME,
+            ])
         );
         assert_eq!(
             left.tool_capabilities().definitions[0].revision(),
@@ -258,9 +305,19 @@ mod tests {
             LEGACY_DESKTOP_AGENT_REVISION,
             "desktop-main",
             false,
+            false,
         )
         .unwrap();
         assert!(legacy.snapshot().capabilities().descriptors.is_empty());
+        let memory = desktop_agent_installation_for_revision(
+            "garive-work",
+            MEMORY_DESKTOP_AGENT_REVISION,
+            "desktop-main",
+            true,
+            false,
+        )
+        .unwrap();
+        assert_eq!(memory.snapshot().capabilities().descriptors.len(), 1);
     }
 
     #[test]

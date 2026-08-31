@@ -53,6 +53,7 @@ mod sandbox_recovery;
 mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
+mod static_knowledge;
 mod t1_dispatch;
 #[cfg(unix)]
 mod t1_system_composition;
@@ -74,15 +75,15 @@ pub use core_bridge::{
     execute_durable_agent_with_skill_activation, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,
     plan_classified_memory_write, plan_core_terminal, plan_knowledge_completed,
-    plan_knowledge_dispatched, plan_knowledge_failed, plan_knowledge_requested,
-    plan_memory_archive, plan_memory_audit, plan_memory_distillation_checkpoint,
-    plan_memory_erasure_receipt, plan_memory_forget, plan_memory_maintenance_decision,
-    plan_memory_obligation, plan_memory_observation, plan_memory_promotion_receipt,
-    plan_memory_promotion_request, plan_memory_recall, plan_memory_repository_import,
-    plan_memory_retrieval, plan_memory_tombstone, plan_memory_write, plan_model_prepared,
-    plan_model_started, plan_model_terminal, plan_model_uncertain, plan_schedule_cancelled,
-    plan_schedule_claimed, plan_schedule_created, plan_schedule_exhausted, plan_schedule_failed,
-    plan_schedule_fired, plan_schedule_skipped, plan_skill_activation,
+    plan_knowledge_dispatched, plan_knowledge_failed, plan_knowledge_recovery_uncertain,
+    plan_knowledge_requested, plan_memory_archive, plan_memory_audit,
+    plan_memory_distillation_checkpoint, plan_memory_erasure_receipt, plan_memory_forget,
+    plan_memory_maintenance_decision, plan_memory_obligation, plan_memory_observation,
+    plan_memory_promotion_receipt, plan_memory_promotion_request, plan_memory_recall,
+    plan_memory_repository_import, plan_memory_retrieval, plan_memory_tombstone, plan_memory_write,
+    plan_model_prepared, plan_model_started, plan_model_terminal, plan_model_uncertain,
+    plan_schedule_cancelled, plan_schedule_claimed, plan_schedule_created, plan_schedule_exhausted,
+    plan_schedule_failed, plan_schedule_fired, plan_schedule_skipped, plan_skill_activation,
     reconstruct_memory_hypothesis_projection, reconstruct_memory_maintenance_projection,
     reconstruct_memory_repository, reconstruct_memory_repository_projection,
     reconstruct_memory_state, verify_memory_evidence, AuthorityDecision, AuthorityFuture,
@@ -247,6 +248,10 @@ pub use sqlite_ledger::{
     ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryContextRepositorySnapshot,
     MemoryRepositoryCommitError, MemoryRepositoryImportCommitError, ScheduleLease,
     ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger, SqliteLedgerError,
+};
+pub use static_knowledge::{
+    KnowledgeConnectorClock, StaticKnowledgeConnector, StaticKnowledgeDocument,
+    StaticKnowledgeError, SystemKnowledgeConnectorClock,
 };
 pub use t1_dispatch::t1_dispatch_attempt_id;
 #[cfg(unix)]

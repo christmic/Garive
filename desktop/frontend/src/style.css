@@ -701,9 +701,9 @@ kbd { font-size: var(--text-2xs); }
 @media (prefers-reduced-motion: reduce) { .live-pulse > span, .live-answer .result-markdown::after { animation: none; } }
 
 .composer-wrap { padding: 24px 24px 8px; background: linear-gradient(transparent, var(--surface-canvas) 24%, var(--surface-canvas)); }
-.composer { width: min(39rem, 100%); border-color: var(--border-strong); border-radius: var(--radius-composer); background: var(--surface-raised); box-shadow: var(--shadow-raised); }
+.composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-raised); box-shadow: var(--shadow-composer); }
 .composer.busy { opacity: 1; }
-.composer:focus-within { border-color: var(--text-tertiary); box-shadow: var(--shadow-raised); }
+.composer:focus-within { box-shadow: var(--shadow-composer); }
 .composer textarea { min-height: 30px; max-height: 168px; padding: 6px 14px 0; font-size: var(--text-md); line-height: 1.5; }
 .composer-toolbar { min-height: 32px; padding: 0 5px 2px 6px; }
 .composer-tools { gap: 4px; }
@@ -719,6 +719,7 @@ kbd { font-size: var(--text-2xs); }
 .composer-stop-button { color: var(--surface-canvas); background: var(--text-primary); }
 .composer-stop-button:hover { background: var(--text-secondary); }
 .composer-stop-button svg { width: 15px; fill: currentColor; stroke-width: 0; }
+@supports (corner-shape: superellipse(1.5)) { .composer { corner-shape: superellipse(1.5); } }
 .conversation-tail-button { bottom: 132px; }
 .error-banner { bottom: 136px; }
 .approval-card { border-color: var(--border-subtle); border-left-color: var(--state-attention); color: var(--text-primary); background: color-mix(in srgb, var(--state-attention-surface) 22%, var(--surface-raised)); }

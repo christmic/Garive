@@ -12,11 +12,12 @@ use serde_json::Value;
 
 use crate::runtime_turn::recovered_completed_iterations;
 use crate::{
-    derive_runtime_recovery, plan_core_terminal, plan_recovery_action_facts, plan_recovery_restart,
+    derive_knowledge_recovery, derive_runtime_recovery, plan_core_terminal,
+    plan_knowledge_recovery_uncertain, plan_recovery_action_facts, plan_recovery_restart,
     recover_f0_prepared_with_port, select_runtime_recovery, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, ExecutorRecoveryRequest, GovernedEffectConfig,
-    LocalGovernedExecutionFactory, RecoveryRestartCommand, RuntimeCommandId, RuntimeRecoveryAction,
-    SqliteGovernedEffectPort, SqliteLedger,
+    EffectiveRuntimeLimits, ExecutorRecoveryRequest, GovernedEffectConfig, KnowledgeRecoveryAction,
+    KnowledgeRecoveryContext, LocalGovernedExecutionFactory, RecoveryRestartCommand,
+    RuntimeCommandId, RuntimeRecoveryAction, SqliteGovernedEffectPort, SqliteLedger,
 };
 
 /// Stable secret-free local restart failure.
@@ -96,6 +97,31 @@ fn recover_local_dispatches_inner(
                 let snapshot = ledger
                     .load_turn(&turn_id)
                     .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
+                match recover_pending_knowledge(
+                    ledger,
+                    &session_id,
+                    &turn_id,
+                    &snapshot,
+                    recorded_at,
+                )? {
+                    PendingKnowledgeRecovery::CommittedUncertainty => continue,
+                    PendingKnowledgeRecovery::RedispatchCurrentExecution => {
+                        let execution_id = latest(&snapshot, "execution.started")?
+                            .execution_id
+                            .clone()
+                            .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+                        output.push(committed_turn(
+                            &snapshot,
+                            session_id.clone(),
+                            turn_id.clone(),
+                            execution_id,
+                            snapshot.session_version,
+                            snapshot.through_position,
+                        )?);
+                        break;
+                    }
+                    PendingKnowledgeRecovery::None => {}
+                }
                 let recovery = derive_runtime_recovery(&snapshot, max_recoveries)
                     .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
                 let action = select_runtime_recovery(recovery);
@@ -167,6 +193,70 @@ fn recover_local_dispatches_inner(
         }
     }
     Ok(output)
+}
+
+enum PendingKnowledgeRecovery {
+    None,
+    RedispatchCurrentExecution,
+    CommittedUncertainty,
+}
+
+fn recover_pending_knowledge(
+    ledger: &mut SqliteLedger,
+    session_id: &garive_ledger::SessionId,
+    turn_id: &garive_ledger::TurnId,
+    snapshot: &TurnSnapshot,
+    recorded_at: &str,
+) -> Result<PendingKnowledgeRecovery, LocalRecoveryError> {
+    let execution_id = latest(snapshot, "execution.started")?
+        .execution_id
+        .clone()
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let mut request_ids = snapshot
+        .facts
+        .iter()
+        .filter(|fact| {
+            fact.kind.as_str() == "knowledge.requested"
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .map(|fact| payload(fact).and_then(|value| text(&value, "request_id").map(str::to_owned)))
+        .collect::<Result<Vec<_>, _>>()?;
+    request_ids.sort();
+    if request_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(LocalRecoveryError::CorruptRecoveryState);
+    }
+    let mut facts = Vec::new();
+    let mut redispatch = false;
+    for request_id in request_ids {
+        let context = KnowledgeRecoveryContext {
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            execution_id: execution_id.clone(),
+            through_position: snapshot.through_position,
+            request_id,
+        };
+        match derive_knowledge_recovery(ledger, &context)
+            .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?
+        {
+            KnowledgeRecoveryAction::ClassifyUncertain { .. } => facts.push(
+                plan_knowledge_recovery_uncertain(ledger, &context, recorded_at)
+                    .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
+            ),
+            KnowledgeRecoveryAction::RedispatchSameRequest { .. } => redispatch = true,
+            KnowledgeRecoveryAction::ReturnTerminal { .. } => {}
+        }
+    }
+    if !facts.is_empty() {
+        ledger
+            .commit(session_id.clone(), snapshot.session_version, facts)
+            .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
+        return Ok(PendingKnowledgeRecovery::CommittedUncertainty);
+    }
+    Ok(if redispatch {
+        PendingKnowledgeRecovery::RedispatchCurrentExecution
+    } else {
+        PendingKnowledgeRecovery::None
+    })
 }
 
 fn reconcile_lost_process(
