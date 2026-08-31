@@ -141,6 +141,11 @@ shadows or rounded outer cards.
 - Window resize preserves the active task, draft, scroll owner and selected
   output. Pane resizing is independent of browser zoom and persists only a
   bounded, non-sensitive width preference.
+- Desktop restores the main native window's monitor-valid position, size,
+  maximized state and full-screen state. It is created hidden and shown after
+  restoration to avoid a centered-to-restored flash. Visibility is used only
+  for that startup handoff; decorations remain immutable product configuration,
+  and no window-state command is delegated to the Web client.
 - The whole 34 px title row participates in native window dragging except
   admitted controls, tabs and the resizer. Tauri 2.11 Desktop uses its deep
   drag-region mode so non-interactive title descendants retain the native hit

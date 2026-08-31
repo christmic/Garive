@@ -478,6 +478,18 @@ left only incidental gaps draggable. The shipping Tauri 2.11.5 runtime supports
 non-interactive descendants while preserving their nested buttons. The unused,
 hidden 28 px drag element was removed rather than kept as false evidence.
 
+### VII. Native window continuity
+
+The former Desktop always opened a centered 1180×780 frame regardless of the
+operator's previous workspace. The official Tauri window-state contract saves
+and restores native frame state after creation, and recommends creating the
+window hidden to prevent a visible centered-to-restored jump. Garive now tracks
+only the `main` window and admits size, monitor-valid position, maximized,
+full-screen and startup-visible flags. `DECORATIONS` is intentionally excluded:
+overlay titlebar and traffic-light composition remain immutable product
+configuration. No window-state permission is granted to the frontend; the Rust
+host owns automatic restore/save across normal application lifecycle events.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
