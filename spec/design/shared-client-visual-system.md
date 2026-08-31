@@ -196,6 +196,12 @@ The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
 
+Conversation content has no permanent top shadow. Once its scroll owner moves
+more than 1 px from the top, a pointer-transparent 16 px surface-to-transparent
+fade appears directly beneath the title row; it disappears again at the top.
+The state is shared by Desktop and Web, carries no accessibility semantics and
+respects the global reduced-motion contract.
+
 A blocking approval is a compact permission rail attached to the Composer, not
 a saturated warning card or a second dialog. It uses a neutral raised surface,
 one 2 px attention edge and a 24 px authority glyph. Exact scope, duration and

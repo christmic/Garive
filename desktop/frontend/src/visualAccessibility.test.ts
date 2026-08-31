@@ -100,6 +100,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
     expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");
     expect(CSS).toContain("background: var(--surface-composer)");
+    expect(CSS).toContain('.conversation-top-fade[data-visible="true"] { opacity: 1; }');
+    expect(CSS).toContain("height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent)");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
     expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");

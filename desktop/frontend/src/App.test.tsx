@@ -259,14 +259,22 @@ describe("Desktop product experience", () => {
     await screen.findByText("Durable product answer");
 
     const conversation = view.container.querySelector<HTMLElement>(".conversation")!;
+    const topFade = view.container.querySelector<HTMLElement>(".conversation-top-fade")!;
+    expect(topFade.dataset.visible).toBe("false");
     Object.defineProperties(conversation, {
       scrollHeight: { configurable: true, value: 1_000 },
       clientHeight: { configurable: true, value: 400 },
       scrollTop: { configurable: true, writable: true, value: 120 },
     });
     fireEvent.scroll(conversation);
+    expect(topFade.dataset.visible).toBe("true");
     const jump = await screen.findByRole("button", { name: "Jump to latest" });
     expect(conversation.scrollTop).toBe(120);
+    conversation.scrollTop = 0;
+    fireEvent.scroll(conversation);
+    expect(topFade.dataset.visible).toBe("false");
+    conversation.scrollTop = 120;
+    fireEvent.scroll(conversation);
     fireEvent.click(jump);
     expect(conversation.scrollTop).toBe(1_000);
     await waitFor(() => expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull());

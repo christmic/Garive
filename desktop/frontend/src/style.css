@@ -71,6 +71,8 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 
 .work-surface { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
 .conversation { min-height: 0; overflow: auto; scroll-behavior: smooth; }
+.conversation-top-fade { pointer-events: none; position: absolute; z-index: 2; top: 0; right: 0; left: 0; height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent); opacity: 0; transition: opacity var(--motion-base) ease; }
+.conversation-top-fade[data-visible="true"] { opacity: 1; }
 .conversation-tail-button { position: absolute; z-index: 4; right: 50%; bottom: 174px; display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-secondary); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: var(--shadow-raised); transform: translateX(50%); backdrop-filter: blur(12px); font-size: var(--text-xs); }
 .conversation-tail-button:hover { color: var(--text-primary); background: var(--surface-hover); }
 .conversation-tail-button svg { width: 13px; transform: rotate(90deg); }

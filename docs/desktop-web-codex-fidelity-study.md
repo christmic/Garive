@@ -490,6 +490,16 @@ overlay titlebar and traffic-light composition remain immutable product
 configuration. No window-state permission is granted to the frontend; the Rust
 host owns automatic restore/save across normal application lifecycle events.
 
+### VIII. Progressive conversation edge
+
+The installed Codex stylesheet defines a 16 px main-content top fade from the
+canvas surface to transparent, with opacity transitioning from zero to one only
+when the owning scroll surface reports the visible state. Garive previously
+kept a hard title-row/content seam for the whole task. Conversation now derives
+that state from its real scroll position: more than 1 px from the top shows the
+pointer-transparent fade, returning to the top removes it. The same React/CSS
+state is used by Desktop and Web and adds no focusable or announced element.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
