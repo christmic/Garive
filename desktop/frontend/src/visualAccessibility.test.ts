@@ -79,6 +79,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto auto");
     expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
     expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
+    expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
   });
 });
 

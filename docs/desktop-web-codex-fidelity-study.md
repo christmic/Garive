@@ -359,6 +359,22 @@ the same expanded semantics and zero document overflow. This follows the
 reference titlebar's quiet utility-action hierarchy without hiding state from
 assistive technology.
 
+### R. Installed Codex user-request geometry audit
+
+The installed ChatGPT/Codex bundle, version `26.825.51511` build `7377`, was
+inspected directly from its signed local `app.asar`; no screenshot inference or
+network copy was used for this measurement. Its conversation-block stylesheet
+sets user chat width to 70%, spacing to 0.25rem, and the temporary bubble radius
+to `5.5 × spacing`—22 px—with a continuously round corner shape. Its shared
+type tokens also confirm 11/12/14/16 px for xs/sm/base/lg.
+
+Garive still allowed user requests to occupy 82% of the 39rem thread and used a
+5 px lower-right tail corner. That produced a conventional messenger bubble
+inside an otherwise document-like work surface. User requests now use the
+resource-backed 70% bound and four continuous 22 px corners while retaining
+Garive's existing 14 px base text and outcome-first alignment. The extracted
+bundle is evidence only and is not redistributed in the repository.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
