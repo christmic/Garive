@@ -249,6 +249,24 @@ the same header position close the inspector. The secondary toolbar close was
 removed. This preserves both operations while making the current layer
 unambiguous.
 
+### L. First-run desktop continuity audit
+
+The Work surface had reached the reference density while first run still
+opened a 750 px floating card with a multicolor top rule, two ambient radial
+gradients, a 24 px radius, a separate shadow family and a blue marketing
+eyebrow. At 1280 × 800 its content started at x=368 instead of the established
+x=470 work axis. The result looked like a setup website embedded inside a
+desktop application.
+
+Setup now stays in the same rail/title shell and uses the 39 rem axis, neutral
+canvas, 24 px heading, 36 px controls, quiet three-step rail and continuous
+review rows. The logo/eyebrow treatment, gradient light field, colored top rule,
+hero card, backdrop blur and separate shadow/radius system are absent. The
+Connect, Review and Restart states were rendered and inspected; 720 px and
+480 px stable states retain exact viewport width and reflow the fields to one
+column. This is a consistency correction based on the observed desktop grammar,
+not a claim that the supplied screenshots showed Codex onboarding.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

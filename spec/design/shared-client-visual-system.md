@@ -142,6 +142,15 @@ separator; rows inside it use spacing or hover surfaces unless a semantic
 boundary requires a rule. Navigation groups use sentence case. Decorative
 gradients are forbidden in the application shell.
 
+First-run and reconfiguration remain inside that shell. They use the same
+39 rem work axis, canvas, title hierarchy, 34–36 px controls and quiet
+separators as Work. A setup route must not introduce a logo, marketing eyebrow,
+ambient glow, decorative gradient, floating hero card or a second radius/shadow
+system. Connect, Review and Restart are one compact progressive sequence;
+review facts are continuous rows rather than a dashboard of cards. At narrow
+widths the fields become one column while every label and action remains text
+visible.
+
 ### Fidelity geometry
 
 | Element | Comfortable target | Compact target |
