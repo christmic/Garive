@@ -102,7 +102,9 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 send "\033\[<0;21;7M"
                 expect "Status details"
                 send "\033"
+                after 100
                 send "\021"
+                expect "Garive?"
                 send "\r"
                 expect eof
             "#])
@@ -647,7 +649,9 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             send "\r"
             must_expect "No function keys are required." 30
             send "\033"
+            after 100
             send "\021"
+            after 100
             send "\r"
             must_expect "Terminal restored." 32
         "#])
