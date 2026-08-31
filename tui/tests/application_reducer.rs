@@ -9,8 +9,9 @@ mod application;
 mod input;
 
 use application::{
-    reduce, AppAction, AppModel, BootState, ConnectionState, ConversationLandmark, FocusTarget,
-    InspectorVariant, Overlay, TerminalSize, TimelineItem, TimelineRole,
+    reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
+    BootState, ConnectionState, ConversationLandmark, EffectFailure, FocusTarget, InspectorVariant,
+    Overlay, TerminalSize, TimelineItem, TimelineRole,
 };
 
 #[test]
@@ -94,6 +95,57 @@ fn blocking_overlays_own_focus_and_quit_requires_confirmation() {
     let exit = reduce(&mut model, AppAction::QuitConfirmed);
     assert!(model.quit_requested);
     assert_eq!(exit.len(), 1);
+}
+
+#[test]
+fn effects_have_monotonic_identity_and_exact_result_correlation() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::QuitConfirmation),
+        ..Default::default()
+    };
+    let first = reduce(&mut model, AppAction::QuitConfirmed).remove(0);
+    model.overlay = Some(Overlay::QuitConfirmation);
+    let second = reduce(&mut model, AppAction::QuitConfirmed).remove(0);
+    assert!(first.context.effect_id < second.context.effect_id);
+    assert_eq!(first.context.issued_generation, AppGeneration::initial());
+
+    let mut stale = completed(&first);
+    stale.context.issued_generation = AppGeneration(stale.context.issued_generation.0 + 1);
+    reduce(&mut model, AppAction::EffectFinished(stale));
+    assert!(model.effects.pending.contains_key(&first.context.effect_id));
+
+    let mut foreign = completed(&first);
+    foreign.context.session_id = Some("other-session".into());
+    reduce(&mut model, AppAction::EffectFinished(foreign));
+    assert!(model.effects.pending.contains_key(&first.context.effect_id));
+
+    reduce(&mut model, AppAction::EffectFinished(completed(&first)));
+    assert!(!model.effects.pending.contains_key(&first.context.effect_id));
+    assert!(model
+        .effects
+        .pending
+        .contains_key(&second.context.effect_id));
+
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(AppEffectResult {
+            context: second.context.clone(),
+            kind: second.kind,
+            outcome: AppEffectOutcome::Failed(EffectFailure::Internal),
+        }),
+    );
+    assert!(!model
+        .effects
+        .pending
+        .contains_key(&second.context.effect_id));
+}
+
+fn completed(effect: &AppEffect) -> AppEffectResult {
+    AppEffectResult {
+        context: effect.context.clone(),
+        kind: effect.kind,
+        outcome: AppEffectOutcome::Completed,
+    }
 }
 
 #[test]

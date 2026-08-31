@@ -308,3 +308,18 @@ fn command_for(session: &str, id: &str, text: &str) -> PendingCommand {
     .seal()
     .unwrap()
 }
+
+#[test]
+fn pending_command_debug_redacts_request_content() {
+    let command = command_for(
+        "session-redaction",
+        "command-redaction",
+        "USER_PROMPT_CANARY_DO_NOT_DISCLOSE",
+    );
+
+    let debug = format!("{command:?}");
+
+    assert!(!debug.contains("USER_PROMPT_CANARY_DO_NOT_DISCLOSE"));
+    assert!(!debug.contains("request_payload"));
+    assert!(debug.contains("command-redaction"));
+}

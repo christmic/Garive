@@ -84,10 +84,16 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         }
         AppAction::QuitConfirmed if model.overlay == Some(Overlay::QuitConfirmation) => {
             model.quit_requested = true;
-            vec![AppEffect {
-                kind: EffectKind::Exit,
-            }]
+            model
+                .effects
+                .issue(EffectKind::Exit, None, None)
+                .into_iter()
+                .collect()
         }
         AppAction::QuitConfirmed => Vec::new(),
+        AppAction::EffectFinished(result) => {
+            model.effects.finish(&result);
+            Vec::new()
+        }
     }
 }

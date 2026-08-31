@@ -5,7 +5,7 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
-use super::{InspectorState, LiveAnswerProjection, TurnBlock};
+use super::{EffectTracker, InspectorState, LiveAnswerProjection, TurnBlock};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
@@ -350,6 +350,7 @@ impl Default for ViewportState {
 
 #[derive(Debug, Default)]
 pub(crate) struct AppModel {
+    pub(crate) effects: EffectTracker,
     pub(crate) boot: BootState,
     pub(crate) focus: FocusTarget,
     pub(crate) prior_focus: FocusTarget,

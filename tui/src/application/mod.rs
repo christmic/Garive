@@ -7,7 +7,10 @@ mod turn_block;
 mod update;
 
 pub(crate) use action::AppAction;
-pub(crate) use effect::{AppEffect, EffectKind};
+pub(crate) use effect::{AppEffect, AppEffectResult, EffectKind, EffectTracker};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use effect::{AppEffectOutcome, AppGeneration, EffectFailure};
 pub(crate) use inspector::{
     InspectorActivation, InspectorEntry, InspectorState, InspectorTone, InspectorVariant,
 };

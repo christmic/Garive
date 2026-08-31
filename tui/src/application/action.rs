@@ -1,4 +1,4 @@
-use super::{FocusTarget, Overlay, TerminalSize};
+use super::{AppEffectResult, FocusTarget, Overlay, TerminalSize};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AppAction {
@@ -17,4 +17,6 @@ pub(crate) enum AppAction {
     OverlayClosed,
     QuitRequested,
     QuitConfirmed,
+    #[allow(dead_code)]
+    EffectFinished(AppEffectResult),
 }
