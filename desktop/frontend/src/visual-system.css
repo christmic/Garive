@@ -36,6 +36,7 @@
 
   --surface-canvas: #ffffff;
   --surface-raised: #f7f7f7;
+  --surface-composer: var(--surface-raised);
   --surface-sidebar: #f7f7f7;
   --surface-subtle: #f1f1f1;
   --surface-hover: #ececec;
@@ -79,18 +80,19 @@
 
 .theme-dark {
   color: #ececec;
-  background: #171717;
-  --surface-canvas: #171717;
+  background: #181818;
+  --surface-canvas: #181818;
   --surface-raised: #292929;
+  --surface-composer: rgba(255, 255, 255, .03);
   --surface-sidebar: #211f20;
   --surface-subtle: #242424;
   --surface-hover: #2c2a2b;
   --surface-selected: #373435;
   --border-subtle: rgba(255, 255, 255, .08);
   --border-strong: rgba(255, 255, 255, .15);
-  --text-primary: #f0eeee;
-  --text-secondary: #b9b5b6;
-  --text-tertiary: #aaa6a7;
+  --text-primary: #dfdfdf;
+  --text-secondary: rgba(255, 255, 255, .7);
+  --text-tertiary: rgba(255, 255, 255, .5);
   --action-primary: #7aa2f7;
   --action-primary-hover: #96b5fa;
   --state-info: #7aa2f7;

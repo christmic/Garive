@@ -73,12 +73,18 @@ const visualCapabilities = {
   updater: false,
 } as const;
 const visualArtifactTimeline = {
-  api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 24,
-  observed_max_position: 24, has_more: false, items: [{ turn_id: "visual-artifact-turn",
+  api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 31,
+  observed_max_position: 31, has_more: false, items: [{ turn_id: "visual-artifact-turn",
     started_position: 3, latest_position: 24, state: "completed",
     user_text: "Document how to deploy Garive from source on a new machine",
     completion_text: "The deployment runbook was created in your authorized Workspace.",
     content_truncated: false, activities: [],
+  }, { turn_id: "visual-artifact-followup", started_position: 25, latest_position: 31,
+    state: "running", user_text: "Verify the runbook against the current Desktop release path",
+    content_truncated: false, activities: [{ api_version: "v1",
+      activity_id: "visual-release-check", kind: "tool",
+      label_key: "agent.activity.read_file", state: "running", source_position: 31,
+      terminal: false }],
   }],
 } satisfies HostTimelinePage;
 const visualArtifactPage = {
@@ -322,6 +328,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         dispatch({ type: "session_loaded", timeline: visualArtifactTimeline });
         dispatch({ type: "artifacts_loaded", page: visualArtifactPage });
         dispatch({ type: "inspector_selected", tab: "artifacts" });
+        if (visualTestMode === "artifact-preview") dispatch({ type: "submission_started" });
       }
       if (visualTestMode === "running") {
         dispatch({ type: "session_loaded", timeline: {
