@@ -32,6 +32,8 @@ binary_path="$app_path/Contents/MacOS/garive-desktop"
 codesign --verify --deep --strict --verbose=2 "$app_path"
 bundle_id=$(plutil -extract CFBundleIdentifier raw "$app_path/Contents/Info.plist")
 [[ $bundle_id == com.garive.desktop ]] || { print -u2 "unexpected bundle identifier"; exit 1; }
+bundle_executable=$(plutil -extract CFBundleExecutable raw "$app_path/Contents/Info.plist")
+[[ $bundle_executable == garive-desktop ]] || { print -u2 "unexpected bundle executable"; exit 1; }
 [[ -x $binary_path ]] || { print -u2 "bundle executable is missing"; exit 1; }
 signature_detail=$(codesign -dvvv "$app_path" 2>&1)
 architectures=$(lipo -archs "$binary_path")

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish = false
+default-run = "garive-desktop"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
