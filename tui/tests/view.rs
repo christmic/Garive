@@ -11,8 +11,8 @@ mod input;
 mod view;
 
 use application::{
-    AppModel, BootState, ConversationLandmark, FocusTarget, InspectorVariant, Overlay,
-    TimelineItem, TimelineRole,
+    reduce, AppAction, AppModel, BootState, ConversationLandmark, FocusTarget, InspectorVariant,
+    Overlay, TimelineItem, TimelineRole,
 };
 use garive_host_client::{SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
@@ -177,6 +177,81 @@ fn suspension_is_a_structured_action_card_not_raw_json() {
     assert!(rendered.contains("Create one file."));
     assert!(rendered.contains("Enter true or false."));
     assert!(!rendered.contains("title_key"));
+}
+
+#[test]
+fn decision_sheet_is_read_only_for_noninteractive_and_unsupported_suspensions() {
+    for (kind, schema) in [
+        ("resource_unavailable", r#"{"type":"boolean"}"#),
+        ("approval_required", r#"{"type":"null"}"#),
+    ] {
+        let model = AppModel {
+            overlay: Some(Overlay::Suspension),
+            suspension: Some(SuspensionView {
+                suspension_id: "s".into(),
+                session_version: 2,
+                kind: kind.into(),
+                prompt_schema: "garive.public-suspension-prompt.v1".into(),
+                prompt_json: r#"{"schema_version":1,"title_key":"title","message_text":"Wait safely.","action_label_key":"action"}"#.into(),
+                prompt_digest: "0".repeat(64),
+                response_schema_json: Some(schema.into()),
+                response_schema_digest: Some("1".repeat(64)),
+            }),
+            ..Default::default()
+        };
+        let visual = frame(&model, 100, 24);
+        let linear = view::linear_overlay(&model);
+        assert!(visual.contains("Read only"));
+        assert!(linear.contains("Read only"));
+        assert!(!visual.contains("Enter submit response"));
+    }
+}
+
+#[test]
+fn suspension_response_identity_preserves_only_the_exact_schema_bound_editor() {
+    let mut model = AppModel {
+        selected_session: Some("session".into()),
+        selected_turn: Some("turn".into()),
+        suspension: Some(SuspensionView {
+            suspension_id: "s".into(),
+            session_version: 2,
+            kind: "approval_required".into(),
+            prompt_schema: "garive.public-suspension-prompt.v1".into(),
+            prompt_json: "{}".into(),
+            prompt_digest: "0".repeat(64),
+            response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+            response_schema_digest: Some("1".repeat(64)),
+        }),
+        ..Default::default()
+    };
+    model.reconcile_suspension_response();
+    model
+        .suspension_response
+        .as_mut()
+        .unwrap()
+        .editor
+        .insert("true")
+        .unwrap();
+    model.reconcile_suspension_response();
+    let response = model.suspension_response.as_ref().unwrap();
+    assert_eq!(response.editor.text(), "true");
+    model.suspension.as_mut().unwrap().response_schema_digest = Some("2".repeat(64));
+    model.reconcile_suspension_response();
+    let response = model.suspension_response.as_ref().unwrap();
+    assert_eq!(response.editor.text(), "");
+}
+
+#[test]
+fn resolved_suspension_cannot_return_from_quit_to_a_stale_sheet() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::QuitConfirmation),
+        return_overlay: Some(Overlay::Suspension),
+        ..Default::default()
+    };
+    model.reconcile_suspension_response();
+    reduce(&mut model, AppAction::OverlayClosed);
+    assert_eq!(model.overlay, None);
+    assert_ne!(model.focus, FocusTarget::Overlay);
 }
 
 #[test]

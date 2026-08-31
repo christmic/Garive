@@ -91,75 +91,18 @@ pub(super) fn submit(state: &mut RuntimeState) {
         }
         return;
     }
+    if state.model.suspension.is_some() {
+        state.model.notice = Some(if state.model.suspension_is_interactive() {
+            "This Turn is waiting for a typed response; the ordinary draft was not sent.".into()
+        } else {
+            "This suspension is read-only; the ordinary draft was not sent.".into()
+        });
+        state.model.overlay = Some(Overlay::Suspension);
+        return;
+    }
     let session = state.model.selected_session.clone().unwrap_or_default();
     let id = state.command_id("turn");
-    if let (Some(turn), Some(suspension)) = (
-        state.model.selected_turn.clone(),
-        state.model.suspension.clone(),
-    ) {
-        if suspension.response_schema_json.is_some() {
-            let Some(schema) = suspension.response_schema_json.as_deref() else {
-                return;
-            };
-            let Ok(input_json) = parse_schema_input(schema, &text) else {
-                state.model.notice =
-                    Some("The response does not match the public response schema.".into());
-                state.model.overlay = Some(Overlay::ErrorDetails);
-                return;
-            };
-            if !admit(
-                state,
-                id.clone(),
-                PendingKind::ContinueTurn,
-                Some(session.clone()),
-                Some(turn.clone()),
-                Some(suspension.suspension_id.clone()),
-                Some(suspension.session_version),
-                None,
-                json!({"input_json": input_json}),
-            ) {
-                return;
-            }
-            host::continue_turn(
-                state.client.clone(),
-                host::ContinuationRequest {
-                    command_id: id,
-                    session_id: session,
-                    turn_id: turn,
-                    suspension_id: suspension.suspension_id,
-                    expected_session_version: suspension.session_version,
-                    input: host::ContinuationInput::Json(input_json),
-                },
-                state.sender.clone(),
-            );
-        } else {
-            if !admit(
-                state,
-                id.clone(),
-                PendingKind::ContinueTurn,
-                Some(session.clone()),
-                Some(turn.clone()),
-                Some(suspension.suspension_id.clone()),
-                Some(suspension.session_version),
-                None,
-                json!({"input": text}),
-            ) {
-                return;
-            }
-            host::continue_turn(
-                state.client.clone(),
-                host::ContinuationRequest {
-                    command_id: id,
-                    session_id: session,
-                    turn_id: turn,
-                    suspension_id: suspension.suspension_id,
-                    expected_session_version: suspension.session_version,
-                    input: host::ContinuationInput::Text(text),
-                },
-                state.sender.clone(),
-            );
-        }
-    } else if matches!(
+    if matches!(
         state.model.execution,
         ExecutionState::Idle | ExecutionState::Failed
     ) {
@@ -184,6 +127,71 @@ pub(super) fn submit(state: &mut RuntimeState) {
             state.sender.clone(),
         );
     }
+}
+
+pub(super) fn submit_suspension_response(state: &mut RuntimeState) {
+    let (Some(response), Some(suspension), Some(session), Some(turn)) = (
+        state.model.suspension_response.as_ref(),
+        state.model.suspension.as_ref(),
+        state.model.selected_session.as_ref(),
+        state.model.selected_turn.as_ref(),
+    ) else {
+        state.model.notice = Some("This suspension is read-only.".into());
+        return;
+    };
+    let schema_digest = suspension
+        .response_schema_digest
+        .as_deref()
+        .unwrap_or_default();
+    if response.identity.session_id != *session
+        || response.identity.turn_id != *turn
+        || response.identity.suspension_id != suspension.suspension_id
+        || response.identity.schema_digest != schema_digest
+    {
+        state.model.suspension_response = None;
+        state.model.notice =
+            Some("The suspension changed; the stale response was discarded.".into());
+        return;
+    }
+    let Some(schema) = suspension.response_schema_json.as_deref() else {
+        return;
+    };
+    let Ok(input_json) = parse_schema_input(schema, response.editor.text()) else {
+        state.model.notice = Some("The response does not match the public response schema.".into());
+        return;
+    };
+    let (session, turn, suspension_id, version) = (
+        session.clone(),
+        turn.clone(),
+        suspension.suspension_id.clone(),
+        suspension.session_version,
+    );
+    let id = state.command_id("continue");
+    if !admit(
+        state,
+        id.clone(),
+        PendingKind::ContinueTurn,
+        Some(session.clone()),
+        Some(turn.clone()),
+        Some(suspension_id.clone()),
+        Some(version),
+        None,
+        json!({"input_json": input_json}),
+    ) {
+        return;
+    }
+    host::continue_turn(
+        state.client.clone(),
+        host::ContinuationRequest {
+            command_id: id,
+            session_id: session,
+            turn_id: turn,
+            suspension_id,
+            expected_session_version: version,
+            input: host::ContinuationInput::Json(input_json),
+        },
+        state.sender.clone(),
+    );
 }
 
 pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {

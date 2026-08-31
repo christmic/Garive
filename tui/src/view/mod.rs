@@ -15,6 +15,7 @@ mod command_suggestions;
 mod composer;
 mod context_line;
 mod conversation;
+mod decision_sheet;
 mod footer;
 mod inspector;
 mod layout;

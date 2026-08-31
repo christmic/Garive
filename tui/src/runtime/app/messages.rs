@@ -75,16 +75,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             && request_id == state.snapshot_request =>
         {
             install_timeline(&mut state.model, items);
-            match state.model.suspension.as_ref() {
-                Some(suspension)
-                    if state.editing_suspension.as_deref()
-                        == Some(suspension.suspension_id.as_str()) =>
-                {
-                    state.model.overlay = None;
-                }
-                Some(_) => state.editing_suspension = None,
-                None => state.editing_suspension = None,
-            }
+            state.model.reconcile_inspector_surface();
             state.model.observed_position = follow_position;
             state.model.connection = ConnectionState::Online;
             state.model.session_count = state.model.sessions.len();
@@ -153,11 +144,15 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             submitted_text,
             response,
         } => {
+            let started_turn = state.pending.iter().any(|pending| {
+                pending.command_id == command_id && pending.kind == PendingKind::StartTurn
+            });
             state.finish_pending(&command_id, &submitted_text);
-            if !submitted_text.is_empty() {
+            if started_turn && !submitted_text.is_empty() {
                 state.model.composer.clear();
                 state.model.prompt_history_browser.reset();
             }
+            state.model.suspension_response = None;
             state.model.live_answer.clear_for_session_change();
             state.model.selected_turn = Some(response.turn_id);
             state.model.active_execution_id = Some(response.execution_id);

@@ -58,7 +58,10 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         }
         AppAction::OverlayClosed => {
             if !model.overlay.is_some_and(Overlay::is_blocking) {
-                if model.overlay == Some(Overlay::Inspector) {
+                if let Some(return_overlay) = model.return_overlay.take() {
+                    model.overlay = Some(return_overlay);
+                    model.focus = FocusTarget::Overlay;
+                } else if model.overlay == Some(Overlay::Inspector) {
                     model.close_inspector();
                 } else if model.overlay == Some(Overlay::TurnNavigator) {
                     model.close_turn_navigator();

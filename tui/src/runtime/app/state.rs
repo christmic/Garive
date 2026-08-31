@@ -41,7 +41,6 @@ pub(in crate::runtime) struct RuntimeState {
     pending_recovery: BTreeSet<String>,
     pub(in crate::runtime) ephemeral_confirmed: bool,
     pub(in crate::runtime) queued_prompt: Option<String>,
-    pub(in crate::runtime) editing_suspension: Option<String>,
     pub(in crate::runtime) snapshot_request: u64,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
     follow_sequence: u64,
@@ -133,7 +132,6 @@ impl RuntimeState {
             pending_recovery,
             ephemeral_confirmed: false,
             queued_prompt: None,
-            editing_suspension: None,
             snapshot_request: 0,
             background_follows: BTreeMap::new(),
             follow_sequence: 0,
@@ -411,6 +409,7 @@ impl RuntimeState {
         self.pending.remove(index);
         self.sync_pending_projection();
         self.model.overlay = None;
+        self.model.reconcile_inspector_surface();
         if let Some(session) = self.model.selected_session.clone() {
             self.load(session);
         }
@@ -466,6 +465,13 @@ impl RuntimeState {
         }
         self.pending.remove(index);
         self.sync_pending_projection();
+        if matches!(
+            self.model.overlay,
+            Some(Overlay::UnknownCommand | Overlay::AbandonConfirmation)
+        ) {
+            self.model.overlay = None;
+            self.model.reconcile_inspector_surface();
+        }
     }
 
     #[cfg(feature = "test-hooks")]

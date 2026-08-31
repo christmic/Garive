@@ -7,14 +7,14 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    application::{ActionOverlayBinding, AppModel, Overlay},
+    application::{AppModel, Overlay},
     input::{help_hints, COMMAND_PALETTE},
     Theme,
 };
 
 use super::{
-    inspector, palette,
-    presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
+    decision_sheet, inspector, palette,
+    presentation::HELP_NOTES,
     primitives::{key_hints, truncate_display},
     safe_text,
     session::picker_line,
@@ -118,21 +118,12 @@ fn overlay_spec(
             content: history_text(model, colors, window.unwrap_or((0, 0))),
         },
         Overlay::Inspector => unreachable!("Inspector owns its composite renderer"),
-        Overlay::Suspension => OverlaySpec {
-            title: " Action required ".into(),
-            content: suspension_text(model, colors),
-        },
+        Overlay::Suspension => decision_sheet_spec(model, overlay, colors),
         Overlay::UnknownCommand
+        | Overlay::AbandonConfirmation
         | Overlay::ErrorDetails
         | Overlay::EphemeralConfirmation
-        | Overlay::QuitConfirmation => {
-            let copy = action_overlay_copy(model, overlay)
-                .expect("action overlay variants always have shared presentation");
-            OverlaySpec {
-                title: format!(" {} ", copy.title),
-                content: action_text(&copy.body, copy.hints, colors),
-            }
-        }
+        | Overlay::QuitConfirmation => decision_sheet_spec(model, overlay, colors),
     }
 }
 
@@ -358,29 +349,58 @@ fn palette_text(
     Text::from(rows)
 }
 
-fn suspension_text(model: &AppModel, colors: Palette) -> Text<'static> {
-    let copy = suspension_copy(model.suspension.as_ref());
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled("!  ", colors.warning),
-            Span::styled(copy.title, colors.title),
-        ]),
-        Line::styled(copy.context, colors.normal),
-    ];
-    if let Some(message) = copy.message {
-        lines.push(Line::styled(safe_text(&message), colors.normal));
+fn decision_sheet_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> OverlaySpec {
+    let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
+    let marker = match spec.tone {
+        decision_sheet::DecisionSheetTone::Neutral => None,
+        decision_sheet::DecisionSheetTone::Warning => Some(("!  ", colors.warning)),
+        decision_sheet::DecisionSheetTone::Danger => Some(("×  ", colors.danger)),
+    };
+    let mut lines = marker.map_or_else(Vec::new, |(marker, style)| {
+        vec![Line::styled(marker, style)]
+    });
+    lines.extend(
+        spec.body
+            .iter()
+            .map(|line| Line::styled(safe_text(line), colors.normal)),
+    );
+    if let Some(response) = spec.response {
+        let (label, guidance) = match response {
+            decision_sheet::DecisionResponseSpec::Editor { guidance, draft } => {
+                lines.push(Line::styled(
+                    if draft.is_empty() {
+                        "› type a response".into()
+                    } else {
+                        format!("› {}", safe_text(&draft))
+                    },
+                    if draft.is_empty() {
+                        colors.placeholder
+                    } else {
+                        colors.normal
+                    },
+                ));
+                ("Response", guidance)
+            }
+            decision_sheet::DecisionResponseSpec::ReadOnly { guidance } => ("Read only", guidance),
+        };
+        lines.extend([
+            Line::default(),
+            Line::styled(label, colors.title),
+            Line::styled(guidance, colors.normal),
+        ]);
     }
-    lines.extend([
-        Line::default(),
-        Line::styled("Response", colors.title),
-        Line::styled(copy.guidance, colors.normal),
-        Line::default(),
-        key_hints(
-            &[("Enter", "respond now"), ("Ctrl+Q", "leave safely")],
-            colors,
-        ),
-    ]);
-    Text::from(lines)
+    if !spec.actions.is_empty() {
+        let actions = spec
+            .actions
+            .iter()
+            .map(|action| (action.visual_key, action.action))
+            .collect::<Vec<_>>();
+        lines.extend([Line::default(), key_hints(&actions, colors)]);
+    }
+    OverlaySpec {
+        title: format!(" {} ", spec.title),
+        content: Text::from(lines),
+    }
 }
 
 fn help_text(colors: Palette, content_width: u16) -> Text<'static> {
@@ -416,21 +436,6 @@ fn help_text(colors: Palette, content_width: u16) -> Text<'static> {
             .iter()
             .map(|note| Line::styled((*note).to_owned(), colors.muted)),
     );
-    Text::from(lines)
-}
-
-fn action_text(body: &str, actions: &[ActionOverlayBinding], colors: Palette) -> Text<'static> {
-    let hints = actions
-        .iter()
-        .map(|hint| (hint.visual_key, hint.action))
-        .collect::<Vec<_>>();
-    let safe = safe_text(body);
-    let mut lines = safe
-        .split('\n')
-        .map(|line| Line::styled(line.to_owned(), colors.normal))
-        .collect::<Vec<_>>();
-    lines.push(Line::default());
-    lines.push(key_hints(&hints, colors));
     Text::from(lines)
 }
 

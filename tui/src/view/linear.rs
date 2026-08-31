@@ -3,11 +3,7 @@ use crate::{
     input::COMMAND_PALETTE,
 };
 
-use super::{
-    presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
-    primitives::selection_window,
-    short_id,
-};
+use super::{decision_sheet, presentation::HELP_NOTES, primitives::selection_window, short_id};
 use crate::input::help_hints;
 
 const LIST_CAPACITY: usize = 10;
@@ -23,18 +19,12 @@ pub(crate) fn overlay_text(model: &AppModel) -> String {
         Overlay::TurnNavigator => turn_navigator(model),
         Overlay::PromptHistory => prompt_history(model),
         Overlay::Inspector => super::inspector::linear_text(model),
-        Overlay::Suspension => {
-            let copy = suspension_copy(model.suspension.as_ref());
-            let message = copy.message.unwrap_or_default();
-            format!(
-                "{}. {} {}\n{}\nPress Enter to respond now.",
-                copy.title, copy.context, message, copy.guidance
-            )
-        }
+        Overlay::Suspension => linear_decision_sheet(model, overlay),
         Overlay::UnknownCommand
+        | Overlay::AbandonConfirmation
         | Overlay::ErrorDetails
         | Overlay::EphemeralConfirmation
-        | Overlay::QuitConfirmation => linear_action_overlay(model, overlay),
+        | Overlay::QuitConfirmation => linear_decision_sheet(model, overlay),
     };
     safe(&value)
 }
@@ -160,16 +150,30 @@ fn help() -> String {
         .join(" ")
 }
 
-fn linear_action_overlay(model: &AppModel, overlay: Overlay) -> String {
-    let copy = action_overlay_copy(model, overlay)
-        .expect("action overlay variants always have shared presentation");
-    let guidance = copy
-        .hints
+fn linear_decision_sheet(model: &AppModel, overlay: Overlay) -> String {
+    let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
+    let response = spec
+        .response
+        .map_or_else(String::new, |response| match response {
+            decision_sheet::DecisionResponseSpec::Editor { guidance, draft } => {
+                let value = if draft.is_empty() { "empty" } else { "entered" };
+                format!(" Response ({value}): {guidance}")
+            }
+            decision_sheet::DecisionResponseSpec::ReadOnly { guidance } => {
+                format!(" Read only: {guidance}")
+            }
+        });
+    let guidance = spec
+        .actions
         .iter()
         .map(|hint| format!("Press {} to {}.", hint.spoken_key, hint.action))
         .collect::<Vec<_>>()
         .join(" ");
-    format!("{}. {} {}", copy.title, copy.body, guidance)
+    format!(
+        "{}. {}{response} {guidance}",
+        spec.title,
+        spec.body.join(" ")
+    )
 }
 
 fn window(total: usize, selected: usize) -> std::ops::Range<usize> {

@@ -1,9 +1,9 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::application::{ActionOverlayIntent, ActionOverlayKey, AppAction, Overlay};
 
 use super::{
-    actions::retry_pending,
+    actions::{retry_pending, submit_suspension_response},
     navigation::{
         is_safe_query_character, matching_commands, matching_history, matching_landmarks,
         matching_sessions, select_command, select_history, select_landmark, select_session,
@@ -15,8 +15,15 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
     let Some(overlay) = state.model.overlay else {
         return false;
     };
-    if let Some(intent) =
-        action_overlay_key(key.code).and_then(|normalized| overlay.action_for_key(normalized))
+    if let Some(intent) = action_overlay_key(key)
+        .and_then(|normalized| {
+            state
+                .model
+                .decision_bindings(overlay)?
+                .iter()
+                .find(|binding| binding.key == normalized)
+        })
+        .map(|binding| binding.intent)
     {
         match intent {
             ActionOverlayIntent::Close => state.dispatch(AppAction::OverlayClosed),
@@ -26,7 +33,18 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
                 state.model.overlay = None;
             }
             ActionOverlayIntent::ExactRetry => retry_pending(state),
-            ActionOverlayIntent::AbandonPending => state.abandon_pending(),
+            ActionOverlayIntent::OpenAbandonConfirmation => {
+                state.model.overlay = Some(Overlay::AbandonConfirmation)
+            }
+            ActionOverlayIntent::ConfirmAbandon => state.abandon_pending(),
+            ActionOverlayIntent::ReturnToUnknown => {
+                state.model.overlay = Some(Overlay::UnknownCommand)
+            }
+            ActionOverlayIntent::SubmitSuspension => submit_suspension_response(state),
+            ActionOverlayIntent::LeaveSafely => {
+                state.model.return_overlay = Some(Overlay::Suspension);
+                state.model.overlay = Some(Overlay::QuitConfirmation);
+            }
         }
         return true;
     }
@@ -137,24 +155,72 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
             state.model.history_filter.pop();
             state.model.history_selection = 0;
         }
-        KeyCode::Enter if overlay == Overlay::Suspension => {
-            state.editing_suspension = state
-                .model
-                .suspension
-                .as_ref()
-                .map(|value| value.suspension_id.clone());
-            state.model.overlay = None;
+        KeyCode::Char(character)
+            if overlay == Overlay::Suspension
+                && !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+        {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                let _ = response.editor.insert(&character.to_string());
+            }
+        }
+        KeyCode::Backspace if overlay == Overlay::Suspension => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response.editor.backspace();
+            }
+        }
+        KeyCode::Delete if overlay == Overlay::Suspension => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response.editor.delete();
+            }
+        }
+        KeyCode::Left if overlay == Overlay::Suspension => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response
+                    .editor
+                    .move_left(key.modifiers.contains(KeyModifiers::SHIFT));
+            }
+        }
+        KeyCode::Right if overlay == Overlay::Suspension => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response
+                    .editor
+                    .move_right(key.modifiers.contains(KeyModifiers::SHIFT));
+            }
+        }
+        KeyCode::Home if overlay == Overlay::Suspension => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response.editor.move_document_start(false);
+            }
+        }
+        KeyCode::End if overlay == Overlay::Suspension => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response.editor.move_document_end(false);
+            }
         }
         _ => {}
     }
     true
 }
 
-fn action_overlay_key(key: KeyCode) -> Option<ActionOverlayKey> {
-    match key {
-        KeyCode::Enter => Some(ActionOverlayKey::Enter),
-        KeyCode::Esc => Some(ActionOverlayKey::Escape),
-        KeyCode::Char(character) => Some(ActionOverlayKey::Character(character)),
+fn action_overlay_key(key: KeyEvent) -> Option<ActionOverlayKey> {
+    if key.code == KeyCode::Char('q')
+        && key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
+        return Some(ActionOverlayKey::CtrlQ);
+    }
+    let plain = key.modifiers.is_empty();
+    match key.code {
+        KeyCode::Enter if plain => Some(ActionOverlayKey::Enter),
+        KeyCode::Esc if plain => Some(ActionOverlayKey::Escape),
+        KeyCode::Char(character)
+            if plain || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
+        {
+            Some(ActionOverlayKey::Character(character.to_ascii_lowercase()))
+        }
         _ => None,
     }
 }

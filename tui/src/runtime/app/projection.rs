@@ -259,6 +259,11 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
             model.overlay = Some(Overlay::Suspension);
         }
     }
+    model.reconcile_suspension_response();
+    if model.suspension.is_none() && model.overlay == Some(Overlay::Suspension) {
+        model.overlay = None;
+        model.reconcile_inspector_surface();
+    }
     if model.execution != ExecutionState::Following {
         if let (Some(session_id), Some(turn_id)) =
             (model.selected_session.clone(), model.selected_turn.clone())

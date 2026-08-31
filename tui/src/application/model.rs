@@ -43,6 +43,7 @@ pub(crate) enum Overlay {
     Inspector,
     Suspension,
     UnknownCommand,
+    AbandonConfirmation,
     ErrorDetails,
     EphemeralConfirmation,
     QuitConfirmation,
@@ -56,18 +57,12 @@ impl Overlay {
     pub(crate) fn action_bindings(self) -> Option<&'static [ActionOverlayBinding]> {
         match self {
             Self::UnknownCommand => Some(UNKNOWN_RESULT_BINDINGS),
+            Self::AbandonConfirmation => Some(ABANDON_CONFIRMATION_BINDINGS),
             Self::ErrorDetails => Some(CLOSE_BINDINGS),
             Self::EphemeralConfirmation => Some(EPHEMERAL_BINDINGS),
             Self::QuitConfirmation => Some(QUIT_BINDINGS),
             _ => None,
         }
-    }
-
-    pub(crate) fn action_for_key(self, key: ActionOverlayKey) -> Option<ActionOverlayIntent> {
-        self.action_bindings()?
-            .iter()
-            .find(|binding| binding.key == key)
-            .map(|binding| binding.intent)
     }
 }
 
@@ -75,6 +70,7 @@ impl Overlay {
 pub(crate) enum ActionOverlayKey {
     Enter,
     Escape,
+    CtrlQ,
     Character(char),
 }
 
@@ -84,7 +80,11 @@ pub(crate) enum ActionOverlayIntent {
     ConfirmQuit,
     AcceptEphemeral,
     ExactRetry,
-    AbandonPending,
+    OpenAbandonConfirmation,
+    ConfirmAbandon,
+    ReturnToUnknown,
+    SubmitSuspension,
+    LeaveSafely,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -109,9 +109,48 @@ const UNKNOWN_RESULT_BINDINGS: &[ActionOverlayBinding] = &[
         visual_key: "A",
         spoken_key: "A",
         action: "abandon local record",
-        intent: ActionOverlayIntent::AbandonPending,
+        intent: ActionOverlayIntent::OpenAbandonConfirmation,
     },
 ];
+const ABANDON_CONFIRMATION_BINDINGS: &[ActionOverlayBinding] = &[
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Enter,
+        visual_key: "Enter",
+        spoken_key: "Enter",
+        action: "abandon local record",
+        intent: ActionOverlayIntent::ConfirmAbandon,
+    },
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Escape,
+        visual_key: "Esc",
+        spoken_key: "Escape",
+        action: "keep recovery record",
+        intent: ActionOverlayIntent::ReturnToUnknown,
+    },
+];
+const SUSPENSION_BINDINGS: &[ActionOverlayBinding] = &[
+    ActionOverlayBinding {
+        key: ActionOverlayKey::Enter,
+        visual_key: "Enter",
+        spoken_key: "Enter",
+        action: "submit response",
+        intent: ActionOverlayIntent::SubmitSuspension,
+    },
+    ActionOverlayBinding {
+        key: ActionOverlayKey::CtrlQ,
+        visual_key: "Ctrl+Q",
+        spoken_key: "Control Q",
+        action: "leave safely",
+        intent: ActionOverlayIntent::LeaveSafely,
+    },
+];
+const READ_ONLY_SUSPENSION_BINDINGS: &[ActionOverlayBinding] = &[ActionOverlayBinding {
+    key: ActionOverlayKey::CtrlQ,
+    visual_key: "Ctrl+Q",
+    spoken_key: "Control Q",
+    action: "leave safely",
+    intent: ActionOverlayIntent::LeaveSafely,
+}];
 const CLOSE_BINDINGS: &[ActionOverlayBinding] = &[ActionOverlayBinding {
     key: ActionOverlayKey::Escape,
     visual_key: "Esc",
@@ -160,6 +199,7 @@ mod overlay_binding_tests {
     fn every_action_overlay_binding_round_trips_to_its_controller_intent() {
         for overlay in [
             Overlay::UnknownCommand,
+            Overlay::AbandonConfirmation,
             Overlay::ErrorDetails,
             Overlay::EphemeralConfirmation,
             Overlay::QuitConfirmation,
@@ -167,13 +207,36 @@ mod overlay_binding_tests {
             let bindings = overlay.action_bindings().expect("action bindings");
             assert!(!bindings.is_empty());
             for binding in bindings {
-                assert_eq!(overlay.action_for_key(binding.key), Some(binding.intent));
+                assert_eq!(
+                    AppModel::default()
+                        .decision_bindings(overlay)
+                        .and_then(|bindings| bindings.iter().find(|item| item.key == binding.key))
+                        .map(|item| item.intent),
+                    Some(binding.intent)
+                );
                 assert!(!binding.visual_key.is_empty());
                 assert!(!binding.spoken_key.is_empty());
                 assert!(!binding.action.is_empty());
             }
         }
         assert!(Overlay::Help.action_bindings().is_none());
+        let model = AppModel {
+            suspension: Some(SuspensionView {
+                suspension_id: "s".into(),
+                session_version: 1,
+                kind: "approval_required".into(),
+                prompt_schema: "garive.public-suspension-prompt.v1".into(),
+                prompt_json: "{}".into(),
+                prompt_digest: "0".repeat(64),
+                response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+                response_schema_digest: Some("1".repeat(64)),
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            model.decision_bindings(Overlay::Suspension).unwrap().len(),
+            2
+        );
     }
 }
 
@@ -252,6 +315,20 @@ pub(crate) struct PendingRecoveryProjection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SuspensionResponseIdentity {
+    pub(crate) session_id: String,
+    pub(crate) turn_id: String,
+    pub(crate) suspension_id: String,
+    pub(crate) schema_digest: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SuspensionResponseState {
+    pub(crate) identity: SuspensionResponseIdentity,
+    pub(crate) editor: EditorState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ViewportState {
     pub(crate) follow_latest: bool,
     pub(crate) anchor_key: Option<String>,
@@ -276,6 +353,7 @@ pub(crate) struct AppModel {
     pub(crate) focus: FocusTarget,
     pub(crate) prior_focus: FocusTarget,
     pub(crate) overlay: Option<Overlay>,
+    pub(crate) return_overlay: Option<Overlay>,
     pub(crate) connection: ConnectionState,
     pub(crate) terminal_size: TerminalSize,
     pub(crate) terminal_focused: bool,
@@ -309,6 +387,7 @@ pub(crate) struct AppModel {
     pub(crate) session_viewports: BTreeMap<String, ViewportState>,
     pub(crate) viewport_order: VecDeque<String>,
     pub(crate) suspension: Option<SuspensionView>,
+    pub(crate) suspension_response: Option<SuspensionResponseState>,
     pub(crate) notice: Option<String>,
     pub(crate) turn_blocks: Vec<TurnBlock>,
     pub(crate) conversation_landmarks: Vec<ConversationLandmark>,
@@ -319,6 +398,64 @@ pub(crate) struct AppModel {
 }
 
 impl AppModel {
+    pub(crate) fn suspension_is_interactive(&self) -> bool {
+        let Some(suspension) = self.suspension.as_ref() else {
+            return false;
+        };
+        matches!(
+            suspension.kind.as_str(),
+            "approval_required" | "external_input_required"
+        ) && suspension
+            .response_schema_json
+            .as_deref()
+            .is_some_and(crate::input::supports_response_schema)
+            && suspension
+                .response_schema_digest
+                .as_deref()
+                .is_some_and(|digest| digest.len() == 64)
+    }
+
+    pub(crate) fn reconcile_suspension_response(&mut self) {
+        let identity = self.suspension.as_ref().and_then(|suspension| {
+            if !self.suspension_is_interactive() {
+                return None;
+            }
+            Some(SuspensionResponseIdentity {
+                session_id: self.selected_session.clone()?,
+                turn_id: self.selected_turn.clone()?,
+                suspension_id: suspension.suspension_id.clone(),
+                schema_digest: suspension.response_schema_digest.clone()?,
+            })
+        });
+        match (self.suspension_response.as_ref(), identity) {
+            (Some(current), Some(identity)) if current.identity == identity => {}
+            (_, Some(identity)) => {
+                self.suspension_response = Some(SuspensionResponseState {
+                    identity,
+                    editor: EditorState::new(16 * 1_024),
+                });
+            }
+            (_, None) => self.suspension_response = None,
+        }
+        if self.suspension.is_none() && self.return_overlay == Some(Overlay::Suspension) {
+            self.return_overlay = None;
+        }
+    }
+
+    pub(crate) fn decision_bindings(
+        &self,
+        overlay: Overlay,
+    ) -> Option<&'static [ActionOverlayBinding]> {
+        if overlay == Overlay::Suspension {
+            return Some(if self.suspension_is_interactive() {
+                SUSPENSION_BINDINGS
+            } else {
+                READ_ONLY_SUSPENSION_BINDINGS
+            });
+        }
+        overlay.action_bindings()
+    }
+
     pub(crate) fn durable_children(&self) -> impl Iterator<Item = &TimelineItem> {
         self.turn_blocks.iter().flat_map(TurnBlock::children)
     }

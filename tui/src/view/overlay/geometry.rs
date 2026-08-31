@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::super::{
+    decision_sheet,
     layout::FrameLayout,
-    presentation::action_overlay_copy,
     primitives::{centered_popup, selection_window},
     safe_text,
 };
@@ -87,6 +87,7 @@ fn desired_width(overlay: Overlay) -> u16 {
         | Overlay::PromptHistory
         | Overlay::Suspension
         | Overlay::UnknownCommand
+        | Overlay::AbandonConfirmation
         | Overlay::ErrorDetails
         | Overlay::EphemeralConfirmation
         | Overlay::QuitConfirmation => 62,
@@ -117,20 +118,29 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
             .saturating_mul(2)
             .saturating_add(3)
             .clamp(8, 18),
-        Overlay::Suspension => 12,
+        Overlay::Suspension => decision_height(model, overlay, popup_width),
         Overlay::UnknownCommand
+        | Overlay::AbandonConfirmation
         | Overlay::ErrorDetails
         | Overlay::EphemeralConfirmation
-        | Overlay::QuitConfirmation => {
-            let copy = action_overlay_copy(model, overlay)
-                .expect("action overlay variants always have shared presentation");
-            let content_width = popup_width.saturating_sub(6).max(1);
-            let body_rows = wrapped_rows(&safe_text(&copy.body), content_width);
-            u16::try_from(body_rows)
-                .unwrap_or(u16::MAX)
-                .saturating_add(6)
-        }
+        | Overlay::QuitConfirmation => decision_height(model, overlay, popup_width),
     }
+}
+
+fn decision_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
+    let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
+    let content_width = popup_width.saturating_sub(6).max(1);
+    let body_rows = spec
+        .body
+        .iter()
+        .map(|line| wrapped_rows(&safe_text(line), content_width))
+        .sum::<usize>();
+    let fixed =
+        5 + spec.response.as_ref().map_or(0, |response| match response {
+            decision_sheet::DecisionResponseSpec::Editor { .. } => 4,
+            decision_sheet::DecisionResponseSpec::ReadOnly { .. } => 3,
+        }) + usize::from(!spec.actions.is_empty()) * 2;
+    u16::try_from(body_rows.saturating_add(fixed)).unwrap_or(u16::MAX)
 }
 
 fn wrapped_rows(value: &str, width: u16) -> usize {

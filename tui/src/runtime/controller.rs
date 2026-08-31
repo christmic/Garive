@@ -34,6 +34,12 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         }
         Event::Paste(text) => {
             state.composer_clicks.reset();
+            if state.model.overlay == Some(Overlay::Suspension) {
+                if let Some(response) = state.model.suspension_response.as_mut() {
+                    let _ = response.editor.insert(&text);
+                }
+                return;
+            }
             let previous = state.model.composer.text().to_owned();
             if state.composer_is_frozen() {
                 state.explain_frozen_composer();
@@ -65,11 +71,11 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
 
 fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     let shortcut = resolve_shortcut(key);
-    if shortcut == Some(ShortcutIntent::Quit) {
-        state.dispatch(AppAction::QuitRequested);
+    if overlay::handle(key, state) {
         return;
     }
-    if overlay::handle(key, state) {
+    if shortcut == Some(ShortcutIntent::Quit) {
+        state.dispatch(AppAction::QuitRequested);
         return;
     }
     if shortcut.is_some_and(|intent| handle_shortcut(intent, state)) {
