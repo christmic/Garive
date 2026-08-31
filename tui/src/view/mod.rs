@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
+mod activity_stack;
 mod command_suggestions;
 mod composer;
 mod context_line;
@@ -20,6 +21,7 @@ mod linear;
 mod live_answer;
 mod markdown_syntax;
 mod markdown_table;
+mod minimum;
 mod motion;
 mod overlay;
 pub(crate) mod presentation;
@@ -65,6 +67,10 @@ pub(crate) fn render_cached_with_motion(
         Paragraph::new("Need 20×8")
             .style(palette(theme).muted)
             .render(area, buffer);
+        return None;
+    }
+    if area.width < 40 {
+        minimum::render(model, palette(theme), area, buffer);
         return None;
     }
     let frame = FrameLayout::resolve(model, area);

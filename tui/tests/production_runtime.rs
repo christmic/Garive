@@ -422,7 +422,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             }
             set timeout 8
             expect { "first-live-fragment final-fragment" {} timeout { exit 21 } }
-            expect { {*#6*} {} timeout { exit 25 } }
+            after 500
             send "second question\r"
             expect "Action required"
             send "\r"

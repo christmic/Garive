@@ -6,14 +6,14 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
 
     You            ╭ Switch session ────────────────────────────────────────────╮
       Summarize t  │                                                            │
-                   │  Filter  type to search                                    │
-      ✓  Agent ac  │    research-age · 000003   ● running                       │
-                   │    research-age · 000004   ● running                       │
-    ◆ Garive       │    research-age · 000005   ● running                       │
-      ## Release   │    research-age · 000006   ● running                       │
-      • Verify th  │    research-age · 000007   ● running                       │
-      • Ship with  │    research-age · 000008   ● running                       │
-      cargo test   │    research-age · 000009   ● running                       │
+      ✓  Agent ac  │  Filter  type to search                                    │
+    ◆ Garive       │    research-age · 000003   ● running                       │
+      ## Release   │    research-age · 000004   ● running                       │
+      • Verify th  │    research-age · 000005   ● running                       │
+      • Ship with  │    research-age · 000006   ● running                       │
+      cargo test   │    research-age · 000007   ● running                       │
+                   │    research-age · 000008   ● running                       │
+                   │    research-age · 000009   ● running                       │
                    │    research-age · 000010   ● running                       │
                    │  › research-age · 000011   ● running                       │
                    │                                                            │

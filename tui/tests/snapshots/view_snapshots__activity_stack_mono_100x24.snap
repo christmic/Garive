@@ -1,17 +1,17 @@
 ---
 source: tui/tests/view_snapshots.rs
-expression: "motion_frame(&model, Theme::Light, 4, 100, 24)"
+expression: "frame(&activities, Theme::Mono, 100, 24)"
 ---
-  Session 1  ·  research-age                                                             ● running
+  Session 1  ·  research-age                                                               running
 
     You
-      Summarize the release plan.
-      ✓  Agent action · completed
-    ◆ Garive
-      ## Release plan
-      • Verify the Runtime
-      • Ship with evidence
-      cargo test passes.
+      Verify the release candidate.
+      ✓  2 actions completed
+      ●  Running strict validation
+
+
+
+
 
 
 

@@ -32,6 +32,23 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&wrapped, Theme::Mono, 40, 16)
     );
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
+    let activities = activity_stack_model();
+    insta::assert_snapshot!(
+        "activity_stack_dark_100x24",
+        frame(&activities, Theme::Dark, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "activity_stack_light_100x24",
+        frame(&activities, Theme::Light, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "activity_stack_mono_100x24",
+        frame(&activities, Theme::Mono, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "activity_stack_compact_mono_40x18",
+        frame(&activities, Theme::Mono, 40, 18)
+    );
     insta::assert_snapshot!(
         "motion_running_dark_100x24",
         motion_frame(&model, Theme::Dark, 4, 100, 24)
@@ -163,7 +180,7 @@ fn responsive_column_boundaries_match_reviewed_snapshots() {
 }
 
 fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
-    let lines = rendered.lines().collect::<Vec<_>>();
+    let lines = rendered.split('\n').collect::<Vec<_>>();
     assert_eq!(lines.len(), usize::from(height));
     assert!(lines
         .iter()
@@ -174,6 +191,14 @@ fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
             !rendered.contains(forbidden),
             "legacy rail detail {forbidden:?} leaked at {width} columns"
         );
+    }
+    if width < 40 {
+        assert!(rendered.contains("Garive needs 40 columns"));
+        assert!(rendered.contains("draft retained"));
+        assert!(rendered.contains("Run continues · Esc cancel"));
+        assert!(!rendered.contains("Summarize the release plan."));
+        assert!(!rendered.contains('╭'));
+        return;
     }
     for required in [
         "Session 1",
@@ -269,6 +294,28 @@ fn product_model() -> AppModel {
     ];
     model.composer.replace("Ask a follow-up…").unwrap();
     model
+}
+
+fn activity_stack_model() -> AppModel {
+    let mut model = product_model();
+    model.timeline = vec![
+        item(
+            "user",
+            2,
+            TimelineRole::User,
+            "Verify the release candidate.",
+        ),
+        activity("read", 3, TimelineTone::Success, "Read project rules"),
+        activity("tests", 4, TimelineTone::Success, "Checked focused tests"),
+        activity("run", 5, TimelineTone::Active, "Running strict validation"),
+    ];
+    model
+}
+
+fn activity(key: &str, position: u64, tone: TimelineTone, text: &str) -> TimelineItem {
+    let mut item = item(key, position, TimelineRole::Status, text);
+    item.tone = tone;
+    item
 }
 
 fn turn_navigator_model() -> AppModel {

@@ -92,14 +92,23 @@ fn conversation_window(
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
         }
-        for item in model.timeline.iter().rev() {
-            let cell = cache.render(item, width, theme);
+        let mut end = model.timeline.len();
+        while end > 0 {
+            let start = cell_start(&model.timeline, end);
+            let mut cell = render_cell(&model.timeline[start..end], width, theme, cache);
+            append_turn_gap(
+                &mut cell,
+                model.timeline[end - 1].role,
+                model.timeline.get(end).map(|item| item.role),
+                end == model.timeline.len() && model.live_answer.current().is_some(),
+            );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
-            laid_out += 1;
+            laid_out += end - start;
             if measured_height >= target_height {
                 break;
             }
+            end = start;
         }
     } else {
         let start = model
@@ -113,14 +122,23 @@ fn conversation_window(
                     .position(|item| item.stable_key == key)
             })
             .unwrap_or(0);
-        for item in model.timeline.iter().skip(start) {
-            let cell = cache.render(item, width, theme);
+        let mut index = start;
+        while index < model.timeline.len() {
+            let end = cell_end(&model.timeline, index);
+            let mut cell = render_cell(&model.timeline[index..end], width, theme, cache);
+            append_turn_gap(
+                &mut cell,
+                model.timeline[end - 1].role,
+                model.timeline.get(end).map(|item| item.role),
+                end == model.timeline.len() && model.live_answer.current().is_some(),
+            );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_back(cell);
-            laid_out += 1;
+            laid_out += end - index;
             if measured_height >= target_height.saturating_add(model.viewport.source_line) {
                 break;
             }
+            index = end;
         }
     }
     let lines = cells.into_iter().flatten().collect::<Vec<_>>();
@@ -133,6 +151,55 @@ fn conversation_window(
         lines,
         scroll,
         laid_out,
+    }
+}
+
+fn cell_start(items: &[crate::application::TimelineItem], end: usize) -> usize {
+    if items[end - 1].role != TimelineRole::Status {
+        return end - 1;
+    }
+    let mut start = end - 1;
+    while start > 0 && items[start - 1].role == TimelineRole::Status {
+        start -= 1;
+    }
+    start
+}
+
+fn cell_end(items: &[crate::application::TimelineItem], start: usize) -> usize {
+    if items[start].role != TimelineRole::Status {
+        return start + 1;
+    }
+    let mut end = start + 1;
+    while end < items.len() && items[end].role == TimelineRole::Status {
+        end += 1;
+    }
+    end
+}
+
+fn render_cell(
+    items: &[crate::application::TimelineItem],
+    width: u16,
+    theme: Theme,
+    cache: &mut RenderCache,
+) -> Vec<Line<'static>> {
+    if items[0].role == TimelineRole::Status {
+        super::activity_stack::render(items, theme, width)
+    } else {
+        cache.render(&items[0], width, theme)
+    }
+}
+
+fn append_turn_gap(
+    cell: &mut Vec<Line<'static>>,
+    role: TimelineRole,
+    next: Option<TimelineRole>,
+    live_answer_follows: bool,
+) {
+    let ends_turn = role == TimelineRole::Agent
+        || next == Some(TimelineRole::User)
+        || (next.is_none() && !live_answer_follows);
+    if ends_turn {
+        cell.push(Line::default());
     }
 }
 
@@ -274,7 +341,6 @@ fn render_timeline_item(
             ]));
         }
     }
-    lines.push(Line::default());
     lines
 }
 

@@ -1,17 +1,17 @@
 ---
 source: tui/tests/view_snapshots.rs
-expression: rendered
+expression: "frame(&activities, Theme::Mono, 40, 18)"
 ---
 Session 1                        running
 
   You
-    Summarize the release plan.
-    ✓ Agent action · completed
-  ◆ Garive
-    ## Release plan
-    • Verify the Runtime
-    • Ship with evidence
-    cargo test passes.
+    Verify the release candidate.
+    ● Running strict valida… · 2 done
+
+
+
+
+
 
 
 

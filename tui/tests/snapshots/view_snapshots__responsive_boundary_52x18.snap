@@ -6,14 +6,14 @@ Session 1                                    running
 
   You
     Summarize the release plan.
-
-    ✓  Agent action · completed
-
+    ✓ Agent action · completed
   ◆ Garive
     ## Release plan
     • Verify the Runtime
     • Ship with evidence
     cargo test passes.
+
+
 
 
 ╭──────────────────────────────────────────────────╮
