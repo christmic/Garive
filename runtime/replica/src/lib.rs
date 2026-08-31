@@ -24,6 +24,7 @@ mod goal_runtime;
 mod live_host;
 mod live_output;
 mod local_composition;
+mod local_memory;
 mod local_recovery;
 mod local_worker;
 mod memory_control;
@@ -147,6 +148,10 @@ pub use live_output::{
 pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
     ReconstructedLocalExecution,
+};
+pub use local_memory::{
+    CatalogueCapabilityPreparationFactory, LocalMemorySystemBinding, LOCAL_MEMORY_CONTRACT_VERSION,
+    USER_DECLARED_PUSH_REVISION,
 };
 pub use local_recovery::{
     recover_local_dispatches, recover_local_dispatches_with_f0, LocalRecoveryError,

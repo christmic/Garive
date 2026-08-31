@@ -373,6 +373,16 @@ pub enum LocalWorkerError {
     DurabilityUnavailable,
     /// Fixed-prefix reconstruction rejected the queued coordinates.
     Reconstruction(LocalReconstructionError),
+    /// The installed snapshot requires a capability without a system binding.
+    CapabilityBindingMissing,
+    /// The installed descriptor and explicit system binding differ.
+    CapabilityBindingMismatch,
+    /// Durable Memory facts and the current projection disagree.
+    MemoryRepositoryCorrupt,
+    /// A configured Memory repository scan bound was exceeded.
+    MemoryRepositoryBoundExceeded,
+    /// An authorized Memory query or retrieval could not be constructed.
+    MemoryPreparationFailed,
     /// Durable Core execution did not reach a committed terminal.
     ExecutionFailed,
 }
@@ -385,6 +395,11 @@ impl LocalWorkerError {
             Self::WorkerStopped => "worker_stopped",
             Self::DurabilityUnavailable => "durability_unavailable",
             Self::Reconstruction(_) => "reconstruction_failed",
+            Self::CapabilityBindingMissing => "capability_binding_missing",
+            Self::CapabilityBindingMismatch => "capability_binding_mismatch",
+            Self::MemoryRepositoryCorrupt => "memory_repository_corrupt",
+            Self::MemoryRepositoryBoundExceeded => "memory_repository_bound_exceeded",
+            Self::MemoryPreparationFailed => "memory_preparation_failed",
             Self::ExecutionFailed => "execution_failed",
         }
     }
