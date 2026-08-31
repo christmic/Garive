@@ -316,6 +316,30 @@ Call to match before `effect.started`; matching only a tool name/revision is
 insufficient. Dispatch also rechecks the executor ID, revision and deterministic
 dispatch-attempt binding selected by preflight.
 
+## Runtime system composition
+
+Machine-level execution configuration is a Host-owned Runtime value, not part
+of the Agent Definition. One T1 system configuration contains exact policy and
+executor revisions, a canonical Workspace root, a private patch-recovery root,
+the complete Process lane registry, and an explicit `PodmanProcessConfig` whose
+Workspace root must be identical. Empty revisions, mismatched roots and
+non-private recovery authority fail before an executor is created.
+
+Construction produces one five-definition `BuiltinT1Catalogue`, one preparation
+port backed by that exact catalogue, and a closed executor router. Read, list
+and search route to the descriptor-confined Workspace executor; apply-patch
+routes to the journaled Patch executor; process-run routes to the configured
+Podman executor. The router selects during preflight by exact Tool name, then
+dispatches, acknowledges receipts and reconciles lost Started effects only by
+the durable executor identity. Duplicate routes, unknown identities or an
+executor returning an identity different from its configured route fail
+closed.
+
+The resulting definitions still must exactly equal the installed Effective
+Agent Snapshot before Core starts. Constructing the T1 system value does not
+implicitly enable tools, discover host paths, read environment variables or
+alter an Agent snapshot.
+
 ## Stable safe terminal codes
 
 T1 uses existing preparation/governance failures plus:
