@@ -40,7 +40,8 @@ pub(super) async fn run(
         panic!("injected panic after terminal acquisition");
     }
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(config, client, sender, restored);
+    let (action_sender, mut action_receiver) = mpsc::channel(64);
+    let mut state = RuntimeState::new(config, client, sender, action_sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
     let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
@@ -103,6 +104,10 @@ pub(super) async fn run(
             },
             message = receiver.recv() => match message {
                 Some(message) => handle_host(message, &mut state),
+                None => break,
+            },
+            action = action_receiver.recv() => match action {
+                Some(action) => state.dispatch(action),
                 None => break,
             },
             signal = shutdown.recv() => {

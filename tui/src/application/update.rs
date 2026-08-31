@@ -1,5 +1,6 @@
 use super::{
-    AppAction, AppEffect, AppModel, BootState, ConnectionState, EffectKind, FocusTarget, Overlay,
+    AppAction, AppEffect, AppEffectOutcome, AppModel, BootState, ConnectionState, EffectKind,
+    ExecutionState, FocusTarget, Overlay, PendingMutationKind,
 };
 
 pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> {
@@ -91,9 +92,54 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 .collect()
         }
         AppAction::QuitConfirmed => Vec::new(),
+        AppAction::StartTurnRequested(draft)
+            if draft.kind == PendingMutationKind::StartTurn
+                && draft.session_id.as_deref() == model.selected_session.as_deref()
+                && matches!(
+                    model.execution,
+                    ExecutionState::Idle | ExecutionState::Failed
+                )
+                && !model.composer_is_frozen =>
+        {
+            let effect = model.effects.issue(
+                EffectKind::PersistPending {
+                    draft: draft.clone(),
+                },
+                draft.session_id.clone(),
+                None,
+            );
+            if effect.is_some() {
+                model.has_pending_command = true;
+                model.composer_is_frozen = true;
+            }
+            effect.into_iter().collect()
+        }
+        AppAction::StartTurnRequested(_) => Vec::new(),
         AppAction::EffectFinished(result) => {
-            model.effects.finish(&result);
-            Vec::new()
+            let Some(effect) = model.effects.take_finished(&result) else {
+                return Vec::new();
+            };
+            match (effect.kind, result.outcome) {
+                (
+                    EffectKind::PersistPending { draft },
+                    AppEffectOutcome::PendingPersisted(Ok(identity)),
+                ) if draft.command_id == identity.command_id => {
+                    let mut context = effect.context;
+                    context.request_digest = Some(identity.request_digest.clone());
+                    vec![AppEffect {
+                        context,
+                        kind: EffectKind::StartTurn { draft, identity },
+                    }]
+                }
+                (EffectKind::PersistPending { .. }, _) => {
+                    model.has_pending_command = false;
+                    model.composer_is_frozen = false;
+                    model.notice = Some("The pending command could not be saved.".into());
+                    model.overlay = Some(Overlay::ErrorDetails);
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            }
         }
     }
 }

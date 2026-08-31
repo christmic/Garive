@@ -35,12 +35,16 @@ pub(crate) struct EffectContext {
     pub(crate) request_digest: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EffectKind {
     Exit,
     #[allow(dead_code)]
     PersistPending {
         draft: PendingMutationDraft,
+    },
+    StartTurn {
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
     },
 }
 
@@ -49,6 +53,7 @@ impl EffectKind {
         match self {
             Self::Exit => EffectTag::Exit,
             Self::PersistPending { .. } => EffectTag::PersistPending,
+            Self::StartTurn { .. } => EffectTag::StartTurn,
         }
     }
 }
@@ -62,7 +67,7 @@ pub(crate) enum PendingMutationKind {
     ContinueTurn,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct PendingMutationDraft {
     pub(crate) command_id: String,
     pub(crate) kind: PendingMutationKind,
@@ -104,9 +109,10 @@ pub(crate) struct PersistedPendingIdentity {
 pub(crate) enum EffectTag {
     Exit,
     PersistPending,
+    StartTurn,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AppEffect {
     pub(crate) context: EffectContext,
     pub(crate) kind: EffectKind,
@@ -171,14 +177,11 @@ impl EffectTracker {
         Some(effect)
     }
 
-    pub(crate) fn finish(&mut self, result: &AppEffectResult) -> bool {
-        let Some(effect) = self.pending.get(&result.context.effect_id) else {
-            return false;
-        };
+    pub(crate) fn take_finished(&mut self, result: &AppEffectResult) -> Option<AppEffect> {
+        let effect = self.pending.get(&result.context.effect_id)?;
         if effect.context != result.context || effect.kind.tag() != result.kind {
-            return false;
+            return None;
         }
-        self.pending.remove(&result.context.effect_id);
-        true
+        self.pending.remove(&result.context.effect_id)
     }
 }

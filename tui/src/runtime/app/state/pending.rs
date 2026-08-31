@@ -1,7 +1,9 @@
 use garive_host_client::HostClientErrorCode;
 
 use crate::{
-    application::Overlay,
+    application::{
+        AppAction, Overlay, PendingMutationDraft, PendingMutationKind, PersistedPendingIdentity,
+    },
     persistence::{now, PendingCommand, PendingKind, PromptHistoryEntry},
 };
 
@@ -9,6 +11,81 @@ use super::RuntimeState;
 use crate::runtime::app::state_error_name;
 
 impl RuntimeState {
+    pub(in crate::runtime) fn request_start_turn(
+        &mut self,
+        command_id: String,
+        session_id: String,
+        text: String,
+    ) {
+        if self.store.is_ephemeral() && !self.ephemeral_confirmed {
+            if self.deferred_ephemeral.is_some() {
+                self.model.notice =
+                    Some("An ephemeral operation is already awaiting consent.".into());
+                return;
+            }
+            self.deferred_ephemeral = Some(PendingCommand {
+                schema_version: 1,
+                command_id,
+                kind: PendingKind::StartTurn,
+                session_id: Some(session_id),
+                turn_id: None,
+                suspension_id: None,
+                expected_session_version: None,
+                requested_through_position: None,
+                request_payload: serde_json::json!({"text": text}),
+                request_digest: String::new(),
+                created_at: now(),
+            });
+            self.model.overlay = Some(Overlay::EphemeralConfirmation);
+            return;
+        }
+        self.dispatch(AppAction::StartTurnRequested(PendingMutationDraft {
+            command_id,
+            kind: PendingMutationKind::StartTurn,
+            session_id: Some(session_id),
+            turn_id: None,
+            suspension_id: None,
+            expected_session_version: None,
+            requested_through_position: None,
+            request_payload: serde_json::json!({"text": text}),
+            created_at: now(),
+        }));
+    }
+
+    pub(super) fn activate_persisted_start(
+        &mut self,
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
+    ) -> Option<(String, String, String)> {
+        let session_id = draft.session_id.clone()?;
+        let text = draft.request_payload.get("text")?.as_str()?.to_owned();
+        let pending = PendingCommand {
+            schema_version: 1,
+            command_id: draft.command_id,
+            kind: PendingKind::StartTurn,
+            session_id: draft.session_id,
+            turn_id: None,
+            suspension_id: None,
+            expected_session_version: None,
+            requested_through_position: None,
+            request_payload: draft.request_payload,
+            request_digest: identity.request_digest,
+            created_at: draft.created_at,
+        };
+        if pending.command_id != identity.command_id || pending.validate().is_err() {
+            self.model.has_pending_command = false;
+            self.model.composer_is_frozen = false;
+            self.local_state_failure("invalid_persisted_start");
+            return None;
+        }
+        let command_id = pending.command_id.clone();
+        self.pending.push(pending);
+        self.sync_pending_projection();
+        #[cfg(feature = "test-hooks")]
+        self.crash_if(crate::args::TestCrashHook::PendingPersisted);
+        Some((command_id, session_id, text))
+    }
+
     pub(in crate::runtime) fn persist_presentation(&mut self) {
         if let Some(session) = self.model.selected_session.as_deref() {
             self.preferences

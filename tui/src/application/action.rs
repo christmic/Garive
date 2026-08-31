@@ -1,4 +1,4 @@
-use super::{AppEffectResult, FocusTarget, Overlay, TerminalSize};
+use super::{AppEffectResult, FocusTarget, Overlay, PendingMutationDraft, TerminalSize};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AppAction {
@@ -17,6 +17,7 @@ pub(crate) enum AppAction {
     OverlayClosed,
     QuitRequested,
     QuitConfirmed,
+    StartTurnRequested(PendingMutationDraft),
     #[allow(dead_code)]
     EffectFinished(AppEffectResult),
 }

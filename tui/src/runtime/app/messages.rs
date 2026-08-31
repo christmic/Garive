@@ -1,9 +1,8 @@
 use garive_host_client::HostClientErrorCode;
-use serde_json::json;
 
 use crate::{
     application::{AppAction, ConnectionState, ExecutionState, Overlay},
-    persistence::{now, DiagnosticEvent, PendingCommand, PendingKind},
+    persistence::{DiagnosticEvent, PendingKind},
 };
 
 use super::{
@@ -110,28 +109,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             state.load(session_id.clone());
             if let Some(text) = state.queued_prompt.take() {
                 let command_id = state.command_id("turn");
-                let pending = PendingCommand {
-                    schema_version: 1,
-                    command_id: command_id.clone(),
-                    kind: PendingKind::StartTurn,
-                    session_id: Some(session_id.clone()),
-                    turn_id: None,
-                    suspension_id: None,
-                    expected_session_version: None,
-                    requested_through_position: None,
-                    request_payload: json!({"text": text}),
-                    request_digest: String::new(),
-                    created_at: now(),
-                };
-                if state.admit_pending(pending) {
-                    host::start_turn(
-                        state.client.clone(),
-                        command_id,
-                        session_id,
-                        text,
-                        state.sender.clone(),
-                    );
-                }
+                state.request_start_turn(command_id, session_id, text);
             } else {
                 state.model.composer.clear();
                 state.model.prompt_history_browser.reset();

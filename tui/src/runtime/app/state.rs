@@ -11,11 +11,12 @@ use crate::{
         reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
     },
     input::ComposerClickTracker,
-    persistence::{PendingCommand, Preferences, PromptHistoryEntry, StateStore},
+    persistence::{AsyncStateStore, PendingCommand, Preferences, PromptHistoryEntry, StateStore},
     view, LaunchConfig,
 };
 
 use super::super::{
+    effects::EffectRunner,
     external_editor::EditorRequest,
     host::{self, HostMessage},
 };
@@ -28,6 +29,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) config: LaunchConfig,
     pub(in crate::runtime) client: LiveHostClient,
     pub(in crate::runtime) sender: mpsc::Sender<HostMessage>,
+    effects: EffectRunner<AsyncStateStore>,
     pub(in crate::runtime) model: AppModel,
     pub(in crate::runtime) follow: Option<JoinHandle<()>>,
     pub(in crate::runtime) reconnect: Option<JoinHandle<()>>,
@@ -78,6 +80,7 @@ impl RuntimeState {
         config: LaunchConfig,
         client: LiveHostClient,
         sender: mpsc::Sender<HostMessage>,
+        action_sender: mpsc::Sender<AppAction>,
         restored: RestoredState,
     ) -> Self {
         let mut model = AppModel::default();
@@ -116,10 +119,13 @@ impl RuntimeState {
             pending_freezes_composer(&restored.pending, model.selected_session.as_deref());
         model.inspector.open = restored.preferences.activity_inspector;
         let persisted_preferences = restored.preferences.clone();
+        let effects =
+            EffectRunner::new(AsyncStateStore::new(restored.store.clone()), action_sender);
         Self {
             config,
             client,
             sender,
+            effects,
             model,
             follow: None,
             reconnect: None,
@@ -155,8 +161,27 @@ impl RuntimeState {
 
     pub(in crate::runtime) fn dispatch(&mut self, action: AppAction) {
         for effect in reduce(&mut self.model, action) {
-            if matches!(effect.kind, EffectKind::Exit) {
-                debug_assert!(self.model.quit_requested);
+            match effect.kind.tag() {
+                crate::application::EffectTag::Exit => {
+                    debug_assert!(self.model.quit_requested);
+                }
+                crate::application::EffectTag::PersistPending => self.effects.submit(effect),
+                crate::application::EffectTag::StartTurn => {
+                    let EffectKind::StartTurn { draft, identity } = effect.kind else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some((command_id, session_id, text)) =
+                        self.activate_persisted_start(draft, identity)
+                    {
+                        host::start_turn(
+                            self.client.clone(),
+                            command_id,
+                            session_id,
+                            text,
+                            self.sender.clone(),
+                        );
+                    }
+                }
             }
         }
     }

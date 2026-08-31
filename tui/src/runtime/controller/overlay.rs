@@ -210,7 +210,17 @@ pub(super) fn activate_intent(
             state.ephemeral_confirmed = true;
             state.model.overlay = None;
             if let Some(pending) = state.deferred_ephemeral.take() {
-                if state.admit_pending(pending.clone()) {
+                if pending.kind == crate::persistence::PendingKind::StartTurn {
+                    let text = pending
+                        .request_payload
+                        .get("text")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned();
+                    if let Some(session_id) = pending.session_id {
+                        state.request_start_turn(pending.command_id, session_id, text);
+                    }
+                } else if state.admit_pending(pending.clone()) {
                     super::replay_pending(state, pending);
                 }
             }

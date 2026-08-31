@@ -12,7 +12,7 @@ use application::{
     reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
     BootState, ConnectionState, ConversationLandmark, EffectFailure, EffectKind, EffectTracker,
     FocusTarget, InspectorVariant, Overlay, PendingMutationDraft, PendingMutationKind,
-    PersistedPendingIdentity, TerminalSize, TimelineItem, TimelineRole,
+    PersistedPendingIdentity, PersistenceFailure, TerminalSize, TimelineItem, TimelineRole,
 };
 use serde_json::json;
 
@@ -175,7 +175,98 @@ fn pending_mutation_contract_redacts_payload_and_correlates_sealed_identity() {
             request_digest: "a".repeat(64),
         })),
     };
-    assert!(tracker.finish(&result));
+    assert!(tracker.take_finished(&result).is_some());
+}
+
+#[test]
+fn start_turn_waits_for_exact_persistence_result_before_host_effect() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        ..Default::default()
+    };
+    let draft = PendingMutationDraft {
+        command_id: "command-start".into(),
+        kind: PendingMutationKind::StartTurn,
+        session_id: Some("session-a".into()),
+        turn_id: None,
+        suspension_id: None,
+        expected_session_version: None,
+        requested_through_position: None,
+        request_payload: json!({"text": "hello"}),
+        created_at: "2026-09-01T00:00:00Z".into(),
+    };
+    let persist = reduce(&mut model, AppAction::StartTurnRequested(draft.clone()))
+        .pop()
+        .expect("persistence effect");
+    assert!(matches!(persist.kind, EffectKind::PersistPending { .. }));
+    assert!(model.composer_is_frozen);
+
+    let mut stale = AppEffectResult {
+        context: persist.context.clone(),
+        kind: persist.kind.tag(),
+        outcome: AppEffectOutcome::PendingPersisted(Ok(PersistedPendingIdentity {
+            command_id: draft.command_id.clone(),
+            request_digest: "a".repeat(64),
+        })),
+    };
+    stale.context.session_id = Some("session-b".into());
+    assert!(reduce(&mut model, AppAction::EffectFinished(stale)).is_empty());
+
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(AppEffectResult {
+            context: persist.context,
+            kind: persist.kind.tag(),
+            outcome: AppEffectOutcome::PendingPersisted(Ok(PersistedPendingIdentity {
+                command_id: draft.command_id,
+                request_digest: "a".repeat(64),
+            })),
+        }),
+    );
+    assert!(matches!(
+        follow_up.as_slice(),
+        [AppEffect {
+            kind: EffectKind::StartTurn { .. },
+            ..
+        }]
+    ));
+    assert_eq!(follow_up[0].context.request_digest, Some("a".repeat(64)));
+}
+
+#[test]
+fn start_turn_persistence_failure_unfreezes_without_host_effect() {
+    let mut model = AppModel {
+        selected_session: Some("session-a".into()),
+        ..Default::default()
+    };
+    let mut draft = start_turn_draft();
+    draft.session_id = model.selected_session.clone();
+    let persist = reduce(&mut model, AppAction::StartTurnRequested(draft)).remove(0);
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(AppEffectResult {
+            context: persist.context,
+            kind: persist.kind.tag(),
+            outcome: AppEffectOutcome::PendingPersisted(Err(PersistenceFailure::Unavailable)),
+        }),
+    );
+    assert!(follow_up.is_empty());
+    assert!(!model.composer_is_frozen);
+    assert!(!model.has_pending_command);
+}
+
+fn start_turn_draft() -> PendingMutationDraft {
+    PendingMutationDraft {
+        command_id: "command-start".into(),
+        kind: PendingMutationKind::StartTurn,
+        session_id: Some("session-a".into()),
+        turn_id: None,
+        suspension_id: None,
+        expected_session_version: None,
+        requested_through_position: None,
+        request_payload: json!({"text": "hello"}),
+        created_at: "2026-09-01T00:00:00Z".into(),
+    }
 }
 
 fn completed(effect: &AppEffect) -> AppEffectResult {

@@ -12,7 +12,7 @@ pub(crate) use action_overlay::{ActionOverlayBinding, ActionOverlayIntent, Actio
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use effect::AppGeneration;
-pub(crate) use effect::{AppEffect, AppEffectResult, EffectKind, EffectTracker};
+pub(crate) use effect::{AppEffect, AppEffectResult, EffectKind, EffectTag, EffectTracker};
 #[allow(unused_imports)]
 pub(crate) use effect::{
     AppEffectOutcome, EffectFailure, PendingMutationDraft, PendingMutationKind,

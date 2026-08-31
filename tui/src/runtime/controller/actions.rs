@@ -109,26 +109,7 @@ pub(super) fn submit(state: &mut RuntimeState) {
         state.model.execution,
         ExecutionState::Idle | ExecutionState::Failed
     ) {
-        if !admit(
-            state,
-            id.clone(),
-            PendingKind::StartTurn,
-            Some(session.clone()),
-            None,
-            None,
-            None,
-            None,
-            json!({"text": text}),
-        ) {
-            return;
-        }
-        host::start_turn(
-            state.client.clone(),
-            id,
-            session,
-            text,
-            state.sender.clone(),
-        );
+        state.request_start_turn(id, session, text);
     }
 }
 
