@@ -105,6 +105,9 @@ public final class SystemNativeAXObserver {
         case .press, .setValue:
             keyboardDispatch = nil
         }
+        if usesKeyboard {
+            try revalidateKeyboardDispatchBoundary(observation.window)
+        }
         guard observation.consume() else {
             throw NativeAXActionFailure.snapshotStale
         }
@@ -276,6 +279,25 @@ public final class SystemNativeAXObserver {
         )
         guard let focused, access.isSameElement(focused, binding.element) else {
             throw NativeAXActionFailure.focusChanged
+        }
+    }
+
+    private func revalidateKeyboardDispatchBoundary(
+        _ binding: NativeAXWindowBinding
+    ) throws {
+        guard permissionState() == .granted else {
+            throw NativeAXActionFailure.permissionRevoked
+        }
+        do {
+            try requireCurrent(binding.applicationIdentity)
+            try requireWindow(binding)
+            try requireKeyboardFocus(binding)
+        } catch let failure as NativeAXActionFailure {
+            throw failure
+        } catch NativeAXObservationFailure.permissionRequired {
+            throw NativeAXActionFailure.permissionRevoked
+        } catch {
+            throw NativeAXActionFailure.targetChanged
         }
     }
 }

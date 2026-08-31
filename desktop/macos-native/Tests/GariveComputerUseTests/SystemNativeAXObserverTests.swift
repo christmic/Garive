@@ -409,6 +409,41 @@ func dispatchesBoundNativePortableKey() throws {
     #expect(keyboard.dispatchedKeys.count == 1)
 }
 
+@Test("portable key rechecks focus after event preparation and before posting")
+func rejectsNativeKeyFocusRaceBeforePosting() throws {
+    let window = AXUIElementCreateApplication(7_023)
+    let field = AXUIElementCreateApplication(7_024)
+    let access = NativeAXAccessProbe(
+        windowElements: [window],
+        semanticRoot: .init(
+            role: "AXWindow",
+            children: [.init(role: "AXTextField", focused: true, valueSettable: true)]
+        ),
+        semanticElements: [window, field]
+    )
+    let keyboard = NativeKeyboardDispatchProbe()
+    keyboard.keyPreparationHook = { access.frontmostApplication = false }
+    let observer = SystemNativeAXObserver(
+        access: access,
+        keyboard: keyboard,
+        permissionState: { .granted },
+        isCurrent: { _ in true }
+    )
+    let windowBinding = try #require(
+        observer.bindWindows(applicationIdentity: makeAXApplicationIdentity()).first
+    )
+    let observation = try observer.observe(
+        window: windowBinding,
+        bounds: try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
+    )
+
+    #expect(throws: NativeAXActionFailure.focusChanged) {
+        try observer.perform(action: .pressKey(.space), observation: observation)
+    }
+    #expect(keyboard.preparedKeys.count == 1)
+    #expect(keyboard.dispatchedKeys.isEmpty)
+}
+
 private func makeGrantedAXObserver(
     access: NativeAXAccessProbe
 ) -> SystemNativeAXObserver {
