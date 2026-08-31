@@ -48,13 +48,13 @@ use garive_runtime::{
     AuthorityRequest, CancelReason, CancelTurnCommand, DurableExecutionConfig,
     DurableExecutionError, EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch,
     ExecutorFuture, ExecutorPort, F0ExecutionGovernance, F0GovernanceContext, KnowledgeAccessGrant,
-    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
-    MemoryRetrievalContext, ModelLifecycleContext, PreparedAgentCapabilities, PreparedExecution,
-    PreparedKnowledgeCapability, RuntimeCommandError, RuntimeCommandId, RuntimeHttpLimits,
-    RuntimeModelHttpTransport, SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture,
-    SafetyPort, SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
-    SkillActivationContext, SqliteLedger, StartTurnCommand, TerminalPublicationError,
-    TerminalPublisher,
+    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveOutputEventKind,
+    LiveOutputHub, LiveOutputLimits, MemoryRetrievalContext, ModelLifecycleContext,
+    PreparedAgentCapabilities, PreparedExecution, PreparedKnowledgeCapability, RuntimeCommandError,
+    RuntimeCommandId, RuntimeHttpLimits, RuntimeModelHttpTransport, SafetyDecisionV1,
+    SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyPort, SandboxAdmission,
+    SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1, SkillActivationContext,
+    SqliteLedger, StartTurnCommand, TerminalPublicationError, TerminalPublisher,
 };
 use garive_skill::{
     ActivationMode, ActivationPolicy, ContentBinding, SkillActivationRequest, SkillDefinition,
@@ -122,7 +122,7 @@ async fn live_memory_ledger_improves_factual_work_and_rejects_stale_revision() {
         MessagesDeployment {
             target_id: "target".into(),
             model_id: "deepseek-v4-pro".into(),
-            capabilities: BTreeSet::from([ModelCapability::Text]),
+            capabilities: BTreeSet::from([ModelCapability::Text, ModelCapability::Streaming]),
             default_max_output_tokens: Some(2_048),
             media_bindings: BTreeMap::new(),
             thinking: None,
@@ -211,6 +211,7 @@ async fn run_live_memory_case(
     ledger.commit(session.clone(), 1, plan.facts).unwrap();
     let evidence = ledger.read_facts(&session, 2, 3, None).unwrap().remove(0);
     let mut request = core_request(&session, &plan.turn_id, &execution);
+    request.required_capabilities = vec![ModelCapability::Text, ModelCapability::Streaming];
     request.context_request.max_utf8_bytes = 16_384;
     request.model_output.max_output_tokens = Some(2_048);
     request.limits.max_total_tokens = None;
@@ -333,7 +334,15 @@ async fn run_live_memory_case(
         prompt: prompt.into(),
     };
     let signals = Signals;
-    let mut events = Signals;
+    let live_output = LiveOutputHub::new(LiveOutputLimits {
+        max_active_executions: 1,
+        max_preview_bytes: 64 * 1024,
+        max_event_bytes: 16 * 1024,
+        broadcast_capacity: 64,
+        max_subscribers_per_session: 1,
+    })
+    .unwrap();
+    let mut events = live_output.event_sink();
     let mut publisher = Publisher {
         path: path.clone(),
         turn: plan.turn_id.clone(),
@@ -398,6 +407,21 @@ async fn run_live_memory_case(
             _ => None,
         })
         .unwrap();
+    let mut subscriber = live_output.subscribe(session.as_str()).unwrap();
+    let preview = tokio::time::timeout(std::time::Duration::from_secs(1), subscriber.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    match preview.kind {
+        LiveOutputEventKind::Snapshot {
+            text: streamed,
+            through_sequence,
+        } => {
+            assert!(through_sequence > 0);
+            assert_eq!(streamed, text);
+        }
+        other => panic!("unexpected real live output: {other:?}"),
+    }
     (
         text,
         known_tokens(usage.input_tokens),
