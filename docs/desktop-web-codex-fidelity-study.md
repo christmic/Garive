@@ -467,6 +467,17 @@ transparent lane and a thumb with 3 px transparent borders, yielding a 4 px
 visible rounded slider only on hover or focus-within. Existing stable-gutter
 layouts keep their geometry without reintroducing an opaque track.
 
+### VI. Native title-row hit testing
+
+The visual geometry alone did not prove a native titlebar. Tauri's official
+window-customization contract states that a normal `data-tauri-drag-region`
+applies only to the element carrying it, not to descendants. Garive's title
+container fills most of the 34 px row, so the former marker on the outer header
+left only incidental gaps draggable. The shipping Tauri 2.11.5 runtime supports
+`data-tauri-drag-region="deep"`: both sidebar and work title rows now admit all
+non-interactive descendants while preserving their nested buttons. The unused,
+hidden 28 px drag element was removed rather than kept as false evidence.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

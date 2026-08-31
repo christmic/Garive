@@ -6,6 +6,7 @@ const config = JSON.parse(readFileSync(fileURLToPath(
   new URL("../../backend/tauri.conf.json", import.meta.url)), "utf8"));
 const css = readFileSync(fileURLToPath(new URL("./style.css", import.meta.url)), "utf8");
 const entry = readFileSync(fileURLToPath(new URL("./main.tsx", import.meta.url)), "utf8");
+const app = readFileSync(fileURLToPath(new URL("./App.tsx", import.meta.url)), "utf8");
 
 describe("native macOS window composition", () => {
   it("keeps content under an overlay titlebar with correctly reserved traffic lights", () => {
@@ -21,6 +22,9 @@ describe("native macOS window composition", () => {
     expect(css).toContain('html[data-client="desktop"] .topbar { padding-left: 70px; }');
     expect(css).toContain('html[data-client="desktop"] .sidebar-window-row > button { visibility: hidden; pointer-events: none; }');
     expect(css).toContain('html[data-client="desktop"] .sidebar-window-row { display: none; }');
+    expect(app).toContain('className="sidebar-window-row" data-tauri-drag-region="deep"');
+    expect(app).toContain('className="topbar" data-tauri-drag-region="deep"');
+    expect(app).not.toContain('className="titlebar-drag"');
     expect(entry).toContain('document.documentElement.dataset.client = "desktop";');
   });
 });
