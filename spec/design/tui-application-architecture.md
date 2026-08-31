@@ -109,6 +109,17 @@ cannot reproduce row coordinates. The modal command palette and visual-only
 anchored menu share the catalog but remain separate components because their
 search grammar, focus, accessibility, and backdrop contracts differ.
 
+Conversation navigation has an equally explicit projection boundary.
+`install_timeline` sorts the typed H2 `TurnTimelineItem` snapshot once and
+builds both rendered `TimelineItem` cells and a bounded
+`ConversationLandmark` list. A landmark contains only its one-based ordinal,
+public `started_position`, and sanitized public prompt preview. The navigator
+never reconstructs identity by parsing a rendered cell's opaque `stable_key`
+and never exposes a Turn ID. Activation resolves the User cell whose public
+position equals `started_position`; absence is a safe no-op with a local
+notice. Session or timeline replacement clears the landmark filter,
+selection, and overlay before installing the new projection.
+
 Composer multi-click also has separate owners. `input/mouse_gesture.rs`
 classifies same-cell clicks within 500 ms as place, word, or logical-line
 selection; `EditorState` resolves Unicode grapheme classes and newline ranges;

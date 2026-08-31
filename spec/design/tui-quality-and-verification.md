@@ -39,6 +39,7 @@ Agent feature count. Evidence revisions and legal constraints are recorded in
 | Visual regression | snapshots and PTY harness | `insta` snapshots and frames | semantic buffer snapshots and PTY golden assertions |
 | Accessible fallback | minimal/fullscreen behavior | terminal capability-aware UI | monochrome, reduced motion, keyboard-only, screen-reader linear mode |
 | Long-conversation position | follow-aware scrollbar/timeline components with bounded hover preview | no dedicated rail transferred; see audit | shared cell-rail render/hit/hover metric, bounded public preview, theme snapshots, mouse PTY, no hidden-transcript layout |
+| Searchable Turn navigation | `/jump` stable-target list and restore tests | no equivalent Turn picker transferred; transcript pager/picker patterns only | typed public landmark projection, non-mutating search, exact-position activation, reload teardown, keyboard/mouse/linear parity |
 
 Garive passes a row only when the required evidence is executable. Presence of
 a module, screenshot, fixture transport, or test-only fake does not pass it.
@@ -160,6 +161,10 @@ Each scenario launches `CARGO_BIN_EXE_garive-tui`, not a test-only entry point:
     intermediate, and latest anchors without changing Markdown wrap width;
     move over the middle track row first and prove its bounded public preview
     without changing the current anchor, then move off-track and prove removal.
+12. type `/jump beta`, observe only the sanitized matching public Turn and its
+    ordinal, move selection without changing the viewport, press Escape and
+    prove the original anchor; reopen, activate with Enter and prove the exact
+    public Turn start, then reload the Session and prove stale results close.
 
 Scenarios 1, 4, 9, and 10 run twice in the same verification job. Both runs
 must pass; a single selected success is not evidence.

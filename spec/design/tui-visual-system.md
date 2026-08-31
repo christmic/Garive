@@ -94,12 +94,28 @@ sequences or schedule their own redraw loops.
 | Composer | idle/focused/frozen/action response; placeholder/draft/over-limit; visible grapheme selection |
 | Context footer | idle/running/notice/recovery; tiny/full width collapse |
 | Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
+| Turn navigator | empty/filtered/selected; public ordinal and prompt preview; keyboard/mouse/linear parity |
 | Command suggestions | prefix/selected/disabled/dismissed; composer-anchored, nonmodal, at most five rows |
 | Confirmation | safe consequence, primary action, escape action; no implicit acceptance |
 
 Session and activity state glyphs are closed semantic vocabulary: `✓`
 completed, `●` running, `!` action required, `×` failed, `■` stopped, and `○`
 unknown/new. Unknown public codes use neutral wording and never borrow success.
+
+`TurnNavigator` reuses `ModalFrame`, `SelectionRow`, and the shared filtered
+list geometry rather than inventing a second picker surface. Its title is
+`Jump to a Turn`; the search row remains visible above the results; each row
+uses a right-aligned ordinal gutter and one sanitized prompt line. The selected
+row is always visible and remains identifiable in mono through reverse video
+and a marker. Empty search results retain the title and filter and render
+`No matching Turns` in the normal muted text role.
+
+Wide and compact layouts bound the modal to readable conversation width and
+terminal height; previews truncate on grapheme/display-cell boundaries with a
+visible ellipsis. Tiny layout uses the full safe content rectangle. Linear
+screen-reader presentation emits the title, filter, result count, selected
+marker, ordinal, preview, and available actions in semantic order. No variant
+shows a Turn ID, stable key, hidden activity, or full prompt in popup chrome.
 
 The conversation `PositionRail` appears only when admitted timeline cells
 extend beyond the visible cell window, the conversation is at least 20 cells

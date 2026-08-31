@@ -349,6 +349,7 @@ sending the text to Host.
 |---|---|---|
 | `/new` | optional definition ID from installed list | create and select a Session |
 | `/sessions` | optional filter text | open Session picker |
+| `/jump` | optional filter text | search loaded Turns and jump to a public start position |
 | `/help` | none | open contextual help |
 | `/status` | none | open safe connection/Session details |
 | `/retry` | none | replay exact pending mutation when available |
@@ -510,6 +511,44 @@ offset where possible. Loading older pages preserves the current visible
 anchor. Render work is bounded to the visible window plus an overscan margin;
 the TUI does not lay out the complete Session on every frame.
 
+### Turn navigator
+
+`/jump [filter]` opens a modal `TurnNavigator` only when a Session is selected
+and its complete loaded H2 snapshot contains at least two public Turn
+landmarks. Otherwise the shared command registry supplies a truthful disabled
+reason. The optional argument seeds the filter; no argument starts with an
+empty filter.
+
+The navigator consumes a separate public projection built directly from typed
+`TurnTimelineItem` values. Each oldest-first `ConversationLandmark` contains:
+
+- the Turn's public `started_position`, used only as the jump coordinate;
+- a one-based ordinal across the complete loaded snapshot; and
+- a sanitized, single-row, display-width-bounded preview of public user text.
+
+It never parses a rendered cell `stable_key`, displays an opaque Turn ID, or
+requests/persists additional data. Filtering is case-insensitive over the
+public prompt preview. An empty result renders an explicit no-match state and
+has no activatable row.
+
+On open, follow-latest selects the final matching Turn. A detached viewport
+selects the matching Turn whose start is closest at or before the current
+public anchor position, falling back to the first result. `Up`, `Down`,
+`Home`, and `End` move a clamped selection and keep it inside the shared
+visible window. Selection and filter changes do not mutate the conversation
+viewport. `Enter` resolves the selected `started_position` to its exact User
+cell, anchors it at the top where possible, disables follow-latest unless it is
+the final Turn, and closes. `Escape` closes without changing the viewport.
+
+The overlay owns all keys while open. Mouse wheel changes selection and a left
+click activates only a row returned by the same rendered-window geometry;
+background conversation and rail routes cannot observe those events. Session
+selection, timeline replacement, terminal focus loss, and quit clear the
+overlay/filter/selection. Resize recomputes only the visible window and keeps
+the same public position selected when it still matches. Linear screen-reader
+mode exposes the same filtered ordinal/preview rows and exact activation, with
+no cursor-addressed popup.
+
 ### Activity and suspension
 
 H3 public activities render semantic icon/text, status, Turn, and durable
@@ -586,7 +625,7 @@ properties also present in the audited Codex/Grok Build implementations:
 |---|---|
 | Responsiveness | input and cancel remain serviceable during Host traffic; no network/file work in render |
 | Editing | multiline Unicode, paste, selection, undo/redo, prompt history, byte limit |
-| Navigation | durable Session picker, reopen, pagination, stable scroll/reflow |
+| Navigation | durable Session picker, reopen, pagination, stable scroll/reflow, searchable public Turn jump |
 | Recovery | reconnect, snapshot+follow, exact unknown-command retry, terminal restore |
 | Presentation | responsive layout, Markdown/code, overlays, themes, semantic status |
 | Accessibility | keyboard-only, monochrome, reduced motion, screen-reader linear mode |
@@ -607,6 +646,9 @@ client-side imitation.
   capability sets, lifecycle states, overlays, Markdown blocks, and hostile
   control strings;
 - scroll/reflow properties preserve stable anchors and bounded visible work;
+- Turn-navigator tests cover seeded filtering, no match, exact public-position
+  activation, Escape immutability, reload teardown, hostile text, and shared
+  keyboard/mouse/linear result ordering;
 - screen-reader tests assert semantic line order and absence of animation,
   cursor addressing, mouse, and alternate-screen control;
 - PTY tests cover typing, inline slash discovery/completion, paste, resize,

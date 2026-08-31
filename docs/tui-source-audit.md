@@ -269,6 +269,34 @@ pagination, persistence, or Host truth. Leaving the rail clears it. A later
 searchable navigator requires a separately frozen public Turn projection; it
 must not parse or display opaque Turn IDs from `stable_key` strings.
 
+### Searchable Turn navigation
+
+Grok's `/jump` is a client-side overlay over an already loaded timeline.
+`xai-grok-pager/src/views/jump.rs:1-8,22-39,59-106,113-145` defines captured
+restore state, clamped keyboard selection, stable activation, shared pointer
+rows, ordinal gutters, and bounded prompt previews. Dispatch refuses competing
+overlay ownership and fewer than two Turns, captures the current viewport,
+live-previews selection, resolves the stable target, and restores on dismissal
+or failed activation in `app/dispatch/jump.rs:8-78`. Focused tests cover
+overlay precedence, reload teardown, target removal, failed activation, and
+dismissal restore in `app/dispatch/tests/jump.rs`.
+
+Codex has a transcript pager and searchable picker patterns, but the audited
+revision has no equivalent searchable conversation-Turn jump. Pi's
+`packages/coding-agent/src/modes/interactive/components/tree-selector.ts` and
+`interactive-mode.ts:2613` navigate and mutate Session branches; that is not a
+flat conversation-position picker and its branching semantics are not
+transferred.
+
+Garive adopts a searchable, bounded, keyboard-and-mouse list over the complete
+loaded H2 snapshot, not Grok's private entry identity or live viewport
+mutation. A separate `ConversationLandmark` projection is built directly from
+typed `TurnTimelineItem` values. Its target is the public
+`started_position`; its label is a one-based ordinal plus sanitized public user
+text. Moving or filtering remains preview-only, Enter commits one jump, and
+Escape leaves the viewport unchanged. Session/timeline replacement tears the
+overlay down, so a stale landmark can never activate.
+
 ## Codex findings
 
 ### Event and terminal ownership
