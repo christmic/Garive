@@ -174,6 +174,18 @@ pub enum CdpPortableKey {
     Space,
 }
 
+/// Exact terminal result of one typed page navigation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CdpNavigationOutcome {
+    /// One page navigation committed at the exact final URL.
+    Page {
+        /// Final committed main-frame URL after redirects.
+        final_url: String,
+    },
+    /// Chromium classified the request as a download instead of a page load.
+    Download,
+}
+
 /// Typed navigation result used by Runtime redirect/origin revalidation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CdpNavigationResult {
@@ -181,10 +193,8 @@ pub struct CdpNavigationResult {
     pub frame_id: String,
     /// Optional new-document loader identity.
     pub loader_id: Option<String>,
-    /// Final committed frame URL after redirects.
-    pub final_url: String,
-    /// Whether Chromium classified the navigation as a download.
-    pub is_download: bool,
+    /// Exact page or download outcome.
+    pub outcome: CdpNavigationOutcome,
 }
 
 /// Current bounded top-level history entry used for action navigation audits.
@@ -300,6 +310,18 @@ impl CdpClient {
         validate_id(session_id)?;
         self.transport
             .call("Accessibility.enable", json!({}), Some(session_id.into()))
+            .await?;
+        Ok(())
+    }
+
+    /// Installs the closed no-path download policy for one managed browser context.
+    pub async fn deny_managed_downloads(&mut self) -> Result<(), CdpTransportError> {
+        self.transport
+            .call(
+                "Browser.setDownloadBehavior",
+                json!({"behavior":"deny","eventsEnabled":false}),
+                None,
+            )
             .await?;
         Ok(())
     }
@@ -464,14 +486,31 @@ impl CdpClient {
                 Some(session_id.into()),
             )
             .await?;
-        if result
+        let error_text = result
             .get("errorText")
             .and_then(Value::as_str)
-            .is_some_and(|value| !value.is_empty())
-        {
+            .filter(|value| !value.is_empty());
+        let frame_id = bounded_text(&result, "frameId", 4_096)?;
+        let is_download = result
+            .get("isDownload")
+            .map(|value| value.as_bool().ok_or_else(protocol))
+            .transpose()?
+            .unwrap_or(false);
+        let loader_id =
+            optional_object_text(result.as_object().ok_or_else(protocol)?, "loaderId", 4_096)?;
+        if is_download {
+            if error_text.is_some_and(|value| value != "net::ERR_ABORTED") {
+                return Err(CdpTransportError::NavigationFailed);
+            }
+            return Ok(CdpNavigationResult {
+                frame_id,
+                loader_id,
+                outcome: CdpNavigationOutcome::Download,
+            });
+        }
+        if error_text.is_some() {
             return Err(CdpTransportError::NavigationFailed);
         }
-        let frame_id = bounded_text(&result, "frameId", 4_096)?;
         match wait_until {
             CdpWaitUntil::DomContentLoaded => {
                 self.transport
@@ -512,17 +551,8 @@ impl CdpClient {
         validate_http_url(&final_url)?;
         Ok(CdpNavigationResult {
             frame_id,
-            loader_id: optional_object_text(
-                result.as_object().ok_or_else(protocol)?,
-                "loaderId",
-                4_096,
-            )?,
-            final_url,
-            is_download: result
-                .get("isDownload")
-                .map(|value| value.as_bool().ok_or_else(protocol))
-                .transpose()?
-                .unwrap_or(false),
+            loader_id,
+            outcome: CdpNavigationOutcome::Page { final_url },
         })
     }
 

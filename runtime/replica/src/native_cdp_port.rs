@@ -3,8 +3,9 @@
 use std::{collections::VecDeque, fmt, time::Duration};
 
 use garive_browser_cdp::{
-    CdpAxProperty, CdpAxTree, CdpClient, CdpFrameTree, CdpHistoryEntry, CdpNavigationResult,
-    CdpPortableKey, CdpSelectOutcome, CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
+    CdpAxProperty, CdpAxTree, CdpClient, CdpFrameTree, CdpHistoryEntry, CdpNavigationOutcome,
+    CdpNavigationResult, CdpPortableKey, CdpSelectOutcome, CdpTransportError, CdpWaitUntil,
+    CDP_ADAPTER_REVISION,
 };
 use garive_tools::canonical_http_origin;
 use serde_json::json;
@@ -110,6 +111,7 @@ pub struct CdpNativeAdapterPort {
     next_popup_sequence: u64,
     accessibility_enabled: bool,
     popup_tracking_enabled: bool,
+    managed_downloads_denied: bool,
     usable: bool,
     pending_popups: VecDeque<CdpPendingPopup>,
     last_snapshot_id: Option<NativeSnapshotId>,
@@ -169,6 +171,7 @@ impl CdpNativeAdapterPort {
             next_popup_sequence: 1,
             accessibility_enabled: false,
             popup_tracking_enabled: false,
+            managed_downloads_denied: false,
             usable: true,
             pending_popups: VecDeque::new(),
             last_snapshot_id: None,
@@ -314,8 +317,18 @@ impl CdpNativeAdapterPort {
         Ok(&self.cdp_target_id)
     }
 
-    async fn ensure_popup_tracking(&mut self) -> Result<(), NativeProtocolError> {
-        if self.session_mode == CdpBrowserSessionMode::Managed && !self.popup_tracking_enabled {
+    async fn ensure_managed_boundaries(&mut self) -> Result<(), NativeProtocolError> {
+        if self.session_mode != CdpBrowserSessionMode::Managed {
+            return Ok(());
+        }
+        if !self.managed_downloads_denied {
+            self.client
+                .deny_managed_downloads()
+                .await
+                .map_err(observation_error)?;
+            self.managed_downloads_denied = true;
+        }
+        if !self.popup_tracking_enabled {
             self.client
                 .enable_managed_popup_tracking(&self.cdp_session_id)
                 .await
@@ -828,7 +841,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
             {
                 return Err(NativeProtocolError::SnapshotStale);
             }
-            self.ensure_popup_tracking().await?;
+            self.ensure_managed_boundaries().await?;
             if !self.accessibility_enabled {
                 self.client
                     .enable_accessibility(&self.cdp_session_id)
@@ -1007,27 +1020,45 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .await
                 .map_err(|_| NativeProtocolError::ActionUncertain)?
                 .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                let prior_history_entry = self
+                    .last_history_entry
+                    .clone()
+                    .ok_or(NativeProtocolError::ActionUncertain)?;
                 let history_entry = self
                     .client
                     .current_history_entry(&self.cdp_session_id)
                     .await
                     .map_err(|_| NativeProtocolError::ActionUncertain)?;
-                if history_entry.url != result.final_url {
+                let (navigation_outcome, final_origin, mut failure_code) = match &result.outcome {
+                    CdpNavigationOutcome::Page { final_url } => {
+                        if history_entry.url != *final_url {
+                            return Err(NativeProtocolError::ActionUncertain);
+                        }
+                        self.target_revision =
+                            navigation_revision(&self.target_revision, &result, final_url);
+                        let final_origin = canonical_http_origin(final_url);
+                        let failure = (final_origin.as_deref()
+                            != Some(navigation.destination_origin.as_str()))
+                        .then(|| NativeProtocolError::BrowserOriginDenied.code().to_owned());
+                        ("page", final_origin, failure)
+                    }
+                    CdpNavigationOutcome::Download => {
+                        if !self.managed_downloads_denied || history_entry != prior_history_entry {
+                            return Err(NativeProtocolError::ActionUncertain);
+                        }
+                        (
+                            "download",
+                            None,
+                            Some(NativeProtocolError::ActionUnsupported.code().to_owned()),
+                        )
+                    }
+                };
+                self.last_history_entry = Some(history_entry.clone());
+                let frame_changed = self.capture_resulting_frame_tree().await?;
+                if navigation_outcome == "download" && frame_changed {
                     return Err(NativeProtocolError::ActionUncertain);
                 }
-                self.last_history_entry = Some(history_entry.clone());
-                self.target_revision = navigation_revision(&self.target_revision, &result);
-                let frame_changed = self.capture_resulting_frame_tree().await?;
                 let popup_audit = self.audit_popups(&[]).await?;
-                let final_origin = canonical_http_origin(&result.final_url);
-                let mut failure_code =
-                    if final_origin.as_deref() != Some(navigation.destination_origin.as_str()) {
-                        Some(NativeProtocolError::BrowserOriginDenied.code().to_owned())
-                    } else if result.is_download {
-                        Some(NativeProtocolError::ActionUnsupported.code().to_owned())
-                    } else {
-                        None
-                    };
                 if popup_audit.failure_code.is_some() {
                     failure_code = popup_audit.failure_code.clone();
                 }
@@ -1046,6 +1077,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "preflight_evidence_digest": binding.preflight_evidence_digest,
                     "terminal_classification": terminal_classification,
                     "failure_code": failure_code,
+                    "navigation_outcome": navigation_outcome,
                     "final_origin": final_origin,
                     "history_entry_id": history_entry.id,
                     "frame_changed": frame_changed,
@@ -1639,7 +1671,7 @@ fn wait_name(value: CdpWaitUntil) -> &'static str {
     }
 }
 
-fn navigation_revision(previous: &str, result: &CdpNavigationResult) -> String {
+fn navigation_revision(previous: &str, result: &CdpNavigationResult, final_url: &str) -> String {
     format!(
         "revision-{:x}",
         Sha256::digest(
@@ -1647,7 +1679,7 @@ fn navigation_revision(previous: &str, result: &CdpNavigationResult) -> String {
                 "{previous}\0{}\0{}\0{}",
                 result.frame_id,
                 result.loader_id.as_deref().unwrap_or_default(),
-                result.final_url
+                final_url
             )
             .as_bytes()
         )

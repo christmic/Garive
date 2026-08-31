@@ -16,6 +16,6 @@ pub use wire::{parse_incoming, CdpCommand, CdpError, CdpIncoming, CdpProtocolErr
 pub const CDP_ADAPTER_REVISION: &str = "garive.browser.cdp.v3";
 pub use client::{
     CdpAxNode, CdpAxProperty, CdpAxTree, CdpBrowserVersion, CdpClient, CdpFrame, CdpFrameTree,
-    CdpHistoryEntry, CdpNavigationHistory, CdpNavigationResult, CdpPopup, CdpPortableKey,
-    CdpSelectOutcome, CdpWaitUntil,
+    CdpHistoryEntry, CdpNavigationHistory, CdpNavigationOutcome, CdpNavigationResult, CdpPopup,
+    CdpPortableKey, CdpSelectOutcome, CdpWaitUntil,
 };

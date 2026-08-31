@@ -178,6 +178,7 @@ fn admitted_method(method: &str) -> bool {
     matches!(
         method,
         "Browser.getVersion"
+            | "Browser.setDownloadBehavior"
             | "Target.activateTarget"
             | "Target.attachToTarget"
             | "Target.closeTarget"
