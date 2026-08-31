@@ -16,13 +16,13 @@ use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, Respon
 use garive_provider_openai::build_profile as build_openai_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
-    ActivityProjectionLimits, HostClock, InstalledAgent, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, RuntimeHttpLimits, RuntimeModelHttpTransport,
+    ActivityProjectionLimits, HostClock, LiveHostLimits, LocalExecutionAttempt,
+    LocalExecutionPolicy, RuntimeAgentInstallation, RuntimeHttpLimits, RuntimeModelHttpTransport,
 };
 use uuid::Uuid;
 
 use crate::{
-    desktop_agent::desktop_agent_installation,
+    desktop_agent::builtin_desktop_agent_installation,
     system_configuration::{
         MissingUsageDocument, OutputLimitDocument, TerminalActionDocument, MAX_DESKTOP_CONFIG_BYTES,
     },
@@ -210,11 +210,11 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             credential,
         )?;
         let lease_duration_ms = config.execution_lease_duration_ms;
-        let installed_agent = installed_agent(&config)?;
+        let agent_installation = agent_installation(&config)?;
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
-            installed_agent,
+            agent_installation: Arc::new(agent_installation),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
@@ -239,10 +239,10 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
     }
 }
 
-fn installed_agent(
+fn agent_installation(
     config: &DesktopSystemConfiguration,
-) -> Result<InstalledAgent, DesktopConfigurationError> {
-    let installation = desktop_agent_installation(
+) -> Result<RuntimeAgentInstallation, DesktopConfigurationError> {
+    let installation = builtin_desktop_agent_installation(
         &config.installed_agent.definition_id,
         &config.installed_agent.agent_instance_namespace,
     )
@@ -258,7 +258,7 @@ fn installed_agent(
     {
         return Err(DesktopConfigurationError::ConstructionFailure);
     }
-    Ok(installation.clone_installed_agent())
+    Ok(installation)
 }
 
 fn execution_policy(config: &DesktopSystemConfiguration) -> LocalExecutionPolicy {

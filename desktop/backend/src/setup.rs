@@ -15,7 +15,7 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use crate::{
-    desktop_agent::desktop_agent_installation, DesktopSystemConfiguration,
+    desktop_agent::builtin_desktop_agent_installation, DesktopSystemConfiguration,
     ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE, DESKTOP_CREDENTIAL_SERVICE,
     OPENAI_RESPONSES_PROFILE_ID,
 };
@@ -1082,7 +1082,7 @@ fn configuration(
     revision: u64,
 ) -> Result<Value, DesktopSetupError> {
     let namespace = format!("desktop-{setup_id}");
-    let installation = desktop_agent_installation(&input.definition_id, &namespace)
+    let installation = builtin_desktop_agent_installation(&input.definition_id, &namespace)
         .map_err(|_| DesktopSetupError::InputInvalid)?;
     let agent = installation.installed_agent();
     Ok(

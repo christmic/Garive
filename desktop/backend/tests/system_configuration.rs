@@ -12,8 +12,9 @@ use garive_desktop::{
     BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopProfileConfiguration,
     DesktopProfileRegistry, DesktopSecretResolver, DesktopSetupError, DesktopSetupInput,
     DesktopSetupService, DesktopState, DesktopSystemConfiguration,
-    FileDesktopConfigurationProvider, SetupCredentialStore, ANTHROPIC_MESSAGES_PROFILE_ID,
-    MAX_DESKTOP_CONFIG_BYTES, OPENAI_RESPONSES_PROFILE_ID,
+    DesktopWorkspaceExecutionFactory, DesktopWorkspaceService, FileDesktopConfigurationProvider,
+    SetupCredentialStore, ANTHROPIC_MESSAGES_PROFILE_ID, MAX_DESKTOP_CONFIG_BYTES,
+    OPENAI_RESPONSES_PROFILE_ID,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
@@ -199,6 +200,16 @@ impl ModelPort for CompletingModel {
     }
 }
 
+fn governed_state(database: &Path) -> DesktopState {
+    let factory = DesktopWorkspaceExecutionFactory::new(
+        database.to_owned(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    DesktopState::governed(Arc::new(factory))
+}
+
 #[tokio::test]
 async fn file_provider_installs_and_runs_one_durable_turn() {
     let directory = tempdir().expect("temporary config directory");
@@ -210,7 +221,7 @@ async fn file_provider_installs_and_runs_one_durable_turn() {
         FixtureSecrets,
         FixtureProfiles,
     );
-    let state = DesktopState::default();
+    let state = governed_state(&directory.path().join("garive-desktop.db"));
     assert!(state.install_from(&provider).expect("installed"));
     let result = state
         .run_turn_isolated("definition-main".into(), "hello configured desktop".into())
@@ -334,7 +345,7 @@ async fn committed_setup_constructs_runtime_after_explicit_restart() {
         .expect("committed setup");
     assert_eq!(receipt.configuration_revision, 1);
 
-    let restarted = DesktopState::default();
+    let restarted = governed_state(&directory.path().join("garive-desktop.db"));
     let provider = FileDesktopConfigurationProvider::new(
         directory.path().join("desktop-v1.json"),
         directory.path().to_owned(),
@@ -410,7 +421,7 @@ async fn configured_builtin_profile_completes_over_real_loopback_http() {
         FixtureSecrets,
         BuiltinDesktopProfileRegistry,
     );
-    let state = DesktopState::default();
+    let state = governed_state(&directory.path().join("garive-desktop.db"));
     assert!(state.install_from(&provider).expect("installed"));
     let result = state
         .run_turn_isolated("definition-main".into(), "hello live desktop".into())

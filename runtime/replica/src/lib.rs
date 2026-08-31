@@ -52,7 +52,9 @@ mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
 
-pub use agent_installation::{RuntimeAgentInstallation, RuntimeAgentInstallationError};
+pub use agent_installation::{
+    RuntimeAgentInstallation, RuntimeAgentInstallationError, SnapshotBoundGovernedExecutionFactory,
+};
 #[cfg(unix)]
 pub use builtin_patch_executor::{BuiltinPatchExecutor, T1_PATCH_EXECUTOR_ID};
 #[cfg(unix)]

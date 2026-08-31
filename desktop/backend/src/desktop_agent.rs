@@ -11,16 +11,19 @@ use garive_runtime::RuntimeAgentInstallation;
 
 use crate::workspace_execution::{desktop_workspace_tool_definition, DESKTOP_WRITE_TOOL_REVISION};
 
-pub(crate) const DESKTOP_AGENT_REVISION: &str = "desktop.agent.v1";
+/// Exact revision of the built-in Desktop Agent definition.
+pub const DESKTOP_AGENT_REVISION: &str = "desktop.agent.v1";
 const GOVERNANCE_ID: &str = "desktop.governance";
 const GOVERNANCE_REVISION: &str = "desktop.governance.v1";
 const CONTEXT_ID: &str = "desktop.context";
 const CONTEXT_REVISION: &str = "desktop.context.v1";
 
+/// Secret-free failure while resolving the built-in Desktop Agent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct DesktopAgentCompositionError;
+pub struct DesktopAgentCompositionError;
 
-pub(crate) fn desktop_agent_installation(
+/// Resolves the built-in Desktop Agent into one immutable Runtime installation.
+pub fn builtin_desktop_agent_installation(
     definition_id: &str,
     instance_namespace: &str,
 ) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
@@ -96,8 +99,8 @@ mod tests {
 
     #[test]
     fn installation_is_deterministic_and_contains_the_exact_workspace_tool() {
-        let left = desktop_agent_installation("garive-work", "desktop-main").unwrap();
-        let right = desktop_agent_installation("garive-work", "desktop-main").unwrap();
+        let left = builtin_desktop_agent_installation("garive-work", "desktop-main").unwrap();
+        let right = builtin_desktop_agent_installation("garive-work", "desktop-main").unwrap();
         assert_eq!(
             left.snapshot().snapshot_digest(),
             right.snapshot().snapshot_digest()

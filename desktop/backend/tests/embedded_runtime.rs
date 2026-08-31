@@ -10,9 +10,9 @@ use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
 use garive_desktop::{
-    DesktopHost, DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
-    DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory, DesktopWorkspaceGrant,
-    DesktopWorkspaceService,
+    builtin_desktop_agent_installation, DesktopHost, DesktopHostConfig, DesktopOperations,
+    DesktopState, DesktopTerminal, DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory,
+    DesktopWorkspaceGrant, DesktopWorkspaceService,
 };
 use garive_ledger::SessionId;
 use garive_llm::{
@@ -21,8 +21,9 @@ use garive_llm::{
     ModelStreamEvent, ModelUsage, ObserverDecision, TextMode, TokenCount, UsageSource,
 };
 use garive_runtime::{
-    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHostLimits, LiveOutputEventKind,
-    LocalExecutionAttempt, LocalExecutionPolicy, SqliteLedger,
+    CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
+    SqliteLedger,
 };
 use tempfile::tempdir;
 
@@ -97,6 +98,19 @@ impl ModelPort for CompletingModel {
                 stop_reason: ModelStopReason::EndTurn,
             })
         })
+    }
+}
+
+struct MismatchedFactory(DesktopWorkspaceExecutionFactory);
+
+impl LocalGovernedExecutionFactory for MismatchedFactory {
+    fn create(
+        &self,
+        committed: &CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        let mut execution = self.0.create(committed)?;
+        execution.capabilities.definitions.clear();
+        Ok(execution)
     }
 }
 
@@ -188,26 +202,21 @@ fn desktop_host_with_ordinal(
 ) -> DesktopHost {
     let mut config = desktop_host_config(database, model);
     config.operations = Arc::new(Operations(AtomicU64::new(first_operation)));
-    DesktopHost::new(config).expect("Desktop Host composition")
+    let factory = DesktopWorkspaceExecutionFactory::new(
+        database.to_owned(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    DesktopHost::new_governed(config, Arc::new(factory)).expect("Desktop Host composition")
 }
 
 fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHostConfig {
     DesktopHostConfig {
         database_path: database.to_owned(),
-        installed_agent: InstalledAgent {
-            definition_id: "definition-main".into(),
-            definition_revision: "revision-1".into(),
-            snapshot_digest: "a".repeat(64),
-            agent_instance_namespace: "desktop-main".into(),
-            public_capabilities: Vec::new(),
-            runtime_limits: EffectiveRuntimeLimits {
-                max_iterations: 4,
-                max_input_tokens: Some(64),
-                max_output_tokens: Some(16),
-                deadline_budget_ms: Some(2_000),
-            },
-            public_activity_catalogue: None,
-        },
+        agent_installation: Arc::new(
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+        ),
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
@@ -220,7 +229,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
             recovery_policy_revision: "recovery-1".into(),
             required_capabilities: vec![ModelCapability::Text],
             model_output: ModelOutputSettings {
-                max_output_tokens: Some(16),
+                max_output_tokens: Some(8_192),
                 text_mode: TextMode::Plain,
                 reasoning_visibility: false,
             },
@@ -240,6 +249,32 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         model,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     }
+}
+
+#[tokio::test]
+async fn installed_snapshot_rejects_a_different_executor_catalogue() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("mismatched.db");
+    let inner = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(
+        desktop_host_config(&database, Arc::new(CompletingModel)),
+        Arc::new(MismatchedFactory(inner)),
+    )
+    .unwrap();
+    let state = DesktopState::default();
+    state.install(host).unwrap();
+    assert_eq!(
+        state
+            .run_turn_isolated("definition-main".into(), "hello".into())
+            .await
+            .unwrap_err(),
+        garive_desktop::DesktopHostError::ExecutionFailure
+    );
 }
 
 #[tokio::test]
