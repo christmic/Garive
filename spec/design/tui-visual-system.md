@@ -182,6 +182,13 @@ right alignment. Below that boundary, each body row becomes a labeled record;
 gutters are deducted before layout, and neither presentation may exceed its
 assigned display width.
 
+## External-editor presentation
+
+No modal chrome remains over a child-owned terminal. Before handoff, Help and
+the command row name `Ctrl+G edit`; after return, the composer is fully repainted
+with a short semantic result notice. No spinner implies Garive still owns the
+screen. Linear mode emits one bounded handoff line and one result line.
+
 ## Conformance
 
 Every new component or variant requires: a semantic buffer test, dark/light/mono snapshot coverage at its responsive boundary, keyboard ownership tests,

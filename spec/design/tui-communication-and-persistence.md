@@ -337,6 +337,15 @@ and validating their filename grammar. Corrupt primary files move to a unique
 The UI and log name only the stable error and file category, never content or
 full path.
 
+## External-editor transient file
+
+The handoff file is not TUI state. It is created exclusively with private
+permissions, removed on every success/error/drop path, and never recovered.
+Reads are bounded to the Host draft limit plus a possible final CRLF before
+validation. File path, argv, prompt, and edited bytes never enter diagnostics.
+`--ephemeral` permits this user-requested transient handoff because it creates
+no durable convenience state.
+
 ## Crash matrix
 
 | Boundary | Recovery |

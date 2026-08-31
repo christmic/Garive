@@ -417,6 +417,20 @@ are emitted only for locally constructed validated URLs.
 Errors and `Debug` implementations exclude user text, completion text, prompt
 JSON, headers, URLs, credential references, and raw response bodies.
 
+## External-editor handoff
+
+`runtime/external_editor.rs` owns bounded editor-command resolution, private
+temporary-file lifetime, child outcome classification, and edited-text
+normalization. `runtime/app.rs` remains the sole TTY owner: it drops the event
+reader, restores every acquired mode, launches the child with inherited stdio
+and no shell, waits, reacquires the configured modes, and forces a full redraw.
+Controllers may request this handoff but may not spawn or manipulate raw mode.
+
+The request snapshots a content digest and Session identity, never prompt text
+in `Debug`, diagnostics, or effects. A successful result replaces the draft as
+one undoable edit only when both identities still match. Host traffic remains
+bounded; no second terminal reader may exist while the child owns stdin.
+
 ## Acceptance
 
 - reducer fixtures cover every state and invariant above, including stale and

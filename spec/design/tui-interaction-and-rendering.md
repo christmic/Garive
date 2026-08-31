@@ -394,6 +394,20 @@ Unicode display-cell boundary and never splits a grapheme. Rendering and hit
 testing consume one shared inner rectangle: the horizontal breathing room and
 border cannot activate a row, while every painted result row can.
 
+## External draft editor
+
+`Ctrl+G` and `/edit-prompt` route to one typed action for an unfrozen composer
+with no blocking overlay. Resolution prefers `VISUAL`, then `EDITOR`; unset,
+empty, malformed, overlong, or over-argument values name a safe reason. Garive
+never guesses an editor and never evaluates a shell.
+
+The child receives the exact draft in a private Markdown file. Exit zero
+normalizes CRLF, strips at most one editor-added final newline when the original
+lacked one, and applies one undoable replacement. Empty output clears the
+draft. Spawn, I/O, non-zero exit, invalid UTF-8, unsafe controls, byte overflow,
+or a changed draft/Session keeps the newer original. Return focuses Composer,
+resets history browsing, recomputes suggestions, and redraws without submitting.
+
 ## Session navigation
 
 Session rows show a bounded display label derived from committed public text,

@@ -212,6 +212,24 @@ before a different Session draft loads. It does not copy Grok/Codex editor
 models or Pi's multi-entry ring, and kill/yank never reads or writes a system
 clipboard.
 
+### External draft editor
+
+Codex resolves `VISUAL` before `EDITOR`, parses argv without a shell, writes a
+Markdown temporary file, inherits stdio, and applies only exit zero in
+`codex-rs/tui/src/external_editor.rs:13-87`; `app.rs:1373-1378` emits an
+explicit launch event. Grok adds exclusive Unix `0600` creation, bounded read,
+UTF-8/non-zero/stale preservation, newline handling, and drop cleanup in
+`app/external_editor.rs:11-144,181-341`; `app/event_loop.rs:680-767` parks the
+reader, releases and reacquires the terminal, then forces presentation. Pi
+independently stops the TUI, awaits an inherited-stdio asynchronous child,
+applies only exit zero, removes the file, restarts, and fully renders at
+`interactive-mode.ts:3647-3702`; its comment names the console-read race.
+
+Garive adopts those three-source invariants, not their modules or wording. It
+adds the exact 4096-byte Host bound, bounded argv, no implicit `vi`, no shell,
+content/Session freshness, one-edit undo, content-free diagnostics, and
+macOS-first PTY evidence.
+
 ## Codex findings
 
 ### Event and terminal ownership

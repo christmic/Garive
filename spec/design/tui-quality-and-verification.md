@@ -499,6 +499,16 @@ sequential terminal gestures explicit parsing boundaries; all 17 shipping PTYs
 then pass. Physical Terminal/iTerm-class image admission remains a separate
 open gate.
 
+## External-editor evidence
+
+Admission requires unit cases for `VISUAL` precedence, quoted argv, every
+bound, exclusive-file cleanup, newline normalization, non-zero/spawn/UTF-8/
+control/oversize failure, and stale draft/Session rejection. Terminal tests
+cover partial restore and reacquire faults. A macOS shipping PTY uses a real
+deterministic child to prove stdin ownership, multiline edit, undo, failure
+preservation, complete raw/paste/focus/mouse/alternate/title restoration, and
+full redraw. ANSI transcripts do not satisfy the physical screenshot gate.
+
 ## Completion rule
 
 The TUI is complete only when:
