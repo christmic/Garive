@@ -13,8 +13,8 @@ mod overlay;
 pub(super) use actions::replay_pending;
 use actions::{cancel, copy_composer_selection, create_session, submit};
 use navigation::{
-    activate_navigation_selection, conversation_page_cells, cycle_focus, move_navigation_selection,
-    move_navigation_to_edge, open_command_palette, open_prompt_history, open_session_picker,
+    conversation_page_cells, cycle_focus, open_command_palette, open_prompt_history,
+    open_session_picker,
 };
 
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
@@ -80,22 +80,6 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     {
         state.dispatch(AppAction::OverlayOpened(Overlay::Help));
         return;
-    }
-    if state.model.focus == FocusTarget::Navigation {
-        match key.code {
-            KeyCode::Up => move_navigation_selection(&mut state.model, true),
-            KeyCode::Down => move_navigation_selection(&mut state.model, false),
-            KeyCode::Home => move_navigation_to_edge(&mut state.model, false),
-            KeyCode::End => move_navigation_to_edge(&mut state.model, true),
-            KeyCode::Enter => activate_navigation_selection(state),
-            _ => {}
-        }
-        if matches!(
-            key.code,
-            KeyCode::Up | KeyCode::Down | KeyCode::Home | KeyCode::End | KeyCode::Enter
-        ) {
-            return;
-        }
     }
     if state.model.focus == FocusTarget::Conversation {
         match key.code {

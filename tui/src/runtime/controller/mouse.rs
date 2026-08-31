@@ -3,10 +3,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use crate::{
     application::{AppAction, AppModel, FocusTarget, Overlay},
     input::ComposerClick,
-    view::{
-        command_suggestion_hit_test, composer_hit_test, conversation_rail_hit_test,
-        conversation_rail_hover_hit_test, navigation_hit_test, overlay_contains, overlay_hit_test,
-    },
+    view::{command_suggestion_hit_test, composer_hit_test, overlay_contains, overlay_hit_test},
 };
 
 use super::{
@@ -18,9 +15,6 @@ use super::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MouseAction {
     ConversationScroll { backwards: bool },
-    ConversationJump(usize),
-    ConversationHover(Option<crate::application::ConversationRailHover>),
-    SessionActivate(usize),
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
     SuggestionMove { backwards: bool },
@@ -65,23 +59,6 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             state.model.scroll_conversation_down(3);
         }
-        MouseAction::ConversationJump(index) => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.jump_to_timeline_index(index);
-        }
-        MouseAction::ConversationHover(hover) => {
-            if state.model.conversation_rail_hover != hover {
-                state.model.conversation_rail_hover = hover;
-            }
-        }
-        MouseAction::SessionActivate(index) => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
-            if let Some(session) = state.model.sessions.get(index) {
-                state.model.session_selection = index;
-                state.model.navigation_selection = Some(session.session_id.clone());
-                state.load(session.session_id.clone());
-            }
-        }
         MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
         MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),
         MouseAction::SuggestionMove { backwards } => {
@@ -115,9 +92,7 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
 
 fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
     if matches!(mouse.kind, MouseEventKind::Moved) {
-        return Some(MouseAction::ConversationHover(
-            conversation_rail_hover_hit_test(model, mouse.column, mouse.row),
-        ));
+        return None;
     }
     if model.overlay.is_some() {
         if !overlay_contains(model, mouse.column, mouse.row) {
@@ -147,20 +122,7 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
         MouseEventKind::ScrollUp => Some(MouseAction::ConversationScroll { backwards: true }),
         MouseEventKind::ScrollDown => Some(MouseAction::ConversationScroll { backwards: false }),
         MouseEventKind::Down(MouseButton::Left) => {
-            conversation_rail_hit_test(model, mouse.column, mouse.row)
-                .map(MouseAction::ConversationJump)
-                .or_else(|| {
-                    composer_hit_test(model, mouse.column, mouse.row, false)
-                        .map(MouseAction::ComposerPlace)
-                        .or_else(|| {
-                            navigation_hit_test(model, mouse.column, mouse.row)
-                                .map(MouseAction::SessionActivate)
-                        })
-                })
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            conversation_rail_hit_test(model, mouse.column, mouse.row)
-                .map(MouseAction::ConversationJump)
+            composer_hit_test(model, mouse.column, mouse.row, false).map(MouseAction::ComposerPlace)
         }
         _ => None,
     }
@@ -347,14 +309,14 @@ mod tests {
         assert_eq!(
             route(
                 &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 31, 21)
+                mouse(MouseEventKind::Down(MouseButton::Left), 5, 22)
             ),
             Some(MouseAction::ComposerPlace(1))
         );
     }
 
     #[test]
-    fn conversation_rail_routes_press_and_drag_through_shared_geometry() {
+    fn removed_rails_have_no_pointer_routes() {
         let mut model = AppModel {
             terminal_size: TerminalSize {
                 width: 100,
@@ -376,15 +338,15 @@ mod tests {
                 &model,
                 mouse(MouseEventKind::Down(MouseButton::Left), 98, 3)
             ),
-            Some(MouseAction::ConversationJump(0))
+            None
         );
-        assert!(matches!(
+        assert_eq!(
             route(
                 &model,
                 mouse(MouseEventKind::Drag(MouseButton::Left), 98, 10)
             ),
-            Some(MouseAction::ConversationJump(8..=12))
-        ));
+            None
+        );
         assert_eq!(
             route(
                 &model,
@@ -397,17 +359,9 @@ mod tests {
                 &model,
                 mouse(MouseEventKind::Down(MouseButton::Left), 98, 18)
             ),
-            Some(MouseAction::ConversationJump(19))
+            None
         );
-        assert_eq!(
-            route(&model, mouse(MouseEventKind::Moved, 98, 11)),
-            Some(MouseAction::ConversationHover(Some(
-                crate::application::ConversationRailHover { index: 11, row: 11 }
-            )))
-        );
-        assert_eq!(
-            route(&model, mouse(MouseEventKind::Moved, 97, 11)),
-            Some(MouseAction::ConversationHover(None))
-        );
+        assert_eq!(route(&model, mouse(MouseEventKind::Moved, 98, 11)), None);
+        assert_eq!(route(&model, mouse(MouseEventKind::Moved, 97, 11)), None);
     }
 }
