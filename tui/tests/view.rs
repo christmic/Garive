@@ -62,7 +62,7 @@ fn standard_frame_has_conversation_context_and_safe_text() {
     });
     let standard = frame(&model, 120, 18);
     assert!(standard.contains("◆ Garive"));
-    assert!(standard.contains("New conversation"));
+    assert!(standard.contains("Current session"));
     assert!(!standard.contains("Sessions 3"));
     assert!(standard.contains("answer�[31m⟦LRI⟧x⟦PDI⟧"));
     assert!(!standard.contains('\u{1b}'));
@@ -112,6 +112,21 @@ fn action_overlay_geometry_preserves_actions_after_wrapped_multiline_details() {
     assert!(compact.contains("Host: online"));
     assert!(compact.contains("Session: durable-session"));
     assert!(compact.contains("Esc close"));
+}
+
+#[test]
+fn modal_geometry_never_erases_a_grown_composer() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::Help),
+        ..Default::default()
+    };
+    model
+        .composer
+        .replace("one\ntwo\nthree\nfour\ncomposer-owned-tail")
+        .unwrap();
+    let rendered = frame(&model, 100, 16);
+    assert!(rendered.contains("Keyboard guide"));
+    assert!(rendered.contains("composer-owned-tail"));
 }
 
 #[test]
@@ -378,7 +393,8 @@ fn linear_overlays_share_filtered_results_and_selection_windows() {
     ];
     model.session_selection = 0;
     let sessions = view::linear_overlay(&model);
-    assert!(sessions.contains("> 1. needle-agent Session ending 000001"));
+    assert!(sessions.contains("> 1. Session 2, needle-agent"));
+    assert!(!sessions.contains("000001"));
     assert!(!sessions.contains("other-agent"));
 }
 
@@ -417,7 +433,8 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
     };
     let filtered = frame(&model, 80, 24);
     assert!(filtered.contains("needle-agent"));
-    assert!(filtered.contains("000001"));
+    assert!(filtered.contains("Session 2"));
+    assert!(!filtered.contains("000001"));
     assert!(!filtered.contains("000000"));
 
     model.session_filter.clear();
@@ -426,7 +443,7 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
         .collect();
     model.session_selection = 11;
     let scrolled = frame(&model, 80, 24);
-    assert!(scrolled.contains("› agent-000011"));
+    assert!(scrolled.contains("› Session 12 · agent-000011"));
     assert!(!scrolled.contains("agent-000000"));
 }
 

@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&turns, Theme::Mono, 40, 12)"
 ---
-Session 1                        running
   ╭ Jump to a Turn ──────────────────╮
   │                                  │
   │  Search  release                 │
@@ -11,6 +10,7 @@ Session 1                        running
   │    Enter jump   Esc close        │
   │                                  │
   ╰──────────────────────────────────╯
+╭──────────────────────────────────────╮
 │ Ask a follow-up…                     │
 ╰──────────────────────────────────────╯
   Esc cancel run

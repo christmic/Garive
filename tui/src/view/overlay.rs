@@ -228,7 +228,18 @@ fn session_picker_text(
             .iter()
             .enumerate()
             .map(|(offset, session)| {
-                picker_line(session, start + offset == model.session_selection, colors)
+                let ordinal = model
+                    .sessions
+                    .iter()
+                    .position(|item| item.session_id == session.session_id)
+                    .map(|index| index + 1)
+                    .unwrap_or(start + offset + 1);
+                picker_line(
+                    session,
+                    ordinal,
+                    start + offset == model.session_selection,
+                    colors,
+                )
             })
             .collect::<Vec<_>>(),
     );

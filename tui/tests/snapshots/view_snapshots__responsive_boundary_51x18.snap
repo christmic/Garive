@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-Session 1                                   running
+Session 1                             Agent running
 
   You
     Summarize the release plan.

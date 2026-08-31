@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-           Session 1  ·  research-age                                                               running
+           Session 1  ·  research-age                                                         Agent running
 
              You
                Summarize the release plan.

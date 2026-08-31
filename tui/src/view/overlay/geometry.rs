@@ -10,6 +10,7 @@ use crate::{
 };
 
 use super::super::{
+    layout::FrameLayout,
     presentation::action_overlay_copy,
     primitives::{centered_popup, selection_window},
     safe_text,
@@ -25,7 +26,7 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     let desired_width = desired_width(overlay);
     let popup_width = desired_width.min(area.width.saturating_sub(4));
     let desired_height = desired_height(model, overlay, popup_width);
-    let modal_area = modal_area(area);
+    let modal_area = modal_area(model, area);
     let popup = centered_popup(
         modal_area,
         popup_width,
@@ -54,23 +55,18 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     }
 }
 
-fn modal_area(area: Rect) -> Rect {
-    let top = if area.height >= 16 { 2 } else { 1 }.min(area.height);
-    let remaining = area.height.saturating_sub(top);
-    let desired_bottom = if area.height >= 20 {
-        5
-    } else if area.height >= 10 {
-        3
+fn modal_area(model: &AppModel, area: Rect) -> Rect {
+    let transcript = FrameLayout::resolve(model, area).transcript;
+    if transcript.height >= 8 {
+        transcript
     } else {
-        1
-    };
-    let bottom = desired_bottom.min(remaining.saturating_sub(1));
-    Rect::new(
-        area.x,
-        area.y.saturating_add(top),
-        area.width,
-        remaining.saturating_sub(bottom),
-    )
+        Rect::new(
+            transcript.x,
+            area.y,
+            transcript.width,
+            transcript.bottom().saturating_sub(area.y),
+        )
+    }
 }
 
 pub(super) fn overlay_padding(overlay: Overlay) -> Padding {

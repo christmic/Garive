@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(
             route(
                 &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 50, 15)
+                mouse(MouseEventKind::Down(MouseButton::Left), 50, 14)
             ),
             Some(MouseAction::OverlayActivate(11))
         );

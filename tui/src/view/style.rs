@@ -1,9 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::{
-    application::{ConnectionState, ExecutionState},
-    Theme,
-};
+use crate::{application::ConnectionState, Theme};
 
 #[derive(Clone, Copy)]
 pub(super) struct Palette {
@@ -27,11 +24,6 @@ pub(super) struct Palette {
     pub(super) success: Style,
     pub(super) warning: Style,
     pub(super) danger: Style,
-    pub(super) neutral_chip: Style,
-    pub(super) accent_chip: Style,
-    pub(super) success_chip: Style,
-    pub(super) warning_chip: Style,
-    pub(super) danger_chip: Style,
     pub(super) selection_row: Style,
     pub(super) text_selection: Style,
 }
@@ -64,12 +56,13 @@ pub(super) fn palette(theme: Theme) -> Palette {
         )
     };
     let bold = Style::default().fg(accent).add_modifier(Modifier::BOLD);
+    let strong = Style::default().fg(text).add_modifier(Modifier::BOLD);
     let keycap = if mono {
         Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
     } else {
         Style::default()
             .fg(text)
-            .bg(Color::Rgb(48, 54, 70))
+            .bg(surface)
             .add_modifier(Modifier::BOLD)
     };
     let selection_row = if mono {
@@ -77,7 +70,11 @@ pub(super) fn palette(theme: Theme) -> Palette {
     } else {
         Style::default()
             .fg(text)
-            .bg(Color::Rgb(45, 62, 78))
+            .bg(if theme == Theme::Light {
+                Color::Rgb(214, 229, 255)
+            } else {
+                Color::Rgb(40, 55, 68)
+            })
             .add_modifier(Modifier::BOLD)
     };
     let text_selection = if mono {
@@ -89,7 +86,7 @@ pub(super) fn palette(theme: Theme) -> Palette {
         normal: Style::default().fg(text),
         muted: Style::default().fg(muted),
         accent: bold,
-        title: bold,
+        title: strong,
         badge: Style::default().fg(violet),
         border: Style::default().fg(muted),
         composer_border: Style::default().fg(accent),
@@ -97,7 +94,7 @@ pub(super) fn palette(theme: Theme) -> Palette {
         modal_backdrop: Style::default().add_modifier(Modifier::DIM),
         selected: Style::default().fg(accent).add_modifier(Modifier::BOLD),
         user: Style::default().fg(violet).add_modifier(Modifier::BOLD),
-        agent: bold,
+        agent: strong,
         activity: Style::default().fg(if mono { text } else { Color::Yellow }),
         placeholder: Style::default().fg(muted).add_modifier(Modifier::ITALIC),
         empty_title: Style::default().fg(text).add_modifier(Modifier::BOLD),
@@ -106,23 +103,6 @@ pub(super) fn palette(theme: Theme) -> Palette {
         success: Style::default().fg(if mono { text } else { Color::Green }),
         warning: Style::default().fg(if mono { text } else { Color::Yellow }),
         danger: Style::default().fg(if mono { text } else { Color::Red }),
-        neutral_chip: Style::default().fg(muted).bg(surface),
-        accent_chip: Style::default()
-            .fg(accent)
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-        success_chip: Style::default()
-            .fg(if mono { text } else { Color::Green })
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-        warning_chip: Style::default()
-            .fg(if mono { text } else { Color::Yellow })
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
-        danger_chip: Style::default()
-            .fg(if mono { text } else { Color::Red })
-            .bg(surface)
-            .add_modifier(Modifier::BOLD),
         selection_row,
         text_selection,
     }
@@ -135,25 +115,6 @@ pub(super) fn connection_name(value: ConnectionState) -> &'static str {
         ConnectionState::Disconnected { .. } => "disconnected",
         ConnectionState::Reconnecting { .. } => "reconnecting",
         ConnectionState::Unavailable { .. } => "unavailable",
-    }
-}
-
-pub(super) fn connection_style(value: ConnectionState, colors: Palette) -> Style {
-    match value {
-        ConnectionState::Online => colors.success_chip,
-        ConnectionState::Connecting | ConnectionState::Reconnecting { .. } => colors.warning_chip,
-        ConnectionState::Disconnected { .. } | ConnectionState::Unavailable { .. } => {
-            colors.danger_chip
-        }
-    }
-}
-
-pub(super) fn execution_style(value: ExecutionState, colors: Palette) -> Style {
-    match value {
-        ExecutionState::Idle => colors.neutral_chip,
-        ExecutionState::Following => colors.accent_chip,
-        ExecutionState::Suspended => colors.warning_chip,
-        ExecutionState::Failed => colors.danger_chip,
     }
 }
 

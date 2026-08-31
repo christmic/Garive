@@ -25,24 +25,29 @@ pub(super) fn render(
         return;
     }
     let colors = palette(theme);
-    let state_width = if area.width >= 52 { 20 } else { 12 };
+    let state_width = if area.width >= 52 { 20 } else { 16 };
     let cells =
         Layout::horizontal([Constraint::Min(1), Constraint::Length(state_width)]).split(area);
-    let session = model
-        .selected_session
-        .as_deref()
-        .and_then(|selected| {
+    let selected = model.selected_session.as_deref().and_then(|selected| {
+        model
+            .sessions
+            .iter()
+            .enumerate()
+            .find(|(_, session)| session.session_id == selected)
+    });
+    let session = match (model.selected_session.as_ref(), selected) {
+        (None, _) => "New conversation".into(),
+        (Some(_), Some((index, _))) => format!("Session {}", index + 1),
+        (Some(_), None) => "Current session".into(),
+    };
+    let definition = selected
+        .map(|(_, session)| short_id(&session.definition_id))
+        .or_else(|| {
             model
-                .sessions
-                .iter()
-                .position(|session| session.session_id == selected)
+                .definitions
+                .first()
+                .map(|item| short_id(&item.definition_id))
         })
-        .map(|index| format!("Session {}", index + 1))
-        .unwrap_or_else(|| "New conversation".into());
-    let definition = model
-        .definitions
-        .first()
-        .map(|item| short_id(&item.definition_id))
         .unwrap_or("Garive");
     let mut identity = vec![Span::styled(session, colors.normal)];
     if area.width >= 80 {
@@ -69,8 +74,14 @@ fn exceptional_state(model: &AppModel, motion: super::motion::StatusMotion) -> S
 }
 
 fn state_style(model: &AppModel, colors: super::style::Palette) -> ratatui::style::Style {
-    if model.connection != ConnectionState::Online {
-        return super::style::connection_style(model.connection, colors);
+    match model.connection {
+        ConnectionState::Connecting | ConnectionState::Reconnecting { .. } => colors.warning,
+        ConnectionState::Disconnected { .. } | ConnectionState::Unavailable { .. } => colors.danger,
+        ConnectionState::Online => match model.execution {
+            ExecutionState::Following => colors.accent,
+            ExecutionState::Suspended => colors.warning,
+            ExecutionState::Failed => colors.danger,
+            ExecutionState::Idle => colors.muted,
+        },
     }
-    super::style::execution_style(model.execution, colors)
 }

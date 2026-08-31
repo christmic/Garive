@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&activities, Theme::Mono, 40, 18)"
 ---
-Session 1                        running
+Session 1                  Agent running
 
   You
     Verify the release candidate.

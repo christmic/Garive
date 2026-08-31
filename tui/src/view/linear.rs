@@ -6,7 +6,7 @@ use crate::{
 use super::{
     presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
     primitives::selection_window,
-    short_id, short_tail,
+    short_id,
 };
 use crate::input::help_hints;
 
@@ -83,13 +83,18 @@ fn session_picker(model: &AppModel) -> String {
     let rows = window(matches.len(), model.session_selection)
         .map(|index| {
             let session = matches[index];
+            let ordinal = model
+                .sessions
+                .iter()
+                .position(|item| item.session_id == session.session_id)
+                .map(|position| position + 1)
+                .unwrap_or(index + 1);
             numbered(
                 index,
                 model.session_selection,
                 format!(
-                    "{} Session ending {}, {}.",
+                    "Session {ordinal}, {}, {}.",
                     short_id(&session.definition_id),
-                    short_tail(&session.session_id),
                     session.latest_turn_state.as_deref().unwrap_or("new")
                 ),
             )

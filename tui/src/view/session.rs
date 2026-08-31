@@ -2,12 +2,13 @@ use garive_host_client::SessionSummary;
 use ratatui::text::{Line, Span};
 
 use super::{
-    short_id, short_tail,
+    short_id,
     style::{session_state_icon, session_state_style, Palette},
 };
 
 pub(super) fn picker_line(
     session: &SessionSummary,
+    ordinal: usize,
     selected: bool,
     colors: Palette,
 ) -> Line<'static> {
@@ -16,11 +17,7 @@ pub(super) fn picker_line(
     Line::from(vec![
         Span::styled(format!("{marker} "), colors.selected),
         Span::styled(
-            format!(
-                "{} · {}   ",
-                label(session),
-                short_tail(&session.session_id)
-            ),
+            format!("Session {ordinal} · {}   ", label(session)),
             colors.normal,
         ),
         Span::styled(
