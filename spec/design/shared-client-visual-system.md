@@ -102,6 +102,17 @@ The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
 
+When a file is open, the workbench has two quiet chrome rows: the first owns one
+selected file tab and the second owns bounded location plus file actions. It
+must not retain an unrelated Activity tab. Rendered and Source views consume the
+same immutable preview payload, preserve revision evidence, and never imply
+filesystem mutability. Closing the preview returns to deliverables; closing the
+workbench returns to the undisturbed thread.
+
+Completed-result actions sit at the assistant content edge. Their visual form
+is a 30 px icon control; their accessible name and tooltip retain the full verb.
+The terminal state remains text-visible and is not replaced by color or an icon.
+
 Neutral surface changes precede borders. A region may have one structural
 separator; rows inside it use spacing or hover surfaces unless a semantic
 boundary requires a rule. Navigation groups use sentence case. Decorative
