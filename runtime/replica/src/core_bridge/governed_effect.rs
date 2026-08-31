@@ -822,6 +822,9 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             receipt(&fact).expect("checked receipt"),
             &fact,
         )?;
+        self.executor
+            .acknowledge_receipt(&invocation_id, receipt(&fact).expect("checked receipt"))
+            .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
         self.commit_terminal(
             &invocation_id,
             prepared,
