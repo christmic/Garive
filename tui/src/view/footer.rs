@@ -45,15 +45,6 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
     hint.render(area, buffer);
 }
 
-pub(super) fn is_visible(model: &AppModel) -> bool {
-    model.notice.is_some()
-        || model.composer.has_selection()
-        || model.command_suggestions_active()
-        || model.composer.text().len() > 3_584
-        || model.execution == ExecutionState::Following
-        || model.focus == FocusTarget::Conversation
-}
-
 fn focus_hint(model: &AppModel, colors: super::style::Palette) -> Line<'static> {
     let running = model.execution == ExecutionState::Following;
     match (model.focus, running, model.viewport.follow_latest) {

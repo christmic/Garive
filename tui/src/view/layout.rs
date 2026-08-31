@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::application::AppModel;
 
-use super::{composer, footer, primitives::centered_column};
+use super::{composer, primitives::centered_column};
 
 const STANDARD_TRANSCRIPT_WIDTH: u16 = 96;
 
@@ -24,7 +24,9 @@ impl FrameLayout {
             area
         };
         let context_height = u16::from(content.height >= 10);
-        let hint_height = u16::from(content.height >= 9 && footer::is_visible(model));
+        // Keep the interactive surface stationary when contextual hints appear.
+        // Below nine rows the hint is deliberately removed by the compact layout.
+        let hint_height = u16::from(content.height >= 9);
         let body = Rect::new(
             content.x,
             content.y.saturating_add(context_height),
@@ -48,5 +50,41 @@ impl FrameLayout {
             composer: rows[1],
             hint: rows[2],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contextual_hint_does_not_move_the_composer_hit_surface() {
+        let mut model = AppModel::default();
+        let area = Rect::new(0, 0, 100, 24);
+        let quiet = FrameLayout::resolve(&model, area);
+
+        model.notice = Some("Selection hint".into());
+        let contextual = FrameLayout::resolve(&model, area);
+
+        assert_eq!(quiet.composer, contextual.composer);
+        assert_eq!(quiet.hint, contextual.hint);
+        assert_eq!(quiet.hint.height, 1);
+    }
+
+    #[test]
+    fn hint_row_is_removed_only_below_the_supported_height_breakpoint() {
+        let model = AppModel::default();
+        assert_eq!(
+            FrameLayout::resolve(&model, Rect::new(0, 0, 40, 9))
+                .hint
+                .height,
+            1
+        );
+        assert_eq!(
+            FrameLayout::resolve(&model, Rect::new(0, 0, 40, 8))
+                .hint
+                .height,
+            0
+        );
     }
 }

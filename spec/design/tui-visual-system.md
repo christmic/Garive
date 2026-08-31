@@ -44,7 +44,10 @@ boxes; controllers do not duplicate layout coordinates. `ContextLine` and
 `HintLine` derive their copy from the same Session, execution, connection,
 focus, and recovery state used by input routing. `ContextLine` has no frame or
 background fill. `HintLine` renders at most one highest-priority action and may
-be absent.
+be absent. At supported heights of nine rows or more, an absent `HintLine`
+retains its one-row layout slot so selection, notices, and Host events never
+move the Composer hit geometry; tiny layouts below nine rows remove the slot as
+part of their explicit degradation.
 The composer lives in `view/composer.rs`. It consumes the editor's admitted
 byte range, styles whole rendered graphemes, and owns its frame, viewport, and
 cursor geometry. Dark/light selection uses the semantic selection surface;

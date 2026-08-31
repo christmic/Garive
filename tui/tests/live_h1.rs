@@ -60,18 +60,13 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         assert!(text.contains("Garive"));
         assert!(text.contains("Press Ctrl+C"));
         assert!(text.contains("Garive?"));
-        if reduced_motion {
-            assert!(
-                text.contains("○ connecting"),
-                "stable connecting glyph rendered"
-            );
-            assert!(
-                !text.contains("· connecting"),
-                "motion pulse stayed disabled"
-            );
-        } else {
-            assert!(text.contains("· connecting"), "first motion frame rendered");
-        }
+        assert!(text.contains("connecting"), "connection state rendered");
+        assert!(
+            !text.contains("· connecting")
+                && !text.contains("• connecting")
+                && !text.contains("● connecting"),
+            "connection state stayed stable; motion is reserved for active execution"
+        );
         assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
         assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
         assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
@@ -297,15 +292,15 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
         .args(["-c", r#"
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 16 columns 20; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "Garive"
-            send "hello wonderful world"
+            send "hello wonderful world crosses the boundary"
             after 100
             send "\033\[A"
             send "X"
-            expect "helloX"
+            expect "hello woX"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -316,7 +311,7 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
     server.join().unwrap();
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("hello wonderful"));
+    assert!(text.contains("hello woX"));
     assert!(text.contains('X'));
     assert!(text.contains("\x1b[?1049l"));
 }
@@ -335,16 +330,16 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
         .args(["-c", r#"
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 16 columns 20; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "Garive"
-            send "hello wonderful world"
+            send "hello wonderful world crosses the boundary"
             after 100
             send "\033\[A"
             send "\033\[F"
             send "X"
-            expect "wonderfulX"
+            expect "theX boundary"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -355,8 +350,8 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
     server.join().unwrap();
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("hello wonderful"));
-    assert!(text.contains("wonderfulX"));
+    assert!(text.contains("theX"));
+    assert!(text.contains("boundary"));
     assert!(text.contains("\x1b[?1049l"));
 }
 
@@ -460,9 +455,9 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             expect "Garive"
             send "a界b"
             after 100
-            send "\033\[<0;32;22M"
-            send "\033\[<32;35;22M"
-            send "\033\[<0;35;22m"
+            send "\033\[<0;6;22M"
+            send "\033\[<32;8;22M"
+            send "\033\[<0;8;22m"
             after 100
             send "X"
             expect "aX"
@@ -502,15 +497,15 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             expect "Garive"
             send "alpha beta"
             after 100
-            send "\033\[<0;38;22M\033\[<0;38;22m"
-            send "\033\[<0;38;22M\033\[<0;38;22m"
+            send "\033\[<0;11;22M\033\[<0;11;22m"
+            send "\033\[<0;11;22M\033\[<0;11;22m"
             after 100
             send "X"
             expect "alpha X"
             after 600
-            send "\033\[<0;32;22M\033\[<0;32;22m"
-            send "\033\[<0;32;22M\033\[<0;32;22m"
-            send "\033\[<0;32;22M\033\[<0;32;22m"
+            send "\033\[<0;6;22M\033\[<0;6;22m"
+            send "\033\[<0;6;22M\033\[<0;6;22m"
+            send "\033\[<0;6;22M\033\[<0;6;22m"
             after 100
             send "Y"
             expect "Y"
@@ -779,7 +774,7 @@ exit 7
 
 #[test]
 fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry() {
-    let (address, stop, server) = timeline_host();
+    let (address, stop, h4_seen, server) = timeline_host();
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("turn-navigator.log");
     let status = Command::new("expect")
@@ -802,22 +797,22 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session session-rail --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
             must_expect "\033\[6n" 70
             send "\033\[1;1R"
-            must_expect {#40} 71
+            must_expect "question-19" 71
             send "/jump \r"
             must_expect "Jump to a Turn" 72
             send "\033\[H"
             send "\033"
-            must_expect {#40} 73
-            send "/jump question 11\r"
-            must_expect "12  question 11" 74
+            must_expect "answer-19" 73
+            send "/jump question-11\r"
+            must_expect "12  question-11" 74
             send "\r"
-            must_expect {#23} 75
+            must_expect "answer-11" 75
             send "/jump \r"
             must_expect "Jump to a Turn" 76
             send "\033\[H"
             after 100
-            send "\033\[<0;50;6M"
-            must_expect {#1} 77
+            send "\033\[<0;50;5M"
+            must_expect "answer-0" 77
             send "\021"
             must_expect "Garive?" 78
             send "\r"
@@ -833,6 +828,10 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
     assert!(
         status.success(),
         "turn navigator walkthrough exited with {status}"
+    );
+    assert!(
+        h4_seen.load(Ordering::Relaxed),
+        "the fixture served the session H4 subscription"
     );
 }
 
@@ -1047,12 +1046,19 @@ fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
     (address, server)
 }
 
-fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
+fn timeline_host() -> (
+    SocketAddr,
+    Arc<AtomicBool>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let server_stop = Arc::clone(&stop);
+    let h4_seen = Arc::new(AtomicBool::new(false));
+    let server_h4_seen = Arc::clone(&h4_seen);
     let items = (0..20)
         .map(|index| {
             json!({
@@ -1060,8 +1066,8 @@ fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
                 "started_position": index * 2 + 1,
                 "latest_position": index * 2 + 2,
                 "state": "completed",
-                "user_text": format!("question {index}"),
-                "completion_text": format!("answer {index}"),
+                "user_text": format!("question-{index}"),
+                "completion_text": format!("answer-{index}"),
                 "suspension": null,
                 "content_truncated": false,
                 "activities": []
@@ -1100,6 +1106,31 @@ fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
                     .unwrap();
                 continue;
             }
+            if request.contains("GET /v1/sessions/session-rail/live ") {
+                let event = json!({
+                    "api_version": "v1",
+                    "session_id": "session-rail",
+                    "turn_id": "turn-19",
+                    "execution_id": "execution-19",
+                    "stream_id": "12345678-1234-4234-8234-123456789abc",
+                    "sequence": 1,
+                    "kind": "snapshot",
+                    "text": "answer-19",
+                    "through_sequence": 1
+                });
+                let body = format!("event: live\ndata: {event}\n\n");
+                socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                server_h4_seen.store(true, Ordering::Relaxed);
+                continue;
+            }
             let body = if request.contains("GET /v1/agent-definitions ") {
                 json!({"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"definition-1","definition_revision":"revision-1","capabilities":[]}]}).to_string()
             } else if request.contains("GET /v1/sessions?") {
@@ -1116,7 +1147,7 @@ fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
             socket.write_all(json_response(&body).as_bytes()).unwrap();
         }
     });
-    (address, stop, server)
+    (address, stop, h4_seen, server)
 }
 
 fn json_response(body: &str) -> String {
