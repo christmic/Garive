@@ -232,6 +232,7 @@ fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {
         OpenSessions => open_session_picker(state),
         OpenCommands => open_command_palette(state),
         OpenHistory => open_prompt_history(state),
+        OpenExternalEditor => super::external_editor::request(state),
         Redraw if state.model.focus == FocusTarget::Conversation => state.force_redraw = true,
         DocumentStart if state.model.focus == FocusTarget::Conversation => {
             state.model.jump_to_oldest();

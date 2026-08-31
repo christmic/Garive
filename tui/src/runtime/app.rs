@@ -1,7 +1,5 @@
 use std::io::{self, Write};
 
-use crossterm::event::EventStream;
-use futures::StreamExt;
 #[cfg(test)]
 use garive_host_client::TurnTimelineItem;
 use garive_host_client::{ClientLimits, LiveHostClient};
@@ -22,8 +20,8 @@ use crate::{
 };
 
 use super::{
-    controller::handle_terminal, host, SystemTerminal, TerminalError, TerminalGuard,
-    TerminalOptions,
+    controller::handle_terminal, external_editor, host, terminal_events::TerminalEventReader,
+    SystemTerminal, TerminalError, TerminalGuard, TerminalOptions,
 };
 
 mod messages;
@@ -113,13 +111,49 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     let (sender, mut receiver) = mpsc::channel(256);
     let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
-    let mut events = EventStream::new();
+    let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
     let mut motion_tick = 0_u64;
     let mut motion_clock = tokio::time::interval(MOTION_INTERVAL);
     motion_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     motion_clock.tick().await;
     loop {
+        if let Some(request) = state.external_editor_request.take() {
+            match external_editor::prepare(request) {
+                Err((message, request)) => {
+                    external_editor::apply(&mut state, request, Err(message))
+                }
+                Ok(prepared) => {
+                    events.pause().map_err(|_| TuiError::TerminalIo)?;
+                    guard.restore().map_err(map_terminal_error)?;
+                    writeln!(
+                        io::stderr(),
+                        "Garive paused. The external editor owns this terminal until it exits."
+                    )
+                    .map_err(|_| TuiError::TerminalIo)?;
+                    let (request, result, signal) =
+                        wait_for_external_editor(prepared, &mut shutdown).await;
+                    guard = TerminalGuard::acquire(
+                        SystemTerminal::default(),
+                        TerminalOptions {
+                            screen_reader: false,
+                            mouse: state.config.mouse == crate::MouseMode::On,
+                        },
+                    )
+                    .map_err(map_terminal_error)?;
+                    terminal.clear().map_err(|_| TuiError::TerminalIo)?;
+                    external_editor::apply(&mut state, request, result);
+                    // The paused clear already invalidated Ratatui's back buffer.
+                    // Do not issue a second cursor query after input resumes.
+                    state.force_redraw = false;
+                    events.resume().map_err(|_| TuiError::TerminalIo)?;
+                    if let Some(signal) = signal {
+                        interrupted = Some(signal);
+                        break;
+                    }
+                }
+            }
+        }
         guard
             .set_title(&view::terminal_title(&state.model))
             .map_err(map_terminal_error)?;
@@ -128,7 +162,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             break;
         }
         tokio::select! {
-            event = events.next() => match event {
+            event = events.recv() => match event {
                 Some(Ok(event)) => handle_terminal(event, &mut state),
                 Some(Err(_)) | None => return Err(TuiError::TerminalIo),
             },
@@ -152,6 +186,38 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         .store
         .record_diagnostic(DiagnosticEvent::TerminalRestored);
     interrupted.map_or(Ok(()), |signal| Err(TuiError::Interrupted(signal)))
+}
+
+pub(super) async fn wait_for_external_editor(
+    prepared: external_editor::PreparedEditor,
+    shutdown: &mut ShutdownSignal,
+) -> (
+    external_editor::EditorRequest,
+    Result<String, &'static str>,
+    Option<i32>,
+) {
+    let mut child = match prepared.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            let (request, result) = prepared.failed(external_editor::SPAWN_FAILED);
+            return (request, result, None);
+        }
+    };
+    tokio::select! {
+        status = child.wait() => {
+            let (request, result) = match status {
+                Ok(status) => prepared.finish(status),
+                Err(_) => prepared.failed(external_editor::EXIT_FAILED),
+            };
+            (request, result, None)
+        }
+        signal = shutdown.recv() => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            let (request, result) = prepared.failed(external_editor::EXIT_FAILED);
+            (request, result, Some(signal))
+        }
+    }
 }
 
 async fn terminal_setup_failure(

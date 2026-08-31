@@ -13,7 +13,10 @@ use crate::{
 };
 
 use super::{
-    super::host::{self, HostMessage},
+    super::{
+        external_editor::EditorRequest,
+        host::{self, HostMessage},
+    },
     state_error_name,
 };
 
@@ -42,6 +45,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) bell_requested: bool,
     pub(in crate::runtime) composer_mouse_selecting: bool,
     pub(in crate::runtime) composer_clicks: ComposerClickTracker,
+    pub(in crate::runtime) external_editor_request: Option<EditorRequest>,
 }
 
 pub(super) struct BackgroundFollow {
@@ -115,6 +119,7 @@ impl RuntimeState {
             bell_requested: false,
             composer_mouse_selecting: false,
             composer_clicks: ComposerClickTracker::default(),
+            external_editor_request: None,
         }
     }
 

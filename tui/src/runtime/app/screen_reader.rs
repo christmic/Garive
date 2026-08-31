@@ -1,7 +1,5 @@
 use std::io::{self, Write};
 
-use crossterm::event::EventStream;
-use futures::StreamExt;
 use garive_host_client::LiveHostClient;
 use tokio::sync::mpsc;
 
@@ -12,8 +10,12 @@ use crate::{
 };
 
 use super::{
-    super::{controller::handle_terminal, host, SystemTerminal, TerminalGuard, TerminalOptions},
-    handle_host, map_terminal_error, RestoredState, RuntimeState, ShutdownSignal,
+    super::{
+        controller::handle_terminal, external_editor, host, terminal_events::TerminalEventReader,
+        SystemTerminal, TerminalGuard, TerminalOptions,
+    },
+    handle_host, map_terminal_error, wait_for_external_editor, RestoredState, RuntimeState,
+    ShutdownSignal,
 };
 
 pub(super) async fn run(
@@ -37,13 +39,50 @@ pub(super) async fn run(
     let (sender, mut receiver) = mpsc::channel(256);
     let mut state = RuntimeState::new(config, client, sender, restored);
     host::bootstrap(state.client.clone(), state.sender.clone());
-    let mut events = EventStream::new();
+    let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
     let mut emitted = 0;
     let mut last_status = String::new();
     let mut last_overlay = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
     loop {
+        if let Some(request) = state.external_editor_request.take() {
+            match external_editor::prepare(request) {
+                Err((message, request)) => {
+                    external_editor::apply(&mut state, request, Err(message))
+                }
+                Ok(prepared) => {
+                    events.pause().map_err(|_| TuiError::TerminalIo)?;
+                    guard.restore().map_err(map_terminal_error)?;
+                    write_linear(
+                        "Garive paused. The external editor owns this terminal until it exits.",
+                    )?;
+                    let (request, result, signal) =
+                        wait_for_external_editor(prepared, &mut shutdown).await;
+                    guard = TerminalGuard::acquire(
+                        SystemTerminal::default(),
+                        TerminalOptions {
+                            screen_reader: true,
+                            mouse: false,
+                        },
+                    )
+                    .map_err(map_terminal_error)?;
+                    external_editor::apply(&mut state, request, result);
+                    events.resume().map_err(|_| TuiError::TerminalIo)?;
+                    write_linear(
+                        state
+                            .model
+                            .notice
+                            .as_deref()
+                            .unwrap_or("External editing finished."),
+                    )?;
+                    if let Some(signal) = signal {
+                        interrupted = Some(signal);
+                        break;
+                    }
+                }
+            }
+        }
         guard
             .set_title(&crate::view::terminal_title(&state.model))
             .map_err(map_terminal_error)?;
@@ -55,7 +94,7 @@ pub(super) async fn run(
             break;
         }
         tokio::select! {
-            event = events.next() => match event {
+            event = events.recv() => match event {
                 Some(Ok(event)) => handle_terminal(event, &mut state),
                 Some(Err(_)) | None => return Err(TuiError::TerminalIo),
             },

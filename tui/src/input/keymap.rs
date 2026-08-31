@@ -8,6 +8,7 @@ pub(crate) enum ShortcutIntent {
     OpenSessions,
     OpenCommands,
     OpenHistory,
+    OpenExternalEditor,
     InsertNewline,
     Redraw,
     DocumentStart,
@@ -62,6 +63,11 @@ const SHORTCUTS: &[Shortcut] = &[
     shortcut!(KeyCode::Char('s'), KeyModifiers::CONTROL, OpenSessions),
     shortcut!(KeyCode::Char('p'), KeyModifiers::CONTROL, OpenCommands),
     shortcut!(KeyCode::Char('r'), KeyModifiers::CONTROL, OpenHistory),
+    shortcut!(
+        KeyCode::Char('g'),
+        KeyModifiers::CONTROL,
+        OpenExternalEditor
+    ),
     shortcut!(KeyCode::Char('j'), KeyModifiers::CONTROL, InsertNewline),
     shortcut!(KeyCode::Char('l'), KeyModifiers::CONTROL, Redraw),
     shortcut!(KeyCode::Home, KeyModifiers::CONTROL, DocumentStart),
@@ -123,6 +129,12 @@ const HELP_HINTS: &[ShortcutHelp] = &[
         "Control R",
         "open prompt history",
         &[ShortcutIntent::OpenHistory],
+    ),
+    help(
+        "Ctrl+G",
+        "Control G",
+        "edit externally",
+        &[ShortcutIntent::OpenExternalEditor],
     ),
     help(
         "Ctrl+U/K",

@@ -232,3 +232,15 @@ fn logical_line_motion_is_distinct_from_document_and_grapheme_motion() {
     assert_eq!(editor.cursor_grapheme(), 5);
     assert!(!editor.has_selection());
 }
+
+#[test]
+fn external_replacement_is_one_undoable_edit() {
+    let mut editor = EditorState::new(128);
+    editor.replace("seed 界").unwrap();
+    editor.replace_undoable("edited\nline").unwrap();
+    assert_eq!(editor.text(), "edited\nline");
+    assert!(editor.undo());
+    assert_eq!(editor.text(), "seed 界");
+    assert!(editor.redo());
+    assert_eq!(editor.text(), "edited\nline");
+}
