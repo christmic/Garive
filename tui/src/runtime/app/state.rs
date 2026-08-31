@@ -138,6 +138,7 @@ impl RuntimeState {
     }
 
     pub(in crate::runtime) fn load(&mut self, session_id: String) {
+        self.model.close_turn_navigator();
         let switching_session = self.model.selected_session.as_deref() != Some(&session_id);
         if switching_session {
             if matches!(

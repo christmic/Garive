@@ -20,6 +20,7 @@ pub(crate) fn overlay_text(model: &AppModel) -> String {
         Overlay::CommandPalette => command_palette(model),
         Overlay::Help => help(),
         Overlay::SessionPicker => session_picker(model),
+        Overlay::TurnNavigator => turn_navigator(model),
         Overlay::PromptHistory => prompt_history(model),
         Overlay::Suspension => {
             let copy = suspension_copy(model.suspension.as_ref());
@@ -120,6 +121,27 @@ fn prompt_history(model: &AppModel) -> String {
         rows,
         "No matching prompt history.",
         "Use arrows and Enter, or Escape to close.",
+    )
+}
+
+fn turn_navigator(model: &AppModel) -> String {
+    let matches = model.matching_landmark_indices();
+    let rows = window(matches.len(), model.turn_selection)
+        .map(|selection_index| {
+            let landmark = &model.conversation_landmarks[matches[selection_index]];
+            numbered(
+                selection_index,
+                model.turn_selection,
+                format!("Turn {}. {}", landmark.ordinal, landmark.prompt_preview),
+            )
+        })
+        .collect::<Vec<_>>();
+    list_prompt(
+        "Jump to a Turn",
+        &model.turn_filter,
+        rows,
+        "No matching Turns.",
+        "Use arrows and Enter to jump, or Escape to close.",
     )
 }
 

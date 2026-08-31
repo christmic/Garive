@@ -352,6 +352,7 @@ fn state_error_name(error: StateError) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::{FocusTarget, Overlay};
 
     #[test]
     fn snapshot_refresh_preserves_manual_anchor_and_counts_new_cells() {
@@ -371,6 +372,42 @@ mod tests {
         model.follow_latest();
         assert!(model.viewport.follow_latest);
         assert_eq!(model.viewport.newer_updates, 0);
+    }
+
+    #[test]
+    fn timeline_install_builds_safe_public_landmarks_and_tears_down_stale_navigation() {
+        let mut hostile = turn("private-id", 9);
+        hostile.user_text = "  beta\n\u{1b}[31m \u{2066}safe\u{2069}  ".into();
+        let mut model = AppModel {
+            overlay: Some(Overlay::TurnNavigator),
+            focus: FocusTarget::Overlay,
+            prior_focus: FocusTarget::Conversation,
+            turn_filter: "stale".into(),
+            turn_selection: 7,
+            ..Default::default()
+        };
+
+        install_timeline(&mut model, vec![hostile, turn("older", 1)]);
+
+        assert_eq!(model.overlay, None);
+        assert_eq!(model.focus, FocusTarget::Conversation);
+        assert!(model.turn_filter.is_empty());
+        assert_eq!(model.turn_selection, 0);
+        assert_eq!(
+            model
+                .conversation_landmarks
+                .iter()
+                .map(|item| (
+                    item.ordinal,
+                    item.started_position,
+                    item.prompt_preview.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![(1, 1, "question older"), (2, 9, "beta �[31m �safe�")]
+        );
+        assert!(!model.conversation_landmarks[1]
+            .prompt_preview
+            .contains("private-id"));
     }
 
     #[test]

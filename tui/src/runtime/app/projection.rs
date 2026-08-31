@@ -3,7 +3,8 @@ use std::collections::BTreeSet;
 use garive_host_client::{HostEvent, TurnTimelineItem};
 
 use crate::application::{
-    AppModel, ConnectionState, ExecutionState, Overlay, TimelineItem, TimelineRole,
+    AppModel, ConnectionState, ConversationLandmark, ExecutionState, Overlay, TimelineItem,
+    TimelineRole,
 };
 use crate::view::presentation::activity_copy;
 
@@ -135,12 +136,19 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
             .position(|item| item.stable_key == key)
     });
     turns.sort_by_key(|turn| turn.started_position);
+    model.close_turn_navigator();
     model.conversation_rail_hover = None;
     model.timeline.clear();
+    model.conversation_landmarks.clear();
     model.suspension = None;
     model.selected_turn = None;
     model.execution = ExecutionState::Idle;
-    for turn in turns {
+    for (index, turn) in turns.into_iter().enumerate() {
+        model.conversation_landmarks.push(ConversationLandmark {
+            ordinal: index + 1,
+            started_position: turn.started_position,
+            prompt_preview: public_prompt_preview(&turn.user_text),
+        });
         model.timeline.push(TimelineItem {
             stable_key: format!("turn:{}:user", turn.turn_id),
             position: turn.started_position,
@@ -206,4 +214,28 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
             .filter(|item| item.position > old_max_position && !old_keys.contains(&item.stable_key))
             .count(),
     );
+}
+
+fn public_prompt_preview(value: &str) -> String {
+    let mut preview = String::new();
+    let mut pending_space = false;
+    for character in value.chars().take(256) {
+        if character.is_whitespace() {
+            pending_space = !preview.is_empty();
+            continue;
+        }
+        let character = if character.is_control()
+            || matches!(character, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        {
+            '�'
+        } else {
+            character
+        };
+        if pending_space {
+            preview.push(' ');
+            pending_space = false;
+        }
+        preview.push(character);
+    }
+    preview
 }

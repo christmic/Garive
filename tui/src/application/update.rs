@@ -38,6 +38,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         AppAction::TerminalFocusChanged(focused) => {
             if !focused {
                 model.conversation_rail_hover = None;
+                model.close_turn_navigator();
             }
             model.terminal_focused = focused;
             Vec::new()
@@ -58,13 +59,18 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         }
         AppAction::OverlayClosed => {
             if !model.overlay.is_some_and(Overlay::is_blocking) {
-                model.overlay = None;
-                model.focus = model.prior_focus;
+                if model.overlay == Some(Overlay::TurnNavigator) {
+                    model.close_turn_navigator();
+                } else {
+                    model.overlay = None;
+                    model.focus = model.prior_focus;
+                }
             }
             Vec::new()
         }
         AppAction::QuitRequested => {
             model.conversation_rail_hover = None;
+            model.close_turn_navigator();
             if !model.overlay.is_some_and(Overlay::is_blocking) {
                 model.prior_focus = model.focus;
                 model.focus = FocusTarget::Overlay;

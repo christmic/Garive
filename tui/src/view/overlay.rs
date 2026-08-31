@@ -105,6 +105,10 @@ fn overlay_spec(
             title: " Switch session ".into(),
             content: session_picker_text(model, colors, window.unwrap_or((0, 0))),
         },
+        Overlay::TurnNavigator => OverlaySpec {
+            title: " Jump to a Turn ".into(),
+            content: turn_navigator_text(model, colors, window.unwrap_or((0, 0)), content_width),
+        },
         Overlay::PromptHistory => OverlaySpec {
             title: " Prompt history ".into(),
             content: history_text(model, colors, window.unwrap_or((0, 0))),
@@ -132,16 +136,76 @@ fn selection_row(
     overlay: Overlay,
     window: Option<(usize, usize)>,
 ) -> Option<u16> {
-    let selection = match overlay {
-        Overlay::CommandPalette => model.command_selection,
-        Overlay::SessionPicker => model.session_selection,
-        Overlay::PromptHistory => model.history_selection,
+    let (selection, count) = match overlay {
+        Overlay::CommandPalette => (
+            model.command_selection,
+            model.matching_command_indices().len(),
+        ),
+        Overlay::SessionPicker => (model.session_selection, model.matching_sessions().count()),
+        Overlay::TurnNavigator => (
+            model.turn_selection,
+            model.matching_landmark_indices().len(),
+        ),
+        Overlay::PromptHistory => (model.history_selection, model.matching_history().count()),
         _ => return None,
     };
+    if selection >= count {
+        return None;
+    }
     let window_start = window?.0;
     u16::try_from(selection.checked_sub(window_start)?)
         .ok()?
         .checked_add(1)
+}
+
+fn turn_navigator_text(
+    model: &AppModel,
+    colors: Palette,
+    (start, end): (usize, usize),
+    content_width: u16,
+) -> Text<'static> {
+    let mut rows = vec![search_line("Search", &model.turn_filter, colors)];
+    let matches = model.matching_landmark_indices();
+    let ordinal_width = model.conversation_landmarks.len().max(1).to_string().len();
+    let preview_width = usize::from(content_width).saturating_sub(ordinal_width + 5);
+    rows.extend(
+        matches[start..end]
+            .iter()
+            .enumerate()
+            .map(|(offset, index)| {
+                let landmark = &model.conversation_landmarks[*index];
+                let marker = if start + offset == model.turn_selection {
+                    "›"
+                } else {
+                    " "
+                };
+                Line::from(vec![
+                    Span::styled(format!("{marker} "), colors.selected),
+                    Span::styled(
+                        format!("{:>ordinal_width$}  ", landmark.ordinal),
+                        colors.accent,
+                    ),
+                    Span::styled(
+                        truncate_display(&landmark.prompt_preview, preview_width),
+                        colors.normal,
+                    ),
+                ])
+            }),
+    );
+    if rows.len() == 1 {
+        rows.push(Line::styled("  No matching Turns", colors.muted));
+    }
+    rows.push(Line::default());
+    rows.push(key_hints(
+        &[
+            ("↑/↓", "select"),
+            ("Home/End", "edge"),
+            ("Enter", "jump"),
+            ("Esc", "close"),
+        ],
+        colors,
+    ));
+    Text::from(rows)
 }
 
 fn session_picker_text(

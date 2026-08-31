@@ -196,6 +196,7 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
             state.model.session_selection = 0;
             state.model.overlay = Some(Overlay::SessionPicker);
         }
+        Command::Jump { filter } => super::navigation::open_turn_navigator(state, filter),
         Command::Help => state.model.overlay = Some(Overlay::Help),
         Command::Status => {
             state.model.notice = Some(format!(

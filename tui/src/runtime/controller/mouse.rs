@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     accept_command_suggestion,
-    navigation::{select_command, select_history, select_session},
+    navigation::{select_command, select_history, select_landmark, select_session},
     RuntimeState,
 };
 
@@ -201,6 +201,11 @@ fn move_overlay_selection(state: &mut RuntimeState, backwards: bool) {
             state.model.session_selection =
                 moved_selection(state.model.session_selection, count, backwards);
         }
+        Overlay::TurnNavigator => {
+            let count = state.model.matching_landmark_indices().len();
+            state.model.turn_selection =
+                moved_selection(state.model.turn_selection, count, backwards);
+        }
         _ => {}
     }
 }
@@ -226,6 +231,10 @@ fn activate_overlay_selection(state: &mut RuntimeState, index: usize) {
         Some(Overlay::SessionPicker) => {
             state.model.session_selection = index;
             select_session(state);
+        }
+        Some(Overlay::TurnNavigator) => {
+            state.model.turn_selection = index;
+            select_landmark(state);
         }
         _ => {}
     }

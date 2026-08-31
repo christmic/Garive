@@ -3,6 +3,11 @@ use crate::args::{MouseMode, Theme};
 pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     CommandSpec::with_args("/new", "Create session", CommandRequirement::InstalledAgent),
     CommandSpec::with_args("/sessions", "Switch session", CommandRequirement::Always),
+    CommandSpec::with_args(
+        "/jump",
+        "Jump to a Turn",
+        CommandRequirement::NavigableTurns,
+    ),
     CommandSpec::new("/status", "Connection details", CommandRequirement::Always),
     CommandSpec::new(
         "/edit-prompt",
@@ -72,6 +77,7 @@ pub(crate) struct CommandContext {
     pub(crate) has_running_turn: bool,
     pub(crate) has_visible_completion: bool,
     pub(crate) has_selected_session: bool,
+    pub(crate) has_navigable_turns: bool,
     pub(crate) has_composer_selection: bool,
     pub(crate) composer_is_editable: bool,
 }
@@ -125,6 +131,9 @@ impl CommandSpec {
             CommandRequirement::SelectedSession if !context.has_selected_session => {
                 Some("no Session is selected")
             }
+            CommandRequirement::NavigableTurns if !context.has_navigable_turns => {
+                Some("fewer than two Turns are loaded")
+            }
             CommandRequirement::ComposerSelection if !context.has_composer_selection => {
                 Some("no composer text is selected")
             }
@@ -144,6 +153,7 @@ enum CommandRequirement {
     RunningTurn,
     VisibleCompletion,
     SelectedSession,
+    NavigableTurns,
     ComposerSelection,
     EditableComposer,
 }
@@ -159,6 +169,7 @@ pub(crate) fn command_matches(name: &str, help: &str, filter: &str) -> bool {
 pub(crate) enum Command {
     New { definition: Option<String> },
     Sessions { filter: Option<String> },
+    Jump { filter: Option<String> },
     Help,
     Status,
     EditPrompt,
@@ -201,6 +212,10 @@ pub(crate) fn parse_command(text: &str) -> CommandParse {
         },
         ("/sessions", []) => Command::Sessions { filter: None },
         ("/sessions", values) => Command::Sessions {
+            filter: Some(values.join(" ")),
+        },
+        ("/jump", []) => Command::Jump { filter: None },
+        ("/jump", values) => Command::Jump {
             filter: Some(values.join(" ")),
         },
         ("/help", []) => Command::Help,

@@ -165,6 +165,58 @@ pub(super) fn matching_history(state: &RuntimeState) -> Vec<String> {
     state.model.matching_history().cloned().collect()
 }
 
+pub(super) fn matching_landmarks(state: &RuntimeState) -> Vec<usize> {
+    state.model.matching_landmark_indices()
+}
+
+pub(super) fn open_turn_navigator(state: &mut RuntimeState, filter: Option<String>) {
+    if state.model.conversation_landmarks.len() < 2 {
+        state.model.notice = Some("Turn navigation requires at least two loaded Turns.".into());
+        return;
+    }
+    state.model.turn_filter = filter.unwrap_or_default();
+    let matches = matching_landmarks(state);
+    state.model.turn_selection = if state.model.viewport.follow_latest {
+        matches.len().saturating_sub(1)
+    } else {
+        let anchor_position = state
+            .model
+            .viewport
+            .anchor_key
+            .as_deref()
+            .and_then(|key| {
+                state
+                    .model
+                    .timeline
+                    .iter()
+                    .find(|item| item.stable_key == key)
+            })
+            .map(|item| item.position)
+            .unwrap_or(0);
+        matches
+            .iter()
+            .rposition(|index| {
+                state.model.conversation_landmarks[*index].started_position <= anchor_position
+            })
+            .unwrap_or(0)
+    };
+    state.dispatch(AppAction::OverlayOpened(Overlay::TurnNavigator));
+}
+
+pub(super) fn select_landmark(state: &mut RuntimeState) {
+    let Some(index) = matching_landmarks(state)
+        .get(state.model.turn_selection)
+        .copied()
+    else {
+        return;
+    };
+    let position = state.model.conversation_landmarks[index].started_position;
+    if !state.model.jump_to_turn_position(position) {
+        state.model.notice = Some("That Turn is no longer in the loaded timeline.".into());
+    }
+    state.model.close_turn_navigator();
+}
+
 pub(super) fn select_session(state: &mut RuntimeState) {
     let selected = matching_sessions(state)
         .get(state.model.session_selection)

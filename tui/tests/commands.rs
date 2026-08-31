@@ -24,6 +24,12 @@ fn non_commands_remain_host_text_and_known_commands_are_exact() {
         parse_command("/theme mono"),
         CommandParse::Valid(Command::Theme(Theme::Mono))
     );
+    assert_eq!(
+        parse_command("/jump \"release blocker\""),
+        CommandParse::Valid(Command::Jump {
+            filter: Some("release blocker".into())
+        })
+    );
 }
 
 #[test]
@@ -91,6 +97,7 @@ fn palette_requirements_explain_every_contextual_command() {
         ("/copy last", "no completion is visible"),
         ("/copy selection", "no composer text is selected"),
         ("/copy session-id", "no Session is selected"),
+        ("/jump", "fewer than two Turns are loaded"),
         ("/edit-prompt", "the draft is frozen"),
     ];
     for (input, expected) in cases {
@@ -107,6 +114,7 @@ fn palette_requirements_explain_every_contextual_command() {
         has_running_turn: true,
         has_visible_completion: true,
         has_selected_session: true,
+        has_navigable_turns: true,
         has_composer_selection: true,
         composer_is_editable: true,
     };

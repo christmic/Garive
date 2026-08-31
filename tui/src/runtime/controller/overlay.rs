@@ -5,8 +5,8 @@ use crate::application::{ActionOverlayIntent, ActionOverlayKey, AppAction, Overl
 use super::{
     actions::retry_pending,
     navigation::{
-        is_safe_query_character, matching_commands, matching_history, matching_sessions,
-        select_command, select_history, select_session,
+        is_safe_query_character, matching_commands, matching_history, matching_landmarks,
+        matching_sessions, select_command, select_history, select_landmark, select_session,
     },
     RuntimeState,
 };
@@ -52,6 +52,18 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
             super::navigation::cycle_session_selection(state, true)
         }
         KeyCode::Enter if overlay == Overlay::SessionPicker => select_session(state),
+        KeyCode::Up if overlay == Overlay::TurnNavigator => {
+            state.model.turn_selection = state.model.turn_selection.saturating_sub(1)
+        }
+        KeyCode::Down if overlay == Overlay::TurnNavigator => {
+            state.model.turn_selection = (state.model.turn_selection + 1)
+                .min(matching_landmarks(state).len().saturating_sub(1))
+        }
+        KeyCode::Home if overlay == Overlay::TurnNavigator => state.model.turn_selection = 0,
+        KeyCode::End if overlay == Overlay::TurnNavigator => {
+            state.model.turn_selection = matching_landmarks(state).len().saturating_sub(1)
+        }
+        KeyCode::Enter if overlay == Overlay::TurnNavigator => select_landmark(state),
         KeyCode::Up if overlay == Overlay::PromptHistory => {
             state.model.history_selection = state.model.history_selection.saturating_sub(1)
         }
@@ -87,6 +99,16 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
         KeyCode::Backspace if overlay == Overlay::SessionPicker => {
             state.model.session_filter.pop();
             state.model.session_selection = 0;
+        }
+        KeyCode::Char(character)
+            if overlay == Overlay::TurnNavigator && is_safe_query_character(character) =>
+        {
+            state.model.turn_filter.push(character);
+            state.model.turn_selection = 0;
+        }
+        KeyCode::Backspace if overlay == Overlay::TurnNavigator => {
+            state.model.turn_filter.pop();
+            state.model.turn_selection = 0;
         }
         KeyCode::Char(character)
             if overlay == Overlay::PromptHistory && is_safe_query_character(character) =>

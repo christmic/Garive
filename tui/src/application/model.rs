@@ -36,6 +36,7 @@ pub(crate) enum Overlay {
     CommandPalette,
     Help,
     SessionPicker,
+    TurnNavigator,
     PromptHistory,
     Suspension,
     UnknownCommand,
@@ -234,6 +235,13 @@ pub(crate) struct TimelineItem {
     pub(crate) text: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ConversationLandmark {
+    pub(crate) ordinal: usize,
+    pub(crate) started_position: u64,
+    pub(crate) prompt_preview: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ConversationRailHover {
     pub(crate) index: usize,
@@ -276,6 +284,8 @@ pub(crate) struct AppModel {
     pub(crate) sessions_next_before: Option<String>,
     pub(crate) sessions_loading: bool,
     pub(crate) session_filter: String,
+    pub(crate) turn_filter: String,
+    pub(crate) turn_selection: usize,
     pub(crate) prompt_history: Vec<String>,
     pub(crate) prompt_history_browser: PromptHistoryBrowser,
     pub(crate) history_filter: String,
@@ -298,6 +308,7 @@ pub(crate) struct AppModel {
     pub(crate) suspension: Option<SuspensionView>,
     pub(crate) notice: Option<String>,
     pub(crate) timeline: Vec<TimelineItem>,
+    pub(crate) conversation_landmarks: Vec<ConversationLandmark>,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,
 }
@@ -317,6 +328,18 @@ impl AppModel {
         self.prompt_history
             .iter()
             .filter(move |text| filter.is_empty() || text.to_lowercase().contains(&filter))
+    }
+
+    pub(crate) fn matching_landmark_indices(&self) -> Vec<usize> {
+        let filter = self.turn_filter.to_lowercase();
+        self.conversation_landmarks
+            .iter()
+            .enumerate()
+            .filter(|(_, landmark)| {
+                filter.is_empty() || landmark.prompt_preview.to_lowercase().contains(&filter)
+            })
+            .map(|(index, _)| index)
+            .collect()
     }
 
     pub(crate) fn matching_command_indices(&self) -> Vec<usize> {
@@ -373,6 +396,7 @@ impl AppModel {
                 .iter()
                 .any(|item| item.role == TimelineRole::Agent),
             has_selected_session: self.selected_session.is_some(),
+            has_navigable_turns: self.conversation_landmarks.len() >= 2,
             has_composer_selection: self.composer.has_selection(),
             composer_is_editable: !self.composer_is_frozen,
         }
@@ -469,5 +493,37 @@ impl AppModel {
         self.viewport.follow_latest = false;
         self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
         self.viewport.source_line = 0;
+    }
+
+    pub(crate) fn jump_to_turn_position(&mut self, position: u64) -> bool {
+        let Some(index) = self
+            .timeline
+            .iter()
+            .position(|item| item.position == position && item.role == TimelineRole::User)
+        else {
+            return false;
+        };
+        let final_position = self
+            .conversation_landmarks
+            .last()
+            .map(|landmark| landmark.started_position);
+        if final_position == Some(position) {
+            self.follow_latest();
+        } else {
+            self.viewport.follow_latest = false;
+            self.viewport.anchor_key = Some(self.timeline[index].stable_key.clone());
+            self.viewport.source_line = 0;
+            self.viewport.newer_updates = 0;
+        }
+        true
+    }
+
+    pub(crate) fn close_turn_navigator(&mut self) {
+        if self.overlay == Some(Overlay::TurnNavigator) {
+            self.overlay = None;
+            self.focus = self.prior_focus;
+        }
+        self.turn_filter.clear();
+        self.turn_selection = 0;
     }
 }

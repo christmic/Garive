@@ -85,6 +85,7 @@ fn desired_width(overlay: Overlay) -> u16 {
     match overlay {
         Overlay::CommandPalette => 74,
         Overlay::Help => 72,
+        Overlay::TurnNavigator => 72,
         Overlay::SessionPicker
         | Overlay::PromptHistory
         | Overlay::Suspension
@@ -110,6 +111,10 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
             .unwrap_or(u16::MAX)
             .saturating_add(7)
             .clamp(8, 16),
+        Overlay::TurnNavigator => u16::try_from(model.matching_landmark_indices().len())
+            .unwrap_or(u16::MAX)
+            .saturating_add(7)
+            .clamp(8, 18),
         Overlay::Suspension => 12,
         Overlay::UnknownCommand
         | Overlay::ErrorDetails
@@ -194,6 +199,10 @@ fn list_count_and_selection(model: &AppModel, overlay: Overlay) -> Option<(usize
             Some((model.matching_sessions().count(), model.session_selection))
         }
         Overlay::PromptHistory => Some((model.matching_history().count(), model.history_selection)),
+        Overlay::TurnNavigator => Some((
+            model.matching_landmark_indices().len(),
+            model.turn_selection,
+        )),
         _ => None,
     }
 }

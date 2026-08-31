@@ -9,8 +9,8 @@ mod application;
 mod input;
 
 use application::{
-    reduce, AppAction, AppModel, BootState, ConnectionState, ConversationRailHover, FocusTarget,
-    Overlay, TerminalSize,
+    reduce, AppAction, AppModel, BootState, ConnectionState, ConversationLandmark,
+    ConversationRailHover, FocusTarget, Overlay, TerminalSize, TimelineItem, TimelineRole,
 };
 
 #[test]
@@ -161,4 +161,51 @@ fn transient_conversation_hover_clears_at_application_lifecycle_boundaries() {
 
     reduce(&mut model, AppAction::OverlayOpened(Overlay::Help));
     assert_eq!(model.conversation_rail_hover, None);
+}
+
+#[test]
+fn turn_navigation_uses_public_positions_and_escape_or_focus_loss_is_non_mutating() {
+    let mut model = AppModel {
+        focus: FocusTarget::Conversation,
+        prior_focus: FocusTarget::Conversation,
+        overlay: Some(Overlay::TurnNavigator),
+        turn_filter: "beta".into(),
+        conversation_landmarks: vec![landmark(1, 10, "alpha"), landmark(2, 20, "beta")],
+        timeline: vec![cell("alpha", 10), cell("beta", 20)],
+        ..Default::default()
+    };
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some("alpha".into());
+    let original = model.viewport.clone();
+
+    reduce(&mut model, AppAction::OverlayClosed);
+    assert_eq!(model.viewport, original);
+    assert!(model.turn_filter.is_empty());
+    assert_eq!(model.overlay, None);
+
+    assert!(model.jump_to_turn_position(20));
+    assert!(model.viewport.follow_latest);
+    model.overlay = Some(Overlay::TurnNavigator);
+    model.turn_filter = "stale".into();
+    reduce(&mut model, AppAction::TerminalFocusChanged(false));
+    assert_eq!(model.overlay, None);
+    assert!(model.turn_filter.is_empty());
+}
+
+fn landmark(ordinal: usize, started_position: u64, prompt: &str) -> ConversationLandmark {
+    ConversationLandmark {
+        ordinal,
+        started_position,
+        prompt_preview: prompt.into(),
+    }
+}
+
+fn cell(key: &str, position: u64) -> TimelineItem {
+    TimelineItem {
+        stable_key: key.into(),
+        position,
+        role: TimelineRole::User,
+        tone: Default::default(),
+        text: key.into(),
+    }
 }
