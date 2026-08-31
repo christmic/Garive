@@ -195,13 +195,44 @@ At 1280, 820, 720 and 480px it retains zero document overflow; state copy
 remains visible until the narrowest layout, where the task rail and row dot
 still preserve condition without crowding the work title.
 
+### I. Installed Agents workbench audit
+
+The prior Agents destination exposed one static capability ID inside a large
+generic card and ignored the durable multi-Agent catalogue already projected by
+the product controller. It could neither distinguish the default Agent nor
+show immutable revision, exact capabilities or actual Session usage.
+
+Agents now consumes only the Host-reported definition and Session projections.
+At 1280px it uses a continuous 224px catalogue/detail split rather than a
+stretched dashboard card; at 720px and 480px the catalogue becomes a horizontal
+strip above an independently scrolling detail surface. Exact revision and
+default status stay visible, capabilities remain behind one disclosure, and no
+persona name or expertise claim is inferred. All three measured widths retain
+zero document overflow.
+
+### J. Running-work immersion and desktop chrome audit
+
+The running fixture still kept a permanent Command-K search capsule in the
+title row and disabled the Composer textarea. The first choice made global
+navigation compete with document identity; the second forced a desktop user to
+wait before even drafting the next instruction.
+
+The title row now carries only a quiet route/task icon, one-line identity,
+truthful capacity when available and the contextual inspector action. Command-K
+remains global and Search remains in the rail, but neither occupies permanent
+work chrome. The admitted Activity is compressed into the Composer status rail
+with an icon-only details action and one stop control. While a Turn runs, users
+may edit a persisted next-instruction draft; Return cannot submit it until the
+current Turn reaches an admitted terminal state. This is drafting, not an
+invented queue, and it does not mutate the active Runtime Turn.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
 
 - neutral layered surfaces with no decorative gradient;
 - a 240–275 px comfortable rail, 30–36 px rows and quiet selected surfaces;
-- a 46 px title bar with one-line orientation and low-chrome actions;
+- a 34 px title bar with one-line orientation and low-chrome actions;
 - a 39 rem reference reading measure and clear user/agent turn rhythm;
 - an elevated compact composer with a 14 px input and 36 px actions;
 - semantic navigation groups in sentence case;

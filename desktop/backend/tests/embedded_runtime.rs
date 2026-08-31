@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 use std::{
     path::Path,
     sync::{
@@ -10,9 +12,10 @@ use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
 use garive_desktop::{
-    builtin_desktop_agent_installation, DesktopHost, DesktopHostConfig, DesktopOperations,
-    DesktopState, DesktopTerminal, DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory,
-    DesktopWorkspaceGrant, DesktopWorkspaceService,
+    builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation, DesktopHost,
+    DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
+    DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory, DesktopWorkspaceGrant,
+    DesktopWorkspaceService,
 };
 use garive_ledger::SessionId;
 use garive_llm::{
@@ -23,8 +26,11 @@ use garive_llm::{
 use garive_runtime::{
     CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    RuntimeAgentCatalogue, SqliteLedger,
+    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SqliteLedger,
+    T1HostSystemConfig,
 };
+use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 struct FixedHostClock;
@@ -149,6 +155,81 @@ struct WorkspaceWritingModel {
     arguments: String,
 }
 
+struct WorkspaceReadingModel(AtomicU64);
+
+impl ModelPort for WorkspaceReadingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let call = self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(InvokeOutcome::Completed {
+                items: if call == 0 {
+                    vec![ModelItem::ToolIntent {
+                        model_call_id: "read-call-1".into(),
+                        tool_name: T1_READ_TEXT.into(),
+                        arguments_json: serde_json::json!({
+                            "path":"note.txt",
+                            "max_bytes":4096
+                        })
+                        .to_string(),
+                    }]
+                } else {
+                    vec![ModelItem::Text {
+                        text: "workspace read completed".into(),
+                    }]
+                },
+                usage: usage(),
+                stop_reason: if call == 0 {
+                    ModelStopReason::ToolUse
+                } else {
+                    ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
+struct WorkspacePatchingModel {
+    calls: AtomicU64,
+    arguments: String,
+}
+
+impl ModelPort for WorkspacePatchingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(InvokeOutcome::Completed {
+                items: if call < 2 {
+                    vec![ModelItem::ToolIntent {
+                        model_call_id: "patch-call-1".into(),
+                        tool_name: T1_APPLY_PATCH.into(),
+                        arguments_json: self.arguments.clone(),
+                    }]
+                } else {
+                    vec![ModelItem::Text {
+                        text: "workspace patch completed".into(),
+                    }]
+                },
+                usage: usage(),
+                stop_reason: if call < 2 {
+                    ModelStopReason::ToolUse
+                } else {
+                    ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
 impl ModelPort for WorkspaceWritingModel {
     fn invoke<'a>(
         &'a self,
@@ -223,6 +304,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
             .unwrap(),
         ),
         default_agent_definition_id: "definition-main".into(),
+        t1_host_system_config: None,
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
@@ -884,4 +966,280 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
             "effect.observation",
         ]
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn workspace_agent_runs_t1_read_through_the_complete_f0_chain() {
+    let directory = tempdir().unwrap();
+    let workspace_path = directory.path().join("Workspace");
+    fs::create_dir(&workspace_path).unwrap();
+    fs::write(workspace_path.join("note.txt"), "bound workspace content").unwrap();
+    let workspaces = DesktopWorkspaceService::default();
+    let selected = workspaces.admit_selected(&workspace_path, "main").unwrap();
+    let writable = workspaces
+        .authorize_writes(&selected.workspace_id, &workspace_path, "main")
+        .unwrap();
+    let t1 = t1_host(directory.path());
+    let database = directory.path().join("workspace-t1.db");
+    let mut config = desktop_host_config(
+        &database,
+        Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
+    );
+    let workspace_agent = builtin_desktop_workspace_agent_installation(
+        "definition-workspace",
+        "desktop-workspace",
+        &t1.tool_capabilities().unwrap(),
+    )
+    .unwrap();
+    config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            workspace_agent,
+        ])
+        .unwrap(),
+    );
+    config.t1_host_system_config = Some(t1.clone());
+    let factory = DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces, "main")
+        .unwrap()
+        .with_t1_host_system_config(t1);
+    let state = DesktopState::default();
+    state
+        .install(DesktopHost::new_governed(config, Arc::new(factory)).unwrap())
+        .unwrap();
+    let session_id = state.create_session("definition-workspace").unwrap();
+    state.attach_workspace(&session_id, &writable).unwrap();
+
+    let result = state
+        .run_turn_in_session_isolated(
+            "definition-workspace".into(),
+            Some(session_id.clone()),
+            "read note.txt".into(),
+        )
+        .await
+        .unwrap();
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let watermark = ledger.session_watermark(&session).unwrap().unwrap();
+    let facts = ledger
+        .read_facts(&session, 0, watermark.max_position, None)
+        .unwrap();
+    let audit = facts
+        .iter()
+        .map(|fact| (fact.kind.as_str(), fact.payload.as_json()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        result.terminal,
+        DesktopTerminal::Completed,
+        "result={result:?} timeline={:?} audit={audit:?}",
+        state.session_timeline(&session_id, 0, 8).unwrap(),
+    );
+    assert_eq!(result.text, "workspace read completed");
+    for required in [
+        "effect.prepared",
+        "safety.decided",
+        "effect.authorized",
+        "sandbox.bound",
+        "sandbox.preflighted",
+        "effect.started",
+        "effect.receipt",
+        "effect.observation",
+    ] {
+        assert!(
+            facts.iter().any(|fact| fact.kind.as_str() == required),
+            "{required}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn workspace_agent_patch_requires_durable_approval_then_acknowledges_receipt() {
+    let directory = tempdir().unwrap();
+    let workspace_path = directory.path().join("Workspace");
+    fs::create_dir(&workspace_path).unwrap();
+    fs::write(workspace_path.join("note.txt"), "before\n").unwrap();
+    let before_digest = format!("{:x}", Sha256::digest(b"before\n"));
+    let arguments = serde_json::json!({
+        "patch":"*** Begin Patch\n*** Update File: note.txt\n@@\n-before\n+after\n*** End Patch",
+        "expected_files":[{"path":"note.txt","before_digest":before_digest}]
+    })
+    .to_string();
+    let workspaces = DesktopWorkspaceService::default();
+    let selected = workspaces.admit_selected(&workspace_path, "main").unwrap();
+    let writable = workspaces
+        .authorize_writes(&selected.workspace_id, &workspace_path, "main")
+        .unwrap();
+    let t1 = t1_host(directory.path());
+    let restart_t1 = t1.clone();
+    let restart_workspaces = workspaces.clone();
+    let database = directory.path().join("workspace-patch.db");
+    let mut config = desktop_host_config(
+        &database,
+        Arc::new(WorkspacePatchingModel {
+            calls: AtomicU64::new(0),
+            arguments,
+        }),
+    );
+    config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            builtin_desktop_workspace_agent_installation(
+                "definition-workspace",
+                "desktop-workspace",
+                &t1.tool_capabilities().unwrap(),
+            )
+            .unwrap(),
+        ])
+        .unwrap(),
+    );
+    config.t1_host_system_config = Some(t1.clone());
+    let factory = DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces, "main")
+        .unwrap()
+        .with_t1_host_system_config(t1);
+    let state = DesktopState::default();
+    state
+        .install(DesktopHost::new_governed(config, Arc::new(factory)).unwrap())
+        .unwrap();
+    let session_id = state.create_session("definition-workspace").unwrap();
+    state.attach_workspace(&session_id, &writable).unwrap();
+
+    let suspended = state
+        .run_turn_in_session_isolated(
+            "definition-workspace".into(),
+            Some(session_id.clone()),
+            "patch note.txt".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(suspended.terminal, DesktopTerminal::Suspended);
+    assert_eq!(
+        fs::read_to_string(workspace_path.join("note.txt")).unwrap(),
+        "before\n"
+    );
+    let timeline = state.session_timeline(&session_id, 0, 8).unwrap();
+    let approval = timeline.items[0].suspension.as_ref().unwrap();
+    assert_eq!(approval.kind, "approval_required");
+    state
+        .continue_approval_detached(
+            "approve-patch-1".into(),
+            session_id.clone(),
+            suspended.turn_id,
+            approval.suspension_id.clone(),
+            approval.session_version,
+            true,
+        )
+        .await
+        .unwrap();
+    let mut final_state = String::new();
+    for _ in 0..500 {
+        final_state = state.session_timeline(&session_id, 0, 8).unwrap().items[0]
+            .state
+            .clone();
+        if final_state == "completed" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    }
+    assert_eq!(
+        final_state,
+        "completed",
+        "{:?}",
+        state.session_timeline(&session_id, 0, 8).unwrap()
+    );
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let watermark = ledger.session_watermark(&session).unwrap().unwrap();
+    let facts = ledger
+        .read_facts(&session, 0, watermark.max_position, None)
+        .unwrap();
+    let audit = facts
+        .iter()
+        .map(|fact| (fact.kind.as_str(), fact.payload.as_json()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fs::read_to_string(workspace_path.join("note.txt")).unwrap(),
+        "after\n",
+        "{audit:?}"
+    );
+    assert_eq!(
+        fs::read_dir(directory.path().join("patch-recovery"))
+            .unwrap()
+            .count(),
+        0
+    );
+    for required in ["interaction.resolved", "effect.started", "effect.receipt"] {
+        assert!(facts.iter().any(|fact| fact.kind.as_str() == required));
+    }
+    drop(state);
+
+    let mut restart_config = desktop_host_config(
+        &database,
+        Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
+    );
+    restart_config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            builtin_desktop_workspace_agent_installation(
+                "definition-workspace",
+                "desktop-workspace",
+                &restart_t1.tool_capabilities().unwrap(),
+            )
+            .unwrap(),
+        ])
+        .unwrap(),
+    );
+    restart_config.t1_host_system_config = Some(restart_t1.clone());
+    restart_config.operations = Arc::new(Operations(AtomicU64::new(100)));
+    let restart_factory =
+        DesktopWorkspaceExecutionFactory::new(database, restart_workspaces, "main")
+            .unwrap()
+            .with_t1_host_system_config(restart_t1);
+    let restarted = DesktopState::default();
+    restarted
+        .install(DesktopHost::new_governed(restart_config, Arc::new(restart_factory)).unwrap())
+        .unwrap();
+    assert_eq!(
+        restarted.session_timeline(&session_id, 0, 8).unwrap().items[0].state,
+        "completed"
+    );
+    let second = restarted
+        .run_turn_in_session_isolated(
+            "definition-workspace".into(),
+            Some(session_id),
+            "read after restart".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second.terminal, DesktopTerminal::Completed);
+    assert_eq!(second.text, "workspace read completed");
+}
+
+#[cfg(unix)]
+fn t1_host(root: &Path) -> T1HostSystemConfig {
+    let patch_recovery = root.join("patch-recovery");
+    let process_recovery = root.join("process-recovery");
+    for directory in [&patch_recovery, &process_recovery] {
+        fs::create_dir(directory).unwrap();
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let lanes = ProcessLaneRegistry::new([ProcessLane::new(
+        "rust",
+        [ProcessExecutable::new("cargo", "/opt/garive/bin/cargo").unwrap()],
+        Vec::new(),
+    )
+    .unwrap()])
+    .unwrap();
+    T1HostSystemConfig::new(
+        "t1.policy.v1",
+        "t1.executor.v1",
+        "/opt/garive/bin/podman",
+        "unix:///var/run/garive-podman.sock",
+        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+        patch_recovery,
+        process_recovery,
+        5_000,
+        lanes,
+    )
+    .unwrap()
 }

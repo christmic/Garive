@@ -14,11 +14,11 @@ use rustix::{
     io::dup,
 };
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 use crate::{
     builtin_patch_journal::{acknowledge_patch, execute_patch, PatchFailure},
-    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, PreparedExecution,
+    t1_dispatch_attempt_id, ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort,
+    PreparedExecution,
 };
 
 /// Stable executor identity used by F0 patch bindings.
@@ -68,7 +68,8 @@ impl ExecutorPort for BuiltinPatchExecutor {
         Ok(PreparedExecution {
             executor_id: T1_PATCH_EXECUTOR_ID.into(),
             executor_revision: self.revision.clone(),
-            dispatch_attempt_id: dispatch_id(invocation_id),
+            dispatch_attempt_id: t1_dispatch_attempt_id(T1_PATCH_EXECUTOR_ID, invocation_id)
+                .ok_or_else(|| "invalid T1 executor identity".to_owned())?,
         })
     }
 
@@ -81,7 +82,8 @@ impl ExecutorPort for BuiltinPatchExecutor {
         );
         let root = dup(&self.root);
         let recovery = dup(&self.recovery);
-        let expected_dispatch = dispatch_id(command.invocation_id);
+        let expected_dispatch =
+            t1_dispatch_attempt_id(T1_PATCH_EXECUTOR_ID, command.invocation_id).unwrap_or_default();
         Box::pin(async move {
             if command.execution.executor_id != T1_PATCH_EXECUTOR_ID
                 || command.execution.executor_revision != self.revision
@@ -234,11 +236,6 @@ const fn failure_code(error: PatchFailure) -> &'static str {
         PatchFailure::Conflict => "patch_conflict",
         PatchFailure::Uncertain => "executor_state_unknown",
     }
-}
-
-fn dispatch_id(invocation: &ToolInvocationId) -> String {
-    let digest = format!("{:x}", Sha256::digest(invocation.as_str().as_bytes()));
-    format!("patch-dispatch-{}", &digest[..24])
 }
 
 fn completed(

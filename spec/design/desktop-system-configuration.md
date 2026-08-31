@@ -31,8 +31,10 @@ channel admitted by
 ## Agent and Host document
 
 The only accepted file name is `desktop-v1.json` under the explicit app config
-directory. This C1 slice defines schema version 1; accepted A-DESKTOP-C2 adds a
-strict version 2 successor in the same file. UTF-8 bytes are bounded to 64 KiB.
+directory. Schema v1 is the legacy single-Agent document and v2 adds the
+monotonic setup revision. Schema v3 replaces the singular field with
+`default_agent_definition_id` plus `installed_agents[]`. UTF-8 bytes are
+bounded to 64 KiB.
 Unknown fields, duplicate JSON members, unsupported versions, absolute database
 paths, parent traversal and empty required strings fail before a Host or HTTP
 client exists.
@@ -62,14 +64,23 @@ DesktopSystemConfigV1 {
 }
 ```
 
+V3 admits 1–16 Agent projections in strictly increasing unique Definition-ID
+order. The default identity must resolve inside that exact list. Every entry
+freezes its Definition revision, snapshot digest, namespace and Runtime limits;
+the backend reconstructs each installed revision and compares every value
+before Host creation. V1/v2 singular fields and v3 catalogue fields may never
+coexist. A Workspace Agent revision additionally requires the same explicit
+machine T1 snapshot used during setup; absence or mismatch fails closed.
+
 `profile_id` is an opaque registry identity. The document does not enumerate
 vendors or protocol dialects. A backend registry maps an exact installed
 profile identity to a constructor which consumes the explicit endpoint,
 credential, model and HTTP bounds. Unknown identities fail closed. Adding a
 profile does not revise this schema and does not grant hosted capabilities.
 
-The current built-in Desktop Agent admits text model capability plus its exact
-governed Workspace write capability. T1, media, reasoning, Memory, Knowledge,
+The general built-in Desktop Agent admits text model capability plus its exact
+governed Workspace write capability. The Workspace Agent separately admits
+that Tool plus the exact five-tool T1 catalogue. Media, reasoning, Memory, Knowledge,
 Scheduler and delegation require explicit Effective Snapshot entries and exact
 Runtime bindings; implementation presence never advertises a capability.
 

@@ -29,6 +29,7 @@ mod update_configuration;
 mod workspace;
 mod workspace_bookmark;
 mod workspace_execution;
+mod workspace_t1_execution;
 
 pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
@@ -137,6 +138,8 @@ pub struct DesktopHostConfig {
     pub agent_catalogue: Arc<RuntimeAgentCatalogue>,
     /// Definition identity selected by isolated convenience Turns.
     pub default_agent_definition_id: String,
+    /// Exact optional machine T1 resources matching Workspace Agent snapshots.
+    pub t1_host_system_config: Option<garive_runtime::T1HostSystemConfig>,
     /// Bounded Host command and projection policy.
     pub host_limits: LiveHostLimits,
     /// Bounded local Agent execution policy.
@@ -1033,12 +1036,15 @@ impl DesktopState {
         let Some(config) = provider.load()? else {
             return Ok(false);
         };
-        let factory = DesktopWorkspaceExecutionFactory::new(
+        let mut factory = DesktopWorkspaceExecutionFactory::new(
             config.database_path.clone(),
             workspaces,
             owner_window,
         )
         .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        if let Some(t1) = config.t1_host_system_config.clone() {
+            factory = factory.with_t1_host_system_config(t1);
+        }
         let host = DesktopHost::new_governed(config, Arc::new(factory))
             .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
         self.install(host)

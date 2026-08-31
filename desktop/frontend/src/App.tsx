@@ -34,7 +34,7 @@ import { isNearConversationTail } from "./conversationTail";
 import { nextDesktopZoom } from "./zoom";
 import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
-import type { AppIntent } from "./state/controller";
+import type { AppIntent, DefinitionItem, SessionItem } from "./state/controller";
 import {
   classifyTask, filterAndOrderTasks, summarizeTasks, type RecentTask, type TaskFilter,
 } from "./taskPresentation";
@@ -101,6 +101,17 @@ const visualUsageBudget = {
   periodLabel: "5-hour window", remainingPercent: 28, resetsAtLabel: "Resets in 1h 40m",
   attribution: "reported", modelPostureLabel: "Balanced", activeTurnMayFinish: true,
 } satisfies UsageBudgetSnapshot;
+const visualAgentDefinitions = [{ definitionId: "garive-work",
+  definitionRevision: "garive.desktop.agent.v1", capabilities: ["local-text"] },
+{ definitionId: "garive-workspace", definitionRevision: "garive.desktop.workspace-agent.v1",
+  capabilities: ["garive.process.run", "garive.workspace.apply_patch", "garive.workspace.list",
+    "garive.workspace.read_text", "garive.workspace.search_text", "write_file"] }] as
+  ReadonlyArray<DefinitionItem>;
+const visualAgentSessions = [{ sessionId: "visual-agent-session", definitionId: "garive-work",
+  definitionRevision: "garive.desktop.agent.v1", turnCount: 2 },
+{ sessionId: "visual-workspace-session", definitionId: "garive-workspace",
+  definitionRevision: "garive.desktop.workspace-agent.v1", turnCount: 1 }] as
+  ReadonlyArray<SessionItem>;
 
 export interface AppProps {
   readonly client?: "desktop" | "web";
@@ -644,14 +655,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
             aria-controls="primary-navigation" onClick={() => navigationCollapsed
               ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
-            <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+            <span className="topbar-context-icon" aria-hidden="true"><Icon name={screen === "work" ? "folder"
+              : screen === "agents" ? "agent" : screen === "settings" ? "settings" : "search"} /></span>
+            <span className="topbar-title-copy">{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
             {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
               onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
-            <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}
-              aria-label={t("command.open")}><Icon name="search" /><span>{t("command.open")}</span><kbd>⌘K</kbd></button>
             {screen === "work" && state.messages.length > 0 && <button className={state.inspectorOpen ? "icon-button active" : "icon-button"}
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
@@ -666,7 +677,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
           approvalAction={approvalAction} t={t} />
           : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} t={t} />
-            : screen === "agents" ? <AgentsScreen definition={state.capabilities?.agent_definition_id} t={t} />
+            : screen === "agents" ? <AgentsScreen definitions={visualTest
+              ? visualAgentDefinitions : product.view?.definitions ?? []}
+              sessions={visualTest ? visualAgentSessions : product.view?.sessions ?? []}
+              defaultDefinitionId={state.capabilities?.agent_definition_id}
+              loading={!visualTest && Boolean(state.capabilities?.configured)
+                && product.view?.shell !== "ready"} t={t} />
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} update={desktopUpdate} runUpdate={runUpdateAction}
               restartBlocked={state.phase === "submitting"} usage={visibleUsage}
@@ -829,12 +845,13 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
               aria-label={t("context.remove")}><Icon name="close" /></button>
           </span>)}</div>}
-        <textarea ref={composer} rows={1} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+        <textarea ref={composer} rows={1} value={state.draft} disabled={blockedSuspension}
           aria-describedby="composer-commit-note"
-          aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
-          placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
+          aria-label={t(state.phase === "submitting" ? "work.composer.draftNext" : needsInput ? "work.composer.continue" : "work.composer.describe")}
+          placeholder={t(blockedSuspension ? "work.composer.governed" : state.phase === "submitting"
+            ? "work.composer.draftNextPlaceholder" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
-          onKeyDown={(event) => { if (shouldSubmitComposer({ key: event.key,
+          onKeyDown={(event) => { if (state.phase !== "submitting" && shouldSubmitComposer({ key: event.key,
             shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing })) {
             event.preventDefault(); void submit();
           } }} />
@@ -946,7 +963,8 @@ export function TurnProgress({ activities, onOpen, t }: { activities: WorkState[
       <strong>{t("timeline.progressTitle")}</strong><p>{current
         ? `${activityLabel(current.label_key, t)} · ${activityState(current.state, t)}`
         : t("timeline.progressBody")}</p></div>
-      <button type="button" onClick={onOpen}>{t("timeline.openActivity")}<Icon name="chevron" /></button></div>
+      <button type="button" onClick={onOpen} aria-label={t("timeline.openActivity")}
+        title={t("timeline.openActivity")}><Icon name="activity" /></button></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>
       <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
         <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
@@ -1216,7 +1234,59 @@ function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettin
 }
 
 function SetupRequired({ t }: { t: (key: MessageKey) => string }) { return <StatusCard icon="shield" title={t("shell.setupRequired")} body={t("setup.unavailable")} />; }
-function AgentsScreen({ definition, t }: { definition?: string; t: (key: MessageKey) => string }) { return <section className="content-page"><p className="eyebrow">{t("agents.eyebrow")}</p><h1>{t("agents.title")}</h1><p>{t("agents.description")}</p><div className="agent-card"><span className="agent-avatar"><Icon name="agent" /></span><div><h2>{definition ?? t("agents.none")}</h2><p>{t(definition ? "agents.readyBody" : "agents.configureBody")}</p></div><span className={definition ? "state-chip ready" : "state-chip"}>{t(definition ? "common.ready" : "common.unavailable")}</span></div></section>; }
+function AgentsScreen({ definitions, sessions, defaultDefinitionId, loading, t }: {
+  definitions: readonly DefinitionItem[];
+  sessions: readonly SessionItem[];
+  defaultDefinitionId?: string;
+  loading: boolean;
+  t: (key: MessageKey) => string;
+}) {
+  const [selectedId, setSelectedId] = useState<string | undefined>(
+    defaultDefinitionId ?? definitions[0]?.definitionId,
+  );
+  useEffect(() => {
+    if (!definitions.length) { setSelectedId(undefined); return; }
+    if (!definitions.some((item) => item.definitionId === selectedId)) {
+      setSelectedId(defaultDefinitionId && definitions.some((item) =>
+        item.definitionId === defaultDefinitionId) ? defaultDefinitionId : definitions[0]!.definitionId);
+    }
+  }, [defaultDefinitionId, definitions, selectedId]);
+  const selected = definitions.find((item) => item.definitionId === selectedId);
+  const sessionCount = selected ? sessions.filter((session) =>
+    session.definitionId === selected.definitionId).length : 0;
+  return <section className="content-page agents-page">
+    <header className="agents-heading"><div><p className="eyebrow">{t("agents.eyebrow")}</p>
+      <h1>{t("agents.title")}</h1><p>{t("agents.description")}</p></div>
+      <span>{definitions.length} {t("agents.installed")}</span></header>
+    {selected ? <div className="agents-workbench"><nav className="agents-navigation"
+      aria-label={t("agents.listAria")}>{definitions.map((definition) => {
+        const used = sessions.filter((session) => session.definitionId === definition.definitionId).length;
+        return <button type="button" className={definition.definitionId === selected.definitionId
+          ? "selected" : ""} aria-current={definition.definitionId === selected.definitionId
+            ? "true" : undefined} onClick={() => setSelectedId(definition.definitionId)}
+          key={definition.definitionId}><span className="agent-list-icon"><Icon name="agent" /></span>
+          <span><strong>{definition.definitionId}</strong><small>{used} {t(used === 1
+            ? "agents.session" : "agents.sessions")}</small></span>
+          {definition.definitionId === defaultDefinitionId && <span className="agent-default-dot"
+            aria-label={t("agents.default")} />}</button>;
+      })}</nav><article className="agent-detail"><header><span className="agent-detail-icon"><Icon name="agent" /></span>
+        <div><h2>{selected.definitionId}</h2><p>{t("agents.immutable")}</p></div>
+        <span className="state-chip ready">{t("common.ready")}</span></header>
+        <dl className="agent-facts"><div><dt>{t("agents.revision")}</dt><dd><code>{selected.definitionRevision}</code></dd></div>
+          <div><dt>{t("agents.sessionUsage")}</dt><dd>{sessionCount} {t(sessionCount === 1
+            ? "agents.session" : "agents.sessions")}</dd></div>
+          <div><dt>{t("agents.defaultStatus")}</dt><dd>{t(selected.definitionId === defaultDefinitionId
+            ? "agents.default" : "agents.available")}</dd></div></dl>
+        <details className="agent-capabilities"><summary><span>{t("agents.capabilities")}</span>
+          <span>{selected.capabilities.length}</span></summary>
+          {selected.capabilities.length ? <ul>{selected.capabilities.map((capability) =>
+            <li key={capability}><Icon name="check" /><code>{capability}</code></li>)}</ul>
+            : <p>{t("agents.noCapabilities")}</p>}</details>
+      </article></div> : <div className="agents-empty">{loading ? <span className="spinner" />
+        : <Icon name="agent" />}<h2>{t(loading ? "agents.loading" : "agents.none")}</h2>
+      <p>{t(loading ? "agents.loadingBody" : "agents.configureBody")}</p></div>}
+  </section>;
+}
 function SettingsScreen({ capabilities, preferences, setPreferences, update, runUpdate,
   restartBlocked, usage, section, onSectionChange, t }: {
   capabilities?: WorkState["capabilities"];

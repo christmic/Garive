@@ -203,6 +203,17 @@ vocabulary. On native macOS, hiding the rail or entering the narrow navigation
 sheet reserves the titlebar traffic-light safe zone; Web renders the identical
 work finder without that platform inset.
 
+Agents is a catalogue workbench, not a gallery of personas or marketing cards.
+Its left pane lists only Host-reported immutable Agent definitions, default
+identity and durable Session usage; selecting one replaces the right detail
+pane without navigation or page reload. Revision and default status remain
+visible, while exact capability names are progressively disclosed. The client
+never invents display names, expertise, quality claims or availability from a
+definition ID. Loading, empty and unavailable catalogues remain distinct.
+Wide windows use a continuous 224px list/detail split with one structural
+separator; below 760px the catalogue becomes a horizontal strip above the
+detail surface. Rounded full-height dashboard cards are forbidden.
+
 ## Component grammar
 
 | Component | Required states | Invariants |

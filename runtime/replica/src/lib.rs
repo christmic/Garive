@@ -52,6 +52,7 @@ mod sandbox_recovery;
 mod sandbox_runtime;
 mod scheduler_runtime;
 mod sqlite_ledger;
+mod t1_dispatch;
 #[cfg(unix)]
 mod t1_system_composition;
 
@@ -240,5 +241,6 @@ pub use sqlite_ledger::{
     MemoryRepositoryImportCommitError, ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest,
     SessionWatermark, SqliteLedger, SqliteLedgerError,
 };
+pub use t1_dispatch::t1_dispatch_attempt_id;
 #[cfg(unix)]
 pub use t1_system_composition::{T1HostSystemConfig, T1RuntimeExecution, T1RuntimeSystemConfig};

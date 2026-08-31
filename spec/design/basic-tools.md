@@ -338,6 +338,15 @@ the durable executor identity. Duplicate routes, unknown identities or an
 executor returning an identity different from its configured route fail
 closed.
 
+Sandbox admission and the selected executor derive the same deterministic T1
+dispatch-attempt identity from the executor ID and Runtime invocation ID.
+Neither Desktop nor another product adapter may invent a random attempt ID or
+copy executor-private algorithms. Read/list/search are allowed without an
+interaction after exact Workspace/Safety/Sandbox binding. Apply-patch and
+process-run require one digest-bound approval; a denial is durable. All five
+tools still commit Prepared, Safety, grant, Sandbox binding, preflight and
+Started facts before crossing an external-effect boundary.
+
 The resulting definitions still must exactly equal the installed Effective
 Agent Snapshot before Core starts. Constructing the T1 system value does not
 implicitly enable tools, discover host paths, read environment variables or

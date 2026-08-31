@@ -13,7 +13,7 @@ use garive_runtime::{
     LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError, PreparedExecution,
     SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyInteraction,
     SafetyPort, SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
-    SqliteLedger,
+    SqliteLedger, T1HostSystemConfig,
 };
 use garive_tools::{
     AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
@@ -27,7 +27,12 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{workspace::WorkspaceWriteRoot, DesktopWorkspaceService};
+use crate::{
+    desktop_agent::{DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION},
+    workspace::WorkspaceWriteRoot,
+    workspace_t1_execution::{extend_with_t1, WorkspaceT1Governance},
+    DesktopWorkspaceService,
+};
 
 /// Exact immutable revision installed in the Desktop Agent snapshot.
 pub const DESKTOP_WRITE_TOOL_REVISION: &str = "desktop.workspace.write-file.v1";
@@ -39,6 +44,7 @@ pub struct DesktopWorkspaceExecutionFactory {
     database_path: PathBuf,
     workspaces: DesktopWorkspaceService,
     owner_window: String,
+    t1_host_system_config: Option<T1HostSystemConfig>,
 }
 
 impl DesktopWorkspaceExecutionFactory {
@@ -56,7 +62,14 @@ impl DesktopWorkspaceExecutionFactory {
             database_path,
             workspaces,
             owner_window,
+            t1_host_system_config: None,
         })
+    }
+
+    /// Installs exact machine T1 resources for snapshot-bound Workspace Agents.
+    pub fn with_t1_host_system_config(mut self, config: T1HostSystemConfig) -> Self {
+        self.t1_host_system_config = Some(config);
+        self
     }
 }
 
@@ -75,11 +88,21 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
         let sandbox_requirements = write_sandbox_requirements()?;
         let definition = desktop_workspace_tool_definition()?;
         let tool_revision = definition.revision().to_owned();
+        let policy_revision = match committed.definition_revision.as_str() {
+            DESKTOP_AGENT_REVISION => tool_revision.clone(),
+            DESKTOP_WORKSPACE_AGENT_REVISION => self
+                .t1_host_system_config
+                .as_ref()
+                .ok_or(LocalWorkerError::InvalidComposition)?
+                .policy_revision()
+                .to_owned(),
+            _ => return Err(LocalWorkerError::InvalidComposition),
+        };
         let preparation = WorkspacePreparation(
             ToolCatalog::new([definition.clone()])
                 .map_err(|_| LocalWorkerError::InvalidComposition)?,
         );
-        Ok(LocalGovernedExecution {
+        let base = LocalGovernedExecution {
             capabilities: AgentToolCapabilities {
                 definitions: vec![definition.clone()],
             },
@@ -87,7 +110,7 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
                 workspaces: self.workspaces.clone(),
                 owner_window: self.owner_window.clone(),
                 snapshot: snapshot.clone(),
-                tool_revision: tool_revision.clone(),
+                policy_revision: policy_revision.clone(),
             }),
             executor: Box::new(WorkspaceExecutor {
                 workspaces: self.workspaces.clone(),
@@ -101,23 +124,70 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
                 safety: Box::new(WorkspaceSafety {
                     snapshot: snapshot.clone(),
                     requirements: definition.requirements().clone(),
-                    policy_revision: tool_revision.clone(),
+                    policy_revision: policy_revision.clone(),
                 }),
                 sandbox: Box::new(WorkspaceSandbox {
                     access_policy,
                     enforcement: sandbox_requirements,
                     executor_revision: tool_revision.clone(),
-                    policy_revision: tool_revision.clone(),
+                    policy_revision: policy_revision.clone(),
                 }),
                 context: garive_runtime::F0GovernanceContext {
                     actor_authority_reference: format!("desktop-window:{}", self.owner_window),
                     goal_reference: None,
                     plan_reference: None,
-                    effective_policy_revision: tool_revision,
+                    effective_policy_revision: policy_revision.clone(),
                 },
             },
-        })
+        };
+        if committed.definition_revision == DESKTOP_AGENT_REVISION {
+            return Ok(base);
+        }
+        let attachment = single_workspace_attachment(&snapshot)?;
+        let root = self
+            .workspaces
+            .resolve_runtime_root(
+                &attachment.workspace_id,
+                attachment.grant_revision,
+                &self.owner_window,
+            )
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        let host = self
+            .t1_host_system_config
+            .as_ref()
+            .ok_or(LocalWorkerError::InvalidComposition)?;
+        let t1 = host
+            .bind_workspace(root)
+            .and_then(|config| config.build())
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        extend_with_t1(
+            base,
+            t1,
+            WorkspaceT1Governance {
+                policy_revision,
+                executor_revision: host.executor_revision().to_owned(),
+                workspace_capability_id: format!(
+                    "{}:{}",
+                    attachment.workspace_id, attachment.grant_revision
+                ),
+                approved_digests: snapshot.approved_digests,
+                denied_digests: snapshot.denied_digests,
+            },
+        )
     }
+}
+
+fn single_workspace_attachment(
+    snapshot: &ExecutionAuthoritySnapshot,
+) -> Result<&WorkspaceAttachment, LocalWorkerError> {
+    let mut attachments = snapshot.attachments.values();
+    let attachment = attachments
+        .next()
+        .ok_or(LocalWorkerError::InvalidComposition)?;
+    if attachments.next().is_some() {
+        return Err(LocalWorkerError::InvalidComposition);
+    }
+    Ok(attachment)
 }
 
 struct WorkspacePreparation(ToolCatalog);
@@ -316,7 +386,7 @@ struct WorkspaceAuthority {
     workspaces: DesktopWorkspaceService,
     owner_window: String,
     snapshot: ExecutionAuthoritySnapshot,
-    tool_revision: String,
+    policy_revision: String,
 }
 
 impl AuthorityPort for WorkspaceAuthority {
@@ -357,7 +427,7 @@ impl AuthorityPort for WorkspaceAuthority {
                 return Ok(AuthorityDecision::Approve {
                     granted_requirements: request.prepared.requirements().clone(),
                     constraints_digest: binding_digest(&arguments, attachment.grant_revision),
-                    authority_revision: self.tool_revision.clone(),
+                    authority_revision: self.policy_revision.clone(),
                 });
             }
             Ok(AuthorityDecision::InteractionRequired {
@@ -739,5 +809,34 @@ mod tests {
             "bound"
         );
         assert!(!selected.join("bound.txt").exists());
+    }
+
+    #[test]
+    fn workspace_agent_requires_exactly_one_durable_workspace_scope() {
+        let attachment = |id: &str| WorkspaceAttachment {
+            _command_id: format!("attach-{id}"),
+            workspace_id: id.into(),
+            _display_name: id.into(),
+            grant_revision: 1,
+            access: "read_write".into(),
+        };
+        let empty = ExecutionAuthoritySnapshot::default();
+        assert!(single_workspace_attachment(&empty).is_err());
+        let one = ExecutionAuthoritySnapshot {
+            attachments: BTreeMap::from([("one".into(), attachment("one"))]),
+            ..ExecutionAuthoritySnapshot::default()
+        };
+        assert_eq!(
+            single_workspace_attachment(&one).unwrap().workspace_id,
+            "one"
+        );
+        let multiple = ExecutionAuthoritySnapshot {
+            attachments: BTreeMap::from([
+                ("one".into(), attachment("one")),
+                ("two".into(), attachment("two")),
+            ]),
+            ..ExecutionAuthoritySnapshot::default()
+        };
+        assert!(single_workspace_attachment(&multiple).is_err());
     }
 }
