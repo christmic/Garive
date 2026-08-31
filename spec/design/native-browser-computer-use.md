@@ -149,6 +149,36 @@ BrowserSessionMode = Managed | Attached
 - **Attached** controls only tabs explicitly granted through a verified browser
   attachment/extension handshake. It cannot enumerate other profiles/tabs.
 
+Target discovery is mode-specific, not an adapter-wide privilege. A managed
+session may enable browser-level page-target discovery because the complete
+profile is Garive-owned. An attached session must not enable global discovery;
+new-page evidence must arrive through the verified attachment/native-messaging
+boundary for the exact granted tab.
+
+### New-page and popup boundary
+
+Before a managed action, Runtime clears only queued `Page.windowOpen` and page
+target-creation evidence, then correlates a bounded window-open intent with a
+new page whose exact `openerId` is the admitted parent. An unrelated target,
+missing/mismatched opener, non-page target, malformed URL, inconsistent target
+origin or late evidence cannot be attributed to the action.
+
+An action may create at most eight attributable pages and a session may retain
+at most 32 pending pages. A requested canonical origin must appear in that
+action's explicit `allowed_navigation_origins`; navigation itself supplies no
+popup authority. A matching page becomes `pending` only: it is not observable
+or actionable until Runtime separately attaches it, assigns session-local
+identities and completes normal page admission. A denied, inconsistent or
+over-bound page is closed by exact target identity. Any close failure is
+`native_action_uncertain`.
+
+Popup creation may change the browser foreground target. After auditing all
+attributable pages, Runtime restores the exact admitted parent target before a
+later action can use its snapshot. Attached sessions neither perform this
+managed discovery nor infer authority from ambient tabs. Popup evidence and
+pending identities remain Runtime-private; Core receives only the governed
+action receipt and later separately admitted observations.
+
 Credentials, cookies, local storage and password-manager contents are never
 returned to Core. Existing authenticated page state may be used only inside the
 granted attached/managed session and policy scope.

@@ -32,8 +32,8 @@ Command:
 cargo test -p garive-adapter-browser-cdp --test managed_chromium -- --ignored --nocapture
 ```
 
-Latest result: 1 passed, 0 failed, 0.77 seconds. The ordinary adapter suite also
-passed 14 tests; strict all-target Clippy and Rustdoc passed.
+Latest result: 1 passed, 0 failed, 0.81 seconds. The ordinary adapter suite also
+passed 15 tests; strict all-target Clippy and Rustdoc passed.
 
 The Runtime-owned concrete-port gate independently launched a fresh managed
 Chrome profile, created and attached one blank target, bootstrapped it to an
@@ -50,7 +50,11 @@ one cross-origin iframe. The gate observed the same-origin button, proved the
 cross-origin secret was absent, retained only a nameless `opaque_frame`, and
 proved a click preflight returns `browser_frame_opaque`. A native password
 canary is absent from the observation, its public fields are redacted, and its
-action set is empty. It passed 1 test in 0.81 seconds;
+action set is empty. The same gate opens an explicitly allowed same-origin
+popup, proves that it remains pending rather than silently joining the admitted
+page set, denies and closes a cross-origin popup, restores the exact parent
+target after Chrome changes foreground focus, and then completes the remaining
+parent-page actions. It passed 1 test in 0.90 seconds;
 strict Runtime test-target Clippy and warning-free Rustdoc also passed.
 
 ```sh
@@ -73,7 +77,15 @@ rotation when a loader changes without a top-level history change.
 The password race gate additionally proves that a normal textbox changed to
 `input[type=password]` after observation fails sensitive before any input.
 
-The adapter revision is `garive.browser.cdp.v2`. Native select uses
+The adapter revision is `garive.browser.cdp.v3`. In the dedicated managed
+profile only, it correlates exact-session `Page.windowOpen` evidence with a
+page-only `Target.targetCreated` carrying the exact parent `openerId`. Runtime
+bounds the result to eight pages per action and 32 pending pages per session.
+Allowed pages remain pending until separate page admission; denied pages are
+closed by exact identity, and the admitted parent is explicitly reactivated.
+Attached mode does not enable browser-level target discovery.
+
+Native select uses
 `DOM.resolveNode`, one fixed `Runtime.callFunctionOn` declaration with the option
 as a structured argument, and `Runtime.releaseObject`. It rejects non-native,
 missing, duplicate and disabled choices without mutation, emits native
@@ -82,7 +94,7 @@ into the receipt digest. Typed `DOM.getFrameOwner` binds child frame identities
 to their embedding backend nodes. Runtime reads AX subtrees only for same-origin
 frames with a fully admitted ancestor chain and collapses a cross-origin owner
 to one nameless, valueless and actionless opaque node. The ordinary adapter
-suite passes 14 tests and the focused Runtime mapping/port suites pass 18 tests
+suite passes 15 tests and the focused Runtime mapping/port suites pass 20 tests
 under strict Clippy.
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
@@ -94,6 +106,9 @@ binding cases pass in the Runtime unit gate. The real managed-Chrome concrete
 port gate now binds initial observation, governed navigation, native select,
 click, focused Enter activation, settled scroll, receipts and fresh
 observation/revision evidence, including same-origin/cross-origin iframe
-isolation and protected-field redaction. Real-browser history actions, popups,
-downloads, attachment loss and durable Started/crash fault injection remain
-open. This is not a complete Browser Use claim.
+isolation, protected-field redaction, popup pending admission, popup origin
+denial and parent-focus restoration. Popup attachment into a separately
+admitted Runtime page session, real-browser history actions, downloads,
+attached-session extension/native-messaging evidence, attachment loss and
+durable Started/crash fault injection remain open. This is not a complete
+Browser Use claim.
