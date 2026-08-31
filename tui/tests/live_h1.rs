@@ -163,7 +163,7 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 expect "Garive"
                 send "\020"
                 expect "/help"
-                send "\033\[<0;21;7M"
+                send "\033\[<0;21;8M"
                 expect "Inspector"
                 expect "Connection"
                 send "\033"
