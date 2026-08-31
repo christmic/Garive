@@ -186,7 +186,11 @@ impl CdpNativeAdapterPort {
 
     /// Returns the oldest popup awaiting an explicit admit/reject decision.
     pub fn oldest_pending_popup(&self) -> Option<CdpPendingPopup> {
-        self.pending_popups.front().cloned()
+        if self.usable {
+            self.pending_popups.front().cloned()
+        } else {
+            None
+        }
     }
 
     /// Explicitly rejects and closes one exact pending popup target.
@@ -287,6 +291,32 @@ impl CdpNativeAdapterPort {
         }
     }
 
+    fn poison_attachment(&mut self) {
+        self.usable = false;
+        self.current_binding = None;
+        self.pending_popups.clear();
+    }
+
+    fn observation_failure(&mut self, error: CdpTransportError) -> NativeProtocolError {
+        let failure = observation_error(error);
+        if failure == NativeProtocolError::BrowserAttachmentLost {
+            self.poison_attachment();
+        }
+        failure
+    }
+
+    fn action_failure(&mut self, error: CdpTransportError) -> NativeProtocolError {
+        if matches!(
+            error,
+            CdpTransportError::ConnectFailed
+                | CdpTransportError::ConnectionLost
+                | CdpTransportError::Timeout
+        ) {
+            self.poison_attachment();
+        }
+        NativeProtocolError::ActionUncertain
+    }
+
     async fn close_pending_popup(
         &mut self,
         index: usize,
@@ -304,7 +334,7 @@ impl CdpNativeAdapterPort {
         popup: &garive_browser_cdp::CdpPopup,
     ) -> Result<(), NativeProtocolError> {
         if self.client.close_popup(popup).await.is_err() {
-            self.usable = false;
+            self.poison_attachment();
             return Err(NativeProtocolError::ActionUncertain);
         }
         Ok(())
@@ -325,14 +355,14 @@ impl CdpNativeAdapterPort {
             self.client
                 .deny_managed_downloads()
                 .await
-                .map_err(observation_error)?;
+                .map_err(|error| self.observation_failure(error))?;
             self.managed_downloads_denied = true;
         }
         if !self.popup_tracking_enabled {
             self.client
                 .enable_managed_popup_tracking(&self.cdp_session_id)
                 .await
-                .map_err(observation_error)?;
+                .map_err(|error| self.observation_failure(error))?;
             self.popup_tracking_enabled = true;
         }
         Ok(())
@@ -361,7 +391,7 @@ impl CdpNativeAdapterPort {
                 .client
                 .take_popup(&self.cdp_session_id, &opener_target_id)
                 .await
-                .map_err(|_| NativeProtocolError::ActionUncertain)?
+                .map_err(|error| self.action_failure(error))?
             else {
                 break;
             };
@@ -424,7 +454,7 @@ impl CdpNativeAdapterPort {
             self.client
                 .activate_target(&opener_target_id)
                 .await
-                .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                .map_err(|error| self.action_failure(error))?;
         }
         Ok(audit)
     }
@@ -674,7 +704,7 @@ impl CdpNativeAdapterPort {
             .client
             .current_history_entry(&self.cdp_session_id)
             .await
-            .map_err(observation_error)?;
+            .map_err(|error| self.observation_failure(error))?;
         if self.last_history_entry.as_ref() != Some(&current) {
             self.current_binding = None;
             return Err(NativeProtocolError::SnapshotStale);
@@ -687,7 +717,7 @@ impl CdpNativeAdapterPort {
             .client
             .frame_tree(&self.cdp_session_id)
             .await
-            .map_err(observation_error)?;
+            .map_err(|error| self.observation_failure(error))?;
         if self.last_frame_tree.as_ref() != Some(&current) {
             self.current_binding = None;
             return Err(NativeProtocolError::SnapshotStale);
@@ -700,7 +730,7 @@ impl CdpNativeAdapterPort {
             .client
             .frame_tree(&self.cdp_session_id)
             .await
-            .map_err(|_| NativeProtocolError::ActionUncertain)?;
+            .map_err(|error| self.action_failure(error))?;
         let changed = self.last_frame_tree.as_ref() != Some(&current);
         if changed {
             self.target_revision = frame_revision(&self.target_revision, &current)?;
@@ -728,7 +758,7 @@ impl CdpNativeAdapterPort {
                 .client
                 .backend_node_is_password(&self.cdp_session_id, backend_dom_node_id)
                 .await
-                .map_err(observation_error)?
+                .map_err(|error| self.observation_failure(error))?
             {
                 node.properties.push(CdpAxProperty {
                     name: "protected".into(),
@@ -846,14 +876,14 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 self.client
                     .enable_accessibility(&self.cdp_session_id)
                     .await
-                    .map_err(observation_error)?;
+                    .map_err(|error| self.observation_failure(error))?;
                 self.accessibility_enabled = true;
             }
             let frame_tree_before = self
                 .client
                 .frame_tree(&self.cdp_session_id)
                 .await
-                .map_err(observation_error)?;
+                .map_err(|error| self.observation_failure(error))?;
             let mut tree = self
                 .client
                 .full_ax_tree(
@@ -864,12 +894,12 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     bounds.max_text_bytes as usize,
                 )
                 .await
-                .map_err(observation_error)?;
+                .map_err(|error| self.observation_failure(error))?;
             let history_entry = self
                 .client
                 .current_history_entry(&self.cdp_session_id)
                 .await
-                .map_err(observation_error)?;
+                .map_err(|error| self.observation_failure(error))?;
             self.classify_password_nodes(&mut tree).await?;
             let main_origin = canonical_http_origin(&history_entry.url)
                 .ok_or(NativeProtocolError::BrowserOriginDenied)?;
@@ -887,7 +917,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     .client
                     .frame_owner_backend_node(&self.cdp_session_id, &frame.id)
                     .await
-                    .map_err(observation_error)?;
+                    .map_err(|error| self.observation_failure(error))?;
                 frame_scope.bind_frame_owner(&frame.id, owner)?;
                 if frame_scope.admits(&frame.id) {
                     let remaining_nodes = (bounds.max_nodes as usize)
@@ -904,7 +934,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                             bounds.max_text_bytes as usize,
                         )
                         .await
-                        .map_err(observation_error)?;
+                        .map_err(|error| self.observation_failure(error))?;
                     let mut child = child;
                     self.classify_password_nodes(&mut child).await?;
                     tree.nodes.extend(child.nodes);
@@ -914,7 +944,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .client
                 .frame_tree(&self.cdp_session_id)
                 .await
-                .map_err(observation_error)?;
+                .map_err(|error| self.observation_failure(error))?;
             if frame_tree_before != frame_tree_after {
                 self.current_binding = None;
                 return Err(NativeProtocolError::SnapshotStale);
@@ -1009,7 +1039,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 self.revalidate_history_snapshot().await?;
                 self.begin_popup_action()?;
                 self.current_binding = None;
-                let result = tokio::time::timeout(
+                let result = match tokio::time::timeout(
                     Duration::from_millis(navigation.timeout_ms),
                     self.client.navigate(
                         &self.cdp_session_id,
@@ -1018,8 +1048,13 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     ),
                 )
                 .await
-                .map_err(|_| NativeProtocolError::ActionUncertain)?
-                .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                {
+                    Ok(result) => result.map_err(|error| self.action_failure(error))?,
+                    Err(_) => {
+                        self.poison_attachment();
+                        return Err(NativeProtocolError::ActionUncertain);
+                    }
+                };
                 let prior_history_entry = self
                     .last_history_entry
                     .clone()
@@ -1028,7 +1063,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     .client
                     .current_history_entry(&self.cdp_session_id)
                     .await
-                    .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                    .map_err(|error| self.action_failure(error))?;
                 let (navigation_outcome, final_origin, mut failure_code) = match &result.outcome {
                     CdpNavigationOutcome::Page { final_url } => {
                         if history_entry.url != *final_url {
@@ -1111,7 +1146,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     .client
                     .navigation_history(&self.cdp_session_id)
                     .await
-                    .map_err(observation_error)?;
+                    .map_err(|error| self.observation_failure(error))?;
                 let before = history.entries[history.current_index].clone();
                 if self.last_history_entry.as_ref() != Some(&before) {
                     self.current_binding = None;
@@ -1165,7 +1200,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     }
                     HistoryActionKind::Reload => self.client.reload(&self.cdp_session_id).await,
                 }
-                .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                .map_err(|error| self.action_failure(error))?;
                 self.target_revision = history_revision(&self.target_revision, &final_entry);
                 self.last_history_entry = Some(final_entry.clone());
                 let frame_changed = self.capture_resulting_frame_tree().await?;
@@ -1238,7 +1273,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                             bounds.max_text_bytes as usize,
                         )
                         .await
-                        .map_err(observation_error)?;
+                        .map_err(|error| self.observation_failure(error))?;
                     if current_focus != Some(focused_target.backend_dom_node_id) {
                         self.current_binding = None;
                         return Err(NativeProtocolError::FocusChanged);
@@ -1258,14 +1293,14 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                             .await
                     }
                 };
-                if result.is_err() {
-                    return Err(NativeProtocolError::ActionUncertain);
+                if let Err(error) = result {
+                    return Err(self.action_failure(error));
                 }
                 let after_history = self
                     .client
                     .current_history_entry(&self.cdp_session_id)
                     .await
-                    .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                    .map_err(|error| self.action_failure(error))?;
                 let mut outcome = action_navigation_outcome(
                     &mut self.target_revision,
                     &before_history,
@@ -1315,7 +1350,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                         resolved.target.backend_dom_node_id,
                     )
                     .await
-                    .map_err(observation_error)?
+                    .map_err(|error| self.observation_failure(error))?
             {
                 self.current_binding = None;
                 return Err(NativeProtocolError::SensitiveActionRequired);
@@ -1374,14 +1409,14 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 }
                 _ => return Err(NativeProtocolError::ActionUnsupported),
             };
-            if result.is_err() {
-                return Err(NativeProtocolError::ActionUncertain);
+            if let Err(error) = result {
+                return Err(self.action_failure(error));
             }
             let after_history = self
                 .client
                 .current_history_entry(&self.cdp_session_id)
                 .await
-                .map_err(|_| NativeProtocolError::ActionUncertain)?;
+                .map_err(|error| self.action_failure(error))?;
             let mut outcome = action_navigation_outcome(
                 &mut self.target_revision,
                 &before_history,
