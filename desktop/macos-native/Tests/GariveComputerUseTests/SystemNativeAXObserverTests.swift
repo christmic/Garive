@@ -287,6 +287,128 @@ func rejectsOversizedAXSetValue() throws {
     #expect(access.setValues.isEmpty)
 }
 
+@Test("native Unicode typing binds the focused window and exact text node")
+func dispatchesBoundNativeUnicodeText() throws {
+    let window = AXUIElementCreateApplication(7_016)
+    let field = AXUIElementCreateApplication(7_017)
+    let access = NativeAXAccessProbe(
+        windowElements: [window],
+        semanticRoot: .init(
+            role: "AXWindow",
+            children: [
+                .init(
+                    role: "AXTextField",
+                    value: "",
+                    focused: true,
+                    valueSettable: true
+                ),
+            ]
+        ),
+        semanticElements: [window, field]
+    )
+    let keyboard = NativeKeyboardDispatchProbe()
+    let observer = SystemNativeAXObserver(
+        access: access,
+        keyboard: keyboard,
+        permissionState: { .granted },
+        isCurrent: { _ in true }
+    )
+    let windowBinding = try #require(
+        observer.bindWindows(applicationIdentity: makeAXApplicationIdentity()).first
+    )
+    let observation = try observer.observe(
+        window: windowBinding,
+        bounds: try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
+    )
+    #expect(observation.snapshot.nodes[1].supportedActions == [.setValue, .typeText])
+
+    _ = try observer.perform(
+        action: .typeText(nodeIndex: 1, text: "原生🦀"),
+        observation: observation
+    )
+
+    #expect(keyboard.preparedText.count == 1)
+    #expect(keyboard.preparedText[0].0 == "原生🦀")
+    #expect(keyboard.preparedText[0].1 == 321)
+    #expect(keyboard.dispatchedText.count == 1)
+}
+
+@Test("portable key input fails before preparation when the exact window loses focus")
+func rejectsNativeKeyAfterWindowFocusLoss() throws {
+    let window = AXUIElementCreateApplication(7_018)
+    let field = AXUIElementCreateApplication(7_019)
+    let access = NativeAXAccessProbe(
+        windowElements: [window],
+        semanticRoot: .init(
+            role: "AXWindow",
+            children: [.init(role: "AXTextField", focused: true, valueSettable: true)]
+        ),
+        semanticElements: [window, field]
+    )
+    let keyboard = NativeKeyboardDispatchProbe()
+    let observer = SystemNativeAXObserver(
+        access: access,
+        keyboard: keyboard,
+        permissionState: { .granted },
+        isCurrent: { _ in true }
+    )
+    let windowBinding = try #require(
+        observer.bindWindows(applicationIdentity: makeAXApplicationIdentity()).first
+    )
+    let observation = try observer.observe(
+        window: windowBinding,
+        bounds: try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
+    )
+    access.frontmostApplication = false
+
+    #expect(throws: NativeAXActionFailure.focusChanged) {
+        try observer.perform(action: .pressKey(.enter), observation: observation)
+    }
+    access.frontmostApplication = true
+    access.focusedWindowElement = AXUIElementCreateApplication(7_020)
+
+    #expect(throws: NativeAXActionFailure.focusChanged) {
+        try observer.perform(action: .pressKey(.enter), observation: observation)
+    }
+    #expect(keyboard.preparedKeys.isEmpty)
+    #expect(keyboard.dispatchedKeys.isEmpty)
+}
+
+@Test("portable key input targets the admitted process after exact focus revalidation")
+func dispatchesBoundNativePortableKey() throws {
+    let window = AXUIElementCreateApplication(7_021)
+    let field = AXUIElementCreateApplication(7_022)
+    let access = NativeAXAccessProbe(
+        windowElements: [window],
+        semanticRoot: .init(
+            role: "AXWindow",
+            children: [.init(role: "AXTextField", focused: true, valueSettable: true)]
+        ),
+        semanticElements: [window, field]
+    )
+    let keyboard = NativeKeyboardDispatchProbe()
+    let observer = SystemNativeAXObserver(
+        access: access,
+        keyboard: keyboard,
+        permissionState: { .granted },
+        isCurrent: { _ in true }
+    )
+    let windowBinding = try #require(
+        observer.bindWindows(applicationIdentity: makeAXApplicationIdentity()).first
+    )
+    let observation = try observer.observe(
+        window: windowBinding,
+        bounds: try NativeAXObservationBounds(maxNodes: 10, maxTextBytes: 100)
+    )
+
+    _ = try observer.perform(action: .pressKey(.pageDown), observation: observation)
+
+    #expect(keyboard.preparedKeys.count == 1)
+    #expect(keyboard.preparedKeys[0].0 == .pageDown)
+    #expect(keyboard.preparedKeys[0].1 == 321)
+    #expect(keyboard.dispatchedKeys.count == 1)
+}
+
 private func makeGrantedAXObserver(
     access: NativeAXAccessProbe
 ) -> SystemNativeAXObserver {

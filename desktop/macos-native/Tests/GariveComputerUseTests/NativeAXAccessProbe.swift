@@ -5,6 +5,8 @@ final class NativeAXAccessProbe: NativeAXAccessing {
     var windowElements: [AXUIElement]
     var semanticRoot: NativeAXSemanticSnapshotBuilder.Element
     var semanticElements: [AXUIElement]
+    var focusedWindowElement: AXUIElement?
+    var frontmostApplication = true
     private(set) var windowsCallCount = 0
     private(set) var semanticCallCount = 0
     private(set) var pressedElements: [AXUIElement] = []
@@ -18,11 +20,20 @@ final class NativeAXAccessProbe: NativeAXAccessing {
         self.windowElements = windowElements
         self.semanticRoot = semanticRoot
         self.semanticElements = semanticElements
+        focusedWindowElement = windowElements.first
     }
 
     func windows(processIdentifier _: Int32) throws -> [AXUIElement] {
         windowsCallCount += 1
         return windowElements
+    }
+
+    func focusedWindow(processIdentifier _: Int32) throws -> AXUIElement? {
+        focusedWindowElement
+    }
+
+    func isFrontmostApplication(processIdentifier _: Int32) throws -> Bool {
+        frontmostApplication
     }
 
     func isSameElement(_ left: AXUIElement, _ right: AXUIElement) -> Bool {
