@@ -57,7 +57,13 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
 fn modal_area(model: &AppModel, overlay: Overlay, area: Rect) -> Rect {
     if area.height < 12
         && (decision_sheet::project(model, overlay).is_some()
-            || matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory))
+            || matches!(
+                overlay,
+                Overlay::SessionPicker
+                    | Overlay::TurnNavigator
+                    | Overlay::PromptHistory
+                    | Overlay::Inspector
+            ))
     {
         return area;
     }
