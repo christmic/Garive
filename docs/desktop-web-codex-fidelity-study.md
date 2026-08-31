@@ -30,7 +30,7 @@ The inspected signed local application is:
 
 The application safety boundary does not permit automated capture of the Codex
 window itself. No private account content was inspected. Read-only static token
-inspection of the installed package established these current facts:
+and bundled-module inspection of the installed package established these facts:
 
 | Family | Observed values |
 |---|---|
@@ -38,9 +38,18 @@ inspection of the installed package established these current facts:
 | type | 11, 12, 14, 16 and 28 px core steps |
 | radii | 4, 6, 8, 10, 12, 16 and 20 px |
 | navigation rows | 30 and 36 px variants |
+| desktop toolbar | 46 px; 36 px compact variant |
+| sidebar | `clamp(240px, 275px preferred, min(520px, 100vw - 320px))` |
+| thread measure | 40 rem default, with 42/48 rem and 480/500 px variants |
+| composer | thread measure plus 24 px inline overhang; 4 px base spacing |
 | neutral ramp | `#fff`, `#f9f9f9`, `#ededed`, `#cdcdcd`, `#afafaf`, `#414141`, `#303030`, `#212121`, `#181818`, `#0d0d0d` |
 
-These values are evidence, not a license to import packaged code or assets.
+The bundle also separates modules for the local conversation thread and turn
+entries, scroll layout and virtualizer, application chrome, message navigation
+rail, composer utility bar, task suggestions, terminal panel, worktree
+environment, text-file tabs and artifact tabs. This confirms that Codex is a
+desktop workbench, not one chat column plus a generic inspector. These values
+and module boundaries are evidence, not a license to import code or assets.
 
 ### B. Official OpenAI UI material
 
@@ -86,17 +95,37 @@ same defects appear on Desktop and Web because both mount the same React UI:
    controlled interaction signal.
 8. The useful artifact inspector visually reads like a debug sidebar.
 
+### D. Current signed-in Codex desktop screenshots
+
+Two user-supplied 1280 × 800 screenshots were reviewed at original resolution.
+They contain private task names and therefore are not copied into repository
+evidence. Observable product facts are recorded without that content:
+
+1. The ordinary thread is a continuous document. Assistant Markdown has no
+   surrounding card; turn actions stay quiet at the content edge.
+2. The composer is a bottom-floating desktop surface. Its live goal/status rail,
+   input, authority, model/run-location controls and stop action form one unit.
+3. Environment is a compact floating panel over the thread, not a permanently
+   allocated evidence column.
+4. Opening a file creates a real split workbench: conversation narrows on the
+   left and the file owns a larger tabbed reading surface on the right.
+5. The workbench has tab chrome, breadcrumbs, view-source/open actions and
+   independent scrolling. It is not an expanded artifact card.
+6. Long-running immersion comes from continuous content, anchored turn actions,
+   live composer status and adjacent outputs—not a large progress dashboard.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
 
 - neutral layered surfaces with no decorative gradient;
-- 252 px comfortable rail, 36 px navigation rows and quiet selected surfaces;
-- 56 px title bar with one-line orientation and low-chrome actions;
-- 720–760 px reading measure and clear user/agent turn rhythm;
+- a 240–275 px comfortable rail, 30–36 px rows and quiet selected surfaces;
+- a 46 px title bar with one-line orientation and low-chrome actions;
+- a 40 rem default reading measure and clear user/agent turn rhythm;
 - an elevated compact composer with a 14 px input and 36 px actions;
 - semantic navigation groups in sentence case;
-- a 360 px evidence panel using the shell's type and spacing scale;
+- Environment as a compact dismissible overlay and artifacts/files as a true
+  resizable tabbed workbench, never one fixed generic inspector;
 - readable 12 px minimum metadata, except bounded 11 px timestamps;
 - light, dark, 720 px and 200% text-zoom evidence without horizontal overflow;
 - identical DOM, keyboard semantics and tokens for Desktop and Web.
@@ -121,6 +150,9 @@ useful without making the shell busier:
    drafts and explain the safe next action in place.
 6. **Honest capacity.** Usage appears only from trusted facts and never
    masquerades as task progress.
+7. **Workbench continuity.** A committed artifact opens beside its originating
+   Turn with revision and authority intact; closing it restores the undisturbed
+   thread and composer position.
 
 Gate 2 cannot compensate for a failed Gate 1. A powerful but visually rough
 surface is still a failed product experience.

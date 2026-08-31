@@ -88,11 +88,15 @@ Components do not test theme names or encode their own dark palette.
 
 ## Layout contract
 
-The wide shell contains a 252 px rail, fluid work canvas and optional 360 px
-evidence inspector. Navigation rows are 36 px and the title bar is 56 px. At
-narrower widths the inspector becomes an overlay, then
-the rail becomes a navigation sheet. The primary canvas has a 760 px readable
-content measure but artifact desks may use the remaining width.
+The wide desktop shell contains a 240–275 px rail and a fluid work canvas.
+Navigation rows are 30–36 px and the title bar is 46 px. The primary thread has
+a 40 rem readable measure. Environment and evidence summaries are compact
+dismissible overlays; opening an artifact, file, diff or terminal creates a
+separately scrollable tabbed workbench beside the thread. A generic fixed-width
+Inspector is not a canonical desktop layout.
+
+At narrower widths the workbench overlays the thread, then becomes a full
+surface with an explicit Back action; the rail becomes a navigation sheet.
 
 The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
@@ -107,12 +111,13 @@ gradients are forbidden in the application shell.
 
 | Element | Comfortable target | Compact target |
 |---|---:|---:|
-| rail | 252 px | 72 px collapsed |
-| title bar | 56 px | 52 px |
-| navigation/task row | 36–44 px | 32–38 px |
-| readable turn measure | 760 px max | unchanged |
-| composer | 760 px max, 112 px typical | 760 px max, 96 px typical |
-| evidence panel | 360 px | overlay below 1120 px |
+| rail | 240–275 px | 72 px collapsed |
+| title bar | 46 px | 36 px |
+| navigation/task row | 30–36 px | 30–36 px |
+| readable turn measure | 40 rem max | unchanged |
+| composer | 40 rem plus 24 px overhang | 40 rem max |
+| Environment overlay | 280–320 px | full overlay below 720 px |
+| artifact/file workbench | 48–62% of remaining width | full surface below 980 px |
 
 Localization and 200% text zoom may grow rows and must never clip content.
 
@@ -127,6 +132,8 @@ Localization and 200% text zoom may grow rows and must never clip content.
 | Notice | info, success, attention, error | states consequence and next action; alert only when interruption is required |
 | Modal | entering, active, exiting | traps focus, Escape closes when safe, returns focus to invoker |
 | Artifact card | preparing, ready, unverified, verified, unavailable | name/type/revision/verification visible; authority actions explicit |
+| Workspace tab | opening, active, background, changed, unavailable | stable title, close action, independent scroll and focus restoration |
+| Environment overlay | closed, open, attention, unavailable | compact summary only; never reserves an empty permanent column |
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
 
 ## Capacity view contract
