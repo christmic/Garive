@@ -319,11 +319,14 @@ dispatch-attempt binding selected by preflight.
 ## Runtime system composition
 
 Machine-level execution configuration is a Host-owned Runtime value, not part
-of the Agent Definition. One T1 system configuration contains exact policy and
-executor revisions, a canonical Workspace root, a private patch-recovery root,
-the complete Process lane registry, and an explicit `PodmanProcessConfig` whose
-Workspace root must be identical. Empty revisions, mismatched roots and
-non-private recovery authority fail before an executor is created.
+of the Agent Definition. Persistent `T1HostSystemConfig` contains exact policy
+and executor revisions, explicit Podman executable/socket/digest-pinned image,
+private patch/process recovery roots, control timeout and the complete Process
+lane registry. It never stores or discovers a Workspace path. Binding one
+explicit authorized canonical Workspace produces `T1RuntimeSystemConfig`; the
+derived `PodmanProcessConfig` must own that identical root. Empty revisions,
+mismatched roots and non-private recovery authority fail before an executor is
+created.
 
 Construction produces one five-definition `BuiltinT1Catalogue`, one preparation
 port backed by that exact catalogue, and a closed executor router. Read, list
