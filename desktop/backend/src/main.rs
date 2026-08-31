@@ -804,16 +804,27 @@ fn main() {
                 .path()
                 .app_config_dir()
                 .map_err(|_| stable_setup_error("config_directory"))?;
-            let provider = garive_desktop::FileDesktopConfigurationProvider::new(
+            let t1_host = load_t1_host_configuration(&directory)?;
+            let mut provider = garive_desktop::FileDesktopConfigurationProvider::new(
                 directory.join(garive_desktop::DESKTOP_CONFIG_FILE),
                 directory.clone(),
                 garive_desktop::SystemDesktopSecretResolver,
                 garive_desktop::BuiltinDesktopProfileRegistry,
             );
-            let setup = garive_desktop::DesktopSetupService::new(
+            if let Some(config) = t1_host.clone() {
+                provider = provider.with_t1_host_system_config(config);
+            }
+            let mut setup = garive_desktop::DesktopSetupService::new(
                 directory.clone(),
                 garive_desktop::SystemSetupCredentialStore,
             );
+            if let Some(config) = t1_host {
+                setup = setup.with_t1_tool_capabilities(
+                    config
+                        .tool_capabilities()
+                        .map_err(|_| stable_setup_error("runtime_tools_invalid"))?,
+                );
+            }
             let product_store = garive_desktop::DesktopProductStore::new(
                 app.path()
                     .app_data_dir()
@@ -916,6 +927,26 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("Garive desktop runtime failed");
+}
+
+#[cfg(unix)]
+fn load_t1_host_configuration(
+    directory: &std::path::Path,
+) -> Result<Option<garive_runtime::T1HostSystemConfig>, std::io::Error> {
+    garive_desktop::DesktopT1ConfigurationProvider::new(
+        directory.join(garive_desktop::DESKTOP_T1_CONFIG_FILE),
+        directory.to_owned(),
+        garive_desktop::SystemDesktopSecretResolver,
+    )
+    .load()
+    .map_err(|error| stable_setup_error(error.code()))
+}
+
+#[cfg(not(unix))]
+fn load_t1_host_configuration(
+    _: &std::path::Path,
+) -> Result<Option<garive_runtime::T1HostSystemConfig>, std::io::Error> {
+    Ok(None)
 }
 
 fn stable_setup_error(code: &'static str) -> std::io::Error {

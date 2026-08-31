@@ -7,11 +7,14 @@ use std::{
     thread,
     time::Duration,
 };
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 
 use garive_desktop::{
-    BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopProfileConfiguration,
-    DesktopProfileRegistry, DesktopSecretResolver, DesktopSetupError, DesktopSetupInput,
-    DesktopSetupService, DesktopState, DesktopSystemConfiguration,
+    builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
+    BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopConfigurationProvider,
+    DesktopProfileConfiguration, DesktopProfileRegistry, DesktopSecretResolver, DesktopSetupError,
+    DesktopSetupInput, DesktopSetupService, DesktopState, DesktopSystemConfiguration,
     DesktopWorkspaceExecutionFactory, DesktopWorkspaceService, FileDesktopConfigurationProvider,
     SetupCredentialStore, ANTHROPIC_MESSAGES_PROFILE_ID, MAX_DESKTOP_CONFIG_BYTES,
     OPENAI_RESPONSES_PROFILE_ID,
@@ -23,7 +26,7 @@ use garive_llm::{
 use garive_provider_profile::SecretValue;
 use garive_runtime::{
     CommittedTurn, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    RuntimeHttpLimits,
+    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeHttpLimits, T1HostSystemConfig,
 };
 use tempfile::tempdir;
 
@@ -99,6 +102,147 @@ fn strict_v2_requires_revision_and_setup_identity() {
         parse(incomplete.as_bytes()).unwrap_err(),
         DesktopConfigurationError::InvalidDocument
     );
+}
+
+#[test]
+fn strict_v3_normalizes_an_ordered_multi_agent_catalogue() {
+    let mut value: serde_json::Value = serde_json::from_slice(FIXTURE).unwrap();
+    let mut primary = value
+        .as_object_mut()
+        .unwrap()
+        .remove("installed_agent")
+        .unwrap();
+    let mut workspace = primary.clone();
+    primary["definition_id"] = "agent-general".into();
+    workspace["definition_id"] = "agent-workspace".into();
+    workspace["agent_instance_namespace"] = "desktop-workspace".into();
+    value["schema_version"] = 3.into();
+    value["configuration_revision"] = 7.into();
+    value["setup_id"] = "setup-v3".into();
+    value["default_agent_definition_id"] = "agent-workspace".into();
+    value["installed_agents"] = serde_json::json!([primary, workspace]);
+
+    let parsed = parse(&serde_json::to_vec(&value).unwrap()).expect("strict v3");
+    assert_eq!(parsed.schema_version(), 3);
+    assert_eq!(parsed.configuration_revision(), Some(7));
+    assert_eq!(parsed.default_agent_definition_id(), "agent-workspace");
+    assert_eq!(parsed.installed_agent_count(), 2);
+}
+
+#[test]
+fn v3_rejects_legacy_mix_unknown_default_and_noncanonical_catalogue() {
+    let mut value: serde_json::Value = serde_json::from_slice(FIXTURE).unwrap();
+    let installed = value["installed_agent"].clone();
+    value["schema_version"] = 3.into();
+    value["configuration_revision"] = 1.into();
+    value["setup_id"] = "setup-v3".into();
+    value["default_agent_definition_id"] = "definition-main".into();
+    value["installed_agents"] = serde_json::json!([installed.clone()]);
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidDocument
+    );
+
+    value.as_object_mut().unwrap().remove("installed_agent");
+    value["default_agent_definition_id"] = "missing".into();
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidValue
+    );
+
+    value["default_agent_definition_id"] = "definition-main".into();
+    value["installed_agents"] = serde_json::json!([installed.clone(), installed]);
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidValue
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn provider_reconstructs_workspace_agent_only_from_exact_t1_capabilities() {
+    let directory = tempdir().unwrap();
+    let patch_recovery = directory.path().join("patch-recovery");
+    let process_recovery = directory.path().join("process-recovery");
+    for path in [&patch_recovery, &process_recovery] {
+        fs::create_dir(path).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let lanes = ProcessLaneRegistry::new([ProcessLane::new(
+        "rust",
+        [ProcessExecutable::new("cargo", "/opt/garive/bin/cargo").unwrap()],
+        Vec::new(),
+    )
+    .unwrap()])
+    .unwrap();
+    let t1 = T1HostSystemConfig::new(
+        "t1.policy.v1",
+        "t1.executor.v1",
+        "/opt/garive/bin/podman",
+        "unix:///var/run/garive-podman.sock",
+        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+        patch_recovery,
+        process_recovery,
+        5_000,
+        lanes,
+    )
+    .unwrap();
+    let general = builtin_desktop_agent_installation("agent-general", "desktop-general").unwrap();
+    let workspace = builtin_desktop_workspace_agent_installation(
+        "agent-workspace",
+        "desktop-workspace",
+        &t1.tool_capabilities().unwrap(),
+    )
+    .unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(FIXTURE).unwrap();
+    value.as_object_mut().unwrap().remove("installed_agent");
+    value["schema_version"] = 3.into();
+    value["configuration_revision"] = 1.into();
+    value["setup_id"] = "setup-v3".into();
+    value["default_agent_definition_id"] = "agent-general".into();
+    value["installed_agents"] =
+        serde_json::json!([agent_document(&general), agent_document(&workspace)]);
+    let document = directory.path().join("desktop-v1.json");
+    fs::write(&document, serde_json::to_vec(&value).unwrap()).unwrap();
+
+    let absent = FileDesktopConfigurationProvider::new(
+        document.clone(),
+        directory.path().to_owned(),
+        FixtureSecrets,
+        FixtureProfiles,
+    );
+    assert!(matches!(
+        absent.load(),
+        Err(DesktopConfigurationError::ConstructionFailure)
+    ));
+    let configured = FileDesktopConfigurationProvider::new(
+        document,
+        directory.path().to_owned(),
+        FixtureSecrets,
+        FixtureProfiles,
+    )
+    .with_t1_host_system_config(t1)
+    .load()
+    .unwrap()
+    .unwrap();
+    assert_eq!(configured.default_agent_definition_id, "agent-general");
+    assert_eq!(configured.agent_catalogue.len(), 2);
+    assert!(configured.agent_catalogue.get("agent-workspace").is_some());
+}
+
+#[cfg(unix)]
+fn agent_document(installation: &garive_runtime::RuntimeAgentInstallation) -> serde_json::Value {
+    let agent = installation.installed_agent();
+    serde_json::json!({
+        "definition_id": agent.definition_id,
+        "definition_revision": agent.definition_revision,
+        "snapshot_digest": agent.snapshot_digest,
+        "agent_instance_namespace": agent.agent_instance_namespace,
+        "max_iterations": agent.runtime_limits.max_iterations,
+        "max_input_tokens": agent.runtime_limits.max_input_tokens,
+        "max_output_tokens": agent.runtime_limits.max_output_tokens,
+        "deadline_budget_ms": agent.runtime_limits.deadline_budget_ms
+    })
 }
 
 #[test]

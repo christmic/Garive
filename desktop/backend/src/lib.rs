@@ -35,7 +35,8 @@ pub use artifact_export::{
     DesktopArtifactExportTarget, DESKTOP_ARTIFACT_EXPORT_JOURNAL_FILE,
 };
 pub use desktop_agent::{
-    builtin_desktop_agent_installation, DesktopAgentCompositionError, DESKTOP_AGENT_REVISION,
+    builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
+    DesktopAgentCompositionError, DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION,
 };
 pub use desktop_menu::{
     build_desktop_menu, build_desktop_menu_for_locale, DesktopMenuIntent, DesktopMenuLocale,

@@ -1148,16 +1148,18 @@ function SearchScreen({ recents, titles, onOpen, t }: {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<TaskFilter>("all");
   const results = filterAndOrderTasks(recents, filter, query, titles);
-  return <section className="search-page"><div className="search-heading"><p className="eyebrow">{t("search.eyebrow")}</p><h1>{t("search.title")}</h1><p>{t("search.description")}</p></div>
-    <div className="search-box"><Icon name="search" /><input autoFocus aria-label={t("search.label")}
+  return <section className="search-page"><div className="search-heading"><h1>{t("search.title")}</h1>
+      <p>{t("search.description")}</p></div>
+    <div className="search-toolbar"><div className="search-box"><Icon name="search" /><input autoFocus aria-label={t("search.label")}
       value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search.placeholder")} /><kbd>⌘F</kbd></div>
-    <div className="task-filters" role="group" aria-label={t("tasks.filterAria")}>
-      {(["all", "attention", "active", "completed"] as const).map((value) => <button type="button"
-        className={filter === value ? "selected" : ""} aria-pressed={filter === value}
-        onClick={() => setFilter(value)} key={value}>{t(`tasks.${value}`)}</button>)}
-    </div>
+      <div className="task-filters" role="group" aria-label={t("tasks.filterAria")}>
+        {(["all", "attention", "active", "completed"] as const).map((value) => <button type="button"
+          className={filter === value ? "selected" : ""} aria-pressed={filter === value}
+          onClick={() => setFilter(value)} key={value}>{t(`tasks.${value}`)}</button>)}
+      </div></div>
+    <div className="search-result-heading"><span>{t("nav.recents")}</span><span>{results.length}</span></div>
     <div className="search-results" aria-live="polite">{results.length ? results.map((recent) => <button type="button" key={recent.session_id} onClick={() => void onOpen(recent.session_id)}>
-      <span className="search-result-icon"><Icon name="work" /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {t(recent.turn_count === 1 ? "search.turn" : "search.turns")} · {terminalCopy(recent.latest_turn_state, t)}</small></span><Icon name="chevron" /></button>)
+      <span className="search-result-icon"><TaskStateDot task={recent} /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {t(recent.turn_count === 1 ? "search.turn" : "search.turns")}</small></span><span className="search-result-state">{terminalCopy(recent.latest_turn_state, t)}</span><Icon name="chevron" /></button>)
       : <div className="search-empty"><Icon name="search" /><h2>{t(query ? "search.noMatch" : "search.noWork")}</h2><p>{t(query ? "search.tryDifferent" : "search.completedHint")}</p></div>}</div>
   </section>;
 }

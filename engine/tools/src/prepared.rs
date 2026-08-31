@@ -358,6 +358,18 @@ impl ToolDefinition {
         self.replay_class
     }
 
+    /// Returns the immutable v2/v3 access ceiling, when installed.
+    pub fn access_policy(&self) -> Option<&ToolAccessPolicyV1> {
+        self.access_contract
+            .as_ref()
+            .map(|contract| &contract.policy)
+    }
+
+    /// Returns the immutable v3 sandbox enforcement request, when installed.
+    pub const fn sandbox_requirements(&self) -> Option<&SandboxRequirementsV1> {
+        self.sandbox_requirements.as_ref()
+    }
+
     /// Returns the opted-in Prepared Call contract version.
     pub const fn prepared_contract_version(&self) -> u16 {
         if self.sandbox_requirements.is_some() {

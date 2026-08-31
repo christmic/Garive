@@ -7,14 +7,23 @@ use garive_config::{
     ContextPolicyCandidate, ContextPolicyReference, DefaultLimits, GovernancePolicy,
     GovernancePolicyCandidate, InteractionMode, ProductPolicy, ResolutionRegistry,
 };
+use garive_core::AgentToolCapabilities;
 use garive_runtime::RuntimeAgentInstallation;
+use garive_tools::{
+    ToolDefinition, T1_APPLY_PATCH, T1_LIST, T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT,
+    T1_TOOL_REVISION,
+};
 
-use crate::workspace_execution::{desktop_workspace_tool_definition, DESKTOP_WRITE_TOOL_REVISION};
+use crate::workspace_execution::desktop_workspace_tool_definition;
 
 /// Exact revision of the built-in Desktop Agent definition.
 pub const DESKTOP_AGENT_REVISION: &str = "desktop.agent.v1";
+/// Exact revision of the built-in T1 Workspace Agent definition.
+pub const DESKTOP_WORKSPACE_AGENT_REVISION: &str = "desktop.workspace-agent.v1";
 const GOVERNANCE_ID: &str = "desktop.governance";
 const GOVERNANCE_REVISION: &str = "desktop.governance.v1";
+const WORKSPACE_GOVERNANCE_ID: &str = "desktop.workspace-governance";
+const WORKSPACE_GOVERNANCE_REVISION: &str = "desktop.workspace-governance.v1";
 const CONTEXT_ID: &str = "desktop.context";
 const CONTEXT_REVISION: &str = "desktop.context.v1";
 
@@ -28,26 +37,96 @@ pub fn builtin_desktop_agent_installation(
     instance_namespace: &str,
 ) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
     let tool = desktop_workspace_tool_definition().map_err(|_| DesktopAgentCompositionError)?;
-    let requirement_capabilities = BTreeSet::from(["filesystem_write".to_owned()]);
+    resolve_desktop_installation(
+        definition_id,
+        DESKTOP_AGENT_REVISION,
+        instance_namespace,
+        vec![tool],
+        GOVERNANCE_ID,
+        GOVERNANCE_REVISION,
+        BTreeSet::from(["filesystem_write".to_owned()]),
+    )
+}
+
+/// Resolves the exact six-tool T1 Workspace Agent from machine capabilities.
+pub fn builtin_desktop_workspace_agent_installation(
+    definition_id: &str,
+    instance_namespace: &str,
+    t1: &AgentToolCapabilities,
+) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
+    let expected = BTreeSet::from([
+        T1_APPLY_PATCH,
+        T1_LIST,
+        T1_PROCESS_RUN,
+        T1_READ_TEXT,
+        T1_SEARCH_TEXT,
+    ]);
+    if t1.definitions.len() != expected.len()
+        || t1
+            .definitions
+            .iter()
+            .map(|definition| definition.name())
+            .collect::<BTreeSet<_>>()
+            != expected
+        || t1
+            .definitions
+            .iter()
+            .any(|definition| definition.revision() != T1_TOOL_REVISION)
+    {
+        return Err(DesktopAgentCompositionError);
+    }
+    let mut tools = t1.definitions.clone();
+    tools.push(desktop_workspace_tool_definition().map_err(|_| DesktopAgentCompositionError)?);
+    tools.sort_by(|left, right| left.name().cmp(right.name()));
+    resolve_desktop_installation(
+        definition_id,
+        DESKTOP_WORKSPACE_AGENT_REVISION,
+        instance_namespace,
+        tools,
+        WORKSPACE_GOVERNANCE_ID,
+        WORKSPACE_GOVERNANCE_REVISION,
+        BTreeSet::from([
+            "filesystem_read".to_owned(),
+            "filesystem_write".to_owned(),
+            "process".to_owned(),
+        ]),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_desktop_installation(
+    definition_id: &str,
+    definition_revision: &str,
+    instance_namespace: &str,
+    tools: Vec<ToolDefinition>,
+    governance_id: &str,
+    governance_revision: &str,
+    requirement_capabilities: BTreeSet<String>,
+) -> Result<RuntimeAgentInstallation, DesktopAgentCompositionError> {
     let interaction_modes = BTreeSet::from([InteractionMode::Approval]);
     let limits = DefaultLimits::new(12, Some(131_072), Some(8_192), Some(600_000))
         .map_err(|_| DesktopAgentCompositionError)?;
     let definition = AgentDefinition::new(
         definition_id,
-        DESKTOP_AGENT_REVISION,
+        definition_revision,
         Vec::new(),
         Vec::new(),
-        vec![CapabilityReference::new(
-            CapabilityKind::Tool,
-            tool.name(),
-            DESKTOP_WRITE_TOOL_REVISION,
-            3,
-            true,
-        )
-        .map_err(|_| DesktopAgentCompositionError)?],
+        tools
+            .iter()
+            .map(|tool| {
+                CapabilityReference::new(
+                    CapabilityKind::Tool,
+                    tool.name(),
+                    tool.revision(),
+                    3,
+                    true,
+                )
+                .map_err(|_| DesktopAgentCompositionError)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
         GovernancePolicy::new(
-            GOVERNANCE_ID,
-            GOVERNANCE_REVISION,
+            governance_id,
+            governance_revision,
             requirement_capabilities.clone(),
             interaction_modes.clone(),
         )
@@ -63,11 +142,11 @@ pub fn builtin_desktop_agent_installation(
         &ResolutionRegistry {
             instructions: Vec::new(),
             model_roles: Vec::new(),
-            tools: vec![tool],
+            tools,
             capability_descriptors: Vec::new(),
             governance_policies: vec![GovernancePolicyCandidate {
-                policy_id: GOVERNANCE_ID.into(),
-                exact_revision: GOVERNANCE_REVISION.into(),
+                policy_id: governance_id.into(),
+                exact_revision: governance_revision.into(),
                 allowed_requirement_capabilities: requirement_capabilities.clone(),
                 interaction_modes: interaction_modes.clone(),
             }],
@@ -95,6 +174,8 @@ pub fn builtin_desktop_agent_installation(
 
 #[cfg(test)]
 mod tests {
+    use garive_tools::BuiltinT1Catalogue;
+
     use super::*;
 
     #[test]
@@ -108,8 +189,41 @@ mod tests {
         assert_eq!(left.tool_capabilities().definitions.len(), 1);
         assert_eq!(
             left.tool_capabilities().definitions[0].revision(),
-            DESKTOP_WRITE_TOOL_REVISION
+            crate::workspace_execution::DESKTOP_WRITE_TOOL_REVISION
         );
         assert_eq!(left.installed_agent().runtime_limits.max_iterations, 12);
+    }
+
+    #[test]
+    fn workspace_installation_requires_and_freezes_the_exact_t1_catalogue() {
+        let catalogue = BuiltinT1Catalogue::new("t1.policy.v1", ["source-control"]).unwrap();
+        let capabilities = AgentToolCapabilities {
+            definitions: catalogue.definitions().to_vec(),
+        };
+        let installation = builtin_desktop_workspace_agent_installation(
+            "garive-workspace",
+            "desktop-workspace",
+            &capabilities,
+        )
+        .unwrap();
+        assert_eq!(
+            installation.installed_agent().definition_revision,
+            DESKTOP_WORKSPACE_AGENT_REVISION
+        );
+        assert_eq!(installation.tool_capabilities().definitions.len(), 6);
+        assert!(installation
+            .tool_capabilities()
+            .definitions
+            .iter()
+            .any(|definition| definition.name() == "write_file"));
+
+        let mut incomplete = capabilities;
+        incomplete.definitions.pop();
+        assert!(builtin_desktop_workspace_agent_installation(
+            "garive-workspace",
+            "desktop-workspace",
+            &incomplete,
+        )
+        .is_err());
     }
 }

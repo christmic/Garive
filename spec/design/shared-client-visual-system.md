@@ -195,6 +195,14 @@ to the Composer without moving it. At every window width the Composer and first
 starter row have at least 12px visual separation; no overlay may satisfy the
 viewport-width gate while occluding interactive content.
 
+Durable Search is a desktop work finder, not a second landing page. It keeps the
+39rem work axis, a 22px orientation heading, one compact field/filter surface
+and 44px result rows. State is visible at the row edge and color remains
+secondary. Search never introduces hero copy, card stacks or a second command
+vocabulary. On native macOS, hiding the rail or entering the narrow navigation
+sheet reserves the titlebar traffic-light safe zone; Web renders the identical
+work finder without that platform inset.
+
 ## Component grammar
 
 | Component | Required states | Invariants |
